@@ -126,7 +126,7 @@ class AppFlowTool {
         try {
           return JSON.parse(jsonString)
         } catch(err) {
-          log.error("Failed to parse JSON String:", jsonString, {})
+          log.error("Failed to parse JSON String:", jsonString);
           return null;
         }
       }).filter(x => x != null)

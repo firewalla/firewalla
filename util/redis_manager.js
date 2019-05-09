@@ -29,7 +29,7 @@ class RedisManager {
     if(!this.rclient) {
       this.rclient = redis.createClient()
       this.rclient.on('error', (err) => {
-        log.error("Redis client got error:", err, {})
+        log.error("Redis client got error:", err);
       })
     }
     return this.rclient
@@ -40,7 +40,7 @@ class RedisManager {
       // this client will return all replies as buffers instead of strings
       this.bclient = redis.createClient({return_buffers: true});
       this.bclient.on('error', (err) => {
-        log.error("Redis buffer client got error:", err, {});
+        log.error("Redis buffer client got error:", err);
       });
     }
     return this.bclient;
@@ -50,7 +50,7 @@ class RedisManager {
     if(!this.mclient) {
       this.mclient = redis.createClient()
       this.mclient.on('error', (err) => {
-        log.error("Redis metrics client got error:", err, {})
+        log.error("Redis metrics client got error:", err);
       })
     }
     return this.mclient
@@ -62,7 +62,7 @@ class RedisManager {
       this.sclient.setMaxListeners(0)
 
       this.sclient.on('error', (err) => {
-        log.error("Redis sclient got error:", err, {})
+        log.error("Redis sclient got error:", err);
       })
     }
 
@@ -75,7 +75,7 @@ class RedisManager {
       this.pclient.setMaxListeners(0)
 
       this.pclient.on('error', (err) => {
-        log.error("Redis pclient got error:", err, {})
+        log.error("Redis pclient got error:", err);
       })
     }
     

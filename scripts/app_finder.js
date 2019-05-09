@@ -44,7 +44,7 @@ function print(flow, app, category) {
   let d = new Date(0)
   d.setUTCSeconds(flow.ts)
  
-  log.info(d, app, category, flow.sh, flow.dh, flow.ob, flow.rb, {})
+  log.info(d, app, category, flow.sh, flow.dh, flow.ob, flow.rb);
 }
 
 if(program.ip) {

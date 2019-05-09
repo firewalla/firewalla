@@ -77,10 +77,10 @@ class SensorEventManager extends EventEmitter {
             this.emitLocalEvent(m); // never send remote pubsub event back to remote 
           }
         } catch (err) {
-          log.error("Failed to parse channel message:", err, {});
+          log.error("Failed to parse channel message:", err);
         }
       } else {
-        log.debug("Ignore channel", channel, {});
+        log.debug("Ignore channel", channel);
       }
     });
 
@@ -119,13 +119,13 @@ class SensorEventManager extends EventEmitter {
       log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
     }
 
-    log.debug(event.type, "subscribers: ", this.listenerCount(event.type), {});
+    log.debug(event.type, "subscribers: ", this.listenerCount(event.type));
     let count = this.listenerCount(event.type);
     if(count === 0) {
-      log.warn("No subscription on event type:", event.type, {});
+      log.warn("No subscription on event type:", event.type);
     } else if (count > 1) {
       // most of time, only one subscribe on each event type
-      log.debug("Subscribers on event type:", event.type, "is more than ONE", {});
+      log.debug("Subscribers on event type:", event.type, "is more than ONE");
       this.emit(event.type, event);
     } else {
       this.emit(event.type, event);

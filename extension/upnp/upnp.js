@@ -139,7 +139,7 @@ module.exports = class {
         }
       });
     } catch (e) {
-      log.error("UPNP.getCapability exception ", e, {});
+      log.error("UPNP.getCapability exception ", e);
     }
 
   }
@@ -230,7 +230,7 @@ module.exports = class {
     }
     this.natpmpClient().portUnmapping({ type: protocol, private: localPort, public: externalPort, ttl: 0 }, (err, info) => {
       if (err) {
-        log.error("UPNP.removePortMappingNATPMP", err, {});
+        log.error("UPNP.removePortMappingNATPMP", err);
       }
       callback(err, info);
     });
@@ -251,7 +251,7 @@ module.exports = class {
           }
         }
       } catch (e) {
-        log.error("UPNP.removePortMapping Exception", e, {});
+        log.error("UPNP.removePortMapping Exception", e);
       }
     });
   }

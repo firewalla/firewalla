@@ -206,7 +206,7 @@ class IntelTool {
   }
 
   checkIntelFromCloud(ipList, domainList, fd, appList, flow) {
-    log.debug("Checking intel for",fd, ipList, domainList, {});
+    log.debug("Checking intel for",fd, ipList, domainList);
     if (fd == null) {
       fd = 'in';
     }
@@ -264,7 +264,7 @@ class IntelTool {
     return new Promise((resolve, reject) => {
       bone.intel("*","", "check", data, (err, data) => {
         if(err) {
-          log.info("IntelCheck Result FAIL:",ipList, data, {});
+          log.info("IntelCheck Result FAIL:",ipList, data);
           reject(err)
         } else {
           if(Array.isArray(data)) {
@@ -275,7 +275,7 @@ class IntelTool {
               }
             })
           }
-          log.debug("IntelCheck Result:",ipList, domainList, data, {});
+          log.debug("IntelCheck Result:",ipList, domainList, data);
           resolve(data);
         }
 

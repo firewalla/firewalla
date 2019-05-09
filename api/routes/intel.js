@@ -54,7 +54,7 @@ router.get('/domain/:domain', async (req, res, next) => {
   try {
     result = await intelTool.checkIntelFromCloud([], [domain]);
   } catch (err) {
-    log.error("Error when intel", err, {});
+    log.error("Error when intel", err);
   }
 
   if (!result) {
@@ -73,7 +73,7 @@ router.get('/finger/:target', async (req, res, next) => {
   try {
     result = await bone.intelFinger(target);
   } catch (err) {
-    log.error("Error when intel finger", err, {});
+    log.error("Error when intel finger", err);
   }
 
   if (!result) {

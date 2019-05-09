@@ -147,7 +147,7 @@ module.exports = class FlowMonitor {
       delete this.recordedFlows[oldrecords[i]];
     }
 
-    log.info("FLOW:INTEL:RECORD", key,record,{});
+    log.info("FLOW:INTEL:RECORD", key,record);
     if (record.count>limit) {
       record.count = 0-limit;
       return true;
@@ -237,9 +237,9 @@ module.exports = class FlowMonitor {
   flowIntel(flows) {
     for (let i in flows) {
       let flow = flows[i];
-      log.debug("FLOW:INTEL:PROCESSING",JSON.stringify(flow),{});
+      log.debug("FLOW:INTEL:PROCESSING",JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow,'l')) {
-        log.debug("########## flowIntel",JSON.stringify(flow),{});
+        log.debug("########## flowIntel",JSON.stringify(flow));
         let c = flow.intel.category;
         let cs = flow.intel.cs;
 
@@ -285,7 +285,7 @@ module.exports = class FlowMonitor {
             // see the packet before that due to how libpcap works
 
             if (flowUtil.checkFlag(flow,'s') && flow.fd==="out") {
-              log.info("Intel:On:Partial:Flows", flow,{});
+              log.info("Intel:On:Partial:Flows", flow);
             } else {
               let msg = "Intel "+flow.shname+" "+flow.dhname;
 
@@ -354,7 +354,7 @@ module.exports = class FlowMonitor {
                 intelobj.pr = flow.pr;
               }
 
-              log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj),{});
+              log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
 
               this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
               this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.resp_h'], intelobj);
@@ -470,7 +470,7 @@ module.exports = class FlowMonitor {
 
       let deletedArray = deletedArrayCount.concat(deletedArrayTs);
 
-      log.debug("Neighbor:Summary:Deleted", deletedArray,{});
+      log.debug("Neighbor:Summary:Deleted", deletedArray);
 
       let addedArray = neighborArrayCount.concat(neighborArrayTs);
 

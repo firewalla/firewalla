@@ -94,7 +94,7 @@ describe('Test mode feature', function() {
                 })
               })
           }).catch((err) => {
-          log.error("Failed to switch to DHCP:", err, {});
+          log.error("Failed to switch to DHCP:", err);
           assert.fail();
         })
       })

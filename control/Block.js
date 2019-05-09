@@ -548,7 +548,7 @@ function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
 
 function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
   ipset = ipset || "blocked_ip_port_set";
-  log.info("Unblocking public port:", localIPAddress, localPort, protocol, {});
+  log.info("Unblocking public port:", localIPAddress, localPort, protocol);
   protocol = protocol || "tcp";
 
   let entry = util.format("%s,%s:%s", localIPAddress, protocol, localPort);

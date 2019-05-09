@@ -117,7 +117,7 @@ function _enforceSpoofMode() {
       return Promise.resolve();
     }
   })().catch((err) => {
-    log.error("Failed to start new spoof", err, {});
+    log.error("Failed to start new spoof", err);
   });
 }
 
@@ -384,7 +384,7 @@ function apply() {
 
     curMode = mode;
     
-    log.info("Applying mode", mode, "...", {})
+    log.info("Applying mode", mode, "...");
 
     let HostManager = require('./HostManager.js')
     let hostManager = new HostManager('cli', 'server', 'info')

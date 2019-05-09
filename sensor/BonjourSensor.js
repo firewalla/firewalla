@@ -93,7 +93,7 @@ class BonjourSensor extends Sensor {
     }
     
     if(this.hostCache[key]) {
-      log.debug("Ignoring duplicated bonjour services from same ip:", key, {});
+      log.debug("Ignoring duplicated bonjour services from same ip:", key);
       return true;
     }
 
@@ -112,7 +112,7 @@ class BonjourSensor extends Sensor {
       return;
     }
     
-    log.info("Found a bonjour service from host:", ipv4Addr, service.name, {});
+    log.info("Found a bonjour service from host:", ipv4Addr, service.name);
 
     l2.getMAC(ipv4Addr, (err, mac) => {
       
@@ -176,7 +176,7 @@ class BonjourSensor extends Sensor {
   }
   
   bonjourParse(service) {
-    log.debug("Discover:Bonjour:Parsing:Received", service, {});
+    log.debug("Discover:Bonjour:Parsing:Received", service);
       if (service == null) {
       return;
     }
