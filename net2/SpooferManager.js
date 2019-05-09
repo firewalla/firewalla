@@ -183,7 +183,7 @@ module.exports = class SpooferManager {
   async ipv6On() {
     try {
       await exec("touch /home/pi/.firewalla/config/enablev6");
-      await exec("pidof bitbridge6 && sudo pkill bitbridge6; true");
+      await exec("pgrep -x bitbridge6 && sudo pkill bitbridge6; true");
     } catch(err) {
       log.warn("Error when turn on ipv6", err);
     }
@@ -192,7 +192,7 @@ module.exports = class SpooferManager {
   async ipv6Off() {
     try {
       await exec("rm -f /home/pi/.firewalla/config/enablev6");
-      await exec("pidof bitbridge6 && sudo pkill bitbridge6; true");
+      await exec("pgrep -x bitbridge6 && sudo pkill bitbridge6; true");
     } catch(err) {
       log.warn("Error when turn off ipv6", err);
     }

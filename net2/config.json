@@ -109,6 +109,11 @@
     },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
+    "IntelLocalCachePlugin": {
+      "testURLs": [
+        "example.com/test/malware"
+      ]
+    },
     "DNSMASQSensor": {},
     "HeapSensor": {},
     "IntelReportSensor": {},
@@ -253,6 +258,10 @@
       "appflow": {
         "expires": 86400,
         "count": 1000
+      },
+      "safe_urls": {
+        "expires": 604800,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {
@@ -276,6 +285,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {},
+    "DestURLFoundHook": {},
     "VPNHook": {}
   },
   "bro": {

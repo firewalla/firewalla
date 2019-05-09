@@ -174,7 +174,6 @@ check_policies() {
         if [[ ! -n $CRONTIME ]]; then
             CRONTIME="Always"
         fi
-
         if [[ -n $ALARM_ID ]]; then
             RULE_ID="* $RULE_ID"
         elif [[ -n $FLOW_DESCRIPTION ]]; then

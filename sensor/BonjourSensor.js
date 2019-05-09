@@ -118,7 +118,7 @@ class BonjourSensor extends Sensor {
       
       if(err) {
         // not found, ignore this host
-        log.error("Not able to found mac address for host:", ipv4Addr, mac);
+        log.info("Ignore, not able to found mac address for host:", ipv4Addr, mac, {});
         return;
       }
 
@@ -126,7 +126,7 @@ class BonjourSensor extends Sensor {
         if(ipv4Addr === sysManager.myIp()) { // if the found device is firewalla itself
           mac = sysManager.myMAC()
         } else {
-          log.error("Not able to found mac address for host:", ipv4Addr, mac);
+          log.info("Ignore2, not able to found mac address for host:", ipv4Addr, mac, {});
           return;
         }
       }

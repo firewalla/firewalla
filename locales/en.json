@@ -43,6 +43,8 @@
   "NOTIF_ALARM_INTEL_OUTBOUND_AUTOBLOCK": "Auto blocked device {{{p.device.name}}} from accessing {{{p.dest.name}}}. (Reported by {{{p.security.numOfReportSources}}} sources)",
   "NOTIF_FW_INTEL_ALARM_INTEL_INBOUND": "{{{p.security.primaryReason}}} site {{{p.dest.name}}} is accessing {{{p.device.name}}}'s port {{{p.device.port}}}",
   "NOTIF_FW_INTEL_ALARM_INTEL_OUTBOUND": "Device {{{p.device.name}}} is accessing {{{p.security.primaryReason}}} site {{{p.dest.readableName}}}",
+  "NOTIF_FW_INTEL_ALARM_URL_INTEL_INBOUND": "{{{p.security.primaryReason}}} site {{{p.dest.name}}} is accessing {{{p.device.url}}} on device {{{p.device.name}}}.",
+  "NOTIF_FW_INTEL_ALARM_URL_INTEL_OUTBOUND": "{{{p.device.name}}} is accessing {{{p.security.primaryReason}}} web link {{{p.dest.url}}}.",
   "NOTIF_FW_INTEL_ALARM_INTEL_INBOUND_AUTOBLOCK": "Auto blocked {{{p.security.primaryReason}}} site {{{p.dest.name}}} from accessing device {{{p.device.name}}}",
   "NOTIF_FW_INTEL_ALARM_INTEL_OUTBOUND_AUTOBLOCK": "Auto blocked device {{{p.device.name}}} from accessing {{{p.security.primaryReason}}} site {{{p.dest.readableName}}}",
   "INFO_ALARM_INTEL_INBOUND": "{{{p.dest.name}}} ({{{p.dest.ip}}}) accessed device {{{p.device.name}}} ({{{p.device.ip}}}:{{{p.device.port}}}). {{{p.dest.name}}} is marked as suspicious by {{{p.security.numOfReportSources}}} sources",

@@ -328,6 +328,10 @@ class IntelAlarm extends Alarm {
 
     let category = "ALARM_INTEL";
 
+    if("p.dest.url" in this) {
+      category = "ALARM_URL_INTEL";
+    }
+
     if (this["p.source"] === 'firewalla_intel' && this["p.security.primaryReason"])
       category = 'FW_INTEL_' + category;
 
