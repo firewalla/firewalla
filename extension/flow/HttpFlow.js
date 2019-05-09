@@ -13,7 +13,7 @@ const sysManager = new SysManager('info');
 
 const config = require('../../net2/config.js').getConfig();
 
-const flowGraph = require('./FlowGraph.js');
+const flowLink = require('./FlowLink.js');
 
 let instance = null;
 
@@ -162,7 +162,7 @@ class HttpFlow {
         await rclient.zaddAsync(redisObj);
         await rclient.expireAsync(flowKey, expireTime);
 
-        flowGraph.recordHttp(obj.uid, obj.ts, {mac, flowDirection});
+        flowLink.recordHttp(obj.uid, obj.ts, {mac, flowDirection});
       } catch(err) {
         log.error(`Failed to save http flow, err: ${err}`);
       }

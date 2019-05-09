@@ -5,7 +5,8 @@ let instance = null;
 const log = require('../../net2/logger.js')(__filename);
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-class FlowGraph {
+// link flows across multiple bro source, conn/http/... and more in the future
+class FlowLink {
   constructor() {
     if(instance === null) {
       instance = this;
@@ -49,4 +50,4 @@ class FlowGraph {
   }
 }
 
-module.exports = new FlowGraph();
+module.exports = new FlowLink();
