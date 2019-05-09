@@ -1592,7 +1592,7 @@ class netBot extends ControllerBot {
     // data.item = [app, alarms, host]
     if(extMgr.hasGet(msg.data.item)) {
       async(() => {
-        const result = await (extMgr.get(msg.data.item, msg))
+        const result = await (extMgr.get(msg.data.item, msg, msg.data.value))
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)

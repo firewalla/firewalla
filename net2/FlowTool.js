@@ -473,8 +473,8 @@ class FlowTool {
 
   async saveGlobalRecentConns(flow) {
     const key = "flow:global:recent";
-    const now = Math.ceil(new Date() / 1000);
-    const limit = -51; // only keep the latest 50 entries
+    const now = new Date() / 1000;
+    const limit = -1001; // only keep the latest 1000 entries
     let flowCopy = JSON.parse(JSON.stringify(flow));
 
     if(!this._isFlowValid(flowCopy)) {
@@ -520,11 +520,14 @@ class FlowTool {
     }));
   }
 
-  async getGlobalRecentConns() {
-    const key = "flow:global:recent";
-    const limit = 50;
+  async getGlobalRecentConns(options) {
+    options = options || {};
 
-    const results = await rclient.zrevrangebyscoreAsync([key, "+inf", "-inf", "LIMIT", 0 , limit]);
+    const key = "flow:global:recent";
+    const limit = options.limit || 50;
+    const offset = options.offset || "-inf";
+
+    const results = await rclient.zrangebyscoreAsync([key, offset, "+inf", "LIMIT", 0 , limit]);
 
     if(_.isEmpty(results)) {
       return [];
