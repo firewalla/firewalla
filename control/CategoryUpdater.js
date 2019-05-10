@@ -400,7 +400,7 @@ class CategoryUpdater {
   }
 
   async getDomainMappingsByDomainPattern(domainPattern) {
-    const keys = await rclient.keysAsync(`rdns:domain:${domainPattern}`)
+    const keys = await rclient.keysAsync(this.getDomainMapping(domainPattern))
     keys.push(this.getDomainMapping(domainPattern.substring(2)))
     return keys
   }

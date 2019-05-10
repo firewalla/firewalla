@@ -50,8 +50,8 @@ class DNSTool {
     return util.format("dns:ip:%s", ip);
   }
 
-  getReverseDNSKey(dns) {
-    return `rdns:domain:${dns}`
+  getReverseDNSKey(domainName) {
+    return `rdns:domain:${domainName}`
   }
 
   async reverseDNSKeyExists(domain) {
