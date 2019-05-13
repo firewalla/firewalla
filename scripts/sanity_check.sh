@@ -132,7 +132,7 @@ get_redis_key_with_no_ttl() {
         COLOR="\e[91m"
     fi
 
-    printf "$COLOR %s $UNCOLOR\n" $NOTTL
+    echo -e "$COLOR $NOTTL $UNCOLOR"
 }
 
 check_system_config() {
@@ -145,7 +145,7 @@ check_system_config() {
     check_each_system_config "vpn" $(redis-cli hget policy:system vpn)
     check_each_system_config "Redis Usage" $(redis-cli info | grep memory_human | awk -F: '{print $2}')
     check_each_system_config "Redis Total Key" $(redis-cli dbsize)
-    check_each_system_config "Redis key without ttl"  $(get_redis_key_with_no_ttl)
+    check_each_system_config "Redis key without ttl"  "$(get_redis_key_with_no_ttl)"
 
     echo ""
     echo ""
