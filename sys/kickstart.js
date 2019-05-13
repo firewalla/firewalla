@@ -238,34 +238,6 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     }
   }
 
-  async function recordAllRegisteredClients(gid) {
-    const groupInfo = eptcloud.groupCache[gid] && eptcloud.groupCache[gid].group
-
-    if(!groupInfo) {
-      return
-    }
-
-    const deviceEID = groupInfo.eid
-
-    const clients = groupInfo.symmetricKeys.filter((client) => client.eid != deviceEID)
-
-    const clientInfos = clients.map((client) => {
-      return JSON.stringify({name: client.displayName, eid: client.eid})
-    })
-
-    const keyName = "sys:ept:members"
-
-    let cmd = [keyName]
-
-    cmd.push.apply(cmd, clientInfos)
-
-    await rclient.delAsync(keyName)
-    
-    if(clientInfos.length > 0) {
-      await rclient.saddAsync(cmd)  
-    }
-  }
-
   function inviteFirstAdmin(gid, callback) {
     log.forceInfo("Initializing first admin:", gid);
 
