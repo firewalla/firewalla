@@ -14,11 +14,10 @@
  */
 'use strict';
 const log = require("../net2/logger.js")(__filename)
-let config;
 
-let cp = require('child_process');
+const cp = require('child_process');
 
-let util = require('util');
+const util = require('util');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
@@ -30,11 +29,6 @@ let _branch = null
 let _lastCommitDate = null
 
 let version = null;
-
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -68,15 +62,13 @@ function getLastCommitDate() {
   return _lastCommitDate
 }
 
-function getProdBranch() {
-  return async(() => {
-    let branch = await (rclient.hgetAsync("sys:config", "prod.branch"))
-    if(branch) {
-      return branch
-    } else {
-      return "release_6_0" // default
-    }
-  })()
+async function getProdBranch() {
+  let branch = await rclient.hgetAsync("sys:config", "prod.branch")
+  if(branch) {
+    return branch
+  } else {
+    return "release_6_0" // default
+  }
 }
 
 function getUserID() {
@@ -138,7 +130,7 @@ function isProduction() {
   } else {
     return false
   }
-  
+
   // if either of condition matches, this is production environment
   if (_isProduction === null) {
     _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
@@ -193,11 +185,9 @@ function isOverlayFS() {
   return _isOverlayFS;
 }
 
-function isBootingComplete() {
-  return async(() => {
-    let exists = await (rclient.existsAsync("bootingComplete"))
-    return exists == 1
-  })()
+async function isBootingComplete() {
+  let exists = await rclient.existsAsync("bootingComplete")
+  return exists == 1
 }
 
 function setBootingComplete() {
@@ -208,12 +198,11 @@ function resetBootingComplete() {
   return rclient.delAsync("bootingComplete")
 }
 
-function isFirstBindDone() {
-  return async(() => {
-    let exists = await (rclient.existsAsync("firstBinding"))
-    return exists == 1
-  })()
+async function isFirstBindDone() {
+  let exists = await rclient.existsAsync("firstBinding")
+  return exists == 1
 }
+
 function getRuntimeInfoFolder() {
   return getHiddenFolder() + "/run";
 }
