@@ -26,8 +26,6 @@ let ip = require('ip');
 const SysManager = require('../net2/SysManager.js')
 const sysManager = new SysManager('info')
 
-let async = require('async');
-
 const l2 = require('../util/Layer2.js');
 
 // BonjourSensor is used to two purposes:
@@ -39,21 +37,18 @@ class BonjourSensor extends Sensor {
     super();
     
     this.hostCache = {};
-    let p = require('../net2/MessageBus.js');
-    this.publisher = new p('info','Scan:Done', 10);
   }
   
   run() {
     log.info("Bonjour Watch Starting");
 
-    if (this.bonjourBrowserTcp == null) {
+    if (this.bonjourBrowserTCP == null) {
       this.bonjourBrowserTcp = bonjour.find({
         protocol: 'tcp'
       }, (service) => {
         this.bonjourParse(service);
-        //         this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
-      });
-      this.bonjourBrowserUdp = bonjour.find({
+      })
+      this.bonjourBrowserUDP = bonjour.find({
         protocol: 'udp'
       }, (service) => {
         this.bonjourParse(service);
@@ -61,27 +56,30 @@ class BonjourSensor extends Sensor {
       
       // why http?? because sometime http service can't be found via { protocol: 'tcp' }
       // maybe it's bonjour lib's bug
-      this.bonjourBrowserhttp = bonjour.find({
+      this.bonjourBrowserHTTP = bonjour.find({
         type: 'http'
       }, (service) => {
         this.bonjourParse(service);
       });
+
+      bonjour._server.mdns.on('warning', (err) => log.error("Error on mdns server", err))
+
       this.bonjourTimer = setInterval(() => {
         log.info("Bonjour Watch Updating");
-        this.bonjourBrowserTcp.update();
-        this.bonjourBrowserUdp.update();
-        this.bonjourBrowserhttp.update();
+        this.bonjourBrowserTCP.update();
+        this.bonjourBrowserUDP.update();
+        this.bonjourBrowserHTTP.update();
       }, 1000 * 60 * 5);
     }
 
-    this.bonjourBrowserTcp.stop();
-    this.bonjourBrowserUdp.stop();
-    this.bonjourBrowserhttp.stop();
+    this.bonjourBrowserTCP.stop();
+    this.bonjourBrowserUDP.stop();
+    this.bonjourBrowserHTTP.stop();
 
     this.bonjourTimer = setTimeout(() => {
-      this.bonjourBrowserTcp.start();
-      this.bonjourBrowserUdp.start();
-      this.bonjourBrowserhttp.start();
+      this.bonjourBrowserTCP.start();
+      this.bonjourBrowserUDP.start();
+      this.bonjourBrowserHTTP.start();
     }, 1000 * 10); 
   }
 
