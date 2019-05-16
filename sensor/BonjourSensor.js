@@ -37,13 +37,15 @@ class BonjourSensor extends Sensor {
     super();
     
     this.hostCache = {};
+
+    bonjour._server.mdns.on('warning', (err) => log.error("Error on mdns server", err))
   }
   
   run() {
     log.info("Bonjour Watch Starting");
 
     if (this.bonjourBrowserTCP == null) {
-      this.bonjourBrowserTcp = bonjour.find({
+      this.bonjourBrowserTCP = bonjour.find({
         protocol: 'tcp'
       }, (service) => {
         this.bonjourParse(service);
@@ -61,8 +63,6 @@ class BonjourSensor extends Sensor {
       }, (service) => {
         this.bonjourParse(service);
       });
-
-      bonjour._server.mdns.on('warning', (err) => log.error("Error on mdns server", err))
 
       this.bonjourTimer = setInterval(() => {
         log.info("Bonjour Watch Updating");
