@@ -326,17 +326,19 @@ class PolicyManager2 {
   // it's hard to keep sanity dealing with partial update and redis in the same time
   async updatePolicyAsync(policy) {
     if (!policy.pid)
-      return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
+      throw new Error("UpdatePolicyAsync requires policy ID");
 
     const policyKey = policyPrefix + policy.pid;
 
     if (policy instanceof Policy) {
-      let redisfied = policy.redisfy();
       await rclient.hmsetAsync(policyKey, policy.redisfy());
       return;
     }
 
     let existing = await this.getPolicy(policy.pid);
+
+    if (!existing)
+      throw new Error("Policy not exist");
 
     Object.assign(existing, policy);
 
@@ -503,27 +505,23 @@ class PolicyManager2 {
   // These two enable/disable functions are intended to be used by all nodejs processes, not just FireMain
   // So cross-process communication is used
   // the real execution is on FireMain, check out _enablePolicy and _disablePolicy below
-  enablePolicy(policy) {
-    return async(() => {
-      if(policy.disabled != '1') {
-        return policy // do nothing, since it's already enabled
-      }
-      await (this._enablePolicy(policy))
-      this.tryPolicyEnforcement(policy, "enforce")
-      Bone.submitIntelFeedback('enable', policy, 'policy')
-      return policy
-    })()
+  async enablePolicy(policy) {
+    if(policy.disabled != '1') {
+      return policy // do nothing, since it's already enabled
+    }
+    await this._enablePolicy(policy)
+    this.tryPolicyEnforcement(policy, "enforce")
+    Bone.submitIntelFeedback('enable', policy, 'policy')
+    return policy
   }
 
-  disablePolicy(policy) {
-    return async(() => {
-      if(policy.disabled == '1') {
-        return // do nothing, since it's already disabled
-      }
-      await (this._disablePolicy(policy))
-      this.tryPolicyEnforcement(policy, "unenforce")
-      Bone.submitIntelFeedback('disable', policy, 'policy')
-    })()
+  async disablePolicy(policy) {
+    if(policy.disabled == '1') {
+      return // do nothing, since it's already disabled
+    }
+    await this._disablePolicy(policy)
+    this.tryPolicyEnforcement(policy, "unenforce")
+    Bone.submitIntelFeedback('disable', policy, 'policy')
   }
 
   async disableAndDeletePolicy(policyID) {
