@@ -378,57 +378,54 @@ async function toggleCompatibleSpoof(state) {
   }
 }
 
-function apply() {
-  return async(() => {
-    let mode = await (Mode.getSetupMode())
+async function apply() {
+  let mode = await Mode.getSetupMode()
 
-    curMode = mode;
-    
-    log.info("Applying mode", mode, "...");
+  curMode = mode;
 
-    let HostManager = require('./HostManager.js')
-    let hostManager = new HostManager('cli', 'server', 'info')
-    
-    switch(mode) {
+  log.info("Applying mode", mode, "...");
+
+  let HostManager = require('./HostManager.js')
+  let hostManager = new HostManager('cli', 'server', 'info')
+
+  switch(mode) {
     case Mode.MODE_DHCP:
-      await (_saveSimpleModeNetworkSettings())
-      await (_changeToAlternativeIpSubnet())
-      await (_enableSecondaryInterface())
-      await (_enforceDHCPMode())
-      pclient.publishAsync("System:IPChange", "");
+      await _saveSimpleModeNetworkSettings()
+      await _changeToAlternativeIpSubnet()
+      await _enableSecondaryInterface()
+      await _enforceDHCPMode()
+      await pclient.publishAsync("System:IPChange", "");
       break;
     case Mode.MODE_DHCP_SPOOF:
     case Mode.MODE_AUTO_SPOOF:
-      await (_enableSecondaryInterface()) // secondary interface ip/subnet may be changed
-      await (_restoreSimpleModeNetworkSettings())
-      await (_enforceSpoofMode())
-      pclient.publishAsync("System:IPChange", "");
+      await _enableSecondaryInterface() // secondary interface ip/subnet may be changed
+      await _restoreSimpleModeNetworkSettings()
+      await _enforceSpoofMode()
+      await pclient.publishAsync("System:IPChange", "");
       // reset oper history for each device, so that we can re-apply spoof commands
       hostManager.cleanHostOperationHistory()
 
-      await (hostManager.getHostsAsync())
+      await hostManager.getHostsAsync()
       if (mode === Mode.MODE_DHCP_SPOOF) {
         // enhanced spoof is necessary for dhcp spoof
         hostManager.setPolicy("enhancedSpoof", true);
         // dhcp service is needed for dhcp spoof mode
-        await (_enforceDHCPMode(mode))
+        await _enforceDHCPMode(mode)
       }
       break;
     case Mode.MODE_MANUAL_SPOOF:
-      await (_enforceSpoofMode())
+      await _enforceSpoofMode()
       let sm = new SpooferManager();
-      await (hostManager.getHostsAsync())
-      await (sm.loadManualSpoofs(hostManager)) // populate monitored_hosts based on manual Spoof configs
+      await hostManager.getHostsAsync()
+      await sm.loadManualSpoofs(hostManager) // populate monitored_hosts based on manual Spoof configs
       break;
     case Mode.MODE_NONE:
       // no thing
       break;
     default:
       // not supported
-      return Promise.reject(util.format("mode %s is not supported", mode));
-      break;
-    }
-  })()
+      throw new Error(util.format("mode %s is not supported", mode));
+  }
 }
 
 function switchToDHCP() {

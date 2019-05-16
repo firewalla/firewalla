@@ -732,7 +732,7 @@ class PolicyManager2 {
         if(options.includingDisabled) {
           callback(err, policyRules)
         } else {
-          callback(err, policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
+          callback(err, err ? [] : policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
         }
       });
     });
