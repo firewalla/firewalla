@@ -112,7 +112,7 @@ class OpenVPNClient extends VPNClient {
     if (!this.profileId) {
       throw "OpenVPN client is not setup properly. Profile id is missing."
     }
-    let cmd = util.format("sudo systemctl start %s@%s", SERVICE_NAME, this.profileId);
+    let cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
     // remove two routes from main table which is inserted by OpenVPN client automatically,
     // otherwise tunnel will be enabled globally
@@ -144,9 +144,9 @@ class OpenVPNClient extends VPNClient {
   }
 
   async stop() {
-    let cmd = util.format("sudo systemctl stop %s@%s", SERVICE_NAME, this.profileId);
+    let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
-    cmd = util.format("sudo systemctl disable %s@%s", SERVICE_NAME, this.profileId);
+    cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
   }
 

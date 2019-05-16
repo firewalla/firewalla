@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Restart=always
-ExecStart=/usr/sbin/openvpn --config /home/pi/.firewalla/run/ovpn_profile/%i.ovpn --askpass /home/pi/.firewalla/run/ovpn_profile/%i.password --script-security 2 --route-up /home/pi/firewalla/extension/vpnclient/ovpn_remove_pushed_routes.sh --log /var/log/openvpn_client-%i.log
+ExecStart=/usr/sbin/openvpn --config "/home/pi/.firewalla/run/ovpn_profile/%i.ovpn" --askpass "/home/pi/.firewalla/run/ovpn_profile/%i.password" --script-security 2 --route-up /home/pi/firewalla/extension/vpnclient/ovpn_remove_pushed_routes.sh --log "/var/log/openvpn_client-%i.log"
 
 [Install]
 WantedBy=multi-user.target
