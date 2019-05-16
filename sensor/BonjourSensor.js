@@ -74,6 +74,9 @@ class BonjourSensor extends Sensor {
         Object.keys(this.bonjourBrowserTCP._serviceMap).forEach(fqdn => this.bonjourBrowserTCP._removeService(fqdn));
         Object.keys(this.bonjourBrowserUDP._serviceMap).forEach(fqdn => this.bonjourBrowserUDP._removeService(fqdn));
         Object.keys(this.bonjourBrowserHTTP._serviceMap).forEach(fqdn => this.bonjourBrowserHTTP._removeService(fqdn));
+        this.bonjourBrowserTCP.update();
+        this.bonjourBrowserUDP.update();
+        this.bonjourBrowserHTTP.update();
       }, 1000 * 60 * 5);
     }
 
