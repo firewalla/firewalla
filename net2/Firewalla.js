@@ -30,6 +30,7 @@ let _branch = null
 let _lastCommitDate = null
 
 let version = null;
+let latestCommitHash = null;
 
 const Promise = require('bluebird');
 
@@ -275,6 +276,21 @@ function getVersion() {
   return version;
 }
 
+function getLatestCommitHash() {
+  if(!latestCommitHash) {
+    const cmd = "git rev-parse HEAD"
+
+    try {
+      latestCommitHash = require('child_process').execSync(cmd).toString('utf-8')
+        .replace(/\n$/, '').substring(0, 8);
+    } catch (err) {
+      log.error("Failed to get latest commit hash", err);
+    }
+  }
+
+  return latestCommitHash;
+}
+
 var __constants = {
   "MAX_V6_PERHOST":6
 };
@@ -349,5 +365,7 @@ module.exports = {
 
   getProcessName:getProcessName,
 
-  getRedHoleIP:getRedHoleIP
+  getRedHoleIP:getRedHoleIP,
+
+  getLatestCommitHash:getLatestCommitHash
 }
