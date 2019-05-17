@@ -90,7 +90,7 @@ module.exports = class {
               return;
             }
           }
-          resolve(host.mac);
+          resolve(null);
         }
       }});
   
