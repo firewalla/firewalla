@@ -2636,7 +2636,9 @@ class netBot extends ControllerBot {
           } else {
             this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
           }
-        })()
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
         break;
       case "policy:disable":
         async(() => {
@@ -2652,7 +2654,9 @@ class netBot extends ControllerBot {
           } else {
             this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
           }
-        })()
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
         break;
       case "intel:finger":
         (async () => {
@@ -2672,7 +2676,9 @@ class netBot extends ControllerBot {
           } else {
             this.simpleTxData(msg, null, new Error(`invalid target: ${target}`), callback);
           }
-        })();
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
         break;
       case "exception:create":
         em.createException(value)

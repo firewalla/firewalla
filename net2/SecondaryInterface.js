@@ -70,7 +70,7 @@ exports.create = function(config, callback) {
      "ipnet2":"192.168.168",
      "ipmask2":"255.255.255.0"
   },
-*/
+  */
   if (config.secondaryInterface && config.secondaryInterface.intf) {
     // ip can sufficiently identify a network configuration, all other configurations are redundant
     let _secondaryIpSubnet = config.secondaryInterface.ip;
@@ -78,7 +78,9 @@ exports.create = function(config, callback) {
     let _secondaryMask = ip.cidrSubnet(_secondaryIpSubnet).subnetMask;
     let legacyIpSubnet = null;
     linux.get_network_interfaces_list((err, list) => {
-      list = list.filter(function(x) {
+      if (err) callback(err);
+
+      list = (list || []).filter(function(x) {
         return is_interface_valid(x);
       });
       for (let i in list) {
