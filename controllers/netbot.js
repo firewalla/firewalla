@@ -73,6 +73,7 @@ const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const unlinkAsync = util.promisify(fs.unlink);
+const existsAsync = util.promisify(fs.exists);
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -1592,7 +1593,7 @@ class netBot extends ControllerBot {
     // data.item = [app, alarms, host]
     if(extMgr.hasGet(msg.data.item)) {
       async(() => {
-        const result = await (extMgr.get(msg.data.item, msg))
+        const result = await (extMgr.get(msg.data.item, msg, msg.data.value))
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -2052,6 +2053,36 @@ class netBot extends ControllerBot {
               this.simpleTxData(msg, {}, err, callback);
             });
         });
+        break;
+      case "ovpnProfile":
+        (async () => {
+          const profileId = value.profileId;
+          if (!profileId) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "profileId should be specified."}, callback);
+          } else {
+            const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+            const cmd = "mkdir -p " + dirPath;
+            await exec(cmd);
+            const filePath = dirPath  + "/" + profileId + ".ovpn";
+            const fileExists = await existsAsync(filePath);
+            if (!fileExists) {
+              this.simpleTxData(msg, {}, {code: 404, msg: "Specified profileId is not found."}, callback);
+            } else {
+              const profileContent = await readFileAsync(filePath, "utf8");
+              const passwordPath = dirPath + "/" + profileId + ".password";
+              const passwordExists = await existsAsync(passwordPath);
+              let password = "";
+              if (passwordExists) {
+                password = await readFileAsync(passwordPath, "utf8");
+              }
+              if (password === "dummy_ovpn_password")
+                password = ""; // not a real password, just a placeholder
+              this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password}, null, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
         break;
       case "ovpnProfiles":
         (async () => {
@@ -3368,11 +3399,11 @@ class netBot extends ControllerBot {
       case "startConnTest": {
         (async () => {
           if (!value.src || !value.src.ip) {
-            this.simpleTxData(msg, {}, new Error("src.ip should be specified"), callback);
+            this.simpleTxData(msg, {}, {code: 400, msg: "src.ip should be specified"}, callback);
             return;
           }
           if (!value.dst || !value.dst.ip || !value.dst.port) {
-            this.simpleTxData(msg, {}, new Error("dst.ip and dst.port should be specified"), callback);
+            this.simpleTxData(msg, {}, {code: 400, msg: "dst.ip and dst.port should be specified"}, callback);
             return;
           }
           const pid = await conncheck.startConnCheck(value.src, value.dst, value.duration);
@@ -3385,12 +3416,12 @@ class netBot extends ControllerBot {
       case "getConnTestResult": {
         (async () => {
           if (!value.pid) {
-            this.simpleTxData(msg, {}, new Error("pid should be specified"), callback);
+            this.simpleTxData(msg, {}, {code: 400, msg: "pid should be specified"}, callback);
             return;
           }
           const result = await conncheck.getConnCheckResult(value.pid);
           if (!result) {
-            this.simpleTxData(msg, {}, new Error("Test result of specified pid is not found"), callback);
+            this.simpleTxData(msg, {}, {code: 404, msg: "Test result of specified pid is not found"}, callback);
           } else {
             this.simpleTxData(msg, result, null, callback);
           }
