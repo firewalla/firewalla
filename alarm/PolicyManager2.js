@@ -77,11 +77,7 @@ const em = new EM();
 
 const _ = require('lodash')
 
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t);
-  });
-}
+const delay = require('../util/util.js').delay
 
 class PolicyManager2 {
   constructor() {
@@ -924,6 +920,7 @@ class PolicyManager2 {
           await Block.addMacToSet(pid, scope);
           await Block.block(target, Block.getDstSet(pid), whitelist)
         } else {
+          if (policy.whitelist) await Block.enableGlobalWhitelist()
           await Block.block(target, null, whitelist)
         }
         break;
@@ -931,9 +928,9 @@ class PolicyManager2 {
       case "mac":
         if (whitelist) {
           await Block.enableGlobalWhitelist();
-          return Block.blockMac(target, "whitelist_mac_set");
+          await Block.blockMac(target, "whitelist_mac_set");
         } else {
-          return Block.blockMac(target);
+          await Block.blockMac(target);
         }
         break;
 
@@ -942,7 +939,7 @@ class PolicyManager2 {
         if(scope) {
           await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
           await Block.addMacToSet(pid, scope);
-          return domainBlock.blockDomain(target, {
+          await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
             no_dnsmasq_entry: true,
@@ -957,7 +954,7 @@ class PolicyManager2 {
             options.no_dnsmasq_reload = true;
             await Block.enableGlobalWhitelist();
           }
-          return domainBlock.blockDomain(target, options);
+          await domainBlock.blockDomain(target, options);
         }
         break;
 
@@ -966,9 +963,9 @@ class PolicyManager2 {
         if(data) {
           if (whitelist) {
             await Block.enableGlobalWhitelist();
-            return Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+            await Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
           } else {
-            return Block.blockPublicPort(data.ip, data.port, data.protocol)
+            await Block.blockPublicPort(data.ip, data.port, data.protocol)
           }
         }
         break;
@@ -1035,15 +1032,20 @@ class PolicyManager2 {
 
     switch(type) {
       case "ip":
-        await Block.destroyRules(scope && pid, pid, whitelist);
+        if (scope) {
+          await Block.destroyRules(pid, pid, whitelist);
+        } else {
+          if (policy.whitelist) await Block.disableGlobalWhitelist()
+          await Block.unblock(target, null, whitelist)
+        }
         break;
 
       case "mac":
         if (whitelist) {
           await Block.disableGlobalWhitelist();
-          return Block.unblockMac(target, "whitelist_mac_set");
+          await Block.unblockMac(target, "whitelist_mac_set");
         } else {
-          return Block.unblockMac(target)
+          await Block.unblockMac(target)
         }
         break;
 
@@ -1057,7 +1059,7 @@ class PolicyManager2 {
             no_dnsmasq_reload: true
           }))
           // destroy domain dst cache, since there may be various domain dst cache in different policies
-          return Block.destroyRules(pid, pid, whitelist);
+          await Block.destroyRules(pid, pid, whitelist);
         } else {
           let options = {exactMatch: policy.domainExactMatch};
           if (whitelist) {
@@ -1066,7 +1068,7 @@ class PolicyManager2 {
             options.no_dnsmasq_reload = true;
             await Block.disableGlobalWhitelist();
           }
-          return domainBlock.unblockDomain(target, options);
+          await domainBlock.unblockDomain(target, options);
         }
         break;
 
@@ -1075,9 +1077,9 @@ class PolicyManager2 {
         if(data) {
           if (whitelist) {
             await Block.disableGlobalWhitelist();
-            return Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+            await Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
           } else {
-            return Block.unblockPublicPort(data.ip, data.port, data.protocol);
+            await Block.unblockPublicPort(data.ip, data.port, data.protocol);
           }
         }
         break;
@@ -1093,7 +1095,12 @@ class PolicyManager2 {
         break;
 
       case "net":
-        await Block.destroyRules(scope && pid, target, whitelist);
+        if (scope) {
+          await Block.destroyRules(pid, pid, whitelist);
+        } else {
+          if (policy.whitelist) await Block.disableGlobalWhitelist()
+          await Block.unblock(target, null, whitelist)
+        }
         break;
 
       case "country":
@@ -1102,7 +1109,7 @@ class PolicyManager2 {
         break;
 
       default:
-        return Promise.reject("Unsupported policy");
+        throw new Error("Unsupported policy");
     }
   }
 
