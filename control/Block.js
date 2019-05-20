@@ -377,6 +377,11 @@ function block(target, ipset, whitelist = false) {
 }
 
 function unblock(target, ipset, whitelist = false) {
+  // never unblock black hole ip
+  if (f.isReservedBlockingIP(target)) {
+    return Promise.resolve()
+  }
+
   return setupIpset(target, ipset, whitelist, true)
 }
 
