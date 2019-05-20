@@ -483,6 +483,7 @@ class FlowTool {
 
     // TODO: might need to cut small traffics
     flowCopy = this.toSimpleFlow(flowCopy);
+    flowCopy.now = now;
 
     // if(flowCopy.deviceIP && !flowCopy.device) {
     //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);

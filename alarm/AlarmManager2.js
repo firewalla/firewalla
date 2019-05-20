@@ -596,6 +596,11 @@ module.exports = class {
         !fc.isFeatureOn("cyber_security.autoBlock"))
       return false;
 
+    if (alarm && alarm.type === 'ALARM_NEW_DEVICE' && 
+      fc.isFeatureOn("new_device_block")) {
+      return true;
+    }
+
     if(alarm["p.cloud.decision"] === "block") {
       return true;
     } else
