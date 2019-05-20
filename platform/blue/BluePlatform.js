@@ -63,29 +63,29 @@ class BluePlatform extends Platform {
     return 200;
   }
 
-  turnOnPowerLED() {
-    ledPaths.forEach(async (path) => {
+  async turnOnPowerLED() {
+    for (const path of ledPaths) {
       const trigger = `${path}/trigger`;
       const brightness = `${path}/brightness`;
       await exec(`sudo bash -c 'echo none > ${trigger}'`);
       await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-    });
+    };
   }
 
-  turnOffPowerLED() {
-    ledPaths.forEach(async (path) => {
+  async turnOffPowerLED() {
+    for (const path of ledPaths) {
       const trigger = `${path}/trigger`;
       await exec(`sudo bash -c 'echo none > ${trigger}'`);
       const brightness = `${path}/brightness`;
       await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
-    });
+    };
   }
 
-  blinkPowerLED() {
-    ledPaths.forEach(async (path) => {
+  async blinkPowerLED() {
+    for (const path of ledPaths) {
       const trigger = `${path}/trigger`;
       await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
-    });
+    };
   }
 
   getCPUDefaultFile() {
