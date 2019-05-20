@@ -145,7 +145,7 @@ class BonjourSensor extends Sensor {
       })
     }
     if (ip.isV6Format(ipAddr)) {
-      const mac = await nmap.neighborSolicitate(ipAddr).catch((err) => {
+      let mac = await nmap.neighborSolicitate(ipAddr).catch((err) => {
         log.error("Not able to find mac address for host:", ipAddr, err);
         return null;
       })
