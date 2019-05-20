@@ -696,10 +696,10 @@ module.exports = class DNSMASQ {
         localIP = this._currentLocalIP;
       let dns = `${localIP}:8853`;
 
-      subnets.forEach(async subnet => {
+      for (const subnet of subnets) {
         log.info("Remove dns rule: ", subnet, dns);
         await iptables.dnsChangeAsync(subnet, dns, false, true);
-      })
+      }
       this._redirectedLocalSubnets = [];
       this._currentLocalIP = null;
 
