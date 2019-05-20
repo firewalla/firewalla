@@ -214,20 +214,18 @@ class HostTool {
     return ips;
   }
 
-  getMacByIP(ip) {
-    return async(() => {
-      let host = null
+  async getMacByIP(ip) {
+    let host = null
 
-      if (iptool.isV4Format(ip)) {
-        host = await (this.getIPv4Entry(ip))
-      } else if(iptool.isV6Format(ip)) {
-        host = await (this.getIPv6Entry(ip))
-      } else {
-        return null
-      }
+    if (iptool.isV4Format(ip)) {
+      host = await this.getIPv4Entry(ip)
+    } else if(iptool.isV6Format(ip)) {
+      host = await this.getIPv6Entry(ip)
+    } else {
+      return null
+    }
 
-      return host && host.mac
-    })();
+    return host && host.mac
   }
 
   async getMacEntryByIP(ip) {
