@@ -46,8 +46,7 @@ const accounting = new Accounting();
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const firewalla = require('../net2/Firewalla.js');
 
 const mode = require('../net2/Mode.js')
 
@@ -423,6 +422,8 @@ module.exports = class {
         for (let i in obj['answers']) {
           // answer can be an alias or ip address
           const answer = obj['answers'][i];
+          if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
+            continue;
 
           let key = "dns:ip:" + obj['answers'][i];
           let value = {
@@ -1249,9 +1250,10 @@ module.exports = class {
         log.error("SSL:Drop", obj);
         return;
       }
-
       let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
+      if (firewalla.isReservedBlockingIP(dst))
+        return;
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
       let key = "host:ext.x509:" + dst;
@@ -1274,14 +1276,16 @@ module.exports = class {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.hmset(key, xobj, (err, value) => {
-          if (err == null) {
-            if (this.config.bro.ssl.expires) {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+        rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data 
+          rclient.hmset(key, xobj, (err, value) => {
+            if (err == null) {
+              if (this.config.bro.ssl.expires) {
+                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+              }
+            } else {
+              log.error("host:ext:x509:save:Error", key, subject);
             }
-          } else {
-            log.error("host:ext:x509:save:Error", key, subject);
-          }
+          });
         });
       } else if (cert_id != null) {
         log.debug("SSL:CERT_ID flow.ssl creating cert", cert_id);
@@ -1300,15 +1304,17 @@ module.exports = class {
 
               this.cleanUpSanDNS(xobj);
 
-              rclient.hmset(key, xobj, (err, value) => {
-                if (err == null) {
-                  if (this.config.bro.ssl.expires) {
-                    rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+              rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
+                rclient.hmset(key, xobj, (err, value) => {
+                  if (err == null) {
+                    if (this.config.bro.ssl.expires) {
+                      rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+                    }
+                    log.debug("SSL:CERT_ID Saved", key, xobj);
+                  } else {
+                    log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
                   }
-                  log.debug("SSL:CERT_ID Saved", key, xobj);
-                } else {
-                  log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
-                }
+                });
               });
             } else {
               log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);

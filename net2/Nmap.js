@@ -70,7 +70,7 @@ module.exports = class {
     }
   }
 
-  async neighborSolicitate(ipv6Addr) {
+  async neighborSolicit(ipv6Addr) {
     return new Promise((resolve, reject) => {
       if (ip.isV4Format(ipv6Addr) || !ip.isV6Format(ipv6Addr)) {
         resolve(null);
@@ -90,7 +90,7 @@ module.exports = class {
               return;
             }
           }
-          resolve(host.mac);
+          resolve(null);
         }
       }});
   
