@@ -46,8 +46,7 @@ const accounting = new Accounting();
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const firewalla = require('../net2/Firewalla.js');
 
 const mode = require('../net2/Mode.js')
 
@@ -423,6 +422,8 @@ module.exports = class {
         for (let i in obj['answers']) {
           // answer can be an alias or ip address
           const answer = obj['answers'][i];
+          if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
+            continue;
 
           let key = "dns:ip:" + obj['answers'][i];
           let value = {
@@ -1249,9 +1250,10 @@ module.exports = class {
         log.error("SSL:Drop", obj);
         return;
       }
-
       let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
+      if (firewalla.isReservedBlockingIP(dst))
+        return;
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
       let key = "host:ext.x509:" + dst;

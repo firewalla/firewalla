@@ -4,6 +4,7 @@ const log = require('../../net2/logger.js')(__filename);
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const useragent = require('useragent');
+const firewalla = require('../../net2/Firewalla.js');
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
@@ -71,6 +72,9 @@ class HttpFlow {
   async refreshDNSMapping(flowObject) {
     const destIP = flowObject["id.resp_h"];
     const host = flowObject.host;
+    if (firewalla.isReservedBlockingIP(destIP)) {
+      return;
+    }
 
     const key = `dns:ip:${destIP}`;
   
@@ -96,6 +100,7 @@ class HttpFlow {
 
     try {
       const expireTime = (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000;
+      await rclient.delAsync(key);
       await rclient.hmsetAsync(key, value);
       await rclient.expireAsync(key, expireTime);
     } catch(err) {
