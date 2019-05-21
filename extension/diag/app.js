@@ -37,6 +37,8 @@ Promise.promisifyAll(fs)
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 
+const { wrapIptables } = require('../../net2/Iptables.js')
+
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
 
@@ -334,6 +336,20 @@ class App {
         res.status(500).send({})
       })
     })
+  }
+
+  async iptablesRedirection(create = true) {
+    const findInf = await exec(`ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/`);
+    const ips = findInf.stdout.split('\n')
+
+    const action = create ? '-A' : '-D';
+
+    for (const ip of ips) {
+      if (!ip) continue;
+
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports 8835`);
+      await exec(cmd);
+    }
   }
 
   start() {
