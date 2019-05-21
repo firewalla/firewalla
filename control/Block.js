@@ -372,7 +372,20 @@ function ipsetEnqueue(ipsetCmd) {
   }
 }
 
-async function block(target, ipset, whitelist = false) {
+function block(target, ipset, whitelist = false) {
+  return setupIpset(target, ipset, whitelist)
+}
+
+function unblock(target, ipset, whitelist = false) {
+  // never unblock black hole ip
+  if (f.isReservedBlockingIP(target)) {
+    return Promise.resolve()
+  }
+
+  return setupIpset(target, ipset, whitelist, true)
+}
+
+async function setupIpset(target, ipset, whitelist, remove = false) {
   const slashIndex = target.indexOf('/')
   const ipAddr = slashIndex > 0 ? target.substring(0, slashIndex) : target;
 
@@ -395,8 +408,10 @@ async function block(target, ipset, whitelist = false) {
   }
   ipset = ipset + suffix;
 
-  const cmd = `add -! ${ipset} ${target}`
-  log.debug("Control:Block:Enqueue", cmd);
+  const action = remove ? 'del' : 'add';
+
+  const cmd = `${action} -! ${ipset} ${target}`
+  log.debug("Control:IPSET:Enqueue", cmd);
   ipsetEnqueue(cmd);
   return;
 }
@@ -447,29 +462,6 @@ async function advancedUnblockMAC(macAddress, setName) {
   } catch(err) {
     log.error('Error when advancedUnblockMAC', err);
   }
-}
-
-async function unblock(destination, ipset) {
-  ipset = ipset || "blocked_ip_set"
-
-  // never unblock black hole ip
-  if(f.isReservedBlockingIP(destination)) {
-    return
-  }
-
-  let cmd = null;
-  if(iptool.isV4Format(destination)) {
-    cmd = `sudo ipset del -! ${ipset} ${destination}`
-  } else if(iptool.isV6Format(destination)) {
-    cmd = `sudo ipset del -! ${ipset}6 ${destination}`
-  } else {
-    // do nothing
-    return
-  }
-
-  log.info("Control:UnBlock:",cmd);
-
-  return exec(cmd)
 }
 
 // Block every connection initiated from one local machine to a remote ip address
