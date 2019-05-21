@@ -177,7 +177,7 @@ class FWInvitation {
                 };
               } else {
                 log.forceInfo("Got a new license");
-                log.info("Got a new license:", lic);
+                log.info("Got a new license:", lic && lic.DATA && lic.DATA.UUID && lic.DATA.UUID.substring(0, 8));
                 await license.writeLicense(lic);
               }
             }

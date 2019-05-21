@@ -20,6 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const Block = require('./Block.js');
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
+const firewalla = require('../net2/Firewalla.js');
 const _ = require('lodash')
 
 var instance = null;
@@ -59,6 +60,9 @@ class DomainUpdater {
         const existingSet = {};
         existingAddresses.forEach((addr) => {
           existingSet[addr] = 1;
+        });
+        addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
+          return firewalla.isReservedBlockingIP(addr) != true;
         });
         for (let i in addresses) {
           const address = addresses[i];

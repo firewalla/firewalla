@@ -596,6 +596,11 @@ module.exports = class {
         !fc.isFeatureOn("cyber_security.autoBlock"))
       return false;
 
+    if (alarm && alarm.type === 'ALARM_NEW_DEVICE' && 
+      fc.isFeatureOn("new_device_block")) {
+      return true;
+    }
+
     if(alarm["p.cloud.decision"] === "block") {
       return true;
     } else
@@ -1588,7 +1593,22 @@ module.exports = class {
     }
 
     if (intel && intel.category) {
-      alarm["p.dest.category"] = intel.category
+      // some alarm types are determined by combination of values in intel.category and intel.cs
+      // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
+      switch (alarm["type"]) {
+        case 'ALARM_VIDEO':
+          alarm["p.dest.category"] = 'av';
+          break;
+        case 'ALARM_GAME':
+          alarm["p.dest.category"] = 'games';
+          break;
+        case 'ALARM_PORN':
+          alarm["p.dest.category"] = 'porn';
+          break;
+        default:
+          alarm["p.dest.category"] = intel.category
+      }
+      
     }
 
     if (intel && intel.host) {
