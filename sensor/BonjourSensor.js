@@ -150,7 +150,7 @@ class BonjourSensor extends Sensor {
         return null;
       })
       if (!mac) {
-        if (sysManager.myIp6().includes(ipAddr)) {
+        if (sysManager.myIp6() && sysManager.myIp6().includes(ipAddr)) {
           mac = sysManager.myMAC();
         }
       }
