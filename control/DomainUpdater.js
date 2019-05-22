@@ -61,8 +61,8 @@ class DomainUpdater {
         existingAddresses.forEach((addr) => {
           existingSet[addr] = 1;
         });
-        addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
-          return firewalla.isReservedBlockingIP(addr) != true;
+        addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses and opendns redirected addresses
+          return !firewalla.isReservedBlockingIP(addr) && !firewalla.isOpenDNSBlockingIP(addr);
         });
         for (let i in addresses) {
           const address = addresses[i];

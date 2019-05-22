@@ -292,6 +292,27 @@ const BLACK_HOLE_IP = "198.51.100.99";
 const BLUE_HOLE_IP = "198.51.100.100";
 const RED_HOLE_IP = "198.51.100.101";
 
+const openDNSBlockingIPAddresses = [
+  "146.112.61.104",
+  "146.112.61.105",
+  "146.112.61.106",
+  "146.112.61.107",
+  "146.112.61.108",
+  "146.112.61.109",
+  "146.112.61.110",
+  ":ffff:146.112.61.104",
+  ":ffff:146.112.61.105",
+  ":ffff:146.112.61.106",
+  ":ffff:146.112.61.107",
+  ":ffff:146.112.61.108",
+  ":ffff:146.112.61.109",
+  ":ffff:146.112.61.110",
+];
+
+function isOpenDNSBlockingIP(ip) {
+  return openDNSBlockingIPAddresses.includes(ip);
+}
+
 function isReservedBlockingIP(ip) {
   return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip)
     || ip.match(/^[0:]+(:ffff:(0\.0\.0\.0|[0:]+))$/i); // all zero v6 address
@@ -347,6 +368,7 @@ module.exports = {
 
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType,
+  isOpenDNSBlockingIP: isOpenDNSBlockingIP,
   isReservedBlockingIP: isReservedBlockingIP,
 
   isMain:isMain,

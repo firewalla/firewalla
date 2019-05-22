@@ -393,8 +393,8 @@ class DestIPFoundHook extends Hook {
     sem.on('DestIPFound', (event) => {
       let ip = event.ip;
 
-      // ignore reserved ip address
-      if(f.isReservedBlockingIP(ip)) {
+      // ignore reserved ip address and OpenDNS blocking ip address
+      if(f.isReservedBlockingIP(ip) || f.isOpenDNSBlockingIP(ip)) {
         return;
       }
 
@@ -408,10 +408,6 @@ class DestIPFoundHook extends Hook {
 
       if(this.paused)
         return;
-
-      if(f.isReservedBlockingIP(ip)) {
-        return; // reserved black hole and blue hole...
-      }
       
       this.appendNewFlow(ip, fd);
     });

@@ -236,7 +236,7 @@ class SafeSearchPlugin extends Sensor {
   async loadDomainCache(domain) {
     const key = `rdns:domain:${domain}`;
     let results = await rclient.zrevrangebyscoreAsync(key, '+inf', '-inf');
-    results = results.filter((ip) => !f.isReservedBlockingIP(ip));
+    results = results.filter((ip) => !f.isReservedBlockingIP(ip) && !f.isOpenDNSBlockingIP(ip));
 
     const ipv4Results = results.filter((ip) => iptool.isV4Format(ip))
 

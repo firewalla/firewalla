@@ -76,7 +76,7 @@ class DNSTool {
         const oldDns = await rclient.hgetallAsync(key);
         await rclient.delAsync(key);
         if (oldDns.host)
-          rclient.zaddAsync(key, oldDns.lastActive || now, oldDns.host);
+          await rclient.zaddAsync(key, oldDns.lastActive || now, oldDns.host);
       }
     } catch (err) {
       log.warn("Failed to convert " + key + " to zset.");
@@ -106,7 +106,7 @@ class DNSTool {
     expire = expire || 24 * 3600; // one day by default
     if (!iptool.isV4Format(ip) && !iptool.isV6Format(ip))
       return;
-    if (firewalla.isReservedBlockingIP(ip))
+    if (firewalla.isReservedBlockingIP(ip) || firewalla.isOpenDNSBlockingIP(ip))
       return;
     if (!domain)
       return;
@@ -126,7 +126,7 @@ class DNSTool {
     addresses = addresses || []
 
     addresses = addresses.filter((addr) => {
-      return firewalla.isReservedBlockingIP(addr) != true
+      return !firewalla.isReservedBlockingIP(addr) && !firewalla.isOpenDNSBlockingIP(addr)
     })
 
     let key = this.getReverseDNSKey(dns)

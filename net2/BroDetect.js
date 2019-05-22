@@ -421,7 +421,7 @@ module.exports = class {
           for (let i in obj['answers']) {
             // answer can be an alias or ip address
             const answer = obj['answers'][i];
-            if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
+            if (firewalla.isReservedBlockingIP(answer) || firewalla.isOpenDNSBlockingIP(answer)) // ignore reserved blocking IP and OpenDNS blocking IP
               continue;
   
             if (!iptool.isV4Format(answer) && !iptool.isV6Format(answer))
@@ -1225,7 +1225,7 @@ module.exports = class {
       }
       let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
-      if (firewalla.isReservedBlockingIP(dst))
+      if (firewalla.isReservedBlockingIP(dst) || firewalla.isOpenDNSBlockingIP(dst))
         return;
       let dsthost = obj['server_name'];
       let subject = obj['subject'];

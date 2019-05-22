@@ -74,7 +74,7 @@ class HttpFlow {
   async refreshDNSMapping(flowObject) {
     const destIP = flowObject["id.resp_h"];
     const host = flowObject.host;
-    if (firewalla.isReservedBlockingIP(destIP)) {
+    if (firewalla.isReservedBlockingIP(destIP) || firewalla.isOpenDNSBlockingIP(destIP)) {
       return;
     }
     await dnsTool.addDns(destIP, host, (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
