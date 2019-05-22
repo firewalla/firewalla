@@ -433,7 +433,7 @@ module.exports = class {
         timeout: 10000 //ms
       });
     } catch (err) {
-      log.info(`Error while requesting ${url}`, err.code, err.message, err.stack);
+//      log.info(`Error while requesting ${url}`, err.code, err.message, err.stack);
     }
     this.cacheAdd(ip, "cymon", JSON.stringify(body));
     return body;

@@ -5,6 +5,7 @@
 'use strict'
 let bonjour = require('bonjour')();
 
+bonjour._server.mdns.on('warning', (err) => console.error("Error on mdns server", err))
 bonjour.find({type: 'http'}, (service) => {
   // console.log(service);
   if(service.name.startsWith("eph:devhi:netbot") &&

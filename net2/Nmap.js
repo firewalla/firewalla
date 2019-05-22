@@ -19,6 +19,7 @@ const util = require('util');
 
 const Firewalla = require('./Firewalla.js');
 const networkTool = require('./NetworkTool.js')();
+const Promise = require('bluebird');
 
 var debugging = false;
 // var log = function () {
@@ -67,6 +68,35 @@ module.exports = class {
         this.scanQueue(this.scanQ.pop());
       });
     }
+  }
+
+  async neighborSolicit(ipv6Addr) {
+    return new Promise((resolve, reject) => {
+      if (ip.isV4Format(ipv6Addr) || !ip.isV6Format(ipv6Addr)) {
+        resolve(null);
+      }
+  
+      const cmd = util.format('sudo nmap -6 -PR -sn %s -oX - | %s', ipv6Addr, xml2jsonBinary);
+      log.info('Running neighbor solicitation: ', cmd);
+  
+      this.scanQ.push({cmdline: cmd, fast: true, callback: (err, hosts, ports) => {
+        if (err) {
+          reject(err);
+        } else {
+          for (let i in hosts) {
+            const host = hosts[i];
+            if (host.mac) {
+              resolve(host.mac);
+              return;
+            }
+          }
+          resolve(null);
+        }
+      }});
+  
+      let obj = this.scanQ.pop();
+      this.scanQueue(obj);
+    })
   }
 
   scan(range /*Must be v4 CIDR*/, fast, callback) {

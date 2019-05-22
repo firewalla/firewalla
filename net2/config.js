@@ -245,9 +245,16 @@ function getTimingConfig(key) {
   return config && config.timing && config.timing[key];
 }
 
+function getSimpleVersion() {
+  const hash = f.getLatestCommitHash();
+  const version = getConfig() && getConfig().version;
+  return `${version}-${hash}`;
+}
+
 module.exports = {
   updateUserConfig: updateUserConfig,
   getConfig: getConfig,
+  getSimpleVersion: getSimpleVersion,
   getUserConfig: getUserConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,

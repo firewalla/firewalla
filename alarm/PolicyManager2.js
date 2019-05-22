@@ -77,11 +77,7 @@ const em = new EM();
 
 const _ = require('lodash')
 
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t);
-  });
-}
+const delay = require('../util/util.js').delay
 
 class PolicyManager2 {
   constructor() {
@@ -326,17 +322,19 @@ class PolicyManager2 {
   // it's hard to keep sanity dealing with partial update and redis in the same time
   async updatePolicyAsync(policy) {
     if (!policy.pid)
-      return Promise.reject(new Error("UpdatePolicyAsync requires policy ID"))
+      throw new Error("UpdatePolicyAsync requires policy ID");
 
     const policyKey = policyPrefix + policy.pid;
 
     if (policy instanceof Policy) {
-      let redisfied = policy.redisfy();
       await rclient.hmsetAsync(policyKey, policy.redisfy());
       return;
     }
 
     let existing = await this.getPolicy(policy.pid);
+
+    if (!existing)
+      throw new Error("Policy not exist");
 
     Object.assign(existing, policy);
 
@@ -503,27 +501,23 @@ class PolicyManager2 {
   // These two enable/disable functions are intended to be used by all nodejs processes, not just FireMain
   // So cross-process communication is used
   // the real execution is on FireMain, check out _enablePolicy and _disablePolicy below
-  enablePolicy(policy) {
-    return async(() => {
-      if(policy.disabled != '1') {
-        return policy // do nothing, since it's already enabled
-      }
-      await (this._enablePolicy(policy))
-      this.tryPolicyEnforcement(policy, "enforce")
-      Bone.submitIntelFeedback('enable', policy, 'policy')
-      return policy
-    })()
+  async enablePolicy(policy) {
+    if(policy.disabled != '1') {
+      return policy // do nothing, since it's already enabled
+    }
+    await this._enablePolicy(policy)
+    this.tryPolicyEnforcement(policy, "enforce")
+    Bone.submitIntelFeedback('enable', policy, 'policy')
+    return policy
   }
 
-  disablePolicy(policy) {
-    return async(() => {
-      if(policy.disabled == '1') {
-        return // do nothing, since it's already disabled
-      }
-      await (this._disablePolicy(policy))
-      this.tryPolicyEnforcement(policy, "unenforce")
-      Bone.submitIntelFeedback('disable', policy, 'policy')
-    })()
+  async disablePolicy(policy) {
+    if(policy.disabled == '1') {
+      return // do nothing, since it's already disabled
+    }
+    await this._disablePolicy(policy)
+    this.tryPolicyEnforcement(policy, "unenforce")
+    Bone.submitIntelFeedback('disable', policy, 'policy')
   }
 
   async disableAndDeletePolicy(policyID) {
@@ -732,7 +726,7 @@ class PolicyManager2 {
         if(options.includingDisabled) {
           callback(err, policyRules)
         } else {
-          callback(err, policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
+          callback(err, err ? [] : policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
         }
       });
     });
@@ -926,6 +920,7 @@ class PolicyManager2 {
           await Block.addMacToSet(pid, scope);
           await Block.block(target, Block.getDstSet(pid), whitelist)
         } else {
+          if (policy.whitelist) await Block.enableGlobalWhitelist()
           await Block.block(target, null, whitelist)
         }
         break;
@@ -933,9 +928,9 @@ class PolicyManager2 {
       case "mac":
         if (whitelist) {
           await Block.enableGlobalWhitelist();
-          return Block.blockMac(target, "whitelist_mac_set");
+          await Block.blockMac(target, "whitelist_mac_set");
         } else {
-          return Block.blockMac(target);
+          await Block.blockMac(target);
         }
         break;
 
@@ -944,7 +939,7 @@ class PolicyManager2 {
         if(scope) {
           await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
           await Block.addMacToSet(pid, scope);
-          return domainBlock.blockDomain(target, {
+          await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
             no_dnsmasq_entry: true,
@@ -959,7 +954,7 @@ class PolicyManager2 {
             options.no_dnsmasq_reload = true;
             await Block.enableGlobalWhitelist();
           }
-          return domainBlock.blockDomain(target, options);
+          await domainBlock.blockDomain(target, options);
         }
         break;
 
@@ -968,9 +963,9 @@ class PolicyManager2 {
         if(data) {
           if (whitelist) {
             await Block.enableGlobalWhitelist();
-            return Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+            await Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
           } else {
-            return Block.blockPublicPort(data.ip, data.port, data.protocol)
+            await Block.blockPublicPort(data.ip, data.port, data.protocol)
           }
         }
         break;
@@ -1037,15 +1032,20 @@ class PolicyManager2 {
 
     switch(type) {
       case "ip":
-        await Block.destroyRules(scope && pid, pid, whitelist);
+        if (scope) {
+          await Block.destroyRules(pid, pid, whitelist);
+        } else {
+          if (policy.whitelist) await Block.disableGlobalWhitelist()
+          await Block.unblock(target, null, whitelist)
+        }
         break;
 
       case "mac":
         if (whitelist) {
           await Block.disableGlobalWhitelist();
-          return Block.unblockMac(target, "whitelist_mac_set");
+          await Block.unblockMac(target, "whitelist_mac_set");
         } else {
-          return Block.unblockMac(target)
+          await Block.unblockMac(target)
         }
         break;
 
@@ -1059,7 +1059,7 @@ class PolicyManager2 {
             no_dnsmasq_reload: true
           }))
           // destroy domain dst cache, since there may be various domain dst cache in different policies
-          return Block.destroyRules(pid, pid, whitelist);
+          await Block.destroyRules(pid, pid, whitelist);
         } else {
           let options = {exactMatch: policy.domainExactMatch};
           if (whitelist) {
@@ -1068,7 +1068,7 @@ class PolicyManager2 {
             options.no_dnsmasq_reload = true;
             await Block.disableGlobalWhitelist();
           }
-          return domainBlock.unblockDomain(target, options);
+          await domainBlock.unblockDomain(target, options);
         }
         break;
 
@@ -1077,9 +1077,9 @@ class PolicyManager2 {
         if(data) {
           if (whitelist) {
             await Block.disableGlobalWhitelist();
-            return Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
+            await Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
           } else {
-            return Block.unblockPublicPort(data.ip, data.port, data.protocol);
+            await Block.unblockPublicPort(data.ip, data.port, data.protocol);
           }
         }
         break;
@@ -1095,7 +1095,12 @@ class PolicyManager2 {
         break;
 
       case "net":
-        await Block.destroyRules(scope && pid, target, whitelist);
+        if (scope) {
+          await Block.destroyRules(pid, pid, whitelist);
+        } else {
+          if (policy.whitelist) await Block.disableGlobalWhitelist()
+          await Block.unblock(target, null, whitelist)
+        }
         break;
 
       case "country":
@@ -1104,7 +1109,7 @@ class PolicyManager2 {
         break;
 
       default:
-        return Promise.reject("Unsupported policy");
+        throw new Error("Unsupported policy");
     }
   }
 

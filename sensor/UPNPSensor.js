@@ -136,7 +136,7 @@ class UPNPSensor extends Sensor {
                   }
                 );
 
-                await am2.enqueueAlarm(enriched);
+                await am2.enqueueAlarm(alarm);
               }
             }
           }
