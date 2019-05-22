@@ -152,6 +152,7 @@ let symmetrickey = generateEncryptionKey(_license);
 // start a diagnostic page for people to access during first binding process
 const diag = new Diag()
 diag.start()
+diag.iptablesRedirection()
 
 let eptcloud = new cloud(eptname, null);
 eptcloud.debug(false);
@@ -411,7 +412,10 @@ async function sendTerminatedInfoToDiagServer(gid) {
 
 async function exitHandler(options, err) {
   if (err) log.info(err.stack);
-  if (options.cleanup) await platform.turnOffPowerLED();
+  if (options.cleanup) {
+    await platform.turnOffPowerLED();
+    await diag.iptablesRedirection(false);
+  }
   if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
   if (options.exit) {
     // previous function calls may be async and needs additional time to complete
