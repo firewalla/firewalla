@@ -714,7 +714,7 @@ class netBot extends ControllerBot {
         const getDevices = `${homePath}/scripts/sanity_check.sh -f`;
         exec(getDevices)
           .then(res => {
-            this.simpleTxData(msg, {password: password, filename: path, devices: res.stdout}, null, callback);
+            this.simpleTxData(msg, {password: password, filename: path, content: res.stdout}, null, callback);
           })
           .catch(err => {
             this.simpleTxData(msg, null, err, callback)
