@@ -151,6 +151,7 @@ let symmetrickey = generateEncryptionKey(_license);
 // start a diagnostic page for people to access during first binding process
 const diag = new Diag()
 diag.start()
+diag.iptablesRedirection()
 
 let eptcloud = new cloud(eptname, null);
 eptcloud.debug(false);
@@ -473,13 +474,13 @@ eptcloud.loadKeys()
 
 process.stdin.resume();
 
-function sendTerminatedInfoToDiagServer(gid) {
+async function sendTerminatedInfoToDiagServer(gid) {
   if (terminated)
     return;
   const gidPrefix = gid.substring(0, 8);
   log.forceInfo("EXIT KICKSTART DUE TO PROCESS TERMINATION");
   terminated = true;
-  fwDiag.submitInfo({
+  await fwDiag.submitInfo({
     event: "FIREKICK_TERMINATED",
     msg: "Firekick Terminated",
     gidPrefix: gidPrefix
@@ -488,10 +489,13 @@ function sendTerminatedInfoToDiagServer(gid) {
   });
 }
 
-function exitHandler(options, err) {
+async function exitHandler(options, err) {
   if (err) log.info(err.stack);
-  if (options.cleanup) platform.turnOffPowerLED();
-  if (options.terminated) sendTerminatedInfoToDiagServer(options.gid);
+  if (options.cleanup) {
+    platform.turnOffPowerLED();
+    await diag.iptablesRedirection(false);
+  }
+  if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
   if (options.exit) {
     // previous function calls may be async and needs additional time to complete
     cp.exec("sleep 5", (err, stdout, stderr) => {

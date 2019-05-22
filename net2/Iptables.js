@@ -37,7 +37,7 @@ exports.wrapIptables= function (rule) {
   command = " -D ";
   if(rule.indexOf(command) > -1) {
     checkRule = rule.replace(command, " -C ");
-    return `bash -c '${checkRule} &>/dev/null && ${rule}'`;
+    return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
   }
 
   if(checkRule) {
@@ -90,9 +90,6 @@ exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
 exports.dhcpSubnetChangeAsync = Promise.promisify(dhcpSubnetChange);
-exports.diagHttpChange = diagHttpChange;
-exports.diagHttpChangeAsync = Promise.promisify(diagHttpChange);
-
 
 var workqueue = [];
 var running = false;
@@ -121,44 +118,6 @@ function iptables(rule, callback) {
             newRule(null, null);
         });
         return proc;
-    } else if (rule.type == "diag_http") {
-        // install/uninstall diag http redirect rule in NAT table
-        let state = rule.state;
-        let ip = rule.ip;
-        let action = "-A";
-        if (state == false || state == null) {
-            action = "-D";
-        }
-
-        let _dst = " -d " + ip;
-        let cmdline = "";
-
-        let getCommand = function(action, dst) {
-          return `sudo iptables -w -t nat ${action} PREROUTING ${dst} -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8835`;
-        };
-
-        switch (action) {
-          case "-A":
-            cmdline = `${getCommand("-C", _dst)} || ${getCommand(action, _dst)}`;
-            break;
-          case "-D":
-            cmdline = `(${getCommand("-C", _dst)} && ${getCommand(action, _dst)}); true`;
-            break;
-          default:
-            cmdline = "sudo iptables -w -t nat " + action + " PREROUTING " + _dst + " -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8835";
-            break;
-        }
-        log.debug("IPTABLE:DIAG_HTTP:Running commandline: ", cmdline);
-        require('child_process').exec(cmdline, (err, stdout, stderr) => {
-            if (err && action !== "-D") {
-                log.error("IPTABLE:DIAG_HTTP:Error unable to set", cmdline, err);
-            }
-            if (callback) {
-                callback(err, null);
-            }
-            running = false;
-            newRule(null, null);
-        });
     } else if (rule.type == "dhcp") {
         // install/uninstall dhcp MASQUERADE rule in NAT table
         let state = rule.state;
@@ -359,14 +318,6 @@ function dnsChange(ip, dns, state, callback) {
 function dhcpSubnetChange(ip, state, callback) {
   newRule({
     type: 'dhcp',
-    ip: ip,
-    state: state
-  }, callback);
-}
-
-function diagHttpChange(ip, state, callback) {
-  newRule({
-    type: 'diag_http',
     ip: ip,
     state: state
   }, callback);
