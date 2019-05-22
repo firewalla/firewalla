@@ -42,7 +42,8 @@ class BonjourSensor extends Sensor {
 
     this.hostCache = {};
 
-    bonjour._server.mdns.on('warning', (err) => log.error("Error on mdns server", err))
+    bonjour._server.mdns.on('warning', (err) => log.warn("Warning on mdns server", err))
+    bonjour._server.mdns.on('error', (err) => log.error("Error on mdns server", err))
   }
 
   run() {
