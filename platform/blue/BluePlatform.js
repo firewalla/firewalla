@@ -23,11 +23,6 @@ const log = require('../../net2/logger.js')(__filename);
 
 const fs = require('fs');
 
-const ledPaths = [
-//  "/sys/devices/platform/leds/leds/nanopi:green:status",
-  "/sys/devices/platform/leds/leds/nanopi:red:pwr"
-];
-
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
 class BluePlatform extends Platform {
@@ -63,28 +58,19 @@ class BluePlatform extends Platform {
     return 200;
   }
 
+  getLedPaths() {
+    return [
+      // "/sys/devices/platform/leds/leds/nanopi:green:status",
+      "/sys/devices/platform/leds/leds/nanopi:red:pwr"
+    ];
+  }
+
   async turnOnPowerLED() {
     for (const path of ledPaths) {
       const trigger = `${path}/trigger`;
       const brightness = `${path}/brightness`;
       await exec(`sudo bash -c 'echo none > ${trigger}'`);
       await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-    };
-  }
-
-  async turnOffPowerLED() {
-    for (const path of ledPaths) {
-      const trigger = `${path}/trigger`;
-      await exec(`sudo bash -c 'echo none > ${trigger}'`);
-      const brightness = `${path}/brightness`;
-      await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
-    };
-  }
-
-  async blinkPowerLED() {
-    for (const path of ledPaths) {
-      const trigger = `${path}/trigger`;
-      await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
     };
   }
 

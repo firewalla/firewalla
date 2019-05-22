@@ -357,7 +357,6 @@ function login() {
       diag.connected = true
 
       initializeGroup(async function (err, gid) {
-        let groupid = gid;
         if (gid) {
           // NOTE: This should be the only code to update sys:ept to avoid race condition
           log.info("Storing Firewalla Cloud Token info to redis");
@@ -380,11 +379,12 @@ function login() {
           await exec("sleep 2; sudo systemctl stop firekick")
 
         } else {
+          log.error("Invalid gid");
           process.exit();
         }
       });
     } else {
-      log.info("Unable to login", err);
+      log.error("Unable to login", err);
       process.exit();
     }
   });
@@ -418,10 +418,7 @@ async function exitHandler(options, err) {
   }
   if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
   if (options.exit) {
-    // previous function calls may be async and needs additional time to complete
-    cp.exec("sleep 5", (err, stdout, stderr) => {
-      process.exit();
-    });
+    process.exit();
   }
 }
 
