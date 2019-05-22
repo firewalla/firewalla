@@ -417,52 +417,25 @@ module.exports = class {
         // record reverse dns as well for future reverse lookup
         (async () => {
           await dnsTool.addReverseDns(obj['query'], obj['answers'])
-        })()
 
-        for (let i in obj['answers']) {
-          // answer can be an alias or ip address
-          const answer = obj['answers'][i];
-          if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
-            continue;
-
-          let key = "dns:ip:" + obj['answers'][i];
-          let value = {
-            'host': obj['query'],
-            'lastActive': Math.ceil(Date.now() / 1000),
-            'count': 1
-          }
-          rclient.hgetall(key,(err,entry)=>{
-            if (entry) {
-              if (entry.host != value.host) {
-                log.debug("Dns:Remap",entry.host,value.host);
-                rclient.hdel(key,"_intel");
-              }
-              if (entry.count) {
-                value.count = Number(entry.count)+1;
-              }
-            }
-            rclient.hmset(key, value, (err, rvalue) => {
-              //   rclient.hincrby(key, "count", 1, (err, value) => {
-              if (err == null) {
-
-                if(iptool.isV4Format(answer) || iptool.isV6Format(answer)) {
-                  sem.emitEvent({
-                    type: 'DestIPFound',
-                    ip: answer,
-                    suppressEventLogging: true
-                  });
-                }
-
-                if (this.config.bro.dns.expires) {
-                  rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-                }
-              } else {
-                log.error("Dns:Error", "unable to update count", err);
-              }
-              //  });
+          for (let i in obj['answers']) {
+            // answer can be an alias or ip address
+            const answer = obj['answers'][i];
+            if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
+              continue;
+  
+            if (!iptool.isV4Format(answer) && !iptool.isV6Format(answer))
+              // do not add domain alias to dns entry
+              continue;
+  
+            await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: answer,
+              suppressEventLogging: true
             });
-          });
-        }
+          }
+        })()
       } else if (obj['id.orig_p'] == 5353 && obj['id.resp_p'] == 5353 && obj['answers'].length > 0) {
         let hostname = obj['answers'][0];
         let ip = obj['id.orig_p'];
@@ -1335,39 +1308,8 @@ module.exports = class {
       this.addAppMap(appCacheObj.uid, appCacheObj);
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
-        let key = "dns:ip:" + dst;
-        let value = {
-          'host': obj.server_name,
-          'lastActive': Math.ceil(Date.now() / 1000),
-          'count': 1,
-          'ssl':1,
-          'established':obj.established
-        }
-        log.debug("SSL:Dns:values",key,value);
-        rclient.hgetall(key,(err,entry)=>{
-          if (entry && entry.host && entry.ssl) {
-            return;
-          }
-          if (entry) {
-            rclient.hdel(key,"_intel");
-            if (entry.count) {
-              value.count = Number(entry.count)+1;
-            }
-          }
-          rclient.hmset(key, value, (err, rvalue) => {
-            if (err == null) {
-              if (this.config.bro.dns.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-              }
-              log.debug("SSL:Dns:Set",key,rvalue,value);
-            } else {
-              log.error("SSL:Dns:Error", "unable to update count", err);
-            }
-          });
-        });
+        dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
       }
-
-
     } catch (e) {
       log.error("SSL:Error Unable to save", e, e.stack, data);
     }

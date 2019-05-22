@@ -346,41 +346,15 @@ class IntelTool {
     return result;
   }
 
-  getDNSKey(ip) {
-    return util.format("dns:ip:%s", ip);
-  }
-
-  getDNS(ip) {
-    let key = this.getDNSKey(ip);
-
-    return rclient.hgetallAsync(key);
-  }
-
   async updateDNSExpire(ip, expire) {
     expire = expire || 7 * 24 * 3600; // one week by default
 
-    const key = this.getDNSKey(ip);
+    const key = dnsTool.getDNSKey(ip);
     return rclient.expireAsync(key, expire);
   }
 
-  updateIntelKeyInDNS(ip, intel, expireTime) {
-    expireTime = expireTime || 24 * 3600; // default one day
-
-    let key = this.getDNSKey(ip);
-
-    return (async() => {
-      // only update if dns key exists
-      // let keys = await (rclient.keysAsync(key))
-      // FIXME: temporalry disabled keys length check, still insert data even dns entry doesn't exist
-//      if(keys.length > 0) {
-        if (intel && intel.ip) {
-            delete intel.ip;
-        }
-        let intelJSON = JSON.stringify(intel);
-        await rclient.hsetAsync(key, "_intel", intelJSON);
-        await rclient.expireAsync(key, expireTime);
-//      }
-    })()
+  async getDNS(ip) {
+    return dnsTool.getDns(ip);
   }
 }
 
