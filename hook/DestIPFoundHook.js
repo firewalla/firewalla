@@ -98,10 +98,10 @@ class DestIPFoundHook extends Hook {
       ip: ip
     };
 
-    // dns
-    if(dnsInfo && dnsInfo.host) {
-      intel.host = dnsInfo.host;
-      intel.dnsHost = dnsInfo.host;
+    // sslInfo is an object, dnsInfo is a string
+    if(dnsInfo) {
+      intel.host = dnsInfo;
+      intel.dnsHost = dnsInfo;
     }
 
     if(sslInfo && sslInfo.server_name) {
@@ -196,9 +196,10 @@ class DestIPFoundHook extends Hook {
   }
 
   getDomains(sslInfo, dnsInfo) {
+    // sslInfo is an object, dnsInfo is a string
     let domain = sslInfo && sslInfo.server_name;
     if(!domain) {
-      domain = dnsInfo && dnsInfo.host;
+      domain = dnsInfo;
     }
 
     let domains = [];

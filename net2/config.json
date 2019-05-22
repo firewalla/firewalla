@@ -273,7 +273,7 @@
     "SubnetSensor": {},
     "IPChangeSensor": {},
     "DataMigrationSensor": {
-      "migrationCodeNames": ["clairvoyant"]
+      "migrationCodeNames": ["clairvoyant", "bipartite_graph"]
     }
   },
   "hooks": {

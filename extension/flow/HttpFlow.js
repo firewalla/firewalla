@@ -8,6 +8,8 @@ const firewalla = require('../../net2/Firewalla.js');
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
+const DNSTool = require('../../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 const SysManager = require('../../net2/SysManager.js');
 const sysManager = new SysManager('info');
@@ -75,37 +77,7 @@ class HttpFlow {
     if (firewalla.isReservedBlockingIP(destIP)) {
       return;
     }
-
-    const key = `dns:ip:${destIP}`;
-  
-    const value = {
-      'host': host,
-      'lastActive': Math.ceil(Date.now() / 1000),
-      'count': 1
-    }
-
-    log.debug("HTTP:Dns:values",key,value,{});
-
-    const entry = await rclient.hgetallAsync(key);
-    if(entry && entry.host) {
-      return;
-    }
-
-    if(entry) {
-      await rclient.hdelAsync(key,"_intel");
-      if (entry.count) {
-        value.count = Number(entry.count)+1;
-      }
-    }
-
-    try {
-      const expireTime = (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000;
-      await rclient.delAsync(key);
-      await rclient.hmsetAsync(key, value);
-      await rclient.expireAsync(key, expireTime);
-    } catch(err) {
-      log.error(`Failed to save dns mapping entry for host ${host} and ip ${destIP}`);
-    }
+    await dnsTool.addDns(destIP, host, (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
   }
 
   async process(flow) {

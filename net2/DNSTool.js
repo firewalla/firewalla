@@ -58,7 +58,7 @@ class DNSTool {
   }
 
   dnsExists(ip) {
-    let key = this.getDnsKey(ip);
+    let key = this.getDNSKey(ip);
 
     return rclient.existsAsync(key)
       .then((exists) => {
@@ -66,24 +66,58 @@ class DNSTool {
       })
   }
 
-  getDns(ip) {
-    let key = this.getDnsKey(ip);
+  async getDns(ip) {
+    let key = this.getDNSKey(ip);
+    const keyType = await rclient.typeAsync(key);
+    try {
+      // FIXME: remove this type conversion code after it is released for several months
+      // convert hash to zset
+      // although there is a migration task in DataMigrationSensor, it may be not finished when this function is invoked
+      if (keyType === "hash") {
+        const oldDns = await rclient.hgetallAsync(key);
+        await rclient.delAsync(key);
+        if (oldDns.host)
+          rclient.zaddAsync(key, oldDns.lastActive || now, oldDns.host);
+      }
+    } catch (err) {
+      log.warn("Failed to convert " + key + " to zset.");
+    }
+    const domain = await rclient.zrevrangeAsync(key, 0, 1); // get domain with latest timestamp
+    if (domain && domain.length != 0)
+      return domain[0];
+    else
+      return null;
+  }
 
-    return rclient.hgetallAsync(key);
-  }  
+  async addDns(ip, domain, expire) {
+    expire = expire || 24 * 3600; // one day by default
+    if (!iptool.isV4Format(ip) && !iptool.isV6Format(ip))
+      return;
+    if (firewalla.isReservedBlockingIP(ip))
+      return;
+    if (!domain)
+      return;
 
-  addDns(ip, dns, expire) {
-    dns = dns || {}
-    expire = expire || 7 * 24 * 3600; // one week by default
-
-    let key = this.getDnsKey(ip);
-
-    dns.updateTime = `${new Date() / 1000}`
-
-    return rclient.hmsetAsync(key, dns)
-      .then(() => {
-        return rclient.expireAsync(key, expire);
-      });
+    let key = this.getDNSKey(ip);
+    const keyType = await rclient.typeAsync(key);
+    const redisObj = [key];
+    const now = Math.ceil(Date.now() / 1000);
+    try {
+      // FIXME: remove this type conversion code after it is released for several months
+      // convert hash to zset
+      // although there is a migration task in DataMigrationSensor, it may be not finished when this function is invoked
+      if (keyType === "hash") {
+        const oldDns = await rclient.hgetallAsync(key);
+        await rclient.delAsync(key);
+        if (oldDns.host)
+          redisObj.push(oldDns.lastActive || now, oldDns.host);
+      }
+    } catch (err) {
+      log.warn("Failed to convert " + key + " to zset.");
+    }
+    redisObj.push(now, domain);
+    await rclient.zaddAsync(redisObj);
+    await rclient.expireAsync(key, expire);
   }
 
   // doesn't have to keep it long, it's only used for instant blocking
@@ -143,10 +177,9 @@ class DNSTool {
     return list
   }
 
-  removeDns(ip) {
-    let key = this.getDnsKey(ip);
-
-    return rclient.delAsync(key);
+  async removeDns(ip, domain) {
+    let key = this.getDNSKey(ip);
+    await rclient.zremAsync(key, domain);
   }
 }
 
