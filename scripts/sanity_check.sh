@@ -289,13 +289,35 @@ check_sys_config() {
     echo ""
 }
 
-check_systemctl_services
-check_rejection
-check_exception
-check_reboot
-check_system_config
-check_sys_features
-check_sys_config
-check_policies
+usage() {
+    return
+}
+
+FAST=false
+while [ "$1" != "" ]; do
+    case $1 in
+        -f | --fast )           shift
+                                FAST=true
+                                ;;
+        -h | --help )           usage
+                                exit
+                                ;;
+        * )                     usage
+                                exit 1
+    esac
+    shift
+done
+
+
+if [ "$FAST" == false ]; then
+    check_systemctl_services
+    check_rejection
+    check_exception
+    check_reboot
+    check_system_config
+    check_sys_features
+    check_sys_config
+    check_policies
+    check_iptables
+fi
 check_hosts
-check_iptables
