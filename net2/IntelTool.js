@@ -346,11 +346,11 @@ class IntelTool {
     return result;
   }
 
-  async updateDNSExpire(ip, expire) {	
-    expire = expire || 7 * 24 * 3600; // one week by default	
+  async updateDNSExpire(ip, expire) {
+    expire = expire || 7 * 24 * 3600; // one week by default
 
-    const key = dnsTool.getDNSKey(ip);	
-    return rclient.expireAsync(key, expire);	
+    const key = dnsTool.getDNSKey(ip);
+    return rclient.expireAsync(key, expire);
   }
 
   async getDNS(ip) {

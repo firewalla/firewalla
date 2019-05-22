@@ -66,11 +66,10 @@ class DNSTool {
       })
   }
 
-  async getDns(ip) {
-    let key = this.getDNSKey(ip);
+  async _convertHashToSortedSet(key) {
+    const now = Math.ceil(Date.now() / 1000);
     const keyType = await rclient.typeAsync(key);
     try {
-      // FIXME: remove this type conversion code after it is released for several months
       // convert hash to zset
       // although there is a migration task in DataMigrationSensor, it may be not finished when this function is invoked
       if (keyType === "hash") {
@@ -82,11 +81,25 @@ class DNSTool {
     } catch (err) {
       log.warn("Failed to convert " + key + " to zset.");
     }
+  }
+
+  async getDns(ip) {
+    let key = this.getDNSKey(ip);
+    // FIXME: remove this type conversion code after it is released for several months
+    await this._convertHashToSortedSet(key);
     const domain = await rclient.zrevrangeAsync(key, 0, 1); // get domain with latest timestamp
     if (domain && domain.length != 0)
       return domain[0];
     else
       return null;
+  }
+
+  async getAllDns(ip) {
+    const key = this.getDNSKey(ip);
+    // FIXME: remove this type conversion code after it is released for several months
+    await this._convertHashToSortedSet(key);
+    const domains = await rclient.zrangeAsync(key, 0, -1);
+    return domains || [];
   }
 
   async addDns(ip, domain, expire) {
@@ -99,24 +112,10 @@ class DNSTool {
       return;
 
     let key = this.getDNSKey(ip);
-    const keyType = await rclient.typeAsync(key);
-    const redisObj = [key];
+    // FIXME: remove this type conversion code after it is released for several months
+    await this._convertHashToSortedSet(key);
     const now = Math.ceil(Date.now() / 1000);
-    try {
-      // FIXME: remove this type conversion code after it is released for several months
-      // convert hash to zset
-      // although there is a migration task in DataMigrationSensor, it may be not finished when this function is invoked
-      if (keyType === "hash") {
-        const oldDns = await rclient.hgetallAsync(key);
-        await rclient.delAsync(key);
-        if (oldDns.host)
-          redisObj.push(oldDns.lastActive || now, oldDns.host);
-      }
-    } catch (err) {
-      log.warn("Failed to convert " + key + " to zset.");
-    }
-    redisObj.push(now, domain);
-    await rclient.zaddAsync(redisObj);
+    await rclient.zaddAsync(key, now, domain);
     await rclient.expireAsync(key, expire);
   }
 
@@ -180,6 +179,35 @@ class DNSTool {
   async removeDns(ip, domain) {
     let key = this.getDNSKey(ip);
     await rclient.zremAsync(key, domain);
+  }
+
+  async getLinkedDomains(target, isDomainPattern) {
+    isDomainPattern = isDomainPattern || false;
+    // target can be either ip or domain
+    if (!target)
+      return [];
+    if (iptool.isV4Format(target) || iptool.isV6Format(target)) {
+      // target is ip
+      const domains = await this.getAllDns(target);
+      return domains || [];
+    } else {
+      const domains = {}
+      let addresses = [];
+      if (!isDomainPattern) {
+        domains[target] = 1;
+        addresses = await this.getAddressesByDNS(target);
+      } else {
+        addresses = await this.getAddressesByDNSPattern(target);
+      }
+      if (addresses && Array.isArray(addresses)) {
+        for (const address of addresses) {
+          const linkedDomains = await this.getAllDns(address);
+          for (const linkedDomain of linkedDomains)
+            domains[linkedDomain] = 1;
+        }
+      }
+      return Object.keys(domains);
+    }
   }
 }
 

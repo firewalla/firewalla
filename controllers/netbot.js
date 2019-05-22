@@ -120,6 +120,9 @@ const netBotTool = new NetBotTool();
 const HostTool = require('../net2/HostTool');
 const hostTool = new HostTool();
 
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
+
 const appTool = require('../net2/AppTool')();
 
 const SpooferManager = require('../net2/SpooferManager.js')
@@ -1901,6 +1904,20 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback);
           }
         })();
+        break;
+      case "linkedDomains":
+        (async () => {
+          const target = value.target;
+          const isDomainPattern = value.isDomainPattern || false;
+          if (!target) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "target should be specified."}, callback);
+          } else {
+            const domains = await dnsTool.getLinkedDomains(target, isDomainPattern);
+            this.simpleTxData(msg, {domains: domains}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
         break;
       case "liveCategoryDomains":
         (async () => {
