@@ -165,6 +165,12 @@ class AutoBlocksRevalidationSensor extends Sensor {
           // intel
           await intelTool.updateExpire(ip, this.config.intelExpireTime);
 
+          // dns	
+          const dnsEntry = await intelTool.getDNS(ip);
+          if (dnsEntry) {
+            await intelTool.updateDNSExpire(ip, this.config.intelExpireTime);
+          }
+
           // ssl
           const sslEntry = await intelTool.getSSLCertificate(ip);
           if (sslEntry) {
