@@ -1439,14 +1439,16 @@ module.exports = class {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.hmset(key, xobj, (err, value) => {
-          if (err == null) {
-            if (this.config.bro.ssl.expires) {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+        rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data 
+          rclient.hmset(key, xobj, (err, value) => {
+            if (err == null) {
+              if (this.config.bro.ssl.expires) {
+                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+              }
+            } else {
+              log.error("host:ext:x509:save:Error", key, subject);
             }
-          } else {
-            log.error("host:ext:x509:save:Error", key, subject);
-          }
+          });
         });
       } else if (cert_id != null) {
         log.debug("SSL:CERT_ID flow.ssl creating cert", cert_id);
@@ -1465,15 +1467,17 @@ module.exports = class {
 
               this.cleanUpSanDNS(xobj);
 
-              rclient.hmset(key, xobj, (err, value) => {
-                if (err == null) {
-                  if (this.config.bro.ssl.expires) {
-                    rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+              rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
+                rclient.hmset(key, xobj, (err, value) => {
+                  if (err == null) {
+                    if (this.config.bro.ssl.expires) {
+                      rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+                    }
+                    log.debug("SSL:CERT_ID Saved", key, xobj);
+                  } else {
+                    log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
                   }
-                  log.debug("SSL:CERT_ID Saved", key, xobj);
-                } else {
-                  log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
-                }
+                });
               });
             } else {
               log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);

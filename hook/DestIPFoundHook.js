@@ -335,9 +335,8 @@ class DestIPFoundHook extends Hook {
       }
 
       if(!skipWriteLocalCache) {
-        if (intel && intel.cloudFailed) {
-          await intelTool.removeIntel(ip);
-        }
+        // remove intel in case some keys in old intel hash is not updated if number of keys in new intel is less than that in old intel
+        await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
       }
 
