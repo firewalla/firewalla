@@ -20,10 +20,41 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
+const { exec } = require('child-process-promise');
+
 class Platform {
   async getNetworkSpeed() {
     const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
     return output.trim();
+  }
+
+  getLedPaths() {
+    return []
+  }
+
+  async turnOnPowerLED() {
+    for (const path of this.getLedPaths()) {
+      const trigger = `${path}/trigger`;
+      const brightness = `${path}/brightness`;
+      await exec(`sudo bash -c 'echo default-on > ${trigger}'`);
+      await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
+    };
+  }
+
+  async turnOffPowerLED() {
+    for (const path of this.getLedPaths()) {
+      const trigger = `${path}/trigger`;
+      await exec(`sudo bash -c 'echo none > ${trigger}'`);
+      const brightness = `${path}/brightness`;
+      await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
+    };
+  }
+
+  async blinkPowerLED() {
+    for (const path of this.getLedPaths()) {
+      const trigger = `${path}/trigger`;
+      await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
+    };
   }
 }
 

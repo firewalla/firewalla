@@ -3222,7 +3222,7 @@ class netBot extends ControllerBot {
             await flowManager.removeFlowsAll(hostMac);
             
             let ips = await hostTool.getIPsByMac(hostMac);
-            ips.forEach(async (ip) => {
+            for (const ip of ips) {
               const latestMac = await hostTool.getMacByIP(ip);
               if (latestMac && latestMac === hostMac) {
                 // double check to ensure ip address is not taken over by other device
@@ -3244,7 +3244,7 @@ class netBot extends ControllerBot {
                   "monitor:flow:out:" + ip
                 ]);
               }
-            });
+            };
             await hostTool.deleteMac(hostMac);
             // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
             this.simpleTxData(msg, {}, null, callback);

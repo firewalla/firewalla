@@ -112,7 +112,7 @@ exports.create = function(config, callback) {
             // other interface already occupies ip1, use alternative ip
             _secondaryIpSubnet = config.secondaryInterface.ip2;
             _secondaryIp = _secondaryIpSubnet.split('/')[0];
-            _secondaryMask = ip.cidrSubnet(_secondaryIp).subnetMask;
+            _secondaryMask = ip.cidrSubnet(_secondaryIpSubnet).subnetMask;
           }
         }
       }

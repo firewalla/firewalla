@@ -18,8 +18,6 @@
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
 const utils = require('../../lib/utils.js');
-const led = require('../../util/Led.js');
-
 const fs = require('fs');
 
 class RedPlatform extends Platform {
@@ -48,16 +46,11 @@ class RedPlatform extends Platform {
     return 100;
   }
 
-  turnOnPowerLED() {
-    led.on();
-  }
-
-  turnOffPowerLED() {
-    led.off();
-  }
-
-  blinkPowerLED() {
-    led.blink();
+  getLedPaths() {
+    return [
+      "/sys/devices/platform/leds/leds/nanopi:green:pwr",
+      "/sys/devices/platform/leds/leds/nanopi:blue:status"
+    ];
   }
 
   async applyCPUDefaultProfile() {
