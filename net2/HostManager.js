@@ -1551,38 +1551,44 @@ module.exports = class HostManager {
     });
   }
 
-  last60MinStatsForInit(json) {
-    return async(() => {
-      let downloadStats = await (getHitsAsync("download", "1minute", 61))
-      if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
-        downloadStats = downloadStats.slice(0, 60)
-      } else {
-        downloadStats = downloadStats.slice(1)
-      }
-      let uploadStats = await (getHitsAsync("upload", "1minute", 61))
-      if(uploadStats[uploadStats.length - 1] &&  uploadStats[uploadStats.length - 1][1] == 0) {
-        uploadStats = uploadStats.slice(0, 60)
-      } else {
-        uploadStats = uploadStats.slice(1)
-      }
+  async last60MinStats() {
+    let downloadStats = await getHitsAsync("download", "1minute", 60)
+    let uploadStats = await getHitsAsync("upload", "1minute", 60)
+    return { downloadStats, uploadStats }
+  }
 
-      let totalDownload = 0
-      downloadStats.forEach((s) => {
-        totalDownload += s[1]
-      })
+  async last60MinStatsForInit(json, mac) {
+    const subKey = mac ? '' : ':' + mac
 
-      let totalUpload = 0
-      uploadStats.forEach((s) => {
-        totalUpload += s[1]
-      })
+    let downloadStats = await getHitsAsync("download" + subKey, "1minute", 61)
+    if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
+      downloadStats = downloadStats.slice(0, 60)
+    } else {
+      downloadStats = downloadStats.slice(1)
+    }
+    let uploadStats = await getHitsAsync("upload" + subKey, "1minute", 61)
+    if(uploadStats[uploadStats.length - 1] &&  uploadStats[uploadStats.length - 1][1] == 0) {
+      uploadStats = uploadStats.slice(0, 60)
+    } else {
+      uploadStats = uploadStats.slice(1)
+    }
 
-      json.last60 = {
-        upload: uploadStats,
-        download: downloadStats,
-        totalUpload: totalUpload,
-        totalDownload: totalDownload
-      }        
-    })()
+    let totalDownload = 0
+    downloadStats.forEach((s) => {
+      totalDownload += s[1]
+    })
+
+    let totalUpload = 0
+    uploadStats.forEach((s) => {
+      totalUpload += s[1]
+    })
+
+    json.last60 = {
+      upload: uploadStats,
+      download: downloadStats,
+      totalUpload: totalUpload,
+      totalDownload: totalDownload
+    }
   }
 
   last60MinTopTransferForInit(json) {
@@ -1607,28 +1613,27 @@ module.exports = class HostManager {
     })()
   }
 
-  last30daysStatsForInit(json) {
-    return async(() => {
-      let downloadStats = await (getHitsAsync("download", "1day", 30))
-      let uploadStats = await (getHitsAsync("upload", "1day", 30))
+  async last30daysStatsForInit(json, mac) {
+    const subKey = mac ? '' : ':' + mac
+    let downloadStats = await getHitsAsync("download" + subKey, "1day", 30)
+    let uploadStats = await getHitsAsync("upload" + subKey, "1day", 30)
 
-      let totalDownload = 0
-      downloadStats.forEach((s) => {
-        totalDownload += s[1]
-      })
+    let totalDownload = 0
+    downloadStats.forEach((s) => {
+      totalDownload += s[1]
+    })
 
-      let totalUpload = 0
-      uploadStats.forEach((s) => {
-        totalUpload += s[1]
-      })
+    let totalUpload = 0
+    uploadStats.forEach((s) => {
+      totalUpload += s[1]
+    })
 
-      json.last30 = {
-        upload: uploadStats,
-        download: downloadStats,
-        totalUpload: totalUpload,
-        totalDownload: totalDownload
-      }        
-    })()
+    json.last30 = {
+      upload: uploadStats,
+      download: downloadStats,
+      totalUpload: totalUpload,
+      totalDownload: totalDownload
+    }        
   }
 
   policyDataForInit(json) {

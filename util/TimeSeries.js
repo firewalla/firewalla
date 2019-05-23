@@ -24,17 +24,14 @@ const rclient = require('../util/redis_manager.js').getMetricsRedisClient()
 const timeSeries = new TimeSeries(rclient, "timedTraffic")
 timeSeries.granularities = {
   '1minute'  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
-  '5minutes' : { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(5) },
-  '10minutes': { ttl: timeSeries.days(1)   , duration: timeSeries.minutes(10) },
   '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
   '1day'     : { ttl: timeSeries.weeks(52) , duration: timeSeries.days(1) },
-  '1month'     : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
+  '1month'   : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
 }
 
 const boneAPITimeSeries = new TimeSeries(rclient, "boneAPIUsage")
 boneAPITimeSeries.granularities = {
   '1minute'  : { ttl: boneAPITimeSeries.minutes(60)  , duration: boneAPITimeSeries.minutes(1) },
-  '5minutes' : { ttl: boneAPITimeSeries.days(1)   , duration: boneAPITimeSeries.minutes(5) },
   '1hour'    : { ttl: boneAPITimeSeries.days(7)   , duration: boneAPITimeSeries.hours(1) },
   '1day'     : { ttl: boneAPITimeSeries.days(30) , duration: boneAPITimeSeries.days(1) },
 }
