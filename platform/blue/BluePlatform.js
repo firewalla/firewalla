@@ -66,7 +66,7 @@ class BluePlatform extends Platform {
   }
 
   async turnOnPowerLED() {
-    for (const path of ledPaths) {
+    for (const path of this.getLedPaths()) {
       const trigger = `${path}/trigger`;
       const brightness = `${path}/brightness`;
       await exec(`sudo bash -c 'echo none > ${trigger}'`);
