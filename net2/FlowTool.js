@@ -198,33 +198,31 @@ class FlowTool {
     })();
   }
 
-  prepareRecentFlowsForHost(json, mac, options) {
+  async prepareRecentFlowsForHost(json, mac, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
 
     json.flows.recent = [];
 
-    return async(() => {
-      let allFlows = [];
-      let flows = await(this.getRecentOutgoingConnections(mac, options));
-      flows.forEach((f) => {
-        f.device = mac;
-      });
-      allFlows.push.apply(allFlows, flows);
+    let allFlows = [];
+    let flows = await this.getRecentOutgoingConnections(mac, options);
+    flows.forEach((f) => {
+      f.device = mac;
+    });
+    allFlows.push.apply(allFlows, flows);
 
-      let flows2 = await(this.getRecentIncomingConnections(mac, options));
-      flows2.forEach((f) => {
-        f.device = mac;
-      });
-      allFlows.push.apply(allFlows, flows2);
+    let flows2 = await this.getRecentIncomingConnections(mac, options);
+    flows2.forEach((f) => {
+      f.device = mac;
+    });
+    allFlows.push.apply(allFlows, flows2);
 
-      allFlows.sort((a, b) => {
-        return b.ts - a.ts;
-      })
+    allFlows.sort((a, b) => {
+      return b.ts - a.ts;
+    })
 
-      Array.prototype.push.apply(json.flows.recent, allFlows);
-    })();
+    Array.prototype.push.apply(json.flows.recent, allFlows);
   }
 
   // merge adjacent flows with same key via this._getKey()
