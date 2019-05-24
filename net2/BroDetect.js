@@ -586,13 +586,23 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
+    const myip = sysManager.myIp();
+    const myip2 = sysManager.myIp2();
+    const myip6 = sysManager.myIp6();
+
     if(m === 'dhcp' || m === 'dhcpSpoof') { // only for dhcp and dhcpSpoof
-      let myip = sysManager.myIp()
-      const myip6 = sysManager.myIp6();
       if (myip) {
         // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
         if (data["id.orig_h"] === myip ||
           data["id.resp_h"] === myip) {
+          return false
+        }
+      }
+
+      if (myip2) {
+        // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
+        if (data["id.orig_h"] === myip2 ||
+          data["id.resp_h"] === myip2) {
           return false
         }
       }
@@ -620,8 +630,6 @@ module.exports = class {
         }
       }
     } else if(m === 'spoof' || m === 'autoSpoof') {
-      let myip = sysManager.myIp()
-      const myip6 = sysManager.myIp6()
       const systemPolicy = hostManager.getPolicyFast();
       const isEnhancedSpoof = (systemPolicy['enhancedSpoof'] == true);
 
@@ -629,6 +637,13 @@ module.exports = class {
       if(myip && 
         (data["id.orig_h"] === myip || data["id.resp_h"] === myip) && 
         (!this.isMonitoring(myip) || isEnhancedSpoof)
+      ) {        
+        return false // set it to invalid if walla itself is set to "monitoring off"
+      }
+
+      if(myip2 && 
+        (data["id.orig_h"] === myip2 || data["id.resp_h"] === myip2) && 
+        (!this.isMonitoring(myip2) || isEnhancedSpoof)
       ) {        
         return false // set it to invalid if walla itself is set to "monitoring off"
       }
@@ -1622,7 +1637,10 @@ module.exports = class {
         // log.error("Notice:Drop", obj);
         return;
       }
-      if ((obj.src != null && obj.src == sysManager.myIp()) || (obj.dst != null && obj.dst == sysManager.myIp())) {
+      if ((obj.src != null && obj.src == sysManager.myIp()) || 
+          (obj.dst != null && obj.dst == sysManager.myIp()) ||
+          (obj.src != null && obj.src == sysManager.myIp2()) || 
+          (obj.dst != null && obj.dst == sysManager.myIp2())) {
         // log.error("Notice:Drop My IP", obj);
         return;
       }

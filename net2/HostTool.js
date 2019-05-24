@@ -225,6 +225,10 @@ class HostTool {
     return async(() => {
       let host = null
 
+      if (ip === sysManager.myIp() || ip === sysManager.myIp2() || (sysManager.myIp6() && sysManager.myIp6().includes(ip)))
+      // shortcut for Firewalla's self IP
+      return sysManager.myMAC();
+
       if (iptool.isV4Format(ip)) {
         host = await (this.getIPv4Entry(ip))
       } else if(iptool.isV6Format(ip)) {
