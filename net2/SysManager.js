@@ -508,8 +508,8 @@ module.exports = class {
   }
 
   myMAC() {
-    if (this.monitoringInterface()) {
-      return this.monitoringInterface().mac_address;
+    if (this.monitoringInterface() && this.monitoringInterface().mac_address) {
+      return this.monitoringInterface().mac_address.toUpperCase();
     } else {
       return null;
     }
