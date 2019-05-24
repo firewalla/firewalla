@@ -4,6 +4,7 @@ const log   = require("../net2/logger.js")(__filename),
       os    = require('os'),
       ip    = require('ip'),
       exec  = require('child_process').exec,
+      util  = require('util'),
       async = require('async');
 
 function trim_exec(cmd, cb) {
@@ -169,3 +170,5 @@ exports.get_network_interfaces_list = function(cb) {
   if (count == 0)
     cb(new Error('No interfaces found.'))
 }
+
+exports.get_network_interfaces_list_async = util.promisify(exports.get_network_interfaces_list)

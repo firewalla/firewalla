@@ -13,16 +13,17 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-var iptool = require('ip');
-var os = require('os');
-var network = require('network');
+const util = require('util');
+const iptool = require('ip');
+const os = require('os');
+const network = require('network');
 var instance = null;
-var fs = require('fs');
-var license = require('../util/license.js');
+const fs = require('fs');
+const license = require('../util/license.js');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -31,8 +32,6 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
-let Promise = require('bluebird');
-
 const async = require('asyncawait/async');
 const await = require('asyncawait/await');
 
@@ -40,7 +39,7 @@ const exec = require('child-process-promise').exec
 
 const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial"];
 
-var bone = require("../lib/Bone.js");
+const bone = require("../lib/Bone.js");
 var systemDebug = false;
 
 function setSystemDebug(_systemDebug) {
@@ -164,6 +163,8 @@ module.exports = class {
       },1000*60*20);
     }
     this.update(null);
+
+    this.updateAsync = util.promisify(this.update)
     return instance;
   }
 
