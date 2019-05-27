@@ -38,6 +38,7 @@ const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 
 const networkTool = require('./NetworkTool.js')();
+const util = require('util');
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -89,6 +90,8 @@ module.exports = class {
       this.publisher = new p(loglevel);
 
       this.hostCache = {};
+
+      this.discoverInterfacesAsync = util.promisify(this.discoverInterfaces)
     }
 
     return instances[name];
