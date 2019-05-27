@@ -65,26 +65,38 @@ class BluePlatform extends Platform {
 
   turnOnPowerLED() {
     ledPaths.forEach(async (path) => {
-      const trigger = `${path}/trigger`;
-      const brightness = `${path}/brightness`;
-      await exec(`sudo bash -c 'echo none > ${trigger}'`);
-      await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
+      try {
+        const trigger = `${path}/trigger`;
+        const brightness = `${path}/brightness`;
+        await exec(`sudo bash -c 'echo none > ${trigger}'`);
+        await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
+      } catch(err) {
+        log.error("Error turning on LED", err)
+      }
     });
   }
 
   turnOffPowerLED() {
     ledPaths.forEach(async (path) => {
-      const trigger = `${path}/trigger`;
-      await exec(`sudo bash -c 'echo none > ${trigger}'`);
-      const brightness = `${path}/brightness`;
-      await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
+      try {
+        const trigger = `${path}/trigger`;
+        await exec(`sudo bash -c 'echo none > ${trigger}'`);
+        const brightness = `${path}/brightness`;
+        await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
+      } catch(err) {
+        log.error("Error turning off LED", err)
+      }
     });
   }
 
   blinkPowerLED() {
     ledPaths.forEach(async (path) => {
-      const trigger = `${path}/trigger`;
-      await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
+      try {
+        const trigger = `${path}/trigger`;
+        await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
+      } catch(err) {
+        log.error("Error blinking LED", err)
+      }
     });
   }
 
