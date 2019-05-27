@@ -66,12 +66,16 @@ class BluePlatform extends Platform {
   }
 
   async turnOnPowerLED() {
-    for (const path of this.getLedPaths()) {
-      const trigger = `${path}/trigger`;
-      const brightness = `${path}/brightness`;
-      await exec(`sudo bash -c 'echo none > ${trigger}'`);
-      await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-    };
+    try {
+      for (const path of this.getLedPaths()) {
+        const trigger = `${path}/trigger`;
+        const brightness = `${path}/brightness`;
+        await exec(`sudo bash -c 'echo none > ${trigger}'`);
+        await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
+      };
+    } catch(err) {
+      log.error("Error turning on LED", err)
+    }
   }
 
   getCPUDefaultFile() {
