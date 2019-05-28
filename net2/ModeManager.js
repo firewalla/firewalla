@@ -31,7 +31,6 @@ const d = new Discovery("modeManager", fConfig, "info", false);
 
 const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
-
 const firewalla = require('./Firewalla.js')
 
 const async = require('asyncawait/async')
@@ -179,9 +178,7 @@ async function _restoreSimpleModeNetworkSettings() {
       cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
       log.info("Command to remove old ip assignment: " + cmd);
       await execAsync(cmd);
-      const oldIp = oldIpSubnet.split('/')[0];
       // dns rule change is done in dnsmasq.js
-      await iptables.diagHttpChangeAsync(oldIp, false); // remove old diag http redirect rule
     } catch (err) {
       log.warn(util.format("Old ip subnet %s is not found on eth0."), oldIpSubnet);
     }
@@ -189,9 +186,7 @@ async function _restoreSimpleModeNetworkSettings() {
     cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", simpleIpSubnet);
     log.info("Command to restore simple ip assignment: " + cmd);
     await execAsync(cmd);
-    const simpleIp = simpleIpSubnet.split('/')[0];
     // dns rule change is done in dnsmasq.js
-    await iptables.diagHttpChangeAsync(simpleIp, true); // add new diag http redirect rule
     await unlinkAsync(simpleIpFile); // remove simple_ip file
     const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
     cmd = util.format("sudo bash -c 'echo %s > %s'", simpleIpSubnet, savedIpFile);
@@ -251,9 +246,7 @@ async function _changeToAlternativeIpSubnet() {
       cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
       log.info("Command to remove old ip assignment: " + cmd);
       await execAsync(cmd);
-      const oldIp = oldIpSubnet.split('/')[0];
       // dns rule change is done in dnsmasq.js
-      await iptables.diagHttpChangeAsync(oldIp, false); // remove old diag http redirect rule
     } catch (err) {
       log.warn(util.format("Old ip subnet %s is not found on eth0.", oldIpSubnet));
     }
@@ -261,9 +254,7 @@ async function _changeToAlternativeIpSubnet() {
     cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", altIpSubnet);
     log.info("Command to add alternative ip assignment: " + cmd);
     await execAsync(cmd);
-    const altIp = altIpSubnet.split('/')[0];
     // dns rule change is done in dnsmasq.js
-    await iptables.diagHttpChangeAsync(altIp, true); // add new diag http redirect rule
     const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
     cmd = util.format("sudo bash -c 'echo %s > %s'", altIpSubnet, savedIpFile);
     await execAsync(cmd);
@@ -296,43 +287,24 @@ async function _changeToAlternativeIpSubnet() {
   });
 }
 
-function _enableSecondaryInterface() {
-  return new Promise((resolve, reject) => {  
-    fConfig = Config.getConfig(true);
-    secondaryInterface.create(fConfig,(err, ipSubnet, legacyIpSubnet)=>{
-      if (err == null) {
-        log.info("Successfully created secondary interface");
-        if (legacyIpSubnet) { // secondary ip is changed
-          d.discoverInterfaces(() => {
-            sysManager.update(() => {
-              // secondary interface ip changed, reload sysManager in all Fire* processes
-              (async () => {
-                // legacyIpSubnet should be like 192.168.218.0/24
-                // dns change is done in dnsmasq.js
-                await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false); // remove old DHCP MASQUERADE rule
-                const legacyIp = legacyIpSubnet.split('/')[0];
-                // legacyIp should be exact address like 192.168.218.1
-                await iptables.diagHttpChangeAsync(legacyIp, false);
-                // dns change is done in dnsmasq.js
-                await iptables.dhcpSubnetChangeAsync(ipSubnet, true); // add new DHCP MASQUERADE rule
-                const ip = ipSubnet.split('/')[0];
-                await iptables.diagHttpChangeAsync(ip, true);
-                resolve();
-              })().catch((err) => {
-                log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
-                reject(err);
-              });
-            });
-          });
-        } else {
-          resolve();
-        }
-      } else {
-        log.error("Failed to create secondary interface: " + err);
-        reject(err);
-      }
-    });
-  });
+async function _enableSecondaryInterface() {
+  fConfig = Config.getConfig(true);
+  let {secondaryIpSubnet, legacyIpSubnet} = await secondaryInterface.create(fConfig)
+  log.info("Successfully created secondary interface");
+  if (legacyIpSubnet) { // secondary ip is changed
+    await d.discoverInterfacesAsync()
+    await sysManager.updateAsync()
+    // secondary interface ip changed, reload sysManager in all Fire* processes
+    try {
+      // legacyIpSubnet should be like 192.168.218.0/24
+      // dns change is done in dnsmasq.js
+      await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false); // remove old DHCP MASQUERADE rule
+      await iptables.dhcpSubnetChangeAsync(secondaryIpSubnet, true); // add new DHCP MASQUERADE rule
+    } catch(err) {
+      log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
+      throw err;
+    };
+  }
 }
 
 async function _enforceDHCPMode(mode) {

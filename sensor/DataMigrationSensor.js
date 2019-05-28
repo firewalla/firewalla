@@ -42,6 +42,7 @@ class DataMigrationSensor extends Sensor {
             log.info("Start migration: " + codeName);
             await this._migrate(codeName);
             await this._set_migration_done(codeName);
+            log.info("Migration complete: " + codeName);
           }
         })().catch((err) => {
           log.error("Failed to migrate, code name: " + codeName, err);
@@ -113,6 +114,23 @@ class DataMigrationSensor extends Sensor {
             }
           }
         };
+        break;
+      case "bipartite_graph": // many-to-many relationship between domain and ip is like a bipartite graph
+        const dnsIpKeys = await rclient.keysAsync("dns:ip:*");
+        const now = Math.ceil(Date.now() / 1000);
+        for (let dnsIpKey of dnsIpKeys) {
+          const keyType = await rclient.typeAsync(dnsIpKey);
+          if (keyType !== "hash")
+            continue;
+          const dnsEntry = await rclient.hgetallAsync(dnsIpKey);
+          await rclient.delAsync(dnsIpKey);
+          const ip = dnsIpKey.substring(7);
+          if (!ipTool.isV4Format(ip) && !ipTool.isV6Format(ip))
+            continue;
+          if (dnsEntry && dnsEntry.host) {
+            await rclient.zaddAsync(dnsIpKey, dnsEntry.lastActive || now, dnsEntry.host);
+          }
+        }
         break;
       default:
         log.warn("Unrecognized code name: " + codeName);

@@ -35,6 +35,9 @@ const hostManager = new HostManager('cli', 'server');
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager('info');
 
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
+
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
@@ -100,39 +103,15 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async prepareVideoEnvironment(ip) {
-    const dnsInfo = {
-      host: "v.qq.com",
-      lastActive: "1528268891",
-      count: 44,
-      ssl: 1,
-      established: true
-    }
-
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
+    await dnsTool.addDns(ip, "v.qq.com");
   }
 
   async prepareGameEnvironment(ip) {
-    const dnsInfo = {
-      host: "battle.net",
-      lastActive: "1528268891",
-      count: 44,
-      ssl: 1,
-      established: true
-    }
-
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
+    await dnsTool.addDns(ip, "battle.net");
   }
 
   async preparePornEnvironment(ip) {
-    const dnsInfo = {
-      host: "pornhub.com",
-      lastActive: "1528268891",
-      count: 44,
-      ssl: 1,
-      established: true
-    }
-
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
+    await dnsTool.addDns(ip, "pornhub.com");
   }
 
   async release(event) {

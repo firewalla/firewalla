@@ -45,6 +45,7 @@ const log = require("../net2/logger.js")(__filename);
 
 const fs = require('fs');
 const cp = require('child_process');
+const exec = require('child-process-promise').exec;
 const cloud = require('../encipher');
 const program = require('commander');
 const storage = require('node-persist');
@@ -151,6 +152,7 @@ let symmetrickey = generateEncryptionKey(_license);
 // start a diagnostic page for people to access during first binding process
 const diag = new Diag()
 diag.start()
+diag.iptablesRedirection()
 
 let eptcloud = new cloud(eptname, null);
 eptcloud.debug(false);
@@ -179,7 +181,7 @@ function generateEncryptionKey(license) {
   };
 }
 
-function initializeGroup(callback) {    
+function initializeGroup(callback) {
   let groupId = storage.getItemSync('groupId');
   if (groupId != null) {
     log.info("Found stored group x", groupId);
@@ -228,7 +230,7 @@ function postAppLinked() {
   }
 }
 
-function inviteFirstAdmin(gid, callback) {
+async function inviteFirstAdmin(gid) {
   log.forceInfo("Initializing first admin:", gid);
 
   const gidPrefix = gid.substring(0, 8);
@@ -237,171 +239,93 @@ function inviteFirstAdmin(gid, callback) {
     terminated: true, cleanup: true, gid: gid, exit: true
   }));
 
-  eptcloud.groupFind(gid, (err, group)=> {
-    if (err) {
-      log.info("Error looking up group", err, err.stack);
-      callback(err, false);
-      return;
-    }
+  const group = await eptcloud.groupFindAsync(gid)
 
-    if (group == null) {
-      callback("404", false);
-      return;
-    }
+  if (!group || !group.symmetricKeys) {
+    return false;
+  }
 
-    if (group.symmetricKeys) {
-      // number of key sym keys equals to number of members in this group
-      // set this number to redis so that other js processes get this info
-      let count = group.symmetricKeys.length;
+  // number of key sym keys equals to number of members in this group
+  // set this number to redis so that other js processes get this info
+  let count = group.symmetricKeys.length;
 
-      rclient.hset("sys:ept", "group_member_cnt", count);
+  await rclient.hsetAsync("sys:ept", "group_member_cnt", count);
 
-      const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
-      eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
-        log.error("Failed to record registered clients, err:", err);
-      });
-
-      // new group without any apps bound;
-      platform.turnOnPowerLED();
-
-      if (count === 1) {
-        let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
-        fwInvitation.diag = diag
-
-        let onSuccess = function(payload) {
-          return (async() => {
-            log.info("some license stuff on device:", payload);
-            await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
-
-            postAppLinked(); // app linked, do any post-link tasks
-            callback(null, true);
-
-            log.forceInfo("EXIT KICKSTART AFTER JOIN");
-            platform.turnOffPowerLED();
-
-            await fwDiag.submitInfo({
-              event: "PAIREND",
-              msg: "Pairing Ended",
-              gidPrefix: gidPrefix
-            }).catch((err) => {
-              log.error("Failed to submit diag info", err);
-            });
-
-            setTimeout(()=> {
-              cp.exec("sudo systemctl stop firekick"  , (err, out, code) => {
-              });
-            },20000);
-          })();
-        }
-
-        let onTimeout = function() {
-          callback("404", false);
-
-          platform.turnOffPowerLED();
-
-          fwDiag.submitInfo({
-            event: "PAIREND_TIMEOUT",
-            msg: "Pairing Ended",
-            gidPrefix: gidPrefix
-          }).catch((err) => {
-            log.error("Failed to submit diag info", err);
-          });
-
-          log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
-          cp.exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
-          });
-        }
-
-        const expireDate = Math.floor(new Date() / 1000) + 3600;
-
-        diag.expireDate = expireDate;
-
-        fwInvitation.broadcast(onSuccess, onTimeout);
-
-        fwDiag.submitInfo({
-          event: "PAIRSTART",
-          msg:"Pairing Ready",
-          expire: expireDate,
-          gidPrefix: gidPrefix
-        }).catch((err) => {
-          log.error("Failed to submit diag info", err);
-        });
-
-      } else {
-        log.forceInfo(`Found existing group ${gid} with ${count} members`);
-
-        postAppLinked(); // already linked
-
-        // broadcast message should already be updated, a new encryption message should be used instead of default one
-        if(symmetrickey.userkey === "cybersecuritymadesimple") {
-          log.warn("Encryption key should NOT be default after app linked");
-        }
-
-        let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
-        fwInvitation.diag = diag
-        fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
-        fwInvitation.recordFirstBinding = false // don't record for additional binding
-
-        let onSuccess = function(payload) {
-          return (async() => {
-
-            const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
-            await eptCloudExtension.job().catch((err) => {
-              log.error("Failed to update group info, err:", err);
-            });;
-
-            await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
-
-            log.forceInfo("EXIT KICKSTART AFTER JOIN");
-            platform.turnOffPowerLED();
-
-            await fwDiag.submitInfo({
-              event: "PAIREND",
-              msg: "Pairing Ended",
-              gidPrefix: gidPrefix
-            }).catch((err) => {
-              log.error("Failed to submit diag info", err);
-            });
-
-            cp.exec("sudo systemctl stop firekick"  , (err, out, code) => {
-            });
-          })();
-        }
-
-        let onTimeout = function() {
-          log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
-          platform.turnOffPowerLED();
-
-          fwDiag.submitInfo({
-            event: "PAIREND_TIMEOUT",
-            msg: "Pairing Ended",
-            gidPrefix: gidPrefix
-          }).catch((err) => {
-            log.error("Failed to submit diag info", err);
-          });
-
-          cp.exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
-          });
-        }
-
-        const expireDate = Math.floor(new Date() / 1000) + 600;
-        diag.expireDate = expireDate;
-
-        fwInvitation.broadcast(onSuccess, onTimeout);          
-
-        fwDiag.submitInfo({
-          event: "PAIRSTART",
-          msg:"Pairing Ready",
-          expire: expireDate,
-          gidPrefix: gidPrefix
-        }).catch((err) => {
-          log.error("Failed to submit diag info", err);
-        });
-
-        callback(null, true);
-      }
-    }
+  const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+  await eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
+    log.error("Failed to record registered clients, err:", err);
   });
+
+  // new group without any apps bound;
+  await platform.turnOnPowerLED();
+
+  let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
+  fwInvitation.diag = diag
+
+  if (count > 1) {
+    log.forceInfo(`Found existing group ${gid} with ${count} members`);
+    fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
+    fwInvitation.recordFirstBinding = false // don't record for additional binding
+
+    // broadcast message should already be updated, a new encryption message should be used instead of default one
+    if(symmetrickey.userkey === "cybersecuritymadesimple") {
+      log.warn("Encryption key should NOT be default after app linked");
+    }
+  }
+
+  const expireDate = Math.floor(new Date() / 1000) + 600;
+  diag.expireDate = expireDate;
+
+  await fwDiag.submitInfo({
+    event: "PAIRSTART",
+    msg:"Pairing Ready",
+    expire: expireDate,
+    gidPrefix: gidPrefix
+  }).catch((err) => {
+    log.error("Failed to submit diag info", err);
+  });
+
+  const result = await fwInvitation.broadcast()
+
+  if (result.status == 'success') {
+    log.forceInfo("EXIT KICKSTART AFTER JOIN");
+    log.info("some license stuff on device:", result.payload);
+
+    postAppLinked()
+
+    if (count > 1) {
+      const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+      await eptCloudExtension.job().catch((err) => {
+        log.error("Failed to update group info, err:", err);
+      });
+    }
+
+    await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
+
+    await platform.turnOffPowerLED();
+
+    await fwDiag.submitInfo({
+      event: "PAIREND",
+      msg: "Pairing Ended",
+      gidPrefix: gidPrefix
+    }).catch((err) => {
+      log.error("Failed to submit diag info", err);
+    });
+
+    await launchService2(gid, null);
+  } else {
+    log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
+
+    if (count > 1) postAppLinked()
+
+    await fwDiag.submitInfo({
+      event: "PAIREND_TIMEOUT",
+      msg: "Pairing Ended",
+      gidPrefix: gidPrefix
+    }).catch((err) => {
+      log.error("Failed to submit diag info", err);
+    });
+  }
 }
 
 
@@ -409,8 +333,8 @@ function launchService2(gid,callback) {
   fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
 
   // don't start bro until app is linked
-  cp.exec("sudo systemctl start brofish");
-  cp.exec("sudo systemctl enable brofish"); // even auto-start for future reboots
+  cp.execSync("sudo systemctl start brofish");
+  cp.execSync("sudo systemctl enable brofish"); // even auto-start for future reboots
 
   // // start fire api
   // if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
@@ -425,16 +349,16 @@ function launchService2(gid,callback) {
 }
 
 function login() {
+  log.info("Logging in cloud");
   eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
     if (err == null) {
       log.info("Cloud Logged In")
 
       diag.connected = true
 
-      initializeGroup(function (err, gid) {
-        let groupid = gid;
+      initializeGroup(async function (err, gid) {
         if (gid) {
-          // TODO: This should be the only code to update sys:ept to avoid race condition
+          // NOTE: This should be the only code to update sys:ept to avoid race condition
           log.info("Storing Firewalla Cloud Token info to redis");
           // log.info("EID:", eptcloud.eid);
           // log.info("GID:", gid);
@@ -446,40 +370,38 @@ function login() {
           }, (err, data) => {
             if (err) {
             }
-            log.info("Set SYS:EPT", err, data, eptcloud.eid, eptcloud.token, gid);
+            log.info("Set sys:ept", err, data, eptcloud.eid, eptcloud.token, gid);
           });
 
-          inviteFirstAdmin(gid, function (err, status) {
-            if (status) {
-              launchService2(groupid, null);
-            }
-          });
+          await inviteFirstAdmin(gid)
+
+          await platform.turnOffPowerLED();
+          await exec("sleep 2; sudo systemctl stop firekick")
+
         } else {
+          log.error("Invalid gid");
           process.exit();
         }
       });
     } else {
-      log.info("Unable to login", err);
+      log.error("Unable to login", err);
       process.exit();
     }
   });
 }
 
 eptcloud.loadKeys()
-  .then(() => {
-    log.info("Logging in cloud");
-    login();
-  })
+  .then(login)
 
 process.stdin.resume();
 
-function sendTerminatedInfoToDiagServer(gid) {
+async function sendTerminatedInfoToDiagServer(gid) {
   if (terminated)
     return;
   const gidPrefix = gid.substring(0, 8);
   log.forceInfo("EXIT KICKSTART DUE TO PROCESS TERMINATION");
   terminated = true;
-  fwDiag.submitInfo({
+  await fwDiag.submitInfo({
     event: "FIREKICK_TERMINATED",
     msg: "Firekick Terminated",
     gidPrefix: gidPrefix
@@ -488,26 +410,26 @@ function sendTerminatedInfoToDiagServer(gid) {
   });
 }
 
-function exitHandler(options, err) {
+async function exitHandler(options, err) {
   if (err) log.info(err.stack);
-  if (options.cleanup) platform.turnOffPowerLED();
-  if (options.terminated) sendTerminatedInfoToDiagServer(options.gid);
+  if (options.cleanup) {
+    await platform.turnOffPowerLED();
+    await diag.iptablesRedirection(false);
+  }
+  if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
   if (options.exit) {
-    // previous function calls may be async and needs additional time to complete
-    cp.exec("sleep 5", (err, stdout, stderr) => {
-      process.exit();
-    });
+    process.exit();
   }
 }
 
 //do something when app is closing
-process.on('exit', exitHandler.bind(null, {
-  cleanup: true
+process.on('beforeExit', exitHandler.bind(null, {
+  cleanup: true, exit: true
 }));
 
 //catches ctrl+c event
 process.on('SIGINT', exitHandler.bind(null, {
-  exit: true
+  cleanup: true, exit: true
 }));
 
 process.on('uncaughtException',(err)=>{

@@ -252,6 +252,8 @@ module.exports = class {
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
+
+      this.lastNTS = null;
     }
   }
   
@@ -417,52 +419,25 @@ module.exports = class {
         // record reverse dns as well for future reverse lookup
         (async () => {
           await dnsTool.addReverseDns(obj['query'], obj['answers'])
-        })()
 
-        for (let i in obj['answers']) {
-          // answer can be an alias or ip address
-          const answer = obj['answers'][i];
-          if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
-            continue;
-
-          let key = "dns:ip:" + obj['answers'][i];
-          let value = {
-            'host': obj['query'],
-            'lastActive': Math.ceil(Date.now() / 1000),
-            'count': 1
-          }
-          rclient.hgetall(key,(err,entry)=>{
-            if (entry) {
-              if (entry.host != value.host) {
-                log.debug("Dns:Remap",entry.host,value.host);
-                rclient.hdel(key,"_intel");
-              }
-              if (entry.count) {
-                value.count = Number(entry.count)+1;
-              }
-            }
-            rclient.hmset(key, value, (err, rvalue) => {
-              //   rclient.hincrby(key, "count", 1, (err, value) => {
-              if (err == null) {
-
-                if(iptool.isV4Format(answer) || iptool.isV6Format(answer)) {
-                  sem.emitEvent({
-                    type: 'DestIPFound',
-                    ip: answer,
-                    suppressEventLogging: true
-                  });
-                }
-
-                if (this.config.bro.dns.expires) {
-                  rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-                }
-              } else {
-                log.error("Dns:Error", "unable to update count", err);
-              }
-              //  });
+          for (let i in obj['answers']) {
+            // answer can be an alias or ip address
+            const answer = obj['answers'][i];
+            if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
+              continue;
+  
+            if (!iptool.isV4Format(answer) && !iptool.isV6Format(answer))
+              // do not add domain alias to dns entry
+              continue;
+  
+            await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: answer,
+              suppressEventLogging: true
             });
-          });
-        }
+          }
+        })()
       } else if (obj['id.orig_p'] == 5353 && obj['id.resp_p'] == 5353 && obj['answers'].length > 0) {
         let hostname = obj['answers'][0];
         let ip = obj['id.orig_p'];
@@ -567,13 +542,23 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
+    const myip = sysManager.myIp();
+    const myip2 = sysManager.myIp2();
+    const myip6 = sysManager.myIp6();
+
     if(m === 'dhcp' || m === 'dhcpSpoof') { // only for dhcp and dhcpSpoof
-      let myip = sysManager.myIp()
-      const myip6 = sysManager.myIp6();
       if (myip) {
         // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
         if (data["id.orig_h"] === myip ||
           data["id.resp_h"] === myip) {
+          return false
+        }
+      }
+
+      if (myip2) {
+        // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
+        if (data["id.orig_h"] === myip2 ||
+          data["id.resp_h"] === myip2) {
           return false
         }
       }
@@ -601,8 +586,6 @@ module.exports = class {
         }
       }
     } else if(m === 'spoof' || m === 'autoSpoof') {
-      let myip = sysManager.myIp()
-      const myip6 = sysManager.myIp6()
       const systemPolicy = hostManager.getPolicyFast();
       const isEnhancedSpoof = (systemPolicy['enhancedSpoof'] == true);
 
@@ -610,6 +593,13 @@ module.exports = class {
       if(myip && 
         (data["id.orig_h"] === myip || data["id.resp_h"] === myip) && 
         (!this.isMonitoring(myip) || isEnhancedSpoof)
+      ) {        
+        return false // set it to invalid if walla itself is set to "monitoring off"
+      }
+
+      if(myip2 && 
+        (data["id.orig_h"] === myip2 || data["id.resp_h"] === myip2) && 
+        (!this.isMonitoring(myip2) || isEnhancedSpoof)
       ) {        
         return false // set it to invalid if walla itself is set to "monitoring off"
       }
@@ -1050,14 +1040,11 @@ module.exports = class {
           let key = "flow:conn:" + tmpspec.fd + ":" + mac;
           let strdata = JSON.stringify(tmpspec);
 
-          // not sure to use tmpspec.ts or now???
           if (tmpspec.fd == 'in') {
             // use now instead of the start time of this flow
-            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob)
-            //this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
+            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, mac)
           } else {
-            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb)
-            //this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
+            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, mac)
           }
 
 
@@ -1335,39 +1322,8 @@ module.exports = class {
       this.addAppMap(appCacheObj.uid, appCacheObj);
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
-        let key = "dns:ip:" + dst;
-        let value = {
-          'host': obj.server_name,
-          'lastActive': Math.ceil(Date.now() / 1000),
-          'count': 1,
-          'ssl':1,
-          'established':obj.established
-        }
-        log.debug("SSL:Dns:values",key,value);
-        rclient.hgetall(key,(err,entry)=>{
-          if (entry && entry.host && entry.ssl) {
-            return;
-          }
-          if (entry) {
-            rclient.hdel(key,"_intel");
-            if (entry.count) {
-              value.count = Number(entry.count)+1;
-            }
-          }
-          rclient.hmset(key, value, (err, rvalue) => {
-            if (err == null) {
-              if (this.config.bro.dns.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-              }
-              log.debug("SSL:Dns:Set",key,rvalue,value);
-            } else {
-              log.error("SSL:Dns:Error", "unable to update count", err);
-            }
-          });
-        });
+        dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
       }
-
-
     } catch (e) {
       log.error("SSL:Error Unable to save", e, e.stack, data);
     }
@@ -1462,7 +1418,9 @@ module.exports = class {
       // TODO: on DHCP mode, notice could be generated on eth0 or eth0:0 first
       // and the other one will be suppressed. And we'll lost either device/dest info
       if (obj.src != null && obj.src == sysManager.myIp() ||
-          obj.dst != null && obj.dst == sysManager.myIp())
+          obj.src != null && obj.src == sysManager.myIp2() ||
+          obj.dst != null && obj.dst == sysManager.myIp() ||
+          obj.dst != null && obj.dst == sysManager.myIp2())
       {
         return;
       }
@@ -1528,35 +1486,38 @@ module.exports = class {
     }, 1 * 60 * 1000) // every minute to record the left-over items if no new flows
   }
 
-  recordTraffic(ts, inBytes, outBytes) {
+  recordTraffic(ts, inBytes, outBytes, mac) {
     if(this.enableRecording) {
 
-      let normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
+      const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 
-      if(!this.lastNTS) {
+      // lastNTS starts with null and assigned with normalizedTS every 10s 
+      if (this.lastNTS != normalizedTS) {
+        const toRecord = this.timeSeriesCache
+
         this.lastNTS = normalizedTS
         this.fullLastNTS = Math.floor(ts)
-        this.lastNTS_download = 0
-        this.lastNTS_upload = 0
+        this.timeSeriesCache = { global: { upload: 0, download: 0 } }
+
+        for (const key in toRecord) {
+          const subKey = key == 'global' ? '' : ':' + key
+          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload)
+          timeSeries
+            .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
+            .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
+        }
+        timeSeries.exec()
       }
 
-      if(this.lastNTS == normalizedTS) {
-        // append current status
-        this.lastNTS_download += Number(inBytes)
-        this.lastNTS_upload += Number(outBytes)
+      // append current status
+      this.timeSeriesCache.global.download += Number(inBytes)
+      this.timeSeriesCache.global.upload += Number(outBytes)
 
-      } else {
-        log.debug("Store timeseries", this.fullLastNTS, this.lastNTS_download, this.lastNTS_upload)
-
-        timeSeries
-          .recordHit('download',this.fullLastNTS, this.lastNTS_download)
-          .recordHit('upload',this.fullLastNTS, this.lastNTS_upload)
-          .exec()
-
-        this.lastNTS = null
-
-        this.recordTraffic(ts, inBytes, outBytes)
-      }           
+      if (!this.timeSeriesCache[mac]) {
+        this.timeSeriesCache[mac] = { upload: 0, download: 0 }
+      }
+      this.timeSeriesCache[mac].download += Number(inBytes)
+      this.timeSeriesCache[mac].upload += Number(outBytes)
     }
   }
 

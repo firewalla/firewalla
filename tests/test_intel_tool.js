@@ -103,36 +103,11 @@ describe('IntelTool', () => {
     it('should get dns info correctly', (done) => {
       async(() => {
         let result = await (intelTool.getDNS(sample.hostIP));
-        expect(result.host).to.equal('www.google.com');
+        expect(result).to.equal('www.google.com');
         done();
       })();
     })
 
-  });
-
-  describe('.updateIntelKeyInDNS', () => {
-    beforeEach((done) => {
-      async(() => {
-        await (sample.addSampleDNSInfo());
-        done();
-      })();
-    })
-
-    afterEach((done) => {
-      async(() => {
-        await (sample.removeSampleDNSInfo());
-        done();
-      })();
-    })
-
-    it('should update the intel entry correctly', (done) => {
-      async(() => {
-        await (intelTool.updateIntelKeyInDNS(sample.hostIP, {test: 1}))
-        let dnsInfo = await (intelTool.getDNS(sample.hostIP));
-        expect(JSON.parse(dnsInfo._intel).test).to.equal(1);
-        done();
-      })();
-    });
   });
 
   describe('.checkIntelFromCloud', function () {

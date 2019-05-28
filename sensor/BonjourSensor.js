@@ -42,7 +42,8 @@ class BonjourSensor extends Sensor {
 
     this.hostCache = {};
 
-    bonjour._server.mdns.on('warning', (err) => log.error("Error on mdns server", err))
+    bonjour._server.mdns.on('warning', (err) => log.warn("Warning on mdns server", err))
+    bonjour._server.mdns.on('error', (err) => log.error("Error on mdns server", err))
   }
 
   run() {
@@ -150,7 +151,7 @@ class BonjourSensor extends Sensor {
         return null;
       })
       if (!mac) {
-        if (sysManager.myIp6().includes(ipAddr)) {
+        if (sysManager.myIp6() && sysManager.myIp6().includes(ipAddr)) {
           mac = sysManager.myMAC();
         }
       }
