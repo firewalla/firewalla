@@ -37,6 +37,7 @@ const configKey = "ext.safeSearch.config";
 const updateInterval = 3600 * 1000 // once per hour
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const domainBlock = require('../control/DomainBlock.js')();
 
@@ -109,6 +110,25 @@ class SafeSearchPlugin extends Sensor {
       sem.on('SAFESEARCH_REFRESH', (event) => {
         this.applySafeSearch();
       });
+
+      sclient.on("message", (channel, message) => {
+        switch (channel) {
+          case "System:IPChange":
+            if (this._localIP) {
+              (async () => {
+                await this.removeIptablesRules();
+                await this.addIptablesRules();
+              })();
+            }
+            break;
+          default:
+          //log.warn("Unknown message channel: ", channel, message);
+        }
+      });
+
+      if (f.isMain()) {
+        sclient.subscribe("System:IPChange");
+      }
 
       await this.job();
       this.timer = setInterval(async () => {
@@ -450,6 +470,7 @@ class SafeSearchPlugin extends Sensor {
 
   async addIptablesRules() {
     const localIP = sysManager.myIp();
+    this._localIP = localIP;
     const deviceDNS = `${localIP}:8863`;
 
     const ipv6s = sysManager.myIp6();
@@ -474,7 +495,10 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async removeIptablesRules() {
-    const localIP = sysManager.myIp();
+    let localIP = sysManager.myIp();
+    if (this._localIP) {
+      localIP = this._localIP;
+    }
     const deviceDNS = `${localIP}:8863`;
 
     const ipv6s = sysManager.myIp6();
@@ -496,6 +520,7 @@ class SafeSearchPlugin extends Sensor {
         }
       }
     }
+    this._localIP = null;
   }
 }
 
