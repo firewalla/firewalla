@@ -16,16 +16,20 @@
 'use strict';
 
 class VPNClient {
-  constructor() {
+  constructor(options) {
   }
 
-  async setup(options) {
+  async setup() {
   }
 
   async start() {
   }
 
   async stop() {
+  }
+
+  async status() {
+
   }
 
   // applicable to pointtopoint interfaces

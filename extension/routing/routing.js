@@ -24,22 +24,34 @@ const util = require('util');
 
 const execAsync = util.promisify(cp.exec);
 
-async function createCustomizedRoutingTable(id, tableName) {
+async function createCustomizedRoutingTable(tableName) {
   let cmd = "cat /etc/iproute2/rt_tables | grep -v '#' | awk '{print $1,\"\\011\",$2}'";
   let result = await execAsync(cmd);
   if (result.stderr !== "") {
     log.error("Failed to read rt_tables.", result.stderr);
   }
   const entries = result.stdout.split('\n');
+  const usedTid = [];
   for (var i in entries) {
     const entry = entries[i];
     const line = entry.split(/\s+/);
     const tid = line[0];
     const name = line[1];
-    if (tid === id + "") {
-      log.info("Table with same id already exists: " + name);
-      return name;
+    usedTid.push(tid);
+    if (name === tableName) {
+      log.info("Table with same name already exists: " + tid);
+      return Number(tid);
     }
+  }
+  // find unoccupied table id between 100-199
+  let id = 100;
+  while (id < 200) {
+    if (!usedTid.includes(id + "")) // convert number to string
+      break;
+    id++;
+  }
+  if (id == 200) {
+    throw "Insufficient space to create routing table";
   }
   cmd = util.format("sudo bash -c 'echo -e %d\\\\t%s >> /etc/iproute2/rt_tables'", id, tableName);
   log.info("Append new routing table: ", cmd);
@@ -48,7 +60,7 @@ async function createCustomizedRoutingTable(id, tableName) {
     log.error("Failed to create customized routing table.", result.stderr);
     throw result.stderr;
   }
-  return tableName;
+  return id;
 }
 
 async function createPolicyRoutingRule(from, tableName) {
@@ -68,7 +80,9 @@ async function createPolicyRoutingRule(from, tableName) {
 }
 
 async function removePolicyRoutingRule(from, tableName) {
-  let cmd = util.format('sudo ip rule del from %s lookup %s', from, tableName);
+  let cmd = util.format('sudo ip rule del from %s', from);
+  if (tableName)
+    cmd = util.format('%s lookup %s', cmd, tableName);
   log.info("Remove policy routing rule: ", cmd);
   let {stdout, stderr} = await execAsync(cmd);
   if (stderr !== "") {
