@@ -60,9 +60,9 @@ class CategoryUpdateSensor extends Sensor {
   }
 
   async countryJob() {
-    const activeCategories = countryUpdater.getCategories();
-    for (const category of activeCategories) {
-      await this.updateCountryBlock(category)
+    const activeCountries = countryUpdater.getActiveCountries();
+    for (const country of activeCountries) {
+      await this.updateCountryAllocation(country)
     }
   }
 
@@ -86,7 +86,7 @@ class CategoryUpdateSensor extends Sensor {
     const domains = info.domain
     const ip4List = info["ip4"]
     const ip6List = info["ip6"]
-    
+
     log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
       + ` ${(ip6List || []).length} ipv6, ${(domains || []).length} domains`)
 
@@ -94,45 +94,39 @@ class CategoryUpdateSensor extends Sensor {
     //   await categoryUpdater.flushDefaultDomains(category);
     //   await categoryUpdater.addDefaultDomains(category,domains);
     // }
-    
+
     if (ip4List) {
       await categoryUpdater.flushIPv4Addresses(category)
       await categoryUpdater.addIPv4Addresses(category, ip4List)
     }
-    
+
     if (ip6List) {
       await categoryUpdater.flushIPv6Addresses(category)
       await categoryUpdater.addIPv6Addresses(category, ip6List)
     }
   }
 
-  async updateCountryBlock(category) {
-    log.info(`Loading country ip block for ${category} from cloud`);
+  async updateCountryAllocation(country) {
+    const category = countryUpdater.getCategory(country);
+    log.info(`Loading country ip allocation list for ${country} from cloud`);
 
-    const info = await this.loadCategoryFromBone(category + ':ip4');
-
-    const ip4List = info
+    const ip4List = await this.loadCategoryFromBone(category + ':ip4');
 
     if (ip4List) {
-      await countryUpdater.flushIPv4Addresses(category)
-      await countryUpdater.addIPv4Addresses(category, ip4List)
+      await countryUpdater.addAddresses(country, false, ip4List)
     }
-    
-    let ip6List = [];
+
+    log.info(`Country ${country} has ${(ip4List || []).length} ipv4 entries`);
 
     if (fc.isFeatureOn('ipv6')) {
-      const info = await this.loadCategoryFromBone(category);
-
-      ip6List = info["ip6"]
+      const ip6List = await this.loadCategoryFromBone(category + ':ip6');
 
       if (ip6List) {
-        await countryUpdater.flushIPv6Addresses(category)
-        await countryUpdater.addIPv6Addresses(category, ip6List)
+        await countryUpdater.addAddresses(country, true, ip6List)
       }
-    }
 
-    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
-      + ` ${(ip6List || []).length} ipv6`)
+      log.info(`Country ${country} has ${(ip6List || []).length} ipv6 entries`)
+    }
   }
 
   run() {
