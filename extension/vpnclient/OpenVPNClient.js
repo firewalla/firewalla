@@ -76,6 +76,31 @@ class OpenVPNClient extends VPNClient {
     return path;
   }
 
+  async _parseProfile(ovpnPath) {
+    if (fs.existsSync(ovpnPath)) {
+      const content = await readFileAsync(ovpnPath, 'utf8');
+      const lines = content.split("\n");
+      this._intfType = "tun";
+      for (let line of lines) {
+        const options = line.split(/\s+/);
+        const option = options[0];
+        switch (option) {
+          case "dev":
+          case "dev-type":
+            const value = options[1];
+            if (value.startsWith("tun"))
+              this._intfType = "tun";
+            if (value.startsWith("tap"))
+              this._intfType = "tap";
+            break;
+          default:
+        }
+      }
+    } else {
+      throw util.format("ovpn file %s is not found", ovpnPath);
+    }
+  }
+
   async _reviseProfile(ovpnPath) {
     const cmd = "openvpn --version | head -n 1 | awk '{print $2}'";
     const result = await execAsync(cmd);
@@ -83,7 +108,19 @@ class OpenVPNClient extends VPNClient {
     let content = await readFileAsync(ovpnPath, 'utf8');
     let revisedContent = content;
     const intf = this.getInterfaceName();
-    revisedContent = revisedContent.replace(/^dev\s+tun.*$/gm, `dev ${intf}`);
+    await this._parseProfile(ovpnPath);
+    // used customized interface name
+    revisedContent = revisedContent.replace(/^dev\s+.*$/gm, `dev ${intf}`);
+    // specify interface type with 'dev-type'
+    if (this._intfType === "tun") {
+      if (!revisedContent.match(/^dev-type tun/gm)) {
+        revisedContent = "dev-type tun\n" + revisedContent;
+      }
+    } else {
+      if (!revisedContent.match(/^dev-type tap/gm)) {
+        revisedContent = "dev-type tap\n" + revisedContent;
+      }
+    }
     if (version.startsWith("2.3.")) {
       const lines = content.split("\n");
       lines.forEach((line) => {
@@ -221,7 +258,7 @@ class OpenVPNClient extends VPNClient {
     if (!this.profileId) {
       throw "profile id is not defined"
     }
-    return `tun_${this.profileId}`
+    return `vpn_${this.profileId}`
   }
 }
 
