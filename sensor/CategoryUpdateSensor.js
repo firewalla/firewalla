@@ -61,6 +61,7 @@ class CategoryUpdateSensor extends Sensor {
 
   async countryJob() {
     const activeCountries = countryUpdater.getActiveCountries();
+    log.info('Active countries', activeCountries);
     for (const country of activeCountries) {
       await this.updateCountryAllocation(country)
     }

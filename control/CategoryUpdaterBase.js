@@ -15,6 +15,7 @@
 'use strict';
 
 const log = require("../net2/logger.js")(__filename);
+const fc = require('../net2/config.js')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -164,7 +165,9 @@ class CategoryUpdaterBase {
   async updatePersistentIPSets(category, options) {
     if (this.isActivated(category)) {
       await this.updateIpset(category, false, options)
-      await this.updateIpset(category, true, options)
+      if (fc.isFeatureOn('ipv6')) {
+        await this.updateIpset(category, true, options)
+      }
     }
   }
 
@@ -228,7 +231,9 @@ class CategoryUpdaterBase {
   async refreshCategoryRecord(category) { }
 
   async refreshAllCategoryRecords() {
+    log.info("============= UPDATING CATEGORY IPSET =============")
     const categories = this.getActiveCategories()
+    log.info('Active categories', categories)
 
     for (const category of categories) {
 
@@ -240,6 +245,7 @@ class CategoryUpdaterBase {
         log.error(`Failed to recycle ipset for category ${category}`, err)
       }) // sync refreshed domain list to ipset
     }
+    log.info("============= UPDATING CATEGORY IPSET COMPLETE =============")
   }
 
   getHttpPort(category) {

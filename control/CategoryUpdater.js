@@ -73,9 +73,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
             this.refreshAllCategoryRecords()
           }, 60 * 60 * 1000) // update records every hour
 
-          log.info("============= UPDATING CATEGORY IPSET =============")
           await this.refreshAllCategoryRecords()
-          log.info("============= UPDATING CATEGORY IPSET COMPLETE =============")
 
           sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
             if(event.category) {

@@ -37,6 +37,8 @@ const fs = require('fs');
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 
+const Ipset = require('../net2/Ipset.js')
+
 const ACTIVE_COUNTRY_SET = 'category:country:list'
 
 const DISK_CACHE_FOLDER = firewalla.getTempFolder() + '/country'
@@ -89,7 +91,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     await exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
 
     // only run refresh category records for fire main process
-    sem.once('IPTABLES_READY', async () => {
+    sem.once('AllPoliciesInitialized', async () => {
       this.inited = true;
       if (firewalla.isMain()) {
         for (const category of this.getActiveCategories()) {
@@ -98,11 +100,9 @@ class CountryUpdater extends CategoryUpdaterBase {
 
         setInterval(() => {
           this.refreshAllCategoryRecords()
-        }, 24 * 60 * 60 * 1000) // update records every day
+        }, 10 * 60 * 1000) // update records every day
 
-        log.info("============= UPDATING COUNTRY IPSET =============")
         await this.refreshAllCategoryRecords()
-        log.info("============= UPDATING COUNTRY IPSET COMPLETE =============")
       }
     })
   }
@@ -110,6 +110,8 @@ class CountryUpdater extends CategoryUpdaterBase {
   // included/excluded ip/subnet should be implemented as exception rules
 
   async activateCountry(code) {
+    if (this.activeCountries[code]) return
+
     const category = this.getCategory(code)
 
     await rclient.saddAsync(ACTIVE_COUNTRY_SET, code)
@@ -119,12 +121,18 @@ class CountryUpdater extends CategoryUpdaterBase {
     await Block.setupCategoryEnv(category, 'hash:net');
 
     await this.refreshCategoryRecord(category)
+    await this.recycleIPSet(category, false)
   }
 
   async deactivateCountry(code) {
     const category = this.getCategory(code)
 
     await rclient.sremAsync(ACTIVE_COUNTRY_SET, code)
+
+    await Ipset.destroy(this.getIPSetName(category))
+    await Ipset.destroy(this.getIPSetNameForIPV6(category))
+    await Ipset.destroy(this.getTempIPSetName(category))
+    await Ipset.destroy(this.getTempIPSetNameForIPV6(category))
 
     delete this.activeCountries[code]
     await this.deactivateCategory(category)
@@ -192,9 +200,24 @@ class CountryUpdater extends CategoryUpdaterBase {
     await writeFileAsync(file, addresses.join('\n') + '\n');
   }
 
-  async recycleIPSet(category) {
+  async checkActivationStatus(category) {
+    const v4Active = await Ipset.isReferenced(this.getIPSetName(category))
+    const v6Active = await Ipset.isReferenced(this.getIPSetNameForIPV6(category))
 
-    if (!this.isActivated(category)) return
+    return v4Active || v6Active
+  }
+
+  async recycleIPSet(category, deactivate = true) {
+    if (deactivate) {
+      // remove inactive ipset as it might occupies a lot mem
+      const active = await this.checkActivationStatus(category);
+
+      if (!active) {
+        await this.deactivateCountry(this.getCountry(category));
+        log.info(`Deactivated ${category} due to unreferenced ipsets`)
+        return
+      }
+    }
 
     await this.updatePersistentIPSets(category, {useTemp: true});
 
