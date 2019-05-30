@@ -33,6 +33,9 @@ const await = require('asyncawait/await')
 const SysManager = require('../../net2/SysManager')
 const sysManager = new SysManager()
 
+const ShieldManager = require('../../net2/ShieldManager.js');
+let shieldManager = null;
+
 const rp = require('request-promise')
 
 const exec = require('child-process-promise').exec
@@ -72,15 +75,14 @@ class PortForward {
               } else {
                 await (this.addPort(obj));
               }
+              // TODO: config should be saved after rule successfully applied
               await (this.saveConfig());
-            }         
+            }
           })();
-        } else {
-          
-        } 
+        }
       });
 
-      instance = this      
+      instance = this
     }
 
     return instance
@@ -121,6 +123,7 @@ class PortForward {
 
   // return -1 if not found
   //        index if found 
+  //        undefined, null, 0, false, '*' will be recognized as wildcards
 
   find(map) {
     if (this.config == null || this.config.maps == null) {
@@ -128,7 +131,12 @@ class PortForward {
     } else {
       for (let i in this.config.maps) {
         let _map = this.config.maps[i];
-        if (_map.dport == map.dport && _map.toIP == map.toIP && _map.toPort == map.toPort) {
+        if (
+          (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
+          (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
+          (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
+          _map.toIP == map.toIP
+        ) {
           return i;
         }
       }
@@ -154,6 +162,9 @@ class PortForward {
       }
       
       log.info("PORTMAP: Add",map);
+      if (!shieldManager)
+        shieldManager = new ShieldManager();
+      await (shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport));
       map.state = true;
       const dupMap = JSON.parse(JSON.stringify(map))
       dupMap.destIP = sysManager.myIp()
@@ -165,22 +176,24 @@ class PortForward {
   }
 
   // save config should follow this
-  removePort(map) {
-    return async(()=>{
-      let old = this.find(map);
-      if (old >= 0) {
-        this.config.maps[old].state = false;
-        map = this.config.maps[old];
-        this.config.maps.splice(old,1);
-        log.info("PortForwarder:removePort Found MAP",map);
-      } 
-      map.state = false;
+  async removePort(map) {
+    let old = this.find(map);
+    while (old >= 0) {
+      this.config.maps[old].state = false;
+      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]))
+      this.config.maps.splice(old, 1);
+
+      log.info("PortForwarder:removePort Found MAP", dupMap);
+      if (!shieldManager)
+        shieldManager = new ShieldManager();
+      await shieldManager.removeIncomingRule(map.protocol, map.toIP, map.dport);
+
       // we call remove anyway ... even there is no entry
-      const dupMap = JSON.parse(JSON.stringify(map))
       dupMap.destIP = sysManager.myIp()
-      let state = await (iptable.portforwardAsync(dupMap));
-      return state;
-    })()
+      let state = await iptable.portforwardAsync(dupMap);
+
+      old = this.find(map);
+    }
   }
 
   restore() {
@@ -199,6 +212,7 @@ class PortForward {
 
   start() {
     log.info("PortForwarder:Starting PortForwarder ...")
+    shieldManager = new ShieldManager();
     return async(() => {
       await (this.loadConfig())
       await (this.restore())

@@ -65,7 +65,7 @@ exports.newDeviceHost = {
 }
 
 exports.createSampleHost = () => {
-  let addHost = hostTool.updateHost({
+  let addHost = hostTool.updateIPv4Host({
     ipv4Addr: hostIP,
     mac: hostMac,
     uid: hostIP,
@@ -93,7 +93,7 @@ exports.createSampleHost = () => {
     ipv6Addr: "[\"fe80::aa07:d334:59a3:1200\", \"fe80::aa07:d334:59a3:1201\"]"
   });
 
-  let addHost2 = hostTool.updateHost({
+  let addHost2 = hostTool.updateIPv4Host({
     ipv4Addr: hostIP,
     mac: hostMac2,
     uid: hostIP2,

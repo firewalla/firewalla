@@ -16,8 +16,6 @@
 
 let log = require('./logger.js')(__filename);
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
-
 let Promise = require('bluebird');
 
 
@@ -37,13 +35,6 @@ class AppTool {
 
   getAppInfo(msg) {
     return msg.appInfo;
-  }
-
-  isAppReadyForNewDeviceHandler(appInfo) {
-    if(appInfo && appInfo.version && appInfo.version >= "1.17")
-      return true
-    else
-      return false;
   }
 
   // when app supports providing app info, it means legacy flow info can be discarded

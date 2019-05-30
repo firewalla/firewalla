@@ -6,7 +6,7 @@ if [[ -e "/home/pi/.firewalla/config/.no_scheduled_reboot" ]]; then
 fi
 
 if [ ! -f /tmp/PRODUCTION ]; then
-  /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA.REBOOT SCHEDULED REBOOT IS DISABLED FOR MASTER"
+  /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA.REBOOT SCHEDULED REBOOT IS DISABLED FOR NON-PRODUCTION"
   exit 0
 fi
 

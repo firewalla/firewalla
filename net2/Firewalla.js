@@ -112,7 +112,7 @@ function isDevelopmentVersion() {
 function isBeta() {
   let branch = getBranch()
   if(branch.match(/^beta_.*/)) {
-    if(branch === 'beta_5_0') {
+    if(branch === 'beta_7_0') {
       return false;
     } else {
       return true;
@@ -154,8 +154,7 @@ function getReleaseType() {
   if(isProduction()) {
     return "prod"
   } else if(isAlpha()) {
-    return "beta"; // TODO: will change to alpha when all app side codes are ready for alpha release
-    //return "alpha";
+    return "alpha";
   } else if(isBeta()) {
     return "beta"
   } else if (isDevelopmentVersion()) {
@@ -332,6 +331,7 @@ module.exports = {
 
   isProduction: isProduction,
   isBeta:isBeta,
+  isAlpha: isAlpha,
   isDevelopmentVersion:isDevelopmentVersion,
   isProductionOrBeta:isProductionOrBeta,
 

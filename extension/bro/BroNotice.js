@@ -41,15 +41,36 @@ class BroNotice {
       return array.indexOf(v) === i
     })
 
-    if(addresses.length > 0) {
-      const ip = addresses[0];
-      alarm["p.device.ip"] = ip;
-      alarm["p.device.name"] = ip;
-      const mac = await hostTool.getMacByIP(ip);
-      if(mac) {
-        alarm["p.device.mac"] = mac;
-      }
+    if(addresses.length == 0) {
+      alarm["p.local.decision"] == "ignore";
+      return;
     }
+
+    const scanSrc = broObj.src;
+    const scanTarget = addresses[0];
+
+    let deviceIP = null;
+    let destIP = null;
+
+    if(sysManager.isLocalIP(scanTarget)) {
+      deviceIP = scanTarget;
+      destIP = scanSrc;
+      alarm["p.local_is_client"] = "0";
+    } else {
+      deviceIP = scanSrc;
+      destIP = scanTarget;
+      alarm["p.local_is_client"] = "1";
+    }
+
+    alarm["p.device.ip"] = deviceIP;
+    alarm["p.device.name"] = deviceIP;
+
+    const mac = await hostTool.getMacByIP(deviceIP);
+    if(mac) {
+      alarm["p.device.mac"] = mac;
+    }
+
+    alarm["p.dest.ip"] = destIP;
 
     alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
   }
@@ -82,6 +103,20 @@ class BroNotice {
 
   }
 
+  async processMalwareHash(alarm, broObj) {
+    if(broObj["file_mime_type"]) {
+      alarm["p.file.type"] = broObj["file_mime_type"];
+    }
+
+    if(broObj["file_desc"]) {
+      alarm["p.file.desc"] = broObj["file_desc"];
+    }
+
+    if(broObj.sub) {
+      alarm["p.malware.reference"] = broObj.sub;
+    }
+  }
+
   async processNotice(alarm, broObj) {
     const noticeType = alarm["p.noticeType"];
 
@@ -106,6 +141,10 @@ class BroNotice {
 
       case "SSH::Interesting_Hostname_Login":
       await this.processSSHInterestingLogin(alarm, broObj);
+      break;
+
+      case "TeamCymruMalwareHashRegistry::Match":
+      await this.processMalwareHash(alarm, broObj);
       break;
 
       default:

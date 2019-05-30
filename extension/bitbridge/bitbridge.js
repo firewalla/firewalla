@@ -106,19 +106,46 @@ class BitBridge {
       //sudo ./bitbridge6 eth0 -q -w 1 -k monitored_hosts6 -g fe80::250:f1ff:fe80:0
       if(this.routerIP6) {
         binary = this.getBinary6()
-        args = [this.intf, '-w 0.18','-q','-k monitored_hosts6','-g '+this.routerIP6];
-        
-        cmd = binary+" "+args.join(" ")
-        log.info("Lanching bitbridge6", cmd);
-        fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge6.rc`,
-                         `export BINARY_ARGUMENTS='${args.join(" ")}'`)
-        
-        require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
+        cmd = `ls ${firewalla.getFirewallaHome()}/bin/bitbridge6.*.rc && rm ${firewalla.getFirewallaHome()}/bin/bitbridge6.*.rc; true`;
+        // remove all bitbridge6 rc files
+        try {
+          require('child_process').execSync(cmd);
+        } catch (err) {
+          // maybe file does not exist.
+          log.warn("Failed to remove bitbridge6 rc files during startup.", err);
+        }
+        if (Array.isArray(this.routerIP6)) {
+          if (this.routerIP6.length !== 0) {
+            for (let i in this.routerIP6) {
+              const routerV6Addr = this.routerIP6[i];
+              args = [this.intf, '-w 0.18', '-q', '-k monitored_hosts6', '-g ' + routerV6Addr];
+              cmd = binary + " " + args.join(" ");
+              log.info("Launching bitbridge6", cmd);
+              // separate rc file for each router v6 address
+              fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge6.${routerV6Addr}.rc`,
+                `export BINARY_ARGUMENTS='${args.join(" ")}'`);
+            }
+          }
+        } else { 
+          args = [this.intf, '-w 0.18','-q','-k monitored_hosts6','-g '+this.routerIP6];
+          cmd = binary+" "+args.join(" ")
+          log.info("Launching bitbridge6", cmd);
+          fs.writeFileSync(`${firewalla.getFirewallaHome()}/bin/bitbridge6.${this.routerIP6}.rc`,
+                           `export BINARY_ARGUMENTS='${args.join(" ")}'`)
+        }
 
+        require('child_process').execSync("sudo service bitbridge6 restart"); // legacy issue to use bitbridge4
+        
         (async () => {
-          if(fc.isFeatureOn("ipv6")) {
+          let ipv6Default = false;
+          if (firewalla.isBeta() || firewalla.isAlpha() || firewalla.isDevelopmentVersion()) {
+            ipv6Default = true;
+          }
+          if(fc.isFeatureOn("ipv6", ipv6Default)) {
+            fc.enableDynamicFeature("ipv6"); // ensure dynamic feature flag is set
             await this.ipv6On();
           } else {
+            fc.disableDynamicFeature("ipv6"); // ensure dynamic feature flag is cleared
             await this.ipv6Off();
           }
           fc.onFeature("ipv6", (feature, status) => {
@@ -172,7 +199,7 @@ class BitBridge {
   async ipv6On() {
     try {
       await exec("touch /home/pi/.firewalla/config/enablev6");
-      await exec("sudo pkill bitbridge6");
+      await exec("pidof bitbridge6 && sudo pkill bitbridge6; true");
     } catch(err) {
       log.warn("Error when turn on ipv6", err);
     }
@@ -181,7 +208,7 @@ class BitBridge {
   async ipv6Off() {
     try {
       await exec("rm -f /home/pi/.firewalla/config/enablev6");
-      await exec("sudo pkill bitbridge6");
+      await exec("pidof bitbridge6 && sudo pkill bitbridge6; true");
     } catch(err) {
       log.warn("Error when turn off ipv6", err);
     }

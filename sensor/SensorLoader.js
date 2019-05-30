@@ -43,7 +43,7 @@ function initSensors() {
 
 function run() {
   sensors.forEach((s) => {
-    log.info("Installing Sensor:", s.constructor.name, {});
+    log.info("Installing Sensor:", s.constructor.name);
     try {
       s.run()
     } catch(err) {

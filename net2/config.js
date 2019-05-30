@@ -46,8 +46,12 @@ function getConfig(reload) {
     let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
-    if(fs.existsSync(userConfigFile)) {
-      userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+    try {
+      if(fs.existsSync(userConfigFile)) {
+        userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+      }
+    } catch(err) {
+      log.error("Error parsing user config");
     }
 
     let testConfig = {};
@@ -55,7 +59,7 @@ function getConfig(reload) {
       let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
       if(fs.existsSync(testConfigFile)) {
         testConfig = JSON.parse(fs.readFileSync(testConfigFile, 'utf8'));
-        log.warn("Test config is being used", testConfig, {});
+        log.warn("Test config is being used", testConfig);
       }
     }
 
@@ -108,7 +112,7 @@ function isFeatureHidden(featureName) {
   }
 }
 
-function isFeatureOn(featureName) {
+function isFeatureOn(featureName, defaultValue) {
   if(isFeatureHidden(featureName)) {
     return false;
   }
@@ -122,7 +126,7 @@ function isFeatureOn(featureName) {
   if(staticFlag !== undefined) {
     return staticFlag
   } else {
-    return false // default disabled
+    return defaultValue || false // default disabled
   }
 }
 

@@ -15,7 +15,7 @@ function trim_exec(cmd, cb) {
   })
 }
 
-exports.ping6= function(intf, ipv6addr,cb) {
+exports.ping6= function(ipv6addr,cb) {
   let pcmd = "ping6 -c 3 "+ipv6addr;
   require('child_process').exec(pcmd,(err)=>{
       if (cb)
@@ -88,6 +88,21 @@ exports.gateway_ip6_sync = function() {
   return trim_exec_sync(cmd);
 };
 
+/*
+[ { name: 'eth0',
+    ip_address: '192.168.10.4',
+    mac_address: '02:81:05:84:b0:5d',
+    ip6_addresses: [ 'fe80::81:5ff:fe84:b05d' ],
+    ip6_masks: [ 'ffff:ffff:ffff:ffff::' ],
+    gateway_ip: '192.168.10.1',
+    netmask: 'Mask:255.255.255.0',
+    type: 'Wired' },
+  { name: 'eth0:0',
+    ip_address: '192.168.218.1',
+    mac_address: '02:81:05:84:b0:5d',
+    netmask: 'Mask:255.255.255.0',
+    type: 'Wired' } ]
+*/
 exports.get_network_interfaces_list = function(cb) {
 
   var count = 0,

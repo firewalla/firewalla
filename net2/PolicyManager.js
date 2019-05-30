@@ -105,12 +105,12 @@ module.exports = class {
       return;
     }
 
-    iptable.flush6((err, data) => {
+    ip6table.flush((err, data) => {
       iptable.flush((err, data) => {
         let defaultTable = config['iptables']['defaults'];
         let myip = sysManager.myIp();
         let mysubnet = sysManager.mySubnet();
-        let secondarySubnet = sysManager.secondarySubnet;
+        let secondarySubnet = sysManager.mySubnet2();
         for (let i in defaultTable) {
           defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
         }
@@ -128,9 +128,6 @@ module.exports = class {
         callback(err);
       });
     });
-  }
-
-  defaults(config) {
   }
 
   block(mac, protocol, src, dst, sport, dport, state, callback) {
@@ -418,6 +415,22 @@ module.exports = class {
     }
   }
 
+  async ipAllocation(host, policy) {
+    if (host.constructor.name !== 'Host') {
+      log.error("ipAllocation only supports per device policy", host);
+      return;
+    }
+    await host.ipAllocation(policy);
+  }
+
+  async enhancedSpoof(host, state) {
+    if (host.constructor.name !== 'HostManager') {
+      log.error("enhancedSpoof doesn't support per device policy", host);
+      return;
+    }
+    host.enhancedSpoof(state);
+  }
+
   vpn(host, config, policies) {
     if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
@@ -532,19 +545,32 @@ module.exports = class {
 
   dnsmasq(host, config, callback) {
     if(host.constructor.name !== 'HostManager') {
-      log.error("dnsmasq doesn't support per device policy", host);
+      log.error("dnsmasq doesn't support per device policy: " + host.o.mac);
       return; // doesn't support per-device policy
     }
-
-    if (config.state == true) {
-      sem.emitEvent({
-        type: "StartDNS"
-      })
-    } else {
-      sem.emitEvent({
-        type: "StopDNS"
-      })
+    let needUpdate = false;
+    let needRestart = false;
+    if (config.secondaryDnsServers && Array.isArray(config.secondaryDnsServers)) {
+      dnsmasq.setInterfaceNameServers("secondary", config.secondaryDnsServers);
+      needUpdate = true;
     }
+    if (config.alternativeDnsServers && Array.isArray(config.alternativeDnsServers)) {
+      dnsmasq.setInterfaceNameServers("alternative", config.alternativeDnsServers);
+      needUpdate = true;
+      needRestart = true;
+    }
+    if (config.secondaryDhcpRange) {
+      dnsmasq.setDhcpRange("secondary", config.secondaryDhcpRange.begin, config.secondaryDhcpRange.end);
+      needRestart = true;
+    }
+    if (config.alternativeDhcpRange) {
+      dnsmasq.setDhcpRange("alternative", config.alternativeDhcpRange.begin, config.alternativeDhcpRange.end);
+      needRestart = true;
+    }
+    if (needUpdate)
+      dnsmasq.updateResolvConf();
+    if (needRestart)
+      dnsmasq.start(true);
   }
 
   addAPIPortMapping(time) {
@@ -623,9 +649,9 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            hook(policy[p])
+            hook(host, ip, policy[p])
           } catch (err) {
-            log.error(`Failed to call applyPolicy hook on policy ${p}, err: ${err}`)
+            log.error(`Failed to call applyPolicy hook on ip ${ip} policy ${p}, err: ${err}`)
           }
         }
       }
@@ -659,8 +685,14 @@ module.exports = class {
         this.shadowsocks(host, policy[p]);
       } else if (p === "scisurf") {
         this.scisurf(host, policy[p]);
+      } else if (p === "shield") {
+        host.shield(policy[p]);
+      } else if (p === "enhancedSpoof") {
+        this.enhancedSpoof(host, policy[p]);
       } else if (p === "externalAccess") {
         this.externalAccess(host, policy[p]);
+      } else if (p === "ipAllocation") {
+        this.ipAllocation(host, policy[p]);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
       } else if (p === "block") {
@@ -756,14 +788,6 @@ module.exports = class {
       host.appliedAcl = {};
     }
 
-    // FIXME: Will got rangeError: Maximum call stack size exceeded when number of acl is huge
-
-    if (policy.length > 1000) {
-      log.warn("Too many policy rules for host", host.shname);
-      callback(null, null); // self protection
-      return;
-    }
-
     /* iterate policies and see if anything need to be modified */
     for (let p in policy) {
       let block = policy[p];
@@ -785,26 +809,27 @@ module.exports = class {
       }
     }
 
-    async.eachLimit(policy, 10, (block, cb) => {
+    async.eachLimit(policy, 10, async.ensureAsync((block, cb) => {
       if (policy.done != null && policy.done == true) {
         cb();
       } else {
-        if (block['dst'] != null && block['src'] != null) {
-          let aclkey = block['dst'] + "," + block['src'];
-          if (block['protocol'] != null) {
-            aclkey = block['dst'] + "," + block['src'] + "," + block['protocol'] + "," + block['sport'] + "," + block['dport'];
+        let {mac, protocol, src, dst, sport, dport, state} = block;
+        if (dst != null && src != null) {
+          let aclkey = dst + "," + src;
+          if (protocol != null) {
+            aclkey = dst + "," + src + "," + protocol + "," + sport + "," + dport;
           }
-          if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == block.state) {
+          if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == state) {
             cb();
           } else {
-            this.block(block.mac, block.protocol, block.src, block.dst, block.sport, block.dport, block['state'], (err) => {
+            this.block(mac, protocol, src, dst, sport, dport, state, (err) => {
               if (err == null) {
-                if (block['state'] == false) {
-                  block['done'] = true;
+                if (state == false) {
+                  block.done = true;
                 }
               }
               if (block.duplex && block.duplex == true) {
-                this.block(block.mac, block.protocol, block.dst, block.src, block.dport, block.sport, block['state'], (err) => {
+                this.block(mac, protocol, dst, src, dport, sport, state, (err) => {
                   cb();
                 });
               } else {
@@ -817,7 +842,7 @@ module.exports = class {
           cb();
         }
       }
-    }, (err) => {
+    }), (err) => {
       let changed = false;
       for (var i = policy.length - 1; i >= 0; i--) {
         if (policy[i].done && policy[i].done == true) {
