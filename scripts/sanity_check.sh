@@ -132,7 +132,7 @@ get_redis_key_with_no_ttl() {
         COLOR="\e[91m"
     fi
 
-    printf "$COLOR %s $UNCOLOR\n" $NOTTL
+    echo -e "$COLOR $NOTTL $UNCOLOR"
 }
 
 check_system_config() {
@@ -145,7 +145,7 @@ check_system_config() {
     check_each_system_config "vpn" $(redis-cli hget policy:system vpn)
     check_each_system_config "Redis Usage" $(redis-cli info | grep memory_human | awk -F: '{print $2}')
     check_each_system_config "Redis Total Key" $(redis-cli dbsize)
-    check_each_system_config "Redis key without ttl"  $(get_redis_key_with_no_ttl)
+    check_each_system_config "Redis key without ttl"  "$(get_redis_key_with_no_ttl)"
 
     echo ""
     echo ""
@@ -160,6 +160,9 @@ check_policies() {
         local TARGET=$(redis-cli hget $RULE target)
         local TYPE=$(redis-cli hget $RULE type)
         local SCOPE=$(redis-cli hget $RULE scope)
+        local ALARM_ID=$(redis-cli hget $RULE aid)
+        local FLOW_DESCRIPTION=$(redis-cli hget $RULE flowDescription)
+
         if [[ ! -n $SCOPE ]]; then
             SCOPE="All Devices"
         fi
@@ -171,9 +174,16 @@ check_policies() {
         if [[ ! -n $CRONTIME ]]; then
             CRONTIME="Always"
         fi
-        printf "%5s %30s %10s %25s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME"
+        if [[ -n $ALARM_ID ]]; then
+            RULE_ID="* $RULE_ID"
+        elif [[ -n $FLOW_DESCRIPTION ]]; then
+            RULE_ID="** $RULE_ID"
+        fi        
+        printf "%8s %30s %10s %25s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME"
     done
 
+    echo ""
+    echo "Note: * - created from alarm, ** - created from network flow"
     echo ""
     echo ""
 }
@@ -279,13 +289,35 @@ check_sys_config() {
     echo ""
 }
 
-check_systemctl_services
-check_rejection
-check_exception
-check_reboot
-check_system_config
-check_sys_features
-check_sys_config
-check_policies
+usage() {
+    return
+}
+
+FAST=false
+while [ "$1" != "" ]; do
+    case $1 in
+        -f | --fast )           shift
+                                FAST=true
+                                ;;
+        -h | --help )           usage
+                                exit
+                                ;;
+        * )                     usage
+                                exit 1
+    esac
+    shift
+done
+
+
+if [ "$FAST" == false ]; then
+    check_systemctl_services
+    check_rejection
+    check_exception
+    check_reboot
+    check_system_config
+    check_sys_features
+    check_sys_config
+    check_policies
+    check_iptables
+fi
 check_hosts
-check_iptables

@@ -43,7 +43,7 @@ class APISensor extends Sensor {
           name: name,
           type: 'http',
           port: 8833
-        })
+        }).on('error', (err) => log.error("Error publish FireAPI via bonjour", err));
 
         process.on('exit', () => {
           log.info("Unpublish FireAPI bonjour broadcast before process exits")

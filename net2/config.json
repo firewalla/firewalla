@@ -81,7 +81,6 @@
     "AlexaIntel",
     "WhoisIPIntel",
     "WhoisDomainIntel",
-    "Cymon2Intel",
     "SSLIntel",
     "UAIntel",
     "TransferContextIntel",
@@ -109,6 +108,11 @@
     },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
+    "IntelLocalCachePlugin": {
+      "testURLs": [
+        "example.com/test/malware"
+      ]
+    },
     "DNSMASQSensor": {},
     "HeapSensor": {},
     "IntelReportSensor": {},
@@ -200,7 +204,7 @@
       },
       "dns": {
         "expires": 100000,
-        "count": 10000
+        "count": 100
       },
       "software": {
         "expires": 604800,
@@ -253,6 +257,10 @@
       "appflow": {
         "expires": 86400,
         "count": 1000
+      },
+      "safe_urls": {
+        "expires": 604800,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {
@@ -265,7 +273,7 @@
     "SubnetSensor": {},
     "IPChangeSensor": {},
     "DataMigrationSensor": {
-      "migrationCodeNames": ["clairvoyant"]
+      "migrationCodeNames": ["clairvoyant", "bipartite_graph"]
     }
   },
   "hooks": {
@@ -276,6 +284,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {},
+    "DestURLFoundHook": {},
     "VPNHook": {}
   },
   "bro": {
@@ -351,6 +360,7 @@
     "game": true,
     "large_upload": true,
     "new_device": true,
+    "new_device_block": false,
     "device_online": true,
     "device_offline": true,
     "alarm_upnp": true,

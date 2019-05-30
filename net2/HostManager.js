@@ -294,14 +294,22 @@ module.exports = class HostManager {
     return json;
   }
 
-  async last60MinStatsForInit(json) {
-    let downloadStats = await getHitsAsync("download", "1minute", 61)
+  async last60MinStats() {
+    let downloadStats = await getHitsAsync("download", "1minute", 60)
+    let uploadStats = await getHitsAsync("upload", "1minute", 60)
+    return { downloadStats, uploadStats }
+  }
+
+  async last60MinStatsForInit(json, mac) {
+    const subKey = mac ? ':' + mac : ''
+
+    let downloadStats = await getHitsAsync("download" + subKey, "1minute", 61)
     if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
       downloadStats = downloadStats.slice(0, 60)
     } else {
       downloadStats = downloadStats.slice(1)
     }
-    let uploadStats = await getHitsAsync("upload", "1minute", 61)
+    let uploadStats = await getHitsAsync("upload" + subKey, "1minute", 61)
     if(uploadStats[uploadStats.length - 1] &&  uploadStats[uploadStats.length - 1][1] == 0) {
       uploadStats = uploadStats.slice(0, 60)
     } else {
@@ -345,9 +353,10 @@ module.exports = class HostManager {
     json.last60top = values
   }
 
-  async last30daysStatsForInit(json) {
-    let downloadStats = await getHitsAsync("download", "1day", 30)
-    let uploadStats = await getHitsAsync("upload", "1day", 30)
+  async last30daysStatsForInit(json, mac) {
+    const subKey = mac ? ':' + mac : ''
+    let downloadStats = await getHitsAsync("download" + subKey, "1day", 30)
+    let uploadStats = await getHitsAsync("upload" + subKey, "1day", 30)
 
     let totalDownload = 0
     downloadStats.forEach((s) => {

@@ -137,7 +137,7 @@ module.exports = class {
       }
 
       const action = event.action;
-      
+
       switch(action) {
         case "create": {
           try {
@@ -290,13 +290,13 @@ module.exports = class {
       alarmID: alarm.aid
     });
   }
-  
-  // exclude extended info from basic info, these two info will be stored separately 
-  
+
+  // exclude extended info from basic info, these two info will be stored separately
+
   parseRawAlarm(alarm) {
     const alarmCopy = JSON.parse(JSON.stringify(alarm));
     const keys = Object.keys(alarmCopy);
-    const extendedInfo = {};    
+    const extendedInfo = {};
 
     keys.forEach((key) => {
       if(key.startsWith("e.") || key.startsWith("r.")) {
@@ -304,10 +304,10 @@ module.exports = class {
         delete alarmCopy[key];
       }
     });
-    
+
     return {basic: alarmCopy, extended: extendedInfo};
   }
-  
+
   saveAlarm(alarm, callback) {
     callback = callback || function() {}
 
@@ -323,10 +323,15 @@ module.exports = class {
       let alarmKey = alarmPrefix + id;
 
       for(const alarmKey in alarm) {
+        const value = alarm[alarmKey];
+        if(value === null || value === undefined) {
+          delete alarm[alarmKey];
+          continue;
+        }
+
         // basic key or extended key
         if (alarmKey.startsWith("p.") || alarmKey.startsWith("e.")) {
-          const value = alarm[alarmKey];
-          if(["Object", "Array"].includes(value.constructor.name)) {
+          if(value && value.constructor && ["Object", "Array"].includes(value.constructor.name)) {
             // for hash or array, need to convert it to JSON string first
             alarm[alarmKey] = JSON.stringify(value);
           }
@@ -334,7 +339,7 @@ module.exports = class {
       }
 
       const flatted = flat.flatten(alarm);
-      
+
       const {basic, extended} = this.parseRawAlarm(flatted);
 
       rclient.hmset(alarmKey, basic, (err) => {
@@ -354,17 +359,17 @@ module.exports = class {
             // add extended info, extended info are optional
             (async () => {
               const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
-              
+
               // if there is any extended info
               if(Object.keys(extended).length !== 0 && extended.constructor === Object) {
                 await rclient.hmsetAsync(extendedAlarmKey, extended);
                 await rclient.expireatAsync(extendedAlarmKey, parseInt((+new Date) / 1000) + expiring);
               }
-              
+
             })().catch((err) => {
               log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
             })
-            
+
             setTimeout(() => {
               this.notifAlarm(alarm.aid);
             }, 1000);
@@ -374,7 +379,7 @@ module.exports = class {
         });
       });
     });
-  }  
+  }
 
   async removeAlarmAsync(alarmID) {
     await rclient.zremAsync(alarmArchiveKey, alarmID);
@@ -401,7 +406,7 @@ module.exports = class {
     return new Promise((resolve, reject) => {
       // expirationTime managed within Alarm sub classes
       let duration = alarm.getExpirationTime() || 15 * 60; // 15 minutes
-      
+
       this.loadRecentAlarms(duration, (err, existingAlarms) => {
         if(err) {
           log.error(':dedup: Failed loading recent alarms', err);
@@ -495,14 +500,14 @@ module.exports = class {
 
   _checkAndSave(alarm, callback) {
     callback = callback || function() {}
-    
+
     // HACK, update rdns if missing, sometimes intel contains ip => domain, but rdns entry is missing
     const destName = alarm["p.dest.name"]
     const destIP = alarm["p.dest.ip"]
     if (destName && destIP && destName !== destIP) {
       dnsTool.addReverseDns(destName, [destIP])
     }
-    
+
     log.info("Checking if similar alarms are generated recently");
 
     this.dedup(alarm).then((dup) => {
@@ -533,7 +538,7 @@ module.exports = class {
         }
 
         pm2.match(alarm, (err, result) => {
-          
+
           if (err) {
             callback(err)
             return
@@ -591,9 +596,14 @@ module.exports = class {
         !fc.isFeatureOn("cyber_security.autoBlock"))
       return false;
 
+    if (alarm && alarm.type === 'ALARM_NEW_DEVICE' && 
+      fc.isFeatureOn("new_device_block")) {
+      return true;
+    }
+
     if(alarm["p.cloud.decision"] === "block") {
       return true;
-    } else 
+    } else
     if((alarm["p.action.block"] === "true") ||
       (alarm["p.action.block"] === true)) {
       return true
@@ -656,7 +666,7 @@ module.exports = class {
       callback(null, results.map((r) => this.jsonToAlarm(r)));
     });
   }
-  
+
   idsToAlarmsAsync(ids) {
     return new Promise((resolve, reject) => {
       this.idsToAlarms(ids, (err, results) => {
@@ -666,7 +676,7 @@ module.exports = class {
         }
 
         resolve(results)
-      })                       
+      })
     })
   }
 
@@ -703,7 +713,7 @@ module.exports = class {
   async loadAlarmsByTimestamp(sinceTS) {
     sinceTS = sinceTS || 0;
 
-    // zrevrangebyscore alarm_active 1544164497 0 withscores limit 0 10  
+    // zrevrangebyscore alarm_active 1544164497 0 withscores limit 0 10
     // use ( to exclude sinceTS itself
     const alarmIDs = await rclient.zrevrangebyscoreAsync(alarmActiveKey, new Date() / 1000, `(${sinceTS}`);
 
@@ -757,7 +767,7 @@ module.exports = class {
 
   async loadArchivedAlarms(options) {
     options = options || {}
-    
+
     const offset = options.offset || 0 // default starts from 0
     const limit = options.limit || 50 // default load 50 alarms
 
@@ -768,7 +778,7 @@ module.exports = class {
                                                "limit",
                                                offset,
                                                limit);
-    
+
     let alarms = await this.idsToAlarmsAsync(alarmIDs);
 
     alarms = alarms.filter((a) => a != null)
@@ -802,7 +812,7 @@ module.exports = class {
   async deleteExtendedAlarm(alarmID) {
     await rclient.delAsync(`${alarmDetailPrefix}:${alarmID}`);
   }
-  
+
   numberOfAlarms(callback) {
     callback = callback || function() {}
 
@@ -835,7 +845,7 @@ module.exports = class {
   loadActiveAlarms(options, callback) {
     if (_.isFunction(options)) {
       callback = options;
-    } 
+    }
     callback = callback || function() {}
 
     this.loadActiveAlarmsAsync(options)
@@ -869,7 +879,7 @@ module.exports = class {
 
     return alarms.filter(a => a != null);
   }
-  
+
   async getAlarmDetail(aid) {
     const key = `${alarmDetailPrefix}:${aid}`
     const detail = await rclient.hgetallAsync(key);
@@ -883,7 +893,7 @@ module.exports = class {
 
     return detail;
   }
-  
+
   // parseDomain(alarm) {
   //   if(!alarm["p.dest.name"] ||
   //      alarm["p.dest.name"] === alarm["p.dest.ip"]) {
@@ -914,7 +924,7 @@ module.exports = class {
       } else {
         return false
       }
-    })                  
+    })
   }
 
   async blockAlarmByPolicy(alarm, policy, info, needArchive) {
@@ -958,7 +968,7 @@ module.exports = class {
       } else {
         return false
       }
-    })                  
+    })
   }
 
   async allowAlarmByException(alarm, exception, info, needArchive) {
@@ -985,7 +995,7 @@ module.exports = class {
 
     log.info(`Alarm ${alarm.aid} is allowed successfully`)
   }
-  
+
   blockFromAlarm(alarmID, value, callback) {
     log.info("Going to block alarm " + alarmID);
     log.info("value: ", value);
@@ -1135,7 +1145,7 @@ module.exports = class {
             p.domainExactMatch = "1"; // by default enable domain exact match
           }
         }
-        
+
         // add additional info
         // TODO: we will want to obsolete target_name & target_ip on android app
         switch(p.type) {
@@ -1187,8 +1197,8 @@ module.exports = class {
 
             async(() => {
               await (this.updateAlarm(alarm))
-              
-              if(alarm.result_method != "auto") {                
+
+              if(alarm.result_method != "auto") {
                 // archive alarm unless it's auto block
                 await (this.archiveAlarm(alarm.aid))
               }
@@ -1212,7 +1222,7 @@ module.exports = class {
 
             })().catch((err) => {
               callback(err)
-            })                         
+            })
           }
         });
       }).catch((err) => {
@@ -1368,13 +1378,13 @@ module.exports = class {
           break
         case "deviceAllPorts":
           e["p.device.mac"] = alarm["p.device.mac"];
-          break;   
+          break;
         case "deviceAppPort":
           e["p.device.mac"] = alarm["p.device.mac"];
           if(alarm.type === 'ALARM_UPNP') {
             e["p.upnp.description"] = alarm["p.upnp.description"];
           }
-          break;                 
+          break;
         default:
           // not supported
           break;
@@ -1406,11 +1416,11 @@ module.exports = class {
           this.updateAlarm(alarm)
             .then(() => {
               // archive alarm
-              
+
               this.archiveAlarm(alarm.aid)
                 .then(() => {
 
-                  async(() => {              
+                  async(() => {
                     log.info("Trying to find if any other active alarms are covered by this new exception")
                     let alarms = await (this.findSimilarAlarmsByException(exception, alarm.aid))
                     if(alarms && alarms.length > 0) {
@@ -1443,7 +1453,7 @@ module.exports = class {
   }
 
   unblockFromAlarm(alarmID, info, callback) {
-    unblockFromAlarmAsync().then(
+    this.unblockFromAlarmAsync().then(
       res => callback(null, res),
       err => callback(err, null)
     )
@@ -1475,7 +1485,7 @@ module.exports = class {
   }
 
   unallowFromAlarm(alarmID, info, callback) {
-    unallowFromAlarmAsync().then(
+    this.unallowFromAlarmAsync().then(
       res => callback(null, res),
       err => callback(err, null)
     )
@@ -1484,118 +1494,133 @@ module.exports = class {
   async unallowFromAlarmAsync(alarmID, info) {
     log.info("Going to unallow alarm " + alarmID);
 
-     let alarmInfo = info.info; // not used by now
+    let alarmInfo = info.info; // not used by now
 
     let alarm = await this.getAlarm(alarmID)
 
-        if(!alarm) {
-          log.error("Invalid alarm ID:", alarmID);
+    if(!alarm) {
+      log.error("Invalid alarm ID:", alarmID);
       throw new Error("Invalid alarm ID: " + alarmID);
-        }
+    }
 
-        let eid = alarm.result_exception;
+    let eid = alarm.result_exception;
 
-        // FIXME: make it transactional
-        // set alarm handle result + add policy
+    // FIXME: make it transactional
+    // set alarm handle result + add policy
 
     await exceptionManager.deleteException(eid);
-            alarm.result = "";
-            alarm.result_policy = "";
+    alarm.result = "";
+    alarm.result_policy = "";
     await this.updateAlarm(alarm);
   }
 
 
-    async enrichDeviceInfo(alarm) {
-      let deviceIP = alarm["p.device.ip"];
-      if(!deviceIP) {
-        return Promise.reject(new Error("requiring p.device.ip"));
-      }
-
-      if(deviceIP === "0.0.0.0") {
-        // do nothing for 0.0.0.0
-        Object.assign(alarm, {
-          "p.device.name": "0.0.0.0",
-          "p.device.id": "0.0.0.0",
-          "p.device.mac": "00:00:00:00:00:00",
-          "p.device.macVendor": "Unknown"
-        });
-
-        return Promise.resolve(alarm);
-      }
-
-      return new Promise((resolve, reject) => {
-        dnsManager.resolveLocalHost(deviceIP, (err, result) => {
-
-          if(err ||result == null) {
-            log.error("Failed to find host " + deviceIP + " in database: " + err);
-            if(err)
-              reject(err);
-            reject(new Error("host " + deviceIP + " not found"));
-            return;
-          }
-
-          let deviceName = getPreferredBName(result);
-          let deviceID = result.mac;
-
-          Object.assign(alarm, {
-            "p.device.name": deviceName,
-            "p.device.id": deviceID,
-            "p.device.mac": deviceID,
-            "p.device.macVendor": result.macVendor || "Unknown"
-          });
-
-          resolve(alarm);
-        });
-      });
+  async enrichDeviceInfo(alarm) {
+    let deviceIP = alarm["p.device.ip"];
+    if(!deviceIP) {
+      return Promise.reject(new Error("requiring p.device.ip"));
     }
 
-    async enrichDestInfo(alarm) {
-      if(alarm["p.transfer.outbound.size"]) {
-        alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
-      }
+    if(deviceIP === "0.0.0.0") {
+      // do nothing for 0.0.0.0
+      Object.assign(alarm, {
+        "p.device.name": "0.0.0.0",
+        "p.device.id": "0.0.0.0",
+        "p.device.mac": "00:00:00:00:00:00",
+        "p.device.macVendor": "Unknown"
+      });
 
-      if(alarm["p.transfer.inbound.size"]) {
-        alarm["p.transfer.inbound.humansize"] = formatBytes(alarm["p.transfer.inbound.size"]);
-      }
+      return Promise.resolve(alarm);
+    }
 
-      let destIP = alarm["p.dest.ip"];
+    return new Promise((resolve, reject) => {
+      dnsManager.resolveLocalHost(deviceIP, (err, result) => {
 
-      if (!destIP) {
-        return alarm;
-      }
-        
-      // location
-      const loc = await intelManager.ipinfo(destIP)
-      if (loc && loc.loc) {
-        const location = loc.loc;
-        const ll = location.split(",");
-        if (ll.length === 2) {
-          alarm["p.dest.latitude"] = parseFloat(ll[0]);
-          alarm["p.dest.longitude"] = parseFloat(ll[1]);
+        if(err ||result == null) {
+          log.error("Failed to find host " + deviceIP + " in database: " + err);
+          if(err)
+            reject(err);
+          reject(new Error("host " + deviceIP + " not found"));
+          return;
         }
-        alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-      }
 
-      // intel
-      const intel = await intelTool.getIntel(destIP)
-      if (intel && intel.app) {
-        alarm["p.dest.app"] = intel.app
-      }
+        let deviceName = getPreferredBName(result);
+        let deviceID = result.mac;
 
-      if (intel && intel.category) {
-        alarm["p.dest.category"] = intel.category
-      }
+        Object.assign(alarm, {
+          "p.device.name": deviceName,
+          "p.device.id": deviceID,
+          "p.device.mac": deviceID,
+          "p.device.macVendor": result.macVendor || "Unknown"
+        });
 
-      if (intel && intel.host) {
-        alarm["p.dest.name"] = intel.host
-      } else {
-        alarm["p.dest.name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
-      }
-      
-      // whois - domain
-      
-      
-      
+        resolve(alarm);
+      });
+    });
+  }
+
+  async enrichDestInfo(alarm) {
+    if(alarm["p.transfer.outbound.size"]) {
+      alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
+    }
+
+    if(alarm["p.transfer.inbound.size"]) {
+      alarm["p.transfer.inbound.humansize"] = formatBytes(alarm["p.transfer.inbound.size"]);
+    }
+
+    let destIP = alarm["p.dest.ip"];
+
+    if (!destIP) {
       return alarm;
-    }    
+    }
+
+    // location
+    const loc = await intelManager.ipinfo(destIP)
+    if (loc && loc.loc) {
+      const location = loc.loc;
+      const ll = location.split(",");
+      if (ll.length === 2) {
+        alarm["p.dest.latitude"] = parseFloat(ll[0]);
+        alarm["p.dest.longitude"] = parseFloat(ll[1]);
+      }
+      alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
+    }
+
+    // intel
+    const intel = await intelTool.getIntel(destIP)
+    if (intel && intel.app) {
+      alarm["p.dest.app"] = intel.app
+    }
+
+    if (intel && intel.category) {
+      // some alarm types are determined by combination of values in intel.category and intel.cs
+      // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
+      switch (alarm["type"]) {
+        case 'ALARM_VIDEO':
+          alarm["p.dest.category"] = 'av';
+          break;
+        case 'ALARM_GAME':
+          alarm["p.dest.category"] = 'games';
+          break;
+        case 'ALARM_PORN':
+          alarm["p.dest.category"] = 'porn';
+          break;
+        default:
+          alarm["p.dest.category"] = intel.category
+      }
+      
+    }
+
+    if (intel && intel.host) {
+      alarm["p.dest.name"] = intel.host
+    } else {
+      alarm["p.dest.name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
+    }
+
+    // whois - domain
+
+
+
+    return alarm;
+  }
 }

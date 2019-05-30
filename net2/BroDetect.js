@@ -46,8 +46,7 @@ const accounting = new Accounting();
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
+const firewalla = require('../net2/Firewalla.js');
 
 const mode = require('../net2/Mode.js')
 
@@ -60,6 +59,8 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
+
+const httpFlow = require('../extension/flow/HttpFlow.js');
 
 /*
  *
@@ -157,7 +158,7 @@ module.exports = class {
         log.debug("Initializing watchers: http initialized", this.config.bro.http.path);
         this.httpLog.on('line', (data) => {
           log.debug("Detect:Http", data);
-          this.processHttpData(data);
+          httpFlow.process(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -247,35 +248,15 @@ module.exports = class {
 
       this.enableRecording = true
       this.cc = 0
-      this.ipMacMapping = {};
       this.activeMac = {};
-      setInterval(() => {
-        this._flushIPMacMapping();
-      }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
+
+      this.lastNTS = null;
     }
   }
-
-  async _getMacByIP(ip) {
-    if (this.ipMacMapping[ip]) {
-      return this.ipMacMapping[ip];
-    } else {
-      const mac = await hostTool.getMacByIP(ip);
-      if (mac) {
-        this.ipMacMapping[ip] = mac;
-        return mac;
-      } else {
-        return null;
-      }
-    }
-  }
-
-  _flushIPMacMapping() {
-    this.ipMacMapping = {};
-  }
-
+  
   async _activeMacHeartbeat() {
     for (let key in this.activeMac) {
       let ip = this.activeMac[key];
@@ -438,50 +419,25 @@ module.exports = class {
         // record reverse dns as well for future reverse lookup
         (async () => {
           await dnsTool.addReverseDns(obj['query'], obj['answers'])
-        })()
 
-        for (let i in obj['answers']) {
-          // answer can be an alias or ip address
-          const answer = obj['answers'][i];
-
-          let key = "dns:ip:" + obj['answers'][i];
-          let value = {
-            'host': obj['query'],
-            'lastActive': Math.ceil(Date.now() / 1000),
-            'count': 1
-          }
-          rclient.hgetall(key,(err,entry)=>{
-            if (entry) {
-              if (entry.host != value.host) {
-                log.debug("Dns:Remap",entry.host,value.host);
-                rclient.hdel(key,"_intel");
-              }
-              if (entry.count) {
-                value.count = Number(entry.count)+1;
-              }
-            }
-            rclient.hmset(key, value, (err, rvalue) => {
-              //   rclient.hincrby(key, "count", 1, (err, value) => {
-              if (err == null) {
-
-                if(iptool.isV4Format(answer) || iptool.isV6Format(answer)) {
-                  sem.emitEvent({
-                    type: 'DestIPFound',
-                    ip: answer,
-                    suppressEventLogging: true
-                  });
-                }
-
-                if (this.config.bro.dns.expires) {
-                  rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-                }
-              } else {
-                log.error("Dns:Error", "unable to update count", err);
-              }
-              //  });
+          for (let i in obj['answers']) {
+            // answer can be an alias or ip address
+            const answer = obj['answers'][i];
+            if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
+              continue;
+  
+            if (!iptool.isV4Format(answer) && !iptool.isV6Format(answer))
+              // do not add domain alias to dns entry
+              continue;
+  
+            await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: answer,
+              suppressEventLogging: true
             });
-          });
-        }
+          }
+        })()
       } else if (obj['id.orig_p'] == 5353 && obj['id.resp_p'] == 5353 && obj['answers'].length > 0) {
         let hostname = obj['answers'][0];
         let ip = obj['id.orig_p'];
@@ -586,13 +542,23 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
+    const myip = sysManager.myIp();
+    const myip2 = sysManager.myIp2();
+    const myip6 = sysManager.myIp6();
+
     if(m === 'dhcp' || m === 'dhcpSpoof') { // only for dhcp and dhcpSpoof
-      let myip = sysManager.myIp()
-      const myip6 = sysManager.myIp6();
       if (myip) {
         // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
         if (data["id.orig_h"] === myip ||
           data["id.resp_h"] === myip) {
+          return false
+        }
+      }
+
+      if (myip2) {
+        // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
+        if (data["id.orig_h"] === myip2 ||
+          data["id.resp_h"] === myip2) {
           return false
         }
       }
@@ -620,8 +586,6 @@ module.exports = class {
         }
       }
     } else if(m === 'spoof' || m === 'autoSpoof') {
-      let myip = sysManager.myIp()
-      const myip6 = sysManager.myIp6()
       const systemPolicy = hostManager.getPolicyFast();
       const isEnhancedSpoof = (systemPolicy['enhancedSpoof'] == true);
 
@@ -629,6 +593,13 @@ module.exports = class {
       if(myip && 
         (data["id.orig_h"] === myip || data["id.resp_h"] === myip) && 
         (!this.isMonitoring(myip) || isEnhancedSpoof)
+      ) {        
+        return false // set it to invalid if walla itself is set to "monitoring off"
+      }
+
+      if(myip2 && 
+        (data["id.orig_h"] === myip2 || data["id.resp_h"] === myip2) && 
+        (!this.isMonitoring(myip2) || isEnhancedSpoof)
       ) {        
         return false // set it to invalid if walla itself is set to "monitoring off"
       }
@@ -988,6 +959,7 @@ module.exports = class {
         pr: obj.proto,
         f: flag,
         flows: [ flowDescriptor ],
+        uids: [obj.uid]
       };
 
       let afobj = this.lookupAppMap(obj.uid);
@@ -1058,7 +1030,7 @@ module.exports = class {
 
       // Single flow is written to redis first to prevent data loss, will be removed in most cases
       if (tmpspec) {
-        this._getMacByIP(tmpspec.lh).then((mac) => {
+        hostTool.getMacByIPWithCache(tmpspec.lh).then((mac) => {
           if (!mac) {
             log.error("Failed to find mac address of " + tmpspec.lh + ", skip tmp flow spec: " + JSON.stringify(tmpspec));
             return;
@@ -1068,14 +1040,11 @@ module.exports = class {
           let key = "flow:conn:" + tmpspec.fd + ":" + mac;
           let strdata = JSON.stringify(tmpspec);
 
-          // not sure to use tmpspec.ts or now???
           if (tmpspec.fd == 'in') {
             // use now instead of the start time of this flow
-            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob)
-            //this.recordTraffic(tmpspec.ts, tmpspec.rb, tmpspec.ob)
+            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, mac)
           } else {
-            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb)
-            //this.recordTraffic(tmpspec.ts, tmpspec.ob, tmpspec.rb)
+            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, mac)
           }
 
 
@@ -1124,7 +1093,7 @@ module.exports = class {
         for (let i in this.flowstash) {
           let spec = this.flowstash[i];
           try {
-            if (Object.keys(spec._afmap).length>0) {
+            if (spec._afmap && Object.keys(spec._afmap).length>0) {
               for (let i in spec._afmap) {
                 let afobj = this.lookupAppMap(i);
                 if (afobj) {
@@ -1142,8 +1111,9 @@ module.exports = class {
           } catch(e) {
             log.error("Conn:Save:AFMAP:EXCEPTION", e);
           }
+          spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
-          this._getMacByIP(spec.lh).then((mac) => {
+          hostTool.getMacByIPWithCache(spec.lh).then((mac) => {
             if (!mac) {
               log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
             } else {
@@ -1246,153 +1216,6 @@ module.exports = class {
 
   }
 
-/*
-{"ts":1506304095.747873,"uid":"CgTsJH3vHBNpMIREU9","id.orig_h":"192.168.2.227","id.orig_p":47292,"id.resp_h":"103.224.182.240","id.resp_p":80,"trans_depth":1,"method":"GET","host":"goooogleadsence.biz","uri":"/","user_agent":"Wget/1.16 (linux-gnueabihf)","request_body_len":0,"response_body_len":0,"status_code":302,"status_msg":"Found","tags":[]}
-*/
-  processHttpData(data) {
-    try {
-      let obj = JSON.parse(data);
-      if (obj == null) {
-        log.error("HTTP:Drop", obj);
-        return;
-      }
-
-      let host = obj["id.orig_h"];
-      let dst = obj["id.resp_h"];
-      let dstPort = obj["id.resp_p"];
-      let flowdir = "in";
-
-      /*
-      if (!iptool.isV4Format(host)) {
-           return;
-      }
-      */
-
-      if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst)) {
-        let flowdir = 'local';
-        return;
-      } else if (sysManager.isLocalIP(host) && sysManager.isLocalIP(dst) == false) {
-        let flowdir = "out";
-      } else if (sysManager.isLocalIP(host) == false && sysManager.isLocalIP(dst)) {
-        let flowdir = "in";
-      } else {
-        log.error("HTTP:Error:Drop", data);
-        return;
-      }
-
-
-      // Cache
-      let appCacheObj = {
-        uid: obj.uid,
-        host: obj.host,
-        uri: obj.uri,
-        rqbl: obj.request_body_len,
-        rsbl: obj.response_body_len,
-      };
-
-      this.addAppMap(appCacheObj.uid, appCacheObj);
-
-      // TODO: Need to write code take care to ensure orig host is us ...
-
-      if (obj.user_agent != null) {
-        let agent = useragent.parse(obj.user_agent);
-        if (agent != null) {
-          if (agent.device.family != null) {
-            let okey = "host:user_agent:" + host;
-            let o = {
-              'family': agent.device.family,
-              'os': agent.os.toString(),
-              'ua': obj.user_agent
-            };
-            rclient.sadd(okey, JSON.stringify(o), (err, response) => {
-              rclient.expireat(okey, parseInt((+new Date) / 1000) + this.config.bro.userAgent.expires);
-              if (err != null) {
-                log.error("HTTP:Save:Error", err, o);
-              } else {
-                log.debug("HTTP:Save:Agent", host, o);
-              }
-            });
-            let ukey = "user_agent:" + host + ":" + dst + ":" + dstPort;
-            rclient.set(ukey, obj.user_agent, (err, response) => {
-              if (err != null) {
-                log.error("USER_AGENT:Save:Error", err, obj.user_agent);
-              } else {
-                rclient.expire(ukey, this.config.bro.activityUserAgent.expires); // a much shorter expiration since this is used to enrich alarm data
-              }
-            });
-            dnsManager.resolveLocalHost(host, (err, data) => {
-              if (data && data.mac) {
-                let mkey = "host:user_agent_m:" + data.mac;
-                rclient.sadd(mkey, JSON.stringify(o), (err, response) => {
-                  rclient.expireat(mkey, parseInt((+new Date) / 1000) + this.config.bro.userAgent.expires);
-                  if (err != null) {
-                    log.error("HTTP:Save:Error", err, o);
-                  } else {
-                    log.debug("HTTP:Save:Agent", host, o);
-                  }
-                });
-              }
-            });
-
-          }
-        }
-      }
-
-      let key = "flow:http:" + flowdir + ":" + host;
-      let strdata = JSON.stringify(obj);
-      let redisObj = [key, obj.ts, strdata];
-      log.debug("HTTP:Save", redisObj);
-
-      rclient.zadd(redisObj, (err, response) => {
-        if (err == null) {
-          if (this.config.bro.http.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.http.expires);
-          } else {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + 60*30);
-          }
-        } else {
-          log.error("HTTP:Save:Error", err);
-        }
-      });
-
-      /* this piece of code uses http to map dns */
-      if (flowdir === "in" && obj.host) {
-        let key = "dns:ip:" + dst;
-        let value = {
-          'host': obj.host,
-          'lastActive': Math.ceil(Date.now() / 1000),
-          'count': 1
-        }
-        log.debug("HTTP:Dns:values",key,value);
-        rclient.hgetall(key,(err,entry)=>{
-          if (entry && entry.host) {
-            return;
-          }
-          if (entry) {
-            rclient.hdel(key,"_intel");
-            if (entry.count) {
-              value.count = Number(entry.count)+1;
-            }
-          }
-          rclient.hmset(key, value, (err, rvalue) => {
-            if (err == null) {
-              if (this.config.bro.dns.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-              }
-              log.debug("HTTP:Dns:Set",rvalue,value);
-            } else {
-              log.error("HTTP:Dns:Error", "unable to update count", err);
-            }
-          });
-        });
-      }
-    } catch (e) {
-      log.error("HTTP:Error Unable to save", e, data, e.stack);
-    }
-
-  }
-
-
   cleanUpSanDNS(obj) {
     // san.dns may be an array, need to convert it to string to avoid redis warning
     if(obj["san.dns"] && obj["san.dns"].constructor === Array) {
@@ -1414,9 +1237,10 @@ module.exports = class {
         log.error("SSL:Drop", obj);
         return;
       }
-
       let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
+      if (firewalla.isReservedBlockingIP(dst))
+        return;
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
       let key = "host:ext.x509:" + dst;
@@ -1439,14 +1263,16 @@ module.exports = class {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.hmset(key, xobj, (err, value) => {
-          if (err == null) {
-            if (this.config.bro.ssl.expires) {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+        rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data 
+          rclient.hmset(key, xobj, (err, value) => {
+            if (err == null) {
+              if (this.config.bro.ssl.expires) {
+                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+              }
+            } else {
+              log.error("host:ext:x509:save:Error", key, subject);
             }
-          } else {
-            log.error("host:ext:x509:save:Error", key, subject);
-          }
+          });
         });
       } else if (cert_id != null) {
         log.debug("SSL:CERT_ID flow.ssl creating cert", cert_id);
@@ -1465,15 +1291,17 @@ module.exports = class {
 
               this.cleanUpSanDNS(xobj);
 
-              rclient.hmset(key, xobj, (err, value) => {
-                if (err == null) {
-                  if (this.config.bro.ssl.expires) {
-                    rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+              rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
+                rclient.hmset(key, xobj, (err, value) => {
+                  if (err == null) {
+                    if (this.config.bro.ssl.expires) {
+                      rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+                    }
+                    log.debug("SSL:CERT_ID Saved", key, xobj);
+                  } else {
+                    log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
                   }
-                  log.debug("SSL:CERT_ID Saved", key, xobj);
-                } else {
-                  log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
-                }
+                });
               });
             } else {
               log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
@@ -1494,39 +1322,8 @@ module.exports = class {
       this.addAppMap(appCacheObj.uid, appCacheObj);
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
-        let key = "dns:ip:" + dst;
-        let value = {
-          'host': obj.server_name,
-          'lastActive': Math.ceil(Date.now() / 1000),
-          'count': 1,
-          'ssl':1,
-          'established':obj.established
-        }
-        log.debug("SSL:Dns:values",key,value);
-        rclient.hgetall(key,(err,entry)=>{
-          if (entry && entry.host && entry.ssl) {
-            return;
-          }
-          if (entry) {
-            rclient.hdel(key,"_intel");
-            if (entry.count) {
-              value.count = Number(entry.count)+1;
-            }
-          }
-          rclient.hmset(key, value, (err, rvalue) => {
-            if (err == null) {
-              if (this.config.bro.dns.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.dns.expires);
-              }
-              log.debug("SSL:Dns:Set",key,rvalue,value);
-            } else {
-              log.error("SSL:Dns:Error", "unable to update count", err);
-            }
-          });
-        });
+        dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
       }
-
-
     } catch (e) {
       log.error("SSL:Error Unable to save", e, e.stack, data);
     }
@@ -1621,7 +1418,9 @@ module.exports = class {
       // TODO: on DHCP mode, notice could be generated on eth0 or eth0:0 first
       // and the other one will be suppressed. And we'll lost either device/dest info
       if (obj.src != null && obj.src == sysManager.myIp() ||
-          obj.dst != null && obj.dst == sysManager.myIp())
+          obj.src != null && obj.src == sysManager.myIp2() ||
+          obj.dst != null && obj.dst == sysManager.myIp() ||
+          obj.dst != null && obj.dst == sysManager.myIp2())
       {
         return;
       }
@@ -1680,34 +1479,6 @@ module.exports = class {
     this.callbacks[something] = callback;
   }
 
-
-  // recordHit(data) {
-  //     const ts = Math.floor(data.ts)
-  //     const inBytes = data.inBytes
-  //     const outBytes = data.outBytes
-
-  //     timeSeries
-  //     .recordHit('download',ts, Number(inBytes))
-  //     .recordHit('upload',ts, Number(outBytes))
-  // }
-
-  //   recordManyHits(datas) {
-  //       datas.forEach((data) => {
-  //         const ts = Math.floor(data.ts)
-  //         const inBytes = data.inBytes
-  //         const outBytes = data.outBytes
-
-  //         timeSeries.recordHit('download',ts, Number(inBytes))
-  //         timeSeries.recordHit('upload',ts, Number(outBytes))
-  //       })
-
-  //       return new Promise((resolve, reject) => {
-  //         timeSeries.exec(() => {
-  //             resolve()
-  //         })
-  //       })
-  //   }
-
   enableRecordHitsTimer() {
     setInterval(() => {
       timeSeries.exec(() => {})
@@ -1715,52 +1486,38 @@ module.exports = class {
     }, 1 * 60 * 1000) // every minute to record the left-over items if no new flows
   }
 
-  //   recordHits() {
-  //     if(this.recordCache && this.recordCache.length > 0 && this.recording == false) {
-  //         this.recording = true
-  //         const copy = JSON.parse(JSON.stringify(this.recordCache))
-  //         this.recordCache = []
-  //         async(() => {
-  //             await(this.recordManyHits(copy))
-  //         })().finally(() => {
-  //             this.recording = false
-  //         })
-  //     } else {
-  //         if(this.recording) {
-  //             log.info("still recording......")
-  //         }
-  //     }
-  //   }
-
-  recordTraffic(ts, inBytes, outBytes) {
+  recordTraffic(ts, inBytes, outBytes, mac) {
     if(this.enableRecording) {
 
-      let normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
+      const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 
-      if(!this.lastNTS) {
+      // lastNTS starts with null and assigned with normalizedTS every 10s 
+      if (this.lastNTS != normalizedTS) {
+        const toRecord = this.timeSeriesCache
+
         this.lastNTS = normalizedTS
         this.fullLastNTS = Math.floor(ts)
-        this.lastNTS_download = 0
-        this.lastNTS_upload = 0
+        this.timeSeriesCache = { global: { upload: 0, download: 0 } }
+
+        for (const key in toRecord) {
+          const subKey = key == 'global' ? '' : ':' + key
+          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload)
+          timeSeries
+            .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
+            .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
+        }
+        timeSeries.exec()
       }
 
-      if(this.lastNTS == normalizedTS) {
-        // append current status
-        this.lastNTS_download += Number(inBytes)
-        this.lastNTS_upload += Number(outBytes)
+      // append current status
+      this.timeSeriesCache.global.download += Number(inBytes)
+      this.timeSeriesCache.global.upload += Number(outBytes)
 
-      } else {
-        log.debug("Store timeseries", this.fullLastNTS, this.lastNTS_download, this.lastNTS_upload)
-
-        timeSeries
-          .recordHit('download',this.fullLastNTS, this.lastNTS_download)
-          .recordHit('upload',this.fullLastNTS, this.lastNTS_upload)
-          .exec()
-
-        this.lastNTS = null
-
-        this.recordTraffic(ts, inBytes, outBytes)
-      }           
+      if (!this.timeSeriesCache[mac]) {
+        this.timeSeriesCache[mac] = { upload: 0, download: 0 }
+      }
+      this.timeSeriesCache[mac].download += Number(inBytes)
+      this.timeSeriesCache[mac].upload += Number(outBytes)
     }
   }
 

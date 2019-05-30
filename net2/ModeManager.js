@@ -31,8 +31,6 @@ const d = new Discovery("modeManager", fConfig, "info", false);
 
 const iptables = require('./Iptables.js');
 
-let Promise = require('bluebird');
-
 const firewalla = require('./Firewalla.js')
 
 const async = require('asyncawait/async')
@@ -54,9 +52,9 @@ const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 
 const fs = require('fs');
-const writeFileAsync = Promise.promisify(fs.writeFile);
-const readFileAsync = Promise.promisify(fs.readFile);
-const unlinkAsync = Promise.promisify(fs.unlink);
+const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+const unlinkAsync = util.promisify(fs.unlink);
 
 
 const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
@@ -181,9 +179,7 @@ async function _restoreSimpleModeNetworkSettings() {
       cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
       log.info("Command to remove old ip assignment: " + cmd);
       await execAsync(cmd);
-      const oldIp = oldIpSubnet.split('/')[0];
       // dns rule change is done in dnsmasq.js
-      await iptables.diagHttpChangeAsync(oldIp, false); // remove old diag http redirect rule
     } catch (err) {
       log.warn(util.format("Old ip subnet %s is not found on eth0."), oldIpSubnet);
     }
@@ -191,9 +187,7 @@ async function _restoreSimpleModeNetworkSettings() {
     cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", simpleIpSubnet);
     log.info("Command to restore simple ip assignment: " + cmd);
     await execAsync(cmd);
-    const simpleIp = simpleIpSubnet.split('/')[0];
     // dns rule change is done in dnsmasq.js
-    await iptables.diagHttpChangeAsync(simpleIp, true); // add new diag http redirect rule
     await unlinkAsync(simpleIpFile); // remove simple_ip file
     const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
     cmd = util.format("sudo bash -c 'echo %s > %s'", simpleIpSubnet, savedIpFile);
@@ -253,9 +247,7 @@ async function _changeToAlternativeIpSubnet() {
       cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
       log.info("Command to remove old ip assignment: " + cmd);
       await execAsync(cmd);
-      const oldIp = oldIpSubnet.split('/')[0];
       // dns rule change is done in dnsmasq.js
-      await iptables.diagHttpChangeAsync(oldIp, false); // remove old diag http redirect rule
     } catch (err) {
       log.warn(util.format("Old ip subnet %s is not found on eth0.", oldIpSubnet));
     }
@@ -263,9 +255,7 @@ async function _changeToAlternativeIpSubnet() {
     cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", altIpSubnet);
     log.info("Command to add alternative ip assignment: " + cmd);
     await execAsync(cmd);
-    const altIp = altIpSubnet.split('/')[0];
     // dns rule change is done in dnsmasq.js
-    await iptables.diagHttpChangeAsync(altIp, true); // add new diag http redirect rule
     const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
     cmd = util.format("sudo bash -c 'echo %s > %s'", altIpSubnet, savedIpFile);
     await execAsync(cmd);
@@ -298,49 +288,30 @@ async function _changeToAlternativeIpSubnet() {
   });
 }
 
-function _enableSecondaryInterface() {
-  return new Promise((resolve, reject) => {  
-    fConfig = Config.getConfig(true);
-    secondaryInterface.create(fConfig,(err, ipSubnet, legacyIpSubnet)=>{
-      if (err == null) {
-        log.info("Successfully created secondary interface");
-        if (legacyIpSubnet) { // secondary ip is changed
-          d.discoverInterfaces(() => {
-            sysManager.update(() => {
-              // secondary interface ip changed, reload sysManager in all Fire* processes
-              (async () => {
-                // legacyIpSubnet should be like 192.168.218.0/24
-                // dns change is done in dnsmasq.js
-                await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false); // remove old DHCP MASQUERADE rule
-                const legacyIp = legacyIpSubnet.split('/')[0];
-                // legacyIp should be exact address like 192.168.218.1
-                await iptables.diagHttpChangeAsync(legacyIp, false);
-                // dns change is done in dnsmasq.js
-                await iptables.dhcpSubnetChangeAsync(ipSubnet, true); // add new DHCP MASQUERADE rule
-                const ip = ipSubnet.split('/')[0];
-                await iptables.diagHttpChangeAsync(ip, true);
-                resolve();
-              })().catch((err) => {
-                log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
-                reject(err);
-              });
-            });
-          });
-        } else {
-          resolve();
-        }
-      } else {
-        log.error("Failed to create secondary interface: " + err);
-        reject(err);
-      }
-    });
-  });
+async function _enableSecondaryInterface() {
+  fConfig = Config.getConfig(true);
+  let {secondaryIpSubnet, legacyIpSubnet} = await secondaryInterface.create(fConfig)
+  log.info("Successfully created secondary interface");
+  if (legacyIpSubnet) { // secondary ip is changed
+    await d.discoverInterfacesAsync()
+    await sysManager.updateAsync()
+    // secondary interface ip changed, reload sysManager in all Fire* processes
+    try {
+      // legacyIpSubnet should be like 192.168.218.0/24
+      // dns change is done in dnsmasq.js
+      await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false); // remove old DHCP MASQUERADE rule
+      await iptables.dhcpSubnetChangeAsync(secondaryIpSubnet, true); // add new DHCP MASQUERADE rule
+    } catch(err) {
+      log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
+      throw err;
+    };
+  }
 }
 
 async function _enforceDHCPMode(mode) {
   mode = mode || "dhcp";
   // need to kill dhclient otherwise ip lease will be relinquished once it is expired, causing system reboot
-  const cmd = "pidof dhclient && sudo pkill dhclient; true";
+  const cmd = "pgrep -x dhclient && sudo pkill dhclient; true";
   try {
     await execAsync(cmd);
   } catch (err) {
@@ -378,57 +349,54 @@ async function toggleCompatibleSpoof(state) {
   }
 }
 
-function apply() {
-  return async(() => {
-    let mode = await (Mode.getSetupMode())
+async function apply() {
+  let mode = await Mode.getSetupMode()
 
-    curMode = mode;
-    
-    log.info("Applying mode", mode, "...");
+  curMode = mode;
 
-    let HostManager = require('./HostManager.js')
-    let hostManager = new HostManager('cli', 'server', 'info')
-    
-    switch(mode) {
+  log.info("Applying mode", mode, "...");
+
+  let HostManager = require('./HostManager.js')
+  let hostManager = new HostManager('cli', 'server', 'info')
+
+  switch(mode) {
     case Mode.MODE_DHCP:
-      await (_saveSimpleModeNetworkSettings())
-      await (_changeToAlternativeIpSubnet())
-      await (_enableSecondaryInterface())
-      await (_enforceDHCPMode())
-      pclient.publishAsync("System:IPChange", "");
+      await _saveSimpleModeNetworkSettings()
+      await _changeToAlternativeIpSubnet()
+      await _enableSecondaryInterface()
+      await _enforceDHCPMode()
+      await pclient.publishAsync("System:IPChange", "");
       break;
     case Mode.MODE_DHCP_SPOOF:
     case Mode.MODE_AUTO_SPOOF:
-      await (_enableSecondaryInterface()) // secondary interface ip/subnet may be changed
-      await (_restoreSimpleModeNetworkSettings())
-      await (_enforceSpoofMode())
-      pclient.publishAsync("System:IPChange", "");
+      await _enableSecondaryInterface() // secondary interface ip/subnet may be changed
+      await _restoreSimpleModeNetworkSettings()
+      await _enforceSpoofMode()
+      await pclient.publishAsync("System:IPChange", "");
       // reset oper history for each device, so that we can re-apply spoof commands
       hostManager.cleanHostOperationHistory()
 
-      await (hostManager.getHostsAsync())
+      await hostManager.getHostsAsync()
       if (mode === Mode.MODE_DHCP_SPOOF) {
         // enhanced spoof is necessary for dhcp spoof
         hostManager.setPolicy("enhancedSpoof", true);
         // dhcp service is needed for dhcp spoof mode
-        await (_enforceDHCPMode(mode))
+        await _enforceDHCPMode(mode)
       }
       break;
     case Mode.MODE_MANUAL_SPOOF:
-      await (_enforceSpoofMode())
+      await _enforceSpoofMode()
       let sm = new SpooferManager();
-      await (hostManager.getHostsAsync())
-      await (sm.loadManualSpoofs(hostManager)) // populate monitored_hosts based on manual Spoof configs
+      await hostManager.getHostsAsync()
+      await sm.loadManualSpoofs(hostManager) // populate monitored_hosts based on manual Spoof configs
       break;
     case Mode.MODE_NONE:
       // no thing
       break;
     default:
       // not supported
-      return Promise.reject(util.format("mode %s is not supported", mode));
-      break;
-    }
-  })()
+      throw new Error(util.format("mode %s is not supported", mode));
+  }
 }
 
 function switchToDHCP() {

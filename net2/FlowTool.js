@@ -68,7 +68,12 @@ class FlowTool {
 
 //    if("f" in flow)
 //      delete flow.f;
-
+    if("uids_array" in flow) {
+      flow.uids = flow.uids_array.filter((v, i) => {
+        return flow.uids_array.indexOf(v) === i;
+      });
+      delete flow.uids_array;
+    }
   }
 
   _mergeFlow(targetFlow, flow) {
@@ -193,33 +198,31 @@ class FlowTool {
     })();
   }
 
-  prepareRecentFlowsForHost(json, mac, options) {
+  async prepareRecentFlowsForHost(json, mac, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
 
     json.flows.recent = [];
 
-    return async(() => {
-      let allFlows = [];
-      let flows = await(this.getRecentOutgoingConnections(mac, options));
-      flows.forEach((f) => {
-        f.device = mac;
-      });
-      allFlows.push.apply(allFlows, flows);
+    let allFlows = [];
+    let flows = await this.getRecentOutgoingConnections(mac, options);
+    flows.forEach((f) => {
+      f.device = mac;
+    });
+    allFlows.push.apply(allFlows, flows);
 
-      let flows2 = await(this.getRecentIncomingConnections(mac, options));
-      flows2.forEach((f) => {
-        f.device = mac;
-      });
-      allFlows.push.apply(allFlows, flows2);
+    let flows2 = await this.getRecentIncomingConnections(mac, options);
+    flows2.forEach((f) => {
+      f.device = mac;
+    });
+    allFlows.push.apply(allFlows, flows2);
 
-      allFlows.sort((a, b) => {
-        return b.ts - a.ts;
-      })
+    allFlows.sort((a, b) => {
+      return b.ts - a.ts;
+    })
 
-      Array.prototype.push.apply(json.flows.recent, allFlows);
-    })();
+    Array.prototype.push.apply(json.flows.recent, allFlows);
   }
 
   // merge adjacent flows with same key via this._getKey()
@@ -468,8 +471,8 @@ class FlowTool {
 
   async saveGlobalRecentConns(flow) {
     const key = "flow:global:recent";
-    const now = Math.ceil(new Date() / 1000);
-    const limit = -51; // only keep the latest 50 entries
+    const now = new Date() / 1000;
+    const limit = -1001; // only keep the latest 1000 entries
     let flowCopy = JSON.parse(JSON.stringify(flow));
 
     if(!this._isFlowValid(flowCopy)) {
@@ -478,6 +481,7 @@ class FlowTool {
 
     // TODO: might need to cut small traffics
     flowCopy = this.toSimpleFlow(flowCopy);
+    flowCopy.now = now;
 
     // if(flowCopy.deviceIP && !flowCopy.device) {
     //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
@@ -515,11 +519,18 @@ class FlowTool {
     }));
   }
 
-  async getGlobalRecentConns() {
-    const key = "flow:global:recent";
-    const limit = 50;
+  async getGlobalRecentConns(options) {
+    options = options || {};
 
-    const results = await rclient.zrevrangebyscoreAsync([key, "+inf", "-inf", "LIMIT", 0 , limit]);
+    const key = "flow:global:recent";
+    const limit = options.limit || 50;
+    let offset = options.offset || "-inf";
+
+    if(offset !== '-inf') {
+      offset = `(${offset}`;
+    }
+
+    const results = await rclient.zrangebyscoreAsync([key, offset, "+inf", "LIMIT", 0 , limit]);
 
     if(_.isEmpty(results)) {
       return [];
