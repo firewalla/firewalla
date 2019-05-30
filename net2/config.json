@@ -204,7 +204,7 @@
       },
       "dns": {
         "expires": 100000,
-        "count": 10000
+        "count": 100
       },
       "software": {
         "expires": 604800,
@@ -273,7 +273,7 @@
     "SubnetSensor": {},
     "IPChangeSensor": {},
     "DataMigrationSensor": {
-      "migrationCodeNames": ["clairvoyant"]
+      "migrationCodeNames": ["clairvoyant", "bipartite_graph"]
     }
   },
   "hooks": {

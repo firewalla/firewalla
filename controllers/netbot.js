@@ -55,9 +55,6 @@ const DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
 const Promise = require('bluebird');
 
-const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
-const getHitsAsync = Promise.promisify(timeSeries.getHits)
-
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
 
@@ -119,6 +116,9 @@ const netBotTool = new NetBotTool();
 
 const HostTool = require('../net2/HostTool');
 const hostTool = new HostTool();
+
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 const appTool = require('../net2/AppTool')();
 
@@ -694,15 +694,15 @@ class netBot extends ControllerBot {
   _sendLog(msg,callback) {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid+".tar.gz.gpg";
-    let path = "";
     log.info("sendLog: ", filename, password);
     this.eptcloud.getStorage(this.primarygid,18000000,0,(e,url)=>{
       log.info("sendLog: Storage ", filename, password,url);
       if (url == null || url.url == null) {
         this.simpleTxData(msg,{},"Unable to get storage",callback);   
       } else {
-        path = URL.parse(url.url).pathname;
-        let cmdline = '/home/pi/firewalla/scripts/encrypt-upload-s3.sh '+filename+' '+password+' '+"'"+url.url+"'";
+        const path = URL.parse(url.url).pathname;
+        const homePath = f.getFirewallaHome();
+        let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
         log.info("sendLog: cmdline", filename, password,cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
           log.error("sendLog: unable to process encrypt-upload",err,out,code);
@@ -711,7 +711,14 @@ class netBot extends ControllerBot {
           } else {
           }
         });
-        this.simpleTxData(msg,{password:password,filename:path},null,callback);   
+        const getDevices = `${homePath}/scripts/sanity_check.sh -f`;
+        exec(getDevices)
+          .then(res => {
+            this.simpleTxData(msg, {password: password, filename: path, content: res.stdout}, null, callback);
+          })
+          .catch(err => {
+            this.simpleTxData(msg, null, err, callback)
+          })
       }
     });
   }
@@ -1878,14 +1885,12 @@ class netBot extends ControllerBot {
         }
         break;
       case "last60mins":
-        async(() => {
-          let downloadStats = await(getHitsAsync("download", "1minute", 60))
-          let uploadStats = await(getHitsAsync("upload", "1minute", 60))
+        this.hostManager.last60MinStats().then(stats => {
           this.simpleTxData(msg, {
-            upload: uploadStats,
-            download: downloadStats
+            upload: stats.uploadStats,
+            download: stats.downloadStats
           }, null, callback)
-        })().catch((err) => {
+        }).catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
@@ -1901,6 +1906,20 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback);
           }
         })();
+        break;
+      case "linkedDomains":
+        (async () => {
+          const target = value.target;
+          const isDomainPattern = value.isDomainPattern || false;
+          if (!target) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "target should be specified."}, callback);
+          } else {
+            const domains = await dnsTool.getLinkedDomains(target, isDomainPattern);
+            this.simpleTxData(msg, {domains: domains}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
         break;
       case "liveCategoryDomains":
         (async () => {
@@ -2167,131 +2186,132 @@ class netBot extends ControllerBot {
   }
 
   
-  systemFlowHandler(msg) {
+  async systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
 
     let begin = msg.data && msg.data.start;
     //let end = msg.data && msg.data.end;
     let end = begin && (begin + 3600);
 
-    if(!begin || !end) {
-      return Promise.reject(new Error("Require begin and error when calling systemFlowHandler"));
+    if (!begin || !end) {
+      throw new Error("Require begin and error when calling systemFlowHandler");
     }
 
     log.info("FROM: ", new Date(begin * 1000).toLocaleTimeString());
     log.info("TO: ", new Date(end * 1000).toLocaleTimeString());
 
-    return async(() => {
-      let jsonobj = {};
-      let options = {
-        begin: begin,
-        end: end
-      }
-      
-      await ([
-        flowTool.prepareRecentFlows(jsonobj, options),
-        netBotTool.prepareTopUploadFlows(jsonobj, options),
-        netBotTool.prepareTopDownloadFlows(jsonobj, options),
-        netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
-        netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options)])
+    let jsonobj = {};
+    let options = {
+      begin: begin,
+      end: end
+    }
 
-      if(!jsonobj.flows['appDetails']) { // fallback to old way
-        await (netBotTool.prepareDetailedAppFlows(jsonobj, options))
-        await (this.validateFlowAppIntel(jsonobj))
-      }
+    await Promise.all([
+      flowTool.prepareRecentFlows(jsonobj, options),
+      netBotTool.prepareTopUploadFlows(jsonobj, options),
+      netBotTool.prepareTopDownloadFlows(jsonobj, options),
+      netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
+      netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options)
+    ])
 
-      if(!jsonobj.flows['categoryDetails']) { // fallback to old model
-        await (netBotTool.prepareDetailedCategoryFlows(jsonobj, options))
-        await (this.validateFlowCategoryIntel(jsonobj))
-      }
+    if (!jsonobj.flows['appDetails']) { // fallback to old way
+      await netBotTool.prepareDetailedAppFlows(jsonobj, options)
+      await this.validateFlowAppIntel(jsonobj)
+    }
 
-      return jsonobj;
-    })();
+    if (!jsonobj.flows['categoryDetails']) { // fallback to old model
+      await netBotTool.prepareDetailedCategoryFlows(jsonobj, options)
+      await this.validateFlowCategoryIntel(jsonobj)
+    }
+
+    return jsonobj;
   }
   
-  deviceHandler(msg, target) { // WARNING: target could be ip address or mac address
+  async deviceHandler(msg, target) { // WARNING: target could be ip address or mac address
     log.info("Getting info on device", target);
 
-    return async(() => {
-      if(target === '0.0.0.0') {
-        return this.systemFlowHandler(msg);
+    if (target === '0.0.0.0') {
+      return this.systemFlowHandler(msg);
+    }
+
+    let begin = msg.data && msg.data.start;
+    let end = (msg.data && msg.data.end) || begin + 3600 * 24;
+
+    // A backward compatbiel fix for query host network stats for 'NOW'
+    // extend it to a full hour if not enough
+    if ((end - begin) < 3600 && msg.data.hourblock === 0) {
+      end = begin + 3600;
+    }
+
+    let options = {}
+    if (begin && end) {
+      options.begin = begin
+      options.end = end
+    }
+
+    if (msg.data.hourblock != "1" &&
+      msg.data.hourblock != "0") { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
+      options.queryall = true
+    }
+
+    // if(hostTool.isMacAddress(target)) {
+    //   log.info("Loading host info by mac address", target);
+    //   const macAddress = target
+    //   const hostObject = await (hostTool.getMACEntry(macAddress))
+
+    //   if(hostObject && hostObject.ipv4Addr) {
+    //     target = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
+    //   } else {
+    //     let error = new Error("Invalid Mac");
+    //     error.code = 404;
+    //     return Promise.reject(error);
+    //   }
+    // }
+
+    let host = await this.hostManager.getHostAsync(target);
+    if (!host || !host.o.mac) {
+      let error = new Error("Invalid Host");
+      error.code = 404;
+      throw error;
+    }
+
+    let mac = host.o.mac;
+
+    // load 24 hours download/upload trend
+    await flowManager.getStats2(host);
+
+    let jsonobj = {};
+    if (host) {
+      jsonobj = host.toJson();
+
+      await Promise.all([
+        flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
+        netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options),
+        netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options),
+        netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options),
+        netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options),
+
+        netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
+        netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options),
+
+        this.hostManager.last60MinStatsForInit(jsonobj, mac),
+        this.hostManager.last30daysStatsForInit(jsonobj, mac)
+      ])
+
+      if (!jsonobj.flows["appDetails"]) {
+        log.warn("Fell back to legacy mode on app details:", mac, options);
+        await netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options)
+        await this.validateFlowAppIntel(jsonobj)
       }
 
-      let begin = msg.data && msg.data.start;
-      let end = (msg.data && msg.data.end) || begin + 3600 * 24;
-
-      // A backward compatbiel fix for query host network stats for 'NOW'
-      // extend it to a full hour if not enough
-      if((end - begin) < 3600 && msg.data.hourblock === 0) {
-        end = begin + 3600; 
+      if (!jsonobj.flows["categoryDetails"]) {
+        log.warn("Fell back to legacy mode on category details:", mac, options);
+        await netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options)
+        await this.validateFlowCategoryIntel(jsonobj)
       }
+    }
 
-      let options = {}
-      if(begin && end) {
-        options.begin = begin
-        options.end = end
-      }
-
-      if(msg.data.hourblock != "1" &&
-         msg.data.hourblock != "0" ) { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
-        options.queryall = true
-      }
-      
-      // if(hostTool.isMacAddress(target)) {
-      //   log.info("Loading host info by mac address", target);
-      //   const macAddress = target
-      //   const hostObject = await (hostTool.getMACEntry(macAddress))
-
-      //   if(hostObject && hostObject.ipv4Addr) {
-      //     target = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
-      //   } else {
-      //     let error = new Error("Invalid Mac");
-      //     error.code = 404;
-      //     return Promise.reject(error);
-      //   }
-      // }
-
-      let host = await (this.hostManager.getHostAsync(target));
-      if(!host || !host.o.mac) {
-        let error = new Error("Invalid Host");
-        error.code = 404;
-        return Promise.reject(error);
-      }
-
-      let mac = host.o.mac;
-
-      // load 24 hours download/upload trend
-      await (flowManager.getStats2(host));
-
-      let jsonobj = {};
-      if (host) {
-        jsonobj = host.toJson();
-
-        await ([
-          flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
-          netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options),
-          netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options),
-          netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options),
-          netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options),
-          
-          netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
-          netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options)])
-
-        if(!jsonobj.flows["appDetails"]) {
-          log.warn("Fell back to legacy mode on app details:", mac, options);
-          await (netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options))
-          await (this.validateFlowAppIntel(jsonobj))
-        }
-
-        if(!jsonobj.flows["categoryDetails"]) {
-          log.warn("Fell back to legacy mode on category details:", mac, options);
-          await (netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options))
-          await (this.validateFlowCategoryIntel(jsonobj))
-        }
-      }
-
-      return jsonobj;
-    })();
+    return jsonobj;
   }
 
   /*
@@ -3205,7 +3225,7 @@ class netBot extends ControllerBot {
             await flowManager.removeFlowsAll(hostMac);
             
             let ips = await hostTool.getIPsByMac(hostMac);
-            ips.forEach(async (ip) => {
+            for (const ip of ips) {
               const latestMac = await hostTool.getMacByIP(ip);
               if (latestMac && latestMac === hostMac) {
                 // double check to ensure ip address is not taken over by other device
@@ -3227,7 +3247,7 @@ class netBot extends ControllerBot {
                   "monitor:flow:out:" + ip
                 ]);
               }
-            });
+            };
             await hostTool.deleteMac(hostMac);
             // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
             this.simpleTxData(msg, {}, null, callback);

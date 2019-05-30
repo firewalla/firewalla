@@ -37,6 +37,8 @@ Promise.promisifyAll(fs)
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 
+const { wrapIptables } = require('../../net2/Iptables.js')
+
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
 
@@ -183,8 +185,7 @@ class App {
       if(eth0s) {
         for (let index = 0; index < eth0s.length; index++) {
           const eth0 = eth0s[index]
-          const secondaryIntfIP = (config.getConfig().secondaryInterface.ip).split('/')[0];
-          if(eth0.family == "IPv4" && eth0.address != secondaryIntfIP) {
+          if(eth0.family == "IPv4") {
             return eth0.address
           }
         }
@@ -334,6 +335,20 @@ class App {
         res.status(500).send({})
       })
     })
+  }
+
+  async iptablesRedirection(create = true) {
+    const findInf = await exec(`ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/`);
+    const ips = findInf.stdout.split('\n')
+
+    const action = create ? '-A' : '-D';
+
+    for (const ip of ips) {
+      if (!ip) continue;
+
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports 8835`);
+      await exec(cmd);
+    }
   }
 
   start() {

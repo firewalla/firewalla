@@ -16,6 +16,8 @@
 
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 let Alarm = require('../alarm/Alarm.js');
 let Exception = require('../alarm/Exception.js');
@@ -339,24 +341,13 @@ exports.removeSampleSSLInfo = () => {
 
 exports.addSampleDNSInfo = () => {
   return async(() => {
-    let key = "dns:ip:" + hostIP;
-
-    let data = {
-      host: 'www.google.com',
-      lastActive: '1501220422',
-      count: '24',
-      _intel: '{"ts":1500896988,"rcount":2}'
-    };
-
-    return rclient.hmsetAsync(key, data);
+    await (dnsTool.addDns(hostIP, "www.google.com"));
   })();
 }
 
 exports.removeSampleDNSInfo = () => {
   return async(() => {
-    let key = "dns:ip:" + hostIP;
-
-    return rclient.delAsync(key);
+    await (dnsTool.removeDns(hostIP, "www.google.com"));
   })();
 }
 

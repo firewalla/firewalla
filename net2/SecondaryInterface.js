@@ -14,13 +14,16 @@
  */
 
 'use strict';
-var linux = require('../util/linux.js');
-var ip = require('ip');
-var os = require('os');
-var dns = require('dns');
-var network = require('network');
-var log = require('./logger.js')(__filename, 'info');
+const linux = require('../util/linux.js');
+const ip = require('ip');
+const os = require('os');
+const dns = require('dns');
+const network = require('network');
+const log = require('./logger.js')(__filename, 'info');
 const util = require('util');
+const f = require('./Firewalla.js');
+const fc = require('./config.js');
+const { exec } = require('child-process-promise')
 
 function is_interface_valid(netif) {
   return (
@@ -31,11 +34,11 @@ function is_interface_valid(netif) {
   );
 }
 
-function getSubnet(networkInterface, family) {
+function getSubnets(networkInterface, family) {
   let networkInterfaces = os.networkInterfaces();
   let interfaceData = networkInterfaces[networkInterface];
   if (interfaceData == null) {
-    return null;
+    return [];
   }
 
   var ipSubnets = [];
@@ -49,15 +52,14 @@ function getSubnet(networkInterface, family) {
         interfaceData[i].address,
         interfaceData[i].netmask
       );
-      let subnetmask = interfaceData[i].address + '/' + subnet.subnetMaskLength;
-      ipSubnets.push(subnetmask);
+      ipSubnets.push(subnet);
     }
   }
 
   return ipSubnets;
 }
 
-exports.create = function(config, callback) {
+exports.create = async function(config) {
   /*
   "secondaryInterface": {
      "intf":"eth0:0",
@@ -71,71 +73,68 @@ exports.create = function(config, callback) {
      "ipmask2":"255.255.255.0"
   },
   */
-  if (config.secondaryInterface && config.secondaryInterface.intf) {
-    // ip can sufficiently identify a network configuration, all other configurations are redundant
-    let _secondaryIpSubnet = config.secondaryInterface.ip;
-    let _secondaryIp = _secondaryIpSubnet.split('/')[0];
-    let _secondaryMask = ip.cidrSubnet(_secondaryIpSubnet).subnetMask;
-    let legacyIpSubnet = null;
-    linux.get_network_interfaces_list((err, list) => {
-      if (err) callback(err);
+  const conf = config.secondaryInterface;
+  if (!conf || !conf.intf) throw new Error("Invalid config");
 
-      list = (list || []).filter(function(x) {
-        return is_interface_valid(x);
-      });
-      for (let i in list) {
-        if (list[i].name == config.secondaryInterface.intf) {
-          if (
-            list[i].netmask === 'Mask:' + _secondaryMask &&
-            list[i].ip_address === _secondaryIp
-          ) {
-            // same ip and subnet mask
-            log.info('Already Created Secondary Interface', list[i]);
-            if (callback) {
-              callback(
-                null,
-                _secondaryIpSubnet,
-                legacyIpSubnet
-              );
-            }
-            return;
-          } else {
-            log.info('Update existing secondary interface: ' + config.secondaryInterface.intf);
-            // should be like 192.168.218.1
-            const legacyCidrSubnet = ip.subnet(list[i].ip_address, list[i].netmask.substring(5));
-            legacyIpSubnet = list[i].ip_address + "/" + legacyCidrSubnet.subnetMaskLength;
-          }
-        } else {
-          let subnets = getSubnet(list[i].name, 'IPv4');
-          // one interface may have multiple ip addresses assigned
-          if (subnets.includes(_secondaryIpSubnet)) {
-            // other interface already occupies ip1, use alternative ip
-            _secondaryIpSubnet = config.secondaryInterface.ip2;
-            _secondaryIp = _secondaryIpSubnet.split('/')[0];
-            _secondaryMask = ip.cidrSubnet(_secondaryIp).subnetMask;
-          }
+  // ip can sufficiently identify a network configuration, all other configurations are redundant
+  let secondaryIpSubnet = conf.ip;
+  let secondarySubnet = ip.cidrSubnet(secondaryIpSubnet);
+  let legacyIpSubnet = null;
+
+  let list = await linux.get_network_interfaces_list_async()
+
+  list = (list || []).filter(function(x) {
+    return is_interface_valid(x);
+  });
+
+  const sameNameIntf = list.find(intf => intf.name == conf.intf)
+  if (sameNameIntf) {
+    if (
+      sameNameIntf.netmask === 'Mask:' + secondarySubnet.subnetMask &&
+      sameNameIntf.ip_address === secondaryIpSubnet.split('/')[0]
+    ) {
+      // same ip and subnet mask
+      log.info('Already Created Secondary Interface', sameNameIntf);
+      return { secondaryIpSubnet, legacyIpSubnet };
+    } else {
+      log.info('Update existing secondary interface: ' + conf.intf);
+      // should be like 192.168.218.1
+      const legacyCidrSubnet = ip.subnet(sameNameIntf.ip_address, sameNameIntf.netmask.substring(5));
+      legacyIpSubnet = sameNameIntf.ip_address + "/" + legacyCidrSubnet.subnetMaskLength;
+    }
+  }
+
+  for (const intf of list) {
+    const subnets = getSubnets(intf.name, 'IPv4');
+
+    const overlapped = subnets.find(net =>
+      net.contains(secondarySubnet.firstAddress) ||
+      net.contains(secondarySubnet.lastAddress) ||
+      secondarySubnet.contains(net.firstAddress) ||
+      secondarySubnet.contains(net.lastAddress)
+    )
+
+    log.warn('Overlapping network found!', overlapped)
+    // one intf may have multiple ip addresses assigned
+    if (overlapped) {
+      // other intf already occupies ip1, use alternative ip
+      secondaryIpSubnet = conf.ip2;
+      let flippedConfig = {
+        secondaryInterface: {
+          intf: conf.intf,
+          ip: conf.ip2,
+          ip2: conf.ip
         }
       }
-      // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
-      require('child_process').exec(
-        util.format("sudo ifconfig %s %s", config.secondaryInterface.intf, _secondaryIpSubnet),
-        (err, stdout, stderr) => {
-          if (err != null) {
-            log.error('SecondaryInterface: Error Creating Secondary Interface', _secondaryIpSubnet, err);
-          }
-          require('child_process').exec(
-            util.format("sudo /home/pi/firewalla/scripts/config_secondary_interface.sh %s", _secondaryIpSubnet),
-            (err, stdout, stderr) => {}
-          );
-          if (callback) {
-            callback(
-              err,
-              _secondaryIpSubnet,
-              legacyIpSubnet
-            );
-          }
-        }
-      );
-    });
+      fc.updateUserConfig(flippedConfig);
+
+      break;
+    }
   }
+
+  // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
+  await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)
+  await exec(`sudo ${f.getFirewallaHome()}/scripts/config_secondary_interface.sh ${secondaryIpSubnet}`);
+
+  return { secondaryIpSubnet, legacyIpSubnet };
 };

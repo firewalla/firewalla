@@ -672,12 +672,12 @@ module.exports = class DNSMASQ {
         localIP = this._currentLocalIP;
       let dns = `${localIP}:8853`;
 
-      subnets.forEach(async subnet => {
+      for (const subnet of subnets) {
         log.info("Remove dns rule: ", subnet, dns);
         try {
           await iptables.dnsChangeAsync(subnet, dns, false);
         } catch(e) { /*Ignore Erros*/ }
-      })
+      }
       this._redirectedLocalSubnets = [];
       this._currentLocalIP = null;
 
