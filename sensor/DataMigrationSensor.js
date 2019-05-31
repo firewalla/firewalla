@@ -33,22 +33,50 @@ class DataMigrationSensor extends Sensor {
   }
 
   run() {
-    const migrationCodeNames = this.config.migrationCodeNames;
-    if (migrationCodeNames && migrationCodeNames.constructor.name == "Array") {
-      migrationCodeNames.forEach(codeName => {
-        (async() => {
-          const done = await this._is_migration_done(codeName);
-          if (!done) {
+    (async () => {
+      const previousMigrationCodeNames = await this._list_previous_migrations();
+      const migrationCodeNames = this.config.migrationCodeNames;
+      if (migrationCodeNames && migrationCodeNames.constructor.name == "Array") {
+        // no need to do migration for previously recorded codenames
+        const upgradeCodeNames = migrationCodeNames.filter((codeName) => {
+          return !previousMigrationCodeNames.includes(codeName);
+        })
+        for (let codeName of upgradeCodeNames) {
+          try {
             log.info("Start migration: " + codeName);
             await this._migrate(codeName);
             await this._set_migration_done(codeName);
             log.info("Migration complete: " + codeName);
+          } catch(err) {
+            log.error("Failed to migrate, code name: " + codeName, err);
           }
-        })().catch((err) => {
-          log.error("Failed to migrate, code name: " + codeName, err);
+        }
+
+        // rollback migrations that are previously done. This usually happens after version rollback
+        const rollbackCodeNames = previousMigrationCodeNames.filter((code) => {
+          return !migrationCodeNames.includes(code);
         });
+        for (let codeName of rollbackCodeNames) {
+          try {
+            // looks like there should be symmetric rollback() function as an equivalent of migratie()?
+            // but it is hardly useful since rollback code logic for a specific code name may also be reverted after rollback...
+            await this._unset_migration_done(codeName);
+          } catch (err) {
+            log.error("Failed to rollback, code name: " + codeName, err);
+          }
+        }
+      }
+    })()
+  }
+
+  async _list_previous_migrations() {
+    let migrations = await rclient.keysAsync("migration:*");
+    if (migrations && Array.isArray(migrations)) {
+      migrations = migrations.map((migration) => {
+        return migration.substring(10);
       });
     }
+    return migrations || [];
   }
 
   async _is_migration_done(codeName) {
@@ -60,6 +88,10 @@ class DataMigrationSensor extends Sensor {
 
   async _set_migration_done(codeName) {
     await rclient.setAsync("migration:" + codeName, "1");
+  }
+
+  async _unset_migration_done(codeName) {
+    await rclient.delAsync("migration:" + codeName);
   }
 
   async _migrate(codeName) {
@@ -120,6 +152,13 @@ class DataMigrationSensor extends Sensor {
         const now = Math.ceil(Date.now() / 1000);
         for (let dnsIpKey of dnsIpKeys) {
           const keyType = await rclient.typeAsync(dnsIpKey);
+          const newDnsIpKey = `r${dnsIpKey}`; // new key is 'rdns:ip:xxxx'
+          if (keyType === "zset") {
+            await rclient.zunionstoreAsync([newDnsIpKey, 2, dnsIpKey, newDnsIpKey, "AGGREGATE", "MAX"]);
+            await rclient.delAsync(dnsIpKey);
+            await rclient.expireAsync(newDnsIpKey, 86400);
+            continue;
+          }
           if (keyType !== "hash")
             continue;
           const dnsEntry = await rclient.hgetallAsync(dnsIpKey);
@@ -128,7 +167,8 @@ class DataMigrationSensor extends Sensor {
           if (!ipTool.isV4Format(ip) && !ipTool.isV6Format(ip))
             continue;
           if (dnsEntry && dnsEntry.host) {
-            await rclient.zaddAsync(dnsIpKey, dnsEntry.lastActive || now, dnsEntry.host);
+            await rclient.zaddAsync(newDnsIpKey, dnsEntry.lastActive || now, dnsEntry.host);
+            await rclient.expireAsync(newDnsIpKey, 86400);
           }
         }
         break;
