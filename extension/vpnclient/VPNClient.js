@@ -32,6 +32,10 @@ class VPNClient {
 
   }
 
+  async getStatistics() {
+
+  }
+
   // applicable to pointtopoint interfaces
   async getRemoteIP() {
   }

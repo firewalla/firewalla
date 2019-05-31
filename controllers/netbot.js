@@ -2102,7 +2102,8 @@ class netBot extends ControllerBot {
                     password = ""; // not a real password, just a placeholder
                   
                   const status = await ovpnClient.status();
-                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, status: status}, null, callback);
+                  const stats = await ovpnClient.getStatistics();
+                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, status: status, stats: stats}, null, callback);
                 }
               }
             })().catch((err) => {
@@ -2144,6 +2145,8 @@ class netBot extends ControllerBot {
                   }
                   const status = await ovpnClient.status();
                   profile.status = status;
+                  const stats = await ovpnClient.getStatistics();
+                  profile.stats = stats;
                   return profile;
                 })));
                 break;
@@ -3173,8 +3176,9 @@ class netBot extends ControllerBot {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
                 await ovpnClient.setup();
+                const stats = await ovpnClient.getStatistics();
                 await ovpnClient.stop();
-                this.simpleTxData(msg, {}, null, callback);
+                this.simpleTxData(msg, {stats: stats}, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
               })

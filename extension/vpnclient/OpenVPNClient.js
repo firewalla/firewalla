@@ -76,6 +76,10 @@ class OpenVPNClient extends VPNClient {
     return path;
   }
 
+  _getStatusLogPath() {
+    return `/var/log/openvpn_client-status-${this.profileId}.log`;
+  }
+
   async _parseProfile(ovpnPath) {
     if (fs.existsSync(ovpnPath)) {
       const content = await readFileAsync(ovpnPath, 'utf8');
@@ -231,6 +235,50 @@ class OpenVPNClient extends VPNClient {
       return true;
     } catch (err) {
       return false;
+    }
+  }
+
+  async getStatistics() {
+    const status = await this.status();
+    if (!status) {
+      return {};
+    }
+    try {
+      const stats = {};
+      const statusLogPath = this._getStatusLogPath();
+      // add read permission in case it is owned by root
+      const cmd = util.format("sudo chmod +r %s", statusLogPath);
+      await execAsync(cmd);
+      const content = await readFileAsync(statusLogPath, "utf8");
+      const lines = content.split("\n");
+      for (let line of lines) {
+        const options = line.split(",");
+        const key = options[0];
+        switch (key) {
+          case "TUN/TAP read bytes":
+            // this corresponds to number of original bytes sent to vpn channel. NOT a typo! Read actually corresponds to bytes sent
+            stats['bytesOut'] = Number(options[1]);
+            break;
+          case "TUN/TAP write bytes":
+            // this corresponds to number of original bytes received from vpn channel. NOT a type! Write actually corresponds to bytes read
+            stats['bytesIn'] = Number(options[1]);
+            break;
+          case "TCP/UDP read bytes":
+            // this corresponds to number of bytes received from VPN server through underlying transport layer
+            stats['transportBytesIn'] = Number(options[1]);
+            break;
+          case "TCP/UDP write bytes":
+            // this corresponds to number of bytes sent to VPN server through underlying transport layer
+            stats['transportBytesOut'] = Number(options[1]);
+            break;
+          default:
+
+        }
+      }
+      return stats;
+    } catch (err) {
+      log.error("Failed to parse OpenVPN client status file for " + this.profileId, err);
+      return {};
     }
   }
 
