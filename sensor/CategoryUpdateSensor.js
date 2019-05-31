@@ -64,6 +64,9 @@ class CategoryUpdateSensor extends Sensor {
     log.info('Active countries', activeCountries);
     for (const country of activeCountries) {
       await this.updateCountryAllocation(country)
+      const category = countryUpdater.getCategory(country)
+      await countryUpdater.refreshCategoryRecord(category)
+      await countryUpdater.recycleIPSet(category)
     }
   }
 
@@ -134,19 +137,22 @@ class CategoryUpdateSensor extends Sensor {
     sem.once('IPTABLES_READY', async() => {
       await this.regularJob()
       await this.securityJob()
-      await this.countryJob()
 
-      setInterval(() => {
-        this.regularJob()
-      }, this.config.regularInterval * 1000)
+      // initial round of country list update is triggered by this event
+      // also triggers dynamic list and ipset update here
+      // to make sure blocking takes effect immediately
+      sem.on('Policy:CountryActivated', async (event) => {
+        await this.updateCountryAllocation(event.country)
+        const category = countryUpdater.getCategory(event.country)
+        await countryUpdater.refreshCategoryRecord(category)
+        await countryUpdater.recycleIPSet(category, false)
+      })
 
-      setInterval(() => {
-        this.securityJob()
-      }, this.config.securityInterval * 1000)
+      setInterval(this.regularJob, this.config.regularInterval * 1000)
 
-      setInterval(() => {
-        this.countryJob()
-      }, this.config.countryInterval * 1000)
+      setInterval(this.securityJob, this.config.securityInterval * 1000)
+
+      setInterval(this.countryJob, this.config.countryInterval * 1000)
     })
   }
 

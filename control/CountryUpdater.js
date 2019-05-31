@@ -39,8 +39,6 @@ const readFileAsync = util.promisify(fs.readFile);
 
 const Ipset = require('../net2/Ipset.js')
 
-const ACTIVE_COUNTRY_SET = 'category:country:list'
-
 const DISK_CACHE_FOLDER = firewalla.getTempFolder() + '/country'
 
 // CountryUpdater is responsible for updating dynamic ip/subnet
@@ -53,8 +51,12 @@ class CountryUpdater extends CategoryUpdaterBase {
       this.inited = false;
       instance = this
 
-      this.init();
+      this.activeCountries = {}
+      this.activeCategories = {}
+
+      exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
     }
+
     return instance
   }
 
@@ -78,35 +80,6 @@ class CountryUpdater extends CategoryUpdaterBase {
     return Object.keys(this.activeCountries);
   }
 
-  async init() {
-    const redisCountries = await rclient.smembersAsync(ACTIVE_COUNTRY_SET);
-    this.activeCountries = {}
-    this.activeCategories = {}
-    for (const code of redisCountries) {
-      this.activeCountries[code] = 1;
-      const category = this.getCategory(code);
-      this.activeCategories[category] = 1;
-    }
-
-    await exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
-
-    // only run refresh category records for fire main process
-    sem.once('AllPoliciesInitialized', async () => {
-      this.inited = true;
-      if (firewalla.isMain()) {
-        for (const category of this.getActiveCategories()) {
-          await Block.setupCategoryEnv(category, 'hash:net');
-        }
-
-        setInterval(() => {
-          this.refreshAllCategoryRecords()
-        }, 10 * 60 * 1000) // update records every day
-
-        await this.refreshAllCategoryRecords()
-      }
-    })
-  }
-
   // included/excluded ip/subnet should be implemented as exception rules
 
   async activateCountry(code) {
@@ -114,20 +87,20 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     const category = this.getCategory(code)
 
-    await rclient.saddAsync(ACTIVE_COUNTRY_SET, code)
-
     this.activeCountries[code] = 1
     this.activeCategories[category] = 1
     await Block.setupCategoryEnv(category, 'hash:net');
 
-    await this.refreshCategoryRecord(category)
-    await this.recycleIPSet(category, false)
+    sem.emitEvent({
+      type: 'Policy:CountryActivated',
+      toProcess: 'FireMain',
+      message: 'Country activated: ' + code,
+      country: code
+    })
   }
 
   async deactivateCountry(code) {
     const category = this.getCategory(code)
-
-    await rclient.sremAsync(ACTIVE_COUNTRY_SET, code)
 
     await Ipset.destroy(this.getIPSetName(category))
     await Ipset.destroy(this.getIPSetNameForIPV6(category))

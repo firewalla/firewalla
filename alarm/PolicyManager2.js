@@ -767,7 +767,7 @@ class PolicyManager2 {
     log.info("All policy rules are enforced")
 
     sem.emitEvent({
-      type: 'AllPoliciesInitialized',
+      type: 'Policy:AllInitialized',
       toProcess: 'FireMain', //make sure firemain process handle enforce policy event
       message: 'All policies are enforced'
     })
