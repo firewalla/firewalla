@@ -206,32 +206,20 @@ async function setupBlockingEnv(macTag, dstTag, dstType = "hash:ip", destroy = f
     const matchMacDst = macTag ? `-m set --match-set ${macSet} dst` : '';
 
     // add rules in filter table
-    const cmdOutgoingRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p all ${matchMacSrc} -m set --match-set ${dstSet} dst -j DROP`)
-    const cmdIncomingRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p all ${matchMacDst} -m set --match-set ${dstSet} src -j DROP`)
-    const cmdOutgoingTCPRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p tcp ${matchMacSrc} -m set --match-set ${dstSet} dst -j REJECT`)
-    const cmdIncomingTCPRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p tcp ${matchMacDst} -m set --match-set ${dstSet} src -j REJECT`)
-    const cmdOutgoingRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p all ${matchMacSrc} -m set --match-set ${dstSet6} dst -j DROP`)
-    const cmdIncomingRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p all ${matchMacDst} -m set --match-set ${dstSet6} src -j DROP`)
-    const cmdOutgoingTCPRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p tcp ${matchMacSrc} -m set --match-set ${dstSet6} dst -j REJECT`)
-    const cmdIncomingTCPRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p tcp ${matchMacDst} -m set --match-set ${dstSet6} src -j REJECT`)
+    const cmdOutgoingRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p all ${matchMacSrc} -m set --match-set ${dstSet} dst -j FW_DROP`)
+    const cmdIncomingRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p all ${matchMacDst} -m set --match-set ${dstSet} src -j FW_DROP`)
+    const cmdOutgoingRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p all ${matchMacSrc} -m set --match-set ${dstSet6} dst -j FW_DROP`)
+    const cmdIncomingRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p all ${matchMacDst} -m set --match-set ${dstSet6} src -j FW_DROP`)
     // add rules in nat table
-    const cmdNatOutgoingTCPRule = _wrapIptables(`sudo iptables -w -t nat ${ops} FW_NAT_BLOCK -p tcp ${matchMacSrc} -m set --match-set ${dstSet} dst -j REDIRECT --to-ports 8888`)
-    const cmdNatOutgoingUDPRule = _wrapIptables(`sudo iptables -w -t nat ${ops} FW_NAT_BLOCK -p udp ${matchMacSrc} -m set --match-set ${dstSet} dst -j REDIRECT --to-ports 8888`)
-    const cmdNatOutgoingTCPRule6 = _wrapIptables(`sudo ip6tables -w -t nat ${ops} FW_NAT_BLOCK -p tcp ${matchMacSrc} -m set --match-set ${dstSet6} dst -j REDIRECT --to-ports 8888`)
-    const cmdNatOutgoingUDPRule6 = _wrapIptables(`sudo ip6tables -w -t nat ${ops} FW_NAT_BLOCK -p udp ${matchMacSrc} -m set --match-set ${dstSet6} dst -j REDIRECT --to-ports 8888`)
+    const cmdNatOutgoingRule = _wrapIptables(`sudo iptables -w -t nat ${ops} FW_NAT_BLOCK ${matchMacSrc} -m set --match-set ${dstSet} dst -j FW_NAT_HOLE`)
+    const cmdNatOutgoingRule6 = _wrapIptables(`sudo ip6tables -w -t nat ${ops} FW_NAT_BLOCK ${matchMacSrc} -m set --match-set ${dstSet6} dst -j FW_NAT_HOLE`)
 
     await exec(cmdOutgoingRule);
     await exec(cmdIncomingRule);
-    await exec(cmdOutgoingTCPRule);
-    await exec(cmdIncomingTCPRule);
     await exec(cmdOutgoingRule6);
     await exec(cmdIncomingRule6);
-    await exec(cmdOutgoingTCPRule6);
-    await exec(cmdIncomingTCPRule6);
-    await exec(cmdNatOutgoingTCPRule);
-    await exec(cmdNatOutgoingUDPRule);
-    await exec(cmdNatOutgoingTCPRule6);
-    await exec(cmdNatOutgoingUDPRule6);
+    await exec(cmdNatOutgoingRule);
+    await exec(cmdNatOutgoingRule6);
 
     if (destroy) {
       if (macTag) {
