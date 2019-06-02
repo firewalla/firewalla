@@ -2082,7 +2082,7 @@ class netBot extends ControllerBot {
         break;
       case "vpnProfile":
       case "ovpnProfile":
-        const type = value.type || "openvpn";
+        const type = (value && value.type) || "openvpn";
         switch (type) {
           case "openvpn":
             (async () => {
@@ -2121,7 +2121,7 @@ class netBot extends ControllerBot {
         break;
       case "vpnProfiles":
       case "ovpnProfiles": {
-        const types = value.types || ["openvpn"];
+        const types = (value && value.types) || ["openvpn"];
         if (!Array.isArray(types)) {
           this.simpleTxData(msg, {}, {code: 400, msg: "'types' should be an array."}, callback);
           return;
