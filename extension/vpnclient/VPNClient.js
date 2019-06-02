@@ -15,8 +15,11 @@
 
 'use strict';
 
-class VPNClient {
+const events = require('events');
+
+class VPNClient extends events.EventEmitter {
   constructor(options) {
+    super();
   }
 
   async setup() {

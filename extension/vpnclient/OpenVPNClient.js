@@ -22,6 +22,7 @@ const Promise = require('bluebird');
 const util = require('util');
 const f = require('../../net2/Firewalla.js');
 
+
 const instances = {};
 
 const VPNClient = require('./VPNClient.js');
@@ -46,6 +47,14 @@ class OpenVPNClient extends VPNClient {
     if (instances[profileId] == null) {
       instances[profileId] = this;
       this.profileId = profileId;
+
+      if (f.isMain()) {
+        setInterval(() => {
+          this._refreshRoutes().catch((err) => {
+            log.error("Failed to refresh route", err);
+          });
+        }, 60000); // refresh routes once every minute, in case of remote IP or interface name change due to auto reconnection
+      }
     }
     return instances[profileId];
   }
@@ -156,6 +165,27 @@ class OpenVPNClient extends VPNClient {
     await writeFileAsync(ovpnPath, revisedContent, 'utf8');
   }
 
+  async _refreshRoutes() {
+    // no need to refresh routes if vpn client is not started
+    if (!this._started) {
+      return;
+    }
+    const newRemoteIP = await this.getRemoteIP();
+    const intf = this.getInterfaceName();
+    if (newRemoteIP === null) {
+      // vpn client is down unexpectedly
+      log.error("VPN client " + this.profileId + " remote IP is missing.");
+      this.emit('link_broken');
+      return;
+    }
+    // no need to refresh if remote ip and interface are not changed
+    if (newRemoteIP !== this._remoteIP) {
+      log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
+      await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf);
+      this._remoteIP = newRemoteIP;
+    }
+  }
+
   async start() {
     if (!this.profileId) {
       throw "OpenVPN client is not setup properly. Profile id is missing."
@@ -168,6 +198,7 @@ class OpenVPNClient extends VPNClient {
         (async () => {
           const remoteIP = await this.getRemoteIP();
           if (remoteIP !== null && remoteIP !== "") {
+            this._remoteIP = remoteIP;
             try {
               // remove two routes from main table which is inserted by OpenVPN client automatically,
               // otherwise tunnel will be enabled globally
@@ -180,22 +211,9 @@ class OpenVPNClient extends VPNClient {
             }
             clearInterval(establishmentTask);
             const intf = this.getInterfaceName();
-            const refreshRoutes = (async() => {
-              const newRemoteIP = await this.getRemoteIP();
-              const newIntf = this.getInterfaceName();
-              // no need to refresh if remote ip and interface are not changed
-              if (newRemoteIP !== remoteIP || newIntf !== intf) {
-                log.info("Refresh vpn client routes for " + newRemoteIP + ", " + newIntf);
-                await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, newIntf);
-              }
-            });
             // add vpn client specific routes
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
-            this.vpnClientRoutesTask = setInterval(() => {
-              refreshRoutes().catch((err) => {
-                log.error("Failed to refresh route", err);
-              });
-            }, 300000); // refresh routes once every 5 minutes, in case of remote IP or interface name change due to auto reconnection
+            this._started = true;
             resolve(true);
           } else {
             const now = Date.now();
@@ -217,15 +235,12 @@ class OpenVPNClient extends VPNClient {
   async stop() {
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
+    this._started = false;
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
-    if (this.vpnClientRoutesTask) {
-      clearInterval(this.vpnClientRoutesTask);
-      this.vpnClientRoutesTask = null;
-    }
   }
 
   async status() {

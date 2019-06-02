@@ -378,6 +378,11 @@ class netBot extends ControllerBot {
       // start VPN client globally
       this.hostManager.loadPolicy((err, data) => {
         if (err == null) {
+          let oldValue = {};
+          if (data["vpnClient"]) {
+            oldValue = JSON.parse(data["vpnClient"]);
+          }
+          value = Object.assign({}, oldValue, value);
           this.hostManager.setPolicy("vpnClient", value, (err, data) => {
             if (err == null) {
               if (callback != null)
@@ -3146,9 +3151,12 @@ class netBot extends ControllerBot {
                 const result = await ovpnClient.start();
                 if (!result) {
                   await ovpnClient.stop();
+                  // set state to false in system policy
+                  this._vpnClient("0.0.0.0", {state: false});
                   // HTTP 408 stands for request timeout
                   this.simpleTxData(msg, {}, {code: 408, msg: "Failed to start vpn client within 20 seconds."}, callback);
                 } else {
+                  this._vpnClient("0.0.0.0", {state: true});
                   this.simpleTxData(msg, {}, null, callback);
                 }
               })().catch((err) => {
@@ -3178,6 +3186,7 @@ class netBot extends ControllerBot {
                 await ovpnClient.setup();
                 const stats = await ovpnClient.getStatistics();
                 await ovpnClient.stop();
+                this._vpnClient("0.0.0.0", {state: false});
                 this.simpleTxData(msg, {stats: stats}, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);

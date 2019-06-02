@@ -52,6 +52,8 @@ const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP()
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 
@@ -110,7 +112,6 @@ const FlowTool = require('./FlowTool.js');
 const flowTool = new FlowTool();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const defaultOvpnProfileId = "ovpn_client";
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -2651,7 +2652,45 @@ module.exports = class HostManager {
   }
 
   async vpnClient(policy) {
-    
+    const type = policy.type;
+    const state = policy.state;
+    switch (type) {
+      case "openvpn": 
+        const profileId = policy.openvpn && policy.openvpn.profileId;
+        if (!profileId) {
+          log.error("profileId is not specified", policy);
+          return false;
+        }
+        const ovpnClient = new OpenVPNClient({profileId: profileId});
+        if (state === true) {
+          await ovpnClient.setup();
+          const result = await ovpnClient.start();
+          if (result) {
+            ovpnClient.once('link_broken', () => {
+              sem.sendEventToFireApi({
+                type: 'FW_NOTIFICATION',
+                titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
+                bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                payload: {
+                  profileId: profileId
+                }
+              });
+              const updatedPolicy = JSON.parse(JSON.stringify(policy));
+              updatedPolicy.state = false;
+              // update vpnClient system policy to state false
+              this.setPolicy("vpnClient", updatedPolicy);
+            });
+          }
+          return result;
+        } else {
+          await ovpnClient.setup();
+          await ovpnClient.stop();
+        }
+        break;
+      default:
+        log.warn("Unsupported VPN type: " + type);
+    }
+    return true;
   }
 
   policyToString() {

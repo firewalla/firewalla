@@ -58,9 +58,14 @@ class VPNClientEnforcer {
     if (!intf)
       throw "interface is not defined";
     const tableName = this._getRoutingTableName(intf);
+    const host = await hostTool.getMACEntry(mac);
+    const currentRoute = await routing.testRoute("8.8.8.8", host.ipv4Addr, "eth0"); // FIXME: hard code eth0 here
+    if (currentRoute && currentRoute.dev === intf) {
+      log.info("VPN Access is already granted to " + mac);
+      return;
+    }
     // ensure customized routing table is created
     await routing.createCustomizedRoutingTable(tableName);
-    const host = await hostTool.getMACEntry(mac);
     host.vpnClientMode = mode;
     host.vpnClientIntf = intf;
     this.enabledHosts[mac] = host;

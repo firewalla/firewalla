@@ -132,11 +132,45 @@ async function flushRoutingTable(tableName) {
   }
 }
 
+async function testRoute(dstIp, srcIp, srcIntf) {
+  try {
+    let cmd = util.format('ip route get to %s from %s iif %s', dstIp, srcIp, srcIntf);
+    let {stdout, stderr} = await execAsync(cmd);
+    if (stderr !== "") {
+      log.error(util.format("Failed to test route from %s %s to %s", srcIp, srcIntf, dstIp), stderr);
+      return null;
+    }
+    // stdout can be two lines:
+    // 8.8.8.8 from 192.168.218.121 via 192.168.7.1 dev eth0
+    // cache  iif eth0
+    const result = (stdout && stdout.split("\n")[0]) || "";
+    const words = result.split(" ");
+    const entry = {};
+    for (let i = 0; i != words.length; i++) {
+      const word = words[i];
+      switch (word) {
+        case "via":
+          entry["via"] = words[++i];
+          break;
+        case "dev":
+          entry["dev"] = words[++i];
+          break;
+        default:
+      }
+    }
+    return entry;
+  } catch (err) {
+    log.error(util.format("Failed to test route from %s %s to %s", srcIp, srcIntf, dstIp), err);
+    return null;
+  }
+}
+
 module.exports = {
   createCustomizedRoutingTable: createCustomizedRoutingTable,
   createPolicyRoutingRule: createPolicyRoutingRule,
   removePolicyRoutingRule: removePolicyRoutingRule,
   addRouteToTable: addRouteToTable,
   removeRouteFromTable: removeRouteFromTable,
-  flushRoutingTable: flushRoutingTable
+  flushRoutingTable: flushRoutingTable,
+  testRoute: testRoute
 }
