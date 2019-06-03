@@ -67,12 +67,11 @@ class ShieldManager {
             }
             // update ip address to protected_ip_set/protected_ip_set6
             if (host.mac && this.protected_macs[host.mac]) {
-              this.activateShield(host.mac);
+              await this.activateShield(host.mac);
             }
           })().catch((err) => {
-
+            log.error("Failed to update trusted_ip_set(6), ", err);
           })
-          
         });
 
         this.protected_macs = {};
