@@ -24,6 +24,7 @@ const Block = require('./Block.js');
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 
 const exec = require('child-process-promise').exec
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let instance = null
 
@@ -31,7 +32,14 @@ const EXPIRE_TIME = 60 * 60 * 48 // one hour
 
 const iptool = require("ip");
 
-const ACTIVE_COUNTRY_SET = 'category:country:list'
+const util = require('util')
+const fs = require('fs');
+const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+
+const Ipset = require('../net2/Ipset.js')
+
+const DISK_CACHE_FOLDER = firewalla.getTempFolder() + '/country'
 
 // CountryUpdater is responsible for updating dynamic ip/subnet
 // presistent subnet set update is triggered in CategoryUpdateSensor
@@ -40,15 +48,24 @@ class CountryUpdater extends CategoryUpdaterBase {
   constructor() {
     if (instance == null) {
       super()
+      this.inited = false;
       instance = this
 
-      this.init();
+      this.activeCountries = {}
+      this.activeCategories = {}
+
+      exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
     }
+
     return instance
   }
 
   getCategory(code) {
     return `country:${code.toUpperCase()}`;
+  }
+
+  getCountry(category) {
+    return category.substring(8);
   }
 
   getDynamicIPv4Key(category) {
@@ -59,54 +76,36 @@ class CountryUpdater extends CategoryUpdaterBase {
     return `dynamicCategory:${category}:ip6:net`
   }
 
-  async getActiveCountries() {
-    // return await rclient.smembersAsync(ACTIVE_COUNTRY_SET);
-    return activeCountries
-  }
-
-  async init() {
-    this.activeCountries = await rclient.smembersAsync(ACTIVE_COUNTRY_SET);
-    this.activeCategories = {}
-    for (const code of this.activeCountries) {
-      const category = this.getCategory(code);
-      this.activeCategories[category] = 1
-      await Block.setupCategoryEnv(category, 'hash:net');
-    }
-
-    // only run refresh category records for fire main process
-    if (firewalla.isMain()) {
-      setInterval(() => {
-        this.refreshAllCategoryRecords()
-      }, 24 * 60 * 60 * 1000) // update records every day
-
-      setTimeout(async () => {
-
-        log.info("============= UPDATING COUNTRY IPSET =============")
-        await this.refreshAllCategoryRecords()
-        log.info("============= UPDATING COUNTRY IPSET COMPLETE =============")
-
-      }, 3 * 60 * 1000) // after 3 minutes
-    }
+  getActiveCountries() {
+    return Object.keys(this.activeCountries);
   }
 
   // included/excluded ip/subnet should be implemented as exception rules
 
   async activateCountry(code) {
-    const category = this.getCategory(code)
+    if (this.activeCountries[code]) return
 
-    await rclient.saddAsync(ACTIVE_COUNTRY_SET, code)
+    const category = this.getCategory(code)
 
     this.activeCountries[code] = 1
     this.activeCategories[category] = 1
     await Block.setupCategoryEnv(category, 'hash:net');
 
-    await this.refreshCategoryRecord(category)
+    sem.emitEvent({
+      type: 'Policy:CountryActivated',
+      toProcess: 'FireMain',
+      message: 'Country activated: ' + code,
+      country: code
+    })
   }
 
   async deactivateCountry(code) {
     const category = this.getCategory(code)
 
-    await rclient.sremAsync(ACTIVE_COUNTRY_SET, code)
+    await Ipset.destroy(this.getIPSetName(category))
+    await Ipset.destroy(this.getIPSetNameForIPV6(category))
+    await Ipset.destroy(this.getTempIPSetName(category))
+    await Ipset.destroy(this.getTempIPSetNameForIPV6(category))
 
     delete this.activeCountries[code]
     await this.deactivateCategory(category)
@@ -139,14 +138,59 @@ class CountryUpdater extends CategoryUpdaterBase {
         const cmd = `redis-cli zrange ${key} 0 -1 | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
         await exec(cmd)
       } catch(err) {
-        log.error(`Failed to update ipset for ${category}, cmd: ${cmd}, err: ${err}`)
+        log.error(`Failed to update ipset for ${category}, cmd: ${cmd}`, err)
       }
     }
   }
+  
+  async updateIpset(category, ip6 = false, options) {
+    const key = ip6 ? this.getIPv6CategoryKey(category) : this.getIPv4CategoryKey(category)
 
-  async recycleIPSet(category) {
+    let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
 
-    if (!this.isActivated(category)) return
+    if(options && options.useTemp) {
+      ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
+    }
+
+    const country = this.getCountry(category);
+    const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
+
+    try {
+      let cmd4 = `cat ${file} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      await exec(cmd4)
+    } catch(err) {
+      log.error(`Failed to update ipset by category ${category} with ipv4 addresses`, err)
+    }
+  }
+
+  async addAddresses(country, ip6 = false, addresses) {
+    if (!country || !this.isActivated(this.getCategory(country))
+      || !Array.isArray(addresses) || addresses.length === 0) {
+      return
+    }
+
+    const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
+    await writeFileAsync(file, addresses.join('\n') + '\n');
+  }
+
+  async checkActivationStatus(category) {
+    const v4Active = await Ipset.isReferenced(this.getIPSetName(category))
+    const v6Active = await Ipset.isReferenced(this.getIPSetNameForIPV6(category))
+
+    return v4Active || v6Active
+  }
+
+  async recycleIPSet(category, deactivate = true) {
+    if (deactivate) {
+      // remove inactive ipset as it might occupies a lot mem
+      const active = await this.checkActivationStatus(category);
+
+      if (!active) {
+        await this.deactivateCountry(this.getCountry(category));
+        log.info(`Deactivated ${category} due to unreferenced ipsets`)
+        return
+      }
+    }
 
     await this.updatePersistentIPSets(category, {useTemp: true});
 

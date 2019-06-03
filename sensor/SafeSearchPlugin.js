@@ -59,6 +59,7 @@ const safeSearchDNSPort = 8863;
 
 
 const iptables = require('../net2/Iptables');
+const wrapIptables = iptables.wrapIptables;
 
 const fc = require('../net2/config.js');
 
@@ -477,7 +478,7 @@ class SafeSearchPlugin extends Sensor {
 
     for(const protocol of ["tcp", "udp"]) {
       const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-      const cmd = iptables.wrapIptables(deviceDNSRule);
+      const cmd = wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
       for(const ip6 of ipv6s || []) {
@@ -487,7 +488,7 @@ class SafeSearchPlugin extends Sensor {
           const deviceDNS6 = `[${ip6}]:8863`;
 
           const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
-          const cmd = iptables.wrapIptables(deviceDNSRule);
+          const cmd = wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }
       }
@@ -505,7 +506,7 @@ class SafeSearchPlugin extends Sensor {
 
     for(const protocol of ["tcp", "udp"]) {
       const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-      const cmd = iptables.wrapIptables(deviceDNSRule);
+      const cmd = wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
       for(const ip6 of ipv6s || []) {
@@ -515,7 +516,7 @@ class SafeSearchPlugin extends Sensor {
           const deviceDNS6 = `[${ip6}]:8863`;
 
           const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
-          const cmd = iptables.wrapIptables(deviceDNSRule);
+          const cmd = wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }
       }

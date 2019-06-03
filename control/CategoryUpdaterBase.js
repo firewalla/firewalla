@@ -15,6 +15,7 @@
 'use strict';
 
 const log = require("../net2/logger.js")(__filename);
+const fc = require('../net2/config.js')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -22,7 +23,7 @@ const Block = require('./Block.js');
 
 const exec = require('child-process-promise').exec
 
-const wrapIptables = Block.wrapIptables
+const wrapIptables = require('../net2/Iptables.js').wrapIptables;
 
 const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;
@@ -60,7 +61,7 @@ class CategoryUpdaterBase {
 
   async getIPv4Addresses(category) {
     if(!this.isActivated(category))
-      return
+      return 0
 
     return rclient.smembersAsync(this.getIPv4CategoryKey(category))
   }
@@ -142,13 +143,13 @@ class CategoryUpdaterBase {
   }
 
   // add entries from category:{category}:ip:domain to ipset
-  async updateIPv4Set(category, options) {
-    const key = this.getIPv4CategoryKey(category)
+  async updateIpset(category, ip6 = false, options) {
+    const key = ip6 ? this.getIPv6CategoryKey(category) : this.getIPv4CategoryKey(category)
 
-    let ipsetName = this.getIPSetName(category)
+    let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
 
     if(options && options.useTemp) {
-      ipsetName = this.getTempIPSetName(category)
+      ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
     }
 
     const hasAny = await rclient.scardAsync(key)
@@ -156,40 +157,17 @@ class CategoryUpdaterBase {
     if(hasAny > 0) {
       let cmd4 = `redis-cli smembers ${key} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       await exec(cmd4).catch((err) => {
-        log.error(`Failed to update ipset by category ${category} with ipv4 addresses, err: ${err}`)
-      })
-    }
-  }
-
-  async updateIPv6Set(category, options) {
-    const key = this.getIPv6CategoryKey(category)
-
-    let ipsetName = this.getIPSetNameForIPV6(category)
-
-    if(options && options.useTemp) {
-      ipsetName = this.getTempIPSetNameForIPV6(category)
-    }
-
-    const hasAny = await rclient.scardAsync(key)
-
-    if(hasAny > 0) {
-      let cmd4 = `redis-cli smembers ${key} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      await exec(cmd4).catch((err) => {
-        log.error(`Failed to update ipset by category ${category} with ipv6 addresses, err: ${err}`)
+        log.error(`Failed to update ipset by ${category} with ip${ip6?6:4} addresses`, err);
       })
     }
   }
 
   async updatePersistentIPSets(category, options) {
-    const ipv4AddressCount = await this.getIPv4AddressesCount(category);
-    const ipv6AddressCount = await this.getIPv6AddressesCount(category);
-
-    if(ipv4AddressCount > 0) {
-      await this.updateIPv4Set(category, options)
-    }
-
-    if(ipv6AddressCount > 0) {
-      await this.updateIPv6Set(category, options)
+    if (this.isActivated(category)) {
+      await this.updateIpset(category, false, options)
+      if (fc.isFeatureOn('ipv6')) {
+        await this.updateIpset(category, true, options)
+      }
     }
   }
 
@@ -206,22 +184,22 @@ class CategoryUpdaterBase {
     const swapCmd6 = `sudo ipset swap ${ipset6Name} ${tmpIPSet6Name}`
 
     await exec(swapCmd).catch((err) => {
-      log.error(`Failed to swap ipsets for category ${category}, err: ${err}`)
+      log.error(`Failed to swap ipsets for category ${category}`, err)
     })
 
     await exec(swapCmd6).catch((err) => {
-      log.error(`Failed to swap ipsets6 for category ${category}, err: ${err}`)
+      log.error(`Failed to swap ipsets6 for category ${category}`, err)
     })
 
     const flushCmd = `sudo ipset flush ${tmpIPSetName}`
     const flushCmd6 = `sudo ipset flush ${tmpIPSet6Name}`
 
     await exec(flushCmd).catch((err) => {
-      log.error(`Failed to flush temp ipsets for category ${category}, err: ${err}`)
+      log.error(`Failed to flush temp ipsets for category ${category}`, err)
     })
 
     await exec(flushCmd6).catch((err) => {
-      log.error(`Failed to flush temp ipsets6 for category ${category}, err: ${err}`)
+      log.error(`Failed to flush temp ipsets6 for category ${category}`, err)
     })
   }
 
@@ -230,7 +208,7 @@ class CategoryUpdaterBase {
     return rclient.delAsync(key)
   }
 
-  getCategories() {
+  getActiveCategories() {
     return Object.keys(this.activeCategories)
   }
 
@@ -253,18 +231,21 @@ class CategoryUpdaterBase {
   async refreshCategoryRecord(category) { }
 
   async refreshAllCategoryRecords() {
-    const categories = this.getCategories()
+    log.info("============= UPDATING CATEGORY IPSET =============")
+    const categories = this.getActiveCategories()
+    log.info('Active categories', categories)
 
     for (const category of categories) {
 
       await this.refreshCategoryRecord(category).catch((err) => {
-        log.error(`Failed to refresh category ${category}, err: ${err}`)
+        log.error(`Failed to refresh category ${category}`, err)
       }) // refresh domain list for each category
 
       await this.recycleIPSet(category).catch((err) => {
-        log.error(`Failed to recycle ipset for category ${category}, err: ${err}`)
+        log.error(`Failed to recycle ipset for category ${category}`, err)
       }) // sync refreshed domain list to ipset
     }
+    log.info("============= UPDATING CATEGORY IPSET COMPLETE =============")
   }
 
   getHttpPort(category) {

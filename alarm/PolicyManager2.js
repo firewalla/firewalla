@@ -740,23 +740,37 @@ class PolicyManager2 {
   }
 
   async enforceAllPolicies() {
-    let rules = await this.loadActivePoliciesAsync();
+    const rules = await this.loadActivePoliciesAsync();
 
-    rules.forEach((rule) => {
-      try {
-        if(this.queue) {
-          const job = this.queue.createJob({
-            policy: rule,
-            action: "enforce",
-            booting: true
-          })
-          job.timeout(60000).save(function() {})
+    const initialEnforcement = rules.map((rule) => {
+      return new Promise((resolve, reject) => {
+        try {
+          if(this.queue) {
+            const job = this.queue.createJob({
+              policy: rule,
+              action: "enforce",
+              booting: true
+            })
+            job.timeout(60000).save();
+            job.on('succeeded', resolve);
+            job.on('failed', resolve);
+          }
+        } catch(err) {
+          log.error(`Failed to queue policy ${rule.pid}`, err)
+          resolve(err)
         }
-      } catch(err) {
-        log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
-      }
+      })
     })
+
+    await Promise.all(initialEnforcement);
+
     log.info("All policy rules are enforced")
+
+    sem.emitEvent({
+      type: 'Policy:AllInitialized',
+      toProcess: 'FireMain', //make sure firemain process handle enforce policy event
+      message: 'All policies are enforced'
+    })
   }
 
 
@@ -992,9 +1006,9 @@ class PolicyManager2 {
         break;
 
       case "country":
+        await countryUpdater.activateCountry(target);
         await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", whitelist);
         await Block.addMacToSet(pid, scope);
-        await countryUpdater.activateCountry(target);
         break;
 
       default:
@@ -1104,8 +1118,7 @@ class PolicyManager2 {
         break;
 
       case "country":
-        await Block.destroyRules(scope && pid, target, whitelist, false);
-        // TODO: deactivateCountry ?
+        await Block.destroyRules(scope && pid, countryUpdater.getCategory(target), whitelist, false);
         break;
 
       default:
