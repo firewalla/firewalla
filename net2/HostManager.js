@@ -1780,7 +1780,7 @@ module.exports = class HostManager {
     let dhcpRange = dnsmasq.getDefaultDhcpRange(network);
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
-        if (data.dnsmasq) {
+        if (data && data.dnsmasq) {
           const dnsmasqConfig = JSON.parse(data.dnsmasq);
           if (dnsmasqConfig[network + "DhcpRange"]) {
             dhcpRange = dnsmasqConfig[network + "DhcpRange"];
