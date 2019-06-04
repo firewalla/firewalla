@@ -140,6 +140,8 @@ const conncheck = require('../diagnostic/conncheck.js');
 
 const _ = require('lodash')
 
+const { delay } = require('../util/util.js')
+
 class netBot extends ControllerBot {
 
   _block2(ip, dst, cron, timezone, duration, callback) {
@@ -2457,6 +2459,22 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break;
+      case "checkIn":
+        sem.sendEventToFireMain({
+          type: 'CloudReCheckin',
+          message: "",
+        });
+        sem.once("CloudReCheckinComplete", async (event) => {
+          let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
+          try {
+            ddns = JSON.parse(ddns);
+            publicIp = JSON.parse(publicIp);
+          } catch(err) {
+            log.error("Failed to parse strings:", ddns, publicIp);
+          }
+          this.simpleTxData(msg, { ddns, publicIp }, null, callback);
+        })
+        break;
       case "debugOn":
         sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
@@ -2793,12 +2811,6 @@ class netBot extends ControllerBot {
           if(timeout) {
             let begin = new Date() / 1000;
 
-            let delayFunction = function(t) {
-              return new Promise(function(resolve) {
-                setTimeout(resolve, t)
-              });
-            }
-
             while(new Date() / 1000 < begin + timeout) {
               const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
               log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
@@ -2806,7 +2818,7 @@ class netBot extends ControllerBot {
               if(running) {
                 break
               }
-              await(delayFunction(1000))
+              await(delay(1000))
             }
 
           } else {
@@ -2857,19 +2869,13 @@ class netBot extends ControllerBot {
 
           let result = false
 
-          let delayFunction = function(t) {
-            return new Promise(function(resolve) {
-              setTimeout(resolve, t)
-            });
-          }
-
           while(new Date() / 1000 < begin + timeout) {
             log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
             result = await (new SpooferManager().isSpoof(ip))
             if(result) {
               break
             }
-            await(delayFunction(1000))
+            await(delay(1000))
           }
 
           this.simpleTxData(msg, {
