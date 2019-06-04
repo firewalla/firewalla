@@ -52,6 +52,8 @@ const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP()
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 
@@ -110,8 +112,6 @@ const FlowTool = require('./FlowTool.js');
 const flowTool = new FlowTool();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const ovpnClient = new OpenVPNClient();
-const defaultOvpnProfileId = "ovpn_client";
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -508,9 +508,16 @@ class Host {
   async vpnClient(policy) {
     try {
       const state = policy.state;
+      const profileId = policy.profileId;
+      if (!profileId) {
+        log.error("VPN client profileId is not specified for " + this.o.mac);
+        return false;
+      }
+      const ovpnClient = new OpenVPNClient({profileId: profileId});
+      const intf = ovpnClient.getInterfaceName();
       if (state === true) {
         const mode = policy.mode || "dhcp";
-        await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode);
+        await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode, intf);
       } else {
         await vpnClientEnforcer.disableVPNAccess(this.o.mac);
       }
@@ -2645,64 +2652,45 @@ module.exports = class HostManager {
   }
 
   async vpnClient(policy) {
+    const type = policy.type;
     const state = policy.state;
-    if (state === true) {
-      switch (policy.type) {
-        case "openvpn":
-          const options = {profileId: defaultOvpnProfileId};
-          if (policy.openvpn) {
-            options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
-          }
-          try {
-            await ovpnClient.setup(options);
-            const result = await ovpnClient.start();
-            if (!result) {
-              log.error("Failed to start vpn client");
-              return false;
-            }
-            let refreshRoutes = (async() => {
-              const remoteIP = await ovpnClient.getRemoteIP();
-              const intf = await ovpnClient.getInterfaceName();
-              await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+    switch (type) {
+      case "openvpn": 
+        const profileId = policy.openvpn && policy.openvpn.profileId;
+        if (!profileId) {
+          log.error("profileId is not specified", policy);
+          return false;
+        }
+        const ovpnClient = new OpenVPNClient({profileId: profileId});
+        if (state === true) {
+          await ovpnClient.setup();
+          const result = await ovpnClient.start();
+          if (result) {
+            ovpnClient.once('link_broken', () => {
+              sem.sendEventToFireApi({
+                type: 'FW_NOTIFICATION',
+                titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
+                bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                payload: {
+                  profileId: profileId
+                }
+              });
+              const updatedPolicy = JSON.parse(JSON.stringify(policy));
+              updatedPolicy.state = false;
+              // update vpnClient system policy to state false
+              this.setPolicy("vpnClient", updatedPolicy);
             });
-            await refreshRoutes();
-            this.vpnClientRoutesTask = setInterval(() => {
-              refreshRoutes();
-            }, 300000); // refresh routes once every 5 minutes, in case of remote IP or interface name change due to auto reconnection
-            return true;
-          } catch (err) {
-            log.error("Failed to start vpn client, ", err);
-            return false;
           }
-        default:
-          log.error("Unsupported vpn client type: " + policy.type);
-          return false;
-      }
-    } else {
-      switch (policy.type) {
-        case "openvpn":
-          try {
-            const options = {profileId: defaultOvpnProfileId};
-            if (policy.openvpn) {
-              options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
-            }
-            await ovpnClient.setup(options);
-            await ovpnClient.stop();
-            await vpnClientEnforcer.flushVPNClientRoutes();
-            if (this.vpnClientRoutesTask) {
-              clearInterval(this.vpnClientRoutesTask);
-              this.vpnClientRoutesTask = null;
-            }
-            return true;
-          } catch (err) {
-            log.error("Failed to stop vpn client, ", err);  
-            return false;
-          }
-        default:
-          log.error("Unsupported vpn client type: " + policy.type);
-          return false;
-      }
+          return result;
+        } else {
+          await ovpnClient.setup();
+          await ovpnClient.stop();
+        }
+        break;
+      default:
+        log.warn("Unsupported VPN type: " + type);
     }
+    return true;
   }
 
   policyToString() {

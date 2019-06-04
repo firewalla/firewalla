@@ -136,6 +136,8 @@ const migration = require('../migration/migration.js');
 
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+
 const conncheck = require('../diagnostic/conncheck.js');
 
 const _ = require('lodash')
@@ -376,6 +378,11 @@ class netBot extends ControllerBot {
       // start VPN client globally
       this.hostManager.loadPolicy((err, data) => {
         if (err == null) {
+          let oldValue = {};
+          if (data["vpnClient"]) {
+            oldValue = JSON.parse(data["vpnClient"]);
+          }
+          value = Object.assign({}, oldValue, value);
           this.hostManager.setPolicy("vpnClient", value, (err, data) => {
             if (err == null) {
               if (callback != null)
@@ -1912,7 +1919,7 @@ class netBot extends ControllerBot {
           const target = value.target;
           const isDomainPattern = value.isDomainPattern || false;
           if (!target) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "target should be specified."}, callback);
+            this.simpleTxData(msg, {}, {code: 400, msg: "'target' should be specified."}, callback);
           } else {
             const domains = await dnsTool.getLinkedDomains(target, isDomainPattern);
             this.simpleTxData(msg, {domains: domains}, null, callback);
@@ -2073,61 +2080,92 @@ class netBot extends ControllerBot {
             });
         });
         break;
+      case "vpnProfile":
       case "ovpnProfile":
-        (async () => {
-          const profileId = value.profileId;
-          if (!profileId) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "profileId should be specified."}, callback);
-          } else {
-            const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-            const cmd = "mkdir -p " + dirPath;
-            await exec(cmd);
-            const filePath = dirPath  + "/" + profileId + ".ovpn";
-            const fileExists = await existsAsync(filePath);
-            if (!fileExists) {
-              this.simpleTxData(msg, {}, {code: 404, msg: "Specified profileId is not found."}, callback);
-            } else {
-              const profileContent = await readFileAsync(filePath, "utf8");
-              const passwordPath = dirPath + "/" + profileId + ".password";
-              const passwordExists = await existsAsync(passwordPath);
-              let password = "";
-              if (passwordExists) {
-                password = await readFileAsync(passwordPath, "utf8");
+        const type = (value && value.type) || "openvpn";
+        switch (type) {
+          case "openvpn":
+            (async () => {
+              const profileId = value.profileId;
+              if (!profileId) {
+                this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' should be specified."}, callback);
+              } else {
+                const ovpnClient = new OpenVPNClient({profileId: profileId});                
+                const filePath = ovpnClient.getProfilePath();
+                const fileExists = await existsAsync(filePath);
+                if (!fileExists) {
+                  this.simpleTxData(msg, {}, {code: 404, msg: "Specified profileId is not found."}, callback);
+                } else {
+                  const profileContent = await readFileAsync(filePath, "utf8");
+                  const passwordPath = ovpnClient.getPasswordPath();
+                  const passwordExists = await existsAsync(passwordPath);
+                  let password = "";
+                  if (passwordExists) {
+                    password = await readFileAsync(passwordPath, "utf8");
+                  }
+                  if (password === "dummy_ovpn_password")
+                    password = ""; // not a real password, just a placeholder
+                  
+                  const status = await ovpnClient.status();
+                  const stats = await ovpnClient.getStatistics();
+                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, status: status, stats: stats}, null, callback);
+                }
               }
-              if (password === "dummy_ovpn_password")
-                password = ""; // not a real password, just a placeholder
-              this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password}, null, callback);
+            })().catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            })
+            break;
+          default:
+            this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
+        }
+        break;
+      case "vpnProfiles":
+      case "ovpnProfiles": {
+        const types = (value && value.types) || ["openvpn"];
+        if (!Array.isArray(types)) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'types' should be an array."}, callback);
+          return;
+        }
+        (async () => {
+          let profiles = [];
+          for (let type of types) {
+            switch (type) {
+              case "openvpn":
+                const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+                const cmd = "mkdir -p " + dirPath;
+                await exec(cmd);
+                const files = await readdirAsync(dirPath);
+                const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+                Array.prototype.push.apply(profiles, await Promise.all(ovpns.map(async filename => {
+                  const profileId = filename.slice(0, filename.length - 5);
+                  const ovpnClient = new OpenVPNClient({profileId: profileId});
+                  const passwordPath = ovpnClient.getPasswordPath();
+                  const profile = {profileId: profileId};
+                  if (fs.existsSync(passwordPath)) {
+                    const password = await readFileAsync(passwordPath, 'utf8');
+                    if (password !== "dummy_ovpn_password") {
+                      // a dummy place holder which indicates the profile is not password-protected
+                      profile.password = password;
+                    }
+                  }
+                  const status = await ovpnClient.status();
+                  profile.status = status;
+                  const stats = await ovpnClient.getStatistics();
+                  profile.stats = stats;
+                  return profile;
+                })));
+                break;
+              default:
+                this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
+                return;
             }
           }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
-      case "ovpnProfiles":
-        (async () => {
-          const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-          const cmd = "mkdir -p " + dirPath;
-          await exec(cmd);
-          const files = await readdirAsync(dirPath);
-          const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
-          const profiles = await Promise.all(ovpns.map(async filename => {
-            const profileId = filename.slice(0, filename.length - 5);
-            const passwordPath = dirPath + "/" + profileId + ".password";
-            const profile = {profileId: profileId};
-            if (fs.existsSync(passwordPath)) {
-              const password = await readFileAsync(passwordPath, 'utf8');
-              if (password !== "dummy_ovpn_password") {
-                // a dummy place holder which indicates the profile is not password-protected
-                profile.password = password;
-              }
-            }
-            return profile;
-          }));
           this.simpleTxData(msg, {"profiles": profiles}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
         break;
+      }
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -3095,51 +3133,149 @@ class netBot extends ControllerBot {
         tokenManager.revokeToken(gid);
         break;
       }
-      case "saveOvpnProfile": {
-        const content = value.content;
-        let profileId = value.profileId;
-        // at least create dummy password file anyway
-        const password = value.password || "dummy_ovpn_password";
-        if (!profileId || profileId === "") {
-          // use default profile id
-          profileId = "ovpn_client";
+      case "startVpnClient": {
+        const type = value.type;
+        if (!type) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'type' is not specified."}, callback);
+          return;
         }
-        (async () => {
-          const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-          const cmd = "mkdir -p " + dirPath;
-          await exec(cmd);
-          const profilePath = dirPath + "/" + profileId + ".ovpn";
-          await writeFileAsync(profilePath, content, 'utf8');
-          const passwordPath = dirPath + "/" + profileId + ".password";
-          await writeFileAsync(passwordPath, password, 'utf8');
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        }) 
+        switch (type) {
+          case "openvpn":
+            const profileId = value.profileId;
+            if (!profileId) {
+              this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' is not specified."}, callback);
+            } else {
+              (async () => {
+                const ovpnClient = new OpenVPNClient({profileId: profileId});
+                await ovpnClient.setup();
+                const result = await ovpnClient.start();
+                if (!result) {
+                  await ovpnClient.stop();
+                  // set state to false in system policy
+                  this._vpnClient("0.0.0.0", {state: false});
+                  // HTTP 408 stands for request timeout
+                  this.simpleTxData(msg, {}, {code: 408, msg: "Failed to start vpn client within 20 seconds."}, callback);
+                } else {
+                  this._vpnClient("0.0.0.0", {state: true});
+                  this.simpleTxData(msg, {}, null, callback);
+                }
+              })().catch((err) => {
+                this.simpleTxData(msg, {}, err, callback);
+              });
+            }
+            break;
+          default:
+            this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
+        }
         break;
       }
-      case "deleteOvpnProfile": {
-        const profileId = value.profileId;
-        (async () => {
-          if (!profileId || profileId === "") {
-            this.simpleTxData(msg, {}, "profile id is not specified", callback);
-          } else {
-            const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-            const profilePath = dirPath + "/" + profileId + ".ovpn";
-            if (fs.existsSync(profilePath)) {
-              await unlinkAsync(profilePath);
-              const passwordPath = dirPath + "/" + profileId + ".password";
-              if (fs.existsSync(passwordPath)) {
-                await unlinkAsync(passwordPath);
-              }
-              this.simpleTxData(msg, {}, null, callback);
+      case "stopVpnClient": {
+        const type = value.type;
+        if (!type) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'type' is not specified."}, callback);
+          return;
+        }
+        switch (type) {
+          case "openvpn":
+            const profileId = value.profileId;
+            if (!profileId) {
+              this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' is not specified."}, callback);
             } else {
-              this.simpleTxData(msg, {}, "profile id '" + profileId + "' does not exist", callback);
+              (async () => {
+                const ovpnClient = new OpenVPNClient({profileId: profileId});
+                await ovpnClient.setup();
+                const stats = await ovpnClient.getStatistics();
+                await ovpnClient.stop();
+                this._vpnClient("0.0.0.0", {state: false});
+                this.simpleTxData(msg, {stats: stats}, null, callback);
+              })().catch((err) => {
+                this.simpleTxData(msg, {}, err, callback);
+              })
             }
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
+            break;
+          default:
+            this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
+        }
+        break;
+      }
+      case "saveVpnProfile":
+      case "saveOvpnProfile": {
+        let type = value.type || "openvpn";
+        switch (type) {
+          case "openvpn":
+            const content = value.content;
+            let profileId = value.profileId;
+            // at least create dummy password file anyway
+            const password = value.password || "dummy_ovpn_password";
+            if (!profileId || profileId === "") {
+              // use default profile id
+              profileId = "vpn_client";
+            }
+            const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
+            if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
+              this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters"}, callback);
+            } else {
+              (async () => {
+                const ovpnClient = new OpenVPNClient({profileId: profileId});
+                const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+                const cmd = "mkdir -p " + dirPath;
+                await exec(cmd);
+                const files = await readdirAsync(dirPath);
+                const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+                if (ovpns && ovpns.length >= 10) {
+                  this.simpleTxData(msg, {}, {code: 429, msg: "At most 10 profiles can be saved on Firewalla"}, callback);
+                } else {
+                  const profilePath = ovpnClient.getProfilePath();
+                  await writeFileAsync(profilePath, content, 'utf8');
+                  const passwordPath = ovpnClient.getPasswordPath();
+                  await writeFileAsync(passwordPath, password, 'utf8');
+                  this.simpleTxData(msg, {}, null, callback);
+                }
+              })().catch((err) => {
+                this.simpleTxData(msg, {}, err, callback);
+              }) 
+            }
+            break;
+          default:
+            this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
+        }
+        break;
+      }
+      case "deleteVpnProfile":
+      case "deleteOvpnProfile": {
+        const type = value.type || "openvpn";
+        switch (type) {
+          case "openvpn":
+            const profileId = value.profileId;
+            (async () => {
+              if (!profileId || profileId === "") {
+                this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' is not specified"}, callback);
+              } else {
+                const ovpnClient = new OpenVPNClient({profileId: profileId});
+                const status = await ovpnClient.status();
+                if (status) {
+                  this.simpleTxData(msg, {}, {code: 400, msg: "OpenVPN client " + profileId + " is still running"}, callback);
+                } else {
+                  const profilePath = ovpnClient.getProfilePath();
+                  if (fs.existsSync(profilePath)) {
+                    await unlinkAsync(profilePath);
+                    const passwordPath = ovpnClient.getPasswordPath();
+                    if (fs.existsSync(passwordPath)) {
+                      await unlinkAsync(passwordPath);
+                    }
+                    this.simpleTxData(msg, {}, null, callback);
+                  } else {
+                    this.simpleTxData(msg, {}, {code: 404, msg: "'profileId' '" + profileId + "' does not exist"}, callback);
+                  }
+                }
+              }
+            })().catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            })
+            break;
+          default:
+            this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
+        }
         break;
       }
       case "saveRSAPublicKey": {

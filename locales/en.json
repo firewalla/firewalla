@@ -93,5 +93,7 @@
   "NOTIF_REVERT_AUTOBLOCK_DOMAIN_TITLE": "Active Protect - Unblock domain",
   "NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY": "Domain {{{domain}}} is unblocked because it's no longer suspicious. - Policy {{{pid}}}",
   "NOTIF_REVERT_AUTOBLOCK_TITLE": "Active Protect Revalidation",
-  "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} active protect rules are removed."
+  "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} active protect rules are removed.",
+  "NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE": "VPN Client Link Broken",
+  "NOTIF_VPN_CLIENT_LINK_BROKEN_BODY": "VPN client {{{profileId}}} is disconnected unexpectedly."
 }
