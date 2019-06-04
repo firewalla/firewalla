@@ -528,6 +528,21 @@ class Host {
     }
   }
 
+  async _dnsmasq(policy) {
+    try {
+      const dnsCaching = policy.dnsCaching;
+      if (dnsCaching === true) {
+        const cmd = `sudo ipset del -! no_dns_caching_mac_set ${this.o.mac}`;
+        await exec(cmd);
+      } else {
+        const cmd = `sudo ipset add -! no_dns_caching_mac_set ${this.o.mac}`;
+        await exec(cmd);
+      }
+    } catch (err) {
+      log.error("Failed to set dnsmasq policy on " + this.o.mac, err);
+    }
+  }
+
   async ipAllocation(policy) {
     const type = policy.type;
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");

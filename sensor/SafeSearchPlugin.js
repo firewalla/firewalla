@@ -477,7 +477,7 @@ class SafeSearchPlugin extends Sensor {
     const ipv6s = sysManager.myIp6();
 
     for(const protocol of ["tcp", "udp"]) {
-      const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+      const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
       const cmd = wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
@@ -487,7 +487,7 @@ class SafeSearchPlugin extends Sensor {
 
           const deviceDNS6 = `[${ip6}]:8863`;
 
-          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
+          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
           const cmd = wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }
@@ -505,7 +505,7 @@ class SafeSearchPlugin extends Sensor {
     const ipv6s = sysManager.myIp6();
 
     for(const protocol of ["tcp", "udp"]) {
-      const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+      const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
       const cmd = wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
@@ -515,7 +515,7 @@ class SafeSearchPlugin extends Sensor {
 
           const deviceDNS6 = `[${ip6}]:8863`;
 
-          const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
+          const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
           const cmd = wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }

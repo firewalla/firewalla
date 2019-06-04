@@ -113,6 +113,7 @@ function iptablesArgs(rule) {
   if (rule.protocol) args = args.concat(["-p", rule.protocol]);
   if (rule.src) args = args.concat(["--source", rule.src]);
   if (rule.dst) args = args.concat(["--destination", rule.dst]);
+  if (rule.extra) args = args.concat([rule.extra]);
   if (rule.sport) args = args.concat(["--sport", rule.sport]);
   if (rule.dport) args = args.concat(["--dport", rule.dport]);
   if (rule.in) args = args.concat(["-i", rule.in]);
@@ -182,6 +183,7 @@ function dnsRedirect(server, port, cb) {
     action: '-A',
     table: 'nat',
     protocol: 'udp',
+    extra: '-m set ! --match-set no_dns_caching_mac_set src',
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
@@ -218,6 +220,7 @@ function dnsUnredirect(server, port, cb) {
     action: '-D',
     table: 'nat',
     protocol: 'udp',
+    extra: '-m set ! --match-set no_dns_caching_mac_set src',
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
