@@ -50,24 +50,28 @@ class ShieldManager {
         sclient.subscribe("System:VPNSubnetChanged");
 
         sem.on("DeviceUpdate", (event) => {
-          // add/update device ip address to trusted_ip_set/trusted_ip_set6
-          const host = event.host;
-          if (host.ipv4Addr) {
-            log.info("Update device ip in trusted_ip_set: " + host.ipv4Addr);
-            const cmd = util.format("sudo ipset add -! trusted_ip_set %s", host.ipv4Addr);
-            exec(cmd);
-          }
-          if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-            host.ipv6Addr.forEach(ipv6Addr => {
-              log.info("Update device ip in trusted_ip_set6: " + ipv6Addr);
-              const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ipv6Addr);
-              exec(cmd);
-            });
-          }
-          // update ip address to protected_ip_set/protected_ip_set6
-          if (host.mac && this.protected_macs[host.mac]) {
-            this.activateShield(host.mac);
-          }
+          (async () => {
+            // add/update device ip address to trusted_ip_set/trusted_ip_set6
+            const host = event.host;
+            if (host.ipv4Addr) {
+              log.info("Update device ip in trusted_ip_set: " + host.ipv4Addr);
+              const cmd = util.format("sudo ipset add -! trusted_ip_set %s", host.ipv4Addr);
+              await exec(cmd);
+            }
+            if (host.ipv6Addr && host.ipv6Addr.length > 0) {
+              for (let v6Addr of host.ipv6Addr) {
+                log.info("Update device ip in trusted_ip_set6: " + v6Addr);
+                const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", v6Addr);
+                await exec(cmd);
+              };
+            }
+            // update ip address to protected_ip_set/protected_ip_set6
+            if (host.mac && this.protected_macs[host.mac]) {
+              await this.activateShield(host.mac);
+            }
+          })().catch((err) => {
+            log.error("Failed to update trusted_ip_set(6), ", err);
+          })
         });
 
         this.protected_macs = {};
