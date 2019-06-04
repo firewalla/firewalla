@@ -68,11 +68,6 @@ class OpenVPNClient extends VPNClient {
       this.ovpnPath = ovpnPath;
       await this._reviseProfile(this.ovpnPath);
     } else throw util.format("ovpn file %s is not found", ovpnPath);
-    const passwordPath = this.getPasswordPath();
-    if (!fs.existsSync(passwordPath)) {
-      // create dummy password file, otherwise openvpn will report missing file on --askpass option
-      await writeFileAsync(passwordPath, "dummy_ovpn_password", 'utf8');
-    }
   }
 
   getProfilePath() {
@@ -82,6 +77,11 @@ class OpenVPNClient extends VPNClient {
 
   getPasswordPath() {
     const path = f.getHiddenFolder() + "/run/ovpn_profile/" + this.profileId + ".password";
+    return path;
+  }
+
+  getUserPassPath() {
+    const path = f.getHiddenFolder() + "/run/ovpn_profile/" + this.profileId + ".userpass";
     return path;
   }
 
@@ -126,14 +126,31 @@ class OpenVPNClient extends VPNClient {
     revisedContent = revisedContent.replace(/^dev\s+.*$/gm, `dev ${intf}`);
     // specify interface type with 'dev-type'
     if (this._intfType === "tun") {
-      if (!revisedContent.match(/^dev-type tun/gm)) {
+      if (!revisedContent.match(/^dev-type\s+tun\s*/gm)) {
         revisedContent = "dev-type tun\n" + revisedContent;
       }
     } else {
-      if (!revisedContent.match(/^dev-type tap/gm)) {
+      if (!revisedContent.match(/^dev-type\s+tap\s*/gm)) {
         revisedContent = "dev-type tap\n" + revisedContent;
       }
     }
+    // add private key password file to profile if present
+    if (fs.existsSync(this.getPasswordPath())) {
+      if (!revisedContent.match(/^askpass.*$/gm)) {
+        revisedContent = `askpass ${this.getPasswordPath()}\n${revisedContent}`;
+      } else {
+        revisedContent = revisedContent.replace(/^askpass.*$/gm, `askpass ${this.getPasswordPath()}`);
+      }
+    }
+    // add user/pass file to profile if present
+    if (fs.existsSync(this.getUserPassPath())) {
+      if (!revisedContent.match(/^auth-user-pass.*$/gm)) {
+        revisedContent = `auth-user-pass ${this.getUserPassPath()}\n${revisedContent}`;
+      } else {
+        revisedContent = revisedContent.replace(/^auth-user-pass.*$/gm, `auth-user-pass ${this.getUserPassPath()}`);
+      }
+    }
+
     if (version.startsWith("2.3.")) {
       const lines = content.split("\n");
       lines.forEach((line) => {
