@@ -20,7 +20,7 @@ if [ -f  /bspool/tmp/post-term* ]; then
 fi
 GITHUB_STATUS_API=https://status.github.com/api.json
 for i in `seq 1 10`; do
-    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
+    HTTP_STATUS_CODE=`curl -L -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       break
     fi
