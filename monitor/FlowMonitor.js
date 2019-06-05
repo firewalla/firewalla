@@ -237,144 +237,127 @@ module.exports = class FlowMonitor {
   flowIntel(flows) {
     for (let i in flows) {
       let flow = flows[i];
-      log.debug("FLOW:INTEL:PROCESSING",JSON.stringify(flow));
-      if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow,'l')) {
-        log.debug("########## flowIntel",JSON.stringify(flow));
-        let c = flow.intel.category;
-        let cs = flow.intel.cs;
+      log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
+      if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
+        log.debug("######## flowIntel Processing", JSON.stringify(flow));
+        if (this.isFlowIntelInClass(flow['intel'], "av")) {
+          if ((flow.du && Number(flow.du) > 60) && (flow.rb && Number(flow.rb) > 5000000)) {
+            let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+              alarmBootstrap(flow)
+            );
 
-        hostManager.isIgnoredIPs([flow.sh,flow.dh,flow.dhname,flow.shname],(err,ignore)=>{
-          if (ignore) {
-            log.info("######## flowIntel:Ignored",flow);
-            return;
+            alarmManager2.enqueueAlarm(alarm);
           }
+        }
+        else if (this.isFlowIntelInClass(flow['intel'], "porn")) {
+          if ((flow.du && Number(flow.du) > 20) &&
+            (flow.rb && Number(flow.rb) > 1000000) ||
+            this.flowIntelRecordFlow(flow, 3)) {
 
-          log.debug("######## flowIntel Processing",JSON.stringify(flow));
-          if (this.isFlowIntelInClass(flow['intel'],"av")) {
-            if ( (flow.du && Number(flow.du)>60) && (flow.rb && Number(flow.rb)>5000000) ) {
-              let msg = "Watching video "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
+            // there should be a unique ID between pi and cloud on websites
 
-              let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-                alarmBootstrap(flow)
-              );
+            let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+              alarmBootstrap(flow)
+            );
 
-              alarmManager2.enqueueAlarm(alarm);
+            alarmManager2.enqueueAlarm(alarm);
+          }
+        }
+        else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
+          // Intel object
+          //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
+          //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
+          // ignore partial flows initiated from outside.  They are blocked by firewall and we 
+          // see the packet before that due to how libpcap works
+
+          if (flowUtil.checkFlag(flow, 's') && flow.fd === "out") {
+            log.info("Intel:On:Partial:Flows", flow);
+          } else {
+            let msg = "Intel " + flow.shname + " " + flow.dhname;
+
+            let intelobj = {
+              uid: uuid.v4(),
+              ts: flow.ts,
+              fd: flow.fd,
+              intel: flow.intel,
+              sp_array: flow.sp_array,
+              "seen.indicator_type": "Intel::DOMAIN",
+            };
+
+            if ("urls" in flow) {
+              intelobj.urls = flow.urls;
             }
-          }
-          else if (this.isFlowIntelInClass(flow['intel'],"porn")) {
-            if ((flow.du && Number(flow.du)>20) &&
-              (flow.rb && Number(flow.rb)>1000000) ||
-              this.flowIntelRecordFlow(flow,3)) {
 
-              // there should be a unique ID between pi and cloud on websites
+            if (flow.fd === "in") {
+              Object.assign(intelobj, {
+                "id.orig_h": flow.sh,
+                "id.resp_h": flow.dh,
+                "id.orig_p": flow.sp,
+                "id.resp_p": flow.dp,
+              });
 
-              let msg = "Watching porn "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
-
-              let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-                alarmBootstrap(flow)
-              );
-
-              alarmManager2.enqueueAlarm(alarm);
-            }
-          }
-          else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
-            // Intel object
-            //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
-            //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
-            // ignore partial flows initiated from outside.  They are blocked by firewall and we 
-            // see the packet before that due to how libpcap works
-
-            if (flowUtil.checkFlag(flow,'s') && flow.fd==="out") {
-              log.info("Intel:On:Partial:Flows", flow);
-            } else {
-              let msg = "Intel "+flow.shname+" "+flow.dhname;
-
-              let intelobj = {
-                uid: uuid.v4(),
-                ts: flow.ts,
-                fd: flow.fd,
-                intel: flow.intel,
-                sp_array: flow.sp_array,
-                "seen.indicator_type": "Intel::DOMAIN",
-              };
-
-              if("urls" in flow) {
-                intelobj.urls = flow.urls;
-              }
-
-              if (flow.fd === "in") {
-                Object.assign(intelobj, {
-                  "id.orig_h": flow.sh,
-                  "id.resp_h": flow.dh,
-                  "id.orig_p": flow.sp,
-                  "id.resp_p": flow.dp,
-                });
-
-                if (flow.dhname) {
-                  intelobj['seen.indicator'] = flow.dhname;
-                } else {
-                  intelobj['seen.indicator'] = flow.dh;
-                }
+              if (flow.dhname) {
+                intelobj['seen.indicator'] = flow.dhname;
               } else {
-                Object.assign(intelobj, {
-                  shname: flow["shname"],
-                  dhname: flow["dhname"],
-                  mac: flow["mac"],
-                  target: flow.lh,
-                  appr: flow["appr"],
-                  org: flow["org"],
-                  "id.orig_h": flow.dh,
-                  "id.resp_h": flow.sh,
-                  "id.orig_p": flow.dp,
-                  "id.resp_p": flow.sp
-                });
-
-                if (flow.shname) {
-                  intelobj['seen.indicator'] = flow.shname;
-                } else {
-                  intelobj['seen.indicator'] = flow.sh;
-                }
+                intelobj['seen.indicator'] = flow.dh;
               }
+            } else {
+              Object.assign(intelobj, {
+                shname: flow["shname"],
+                dhname: flow["dhname"],
+                mac: flow["mac"],
+                target: flow.lh,
+                appr: flow["appr"],
+                org: flow["org"],
+                "id.orig_h": flow.dh,
+                "id.resp_h": flow.sh,
+                "id.orig_p": flow.dp,
+                "id.resp_p": flow.sp
+              });
 
-              if (flow.intel && flow.intel.action ) {
-                intelobj.action = flow.intel.action;
+              if (flow.shname) {
+                intelobj['seen.indicator'] = flow.shname;
+              } else {
+                intelobj['seen.indicator'] = flow.sh;
               }
-              if (flow.intel && flow.intel.cc) {
-                intelobj.categoryArray = flow.intel.cc;
-              }
-
-              if (flow.pf) {
-                for (let o in flow.pf) {
-                  intelobj['id.resp_p'] = o;
-                  break;
-                }
-              }
-
-              if (flow.pr) {
-                intelobj.pr = flow.pr;
-              }
-
-              log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
-
-              this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
-              this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.resp_h'], intelobj);
-
-              // Process intel to generate Alarm about it
-              this.processIntelFlow(intelobj);
             }
-          }
-          else if (this.isFlowIntelInClass(flow['intel'],"games") && this.flowIntelRecordFlow(flow,3)) {
-            if ((flow.du && Number(flow.du)>3) && (flow.rb && Number(flow.rb)>30000) || this.flowIntelRecordFlow(flow,3)) {
-              let msg = "Playing "+c+" "+flow["shname"] +" "+flowUtil.dhnameFlow(flow);
 
-              let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-                alarmBootstrap(flow)
-              );
-
-              alarmManager2.enqueueAlarm(alarm);
+            if (flow.intel && flow.intel.action) {
+              intelobj.action = flow.intel.action;
             }
+            if (flow.intel && flow.intel.cc) {
+              intelobj.categoryArray = flow.intel.cc;
+            }
+
+            if (flow.pf) {
+              for (let o in flow.pf) {
+                intelobj['id.resp_p'] = o;
+                break;
+              }
+            }
+
+            if (flow.pr) {
+              intelobj.pr = flow.pr;
+            }
+
+            log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
+
+            this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
+            this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.resp_h'], intelobj);
+
+            // Process intel to generate Alarm about it
+            this.processIntelFlow(intelobj);
           }
-        });
+        }
+        else if (this.isFlowIntelInClass(flow['intel'], "games") && this.flowIntelRecordFlow(flow, 3)) {
+          if ((flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) || this.flowIntelRecordFlow(flow, 3)) {
+            let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+              alarmBootstrap(flow)
+            );
+
+            alarmManager2.enqueueAlarm(alarm);
+          }
+        }
       }
     }
   }
@@ -857,7 +840,7 @@ module.exports = class FlowMonitor {
     const deviceIP = this.getDeviceIP(flowObj);
     const remoteIP = this.getRemoteIP(flowObj);
 
-    if (sysManager.isLocalIP(remoteIP) || sysManager.ignoreIP(remoteIP)) {
+    if (sysManager.isLocalIP(remoteIP) || sysManager.isDNS(remoteIP)) {
       log.error("Host:Subscriber:Intel Error related to local ip", remoteIP);
       return;
     }

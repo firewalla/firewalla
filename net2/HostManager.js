@@ -1733,20 +1733,6 @@ module.exports = class HostManager {
     });
   }
 
-  ignoredIPDataForInit(json) {
-    log.debug("Reading ignored IP list");
-    return new Promise((resolve, reject) => {
-      this.loadIgnoredIP((err,ipdata)=>{
-        if(err) {
-          reject(err);
-          return;
-        }
-        json.ignoredIP = ipdata;
-        resolve(json);
-      });
-    });
-  }
-
   boneDataForInit(json) {
     log.debug("Bone for Init");
     return new Promise((resolve, reject) => {
@@ -1984,7 +1970,6 @@ module.exports = class HostManager {
         this.policyRulesForInit(json),
         this.exceptionRulesForInit(json),
         this.natDataForInit(json),
-        this.ignoredIPDataForInit(json),
         this.getCloudURL(json)
       ]
 
@@ -2138,7 +2123,6 @@ module.exports = class HostManager {
           this.newAlarmDataForInit(json),
           this.archivedAlarmNumberForInit(json),
           this.natDataForInit(json),
-          this.ignoredIPDataForInit(json),
           this.boneDataForInit(json),
           this.encipherMembersForInit(json),
           this.jwtTokenForInit(json),
@@ -2807,85 +2791,6 @@ module.exports = class HostManager {
           });
         });
       }
-    });
-  }
-
-  loadIgnoredIP(callback) {
-    let key = "policy:ignore"
-    rclient.hgetall(key, (err, data) => {
-      if (err != null) {
-        log.error("Ignored:Policy:Load:Error", key, err);
-        if (callback) {
-          callback(err, null);
-        }
-      } else {
-        if (data) {
-          let ignored= {};
-          for (let k in data) {
-            ignored[k] = JSON.parse(data[k]);
-          }
-          if (callback)
-            callback(null, ignored);
-        } else {
-          if (callback)
-            callback(null, null);
-        }
-      }
-    });
-  }
-
-  unignoreIP(ip,callback) {
-    let key = "policy:ignore";
-    rclient.hdel(key,ip,callback);
-    log.info("Unignore:",ip);
-  }
-
-  ignoreIP(ip,reason,callback) {
-    let now = Math.ceil(Date.now() / 1000);
-    let key = "policy:ignore";
-    let obj = {
-      ip: ip,
-      ts: now,
-      reason: reason
-    };
-    let objkey ={};
-    objkey[ip]=JSON.stringify(obj);
-    rclient.hmset(key,objkey,(err,data)=> {
-      if (err!=null) {
-        callback(err,null);
-      } else {
-        callback(null,null);
-      }
-    });
-  }
-
-  isIgnoredIP(ip,callback) {
-    if (ip == null || ip == undefined) {
-      callback(null,null);
-      return;
-    }
-    if (ip.includes("encipher.io") || ip.includes("firewalla.com")) {
-      callback(null,"predefined");
-      return;
-    }
-    let key = "policy:ignore";
-    rclient.hget(key,ip,(err,data)=> {
-      callback(err,data);
-    });
-  }
-
-  isIgnoredIPs(ips,callback) {
-    let ignored = false;
-    _async.each(ips, (ip, cb) => {
-      this.isIgnoredIP(ip,(err,data)=>{
-        if (err==null&& data!=null) {
-          ignored = true;
-        }
-        cb();
-      });
-    } , (err) => {
-      log.debug("HostManager:isIgnoredIPs:",ips,ignored);
-      callback(null,ignored );
     });
   }
 
