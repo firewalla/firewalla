@@ -24,9 +24,6 @@ const sysManager = new SysManager('info');
 const firewalla = require('../net2/Firewalla.js');
 const fHome = firewalla.getFirewallaHome();
 
-const later = require('later');
-const publicIp = require('public-ip');
-
 const fs = require('fs');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -35,10 +32,7 @@ const util = require('util');
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
-const linux = require('../util/linux');
 const UPNP = require('../extension/upnp/upnp.js');
-
-const ttlExpire = 12 * 60 * 60;
 
 module.exports = class {
   constructor() {
@@ -235,6 +229,13 @@ module.exports = class {
 
   start(callback) {
     callback = callback || function(){};
+
+    // check whatever VPN server is running or not
+    sem.sendEventToFireMain({
+      type: "PublicIP:Check",
+      message: "VPN server starting, check public IP"
+    })
+
     if (this.started && !this.needRestart) {
       log.info("VpnManager::StartedAlready");
       callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);
