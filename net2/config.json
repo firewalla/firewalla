@@ -117,7 +117,9 @@
     "HeapSensor": {},
     "IntelReportSensor": {},
     "VPNRelaySensor": {},
-    "PublicIPSensor": {},
+    "PublicIPSensor": {
+      "interval": 7200
+    },
     "APIRelaySensor": {},
     "CategoryUpdateSensor": {
       "regularInterval": 28800,
