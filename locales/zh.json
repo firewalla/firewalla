@@ -83,5 +83,7 @@
   "NOTIF_REVERT_AUTOBLOCK_TITLE": "Active Protect Revalidation",
   "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} active protect rules are removed.",
 
-  "NOTIF_ALARM_BRO_NOTICE_TeamCymruMalwareHashRegistry::Match": "设备{{{p.device.name}}}从{{{p.dest.name}}}下载了一个文件{{{p.file.type}}}文件，该文件可能包含可疑蠕虫代码。"
+  "NOTIF_ALARM_BRO_NOTICE_TeamCymruMalwareHashRegistry::Match": "设备{{{p.device.name}}}从{{{p.dest.name}}}下载了一个文件{{{p.file.type}}}文件，该文件可能包含可疑蠕虫代码。",
+  "NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE": "VPN客户端连接中断",
+  "NOTIF_VPN_CLIENT_LINK_BROKEN_BODY": "和VPN客户端{{{profileId}}}之间的连接意外中断了。"
 }
