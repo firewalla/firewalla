@@ -188,7 +188,7 @@ class SSClient {
 
   // prepare the chnroute files
   async prepareCHNRoute() {
-    log.info("Preparing CHNRoute")
+    log.info("Preparing CHNRoute...")
     await countryUpdater.activateCountry("CN");
   }
 
