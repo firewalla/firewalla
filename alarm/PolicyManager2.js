@@ -20,7 +20,6 @@ const log = require('../net2/logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const audit = require('../util/audit.js');
-const util = require('util');
 const Bone = require('../lib/Bone.js');
 
 const async = require('asyncawait/async')
@@ -43,17 +42,12 @@ const initID = 1;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const extend = require('util')._extend;
-
 const Block = require('../control/Block.js');
 
 const Policy = require('./Policy.js');
 
 const HostTool = require('../net2/HostTool.js')
 const ht = new HostTool()
-
-const DNSTool = require('../net2/DNSTool.js')
-const dnsTool = new DNSTool()
 
 const DomainIPTool = require('../control/DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
@@ -71,9 +65,6 @@ const Queue = require('bee-queue')
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const policyCapacity = platform.getPolicyCapacity();
-
-const EM = require('./ExceptionManager.js');
-const em = new EM();
 
 const _ = require('lodash')
 
@@ -108,7 +99,7 @@ class PolicyManager2 {
     return false;
   }
 
-  setupPolicyQueue() {
+  async setupPolicyQueue() {
     this.queue = new Queue('policy', {
       removeOnFailure: true,
       removeOnSuccess: true
@@ -237,6 +228,8 @@ class PolicyManager2 {
       })
 
     }, 60 * 1000)
+
+    return this.queue.ready();
   }
 
   registerPolicyEnforcementListener() { // need to ensure it's serialized

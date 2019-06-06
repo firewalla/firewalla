@@ -266,18 +266,16 @@ async function run() {
 
     let PolicyManager2 = require('../alarm/PolicyManager2.js');
     let pm2 = new PolicyManager2();
-    pm2.setupPolicyQueue()
+    await pm2.setupPolicyQueue()
     pm2.registerPolicyEnforcementListener()
 
-    setTimeout(async () => {
-      try {
-        await pm2.cleanupPolicyData()
-        await pm2.enforceAllPolicies()
-        log.info("========= All existing policy rules are applied =========");
-      } catch(err) {
-        log.error("Failed to apply some policy rules: ", err);
-      };
-    }, 1000 * 10); // delay for 10 seconds
+    try {
+      await pm2.cleanupPolicyData()
+      await pm2.enforceAllPolicies()
+      log.info("========= All existing policy rules are applied =========");
+    } catch (err) {
+      log.error("Failed to apply some policy rules: ", err);
+    };
     require('./UpgradeManager').finishUpgrade();
 
   },1000*2);
