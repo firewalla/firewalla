@@ -18,9 +18,7 @@
 const log = require("../../net2/logger.js")(__filename, "info");
 
 const fs = require('fs');
-const util = require('util');
 const jsonfile = require('jsonfile');
-const p = require('child_process');
 
 const DNSMASQ = require('../dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -33,33 +31,15 @@ const jsonfileWrite = Promise.promisify(jsonfile.writeFile)
 Promise.promisifyAll(fs);
 
 const f = require('../../net2/Firewalla.js');
-const fHome = f.getFirewallaHome();
 
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
 
-const extensionFolder = fHome + "/extension/ss_client";
-
 const ssConfigKey = "scisurf.config";
-
-const enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
-const disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
 
 const delay = require('../../util/util.js').delay;
 
 const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
-
-var ssConfig = null;
-
-const localSSClientPort = 8822;
-const localSSClientAddress = "0.0.0.0";
-
-let localRedirectionPort = 8820;
-const localRedirectionAddress = "0.0.0.0";
-
-const localDNSForwarderPort = 8857
-const remoteDNS = "8.8.8.8"
-const remoteDNSPort = "53"
 
 const OVERTURE_PORT = 8854;
 const REMOTE_DNS = "8.8.8.8";
@@ -127,31 +107,6 @@ class SSClient {
   getConfigPath() {
     return `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.config.json`;
   }
-  
-  getRedirPIDPath() {
-    return `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.redir.pid`;
-  }
-  
-  getClientPidPath() {
-    return `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.client.pid`;
-  }
-  
-  // ports
-  getRedirPort() {
-    return this.config.redirPort || localRedirectionPort; // by default 8820
-  }
-  
-  getLocalPort() {
-    return this.config.localPort || localSSClientPort; // by default 8822
-  }
-  
-  getChinaDNSPort() {
-    return this.config.chinaDNSPort || chinaDNSPort; // by default 8854
-  }
-  
-  getDNSForwardPort() {
-    return this.config.dnsForwarderPort || localDNSForwarderPort; // by default 8857
-  }
 
   // START
   async _createConfigFile() {
@@ -197,39 +152,12 @@ class SSClient {
     })();
   }
 
-  async _enableIptablesRule() {
-
-    const cmd = util.format("FW_NAME=%s FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
-      this.name,
-      this.config.server,
-      this.getRedirPort(),
-      remoteDNS,
-      remoteDNSPort,
-      enableIptablesBinary);
-
-    log.info("Running cmd:", cmd);
-    
-    return exec(cmd);
-  }
-    
-  async _disableIptablesRule() {
-    const cmd = util.format("FW_NAME=%s %s",
-      this.name,
-      disableIptablesBinary);
-    
-    log.info("Running cmd:", cmd);
-    return exec(cmd).catch((err) => {
-//      log.error("Got error when disable ss iptables rule set:", err);
-    });
-  }
-
   isStarted() {
     return this.started;
   }
   
   async statusCheck() {
   }
-
 
   // config may contain one or more ss server configurations
   async saveConfig(config) {
@@ -251,30 +179,8 @@ class SSClient {
     }
   }
   
-  async readyToStart() {
-    const config = await this.loadConfig();
-    if(config) {
-      return true;
-    } else {
-      return false;
-    }
-  }
-  
   async clearConfig() {
     return rclient.delAsync(ssConfigKey);
-  }
-
-  async loadConfigFromMem() {
-    return this.config;
-  }
-  
-  async _getSSConfigs() {
-    const config = await this.loadConfig();
-    if(config.servers) {
-      return config.servers;
-    }
-    
-    return [config];
   }
 
 }
