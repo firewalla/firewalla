@@ -2103,17 +2103,27 @@ class netBot extends ControllerBot {
                 } else {
                   const profileContent = await readFileAsync(filePath, "utf8");
                   const passwordPath = ovpnClient.getPasswordPath();
-                  const passwordExists = await existsAsync(passwordPath);
                   let password = "";
-                  if (passwordExists) {
+                  if (await existsAsync(passwordPath)) {
                     password = await readFileAsync(passwordPath, "utf8");
+                    if (password === "dummy_ovpn_password")
+                      password = ""; // not a real password, just a placeholder
                   }
-                  if (password === "dummy_ovpn_password")
-                    password = ""; // not a real password, just a placeholder
+                  const userPassPath = ovpnClient.getUserPassPath();
+                  let user = "";
+                  let pass = "";
+                  if (await existsAsync(userPassPath)) {
+                    const userPass = await readFileAsync(userPassPath, "utf8");
+                    const lines = userPass.split("\n", 2);
+                    if (lines.length == 2) {
+                      user = lines[0];
+                      pass = lines[1];
+                    }
+                  }
                   
                   const status = await ovpnClient.status();
                   const stats = await ovpnClient.getStatistics();
-                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, status: status, stats: stats}, null, callback);
+                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, user: user, pass: pass, status: status, stats: stats}, null, callback);
                 }
               }
             })().catch((err) => {
@@ -2146,13 +2156,26 @@ class netBot extends ControllerBot {
                   const ovpnClient = new OpenVPNClient({profileId: profileId});
                   const passwordPath = ovpnClient.getPasswordPath();
                   const profile = {profileId: profileId};
-                  if (fs.existsSync(passwordPath)) {
-                    const password = await readFileAsync(passwordPath, 'utf8');
-                    if (password !== "dummy_ovpn_password") {
-                      // a dummy place holder which indicates the profile is not password-protected
-                      profile.password = password;
+                  let password = "";
+                  if (await existsAsync(passwordPath)) {
+                    password = await readFileAsync(passwordPath, "utf8");
+                    if (password === "dummy_ovpn_password")
+                      password = ""; // not a real password, just a placeholder
+                  }
+                  profile.password = password;
+                  const userPassPath = ovpnClient.getUserPassPath();
+                  let user = "";
+                  let pass = "";
+                  if (await existsAsync(userPassPath)) {
+                    const userPass = await readFileAsync(userPassPath, "utf8");
+                    const lines = userPass.split("\n", 2);
+                    if (lines.length == 2) {
+                      user = lines[0];
+                      pass = lines[1];
                     }
                   }
+                  profile.user = user;
+                  profile.pass = pass;
                   const status = await ovpnClient.status();
                   profile.status = status;
                   const stats = await ovpnClient.getStatistics();
@@ -3214,8 +3237,20 @@ class netBot extends ControllerBot {
           case "openvpn":
             const content = value.content;
             let profileId = value.profileId;
-            // at least create dummy password file anyway
-            const password = value.password || "dummy_ovpn_password";
+            const password = value.password;
+            const user = value.user;
+            const pass = value.pass;
+            if (!content) {
+              this.simpleTxData(msg, {}, {code: 400, msg: "'content' should be specified"}, callback);
+              return;
+            }
+            if (content.match(/^auth-user-pass\s*/gm)) {
+              // username password is required for this profile
+              if (!user || !pass) {
+                this.simpleTxData(msg, {}, {code: 400, msg: "'user' and 'pass' should be specified for this profile", callback});
+                return;
+              }
+            }
             if (!profileId || profileId === "") {
               // use default profile id
               profileId = "vpn_client";
@@ -3236,8 +3271,14 @@ class netBot extends ControllerBot {
                 } else {
                   const profilePath = ovpnClient.getProfilePath();
                   await writeFileAsync(profilePath, content, 'utf8');
-                  const passwordPath = ovpnClient.getPasswordPath();
-                  await writeFileAsync(passwordPath, password, 'utf8');
+                  if (password) {
+                    const passwordPath = ovpnClient.getPasswordPath();
+                    await writeFileAsync(passwordPath, password, 'utf8');
+                  }
+                  if (user && pass) {
+                    const userPassPath = ovpnClient.getUserPassPath();
+                    await writeFileAsync(userPassPath, `${user}\n${pass}`);
+                  }
                   this.simpleTxData(msg, {}, null, callback);
                 }
               })().catch((err) => {
@@ -3271,6 +3312,10 @@ class netBot extends ControllerBot {
                     const passwordPath = ovpnClient.getPasswordPath();
                     if (fs.existsSync(passwordPath)) {
                       await unlinkAsync(passwordPath);
+                    }
+                    const userPassPath = ovpnClient.getUserPassPath();
+                    if (fs.existsSync(userPassPath)) {
+                      await unlinkAsync(userPassPath);
                     }
                     this.simpleTxData(msg, {}, null, callback);
                   } else {
