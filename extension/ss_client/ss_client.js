@@ -41,17 +41,12 @@ const sysManager = new SysManager();
 const extensionFolder = fHome + "/extension/ss_client";
 
 // Files
-
-
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platformName = platformLoader.getPlatformName();
 
 const binaryFolder = `${extensionFolder}/bin.${platformName}`;
 
-const dnsForwarderBinary = `${binaryFolder}/dns_forwarder`;
-const redirectionBinary = `${binaryFolder}/fw_ss_redir`;
-const chinaDNSBinary = `${binaryFolder}/chinadns`;
-const ssClientBinary = `${binaryFolder}/fw_ss_client`;
+const ssConfigKey = "scisurf.config";
 
 const enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
 const disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
@@ -81,23 +76,44 @@ const REMOTE_DNS_PORT = 53;
 
 const _ = require('lodash');
 
+const CountryUpdater = require('../../control/CountryUpdater.js')
+const countryUpdater = new CountryUpdater()
+
 class SSClient {
-  constructor(config, options) {
+  constructor(config = {}) {
     if(!config) {
       throw new Error("Invalid name or config when new SSClient");
     }
 
     options = options || {}
     
-    this.name = `${config.server}:${config.server_port}`;
+    this.name = config.name || "default";
     this.config = config;
-    this.options = options;
     this.started = false;
     this.statusCheckTimer = null;
 
     log.info(`Creating ss client ${this.name}...`);//, config: ${require('util').inspect(this.config, {depth: null})}, options, ${require('util').inspect(this.options, {depth: null})}`);
   }
   
+  // This only starts the service, call redirectTraffic to redirect devices traffic
+  async start() {
+    log.info("Starting SS backend service...");    
+    await this._createConfigFile();
+    await exec("sudo systemctl restart ss_client");
+    log.info("Started SS backend service.");
+  }
+
+
+  async stop() {
+    log.info("Stopping SS backend service...");
+    await exec("sudo systemctl stop ss_client");
+    log.info("Stopped SS backend service...");
+  }
+
+  async resetConfig() {
+    // do nothing
+  }
+
   // file paths
   getConfigPath() {
     return `${f.getUserConfigFolder()}/ss_client.${this.name}.config.json`;
@@ -113,69 +129,30 @@ class SSClient {
   
   // ports
   getRedirPort() {
-    return this.options.redirPort || localRedirectionPort; // by default 8820
+    return this.config.redirPort || localRedirectionPort; // by default 8820
   }
   
   getLocalPort() {
-    return this.options.localPort || localSSClientPort; // by default 8822
+    return this.config.localPort || localSSClientPort; // by default 8822
   }
   
   getChinaDNSPort() {
-    return this.options.chinaDNSPort || chinaDNSPort; // by default 8854
+    return this.config.chinaDNSPort || chinaDNSPort; // by default 8854
   }
   
   getDNSForwardPort() {
-    return this.options.dnsForwarderPort || localDNSForwarderPort; // by default 8857
+    return this.config.dnsForwarderPort || localDNSForwarderPort; // by default 8857
   }
   
-  async start() {
-    log.info("Starting SS...");
+  
+  async redirectTraffic() {
 
-    const options = this.options;
-    
-    try {
-      await this.stop();
-      await this._createConfigFile();
-      await this._startDNSForwarder();
-      await this._startRedirection();
-      await this._startSSClient();
-      options.gfw && await this._enableChinaDNS();
-      await this.prepareOvertureConfig();
-      await this._enableIptablesRule();
-
-      if(!this.statusCheckTimer) {
-        this.statusCheckTimer = setInterval(() => {
-//          statusCheck()
-        }, 1000 * 60) // check status every minute
-        log.info("Status check timer installed")
-      }
-      this.started = true;
-      
-    } catch(err) {
-      log.error("Failed to start SS, err:", err);
-      // when any err occurs, revoke ss_client
-      await this.stop();
-    }
   }
 
-  async stop() {
+  async unRedirectTraffic() {
 
-    log.info("Stopping everything on ss_client");
-
-    if(this.statusCheckTimer) {
-      clearInterval(this.statusCheckTimer)
-      this.statusCheckTimer = null
-      log.info("status check timer is stopped")
-    }
-
-    await this._disableIptablesRule().catch(() => {});
-    await this._disableChinaDNS().catch(() => {});
-    await this._stopSSClient().catch(() => {});
-    await this._stopRedirection().catch(() => {});
-    await this._stopDNSForwarder().catch(() => {});
-    
-    this.started = false;
   }
+
 
   async bypassSSServer() {
     const chainName = `FW_SHADOWSOCKS${this.name}`;
@@ -220,12 +197,6 @@ class SSClient {
 
     let port = null;
 
-    if(this.options.gfw) {
-      port = this.getChinaDNS();
-    } else {
-      port = this.getDNSForwardPort();
-    }
-
     await dnsmasq.setUpstreamDNS(port);
 
     log.info("dnsmasq upstream dns is set to", this.getChinaDNS());
@@ -252,62 +223,12 @@ class SSClient {
 
   // START
   async _createConfigFile() {
-    return jsonfileWrite(this.getConfigPath(), this.config);
+    await jsonfileWrite(this.getConfigPath(), this.config);
+    await this.prepareOvertureConfig();
+    await this.prepareServiceConfig();
+    await this.prepareCHNRoute();
   }
-
-  async _startDNSForwarder() {
-    const cmd = `${dnsForwarderBinary} -b 127.0.0.1 -p ${this.getDNSForwardPort()} -s ${remoteDNS}:${remoteDNSPort}`
-
-    log.info("dns forwarder cmd:", cmd);
-
-    const process = p.spawn(cmd, {shell: true})
-
-    process.on('exit', (code, signal) => {
-      if(code !== 0) {
-        log.error("dns forwarder exited with error:", code, signal);
-      } else {
-        log.info("dns forwarder exited successfully!")
-      }
-    })
-  }
-
-  async _startRedirection() {
-    const cmd = util.format("%s -c %s -l %d -f %s -b %s",
-      redirectionBinary,
-      this.getConfigPath(),
-      this.getRedirPort(),
-      this.getRedirPIDPath(),
-      localRedirectionAddress);
-
-    log.info("Running cmd:", cmd);
-    
-    return exec(cmd);
-  }
-
-  async _enableChinaDNS() {
-    let localDNSServers = sysManager.myDNS();
-    if(localDNSServers == null || localDNSServers.length == 0) {
-      // only use 114 dns server if local dns server is not available (NOT LIKELY)
-      localDNSServers = ["114.114.114.114"];
-    }
-
-    const dnsConfig = util.format("%s,%s:%d",
-      localDNSServers[0],
-      "127.0.0.1",
-      localDNSForwarderPort
-    )
-
-    const args = util.format("-m -c %s -p %d -s %s", chnrouteFile, chinaDNSPort, dnsConfig);
-
-    log.info("Running cmd:", chinaDNSBinary, args);
-
-    const chinadns = p.spawn(chinaDNSBinary, args.split(" "), {detached:true});
-
-    chinadns.on('close', (code) => {
-      log.info("chinadns exited with code", code);
-    });
-  }
-
+  
   async prepareOvertureConfig() {
     const localDNSServers = sysManager.myDNS();
     if(_.isEmpty(localDNSServers)) {
@@ -324,7 +245,18 @@ class SSClient {
     content = content.replace("%FIREWALLA_IPNETWORK_FILE_PRIMARY%", chnrouteFile);
     content = content.replace("%FIREWALLA_IPNETWORK_FILE_ALTERNATIVE%", `${__dirname}/overture_alternative.lst`);
 
-    await fs.writeFileAsync(`${__dirname}/overture.config.json`, content);
+    await fs.writeFileAsync(`${f.getRuntimeInfoFolder()}/overture.${this.name}.config.json`, content);
+  }
+
+  async prepareServiceConfig() {
+    const configPath = `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.rc`;
+    await fs.writeFileAsync(configPath, "");
+  }
+
+  // prepare the chnroute files
+  async prepareCHNRoute() {
+    log.info("Preparing CHNRoute")
+    await countryUpdater.activateCountry("CN");
   }
 
   async _enableIptablesRule() {
@@ -424,6 +356,125 @@ class SSClient {
   }
   
   async statusCheck() {
+  }
+
+
+  // config may contain one or more ss server configurations
+  async saveConfig(config) {
+    const configCopy = JSON.parse(JSON.stringify(config));
+    configCopy.version = "v2";
+    await rclient.setAsync(ssConfigKey, JSON.stringify(configCopy));
+    this.config = config;
+  }
+
+  async loadConfig() {
+    const configString = await rclient.getAsync(ssConfigKey);
+    try {
+      const config = JSON.parse(configString);
+      this.config = config;
+      return config;
+    } catch(err) {
+      log.error("Failed to parse mss config:", err);
+      return null;
+    }
+  }
+  
+  async readyToStart() {
+    const config = await this.loadConfig();
+    if(config) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+  
+  async clearConfig() {
+    return rclient.delAsync(ssConfigKey);
+  }
+
+  async loadConfigFromMem() {
+    return this.config;
+  }
+  
+  async _getSSConfigs() {
+    const config = await this.loadConfig();
+    if(config.servers) {
+      return config.servers;
+    }
+    
+    return [config];
+  }
+
+  async start() {
+    try {
+      await this.install();
+
+      const sss = await this._getSSConfigs();
+      this.isGFWEnabled() && await this._enableCHNIpset();
+      this.isGFWEnabled() && await this._revertCHNRouteFile();
+      this.isGFWEnabled() && await this._prepareCHNRouteFile();
+
+      await this._startHAProxy();
+
+      const config = await this.getHASSConfig();
+
+      this.ssClient = new SSClient(config, {
+        gfw: this.isGFWEnabled()
+      });
+      this.ssClient.ssServers = sss.map((s) => s.server);
+
+      await this.ssClient.start();
+      await this.ssClient.goOnline();
+    } catch(err) {
+      log.error("Failed to start mss, revert it back, err:", err);
+      await this.stop().catch((err) => {});
+    }
+  }
+
+  async stop() {
+    if(this.ssClient) {
+      await this.ssClient.goOffline();
+      await this.ssClient.stop();
+    }
+
+    await this._stopHAProxy();
+    await this._disableCHNIpset();
+    await this._revertCHNRouteFile();
+  }
+  
+  async _enableCHNIpset() {
+    const cmd = `sudo ipset -! restore -file ${chnrouteRestoreForIpset}`;
+    log.info("Running cmd:", cmd);
+    return exec(cmd);
+  }
+  
+  async _disableCHNIpset() {
+    const cmd = "sudo ipset destroy chnroute";
+    log.info("Running cmd:", cmd);
+    return exec(cmd).catch((err) => {
+      log.debug("Failed to destroy chnroute:", err);
+    });
+  }
+  
+  async _prepareCHNRouteFile() {
+    let localDNSServers = sysManager.myDNS();
+    if (localDNSServers == null || localDNSServers.length == 0) {
+      // only use 114 dns server if local dns server is not available (NOT LIKELY)
+      localDNSServers = [defaultDNS];
+    }
+
+    const localDNS = localDNSServers[0];
+
+    try {
+      await fs.appendFileAsync(chnrouteFile, localDNS);
+    } catch (err) {
+      log.error("Failed to append local dns info to chnroute file, err:", err);
+    }
+  }
+  
+  async _revertCHNRouteFile() {
+    const revertCommand = `git checkout HEAD -- ${chnrouteFile}`;
+    await exec(revertCommand).catch((err) => {});
   }
 
 }

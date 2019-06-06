@@ -1451,7 +1451,7 @@ class netBot extends ControllerBot {
         let v = value;
         
         if (v.from && v.from === "firewalla") {
-          const mssc = require('../extension/ss_client/multi_ss_client.js');
+          const ssClient = require('../extension/ss_client/ss_client.js');
           mssc.saveConfig(v)
             .then(() => this.simpleTxData(msg, {}, null, callback))
             .catch((err) => this.simpleTxData(msg, null, err, callback));
@@ -1776,11 +1776,15 @@ class netBot extends ControllerBot {
         });
         break;
       case "scisurfconfig":
-        let mssc = require('../extension/ss_client/multi_ss_client.js');
+        const mgr = require('../extension/ss_client/ss_client_manager.js');
 
-        mssc.loadConfig()
-          .then((result) => this.simpleTxData(msg, result || {}, null, callback))
-          .catch((err) => this.simpleTxData(msg, null, err, callback));
+        (async () => {
+          const client = mgr.getSSClient();
+          const result = client.getConfig();
+          this.simpleTxData(msg, result || {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
         break;
       case "language":
         this.simpleTxData(msg, {language: sysManager.language}, null, callback);
@@ -2557,11 +2561,13 @@ class netBot extends ControllerBot {
         break;
 
       case "resetSciSurfConfig":
-        const mssc = require('../extension/ss_client/multi_ss_client.js');
+        const mgr = require('../extension/ss_client/ss_client_manager.js');
         (async () => {
           try {
-            await mssc.stop();
-            await mssc.clearConfig();  
+            const client = mgr.getSSClient();
+            client.resetConfig();
+            // await mssc.stop();
+            // await mssc.clearConfig();  
           } finally {
             this.simpleTxData(msg, null, err, callback);  
           }

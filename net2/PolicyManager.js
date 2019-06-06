@@ -41,8 +41,6 @@ let dnsmasq = new DNSMASQ();
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let mss_client = require('../extension/ss_client/multi_ss_client.js');
-
 var firewalla = require('../net2/Firewalla.js');
 
 let externalAccessFlag = false;
@@ -60,7 +58,9 @@ let b = require('../control/Block.js');
 
 let features = require('../net2/features');
 
-const cp = require('child_process')
+const cp = require('child_process');
+
+const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -477,16 +477,11 @@ module.exports = class {
       return; // doesn't support per-device policy
     }
 
-    if (config.state == true) {
-
-      if(!mss_client.readyToStart()) {
-        log.error("MSS client is not ready to start yet");
-        return;
-      }
-      
+    if (config.state == true) {      
       (async () => {
-        await mss_client.start()
-        log.info("SciSurf feature is enabled successfully");
+        const client = ssClientManager.getSSClient();
+        await client.redirectTraffic();
+        log.info("SciSurf feature is enabled successfully for traffic redirection");
       })().catch((err) => {
         log.error("Failed to start scisurf feature:", err);
       })
@@ -494,9 +489,9 @@ module.exports = class {
     } else {
       
       (async () => {
-        await mss_client.stop()
-        log.info("SciSurf feature is disabled successfully");
-        dnsmasq.setUpstreamDNS(null);
+        const client = ssClientManager.getSSClient();
+        await client.unRedirectTraffic();
+        log.info("SciSurf feature is disabled successfully for traffic redirection");
       })().catch((err) => {
         log.error("Failed to disable SciSurf feature: " + err);
       })

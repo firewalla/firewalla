@@ -121,6 +121,7 @@
       "interval": 7200
     },
     "APIRelaySensor": {},
+    "SSClientSensor": {},
     "CategoryUpdateSensor": {
       "regularInterval": 28800,
       "securityInterval": 14400,
