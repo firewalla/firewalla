@@ -2,21 +2,22 @@
 
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 
-source $DIR/ss_client.rc
+NAME=$1
+source $DIR/ss_client.${NAME}.rc
 
-: ${FW_SS_CONFIG_PATH:="${HOME}/.firewalla/config/ss_client.config.json"}
+: ${FW_SS_CONFIG_PATH:="${HOME}/.firewalla/run/ss_client.${NAME}.config.json"}
 
-: ${FW_SS_REDIR_BINARY:="${DIR}/${uname -m}/fw_ss_redir"}
+: ${FW_SS_REDIR_BINARY:="${DIR}/bin.$(uname -m)/fw_ss_redir"}
 : ${FW_SS_REDIR_PID_FILE:="${HOME}/.firewalla/run/ss_client.redir.pid"}
 : ${FW_SS_REDIR_PORT:=8820}
 : ${FW_SS_REDIR_ADDRESS:="0.0.0.0"}
 
-: ${FW_SS_CLIENT_BINARY:="${DIR}/${uname -m}/fw_ss_client"}
+: ${FW_SS_CLIENT_BINARY:="${DIR}/bin.$(uname -m)/fw_ss_client"}
 : ${FW_SS_CLIENT_PORT:=8822}
 : ${FW_SS_CLIENT_PID_FILE:="${HOME}/.firewalla/run/ss_client.client.pid"}
 : ${FW_SS_CLIENT_ADDRESS:="0.0.0.0"}
 
-: ${FW_OVERTURE_BINARY:="${DIR}/${uname -m}/overture"}
+: ${FW_OVERTURE_BINARY:="${DIR}/bin.$(uname -m)/overture"}
 : ${FW_OVERTURE_CONFIG:="${DIR}/overture.config.json"}
 
 # redirection

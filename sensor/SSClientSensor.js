@@ -57,7 +57,7 @@ class SSClientSensor extends Sensor {
 
   async turnOn() {
     this.client = ssClientManager.getSSClient();
-    await client.start();
+    await this.client.start();
   }
 
   async turnOff() {

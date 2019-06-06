@@ -84,8 +84,6 @@ class SSClient {
     if(!config) {
       throw new Error("Invalid name or config when new SSClient");
     }
-
-    options = options || {}
     
     this.name = config.name || "default";
     this.config = config;
@@ -99,15 +97,15 @@ class SSClient {
   async start() {
     log.info("Starting SS backend service...");    
     await this._createConfigFile();
-    await exec("sudo systemctl restart ss_client");
+    await exec(`sudo systemctl restart ss_client@${this.name}`);
     log.info("Started SS backend service.");
   }
 
 
   async stop() {
-    log.info("Stopping SS backend service...");
-    await exec("sudo systemctl stop ss_client");
-    log.info("Stopped SS backend service...");
+    log.info(`Stopping SS backend service ${this.name}...`);
+    await exec(`sudo systemctl stop ss_client@${this.name}`);
+    log.info(`Stopped SS backend service ${this.name}.`);
   }
 
   async resetConfig() {
@@ -116,7 +114,7 @@ class SSClient {
 
   // file paths
   getConfigPath() {
-    return `${f.getUserConfigFolder()}/ss_client.${this.name}.config.json`;
+    return `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.config.json`;
   }
   
   getRedirPIDPath() {
@@ -403,43 +401,6 @@ class SSClient {
     }
     
     return [config];
-  }
-
-  async start() {
-    try {
-      await this.install();
-
-      const sss = await this._getSSConfigs();
-      this.isGFWEnabled() && await this._enableCHNIpset();
-      this.isGFWEnabled() && await this._revertCHNRouteFile();
-      this.isGFWEnabled() && await this._prepareCHNRouteFile();
-
-      await this._startHAProxy();
-
-      const config = await this.getHASSConfig();
-
-      this.ssClient = new SSClient(config, {
-        gfw: this.isGFWEnabled()
-      });
-      this.ssClient.ssServers = sss.map((s) => s.server);
-
-      await this.ssClient.start();
-      await this.ssClient.goOnline();
-    } catch(err) {
-      log.error("Failed to start mss, revert it back, err:", err);
-      await this.stop().catch((err) => {});
-    }
-  }
-
-  async stop() {
-    if(this.ssClient) {
-      await this.ssClient.goOffline();
-      await this.ssClient.stop();
-    }
-
-    await this._stopHAProxy();
-    await this._disableCHNIpset();
-    await this._revertCHNRouteFile();
   }
   
   async _enableCHNIpset() {
