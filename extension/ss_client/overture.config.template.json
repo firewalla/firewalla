@@ -5,7 +5,12 @@
       "Name": "Local",
       "Address": "%FIREWALLA_PRIMARY_DNS%:%FIREWALLA_PRIMARY_DNS_PORT%",
       "Protocol": "udp",
-      "Timeout": 6
+      "Timeout": 6,
+      "EDNSClientSubnet": {
+        "Policy": "disable",
+        "ExternalIP": "",
+        "NoCookie": true
+      }
     }
   ],
   "AlternativeDNS": [
@@ -13,7 +18,12 @@
       "Name": "Remote",
       "Address": "%FIREWALLA_ALTERNATIVE_DNS%:%FIREWALLA_ALTERNATIVE_DNS_PORT%",
       "Protocol": "tcp",
-      "Timeout": 6
+      "Timeout": 6,
+      "EDNSClientSubnet": {
+        "Policy": "disable",
+        "ExternalIP": "",
+        "NoCookie": true
+      }
     }
   ],
   "OnlyPrimaryDNS": false,
