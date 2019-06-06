@@ -3,7 +3,9 @@
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 
 NAME=$1
-source $DIR/ss_client.${NAME}.rc
+if [[ -e $DIR/ss_client.${NAME}.rc ]]; then
+  source $DIR/ss_client.${NAME}.rc
+fi
 
 : ${FW_SS_CONFIG_PATH:="${HOME}/.firewalla/run/ss_client.${NAME}.config.json"}
 
@@ -43,6 +45,7 @@ $FW_OVERTURE_BINARY -c $FW_OVERTURE_CONFIG
 # setup iptables chain
 FW_SS_CHAIN="FW_SHADOWSOCKS_${NAME}"
 
+sudo iptables -w -t nat -X $FW_SS_CHAIN &>/dev/null
 sudo iptables -w -t nat -N $FW_SS_CHAIN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d $FW_SS_SERVER -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d 0.0.0.0/8 -j RETURN
@@ -57,7 +60,7 @@ sudo iptables -w -t nat -A $FW_SS_CHAIN -d 240.0.0.0/4 -j RETURN
 # for black hole ip, return it, no ss routing
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d 198.51.100.99 -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp -m set --match-set $FW_OVERTURE_IPSET dst -j RETURN
-sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_LOCAL_PORT
+sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 
 if [[ ! -z $FW_SS_SERVER ]]; then
   sudo iptables -w -t nat -I ${FW_SS_CHAIN} -d ${FW_SS_SERVER} -j RETURN
