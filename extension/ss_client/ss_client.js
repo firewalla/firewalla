@@ -48,6 +48,8 @@ const disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
 const onlineScript = extensionFolder + "/iptables_online.sh";
 const offlineScript = extensionFolder + "/iptables_offline.sh";
 
+const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
+
 var ssConfig = null;
 
 const localSSClientPort = 8822;
@@ -100,13 +102,22 @@ class SSClient {
 
     
   async redirectTraffic() {
-    // redirect dns traffic to 8.8.8.8
-    
+    // set dnsmasq upstream to overture
+    const upstreamDNS = `127.0.0.1:${OVERTURE_PORT}`;
+    await dnsmasq.setUpstreamDNS(upstreamDNS);
 
+    // reroute all devices's traffic to ss special chain
+    const chain = `FW_SHADOWSOCKS_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -A PREROUTING -p tcp -j ${chain}`));
   }
 
   async unRedirectTraffic() {
+    // unreroute all traffic
+    const chain = `FW_SHADOWSOCKS_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -A PREROUTING -p tcp -j ${chain}`));
 
+    // set dnsmasq upstream back to default
+    await dnsmasq.setUpstreamDNS(null);
   }
 
   async resetConfig() {
@@ -141,76 +152,6 @@ class SSClient {
   
   getDNSForwardPort() {
     return this.config.dnsForwarderPort || localDNSForwarderPort; // by default 8857
-  }
-  
-
-
-
-  async bypassSSServer() {
-    const chainName = `FW_SHADOWSOCKS${this.name}`;
-
-    if(this.ssServers) {
-      for (let i = 0; i < this.ssServers.length; i++) {
-        const ssServer = this.ssServers[i];
-        const cmd = `sudo iptables -w -t nat -I ${chainName} -d ${ssServer} -j RETURN`;
-        await exec(cmd).catch((err) => {});
-      }
-    }
-  }
-
-  async unbypassSSServer() {
-    const chainName = `FW_SHADOWSOCKS${this.name}`;
-
-    if(this.ssServers) {
-      for (let i = 0; i < this.ssServers.length; i++) {
-        const ssServer = this.ssServers[i];
-        const cmd = `sudo iptables -w -t nat -D ${chainName} -d ${ssServer} -j RETURN`;
-        await exec(cmd).catch((err) => {});
-      }
-    }
-  }
-  
-  async goOnline() {
-    const cmd = util.format("FW_NAME=%s FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
-      this.name,
-      this.config.server,
-      this.getRedirPort(),
-      remoteDNS,
-      remoteDNSPort,
-      onlineScript);
-
-    log.info("Running cmd:", cmd);
-
-    await exec(cmd).catch((err) => {
-      log.error(`Got error when ${this.name} go online:`, err)
-    });
-
-    await this.bypassSSServer();
-
-    let port = null;
-
-    await dnsmasq.setUpstreamDNS(port);
-
-    log.info("dnsmasq upstream dns is set to", this.getChinaDNS());
-  }
-  
-  async goOffline() {
-    await dnsmasq.setUpstreamDNS(null)
-
-    await this.unbypassSSServer();
-
-    const cmd = util.format("FW_NAME=%s FW_SS_SERVER=%s FW_SS_LOCAL_PORT=%s FW_REMOTE_DNS=%s FW_REMOTE_DNS_PORT=%s %s",
-      this.name,
-      this.config.server,
-      this.getRedirPort(),
-      remoteDNS,
-      remoteDNSPort,
-      offlineScript);
-
-    log.info("Running cmd:", cmd);
-    return exec(cmd).catch((err) => {
-      log.error(`Got error when ${this.name} go offline:`, err);
-    });
   }
 
   // START

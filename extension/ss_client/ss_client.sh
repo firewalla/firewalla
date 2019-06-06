@@ -23,6 +23,9 @@ fi
 : ${FW_OVERTURE_CONFIG:="${DIR}/overture.config.json"}
 : ${FW_OVERTURE_IPSET:="c_bd_country:CN_set"}
 
+: ${FW_REMOTE_DNS:="8.8.8.8"}
+: ${FW_REMOTE_DNS_PORT:=53}
+
 # redirection
 # /home/pi/firewalla/extension/ss_client/fw_ss_redir
 #  -c /home/pi/.firewalla/config/ss_client.config.json
@@ -61,6 +64,10 @@ sudo iptables -w -t nat -A $FW_SS_CHAIN -d 240.0.0.0/4 -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d 198.51.100.99 -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp -m set --match-set $FW_OVERTURE_IPSET dst -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_REDIR_PORT
+
+# make sure tcp 53 traffic goes to ss tunnel
+sudo iptables -w -t nat -C OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT || \
+sudo iptables -w -t nat -A OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 
 if [[ ! -z $FW_SS_SERVER ]]; then
   sudo iptables -w -t nat -I ${FW_SS_CHAIN} -d ${FW_SS_SERVER} -j RETURN
