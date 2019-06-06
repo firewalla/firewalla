@@ -103,7 +103,7 @@ class SSClient {
     
   async redirectTraffic() {
     // set dnsmasq upstream to overture
-    const upstreamDNS = `127.0.0.1:${OVERTURE_PORT}`;
+    const upstreamDNS = `127.0.0.1#${OVERTURE_PORT}`;
     await dnsmasq.setUpstreamDNS(upstreamDNS);
 
     // reroute all devices's traffic to ss special chain

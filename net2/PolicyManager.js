@@ -45,6 +45,8 @@ var firewalla = require('../net2/Firewalla.js');
 
 let externalAccessFlag = false;
 
+const delay = require('../util/util.js').delay;
+
 let localPort = 8833;
 let externalPort = 8833;
 let UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
@@ -481,6 +483,7 @@ module.exports = class {
       (async () => {
         const client = await ssClientManager.getSSClient();
         await client.start();
+        await delay(10000);
         await client.redirectTraffic();
         log.info("SciSurf feature is enabled successfully for traffic redirection");
       })().catch((err) => {
