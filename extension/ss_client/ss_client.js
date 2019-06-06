@@ -45,8 +45,7 @@ const ssConfigKey = "scisurf.config";
 const enableIptablesBinary = extensionFolder + "/add_iptables_template.sh";
 const disableIptablesBinary = extensionFolder + "/remove_iptables_template.sh";
 
-const onlineScript = extensionFolder + "/iptables_online.sh";
-const offlineScript = extensionFolder + "/iptables_offline.sh";
+const delay = require('../../util/util.js').delay;
 
 const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
 
@@ -188,8 +187,11 @@ class SSClient {
 
   // prepare the chnroute files
   async prepareCHNRoute() {
-    log.info("Preparing CHNRoute...")
-    await countryUpdater.activateCountry("CN");
+    log.info("Preparing CHNRoute...")    
+    (async () => {
+      await delay(60000);
+      await countryUpdater.activateCountry("CN");
+    })();
   }
 
   async _enableIptablesRule() {
