@@ -157,14 +157,6 @@ class netBot extends ControllerBot {
     this._block(ip, 'block', value, callback);
   }
 
-  _ignore(ip, reason, callback) {
-    this.hostManager.ignoreIP(ip, reason, callback);
-  }
-
-  _unignore(ip, callback) {
-    this.hostManager.unignoreIP(ip, callback);
-  }
-
   _devicePresence(ip, value, callback) {
     log.info("_devicePresence", ip, value);
     if (ip === "0.0.0.0") {
@@ -1292,16 +1284,6 @@ class netBot extends ControllerBot {
               break;
             case "ssh":
               this._ssh(msg.target, value.ssh, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "ignore":
-              this._ignore(msg.target, value.ignore.reason, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "unignore":
-              this._unignore(msg.target, (err, obj) => {
                 cb(err);
               });
               break;
