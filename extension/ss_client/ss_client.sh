@@ -19,7 +19,7 @@ source $DIR/ss_client.${NAME}.rc
 
 : ${FW_OVERTURE_BINARY:="${DIR}/bin.$(uname -m)/overture"}
 : ${FW_OVERTURE_CONFIG:="${DIR}/overture.config.json"}
-: ${FW_OVERTURE_IPSET_FILE:="${HOME}/.firewalla/tmp/country/CN.ip4"}
+: ${FW_OVERTURE_IPSET:="c_bd_country:CN_set"}
 
 # redirection
 # /home/pi/firewalla/extension/ss_client/fw_ss_redir
@@ -56,7 +56,7 @@ sudo iptables -w -t nat -A $FW_SS_CHAIN -d 240.0.0.0/4 -j RETURN
 
 # for black hole ip, return it, no ss routing
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d 198.51.100.99 -j RETURN
-sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp -m set --match-set $FW_OVERTURE_IPSET_FILE dst -j RETURN
+sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp -m set --match-set $FW_OVERTURE_IPSET dst -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_LOCAL_PORT
 
 if [[ ! -z $FW_SS_SERVER ]]; then
