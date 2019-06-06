@@ -69,7 +69,7 @@ class PublicIPSensor extends Sensor {
         sem.emitEvent({
           type: "PublicIP:Updated",
           ip: publicIP
-        });
+        }); // local event within FireMain
         sem.emitEvent({
           type: "PublicIP:Updated",
           ip: publicIP,
@@ -84,9 +84,14 @@ class PublicIPSensor extends Sensor {
   async run() {
     this.publicIPAPI = this.config.publicIPAPI || "https://api.ipify.org?format=json";
     this.job();
+
+    sem.on("PublicIP:Check", (event) => {
+      this.job();
+    });
+
     setInterval(() => {
       this.job();
-    }, 1000 * 60 * 60 * 24); // check in every day
+    }, this.config.interval * 1000 || 1000 * 60 * 60 * 2); // check every 2 hrs
   }
 }
 
