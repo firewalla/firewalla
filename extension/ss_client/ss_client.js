@@ -75,6 +75,12 @@ const localDNSForwarderPort = 8857
 const remoteDNS = "8.8.8.8"
 const remoteDNSPort = "53"
 
+const OVERTURE_PORT = 8854;
+const REMOTE_DNS = "8.8.8.8";
+const REMOTE_DNS_PORT = 53;
+
+const _ = require('lodash');
+
 class SSClient {
   constructor(config, options) {
     if(!config) {
@@ -134,6 +140,7 @@ class SSClient {
       await this._startRedirection();
       await this._startSSClient();
       options.gfw && await this._enableChinaDNS();
+      await this.prepareOvertureConfig();
       await this._enableIptablesRule();
 
       if(!this.statusCheckTimer) {
@@ -299,6 +306,25 @@ class SSClient {
     chinadns.on('close', (code) => {
       log.info("chinadns exited with code", code);
     });
+  }
+
+  async prepareOvertureConfig() {
+    const localDNSServers = sysManager.myDNS();
+    if(_.isEmpty(localDNSServers)) {
+      throw new Error("missing local dns server");
+    }
+
+    const templatePath = `${__dirname}/overture.config.template.json`;
+    let content = await fs.readFileAsync(templatePath, {encoding: 'utf8'});
+    content = content.replace("%FIREWALLA_OVERTURE_PORT%", OVERTURE_PORT);
+    content = content.replace("%FIREWALLA_PRIMARY_DNS%", localDNSServers[0]);
+    content = content.replace("%FIREWALLA_PRIMARY_DNS_PORT%", 53);
+    content = content.replace("%FIREWALLA_ALTERNATIVE_DNS%", REMOTE_DNS);
+    content = content.replace("%FIREWALLA_ALTERNATIVE_DNS_PORT%", REMOTE_DNS_PORT);
+    content = content.replace("%FIREWALLA_IPNETWORK_FILE_PRIMARY%", chnrouteFile);
+    content = content.replace("%FIREWALLA_IPNETWORK_FILE_ALTERNATIVE%", `${__dirname}/overture_alternative.lst`);
+
+    await fs.writeFileAsync(`${__dirname}/overture.config.json`, content);
   }
 
   async _enableIptablesRule() {
