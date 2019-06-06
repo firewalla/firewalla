@@ -7,8 +7,12 @@ User=pi
 Type=simple
 Restart=always
 WorkingDirectory=/home/pi/firewalla/
-ExecStart=/bin/bash /home/pi/firewalla/extension/ss_client/ss_client.sh "%i"
-ExecStop=/bin/bash /home/pi/firewalla/extension/ss_client/ss_client_stop.sh "%i"
+ExecStart=/bin/bash -x /home/pi/firewalla/extension/ss_client/ss_client.sh "%i"
+ExecStopPost=/bin/bash -x /home/pi/firewalla/extension/ss_client/ss_client_stop.sh "%i"
+#TimeoutStartSec=60
+RestartSec=90
+StartLimitInterval=400
+StartLimitBurst=3
 
 [Install]
 WantedBy=multi-user.target

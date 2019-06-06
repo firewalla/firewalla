@@ -19,4 +19,5 @@ FW_SS_CHAIN="FW_SHADOWSOCKS_${NAME}"
 sudo iptables -w -t nat -C OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT && \
 sudo iptables -w -t nat -D OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 
-sudo iptables -w -t nat -X $FW_SS_CHAIN &>/dev/null
+sudo iptables -w -t nat -F $FW_SS_CHAIN
+sudo iptables -w -t nat -X $FW_SS_CHAIN

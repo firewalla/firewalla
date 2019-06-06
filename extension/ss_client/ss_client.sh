@@ -43,12 +43,13 @@ $FW_SS_REDIR_BINARY -c $FW_SS_CONFIG_PATH -l $FW_SS_REDIR_PORT -f $FW_SS_REDIR_P
 $FW_SS_CLIENT_BINARY -c $FW_SS_CONFIG_PATH -l $FW_SS_CLIENT_PORT -f $FW_SS_CLIENT_PID_FILE -b $FW_SS_CLIENT_ADDRESS
 
 # overture
-$FW_OVERTURE_BINARY -c $FW_OVERTURE_CONFIG
+$FW_OVERTURE_BINARY -c $FW_OVERTURE_CONFIG &
 
 # setup iptables chain
 FW_SS_CHAIN="FW_SHADOWSOCKS_${NAME}"
 
-sudo iptables -w -t nat -X $FW_SS_CHAIN &>/dev/null
+sudo iptables -w -t nat -F $FW_SS_CHAIN
+sudo iptables -w -t nat -X $FW_SS_CHAIN
 sudo iptables -w -t nat -N $FW_SS_CHAIN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d $FW_SS_SERVER -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d 0.0.0.0/8 -j RETURN
@@ -72,3 +73,7 @@ sudo iptables -w -t nat -A OUTPUT -p tcp --destination $FW_REMOTE_DNS --destinat
 if [[ ! -z $FW_SS_SERVER ]]; then
   sudo iptables -w -t nat -I ${FW_SS_CHAIN} -d ${FW_SS_SERVER} -j RETURN
 fi
+
+for job in `jobs -p`; do
+    wait $job
+dones
