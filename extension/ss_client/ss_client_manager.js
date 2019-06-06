@@ -5,6 +5,8 @@ let instance = null;
 const SSClient = require('./ss_client.js');
 const rclient = require('../../util/redis_manager').getRedisClient();
 
+const log = require("../../net2/logger.js")(__filename);
+
 const ssConfigKey = "scisurf.config";
 
 class SSClientManager {
@@ -22,6 +24,10 @@ class SSClientManager {
       key = `scisurf.${name}.config`;
     }
     const configString = await rclient.getAsync(key);
+    if(!configString) {
+      return null;
+    }
+    
     try {
       let config = JSON.parse(configString);
       if(config.servers && Array.isArray(config.servers)) {
