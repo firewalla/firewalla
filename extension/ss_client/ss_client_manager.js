@@ -5,6 +5,8 @@ let instance = null;
 const SSClient = require('./ss_client.js');
 const rclient = require('../../util/redis_manager').getRedisClient();
 
+const ssConfigKey = "scisurf.config";
+
 class SSClientManager {
   constructor() {
     if(instance === null) {
@@ -14,21 +16,34 @@ class SSClientManager {
     return instance;
   }
 
+  async getConfig(name = "default") {
+    let key = `${ssConfigKey}`;
+    if(name !== "default") {
+      key = `scisurf.${name}.config`;
+    }
+    const configString = await rclient.getAsync(key);
+    try {
+      let config = JSON.parse(configString);
+      if(config.servers && Array.isArray(config.servers)) {
+        if(config.servers.length === 0) {
+          return null;
+        } else {
+          config = config.servers[0];
+        }
+      }
+      return config;
+    } catch(err) {
+      log.error(`Failed to load ss config ${key}, err:`, err);
+      return null;
+    }
+  }
+
   async getSSClient(name = "default") {
     if(!this.ssClientMap[name]) {
-      const configJSON = await rclient.getAsync("scisurf.config");
-      try {
-        let config = JSON.parse(configJSON);
-        if(Array.isArray(config)) {
-          if(config.length === 0) {
-            return null;
-          } else {
-            config = config[0];
-            this.ssClientMap[name] = new SSClient(Object.assign({}, config, {name}));
-          }
-        }
-      } catch (err) {
-        log.error("Failed to load ss config, err:", err);
+      let config = await this.getConfig(name);
+      if(config) {
+        this.ssClientMap[name] = new SSClient(Object.assign({}, config, {name}));
+      } else {
         return null;
       }
     }

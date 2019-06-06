@@ -479,7 +479,7 @@ module.exports = class {
 
     if (config.state == true) {      
       (async () => {
-        const client = ssClientManager.getSSClient();
+        const client = await ssClientManager.getSSClient();
         await client.redirectTraffic();
         log.info("SciSurf feature is enabled successfully for traffic redirection");
       })().catch((err) => {
@@ -489,7 +489,7 @@ module.exports = class {
     } else {
       
       (async () => {
-        const client = ssClientManager.getSSClient();
+        const client = await ssClientManager.getSSClient();
         await client.unRedirectTraffic();
         log.info("SciSurf feature is disabled successfully for traffic redirection");
       })().catch((err) => {
