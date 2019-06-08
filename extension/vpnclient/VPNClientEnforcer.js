@@ -47,7 +47,7 @@ class VPNClientEnforcer {
         } catch (err) {
           log.error("Failed to refresh routing rule for VPN client: ", err);
         }
-      }, 300 * 1000); // once every 5 minutes
+      }, 60 * 1000); // once every minute
     }
     return instance;
   }
