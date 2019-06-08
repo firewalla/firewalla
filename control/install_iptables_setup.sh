@@ -52,6 +52,11 @@ for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset destroy -! $set
 done
 
+# This is to remove all vpn client ip sets  
+for set in `sudo ipset list -name | egrep "^vpn_client_"`; do
+  sudo ipset destroy -! $set
+done
+
 # multi protocol block chain
 sudo iptables -w -N FW_DROP &>/dev/null
 sudo iptables -w -F FW_DROP
