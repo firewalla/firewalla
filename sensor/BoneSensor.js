@@ -220,10 +220,6 @@ class BoneSensor extends Sensor {
   }
 
   run() {
-    // setTimeout(() => {
-    //   this.scheduledJob();
-    // }, 5 * 1000); // in 5 seconds
-
     setInterval(() => {
       this.scheduledJob();
     }, syncInterval);
@@ -231,6 +227,10 @@ class BoneSensor extends Sensor {
     sem.on("CloudURLUpdate", async (event) => {
       return this.applyNewCloudInstanceURL()
     })
+
+    sem.on("PublicIP:Updated", (event) => {
+      this.checkIn();
+    });
 
     sem.on("CloudReCheckin", async (event) => {
       await this.checkIn();

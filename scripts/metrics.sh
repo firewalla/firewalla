@@ -10,7 +10,7 @@ err(){
 }
 
 REDIS_KEYS=(
-    'dns:ip:*' 
+    'rdns:ip:*' 
     'intel:ip:*' 
     'host:ip4:'
     'host:ip6:'

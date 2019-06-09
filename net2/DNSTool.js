@@ -45,7 +45,7 @@ class DNSTool {
   }
 
   getDNSKey(ip) {
-    return util.format("dns:ip:%s", ip);
+    return util.format("rdns:ip:%s", ip);
   }
 
   getReverseDNSKey(domainName) {

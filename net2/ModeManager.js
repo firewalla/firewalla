@@ -30,7 +30,7 @@ const Discovery = require('./Discovery.js');
 const d = new Discovery("modeManager", fConfig, "info", false);
 
 const iptables = require('./Iptables.js');
-
+const wrapIptables = iptables.wrapIptables;
 const firewalla = require('./Firewalla.js')
 
 const async = require('asyncawait/async')
@@ -55,7 +55,6 @@ const fs = require('fs');
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const unlinkAsync = util.promisify(fs.unlink);
-
 
 const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
 
@@ -337,14 +336,14 @@ function _disableDHCPMode(mode) {
 
 async function toggleCompatibleSpoof(state) {
   if (state) {
-    let cmd = "sudo iptables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE || sudo iptables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE";
+    let cmd = wrapIptables("sudo iptables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
     await execAsync(cmd);
-    cmd = "sudo ip6tables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE || sudo ip6tables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE";
+    cmd = wrapIptables("sudo ip6tables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
     await execAsync(cmd);
   } else {
-    let cmd = "(sudo iptables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE && sudo iptables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE) || true";
+    let cmd = wrapIptables("sudo iptables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
     await execAsync(cmd);
-    cmd = "(sudo ip6tables -w -t nat -C POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE && sudo ip6tables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE) || true";
+    cmd = wrapIptables("sudo ip6tables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
     await execAsync(cmd);
   }
 }
