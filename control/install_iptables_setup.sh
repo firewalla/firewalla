@@ -57,6 +57,11 @@ for set in `sudo ipset list -name | egrep "^vpn_client_"`; do
   sudo ipset destroy -! $set
 done
 
+sudo ip rule flush
+sudo ip rule add pref 0 from all lookup local
+sudo ip rule add pref 32766 from all lookup main
+sudo ip rule add pref 32767 from all lookup default
+
 # multi protocol block chain
 sudo iptables -w -N FW_DROP &>/dev/null
 sudo iptables -w -F FW_DROP
