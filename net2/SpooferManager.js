@@ -290,9 +290,9 @@ module.exports = class SpooferManager {
     let activeMACs = hostManager.getActiveMACs()
 
     await emptySpoofSet() // this is to ensure no other ip addresses are added to the list
-    activeMACs.forEach((mac) => {
+    for (const mac of activeMACs) {
       await this.loadManualSpoof(mac)
-    })
+    }
   }
 
 
