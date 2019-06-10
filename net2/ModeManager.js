@@ -239,7 +239,13 @@ async function _changeToAlternativeIpSubnet() {
   const oldGateway = sysManager.myGateway();
   const oldIpSubnet = sysManager.mySubnet();
   let cmd = "";
-  
+  // kill dhclient before change eth0 ip address, in case it is overridden by dhcp
+  cmd = "pgrep -x dhclient && sudo pkill dhclient; true";
+  try {
+    await execAsync(cmd);
+  } catch (err) {
+    log.warn("Failed to kill dhclient");
+  }
   if (oldIpSubnet !== altIpSubnet) {
     // delete old ip from eth0
     try {
@@ -360,17 +366,18 @@ async function apply() {
 
   switch(mode) {
     case Mode.MODE_DHCP:
-      await _saveSimpleModeNetworkSettings()
-      await _changeToAlternativeIpSubnet()
-      await _enableSecondaryInterface()
-      await _enforceDHCPMode()
+      //await _saveSimpleModeNetworkSettings() // no need to do this anymore, primary interface IP is editable now
+      await _changeToAlternativeIpSubnet();
+      await _enableSecondaryInterface();
+      await _enforceDHCPMode();
       await pclient.publishAsync("System:IPChange", "");
       break;
     case Mode.MODE_DHCP_SPOOF:
     case Mode.MODE_AUTO_SPOOF:
-      await _enableSecondaryInterface() // secondary interface ip/subnet may be changed
-      await _restoreSimpleModeNetworkSettings()
-      await _enforceSpoofMode()
+      await _changeToAlternativeIpSubnet();
+      await _enableSecondaryInterface(); // secondary interface ip/subnet may be changed
+      //await _restoreSimpleModeNetworkSettings() // no need to do this anymore, primary interface IP is ediatable now
+      await _enforceSpoofMode();
       await pclient.publishAsync("System:IPChange", "");
       // reset oper history for each device, so that we can re-apply spoof commands
       hostManager.cleanHostOperationHistory()
