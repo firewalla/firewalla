@@ -17,33 +17,27 @@
 const log = require('./logger.js')(__filename);
 
 const ip = require('ip');
-const spawn = require('child_process').spawn;
+const cp = require('child_process');
+const spawn = cp.spawn;
+const execAsync = require('util').promisify(cp.exec)
 
-const Promise = require('bluebird');
+const util = require('util');
 
-exports.wrapIptables= function (rule) {
-  let command = " -I ";
-  let checkRule = null;
+exports.wrapIptables = function(rule) {
+  const res = rule.match(/ -[AID] /);
 
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-  }
+  if (!res) return rule;
 
-  command = " -A ";
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-  }
+  const command = res[0];
+  const checkRule = rule.replace(command, " -C ");
 
-  command = " -D ";
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-    return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
-  }
+  switch (command) {
+    case " -I ":
+    case " -A ":
+      return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
 
-  if(checkRule) {
-    return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
-  } else {
-    return rule;
+    case " -D ":
+      return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
   }
 }
 
@@ -81,15 +75,15 @@ function reject(rule, callback) {
 }
 
 exports.reject = reject
-exports.rejectAsync = Promise.promisify(reject);
+exports.rejectAsync = util.promisify(reject);
 exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 exports.dnsChange = dnsChange;
-exports.dnsChangeAsync = Promise.promisify(dnsChange);
+exports.dnsChangeAsync = util.promisify(dnsChange);
 exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
-exports.dhcpSubnetChangeAsync = Promise.promisify(dhcpSubnetChange);
+exports.dhcpSubnetChangeAsync = util.promisify(dhcpSubnetChange);
 
 var workqueue = [];
 var running = false;
@@ -145,7 +139,7 @@ function iptables(rule, callback) {
             break;
         }
         log.debug("IPTABLE:DHCP:Running commandline: ", cmdline);
-        require('child_process').exec(cmdline, (err, stdout, stderr) => {
+        cp.exec(cmdline, (err, stdout, stderr) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:DHCP:Error unable to set", cmdline, err);
             }
@@ -173,7 +167,7 @@ function iptables(rule, callback) {
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
-          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} ${src} --dport 53 -j DNAT --to-destination ${dns}`
+          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} ${src} -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${dns}`
         }
 
         switch(action) {
@@ -187,12 +181,12 @@ function iptables(rule, callback) {
             cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
+            cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns;
           break;
         }
 
         log.debug("IPTABLE:DNS:Running commandline: ", cmdline);
-        require('child_process').exec(cmdline, (err, out, code) => {
+        cp.exec(cmdline, (err, out, code) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
             }
@@ -232,7 +226,7 @@ function iptables(rule, callback) {
         }
 
         log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
-        require('child_process').exec(cmdline, (err, out, code) => {
+        cp.exec(cmdline, (err, out, code) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:PORTFORWARD:Error unable to set", cmdline, err);
             }
@@ -323,49 +317,30 @@ function dhcpSubnetChange(ip, state, callback) {
   }, callback);
 }
 
-function flush(callback) {
-  this.process = require('child_process').exec(
+function flush() {
+  return execAsync(
     "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
-    (err, stdout, stderr) => {
-      if (err) {
-        log.error("IPTABLE:FLUSH:Unable to flush", err, stdout);
-      }
-      if (callback) {
-        callback(err, null);
-      }
-    }
-  );
+  ).catch(err => {
+    log.error("IP6TABLE:FLUSH:Unable to flush", err)
+  });
 }
 
-function run(listofcmds, eachCallback, finalCallback) {
-  require('async').eachLimit(listofcmds, 1,
-    async (cmd, cb) => { // iteratee
-      log.info("IPTABLE:RUNCOMMAND", cmd);
-
-      await require('child_process').exec(
-        cmd,
-        {timeout: 10000}, // set timeout to 10s
-        (err, stdout, stderr) => {
-          if (err) {
-            log.error("IPTABLE:RUN:Unable to run command", cmd, err.message);
-          }
-          if (stderr) {
-            log.warn("IPTABLE:RUN:", cmd, stderr);
-          }
-          if (stdout) {
-            log.debug("IPTABLE:RUN:", cmd, stdout);
-          }
-
-          if (eachCallback) {
-            eachCallback(err, null);
-          }
-          cb(err);
+async function run(listofcmds) {
+  for (const cmd of listofcmds || []) {
+    await cp.exec(
+      cmd,
+      {timeout: 10000}, // set timeout to 10s
+      (err, stdout, stderr) => {
+        if (err) {
+          log.error("IPTABLE:RUN:Unable to run command", cmd, err.message);
         }
-      )
-    },
-    (error) => {
-      if (finalCallback)
-        finalCallback(error, null);
-    }
-  )
+        if (stderr) {
+          log.warn("IPTABLE:RUN:", cmd, stderr);
+        }
+        if (stdout) {
+          log.debug("IPTABLE:RUN:", cmd, stdout);
+        }
+      }
+    )
+  }
 }

@@ -39,6 +39,8 @@
  * UPDATE_CATEGORY_DYNAMIC_DOMAIN
  * VPNConnectionAccepted
  * Alarm:NewAlarm
+ * Policy:AllInitialized
+ * Policy:CountryActivated
  */
 
 

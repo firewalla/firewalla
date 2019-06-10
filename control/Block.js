@@ -15,7 +15,6 @@
 'use strict';
 
 const util = require('util');
-const cp = require('child_process');
 const log = require("../net2/logger.js")(__filename);
 
 const iptool = require("ip");
@@ -26,6 +25,9 @@ const accounting = new Accounting();
 const exec = require('child-process-promise').exec
 
 const f = require('../net2/Firewalla.js')
+
+const _wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const Ipset = require('../net2/Ipset.js');
 
 const WHITELIST_MARK = "0x1/0x1";
 
@@ -42,21 +44,24 @@ function getIPTablesCmd(v6) {
 }
 
 // This function MUST be called at the beginning of main.js
-function setupBlockChain() {
+async function setupBlockChain() {
   log.info("Setting up iptables for traffic blocking");
   let cmd = __dirname + "/install_iptables_setup.sh";
 
-  // FIXME: ignore if failed or not
-  cp.execSync(cmd);
+  await exec(cmd);
 
-  setupCategoryEnv("games");
-  setupCategoryEnv("porn");
-  setupCategoryEnv("social");
-  setupCategoryEnv("shopping");
-  setupCategoryEnv("p2p");
-  setupCategoryEnv("gamble");
-  setupCategoryEnv("av");
-  setupCategoryEnv("default_c");
+  await Promise.all([
+    setupCategoryEnv("games"),
+    setupCategoryEnv("porn"),
+    setupCategoryEnv("social"),
+    setupCategoryEnv("shopping"),
+    setupCategoryEnv("p2p"),
+    setupCategoryEnv("gamble"),
+    setupCategoryEnv("av"),
+    setupCategoryEnv("default_c"),
+  ])
+
+  log.info("Finished setup for traffic blocking");
 }
 
 function getMacSet(tag) {
@@ -154,20 +159,13 @@ async function setupWhitelistEnv(macTag, dstTag, dstType = "hash:ip", destroy = 
 
     if (destroy) {
       if (macTag) {
-        if (!await _isIpsetReferenced(macSet)) {
-          const cmdDeleteMacSet = `sudo ipset destroy ${macSet}`;
-          await exec(cmdDeleteMacSet);
-        }
+        await Ipset.destroy(macSet)
       } else {
         await this.disableGlobalWhitelist();
       }
-      if (destroyDstCache && !await _isIpsetReferenced(dstSet)) {
-        const cmdDeleteDstSet = `sudo ipset destroy ${dstSet}`;
-        await exec(cmdDeleteDstSet);
-      }
-      if (destroyDstCache && !await _isIpsetReferenced(dstSet6)) {
-        const cmdDeleteDstSet6 = `sudo ipset destroy ${dstSet6}`;
-        await exec(cmdDeleteDstSet6);
+      if (destroyDstCache) {
+        await Ipset.destroy(dstSet)
+        await Ipset.destroy(dstSet6)
       }
     }
 
@@ -208,45 +206,28 @@ async function setupBlockingEnv(macTag, dstTag, dstType = "hash:ip", destroy = f
     const matchMacDst = macTag ? `-m set --match-set ${macSet} dst` : '';
 
     // add rules in filter table
-    const cmdOutgoingRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p all ${matchMacSrc} -m set --match-set ${dstSet} dst -j DROP`)
-    const cmdIncomingRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p all ${matchMacDst} -m set --match-set ${dstSet} src -j DROP`)
-    const cmdOutgoingTCPRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p tcp ${matchMacSrc} -m set --match-set ${dstSet} dst -j REJECT`)
-    const cmdIncomingTCPRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p tcp ${matchMacDst} -m set --match-set ${dstSet} src -j REJECT`)
-    const cmdOutgoingRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p all ${matchMacSrc} -m set --match-set ${dstSet6} dst -j DROP`)
-    const cmdIncomingRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p all ${matchMacDst} -m set --match-set ${dstSet6} src -j DROP`)
-    const cmdOutgoingTCPRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p tcp ${matchMacSrc} -m set --match-set ${dstSet6} dst -j REJECT`)
-    const cmdIncomingTCPRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p tcp ${matchMacDst} -m set --match-set ${dstSet6} src -j REJECT`)
+    const cmdOutgoingRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p all ${matchMacSrc} -m set --match-set ${dstSet} dst -j FW_DROP`)
+    const cmdIncomingRule = _wrapIptables(`sudo iptables -w ${ops} FW_BLOCK -p all ${matchMacDst} -m set --match-set ${dstSet} src -j FW_DROP`)
+    const cmdOutgoingRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p all ${matchMacSrc} -m set --match-set ${dstSet6} dst -j FW_DROP`)
+    const cmdIncomingRule6 = _wrapIptables(`sudo ip6tables -w ${ops} FW_BLOCK -p all ${matchMacDst} -m set --match-set ${dstSet6} src -j FW_DROP`)
     // add rules in nat table
-    const cmdNatOutgoingTCPRule = _wrapIptables(`sudo iptables -w -t nat ${ops} FW_NAT_BLOCK -p tcp ${matchMacSrc} -m set --match-set ${dstSet} dst -j REDIRECT --to-ports 8888`)
-    const cmdNatOutgoingUDPRule = _wrapIptables(`sudo iptables -w -t nat ${ops} FW_NAT_BLOCK -p udp ${matchMacSrc} -m set --match-set ${dstSet} dst -j REDIRECT --to-ports 8888`)
-    const cmdNatOutgoingTCPRule6 = _wrapIptables(`sudo ip6tables -w -t nat ${ops} FW_NAT_BLOCK -p tcp ${matchMacSrc} -m set --match-set ${dstSet6} dst -j REDIRECT --to-ports 8888`)
-    const cmdNatOutgoingUDPRule6 = _wrapIptables(`sudo ip6tables -w -t nat ${ops} FW_NAT_BLOCK -p udp ${matchMacSrc} -m set --match-set ${dstSet6} dst -j REDIRECT --to-ports 8888`)
+    const cmdNatOutgoingRule = _wrapIptables(`sudo iptables -w -t nat ${ops} FW_NAT_BLOCK ${matchMacSrc} -m set --match-set ${dstSet} dst -j FW_NAT_HOLE`)
+    const cmdNatOutgoingRule6 = _wrapIptables(`sudo ip6tables -w -t nat ${ops} FW_NAT_BLOCK ${matchMacSrc} -m set --match-set ${dstSet6} dst -j FW_NAT_HOLE`)
 
     await exec(cmdOutgoingRule);
     await exec(cmdIncomingRule);
-    await exec(cmdOutgoingTCPRule);
-    await exec(cmdIncomingTCPRule);
     await exec(cmdOutgoingRule6);
     await exec(cmdIncomingRule6);
-    await exec(cmdOutgoingTCPRule6);
-    await exec(cmdIncomingTCPRule6);
-    await exec(cmdNatOutgoingTCPRule);
-    await exec(cmdNatOutgoingUDPRule);
-    await exec(cmdNatOutgoingTCPRule6);
-    await exec(cmdNatOutgoingUDPRule6);
+    await exec(cmdNatOutgoingRule);
+    await exec(cmdNatOutgoingRule6);
 
     if (destroy) {
-      if (macTag && !await _isIpsetReferenced(macSet)) {
-        const cmdDeleteMacSet = `sudo ipset destroy ${macSet}`
-        await exec(cmdDeleteMacSet);
+      if (macTag) {
+        await Ipset.destroy(macSet)
       }
-      if (destroyDstCache && !await _isIpsetReferenced(dstSet)) {
-        const cmdDeleteDstSet = `sudo ipset destroy ${dstSet}`
-        await exec(cmdDeleteDstSet);
-      }
-      if (destroyDstCache && !await _isIpsetReferenced(dstSet6)) {
-        const cmdDeleteDstSet6 = `sudo ipset destroy ${dstSet6}`
-        await exec(cmdDeleteDstSet6);
+      if (destroyDstCache) {
+        await Ipset.destroy(dstSet)
+        await Ipset.destroy(dstSet6)
       }
     }
 
@@ -292,86 +273,6 @@ async function existsBlockingEnv(tag) {
   }
 }
 
-async function _isIpsetReferenced(ipset) {
-  const listCommand = `sudo ipset list ${ipset} | grep References | cut -d ' ' -f 2`;
-  const result = await exec(listCommand);
-  const referenceCount = result.stdout.trim();
-  return referenceCount !== "0";
-}
-
-let ipsetQueue = [];
-let maxIpsetQueue = 158;
-let ipsetInterval = 3000;
-let ipsetTimerSet = false;
-let ipsetProcessing = false;
-
-function ipsetEnqueue(ipsetCmd) {
-  if (ipsetCmd != null) {
-    ipsetQueue.push(ipsetCmd);
-  }
-  if (ipsetProcessing == false && ipsetQueue.length>0 && (ipsetQueue.length>maxIpsetQueue || ipsetCmd == null)) {
-    ipsetProcessing = true;
-    let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
-    ipsetQueue = [];
-    let child = require('child_process').spawn('sudo',['ipset', 'restore', '-!']);
-    child.stdin.setEncoding('utf-8');
-    child.on('exit',(code,signal)=>{
-      ipsetProcessing = false;
-      log.info("Control:Block:Processing:END", code);
-      ipsetEnqueue(null);
-    });
-    child.on('error',(code,signal)=>{
-      ipsetProcessing = false;
-      log.info("Control:Block:Processing:Error", code);
-      ipsetEnqueue(null);
-    });
-    let errorOccurred = false;
-    child.stderr.on('data', (data) => {
-      log.error("ipset restore error: " + data);
-    });
-    child.stdin.on('error', (err) =>{
-      errorOccurred = true;
-      log.error("Failed to write to stdin", err);
-    });
-    writeToStdin(0);
-    function writeToStdin(i) {
-      const stdinReady = child.stdin.write(_ipsetQueue[i] + "\n", (err) => {
-        if (err) {
-          errorOccurred = true;
-          log.error("Failed to write to stdin", err);
-        } else {
-          if (i == _ipsetQueue.length - 1) {
-            child.stdin.end();
-          }
-        }
-      });
-      if (!stdinReady) {
-        child.stdin.once('drain', () => {
-          if (i !== _ipsetQueue.length - 1 && !errorOccurred) {
-            writeToStdin(i + 1);
-          }
-        });
-      } else {
-        if (i !== _ipsetQueue.length - 1 && !errorOccurred) {
-          writeToStdin(i + 1);
-        }
-      }
-    }
-    log.info("Control:Block:Processing:Launched", _ipsetQueue.length);
-  } else {
-    if (ipsetTimerSet == false) {
-      setTimeout(()=>{
-        if (ipsetQueue.length>0) {
-          log.info("Control:Block:Timer", ipsetQueue.length);
-          ipsetEnqueue(null);
-        }
-        ipsetTimerSet = false;
-      },ipsetInterval);
-      ipsetTimerSet = true;
-    }
-  }
-}
-
 function block(target, ipset, whitelist = false) {
   return setupIpset(target, ipset, whitelist)
 }
@@ -412,7 +313,7 @@ async function setupIpset(target, ipset, whitelist, remove = false) {
 
   const cmd = `${action} -! ${ipset} ${target}`
   log.debug("Control:IPSET:Enqueue", cmd);
-  ipsetEnqueue(cmd);
+  Ipset.enqueue(cmd);
   return;
 }
 
@@ -461,39 +362,6 @@ async function advancedUnblockMAC(macAddress, setName) {
     }
   } catch(err) {
     log.error('Error when advancedUnblockMAC', err);
-  }
-}
-
-// Block every connection initiated from one local machine to a remote ip address
-function blockOutgoing(macAddress, destination, state, v6, callback) {
-
-  let destinationStr = ""
-
-  let cmd = getIPTablesCmd(v6);
-
-  if (destination) {
-     let destinationStr = " --destination "+destination;
-  }
-
-  if (state == true) {
-      let checkCMD = util.format("sudo %s -C FW_BLOCK --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
-      let addCMD = util.format("sudo %s -I FW_BLOCK --protocol all %s  -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
-
-      cp.exec(checkCMD, (err, stdout, stderr) => {
-        if(err) {
-          log.info("BLOCK:OUTGOING==> ", addCMD);
-          cp.exec(addCMD, (err, stdout, stderr) => {
-            log.debug(err, stdout, stderr);
-            callback(err);
-          });
-        }
-      });
-  } else {
-      let delCMD = util.format("sudo %s -D FW_BLOCK --protocol all  %s -m mac --mac-source %s -j DROP", cmd, destinationStr, macAddress);
-      cp.exec(delCMD, (err, stdout, stderr) => {
-        log.debug(err, stdout, stderr);
-        callback(err);
-      });
   }
 }
 
@@ -555,35 +423,8 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
   return exec(cmd);
 }
 
-function _wrapIptables(rule) {
-  let command = " -I ";
-  let checkRule = null;
-
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-  }
-
-  command = " -A ";
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-  }
-
-  command = " -D ";
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-    return `bash -c '${checkRule} &>/dev/null && ${rule}'`;
-  }
-
-  if(checkRule) {
-    return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
-  } else {
-    return rule;
-  }
-}
-
 module.exports = {
   setupBlockChain:setupBlockChain,
-  blockOutgoing : blockOutgoing,
   blockMac: blockMac,
   unblockMac: unblockMac,
   block: block,
@@ -600,6 +441,5 @@ module.exports = {
   getMacSet: getMacSet,
   existsBlockingEnv: existsBlockingEnv,
   enableGlobalWhitelist: enableGlobalWhitelist,
-  disableGlobalWhitelist: disableGlobalWhitelist,
-  wrapIptables: _wrapIptables
+  disableGlobalWhitelist: disableGlobalWhitelist
 }

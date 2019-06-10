@@ -37,6 +37,7 @@ const configKey = "ext.safeSearch.config";
 const updateInterval = 3600 * 1000 // once per hour
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const domainBlock = require('../control/DomainBlock.js')();
 
@@ -58,6 +59,7 @@ const safeSearchDNSPort = 8863;
 
 
 const iptables = require('../net2/Iptables');
+const wrapIptables = iptables.wrapIptables;
 
 const fc = require('../net2/config.js');
 
@@ -109,6 +111,25 @@ class SafeSearchPlugin extends Sensor {
       sem.on('SAFESEARCH_REFRESH', (event) => {
         this.applySafeSearch();
       });
+
+      sclient.on("message", (channel, message) => {
+        switch (channel) {
+          case "System:IPChange":
+            if (this._localIP) {
+              (async () => {
+                await this.removeIptablesRules();
+                await this.addIptablesRules();
+              })();
+            }
+            break;
+          default:
+          //log.warn("Unknown message channel: ", channel, message);
+        }
+      });
+
+      if (f.isMain()) {
+        sclient.subscribe("System:IPChange");
+      }
 
       await this.job();
       this.timer = setInterval(async () => {
@@ -450,13 +471,14 @@ class SafeSearchPlugin extends Sensor {
 
   async addIptablesRules() {
     const localIP = sysManager.myIp();
+    this._localIP = localIP;
     const deviceDNS = `${localIP}:8863`;
 
     const ipv6s = sysManager.myIp6();
 
     for(const protocol of ["tcp", "udp"]) {
-      const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-      const cmd = iptables.wrapIptables(deviceDNSRule);
+      const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+      const cmd = wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
       for(const ip6 of ipv6s || []) {
@@ -465,8 +487,8 @@ class SafeSearchPlugin extends Sensor {
 
           const deviceDNS6 = `[${ip6}]:8863`;
 
-          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
-          const cmd = iptables.wrapIptables(deviceDNSRule);
+          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
+          const cmd = wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }
       }
@@ -474,14 +496,17 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async removeIptablesRules() {
-    const localIP = sysManager.myIp();
+    let localIP = sysManager.myIp();
+    if (this._localIP) {
+      localIP = this._localIP;
+    }
     const deviceDNS = `${localIP}:8863`;
 
     const ipv6s = sysManager.myIp6();
 
     for(const protocol of ["tcp", "udp"]) {
-      const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-      const cmd = iptables.wrapIptables(deviceDNSRule);
+      const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+      const cmd = wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
       for(const ip6 of ipv6s || []) {
@@ -490,12 +515,13 @@ class SafeSearchPlugin extends Sensor {
 
           const deviceDNS6 = `[${ip6}]:8863`;
 
-          const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
-          const cmd = iptables.wrapIptables(deviceDNSRule);
+          const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
+          const cmd = wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }
       }
     }
+    this._localIP = null;
   }
 }
 

@@ -20,7 +20,6 @@ const log = require('../net2/logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const audit = require('../util/audit.js');
-const util = require('util');
 const Bone = require('../lib/Bone.js');
 
 const async = require('asyncawait/async')
@@ -43,17 +42,12 @@ const initID = 1;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const extend = require('util')._extend;
-
 const Block = require('../control/Block.js');
 
 const Policy = require('./Policy.js');
 
 const HostTool = require('../net2/HostTool.js')
 const ht = new HostTool()
-
-const DNSTool = require('../net2/DNSTool.js')
-const dnsTool = new DNSTool()
 
 const DomainIPTool = require('../control/DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
@@ -71,9 +65,6 @@ const Queue = require('bee-queue')
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const policyCapacity = platform.getPolicyCapacity();
-
-const EM = require('./ExceptionManager.js');
-const em = new EM();
 
 const _ = require('lodash')
 
@@ -108,7 +99,7 @@ class PolicyManager2 {
     return false;
   }
 
-  setupPolicyQueue() {
+  async setupPolicyQueue() {
     this.queue = new Queue('policy', {
       removeOnFailure: true,
       removeOnSuccess: true
@@ -237,6 +228,8 @@ class PolicyManager2 {
       })
 
     }, 60 * 1000)
+
+    return this.queue.ready();
   }
 
   registerPolicyEnforcementListener() { // need to ensure it's serialized
@@ -740,23 +733,37 @@ class PolicyManager2 {
   }
 
   async enforceAllPolicies() {
-    let rules = await this.loadActivePoliciesAsync();
+    const rules = await this.loadActivePoliciesAsync();
 
-    rules.forEach((rule) => {
-      try {
-        if(this.queue) {
-          const job = this.queue.createJob({
-            policy: rule,
-            action: "enforce",
-            booting: true
-          })
-          job.timeout(60000).save(function() {})
+    const initialEnforcement = rules.map((rule) => {
+      return new Promise((resolve, reject) => {
+        try {
+          if(this.queue) {
+            const job = this.queue.createJob({
+              policy: rule,
+              action: "enforce",
+              booting: true
+            })
+            job.timeout(60000).save();
+            job.on('succeeded', resolve);
+            job.on('failed', resolve);
+          }
+        } catch(err) {
+          log.error(`Failed to queue policy ${rule.pid}`, err)
+          resolve(err)
         }
-      } catch(err) {
-        log.error(`Failed to enforce policy ${rule.pid}: ${err}`)
-      }
+      })
     })
+
+    await Promise.all(initialEnforcement);
+
     log.info("All policy rules are enforced")
+
+    sem.emitEvent({
+      type: 'Policy:AllInitialized',
+      toProcess: 'FireMain', //make sure firemain process handle enforce policy event
+      message: 'All policies are enforced'
+    })
   }
 
 
@@ -992,9 +999,9 @@ class PolicyManager2 {
         break;
 
       case "country":
+        await countryUpdater.activateCountry(target);
         await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", whitelist);
         await Block.addMacToSet(pid, scope);
-        await countryUpdater.activateCountry(target);
         break;
 
       default:
@@ -1104,8 +1111,7 @@ class PolicyManager2 {
         break;
 
       case "country":
-        await Block.destroyRules(scope && pid, target, whitelist, false);
-        // TODO: deactivateCountry ?
+        await Block.destroyRules(scope && pid, countryUpdater.getCategory(target), whitelist, false);
         break;
 
       default:

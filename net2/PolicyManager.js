@@ -97,38 +97,31 @@ module.exports = class {
   }
 
   // this should flush ip6tables as well
-  flush(config, callback) {
-    callback = callback || function () {
-    }
-
+  async flush(config) {
     if (require('./UpgradeManager.js').isUpgrading() == true) {
-      callback(null);
       return;
     }
 
-    ip6table.flush((err, data) => {
-      iptable.flush((err, data) => {
-        let defaultTable = config['iptables']['defaults'];
-        let myip = sysManager.myIp();
-        let mysubnet = sysManager.mySubnet();
-        let secondarySubnet = sysManager.mySubnet2();
-        for (let i in defaultTable) {
-          defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
-        }
-        if (secondarySubnet) {
-          for (let i in defaultTable) {
-            defaultTable[i] = defaultTable[i].replace("LOCALSUBNET2", secondarySubnet);
-          }
-        }
-        log.debug("PolicyManager:flush", defaultTable);
-        iptable.run(defaultTable);
+    await ip6table.flush()
+    await iptable.flush()
 
-        // Setup iptables so that it's ready for blocking
-        require('../control/Block.js').setupBlockChain();
+    let defaultTable = config['iptables']['defaults'];
+    let myip = sysManager.myIp();
+    let mysubnet = sysManager.mySubnet();
+    let secondarySubnet = sysManager.mySubnet2();
+    for (let i in defaultTable) {
+      defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
+    }
+    if (secondarySubnet) {
+      for (let i in defaultTable) {
+        defaultTable[i] = defaultTable[i].replace("LOCALSUBNET2", secondarySubnet);
+      }
+    }
+    log.debug("PolicyManager:flush", defaultTable);
+    iptable.run(defaultTable);
 
-        callback(err);
-      });
-    });
+    // Setup iptables so that it's ready for blocking
+    await require('../control/Block.js').setupBlockChain();
   }
 
   block(mac, protocol, src, dst, sport, dport, state, callback) {
@@ -546,8 +539,9 @@ module.exports = class {
 
   dnsmasq(host, config, callback) {
     if(host.constructor.name !== 'HostManager') {
-      log.error("dnsmasq doesn't support per device policy: " + host.o.mac);
-      return; // doesn't support per-device policy
+      // per-device dnsmasq policy
+      host._dnsmasq(config);
+      return;
     }
     let needUpdate = false;
     let needRestart = false;

@@ -30,7 +30,6 @@ const execAsync = util.promisify(cp.exec);
 var instance = null;
 
 const VPN_CLIENT_RULE_TABLE = "vpn_client";
-const VPN_CLIENT_RULE_TABLE_ID = 101;
 
 class VPNClientEnforcer {
   constructor() {
@@ -51,42 +50,56 @@ class VPNClientEnforcer {
     return instance;
   }
 
-  async enableVPNAccess(mac, mode) {
-    if (!this.enabledHosts[mac]) {
-      const host = await hostTool.getMACEntry(mac);
-      host.vpnClientMode = mode;
-      this.enabledHosts[mac] = host;
-      switch (mode) {
-        case "dhcp":
-          const mode = require('../../net2/Mode.js');
-          await mode.reloadSetupMode();
-          // enforcement takes effect if devcie ip address is in overlay network or dhcp spoof mode is on
-          if (this._isSecondaryInterfaceIP(host.ipv4Addr) || mode.isDHCPSpoofModeOn()) {
-            try {
-              await routing.removePolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
-            } catch (err) {
-              log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
-            }
-            if (host.spoofing === "true") {
-              log.info("Add vpn client routing rule for " + host.ipv4Addr);
-              await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
-            }
-          } else {
-            log.warn(util.format("IP address %s is not assigned by secondary interface, vpn access of %s is suspended.", host.ipv4Addr, mac));
-          }
-          break;
-        default:
-          log.error("Unsupported vpn client mode: " + mode);
-      }
-      
+  _getRoutingTableName(intf) {
+    return `${VPN_CLIENT_RULE_TABLE}_${intf}`;
+  }
+
+  async enableVPNAccess(mac, mode, intf) {
+    if (!intf)
+      throw "interface is not defined";
+    const tableName = this._getRoutingTableName(intf);
+    const host = await hostTool.getMACEntry(mac);
+    const currentRoute = await routing.testRoute("8.8.8.8", host.ipv4Addr, "eth0"); // FIXME: hard code eth0 here
+    if (currentRoute && currentRoute.dev === intf) {
+      log.info("VPN Access is already granted to " + mac);
+      return;
     }
+    // ensure customized routing table is created
+    await routing.createCustomizedRoutingTable(tableName);
+    host.vpnClientMode = mode;
+    host.vpnClientIntf = intf;
+    this.enabledHosts[mac] = host;
+    switch (mode) {
+      case "dhcp":
+        const mode = require('../../net2/Mode.js');
+        await mode.reloadSetupMode();
+        // enforcement takes effect if devcie ip address is in overlay network or dhcp spoof mode is on
+        if (this._isSecondaryInterfaceIP(host.ipv4Addr) || await mode.isDHCPSpoofModeOn()) {
+          try {
+            await routing.removePolicyRoutingRule(host.ipv4Addr);
+          } catch (err) {
+            log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
+          }
+          if (host.spoofing === "true") {
+            log.info("Add vpn client routing rule for " + host.ipv4Addr);
+            await routing.createPolicyRoutingRule(host.ipv4Addr, tableName);
+          }
+        } else {
+          log.warn(util.format("IP address %s is not assigned by secondary interface, vpn access of %s is suspended.", host.ipv4Addr, mac));
+        }
+        break;
+      default:
+        log.error("Unsupported vpn client mode: " + mode);
+    }  
   }
 
   async disableVPNAccess(mac) {
     if (this.enabledHosts[mac]) {
       const host = this.enabledHosts[mac];
+      const intf = host.vpnClientIntf;
+      const tableName = this._getRoutingTableName(intf);
       try {
-        await routing.removePolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+        await routing.removePolicyRoutingRule(host.ipv4Addr, tableName);
       } catch (err) {
         log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
       }
@@ -95,24 +108,31 @@ class VPNClientEnforcer {
   }
 
   async enforceVPNClientRoutes(remoteIP, intf) {
+    if (!intf)
+      throw "Interface is not specified";
+    const tableName = this._getRoutingTableName(intf);
     // ensure customized routing table is created
-    await routing.createCustomizedRoutingTable(VPN_CLIENT_RULE_TABLE_ID, VPN_CLIENT_RULE_TABLE);
+    await routing.createCustomizedRoutingTable(tableName);
     // add routes from main routing table to vpn client table except default route
-    await routing.flushRoutingTable(VPN_CLIENT_RULE_TABLE);
+    await routing.flushRoutingTable(tableName);
     let cmd = "ip route list | grep -v default";
     const routes = await execAsync(cmd);
     await Promise.all(routes.stdout.split('\n').map(async route => {
       if (route.length > 0) {
-        cmd = util.format("sudo ip route add %s table %s", route, VPN_CLIENT_RULE_TABLE);
+        cmd = util.format("sudo ip route add %s table %s", route, tableName);
         await execAsync(cmd);
       }
     }));
     // then add remote IP as gateway of default route to vpn client table
-    await routing.addRouteToTable("default", remoteIP, intf, VPN_CLIENT_RULE_TABLE);
+    await routing.addRouteToTable("default", remoteIP, intf, tableName);
   }
 
-  async flushVPNClientRoutes() {
-    await routing.flushRoutingTable(VPN_CLIENT_RULE_TABLE);
+  async flushVPNClientRoutes(intf) {
+    if (!intf)
+      throw "Interface is not specified";
+    const tableName = this._getRoutingTableName(intf);
+    await routing.createCustomizedRoutingTable(tableName);
+    await routing.flushRoutingTable(tableName);
   }
 
   async _periodicalRefreshRule() {
@@ -121,21 +141,23 @@ class VPNClientEnforcer {
       const oldHost = this.enabledHosts[mac];
       const enabledMode = oldHost.vpnClientMode;
       host.vpnClientMode = enabledMode;
+      host.vpnClientIntf = oldHost.vpnClientIntf;
+      const tableName = this._getRoutingTableName(host.vpnClientIntf);
       switch (enabledMode) {
         case "dhcp":
           const mode = require('../../net2/Mode.js');
           await mode.reloadSetupMode();
-          if (host.ipv4Addr !== oldHost.ipv4Addr || (!this._isSecondaryInterfaceIP(host.ipv4Addr) && (!mode.isDHCPSpoofModeOn())) || host.spoofing === "false") {
+          if (host.ipv4Addr !== oldHost.ipv4Addr || (!this._isSecondaryInterfaceIP(host.ipv4Addr) && !(await mode.isDHCPSpoofModeOn())) || host.spoofing === "false") {
             // policy routing rule should be removed anyway if ip address is changed or ip address is not assigned by secondary interface
             // or host is not monitored
             try {
-              await routing.removePolicyRoutingRule(oldHost.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+              await routing.removePolicyRoutingRule(oldHost.ipv4Addr, tableName);
             } catch (err) {
               log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
             }
           }
-          if ((this._isSecondaryInterfaceIP(host.ipv4Addr) || mode.isDHCPSpoofModeOn()) && host.spoofing === "true") {
-            await routing.createPolicyRoutingRule(host.ipv4Addr, VPN_CLIENT_RULE_TABLE);
+          if ((this._isSecondaryInterfaceIP(host.ipv4Addr) || await mode.isDHCPSpoofModeOn()) && host.spoofing === "true") {
+            await routing.createPolicyRoutingRule(host.ipv4Addr, tableName);
           }
           this.enabledHosts[mac] = host;
           break;
@@ -149,7 +171,6 @@ class VPNClientEnforcer {
     const sysManager = new SysManager();
     const ip2 = sysManager.myIp2();
     const ipMask2 = sysManager.myIpMask2();
-    const prefix = ip2 && ip2.substring(0, ip2.lastIndexOf("."));
     
     if(ip && ip2 && ipMask2) {
       return ipTool.subnet(ip2, ipMask2).contains(ip);

@@ -33,28 +33,40 @@ class Platform {
   }
 
   async turnOnPowerLED() {
-    for (const path of this.getLedPaths()) {
-      const trigger = `${path}/trigger`;
-      const brightness = `${path}/brightness`;
-      await exec(`sudo bash -c 'echo default-on > ${trigger}'`);
-      await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-    };
+    try {
+      for (const path of this.getLedPaths()) {
+        const trigger = `${path}/trigger`;
+        const brightness = `${path}/brightness`;
+        await exec(`sudo bash -c 'echo default-on > ${trigger}'`);
+        await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
+      };
+    } catch(err) {
+      log.error("Error turning on LED", err)
+    }
   }
 
   async turnOffPowerLED() {
-    for (const path of this.getLedPaths()) {
-      const trigger = `${path}/trigger`;
-      await exec(`sudo bash -c 'echo none > ${trigger}'`);
-      const brightness = `${path}/brightness`;
-      await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
-    };
+    try {
+      for (const path of this.getLedPaths()) {
+        const trigger = `${path}/trigger`;
+        await exec(`sudo bash -c 'echo none > ${trigger}'`);
+        const brightness = `${path}/brightness`;
+        await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
+      };
+    } catch(err) {
+      log.error("Error turning off LED", err)
+    }
   }
 
   async blinkPowerLED() {
-    for (const path of this.getLedPaths()) {
-      const trigger = `${path}/trigger`;
-      await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
-    };
+    try {
+      for (const path of this.getLedPaths()) {
+        const trigger = `${path}/trigger`;
+        await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
+      };
+    } catch(err) {
+      log.error("Error blinking LED", err)
+    }
   }
 }
 

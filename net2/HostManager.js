@@ -49,6 +49,8 @@ const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP()
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 
@@ -87,8 +89,6 @@ const FlowTool = require('./FlowTool.js');
 const flowTool = new FlowTool();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const ovpnClient = new OpenVPNClient();
-const defaultOvpnProfileId = "ovpn_client";
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -451,20 +451,6 @@ module.exports = class HostManager {
     });
   }
 
-  ignoredIPDataForInit(json) {
-    log.debug("Reading ignored IP list");
-    return new Promise((resolve, reject) => {
-      this.loadIgnoredIP((err,ipdata)=>{
-        if(err) {
-          reject(err);
-          return;
-        }
-        json.ignoredIP = ipdata;
-        resolve(json);
-      });
-    });
-  }
-
   boneDataForInit(json) {
     log.debug("Bone for Init");
     return new Promise((resolve, reject) => {
@@ -507,7 +493,7 @@ module.exports = class HostManager {
     let dhcpRange = dnsmasq.getDefaultDhcpRange(network);
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
-        if (data.dnsmasq) {
+        if (data && data.dnsmasq) {
           const dnsmasqConfig = JSON.parse(data.dnsmasq);
           if (dnsmasqConfig[network + "DhcpRange"]) {
             dhcpRange = dnsmasqConfig[network + "DhcpRange"];
@@ -699,7 +685,6 @@ module.exports = class HostManager {
       this.policyRulesForInit(json),
       this.exceptionRulesForInit(json),
       this.natDataForInit(json),
-      this.ignoredIPDataForInit(json),
       this.getCloudURL(json)
     ]
 
@@ -847,7 +832,6 @@ module.exports = class HostManager {
           this.newAlarmDataForInit(json),
           this.archivedAlarmNumberForInit(json),
           this.natDataForInit(json),
-          this.ignoredIPDataForInit(json),
           this.boneDataForInit(json),
           this.encipherMembersForInit(json),
           this.jwtTokenForInit(json),
@@ -1372,64 +1356,45 @@ module.exports = class HostManager {
   }
 
   async vpnClient(policy) {
+    const type = policy.type;
     const state = policy.state;
-    if (state === true) {
-      switch (policy.type) {
-        case "openvpn":
-          const options = {profileId: defaultOvpnProfileId};
-          if (policy.openvpn) {
-            options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
-          }
-          try {
-            await ovpnClient.setup(options);
-            const result = await ovpnClient.start();
-            if (!result) {
-              log.error("Failed to start vpn client");
-              return false;
-            }
-            let refreshRoutes = (async() => {
-              const remoteIP = await ovpnClient.getRemoteIP();
-              const intf = await ovpnClient.getInterfaceName();
-              await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+    switch (type) {
+      case "openvpn": 
+        const profileId = policy.openvpn && policy.openvpn.profileId;
+        if (!profileId) {
+          log.error("profileId is not specified", policy);
+          return false;
+        }
+        const ovpnClient = new OpenVPNClient({profileId: profileId});
+        if (state === true) {
+          await ovpnClient.setup();
+          const result = await ovpnClient.start();
+          if (result) {
+            ovpnClient.once('link_broken', () => {
+              sem.sendEventToFireApi({
+                type: 'FW_NOTIFICATION',
+                titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
+                bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                payload: {
+                  profileId: profileId
+                }
+              });
+              const updatedPolicy = JSON.parse(JSON.stringify(policy));
+              updatedPolicy.state = false;
+              // update vpnClient system policy to state false
+              this.setPolicy("vpnClient", updatedPolicy);
             });
-            await refreshRoutes();
-            this.vpnClientRoutesTask = setInterval(() => {
-              refreshRoutes();
-            }, 300000); // refresh routes once every 5 minutes, in case of remote IP or interface name change due to auto reconnection
-            return true;
-          } catch (err) {
-            log.error("Failed to start vpn client, ", err);
-            return false;
           }
-        default:
-          log.error("Unsupported vpn client type: " + policy.type);
-          return false;
-      }
-    } else {
-      switch (policy.type) {
-        case "openvpn":
-          try {
-            const options = {profileId: defaultOvpnProfileId};
-            if (policy.openvpn) {
-              options.profileId = policy.openvpn.profileId || defaultOvpnProfileId;
-            }
-            await ovpnClient.setup(options);
-            await ovpnClient.stop();
-            await vpnClientEnforcer.flushVPNClientRoutes();
-            if (this.vpnClientRoutesTask) {
-              clearInterval(this.vpnClientRoutesTask);
-              this.vpnClientRoutesTask = null;
-            }
-            return true;
-          } catch (err) {
-            log.error("Failed to stop vpn client, ", err);
-            return false;
-          }
-        default:
-          log.error("Unsupported vpn client type: " + policy.type);
-          return false;
-      }
+          return result;
+        } else {
+          await ovpnClient.setup();
+          await ovpnClient.stop();
+        }
+        break;
+      default:
+        log.warn("Unsupported VPN type: " + type);
     }
+    return true;
   }
 
   policyToString() {
@@ -1531,85 +1496,6 @@ module.exports = class HostManager {
           });
         });
       }
-    });
-  }
-
-  loadIgnoredIP(callback) {
-    let key = "policy:ignore"
-    rclient.hgetall(key, (err, data) => {
-      if (err != null) {
-        log.error("Ignored:Policy:Load:Error", key, err);
-        if (callback) {
-          callback(err, null);
-        }
-      } else {
-        if (data) {
-          let ignored= {};
-          for (let k in data) {
-            ignored[k] = JSON.parse(data[k]);
-          }
-          if (callback)
-            callback(null, ignored);
-        } else {
-          if (callback)
-            callback(null, null);
-        }
-      }
-    });
-  }
-
-  unignoreIP(ip,callback) {
-    let key = "policy:ignore";
-    rclient.hdel(key,ip,callback);
-    log.info("Unignore:",ip);
-  }
-
-  ignoreIP(ip,reason,callback) {
-    let now = Math.ceil(Date.now() / 1000);
-    let key = "policy:ignore";
-    let obj = {
-      ip: ip,
-      ts: now,
-      reason: reason
-    };
-    let objkey ={};
-    objkey[ip]=JSON.stringify(obj);
-    rclient.hmset(key,objkey,(err,data)=> {
-      if (err!=null) {
-        callback(err,null);
-      } else {
-        callback(null,null);
-      }
-    });
-  }
-
-  isIgnoredIP(ip,callback) {
-    if (ip == null || ip == undefined) {
-      callback(null,null);
-      return;
-    }
-    if (ip.includes("encipher.io") || ip.includes("firewalla.com")) {
-      callback(null,"predefined");
-      return;
-    }
-    let key = "policy:ignore";
-    rclient.hget(key,ip,(err,data)=> {
-      callback(err,data);
-    });
-  }
-
-  isIgnoredIPs(ips,callback) {
-    let ignored = false;
-    _async.each(ips, (ip, cb) => {
-      this.isIgnoredIP(ip,(err,data)=>{
-        if (err==null&& data!=null) {
-          ignored = true;
-        }
-        cb();
-      });
-    } , (err) => {
-      log.debug("HostManager:isIgnoredIPs:",ips,ignored);
-      callback(null,ignored );
     });
   }
 

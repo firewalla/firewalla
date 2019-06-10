@@ -13,15 +13,14 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var ip = require('ip');
-var cp = require('child_process');
+const ip = require('ip');
+const cp = require('child_process');
+const execAsync = require('util').promisify(cp.exec)
 
 const log = require('./logger.js')(__filename);
 
 var running = false;
 var workqueue = [];
-
-const Promise = require('bluebird')
 
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
@@ -114,6 +113,7 @@ function iptablesArgs(rule) {
   if (rule.protocol) args = args.concat(["-p", rule.protocol]);
   if (rule.src) args = args.concat(["--source", rule.src]);
   if (rule.dst) args = args.concat(["--destination", rule.dst]);
+  if (rule.extra) args = args.concat([rule.extra]);
   if (rule.sport) args = args.concat(["--sport", rule.sport]);
   if (rule.dport) args = args.concat(["--dport", rule.dport]);
   if (rule.in) args = args.concat(["-i", rule.in]);
@@ -154,18 +154,12 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
-function flush(callback) {
-  this.process = cp.exec(
+function flush() {
+  return execAsync(
     "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
-    (err, stdout, stderr) => {
-      if (err) {
-        log.error("IP6TABLE:FLUSH:Unable to flush", err, stdout);
-      }
-      if (callback) {
-        callback(err, null);
-      }
-    }
-  );
+  ).catch(err => {
+    log.error("IP6TABLE:FLUSH:Unable to flush", err)
+  });
 }
 
 // run() is deleted as same functionality is provided in Iptables.run() 
@@ -189,6 +183,7 @@ function dnsRedirect(server, port, cb) {
     action: '-A',
     table: 'nat',
     protocol: 'udp',
+    extra: '-m set ! --match-set no_dns_caching_mac_set src',
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
@@ -225,6 +220,7 @@ function dnsUnredirect(server, port, cb) {
     action: '-D',
     table: 'nat',
     protocol: 'udp',
+    extra: '-m set ! --match-set no_dns_caching_mac_set src',
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,

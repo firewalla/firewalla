@@ -770,13 +770,6 @@ module.exports = class {
     }
   }
 
-  ignoreIP(ip) {
-    if (this.isDNS(ip)) {
-      return true;
-    }
-    return false;
-  }
-
   isSystemDomain(ipOrDomain) {
     if (ipOrDomain.indexOf('encipher.io') > -1) {
       return true;

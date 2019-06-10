@@ -58,6 +58,9 @@ const hostTool = new HostTool()
 const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const vpnClientEnforcer = new VPNClientEnforcer();
 
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const ovpnClient = new OpenVPNClient();
+const defaultOvpnProfileId = "ovpn_client";
 
 class Host {
   constructor(obj, mgr, callback) {
@@ -393,9 +396,16 @@ class Host {
   async vpnClient(policy) {
     try {
       const state = policy.state;
+      const profileId = policy.profileId;
+      if (!profileId) {
+        log.error("VPN client profileId is not specified for " + this.o.mac);
+        return false;
+      }
+      const ovpnClient = new OpenVPNClient({profileId: profileId});
+      const intf = ovpnClient.getInterfaceName();
       if (state === true) {
         const mode = policy.mode || "dhcp";
-        await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode);
+        await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode, intf);
       } else {
         await vpnClientEnforcer.disableVPNAccess(this.o.mac);
       }
@@ -403,6 +413,21 @@ class Host {
     } catch (err) {
       log.error("Failed to set VPN client access on " + this.o.mac);
       return false;
+    }
+  }
+
+  async _dnsmasq(policy) {
+    try {
+      const dnsCaching = policy.dnsCaching;
+      if (dnsCaching === true) {
+        const cmd = `sudo ipset del -! no_dns_caching_mac_set ${this.o.mac}`;
+        await exec(cmd);
+      } else {
+        const cmd = `sudo ipset add -! no_dns_caching_mac_set ${this.o.mac}`;
+        await exec(cmd);
+      }
+    } catch (err) {
+      log.error("Failed to set dnsmasq policy on " + this.o.mac, err);
     }
   }
 
