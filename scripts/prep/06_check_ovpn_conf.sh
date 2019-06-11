@@ -43,3 +43,4 @@ sudo chmod 777 /etc/openvpn/client_conf
 sudo chmod 644 /etc/openvpn/client_conf/*
 
 sudo cp /home/pi/firewalla/extension/vpnclient/openvpn_client@.service.template /etc/systemd/system/openvpn_client@.service
+sudo systemctl daemon-reload
