@@ -1451,7 +1451,7 @@ class netBot extends ControllerBot {
         let v = value;
         
         if (v.from && v.from === "firewalla") {
-          const mssc = require('../extension/ss_client/multi_ss_client.js');
+          const ssClient = require('../extension/ss_client/ss_client.js');
           mssc.saveConfig(v)
             .then(() => this.simpleTxData(msg, {}, null, callback))
             .catch((err) => this.simpleTxData(msg, null, err, callback));
@@ -1776,11 +1776,15 @@ class netBot extends ControllerBot {
         });
         break;
       case "scisurfconfig":
-        let mssc = require('../extension/ss_client/multi_ss_client.js');
+        const mgr = require('../extension/ss_client/ss_client_manager.js');
 
-        mssc.loadConfig()
-          .then((result) => this.simpleTxData(msg, result || {}, null, callback))
-          .catch((err) => this.simpleTxData(msg, null, err, callback));
+        (async () => {
+          const client = mgr.getSSClient();
+          const result = client.getConfig();
+          this.simpleTxData(msg, result || {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
         break;
       case "language":
         this.simpleTxData(msg, {language: sysManager.language}, null, callback);
@@ -2194,6 +2198,13 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "country:supported":
+        rc.smembersAsync('country:list').then(list => {
+          this.simpleTxData(msg, {supported: list}, null, callback);
+        }).catch(err => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2319,20 +2330,6 @@ class netBot extends ControllerBot {
       msg.data.hourblock != "0") { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
       options.queryall = true
     }
-
-    // if(hostTool.isMacAddress(target)) {
-    //   log.info("Loading host info by mac address", target);
-    //   const macAddress = target
-    //   const hostObject = await (hostTool.getMACEntry(macAddress))
-
-    //   if(hostObject && hostObject.ipv4Addr) {
-    //     target = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
-    //   } else {
-    //     let error = new Error("Invalid Mac");
-    //     error.code = 404;
-    //     return Promise.reject(error);
-    //   }
-    // }
 
     let host = await this.hostManager.getHostAsync(target);
     if (!host || !host.o.mac) {
@@ -2557,11 +2554,13 @@ class netBot extends ControllerBot {
         break;
 
       case "resetSciSurfConfig":
-        const mssc = require('../extension/ss_client/multi_ss_client.js');
+        const mgr = require('../extension/ss_client/ss_client_manager.js');
         (async () => {
           try {
-            await mssc.stop();
-            await mssc.clearConfig();  
+            const client = mgr.getSSClient();
+            client.resetConfig();
+            // await mssc.stop();
+            // await mssc.clearConfig();  
           } finally {
             this.simpleTxData(msg, null, err, callback);  
           }

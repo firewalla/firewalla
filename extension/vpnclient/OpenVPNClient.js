@@ -85,6 +85,10 @@ class OpenVPNClient extends VPNClient {
     return path;
   }
 
+  _getPushOptionsPath() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.push_options`;
+  }
+
   _getStatusLogPath() {
     return `/var/log/openvpn_client-status-${this.profileId}.log`;
   }
@@ -207,7 +211,7 @@ class OpenVPNClient extends VPNClient {
     if (!this.profileId) {
       throw "OpenVPN client is not setup properly. Profile id is missing."
     }
-    let cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
+    let cmd = util.format("sudo systemctl restart \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
@@ -230,6 +234,10 @@ class OpenVPNClient extends VPNClient {
             const intf = this.getInterfaceName();
             // add vpn client specific routes
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+            await this._processPushOptions();
+            if (this._dnsServers && this._dnsServers.length > 0) {
+              await vpnClientEnforcer.enforceDNSRedirect(intf, this._dnsServers);
+            }
             this._started = true;
             resolve(true);
           } else {
@@ -249,11 +257,38 @@ class OpenVPNClient extends VPNClient {
     });
   }
 
+  async _processPushOptions() {
+    const pushOptionsFile = this._getPushOptionsPath();
+    this._dnsServers = [];
+    if (fs.existsSync(pushOptionsFile)) {
+      const content = await readFileAsync(pushOptionsFile, "utf8");
+      if (!content)
+        return;
+      const dnsServers = [];
+      for (let line of content.split("\n")) {
+        const options = line.split(/\s+/);
+        switch (options[0]) {
+          case "dhcp-option":
+            if (options[1] === "DNS") {
+              dnsServers.push(options[2]);
+            }
+            break;
+          default:
+        }
+      }
+      this._dnsServers = dnsServers;
+    }
+  }
+
   async stop() {
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
     this._started = false;
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
+    await this._processPushOptions();
+    if (this._dnsServers && this._dnsServers.length > 0) {
+      await vpnClientEnforcer.unenforceDNSRedirect(intf, this._dnsServers);
+    }
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
