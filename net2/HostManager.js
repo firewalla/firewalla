@@ -82,9 +82,6 @@ const hostTool = new HostTool()
 
 const tokenManager = require('../util/FWTokenManager.js');
 
-const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const vpnClientEnforcer = new VPNClientEnforcer();
-
 const FlowTool = require('./FlowTool.js');
 const flowTool = new FlowTool();
 

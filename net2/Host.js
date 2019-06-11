@@ -18,9 +18,7 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
-const Promise = require('bluebird');
-
-const _ = require('lodash');
+const exec = require('child-process-promise').exec
 
 const Spoofer = require('./Spoofer.js');
 const SysManager = require('./SysManager.js');
@@ -59,8 +57,6 @@ const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js')
 const vpnClientEnforcer = new VPNClientEnforcer();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const ovpnClient = new OpenVPNClient();
-const defaultOvpnProfileId = "ovpn_client";
 
 class Host {
   constructor(obj, mgr, callback) {
