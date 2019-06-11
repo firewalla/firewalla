@@ -1636,6 +1636,39 @@ class netBot extends ControllerBot {
           })
         }
         break;
+      case "flows":
+        (async () => {
+          // options:
+          //  count: number of alarms returned, default 100
+          //  ts: timestamp used to query alarms, default to now
+          //  asc: return results in ascending order, default to false
+          //  begin/end: time range used to query, will be ommitted when ts is set
+
+          let options = Object.assign({}, msg.data);
+
+          if (msg.target && msg.target != '0.0.0.0') {
+            let host = await this.hostManager.getHostAsync(msg.target);
+            if (!host || !host.o.mac) {
+              let error = new Error("Invalid Host");
+              error.code = 404;
+              throw error;
+            }
+            options.mac = host.o.mac
+          }
+
+          options.begin = options.begin || options.start;
+
+          let flows = await flowTool.prepareRecentFlows({}, options)
+          let data = {
+            count: flows.length,
+            flows,
+            nextTs: flows[flows.length - 1].ts
+          }
+          this.simpleTxData(msg, data, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
       case "vpn":
       case "vpnreset":
         let regenerate = false
@@ -2339,6 +2372,7 @@ class netBot extends ControllerBot {
     }
 
     let mac = host.o.mac;
+    options.mac = mac;
 
     // load 24 hours download/upload trend
     await flowManager.getStats2(host);
@@ -2348,7 +2382,7 @@ class netBot extends ControllerBot {
       jsonobj = host.toJson();
 
       await Promise.all([
-        flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
+        flowTool.prepareRecentFlows(jsonobj, options),
         netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options),
         netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options),
         netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options),
