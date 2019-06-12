@@ -138,9 +138,6 @@ class CategoryUpdateSensor extends Sensor {
 
   run() {
     sem.once('IPTABLES_READY', async() => {
-      await this.regularJob()
-      await this.securityJob()
-
       // initial round of country list update is triggered by this event
       // also triggers dynamic list and ipset update here
       // to make sure blocking takes effect immediately
@@ -150,6 +147,9 @@ class CategoryUpdateSensor extends Sensor {
         await countryUpdater.refreshCategoryRecord(category)
         await countryUpdater.recycleIPSet(category, false)
       })
+
+      await this.regularJob()
+      await this.securityJob()
 
       setInterval(this.regularJob, this.config.regularInterval * 1000)
 
