@@ -80,6 +80,8 @@ exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 exports.dnsChange = dnsChange;
 exports.dnsChangeAsync = util.promisify(dnsChange);
+exports.dnsFlush = dnsFlush;
+exports.dnsFlushAsync = util.promisify(dnsFlush);
 exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
@@ -153,6 +155,7 @@ function iptables(rule, callback) {
         let state = rule.state;
         let ip = rule.ip;
         let dns = rule.dns;
+        let srcType = rule.srcType || "local";
         let action = "-A";
         if (state == false || state == null) {
             action = "-D";
@@ -163,11 +166,13 @@ function iptables(rule, callback) {
             _src = "-i eth0";
         }
 
+        const chain = _getDNSRedirectChain(srcType);
+
         let cmd = "iptables";
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
-          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} ${src} -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${dns}`
+          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${dns}`
         }
 
         switch(action) {
@@ -186,7 +191,7 @@ function iptables(rule, callback) {
         }
 
         log.debug("IPTABLE:DNS:Running commandline: ", cmdline);
-        cp.exec(cmdline, (err, out, code) => {
+        cp.exec(cmdline, (err, stdout, stderr) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
             }
@@ -196,6 +201,21 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
+    } else if (rule.type == "dns_flush") {
+      const srcType = rule.srcType || "local";
+      const chain = _getDNSRedirectChain(srcType);
+      const cmdline = `sudo iptables -w -t nat -F ${chain}`
+      log.debug("IPTABLE:DNS_FLUSH:Running commandline: ", cmdline);
+      cp.exec(cmdline, (err, stdout, stderr) => {
+        if (err) {
+          log.error("IPTABLE:DNS_FLUSH:Error", cmdline, err);
+        }
+        if (callback) {
+          callback(err, null);
+        }
+        running = false;
+        newRule(null, null);
+      })
     } else if (rule.type == "portforward") {
         let state = rule.state;
         let protocol = rule.protocol;
@@ -300,11 +320,38 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
-function dnsChange(ip, dns, state, callback) {
+function _getDNSRedirectChain(type) {
+  type = type || "local";
+  let chain = "PREROUTING_DNS_DEFAULT";
+  switch (type) {
+    case "local":
+      chain = "PREROUTING_DNS_DEFAULT";
+      break;
+    case "vpn":
+      chain = "PREROUTING_DNS_VPN";
+      break;
+    case "vpnClient":
+      chain = "PREROUTING_DNS_VPN_CLIENT";
+      break;
+    default:
+      chain = "PREROUTING_DNS_DEFAULT";
+  }
+  return chain;
+}
+
+function dnsFlush(srcType, callback) {
+  newRule({
+    type: 'dns_flush',
+    srcType: srcType || 'local'
+  }, callback);
+}
+
+function dnsChange(ip, dns, srcType, state, callback) {
   newRule({
       type: 'dns',
       ip: ip,
       dns: dns,
+      srcType: srcType || 'local',
       state: state
   }, callback);
 }

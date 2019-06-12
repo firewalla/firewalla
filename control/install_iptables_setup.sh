@@ -188,6 +188,19 @@ sudo iptables -w -t nat -C FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888 &
 # divert to whitelist chain if whitelist bit is marked
 sudo iptables -w -t nat -C PREROUTING -m connmark --mark 0x1/0x1 -j FW_NAT_WHITELIST &>/dev/null || sudo iptables -w -t nat -I PREROUTING -m connmark --mark 0x1/0x1 -j FW_NAT_WHITELIST
 
+# create dns redirect chain in PREROUTING
+sudo iptables -w -t nat -N PREROUTING_DNS_DEFAULT &> /dev/null
+sudo iptables -w -t nat -F PREROUTING_DNS_DEFAULT
+sudo iptables -w -t nat -C PREROUTING -j PREROUTING_DNS_DEFAULT || sudo iptables -w -t nat -I PREROUTING -j PREROUTING_DNS_DEFAULT
+sudo iptables -w -t nat -N PREROUTING_DNS_VPN &> /dev/null
+sudo iptables -w -t nat -F PREROUTING_DNS_VPN
+sudo iptables -w -t nat -C PREROUTING -j PREROUTING_DNS_VPN || sudo iptables -w -t nat -I PREROUTING -j PREROUTING_DNS_VPN
+sudo iptables -w -t nat -N PREROUTING_DNS_SAFE_SEARCH &> /dev/null
+sudo iptables -w -t nat -F PREROUTING_DNS_SAFE_SEARCH
+sudo iptables -w -t nat -C PREROUTING -j PREROUTING_DNS_SAFE_SEARCH || sudo iptables -w -t nat -I PREROUTING -j PREROUTING_DNS_SAFE_SEARCH
+sudo iptables -w -t nat -N PREROUTING_DNS_VPN_CLIENT &> /dev/null
+sudo iptables -w -t nat -F PREROUTING_DNS_VPN_CLIENT
+sudo iptables -w -t nat -C PREROUTING -j PREROUTING_DNS_VPN_CLIENT || sudo iptables -w -t nat -I PREROUTING -j PREROUTING_DNS_VPN_CLIENT
 
 if [[ -e /.dockerenv ]]; then
   sudo iptables -w -C OUTPUT -p all -j FW_BLOCK &>/dev/null || sudo iptables -w -A OUTPUT -p all -j FW_BLOCK
@@ -345,6 +358,20 @@ if [[ -e /sbin/ip6tables ]]; then
 
   # divert to whitelist chain if whitelist chain is marked
   sudo ip6tables -w -t nat -C PREROUTING -m connmark --mark 0x1/0x1 -j FW_NAT_WHITELIST &>/dev/null || sudo ip6tables -w -t nat -I PREROUTING -m connmark --mark 0x1/0x1 -j FW_NAT_WHITELIST
+
+  # create dns redirect chain in PREROUTING
+  sudo ip6tables -w -t nat -N PREROUTING_DNS_DEFAULT &> /dev/null
+  sudo ip6tables -w -t nat -F PREROUTING_DNS_DEFAULT
+  sudo ip6tables -w -t nat -C PREROUTING -j PREROUTING_DNS_DEFAULT || sudo ip6tables -w -t nat -I PREROUTING -j PREROUTING_DNS_DEFAULT
+  sudo ip6tables -w -t nat -N PREROUTING_DNS_VPN &> /dev/null
+  sudo ip6tables -w -t nat -F PREROUTING_DNS_VPN
+  sudo ip6tables -w -t nat -C PREROUTING -j PREROUTING_DNS_VPN || sudo ip6tables -w -t nat -I PREROUTING -j PREROUTING_DNS_VPN
+  sudo ip6tables -w -t nat -N PREROUTING_DNS_SAFE_SEARCH &> /dev/null
+  sudo ip6tables -w -t nat -F PREROUTING_DNS_SAFE_SEARCH
+  sudo ip6tables -w -t nat -C PREROUTING -j PREROUTING_DNS_SAFE_SEARCH || sudo ip6tables -w -t nat -I PREROUTING -j PREROUTING_DNS_SAFE_SEARCH
+  sudo ip6tables -w -t nat -N PREROUTING_DNS_VPN_CLIENT &> /dev/null
+  sudo ip6tables -w -t nat -F PREROUTING_DNS_VPN_CLIENT
+  sudo ip6tables -w -t nat -C PREROUTING -j PREROUTING_DNS_VPN_CLIENT || sudo ip6tables -w -t nat -I PREROUTING -j PREROUTING_DNS_VPN_CLIENT
 fi
 
 # redirect blue hole ip 80/443 port to localhost
