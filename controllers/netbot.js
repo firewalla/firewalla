@@ -2198,6 +2198,13 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "country:supported":
+        rc.smembersAsync('country:list').then(list => {
+          this.simpleTxData(msg, {supported: list}, null, callback);
+        }).catch(err => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2323,20 +2330,6 @@ class netBot extends ControllerBot {
       msg.data.hourblock != "0") { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
       options.queryall = true
     }
-
-    // if(hostTool.isMacAddress(target)) {
-    //   log.info("Loading host info by mac address", target);
-    //   const macAddress = target
-    //   const hostObject = await (hostTool.getMACEntry(macAddress))
-
-    //   if(hostObject && hostObject.ipv4Addr) {
-    //     target = hostObject.ipv4Addr       // !! Reassign ip address to the real ip address queried by mac
-    //   } else {
-    //     let error = new Error("Invalid Mac");
-    //     error.code = 404;
-    //     return Promise.reject(error);
-    //   }
-    // }
 
     let host = await this.hostManager.getHostAsync(target);
     if (!host || !host.o.mac) {

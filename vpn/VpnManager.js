@@ -44,6 +44,8 @@ module.exports = class {
             case "System:IPChange":
               // update SNAT rule in iptables
               try {
+                // sysManager.myIp() only returns latest IP of Firewalla. Should unset old rule with legacy IP before add new rule
+                await this.unsetIptables();
                 await this.setIptables()
               } catch(err) {
                 log.error("Failed to set iptables", err);
