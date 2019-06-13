@@ -81,7 +81,7 @@ router.get('/:host',
                      let jsonObj = h.toJson();
 
                      Promise.all([
-                       flowTool.prepareRecentFlowsForHost(jsonObj, h.o.mac),
+                       flowTool.prepareRecentFlows(jsonObj, {mac: h.o.mac}),
                        netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac),
                        netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac),
                        netBotTool.prepareAppActivityFlowsForHost(jsonObj, h.o.mac),

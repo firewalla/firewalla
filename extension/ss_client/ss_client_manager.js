@@ -1,6 +1,7 @@
 'use strict';
 
 let instance = null;
+const log = require('../../net2/logger.js')(__filename);
 
 const SSClient = require('./ss_client.js');
 const rclient = require('../../util/redis_manager').getRedisClient();
