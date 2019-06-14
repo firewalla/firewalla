@@ -143,7 +143,7 @@ sudo chmod 644 /etc/openvpn/crl.pem
 sudo chmod 644 /etc/openvpn/client_conf/*
 echo "$NAME$FILEEXT moved to home directory."
 PASSEXT=".password"
-echo $2 > ~/ovpns/$NAME$FILEEXT$PASSEXT
+echo -n "$2" > ~/ovpns/$NAME$FILEEXT$PASSEXT
 cp ~/ovpns/$NAME$FILEEXT ~/ovpns/$ORIGINAL_NAME.ovpn
 cp ~/ovpns/$NAME$FILEEXT$PASSEXT ~/ovpns/$ORIGINAL_NAME.ovpn.password
 echo "$NAME" > ~/ovpns/.ovpn.cn

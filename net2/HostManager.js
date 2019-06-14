@@ -2559,7 +2559,7 @@ module.exports = class HostManager {
   setPolicy(name, data, callback) {
 
     let savePolicyWrapper = (name, data, callback) => {
-      this.savePolicy((err, data) => {
+      this.savePolicy((err) => {
         if (err == null) {
           let obj = {};
           obj[name] = data;

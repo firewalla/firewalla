@@ -10,7 +10,9 @@ DNS=$3
 : ${DNS:="8.8.8.8"}
 SERVER_NETWORK=$4
 : ${SERVER_NETWORK="10.8.0.0"}
-LOCAL_PORT=$5
+NETMASK=$5
+: ${NETMASK="255.255.255.0"}
+LOCAL_PORT=$6
 : ${LOCAL_PORT="1194"}
 
 chmod 777 /etc/openvpn
@@ -42,9 +44,9 @@ fi
 chmod 644 /etc/openvpn/client_conf/*
 
 if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
-  # make sure that server config with same instance name, server network and local port
+  # make sure that server config with same instance name, server network , netmask and local port
   # will not be regenerated
-  grep -q "server $SERVER_NETWORK" /etc/openvpn/$INSTANCE_NAME.conf
+  grep -q "server $SERVER_NETWORK $NETMASK" /etc/openvpn/$INSTANCE_NAME.conf
   same_network=$?
   grep -q "port $LOCAL_PORT" /etc/openvpn/$INSTANCE_NAME.conf
   same_port=$?
@@ -78,6 +80,8 @@ sed -i "s=MY_DNS=$DNS=" /etc/openvpn/$INSTANCE_NAME.conf
 # sed 's/MYDNS/'$DNS'/' <$FIREWALLA_HOME/vpn/server_config.txt.tmp >/etc/openvpn/server.conf
 # Set server network
 sed -i "s=SERVER_NETWORK=$SERVER_NETWORK=" /etc/openvpn/$INSTANCE_NAME.conf
+# Set netmask
+sed -i "s=NETMASK=$NETMASK=" /etc/openvpn/$INSTANCE_NAME.conf
 # Set local port
 sed -i "s=LOCAL_PORT=$LOCAL_PORT=" /etc/openvpn/$INSTANCE_NAME.conf
 # Set server instance
