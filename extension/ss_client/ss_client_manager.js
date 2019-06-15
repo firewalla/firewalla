@@ -23,6 +23,10 @@ class SSClientManager {
       key = `scisurf.${name}.config`;
     }
     const configString = await rclient.getAsync(key);
+    if(!configString) {
+      return null;
+    }
+    
     try {
       let config = JSON.parse(configString);
       if(config.servers && Array.isArray(config.servers)) {

@@ -1453,7 +1453,7 @@ module.exports = class {
   }
 
   unblockFromAlarm(alarmID, info, callback) {
-    this.unblockFromAlarmAsync().then(
+    this.unblockFromAlarmAsync(alarmID, info).then(
       res => callback(null, res),
       err => callback(err, null)
     )
@@ -1485,7 +1485,7 @@ module.exports = class {
   }
 
   unallowFromAlarm(alarmID, info, callback) {
-    this.unallowFromAlarmAsync().then(
+    this.unallowFromAlarmAsync(alarmID, info).then(
       res => callback(null, res),
       err => callback(err, null)
     )
