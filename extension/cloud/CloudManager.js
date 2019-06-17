@@ -15,9 +15,10 @@ class CloudManager {
     const actions = Object.keys(config);
     if (actions.includes(action)) {
       try {
-        const A = require(`./${action}.js`);
+        const className = config[action] && config[action].name;
+        const A = require(`./${className}.js`);
         const a = new A();
-        log.info(`Running action ${action}...`);
+        log.info(`Running action ${className}...`);
         const result = a.run(info);
         return bone.cloudActionCallback({ action, info, result });
       } catch (err) {

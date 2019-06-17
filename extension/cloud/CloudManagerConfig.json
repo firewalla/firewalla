@@ -1,3 +1,5 @@
 {
-    "PingAction": {}
+    "ping": {
+        "name": "PingAction"
+    }
 }

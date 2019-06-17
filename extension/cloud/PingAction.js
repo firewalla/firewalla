@@ -8,3 +8,5 @@ class PingAction extends CloudAction {
         log.info("Ping... Pong...");
     }
 }
+
+module.exports = PingAction;
