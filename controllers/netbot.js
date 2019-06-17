@@ -1141,6 +1141,14 @@ class netBot extends ControllerBot {
                       });
                   }
               }
+          } else if (msg.control === 'cloud') {
+            log.error("Firewalla Cloud");
+            if(msg.command) {
+              const cloudManager = require('../extension/cloud/CloudManager.js');
+              cloudManager.run(msg.command, msg.info).catch((err) => {
+                log.error("Got error when handling cloud action, err:", err);
+              });
+            }
           }
       }
   }
