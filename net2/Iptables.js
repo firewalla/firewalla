@@ -374,20 +374,8 @@ function flush() {
 
 async function run(listofcmds) {
   for (const cmd of listofcmds || []) {
-    await cp.exec(
-      cmd,
-      {timeout: 10000}, // set timeout to 10s
-      (err, stdout, stderr) => {
-        if (err) {
-          log.error("IPTABLE:RUN:Unable to run command", cmd, err.message);
-        }
-        if (stderr) {
-          log.warn("IPTABLE:RUN:", cmd, stderr);
-        }
-        if (stdout) {
-          log.debug("IPTABLE:RUN:", cmd, stdout);
-        }
-      }
-    )
+    await execAsync(cmd, {timeout: 10000}).catch((err) => {
+      log.error("IPTABLE:RUN:Unable to run command", cmd, err.message);
+    });
   }
 }
