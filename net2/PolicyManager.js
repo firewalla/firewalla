@@ -427,50 +427,49 @@ module.exports = class {
     host.enhancedSpoof(state);
   }
 
-  vpn(host, config, policies) {
+  async vpn(host, config, policies) {
     if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
 
     let vpnManager = new VpnManager();
-    vpnManager.configure(config, false, (err) => {
-      if (err != null) {
-        log.error("PolicyManager:VPN", "Failed to configure vpn");
+    let conf = await vpnManager.configure(config, false);
+    if (conf == null) {
+      log.error("PolicyManager:VPN", "Failed to configure vpn");
+      return;
+    } else {
+      if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
+        conf = await vpnManager.stop();
+        log.error("PolicyManager:VPN", "VPN Not avaliable");
+        const updatedConfig = Object.assign({}, config, conf);
+        host.setPolicy("vpn", updatedConfig);
         return;
-      } else {
-        if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
-          vpnManager.stop();
-          log.error("PolicyManager:VPN", "VPN Not avaliable");
-          return;
-        }
-        const updatedConfig = JSON.parse(JSON.stringify(config));
-        if (config.state == true) {
-          vpnManager.start((err, external, port, serverNetwork, localPort) => {
-            if (err != null) {
-              updatedConfig.state = false;
-              host.setPolicy("vpn", updatedConfig);
-            } else {
-              updatedConfig.serverNetwork = serverNetwork;
-              updatedConfig.localPort = localPort;
-              if (external) {
-                updatedConfig.portmapped = true;
-                host.setPolicy("vpn", updatedConfig, (err) => {
-                  host.setPolicy("vpnPortmapped", true);
-                });
-              } else {
-                updatedConfig.portmapped = false;
-                host.setPolicy("vpn", updatedConfig, (err) => {
-                  host.setPolicy("vpnPortmapped", false);
-                });
-              }
-            }
-          });
-        } else {
-          vpnManager.stop();
-        }
       }
-    });
+      if (config.state == true) {
+        conf = await vpnManager.start();
+        // vpnManager.start() will return latest status of VPN server, which needs to be updated and re-enforced in system policy
+        const updatedConfig = Object.assign({}, config, conf);
+        host.setPolicy("vpn", updatedConfig, (err) => {
+          if (updatedConfig.portmapped) {
+            host.setPolicy("vpnPortmapped", true);
+          } else {
+            host.setPolicy("vpnPortmapped", false);
+          }
+        });
+      } else {
+        conf = await vpnManager.stop();
+        // vpnManager.stop() will return latest status of VPN server, which needs to be updated and re-enforced in system policy
+        const updatedConfig = Object.assign({}, config, conf);
+        host.setPolicy("vpn", updatedConfig, (err) => {
+          if (updatedConfig.portmapped) {
+            host.setPolicy("vpnPortmapped", true);
+          } else {
+            host.setPolicy("vpnPortmapped", false);
+          }
+        });
+      }
+    }
   }
 
   scisurf(host, config) {
