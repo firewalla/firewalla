@@ -52,9 +52,6 @@ const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 
 const fs = require('fs');
-const writeFileAsync = util.promisify(fs.writeFile);
-const readFileAsync = util.promisify(fs.readFile);
-const unlinkAsync = util.promisify(fs.unlink);
 
 const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
 
@@ -132,101 +129,6 @@ function _disableSpoofMode() {
       spoofer.clean7()
     ]);
   }
-}
-
-// for ipv4 only
-async function _saveSimpleModeNetworkSettings() {
-  const ipSubnet = sysManager.mySubnet();
-  const gateway = sysManager.myGateway();
-  const simpleIpFile = firewalla.getHiddenFolder() + "/run/simple_ip";
-  let cmd = "";
-  if (fs.existsSync(simpleIpFile)) {
-    // simple_ip file already exists. This is likely an update of alternative ip/subnet and should not override simple_ip file
-    log.info("simple_ip file already exists. No need to override it.");
-  } else {
-    await writeFileAsync(simpleIpFile, ipSubnet);
-  }
-
-  const simpleGwFile = firewalla.getHiddenFolder() + "/run/simple_gw";
-  if (fs.existsSync(simpleGwFile)) {
-    // simple_gw file already exists. This is likely an update of alternative gateway and should not override simple_gw file
-    log.info("simple_gw file already exists. No need to override it.");
-  } else {
-    await writeFileAsync(simpleGwFile, gateway);
-  }
-
-  const simpleResolvFile = firewalla.getHiddenFolder() + "/run/simple_resolv.conf";
-  if (fs.existsSync(simpleResolvFile)) {
-    // simple_resolv.conf already exists. This is likely an update of alternative dns and should not override simple_resolv.conf file
-    log.info("simple_resolv.conf file already exists. No need to override it.");
-  } else {
-    cmd = util.format("cp /etc/resolv.conf %s", simpleResolvFile);
-    await execAsync(cmd);
-  }
-}
-
-// for ipv4 only
-async function _restoreSimpleModeNetworkSettings() {
-  const oldIpSubnet = sysManager.myIp();
-  let cmd = "";
-
-  const simpleIpFile = firewalla.getHiddenFolder() + "/run/simple_ip";
-  if (fs.existsSync(simpleIpFile)) {
-    // delete old ip from eth0
-    const simpleIpSubnet = await readFileAsync(simpleIpFile, "utf8");
-    try {
-      cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
-      log.info("Command to remove old ip assignment: " + cmd);
-      await execAsync(cmd);
-      // dns rule change is done in dnsmasq.js
-    } catch (err) {
-      log.warn(util.format("Old ip subnet %s is not found on eth0."), oldIpSubnet);
-    }
-
-    cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", simpleIpSubnet);
-    log.info("Command to restore simple ip assignment: " + cmd);
-    await execAsync(cmd);
-    // dns rule change is done in dnsmasq.js
-    await unlinkAsync(simpleIpFile); // remove simple_ip file
-    const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
-    cmd = util.format("sudo bash -c 'echo %s > %s'", simpleIpSubnet, savedIpFile);
-    await execAsync(cmd);
-  } else {
-    log.info("simple_ip file is not found. No need to update ip address.");
-  }
-
-  const simpleGwFile = firewalla.getHiddenFolder() + "/run/simple_gw";
-  if (fs.existsSync(simpleGwFile)) {
-    // update default route
-    const simpleGateway = await readFileAsync(simpleGwFile, "utf8");
-    cmd = util.format("sudo /sbin/ip route replace default via %s dev eth0", simpleGateway);
-    log.info("Command to update simple gateway assignment: " + cmd);
-    await execAsync(cmd);
-    await unlinkAsync(simpleGwFile); // remove simple_gw file
-    const savedGwFile = firewalla.getHiddenFolder() + "/run/saved_gw";
-    cmd = util.format("sudo bash -c 'echo %s > %s'", simpleGateway, savedGwFile);
-    await execAsync(cmd);
-  } else {
-    log.info("simple_gw file is not found. No need to udpate default route.");
-  }
-
-  const simpleResolvFile = firewalla.getHiddenFolder() + "/run/simple_resolv.conf";
-  if (fs.existsSync(simpleResolvFile)) {
-    cmd = util.format("sudo cp %s /etc/resolv.conf", simpleResolvFile);
-    await execAsync(cmd);
-    await unlinkAsync(simpleResolvFile); // remove simple_resolv.conf file
-  } else {
-    log.info("simple_resolv.conf file is not found. No need to update dns.");
-  }
-
-  return new Promise((resolve, reject) => {
-    // rescan all interfaces to reflect network changes
-    d.discoverInterfaces(() => {
-      sysManager.update(() => {
-        resolve();
-      });
-    });
-  });
 }
 
 async function _changeToAlternativeIpSubnet() {
@@ -322,21 +224,11 @@ async function _enforceDHCPMode(mode) {
   } catch (err) {
     log.warn("Failed to kill dhclient");
   }
-  sem.emitEvent({
-    type: 'StartDHCP',
-    mode: mode,
-    message: "Enabling DHCP Mode"
-  });
   return Promise.resolve();
 }
 
 function _disableDHCPMode(mode) {
   mode = mode || "dhcp";
-  sem.emitEvent({
-    type: 'StopDHCP',
-    mode: mode,
-    message: "Disabling DHCP Mode"
-  });
   return Promise.resolve();
 }
 
@@ -403,55 +295,11 @@ async function apply() {
       // not supported
       throw new Error(util.format("mode %s is not supported", mode));
   }
-}
-
-function switchToDHCP() {
-  log.info("Switching to DHCP")
-  
-  return Mode.dhcpModeOn()
-    .then(() => {
-      return _disableSpoofMode()
-        .then(() => {
-          return apply();
-        });
-    });
-}
-
-function switchToSpoof() {
-  log.info("Switching to legacy spoof")
-  return switchToAutoSpoof()
-}
-
-function switchToAutoSpoof() {
-  log.info("Switching to auto spoof")
-  return Mode.autoSpoofModeOn()
-    .then(() => {
-      return _disableDHCPMode()
-        .then(() => {
-          return apply();
-        });
-    });
-}
-
-function switchToManualSpoof() {
-  log.info("Switching to manual spoof")
-  return Mode.manualSpoofModeOn()
-    .then(() => {
-      return _disableDHCPMode()
-        .then(() => {
-          return apply();
-        });
-    });  
-}
-
-function switchToNone() {
-  log.info("Switching to none")
-  return async(() => {
-    await (Mode.noneModeOn())
-    await (_disableDHCPMode())
-    await (_disableSpoofMode())
-    return apply()
-  })()
+  sem.emitEvent({
+    type: 'Mode:Applied',
+    mode: mode,
+    message: `Mode is applied: ${mode}`
+  });
 }
 
 function reapply() {
@@ -571,11 +419,6 @@ function setNoneAndPublish() {
 
 module.exports = {
   apply:apply,
-  switchToDHCP:switchToDHCP,
-  switchToSpoof:switchToSpoof,
-  switchToManualSpoof: switchToManualSpoof,
-  switchToAutoSpoof: switchToAutoSpoof,
-  switchToNone: switchToNone,
   mode: mode,
   listenOnChange: listenOnChange,
   publish: publish,

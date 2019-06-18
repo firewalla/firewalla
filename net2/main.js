@@ -50,6 +50,7 @@ const firewalla = require("./Firewalla.js");
 
 const ModeManager = require('./ModeManager.js')
 const mode = require('./Mode.js')
+const WifiInterface = require('./WifiInterface.js');
 
 // api/main/monitor all depends on sysManager configuration
 const SysManager = require('./SysManager.js');
@@ -257,6 +258,8 @@ async function run() {
 
     await mode.reloadSetupMode() // make sure get latest mode from redis
     await ModeManager.apply()
+
+    WifiInterface.listenOnChange();
 
     // when mode is changed by anyone else, reapply automatically
     ModeManager.listenOnChange();

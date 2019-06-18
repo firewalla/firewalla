@@ -15,11 +15,11 @@ const ip = require('ip');
 const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
-const exec = require('child-process-promise').exec;
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
+const Mode = require('../../net2/Mode.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
 
@@ -42,7 +42,8 @@ const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
 
-const fConfig = require('../../net2/config.js').getConfig();
+const Config = require('../../net2/config.js');
+let fConfig = Config.getConfig(true);
 
 const bone = require("../../lib/Bone.js");
 
@@ -90,8 +91,7 @@ module.exports = class DNSMASQ {
 
       instance = this;
 
-      this.dhcpMode = false;
-      this.dhcpSpoofMode = false;
+      this.mode = null;
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
@@ -223,7 +223,7 @@ module.exports = class DNSMASQ {
 
     let effectiveNameServers = nameservers;
     // different interface specific nameservers take effect in different mode
-    if (this.dhcpMode) {
+    if (this.mode === Mode.MODE_DHCP) {
       effectiveNameServers = effectiveNameServers.concat(secondaryIntfNameServers); // specified interface dns servers are listed after default name servers, e.g., OpenDNS, upstream DNS
     } else {
       // for simple or dhcp spoof mode
@@ -576,15 +576,19 @@ module.exports = class DNSMASQ {
   async _add_iptables_rules() {
     let subnets = await networkTool.getLocalNetworkSubnets() || [];
     let localIP = sysManager.myIp();
-    this._currentLocalIP = localIP;
     let dns = `${localIP}:8853`;
 
-    this._redirectedLocalSubnets = subnets;
     for (let index = 0; index < subnets.length; index++) {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
 
       await iptables.dnsChangeAsync(subnet, dns, 'local', true);
+    }
+
+    const wifiSubnet = fConfig.wifiInterface && fConfig.wifiInterface.ip;
+    if (wifiSubnet) {
+      log.info("Add dns rule: ", wifiSubnet, dns);
+      await iptables.dnsChangeAsync(wifiSubnet, dns, 'local', true);
     }
   }
 
@@ -628,8 +632,6 @@ module.exports = class DNSMASQ {
   async _remove_iptables_rules() {
     try {
       await iptables.dnsFlushAsync('local');
-      this._redirectedLocalSubnets = [];
-      this._currentLocalIP = null;
     } catch (err) {
       log.error("Error when removing iptable rules", err);
     }
@@ -743,14 +745,14 @@ module.exports = class DNSMASQ {
   }
 
   onDHCPReservationChanged() {
-    if (this.dhcpMode || this.dhcpSpoofMode) {
+    if (this.mode === "dhcp" || this.mode === "dhcpSpoof") {
       this.needWriteHostsFile = true;
       log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
     }
   }
 
   onSpoofChanged() {
-    if (this.dhcpMode || this.dhcpSpoofMode) {
+    if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
       this.needWriteHostsFile = true;
       log.debug("Spoof status changed, set needWriteHostsFile to true");
     }
@@ -818,14 +820,14 @@ module.exports = class DNSMASQ {
 
     let hostsList = [];
 
-    if (this.dhcpMode) {
+    if (this.mode === Mode.MODE_DHCP) {
       hostsList = hosts.map(h => (h.spoofing === 'false') ?
         `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
         `${h.mac},set:monitor,${h.staticSecIp ? h.staticSecIp + ',' : ''}${lease_time}`
       );
     }
 
-    if (this.dhcpSpoofMode) {
+    if (this.mode === Mode.MODE_DHCP_SPOOF) {
       hostsList = hosts.map(h => (h.spoofing === 'false') ?
         `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
         `${h.mac},set:monitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}`
@@ -860,19 +862,7 @@ module.exports = class DNSMASQ {
     // use restart to ensure the latest configuration is loaded
     let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
 
-    if (this.dhcpMode) {
-      if (sysManager.myIp2() && sysManager.myIpMask2()) {
-        log.info("DHCP feature is enabled");
-        cmd = await this.prepareDnsmasqCmd(cmd);
-      } else {
-        log.warn("DHCPFeature is enabled but secondary network interface is not setup");
-      }
-    }
-
-    if (this.dhcpSpoofMode) {
-      log.info("DHCP spoof feature is enabled");
-      cmd = await this.prepareDnsmasqCmd(cmd);
-    }
+    cmd = await this.prepareDnsmasqCmd(cmd);
 
     if(upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
@@ -948,30 +938,31 @@ module.exports = class DNSMASQ {
   }
   
   getDefaultDhcpRange(network) {
+    let subnet = null;
     if (network === "alternative") {
-      let cidr = ip.cidrSubnet(sysManager.mySubnet());
-      let firstAddr = ip.toLong(cidr.firstAddress);
-      let lastAddr = ip.toLong(cidr.lastAddress);
-      let midAddr = firstAddr + (lastAddr - firstAddr) / 5;
-
-      let rangeBegin = ip.fromLong(midAddr);
-      let rangeEnd = ip.fromLong(lastAddr - 3);
-      return {
-        begin: rangeBegin,
-        end: rangeEnd
-      };
+      subnet = ip.cidrSubnet(sysManager.mySubnet());
     }
     if (network === "secondary") {
       const subnet2 = sysManager.mySubnet2() || "192.168.218.1/24";
-      const prefix = subnet2.substring(0, subnet2.lastIndexOf("."));
-      let rangeBegin = util.format("%s.50", prefix);
-      let rangeEnd = util.format("%s.250", prefix);
-      return {
-        begin: rangeBegin,
-        end: rangeEnd
-      };
+      subnet = ip.cidrSubnet(subnet2);
     }
-    return null;
+    if (network === "wifi") {
+      fConfig = Config.getConfig(true);
+      if (fConfig && fConfig.wifiInterface && fConfig.wifiInterface.ip)
+        subnet = ip.cidrSubnet(fConfig.wifiInterface.ip);
+    }
+
+    if (!subnet)
+      return null;
+    const firstAddr = ip.toLong(subnet.firstAddress);
+    const lastAddr = ip.toLong(subnet.lastAddress);
+    const midAddr = firstAddr + (lastAddr - firstAddr) / 5;
+    let rangeBegin = ip.fromLong(midAddr);
+    let rangeEnd = ip.fromLong(lastAddr - 3);
+    return {
+      begin: rangeBegin,
+      end: rangeEnd
+    };
   }
 
   getDhcpRange(network) {
@@ -983,6 +974,7 @@ module.exports = class DNSMASQ {
   }
 
   async prepareDnsmasqCmd(cmd) {
+    fConfig = Config.getConfig(true);
     const secondaryRange = this.getDhcpRange("secondary");
     const secondaryRouterIp = sysManager.myIp2();
     const secondaryMask = sysManager.myIpMask2();
@@ -991,6 +983,7 @@ module.exports = class DNSMASQ {
       // if secondary dns server is set, use specified dns servers in dhcp response
       secondaryDnsServers = interfaceNameServers.secondary.join(',');
     }
+
     const alternativeRange = this.getDhcpRange("alternative");
     const alternativeRouterIp = sysManager.myGateway();
     const alternativeMask = sysManager.myIpMask();
@@ -999,12 +992,51 @@ module.exports = class DNSMASQ {
       // if alternative dns server is set, use specified dns servers in dhcp response
       alternativeDnsServers = interfaceNameServers.alternative.join(',');
     }
-    const leaseTime = fConfig.dhcp && fConfig.dhcp.leaseTime || "24h";
 
-    if (this.dhcpMode) {
+    const leaseTime = fConfig.dhcp && fConfig.dhcp.leaseTime || "24h";
+    const monitoringInterface = fConfig.monitoringInterface || "eth0";
+
+    if (fConfig.wifiInterface) {
+      const wifiIntf = fConfig.wifiInterface;
+      const mode = wifiIntf.mode || "router";
+      const intf = wifiIntf.intf || "wlan0";
+
+      switch (mode) {
+        case "router":
+          // need to setup dhcp service on wifi interface for router mode
+          if (!wifiIntf.ip)
+            break;
+          const cidr = ip.cidrSubnet(wifiIntf.ip);
+          const wifiRouterIp = wifiIntf.ip.split('/')[0];
+          const wifiNetmask = cidr.subnetMask;
+          const wifiRange = this.getDhcpRange("wifi");
+          if (!wifiRouterIp || !wifiNetmask || !wifiRange)
+            break;
+          cmd = util.format("%s --dhcp-range=tag:%s,%s,%s,%s,%s",
+            cmd,
+            intf,
+            wifiRange.begin,
+            wifiRange.end,
+            wifiNetmask,
+            leaseTime
+          );
+          // wifi interface ip as router
+          cmd = util.format("%s --dhcp-option=tag:%s,3,%s", cmd, intf, wifiRouterIp);
+          // same dns servers as secondary interface
+          cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, intf, secondaryDnsServers);
+          break;
+        case "bridge":
+          break;
+        default:
+      }
+    }
+
+    if (this.mode === Mode.MODE_DHCP) {
+      log.info("DHCP feature is enabled");
       // allocate secondary interface ip to monitored hosts and new hosts
-      cmd = util.format("%s --dhcp-range=tag:!unmonitor,%s,%s,%s,%s",
+      cmd = util.format("%s --dhcp-range=tag:%s,tag:!unmonitor,%s,%s,%s,%s",
         cmd,
+        monitoringInterface,
         secondaryRange.begin,
         secondaryRange.end,
         secondaryMask,
@@ -1012,8 +1044,9 @@ module.exports = class DNSMASQ {
       );
 
       // allocate primary(alternative) interface ip to unmonitored hosts
-      cmd = util.format("%s --dhcp-range=tag:unmonitor,%s,%s,%s,%s",
+      cmd = util.format("%s --dhcp-range=tag:%s,tag:unmonitor,%s,%s,%s,%s",
         cmd,
+        monitoringInterface,
         alternativeRange.begin,
         alternativeRange.end,
         alternativeMask,
@@ -1021,19 +1054,22 @@ module.exports = class DNSMASQ {
       );
 
       // secondary interface ip as router for monitored hosts and new hosts
-      cmd = util.format("%s --dhcp-option=tag:!unmonitor,3,%s", cmd, secondaryRouterIp);
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, secondaryRouterIp);
       
       // gateway ip as router for unmonitored hosts
-      cmd = util.format("%s --dhcp-option=tag:unmonitor,3,%s", cmd, alternativeRouterIp);
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,3,%s", cmd, monitoringInterface, alternativeRouterIp);
 
-      cmd = util.format("%s --dhcp-option=tag:!unmonitor,6,%s", cmd, secondaryDnsServers);
-      cmd = util.format("%s --dhcp-option=tag:unmonitor,6,%s", cmd, alternativeDnsServers);
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,6,%s", cmd, monitoringInterface, secondaryDnsServers);
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,6,%s", cmd, monitoringInterface, alternativeDnsServers);
     }
 
-    if (this.dhcpSpoofMode) {
-      // allocate primary(alternative) interface ip to all hosts, no matter it is monitored, unmonitored or new hosts
-      cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
+
+    if (this.mode === Mode.MODE_DHCP_SPOOF) {
+      log.info("DHCP spoof feature is enabled");
+      // allocate primary(alternative) interface ip to all hosts from monitoring interface, no matter it is monitored, unmonitored or new hosts
+      cmd = util.format("%s --dhcp-range=tag:%s,%s,%s,%s,%s",
         cmd,
+        monitoringInterface,
         alternativeRange.begin,
         alternativeRange.end,
         alternativeMask,
@@ -1041,24 +1077,14 @@ module.exports = class DNSMASQ {
       );
 
       // Firewalla's ip as router for monitored hosts and new hosts. In case Firewalla's ip is changed, a thorough restart is required
-      cmd = util.format("%s --dhcp-option=tag:!unmonitor,3,%s", cmd, sysManager.myIp());
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, sysManager.myIp());
 
       // gateway ip as router for unmonitored hosts
-      cmd = util.format("%s --dhcp-option=tag:unmonitor,3,%s", cmd, alternativeRouterIp);
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,3,%s", cmd, monitoringInterface, alternativeRouterIp);
 
-      cmd = util.format("%s --dhcp-option=6,%s", cmd, alternativeDnsServers);
+      cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, monitoringInterface, alternativeDnsServers);
     }
 
-    // reserve ip address which was used by Firewalla in simple mode if secondary ip subnet is same as that in previous simple mode
-    const simpleIpFile = f.getHiddenFolder() + "/run/simple_ip";
-    const simpleIpFileExists = fs.existsSync(simpleIpFile);
-    if (simpleIpFileExists) {
-      const simpleIpSubnet = await fs.readFileAsync(simpleIpFile, "utf8");
-      const simpleIp = simpleIpSubnet.split('/')[0];
-      const secondarySubnet = ip.subnet(sysManager.myIp2(), sysManager.myIpMask2());
-      if (secondarySubnet.contains(simpleIp)) // previous simple ip is contained in current secondary ip subnet, need to reserve this ip address
-        cmd = util.format("%s --dhcp-host=%s,%s", cmd, sysManager.myMAC(), simpleIp);
-    }
     return cmd;
   }
 
@@ -1158,44 +1184,23 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async enableDHCP(mode) {
-    if (mode === "dhcp") {
-      this.dhcpMode = true;
+  async applyMode(mode) {
+    if (this.mode === mode) {
+      log.info("Mode is not changed: " + mode);
+      return;
     }
-    if (mode == "dhcpSpoof") {
-      this.dhcpSpoofMode = true;
-    }
+    log.info(`Mode is changed from ${this.mode} to ${mode}`);
+    this.mode = mode;
     try {
-      log.info("Enabling DHCP mode: " + mode);
-      await this.start(true); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
-      log.info("DHCP mode is enabled");
+      await this.start(true); // restart firemasq service, no need to update iptables
     } catch (err) {
-      log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
+      log.error("Failed to restart dnsmasq while enabling " + mode, err);
     }
   }
 
-  async disableDHCP(mode) {
-    if (mode === "dhcp") {
-      this.dhcpMode = false;
-    }
-    if (mode === "dhcpSpoof") {
-      this.dhcpSpoofMode = false;
-    }
-    try {
-      log.info("Disabling DHCP mode: " + mode);
-      await (this.start(true)); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
-      log.info("DHCP mode is disabled");
-    } catch (err) {
-      log.error("Failed to restart dnsmasq when disabling DHCP: " + err);
-    }
-  }
-
-  setDhcpMode(isEnabled) {
-    this.dhcpMode = isEnabled;
-  }
-
-  setDhcpSpoofMode(isEnabled) {
-    this.dhcpSpoofMode = isEnabled;
+  // set mode but not apply it, this is invoked before dnsmasq is started
+  async setMode(mode) {
+    this.mode = mode;
   }
 
   async verifyDNSConnectivity() {
@@ -1241,7 +1246,7 @@ module.exports = class DNSMASQ {
       if(!f.isProductionOrBeta()) {
         pclient.publishAsync("DNS:DOWN", this.failCount);
       }
-      if (this.dhcpMode || this.dhcpSpoofMode) {
+      if (this.mode === "dhcp" || this.mode === "dhcpSpoof") {
         // dnsmasq is needed for dhcp service, still need to erase dns related rules in iptables
         log.warn("Dnsmasq keeps running under DHCP mode, remove all dns related rules from iptables...");
         await this._remove_all_iptables_rules();

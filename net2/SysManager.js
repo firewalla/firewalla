@@ -450,6 +450,12 @@ module.exports = class {
     }
   }
 
+  monitoringWifiInterface() {
+    if (this.config) {
+      return this.sysinfo && this.sysinfo[this.config.monitoringWifiInterface];
+    }
+  }
+
   myIp() {
     if(this.monitoringInterface()) {
       return this.monitoringInterface().ip_address;

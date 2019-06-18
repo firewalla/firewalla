@@ -22,6 +22,8 @@ const util = require('util');
 const routing = require('../routing/routing.js');
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
+const Config = require('../../net2/config.js');
+let fConfig = Config.getConfig();
 
 const iptables = require('../../net2/Iptables.js');
 const wrapIptables = iptables.wrapIptables;
@@ -72,14 +74,7 @@ class VPNClientEnforcer {
     const vpnClientIpset = this._getVPNClientIPSetName(intf);
     const host = await hostTool.getMACEntry(mac);
     const legacyHost = this.enabledHosts[mac] || null;
-    const currentRoute = await routing.testRoute("8.8.8.8", host.ipv4Addr, "eth0"); // FIXME: hard code eth0 here
-    if (currentRoute && currentRoute.dev === intf) {
-      log.info("VPN Access is already granted to " + mac);
-      await this._ensureCreateIpset(vpnClientIpset);
-      const cmd = `sudo ipset add -! ${vpnClientIpset} ${host.ipv4Addr}`;
-      await execAsync(cmd);
-      return;
-    }
+    
     // ensure customized routing table is created
     await routing.createCustomizedRoutingTable(tableName);
     host.vpnClientMode = mode;
@@ -95,8 +90,9 @@ class VPNClientEnforcer {
         // enforcement takes effect if devcie ip address is in overlay network or dhcp spoof mode is on
         if (this._isSecondaryInterfaceIP(host.ipv4Addr) || await mode.isDHCPSpoofModeOn()) {
           try {
-            // remove previous policy routing rule and ipset presence if present
-            await routing.removePolicyRoutingRule(host.ipv4Addr);
+            // remove previous policy routing rule and ipset presence if present. This usually happens in case of profile switch
+            if (legacyHost && legacyHost.ipv4Addr)
+              await routing.removePolicyRoutingRule(legacyHost.ipv4Addr);
             if (legacyVpnClientIpset) {
               await this._ensureCreateIpset(legacyVpnClientIpset);
               const cmd = `sudo ipset del -! ${legacyVpnClientIpset} ${host.ipv4Addr}`;
@@ -107,7 +103,7 @@ class VPNClientEnforcer {
           }
           if (host.spoofing === "true") {
             log.info("Add vpn client routing rule for " + host.ipv4Addr);
-            await routing.createPolicyRoutingRule(host.ipv4Addr, tableName);
+            await routing.createPolicyRoutingRule(host.ipv4Addr, fConfig.monitoringInterface || "eth0", tableName);
             await this._ensureCreateIpset(vpnClientIpset);
             const cmd = `sudo ipset add -! ${vpnClientIpset} ${host.ipv4Addr}`;
             await execAsync(cmd);
@@ -128,7 +124,7 @@ class VPNClientEnforcer {
       const tableName = this._getRoutingTableName(intf);
       const vpnClientIpset = this._getVPNClientIPSetName(intf);
       try {
-        await routing.removePolicyRoutingRule(host.ipv4Addr, tableName);
+        await routing.removePolicyRoutingRule(host.ipv4Addr, null, tableName); // remove ip rule from host address regardless of src interface
         await this._ensureCreateIpset(vpnClientIpset);
         const cmd = `sudo ipset del -! ${vpnClientIpset} ${host.ipv4Addr}`;
         await execAsync(cmd);
@@ -250,7 +246,7 @@ class VPNClientEnforcer {
             // policy routing rule should be removed anyway if ip address is changed or ip address is not assigned by secondary interface
             // or host is not monitored
             try {
-              await routing.removePolicyRoutingRule(oldHost.ipv4Addr, tableName);
+              await routing.removePolicyRoutingRule(oldHost.ipv4Addr, fConfig.monitoringInterface || "eth0", tableName);
               await this._ensureCreateIpset(vpnClientIpset);
               const cmd = `sudo ipset del -! ${vpnClientIpset} ${oldHost.ipv4Addr}`;
               await execAsync(cmd);
@@ -259,7 +255,7 @@ class VPNClientEnforcer {
             }
           }
           if ((this._isSecondaryInterfaceIP(host.ipv4Addr) || await mode.isDHCPSpoofModeOn()) && host.spoofing === "true") {
-            await routing.createPolicyRoutingRule(host.ipv4Addr, tableName);
+            await routing.createPolicyRoutingRule(host.ipv4Addr, fConfig.monitoringInterface || "eth0", tableName);
             await this._ensureCreateIpset(vpnClientIpset);
             const cmd = `sudo ipset add -! ${vpnClientIpset} ${host.ipv4Addr}`;
             await execAsync(cmd);
