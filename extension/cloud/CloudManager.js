@@ -19,7 +19,7 @@ class CloudManager {
         const A = require(`./${className}.js`);
         const a = new A();
         log.info(`Running action ${className}...`);
-        const result = a.run(info);
+        const result = await a.run(info);
         return bone.cloudActionCallback({ action, info, result });
       } catch (err) {
         log.error(`Got error when calling cloud action ${action}, err: ${err}`);
