@@ -29,6 +29,10 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const ip = require('ip');
 const iptables = require('../net2/Iptables');
 const firewalla = require('../net2/Firewalla.js');
+const Discovery = require('../net2/Discovery.js');
+const discovery = new Discovery("nmap", fConfig, "info");
+const SysManager = require("../net2/SysManager.js");
+const sysManager = new SysManager();
 
 const HOSTAPD_TEMPLATE_PATH = `${firewalla.getFirewallaHome()}/extension/wifi/hostapd.conf.template`;
 
@@ -136,6 +140,8 @@ async function _configureWifi(config) {
           cmd = `sudo ifconfig ${intf} ${config.ip} up`;
           await execAsync(cmd);
           await _enableHostapd(config);
+          await discovery.discoverInterfacesAsync();
+          await sysManager.updateAsync();
         }
         // ensure MASQUERADE rule is added to iptables
         await iptables.dhcpSubnetChangeAsync(config.ip, true);
