@@ -136,7 +136,7 @@ async function _configureWifi(config) {
           // remove master of the interface
           let cmd = `sudo ip link set ${intf} nomaster`;
           await execAsync(cmd);
-          cmd = "sudo nmcli nm wifi off" // detach wifi management from NetworkManager
+          cmd = "sudo nmcli radio wifi off" // detach wifi management from NetworkManager
           await execAsync(cmd);
           cmd = "sudo rfkill unblock wlan" // unblock wlan interfaces so that ifconfig can work
           await execAsync(cmd);
