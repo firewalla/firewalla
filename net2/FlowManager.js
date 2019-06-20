@@ -30,17 +30,12 @@ var instance = null;
 
 const QUERY_MAX_FLOW = 10000;
 
-var bconfig;
-// Will use bconfig.config.flow.activitymin/activitymax
 var flowconfig = {
     activityDetectMin : 10,
     activityDetectMax : 60*60*5,
 }; 
 
 let flowTool = require('./FlowTool')();
-
-const HostTool = require('./HostTool.js');
-const hostTool = new HostTool();
 
 const IntelTool = require('../net2/IntelTool.js')
 const intelTool = new IntelTool()
@@ -49,18 +44,12 @@ const _ = require('lodash');
 
 class FlowGraph {
     constructor(name,flowarray) {
-         if (flowarray) {
-             this.flowarray = flowarray;
-         } else {
-             this.flowarray = [];
-         }
-         this.name = name;
-         firewalla.getBoneInfo((err,config)=>{
-             bconfig = config;
-             if (bconfig.config.flow && bconfig.config.flow.activityDetectMin) {
-                 flowconfig = bconfig.config.flowManager;
-             }
-         });
+        if (flowarray) {
+            this.flowarray = flowarray;
+        } else {
+            this.flowarray = [];
+        }
+        this.name = name;
     }
 
 

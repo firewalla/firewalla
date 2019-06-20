@@ -813,7 +813,7 @@ module.exports = class DNSMASQ {
     }
     */
 
-    hosts = hosts.filter((x) => x.mac != null);
+    hosts = hosts.filter((x) => (x && x.mac) != null);
     hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
 
     let hostsList = [];
