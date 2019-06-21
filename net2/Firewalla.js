@@ -294,7 +294,7 @@ const RED_HOLE_IP = "198.51.100.101";
 
 function isReservedBlockingIP(ip) {
   return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip)
-    || ip.match(/^[0:]+(:ffff:(0\.0\.0\.0|[0:]+))$/i); // all zero v6 address
+    || ip.match(/^[0:]+(:ffff:(0*:)?)?(0\.0\.0\.0|[0:]+)$/i); // all zero v6 address
 }
 
 function getRedHoleIP() {
