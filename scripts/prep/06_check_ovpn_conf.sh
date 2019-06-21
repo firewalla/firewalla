@@ -15,6 +15,20 @@ if [ ! -s /etc/openvpn/crl.pem ]; then
   cd -  
 fi
 
+crl_expr=$(date -d "$(openssl crl -in /etc/openvpn/crl.pem -noout -nextupdate | cut -d= -f2)" +%s)
+current_time=$(date +%s)
+crl_expr_days_left=$((($crl_expr - $current_time) / 86400))
+
+if [[ $crl_expr_days_left -lt 30 ]]; then
+  # refresh crl next update time by create and revoke dummy certificate. The new crl next update time should be 3600 days later
+  cd /etc/openvpn/easy-rsa
+  source ./vars
+  ./pkitool dummy
+  ./revoke-full dummy
+  cp keys/crl.pem ../crl.pem
+  cd - 
+fi
+
 if [ -f /etc/openvpn/server.conf ]; then
   grep -q -w "crl-verify" /etc/openvpn/server.conf
   crl_enabled=$?
