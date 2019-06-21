@@ -64,16 +64,15 @@ async function createCustomizedRoutingTable(tableName) {
 }
 
 async function createPolicyRoutingRule(from, iif, tableName) {
+  from = from || "all";
   let cmd = "ip rule list";
   let result = await execAsync(cmd);
-  let rule = "";
-  if (from && from !== "")
-    rule = `from ${from} `;
+  let rule = `from ${from} `;
   if (iif && iif !== "")
     rule = `${rule}iif ${iif} `;
   rule = `${rule}lookup ${tableName}`;
   if (result.stdout.includes(rule)) {
-    log.info("same ip rule already exists");
+    log.info("Same policy routing rule already exists: ", rule);
     return;
   }  
   cmd = `sudo ip rule add ${rule}`;
@@ -86,11 +85,18 @@ async function createPolicyRoutingRule(from, iif, tableName) {
 }
 
 async function removePolicyRoutingRule(from, iif, tableName) {
-  let cmd = util.format('sudo ip rule del from %s', from);
-  if (iif)
-    cmd = util.format('%s iff %s', cmd, iif);
-  if (tableName)
-    cmd = util.format('%s lookup %s', cmd, tableName);
+  from = from || "all";
+  let cmd = "ip rule list";
+  let result = await execAsync(cmd);
+  let rule = `from ${from} `;
+  if (iif && iif !== "")
+    rule = `${rule}iif ${iif} `;
+  rule = `${rule}lookup ${tableName}`;
+  if (!result.stdout.includes(rule)) {
+    log.info("Policy routing rule does not exist: ", rule);
+    return;
+  }
+  cmd = `sudo ip rule del ${rule}`;
   log.info("Remove policy routing rule: ", cmd);
   let {stdout, stderr} = await execAsync(cmd);
   if (stderr !== "") {

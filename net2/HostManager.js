@@ -2535,11 +2535,11 @@ module.exports = class HostManager {
 
   setPolicy(name, data, callback) {
 
-    let savePolicyWrapper = (name, data, callback) => {
-      this.savePolicy((err) => {
+    let savePolicyWrapper = (name, policy, callback) => {
+      this.savePolicy((err, data) => {
         if (err == null) {
           let obj = {};
-          obj[name] = data;
+          obj[name] = policy;
           if (this.subscriber) {
             this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
           }
@@ -2630,6 +2630,7 @@ module.exports = class HostManager {
   async vpnClient(policy) {
     const type = policy.type;
     const state = policy.state;
+    const appliedInterfaces = policy.appliedInterfaces || [];
     switch (type) {
       case "openvpn": 
         const profileId = policy.openvpn && policy.openvpn.profileId;
@@ -2638,10 +2639,58 @@ module.exports = class HostManager {
           return false;
         }
         const ovpnClient = new OpenVPNClient({profileId: profileId});
+        // apply vpn client access to interfaces in appliedInterfaces
+        const supportedInterfaces = {
+          wifi: fConfig.monitoringWifiInterface
+        };
+        try {
+          // set/clear vpn access of all supported interfaces accordingly
+          for (let supportedInterface in supportedInterfaces) {
+            const intfName = supportedInterfaces[supportedInterface];
+            if (appliedInterfaces.includes(supportedInterface)) {
+              await vpnClientEnforcer.enableInterfaceVPNAccess(intfName, ovpnClient.getInterfaceName());
+            } else {
+              await vpnClientEnforcer.disableInterfaceVPNAccess(intfName, ovpnClient.getInterfaceName());
+            }
+          }
+        } catch (err) {
+          log.error("Failed to apply VPN client access to interfaces", err);
+          return false;
+        }
         if (state === true) {
           await ovpnClient.setup().catch((err) => {
             // do not return false here since following start() operation should fail
             log.error(`Failed to setup openvpn client for ${profileId}`, err);
+          });
+          ovpnClient.once('push_options_start', async (content) => {
+            const dnsServers = [];
+            for (let line of content.split("\n")) {
+              if (line && line.length != 0) {
+                log.info(`Apply push options from ${profileId}: ${line}`);
+                const options = line.split(/\s+/);
+                switch (options[0]) {
+                  case "dhcp-option":
+                    if (options[1] === "DNS") {
+                      dnsServers.push(options[2]);
+                    }
+                    break;
+                  default:
+                }
+              }
+            }
+            // redirect dns to vpn channel
+            if (dnsServers.length > 0) {
+              await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+              // set/clear dns redirection of all supported interfaces accordingly
+              for (let supportedInterface in supportedInterfaces) {
+                const intfName = supportedInterfaces[supportedInterface];
+                if (appliedInterfaces.includes(supportedInterface)) {
+                  await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+                } else {
+                  await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+                }
+              }
+            }
           });
           const result = await ovpnClient.start();
           if (result) {
@@ -2664,6 +2713,32 @@ module.exports = class HostManager {
         } else {
           await ovpnClient.setup().catch((err) => {
             log.error(`Failed to setup openvpn client for ${profileId}`, err);
+          });
+          ovpnClient.once('push_options_stop', async (content) => {
+            const dnsServers = [];
+            for (let line of content.split("\n")) {
+              if (line && line.length != 0) {
+                log.info(`Roll back push options from ${profileId}: ${line}`);
+                const options = line.split(/\s+/);
+                switch (options[0]) {
+                  case "dhcp-option":
+                    if (options[1] === "DNS") {
+                      dnsServers.push(options[2]);
+                    }
+                    break;
+                  default:
+                }
+              }
+            }
+            // remove dns redirect rule
+            if (dnsServers.length > 0) {
+              await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+              // clear dns redirect for all supported interfaces
+              for (let supportedInterface in supportedInterfaces) {
+                const intfName = supportedInterfaces[supportedInterface];
+                await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+              }
+            }
           });
           await ovpnClient.stop();
         }
