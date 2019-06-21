@@ -484,6 +484,14 @@ module.exports = class {
     }
   }
 
+  myWifiIp() {
+    if (this.monitoringWifiInterface()) {
+      return this.monitoringWifiInterface().ip_address;
+    } else {
+      return undefined;
+    }
+  }
+
   // This returns an array
   myIp6() {
     if(this.monitoringInterface()) {
