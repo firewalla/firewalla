@@ -47,7 +47,7 @@ for i in `seq 1 10`; do
         exit 0
       else
         echo "Ping backup domain $BACKUP_DOMAIN failed. Trying curl instead ..."
-        if curl -s "https://$BACKUP_DOMAIN" &> /dev/null
+        if timeout 10 curl -s "https://$BACKUP_DOMAIN" &> /dev/null
         then
           exit 0
         else
