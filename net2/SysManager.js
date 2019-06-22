@@ -533,6 +533,14 @@ module.exports = class {
     }
   }
 
+  myWifiMAC() {
+    if (this.monitoringWifiInterface() && this.monitoringWifiInterface().mac_address) {
+      return this.monitoringWifiInterface().mac_address.toUpperCase();
+    } else {
+      return null;
+    }
+  }
+
   myDDNS() {
     return this.ddns;
   }

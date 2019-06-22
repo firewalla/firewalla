@@ -144,8 +144,10 @@ async function _configureWifi(config) {
           cmd = `sudo ifconfig ${intf} ${config.ip} up`;
           await execAsync(cmd);
           await _enableHostapd(config);
-          await discovery.discoverInterfacesAsync();
-          await sysManager.updateAsync();
+          setTimeout(async () => {
+            await discovery.discoverInterfacesAsync();
+            await sysManager.updateAsync();
+          }, 10000); // awaiting wlan interface being brought up
         }
         // ensure MASQUERADE rule is added to iptables
         await iptables.dhcpSubnetChangeAsync(config.ip, true);

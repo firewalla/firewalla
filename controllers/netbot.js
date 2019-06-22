@@ -3877,38 +3877,39 @@ class netBot extends ControllerBot {
                 rawmsg.message.obj.data.simulator) {
                 // options.simulator = 1
               }
-
-              this.hostManager.toJson(true, options, (err, json) => {
-                let datamodel = {
-                  type: 'jsonmsg',
-                  mtype: 'init',
-                  id: uuid.v4(),
-                  expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                  replyid: msg.id,
-                }
-                if (json != null) {
-
-                  json.device = this.getDeviceName();
-                  
-                  datamodel.code = 200;
-                  datamodel.data = json;
-
-                  let end = Date.now();
-                  log.info("Took " + (end - begin) + "ms to load init data");
-
-                  this.cacheInitData(json);
-
-                } else {
-                  if (err) {
-                    log.error("got error when calling hostManager.toJson: " + err);
-                  } else {
-                    log.error("json is null when calling init")
+              sysManager.update((err) => {
+                this.hostManager.toJson(true, options, (err, json) => {
+                  let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: 'init',
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
                   }
-                  datamodel.code = 500;
-                }
-                log.info("Sending data", datamodel.replyid, datamodel.id);
-                this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
-
+                  if (json != null) {
+  
+                    json.device = this.getDeviceName();
+                    
+                    datamodel.code = 200;
+                    datamodel.data = json;
+  
+                    let end = Date.now();
+                    log.info("Took " + (end - begin) + "ms to load init data");
+  
+                    this.cacheInitData(json);
+  
+                  } else {
+                    if (err) {
+                      log.error("got error when calling hostManager.toJson: " + err);
+                    } else {
+                      log.error("json is null when calling init")
+                    }
+                    datamodel.code = 500;
+                  }
+                  log.info("Sending data", datamodel.replyid, datamodel.id);
+                  this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
+  
+                });
               });
             } else {
 
