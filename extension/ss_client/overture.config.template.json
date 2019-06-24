@@ -27,8 +27,8 @@
     }
   ],
   "OnlyPrimaryDNS": false,
-  "IPv6UseAlternativeDNS": false,
-  "WhenPrimaryDNSAnswerNoneUse": "PrimaryDNS",
+  "IPv6UseAlternativeDNS": true,
+  "WhenPrimaryDNSAnswerNoneUse": "AlternativeDNS",
   "IPNetworkFile": {
     "Primary": "%FIREWALLA_IPNETWORK_FILE_PRIMARY%",
     "Alternative": "%FIREWALLA_IPNETWORK_FILE_ALTERNATIVE%"
