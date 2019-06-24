@@ -185,14 +185,8 @@ async function _changeToAlternativeIpSubnet() {
     await execAsync(cmd);
   }
 
-  return new Promise((resolve, reject) => {
-    // rescan all interfaces to reflect network changes
-    d.discoverInterfaces(() => {
-      sysManager.update(() => {
-        resolve();
-      });
-    });
-  });
+  await d.discoverInterfacesAsync();
+  await sysManager.updateAsync();
 }
 
 async function _enableSecondaryInterface() {
@@ -353,8 +347,8 @@ function listenOnChange() {
       sm.loadManualSpoofs(hostManager)
     } else if (channel === "NetworkInterface:Update") {
       (async () => {
-        await (_changeToAlternativeIpSubnet());
-        await (_enableSecondaryInterface());
+        await _changeToAlternativeIpSubnet();
+        await _enableSecondaryInterface();
         pclient.publishAsync("System:IPChange", "");
       })()
     }

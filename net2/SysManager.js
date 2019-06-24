@@ -525,11 +525,23 @@ module.exports = class {
     }
   }
 
+  myWifiIpMask() {
+    if(this.monitoringWifiInterface()) {
+      let mask =  this.monitoringWifiInterface().netmask;
+      if (mask.startsWith("Mask:")) {
+        mask = mask.substr(5);
+      }
+      return mask;
+    } else {
+      return undefined;
+    }
+  }
+
   myMAC() {
     if (this.monitoringInterface() && this.monitoringInterface().mac_address) {
       return this.monitoringInterface().mac_address.toUpperCase();
     } else {
-      return null;
+      return undefined;
     }
   }
 
@@ -537,7 +549,7 @@ module.exports = class {
     if (this.monitoringWifiInterface() && this.monitoringWifiInterface().mac_address) {
       return this.monitoringWifiInterface().mac_address.toUpperCase();
     } else {
-      return null;
+      return undefined;
     }
   }
 

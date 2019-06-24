@@ -24,15 +24,16 @@ const execAsync = Promise.promisify(cp.exec);
 const fs = require('fs');
 const readFileAsync = Promise.promisify(fs.readFile);
 const writeFileAsync = Promise.promisify(fs.writeFile);
-const networkTool = require('../net2/NetworkTool.js')();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const ip = require('ip');
 const iptables = require('../net2/Iptables');
 const firewalla = require('../net2/Firewalla.js');
 const Discovery = require('../net2/Discovery.js');
 const discovery = new Discovery("nmap", fConfig, "info");
 const SysManager = require("../net2/SysManager.js");
 const sysManager = new SysManager();
+const pclient = require('../util/redis_manager.js').getPublishClient()
+
+const intfConfigs = {};
 
 const HOSTAPD_TEMPLATE_PATH = `${firewalla.getFirewallaHome()}/extension/wifi/hostapd.conf.template`;
 
@@ -71,37 +72,6 @@ async function _renameInterface(oldIntf, newIntf) {
   await execAsync(cmd);
 }
 
-async function _isInterfaceAlreadyConfigured(config) {
-  /*
-    "wifiInterface": {
-      "intf": "wlan0",
-      "ip": "10.0.218.1/24",
-      "mode": "router"
-    }
-  */
-  const intf = config.intf;
-  if (!intf)
-    return false;
-  const interfaces = await networkTool.listInterfaces();
-  const wifiIntf = interfaces.filter(i => i.name === intf);
-  if (!wifiIntf || wifiIntf.length == 0) // interface with specified name is not found
-    return false;
-  
-  if (!wifiIntf.ip_address || !wifiIntf.subnet)
-    return false;
-  const currentIp = wifiIntf.ip_address;
-  const currentSubnetMaskLength = ip.cidrSubnet(wifiIntf.subnet).subnetMaskLength;
-  if (intf.ip !== `${currentIp}/${currentSubnetMaskLength}`)
-    return false;
-  else
-    return true;
-}
-
-async function _getCurrentInterfaceConfig(intf) {
-  const interfaces = await networkTool.listInterfaces();
-  return interfaces.find(i => i.name === intf);
-}
-
 async function _configureWifi(config) {
   /*
     "wifiInterface": {
@@ -116,9 +86,10 @@ async function _configureWifi(config) {
   */
   const intf = config.intf;
   const mode = config.mode || "router";
-  const currentConfig = await _getCurrentInterfaceConfig(intf);
+
   if (!intf)
     return;
+  const currentConfig = intfConfigs[intf];
   try {
     switch (mode) {
       case "router":
@@ -126,13 +97,11 @@ async function _configureWifi(config) {
           log.error(`'ip' is required for ${intf} to run ${mode} mode`);
           return;
         }
-        const currentIp = (currentConfig && currentConfig.ip_address) || null;
-        const currentSubnetMaskLength = (currentConfig && currentConfig.subnet && ip.cidrSubnet(currentConfig.subnet).subnetMaskLength) || null;
-        if (config.ip !== `${currentIp}/${currentSubnetMaskLength}`) {
-          log.info(`Update wifi interface from ${currentIp}/${currentSubnetMaskLength} to ${config.ip}`);
+        if (JSON.stringify(currentConfig) !== JSON.stringify(config)) {
+          log.info("Update wifi interface: ", config);
           // remove old MASQUERADE rule from iptables if present
-          if (currentConfig && currentConfig.subnet)
-            await iptables.dhcpSubnetChangeAsync(currentConfig.subnet, false);
+          if (currentConfig && currentConfig.ip)
+            await iptables.dhcpSubnetChangeAsync(currentConfig.ip, false);
           // remove master of the interface
           let cmd = `sudo ip link set ${intf} nomaster`;
           await execAsync(cmd);
@@ -147,10 +116,12 @@ async function _configureWifi(config) {
           setTimeout(async () => {
             await discovery.discoverInterfacesAsync();
             await sysManager.updateAsync();
+            await pclient.publishAsync("System:IPChange", "");
           }, 10000); // awaiting wlan interface being brought up
         }
         // ensure MASQUERADE rule is added to iptables
         await iptables.dhcpSubnetChangeAsync(config.ip, true);
+        intfConfigs[intf] = config;
         break;
       case "bridge":
         // TODO: support bridge mode for wifi interface

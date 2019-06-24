@@ -745,7 +745,7 @@ module.exports = class DNSMASQ {
   }
 
   onDHCPReservationChanged() {
-    if (this.mode === "dhcp" || this.mode === "dhcpSpoof") {
+    if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
       this.needWriteHostsFile = true;
       log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
     }
@@ -993,6 +993,12 @@ module.exports = class DNSMASQ {
       alternativeDnsServers = interfaceNameServers.alternative.join(',');
     }
 
+    let wifiDnsServers = sysManager.myDNS().join(',');
+    if (interfaceNameServers.wifi && interfaceNameServers.wifi.length != 0) {
+      // if wifi dns server is set, use specified dns servers in dhcp response
+      wifiDnsServers = interfaceNameServers.wifi.join(',');
+    }
+
     const leaseTime = fConfig.dhcp && fConfig.dhcp.leaseTime || "24h";
     const monitoringInterface = fConfig.monitoringInterface || "eth0";
 
@@ -1023,7 +1029,7 @@ module.exports = class DNSMASQ {
           // wifi interface ip as router
           cmd = util.format("%s --dhcp-option=tag:%s,3,%s", cmd, intf, wifiRouterIp);
           // same dns servers as secondary interface
-          cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, intf, secondaryDnsServers);
+          cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, intf, wifiDnsServers);
           break;
         case "bridge":
           break;
@@ -1246,7 +1252,7 @@ module.exports = class DNSMASQ {
       if(!f.isProductionOrBeta()) {
         pclient.publishAsync("DNS:DOWN", this.failCount);
       }
-      if (this.mode === "dhcp" || this.mode === "dhcpSpoof") {
+      if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
         // dnsmasq is needed for dhcp service, still need to erase dns related rules in iptables
         log.warn("Dnsmasq keeps running under DHCP mode, remove all dns related rules from iptables...");
         await this._remove_all_iptables_rules();

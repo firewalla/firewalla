@@ -3514,59 +3514,83 @@ class netBot extends ControllerBot {
           const intf = msg.data.value.interface;
           const dhcpRange = msg.data.value.dhcpRange;
           const dnsServers = msg.data.value.dnsServers || []; // default value is empty
-          if (!network || !intf || !intf.ipAddress || !intf.subnetMask || !dhcpRange || !dhcpRange.begin || !dhcpRange.end ) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface.ipAddress/subnetMask and dhcpRange.start/end should be specified."}, callback);
-          } else {
-            const currentConfig = fc.getConfig(true);
-            switch (network) {
-              case "secondary":
-                const currentSecondaryInterface = currentConfig.secondaryInterface;
-                const updatedConfig = {intf: "eth0:0"};
-                const ipAddress = intf.ipAddress;
-                const subnetMask = intf.subnetMask;
-                const ipSubnet = iptool.subnet(ipAddress, subnetMask);
-                updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
-                const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
-                // redundant entries for backward compatitibility
-                mergedSecondaryInterface.ipOnly = ipAddress;
-                mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
-                mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
-                mergedSecondaryInterface.ipmask = subnetMask;
-                if (mergedSecondaryInterface.ip2) {
-                  const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
-                  mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
-                  mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
-                  mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
-                  mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
-                }
-                await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
+          if (!network || !intf || !intf.ipAddress || !intf.subnetMask) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface.ipAddress/subnetMask should be specified."}, callback);
+            return;
+          }
+          if (dhcpRange && (!dhcpRange.begin || !dhcpRange.end)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "dhcpRange.start/end should be set at the same time."}, callback);
+            return;
+          }
+          const currentConfig = fc.getConfig(true);
+          switch (network) {
+            case "secondary":
+              const currentSecondaryInterface = currentConfig.secondaryInterface;
+              const updatedConfig = {intf: "eth0:0"};
+              const ipAddress = intf.ipAddress;
+              const subnetMask = intf.subnetMask;
+              const ipSubnet = iptool.subnet(ipAddress, subnetMask);
+              updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+              const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
+              // redundant entries for backward compatitibility
+              mergedSecondaryInterface.ipOnly = ipAddress;
+              mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
+              mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
+              mergedSecondaryInterface.ipmask = subnetMask;
+              if (mergedSecondaryInterface.ip2) {
+                const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
+                mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
+                mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
+                mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
+                mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
+              }
+              await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
+              if (dhcpRange)
                 this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
-                setTimeout(() => {
-                  let modeManager = require('../net2/ModeManager.js');
-                  modeManager.publishNetworkInterfaceUpdate();
-                }, 5000); // update interface in 5 seconds.
-                this.simpleTxData(msg, {}, null, callback);
-                break;
-              case "alternative":
-                const currentAlternativeInterface = currentConfig.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
-                const updatedAltConfig = {gateway: intf.gateway};
-                const altIpAddress = intf.ipAddress;
-                const altSubnetMask = intf.subnetMask;
-                const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
-                updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
-                const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
-                await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
+              setTimeout(() => {
+                let modeManager = require('../net2/ModeManager.js');
+                modeManager.publishNetworkInterfaceUpdate();
+              }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+              this.simpleTxData(msg, {}, null, callback);
+              break;
+            case "alternative":
+              const currentAlternativeInterface = currentConfig.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+              const updatedAltConfig = {gateway: intf.gateway};
+              const altIpAddress = intf.ipAddress;
+              const altSubnetMask = intf.subnetMask;
+              const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
+              updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+              const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
+              await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
+              if (dhcpRange)
                 this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers, alternativeDhcpRange: dhcpRange});
-                setTimeout(() => {
-                  let modeManager = require('../net2/ModeManager.js');
-                  modeManager.publishNetworkInterfaceUpdate();
-                }, 5000); // update interface in 5 seconds.
-                this.simpleTxData(msg, {}, null, callback);
-                break;
-              default:
-                log.error("Unknwon network type in networkInterface:update, " + network);
-                this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network}, callback);
-            }
+              setTimeout(() => {
+                let modeManager = require('../net2/ModeManager.js');
+                modeManager.publishNetworkInterfaceUpdate();
+              }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+              this.simpleTxData(msg, {}, null, callback);
+              break;
+            case "wifi":
+              const currentWifiInterface = currentConfig.wifiInterface;
+              const updatedWifiConfig = {intf: "wlan0"};
+              const wifiIpAddress = intf.ipAddress;
+              const wifiSubnetMask = intf.subnetMask;
+              const wifiIpSubnet = iptool.subnet(wifiIpAddress, wifiSubnetMask);
+              updatedWifiConfig.ip = wifiIpAddress + "/" + wifiIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+              updatedWifiConfig.mode = intf.mode || "router";
+              updatedWifiConfig.ssid = intf.ssid || "FW_AP";
+              updatedWifiConfig.password = intf.password || "firewalla";
+              updatedWifiConfig.band = intf.band || "g";
+              updatedWifiConfig.channel = intf.channel || "5";
+              const mergedWifiInterface = Object.assign({}, currentWifiInterface, updatedWifiConfig); // if ip2 is not defined, it will be inherited from previous settings
+              await fc.updateUserConfig({wifiInterface: mergedWifiInterface});
+              if (dhcpRange)
+                this._dnsmasq("0.0.0.0", {wifiDnsServers: dnsServers, wifiDhcpRange: dhcpRange});
+              this.simpleTxData(msg, {}, null, callback);
+              break;
+            default:
+              log.error("Unknown network type in networkInterface:update, " + network);
+              this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network}, callback);
           }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);

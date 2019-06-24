@@ -1507,6 +1507,7 @@ module.exports = class HostManager {
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;
     json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
+    json.wifiNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringWifiInterface];
     json.remoteSupport = frp.started;
     json.model = platform.getName();
     json.branch = f.getBranch();
