@@ -235,7 +235,7 @@ class HostTool {
 
   async getAllMACs() {
     let keys = await rclient.keysAsync("host:mac:*");
-    return keys.map((key) => key.replace("host:mac:", ""));
+    return keys.map((key) => key.replace("host:mac:", "")).filter(Boolean);
   }
 
   async getAllMACEntries() {
@@ -251,7 +251,7 @@ class HostTool {
   async getAllIPs() {
     let allIPs = [];
 
-    let macs = await this.getAllMACs();
+    let macKeys = await this.getAllMACs();
 
     for (const mac of macKeys) {
       let ips = await this.getIPsByMac(mac);
