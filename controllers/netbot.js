@@ -2927,7 +2927,7 @@ class netBot extends ControllerBot {
           if(iptool.isV4Format(ip)) {
             sem.emitEvent({
               type: "DeviceUpdate",
-              message: "Manual submit a new device via API",
+              message: `Manual submit a new device via API ${ip} ${bname}`,
               host: {
                 ipv4: ip,
                 ipv4Addr: ip,

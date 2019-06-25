@@ -274,7 +274,7 @@ module.exports = class {
         };
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: "Device network activity heartbeat",
+          message: `Device network activity heartbeat ${host.ip} ${host.mac}`,
           host: host
         });
       }
@@ -1396,7 +1396,7 @@ module.exports = class {
 
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: "Found a device via bro known hosts",
+          message: `Found a device via bro known hosts ${host.ip} ${host.mac}`,
           host: host
         })
 
