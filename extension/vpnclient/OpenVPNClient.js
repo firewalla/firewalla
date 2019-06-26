@@ -244,7 +244,7 @@ class OpenVPNClient extends VPNClient {
             resolve(true);
           } else {
             const now = Date.now();
-            if (now - startTime > 20000) {
+            if (now - startTime > 30000) {
               log.error("Failed to establish tunnel for OpenVPN client, stop it...");
               clearInterval(establishmentTask);
               resolve(false);
