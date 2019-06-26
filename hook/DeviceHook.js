@@ -428,6 +428,7 @@ class DeviceHook extends Hook {
 
       let currentTimestamp = new Date() / 1000;
       let enrichedHost = extend({}, host, {
+        uid: host.ipv4Addr,
         lastActiveTimestamp: currentTimestamp
       });
 
