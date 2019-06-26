@@ -113,3 +113,7 @@ api/db/token.json
 /test
 /.gitmodules
 /extension/frp/frpc.ini
+
+/bin/bitbridge7.rc
+/extension/frp/frpc.support.ini
+/extension/frp/frpc.support.service
