@@ -179,10 +179,12 @@ class OpenVPNClient extends VPNClient {
         }
       })
     }
+    /* comp-lzo is still compatible in 2.4.x. Need to check the value of comp-lzo for proper convertion, e.g. comp-lzo (yes)-> compress lzo, comp-lzo no -> compress ...
     if (version.startsWith("2.4.")) {
       // 'comp-lzo' is deprecated in 2.4.x
       revisedContent = revisedContent.replace(/comp\-lzo/g, "compress lzo");
     }
+    */
     await writeFileAsync(ovpnPath, revisedContent, 'utf8');
   }
 
