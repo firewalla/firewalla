@@ -346,7 +346,7 @@ class HostTool {
   async updateIPv6Host(host, ipv6Addr, skipTimeUpdate) {
     skipTimeUpdate = skipTimeUpdate || false;
     if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
-      for (const addr in ipv6Addr) {
+      for (const addr of ipv6Addr) {
         let key = this.getIPv6HostKey(addr)
 
         let existingData = await rclient.hgetallAsync(key)
