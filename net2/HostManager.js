@@ -15,9 +15,6 @@
 'use strict';
 const log = require('./logger.js')(__filename);
 
-var iptool = require('ip');
-var os = require('os');
-var network = require('network');
 var instances = {};
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -25,7 +22,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
 const _ = require('lodash');
 
@@ -35,14 +32,14 @@ const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
-var Spoofer = require('./Spoofer.js');
+const Spoofer = require('./Spoofer.js');
 var spoofer = null;
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
-var DNSManager = require('./DNSManager.js');
-var dnsManager = new DNSManager('error');
-var FlowManager = require('./FlowManager.js');
-var flowManager = new FlowManager('debug');
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
+const DNSManager = require('./DNSManager.js');
+const dnsManager = new DNSManager('error');
+const FlowManager = require('./FlowManager.js');
+const flowManager = new FlowManager('debug');
 
 const ShieldManager = require('./ShieldManager.js');
 
@@ -62,43 +59,40 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const policyManager2 = new PolicyManager2();
 const pm2 = policyManager2
 
-let ExceptionManager = require('../alarm/ExceptionManager.js');
-let exceptionManager = new ExceptionManager();
+const ExceptionManager = require('../alarm/ExceptionManager.js');
+const exceptionManager = new ExceptionManager();
 
-let SpooferManager = require('./SpooferManager.js')
+const SpooferManager = require('./SpooferManager.js')
 
-let modeManager = require('./ModeManager.js');
+const modeManager = require('./ModeManager.js');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const async = require('asyncawait/async');
+const await = require('asyncawait/await');
 
-let f = require('./Firewalla.js');
+const f = require('./Firewalla.js');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
 const license = require('../util/license.js')
 
-var alarmManager = null;
+const bone = require("../lib/Bone.js");
 
-var uuid = require('uuid');
-var bone = require("../lib/Bone.js");
+const util = require('util');
 
-var utils = require('../lib/utils.js');
-
-let fConfig = require('./config.js').getConfig();
+const fConfig = require('./config.js').getConfig();
 
 const fc = require('./config.js')
 
-var _async = require('async');
+const _async = require('async');
 
-var MobileDetect = require('mobile-detect');
+const MobileDetect = require('mobile-detect');
 
-var flowUtil = require('../net2/FlowUtil.js');
+const flowUtil = require('../net2/FlowUtil.js');
 
-let AppTool = require('./AppTool');
-let appTool = new AppTool();
+const AppTool = require('./AppTool');
+const appTool = new AppTool();
 
-var linux = require('../util/linux.js');
+const linux = require('../util/linux.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
@@ -370,33 +364,33 @@ class Host {
       });
 
       /*
-          rclient.smembers("host:user_agent:"+this.o.ipv4Addr,(err,results)=> {
-              if (results!=null && results.length>0) {
-                  let bestFamily = null;
-                  let bestOS = null;
-                  for (let i in results) {
-                      let r = JSON.parse(results[i]);
-                      if (r!=null) {
-                          if (r.family.indexOf("Other")==-1) {
-                              bestFamily = r.family;
-                          } else if (r.os.indexOf("Other")==-1) {
-                              bestOS = r.os;
-                          }
-                          break;
-                      }
-                  }
-                  if (bestFamily!=null) {
-                      this.hostname = "(?)"+bestFamily;
-                  } else if (bestOS!=null) {
-                      this.hostname = "(?)"+bestOS;
-                  }
-                  log.info(this.o.name,this.hostname);
-                  if (this.hostname!=null && this.o.name!=this.hostname) {
-                    //this.o.name = this.hostname;
-                      this.save("name",null);
-                  }
+      rclient.smembers("host:user_agent:" + this.o.ipv4Addr, (err, results) => {
+        if (results != null && results.length > 0) {
+          let bestFamily = null;
+          let bestOS = null;
+          for (let i in results) {
+            let r = JSON.parse(results[i]);
+            if (r != null) {
+              if (r.family.indexOf("Other") == -1) {
+                bestFamily = r.family;
+              } else if (r.os.indexOf("Other") == -1) {
+                bestOS = r.os;
               }
-          });
+              break;
+            }
+          }
+          if (bestFamily != null) {
+            this.hostname = "(?)" + bestFamily;
+          } else if (bestOS != null) {
+            this.hostname = "(?)" + bestOS;
+          }
+          log.info(this.o.name, this.hostname);
+          if (this.hostname != null && this.o.name != this.hostname) {
+            //this.o.name = this.hostname;
+            this.save("name", null);
+          }
+        }
+      });
       */
 
     }
@@ -930,33 +924,32 @@ class Host {
   syncToMac(callback) {
     //TODO
     /*
-                if (this.o.mac) {
-                    let mackey = "host:mac:"+this.o.mac.toUpperCase();
-                        rclient.hgetall(key, (err,data)=> {
-                            if ( err == null) {
-                                if (data!=null) {
-                                    data.ipv4 = host.ipv4Addr;
-                                    data.lastActiveTimestamp = Date.now()/1000;
-                                    if (host.macVendor) {
-                                        data.macVendor = host.macVendor;
-                                    }
-                               } else {
-                                   data = {};
-                                   data.ipv4 = host.ipv4Addr;
-                                   data.lastActiveTimestamp = Date.now()/1000;
-                                   data.firstFoundTimestamp = data.lastActiveTimestamp;
-                                   if (host.macVendor) {
-                                        data.macVendor = host.macVendor;
-                                   }
-                               }
-                               rclient.hmset(key,data, (err,result)=> {
-                         });
+    if (this.o.mac) {
+      let mackey = "host:mac:" + this.o.mac.toUpperCase();
+      rclient.hgetall(key, (err, data) => {
+        if (err == null) {
+          if (data != null) {
+            data.ipv4 = host.ipv4Addr;
+            data.lastActiveTimestamp = Date.now() / 1000;
+            if (host.macVendor) {
+              data.macVendor = host.macVendor;
+            }
+          } else {
+            data = {};
+            data.ipv4 = host.ipv4Addr;
+            data.lastActiveTimestamp = Date.now() / 1000;
+            data.firstFoundTimestamp = data.lastActiveTimestamp;
+            if (host.macVendor) {
+              data.macVendor = host.macVendor;
+            }
+          }
+          rclient.hmset(key, data, (err, result) => {
+          });
 
-                }
-                */
+        }
+    */
 
   }
-
 
   listen(tell) {}
 
@@ -1205,6 +1198,10 @@ class Host {
     // deprecated, do nothing
   }
 
+  setPolicyAsync(name, data) {
+    return util.promisify(this.setPolicy).bind(this)(name, data)
+  }
+
   // policy:mac:xxxxx
   setPolicyAsync(name, data) {
     return new Promise((resolve, reject) => {
@@ -1249,49 +1246,6 @@ class Host {
         }
         this.policy.acl = acls;
       }
-    } else if (name === "blockin") { // legacy logic handling, code can be removed in the future
-      if(this.o && this.o.mac) {
-        if(data) {
-          async(() => {
-            // TODO: performance enhancement needed
-            let rule = await (pm2.findPolicy(this.o.mac, "mac"))
-            if(rule) { // already created              
-              callback(null, {blockin: true});
-            } else {
-              // need to create one
-              let rule = new Policy({
-                target: this.o.mac,
-                type: "mac"
-              })
-
-              let resultPolicyRule = await (pm2.checkAndSaveAsync(rule))
-              if(resultPolicyRule) {
-                callback(null, {blockin: true})
-              } else {
-                callback(new Error("failed to apply blockin"))
-              }
-            }
-          })().catch((err) => {
-            callback(err, null)
-          })
-
-        } else {
-          async(() => {
-            // TODO: performance enhancement needed
-            let rule = await (pm2.findPolicy(this.o.mac, "mac"))
-            if(rule) { // already created
-              await (pm2.disableAndDeletePolicy(rule.pid))
-            } 
-
-            callback(null, {blockin: false});
-          })().catch((err) => {
-            callback(err, null)
-          })
-        }
-      }
-
-      return // no need to save policy for blockin case, it's already routed to new policy model
-
     } else {
       if (this.policy[name] != null && this.policy[name] == data) {
         callback(null, null);
@@ -1348,6 +1302,10 @@ class Host {
         callback(err, null);
     });
 
+  }
+
+  loadPolicyAsync() {
+    return util.promisify(this.loadPolicy).bind(this)()
   }
 
   loadPolicy(callback) {
@@ -2569,6 +2527,10 @@ module.exports = class HostManager {
       }
       this.policy.acl = acls;
     }
+  }
+
+  setPolicyAsync(name, data) {
+    return util.promisify(this.setPolicy).bind(this)(name, data)
   }
 
   setPolicy(name, data, callback) {

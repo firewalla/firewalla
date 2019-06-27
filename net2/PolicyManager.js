@@ -15,57 +15,56 @@
 'use strict';
 
 var instance = null;
-var log = null;
-var SysManager = require('./SysManager.js');
-var sysManager = new SysManager('info');
+const log = require("./logger.js")("PolicyManager");
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const fc = require('../net2/config.js');
 
-var later = require('later');
-var iptable = require('./Iptables.js');
-var ip6table = require('./Ip6tables.js');
+const iptable = require('./Iptables.js');
+const ip6table = require('./Ip6tables.js');
 
-var CronJob = require('cron').CronJob;
-var async = require('async');
+const Block = require('../control/Block.js');
 
-var VpnManager = require('../vpn/VpnManager.js');
+const CronJob = require('cron').CronJob;
+const async = require('async');
+
+const VpnManager = require('../vpn/VpnManager.js');
 
 const extensionManager = require('../sensor/ExtensionManager.js')
 
 const UPNP = require('../extension/upnp/upnp');
 const upnp = new UPNP();
 
-let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-let dnsmasq = new DNSMASQ();
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
-var firewalla = require('../net2/Firewalla.js');
+const firewalla = require('../net2/Firewalla.js');
 
 let externalAccessFlag = false;
 
 const delay = require('../util/util.js').delay;
 
-let localPort = 8833;
-let externalPort = 8833;
-let UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
+const localPort = 8833;
+const externalPort = 8833;
+const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 
 let FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
 let ADBLOCK_DNS = ["8.8.8.8"]; // these are just backup servers
 
-var ip = require('ip');
+const ip = require('ip');
 
-let b = require('../control/Block.js');
+const b = require('../control/Block.js');
 
-let features = require('../net2/features');
-
-const cp = require('child_process');
+const features = require('../net2/features');
 
 const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -89,10 +88,11 @@ const categoryUpdater = new CategoryUpdater()
 
 */
 
+let iptablesReady = false
+
 module.exports = class {
   constructor(loglevel) {
     if (instance == null) {
-      log = require("./logger.js")("PolicyManager", loglevel);
       instance = this;
     }
     return instance;
@@ -100,6 +100,8 @@ module.exports = class {
 
   // this should flush ip6tables as well
   async flush(config) {
+    iptablesReady = false
+
     if (require('./UpgradeManager.js').isUpgrading() == true) {
       return;
     }
@@ -109,7 +111,6 @@ module.exports = class {
 
     let defaultTable = config['iptables']['defaults'];
     let myip = sysManager.myIp();
-    let mysubnet = sysManager.mySubnet();
     let secondarySubnet = sysManager.mySubnet2();
     for (let i in defaultTable) {
       defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
@@ -124,6 +125,12 @@ module.exports = class {
 
     // Setup iptables so that it's ready for blocking
     await require('../control/Block.js').setupBlockChain();
+
+    iptablesReady = true
+
+    sem.emitEvent({
+      type: 'IPTABLES_READY'
+    });
   }
 
   block(mac, protocol, src, dst, sport, dport, state, callback) {
@@ -502,6 +509,28 @@ module.exports = class {
     }
   }
 
+  async whitelist(host, config) {
+    if (host.constructor.name == 'HostManager') {
+      if (iptablesReady)
+        return Block.setupGlobalWhitelist(config.state);
+      else
+        // wait until basic ipables are all set
+        return new Promise((resolve, reject) => {
+          sem.once('IPTABLES_READY', () => {
+            Block.setupGlobalWhitelist(config.state)
+              .then(resolve).catch(reject)
+          })
+        })
+    }
+
+    if (!host.o.mac) throw new Error('Invalid host MAC');
+
+    if (config.state)
+      return Block.addMacToSet([host.o.mac], 'device_whitelist_set')
+    else
+      return Block.delMacFromSet([host.o.mac], 'device_whitelist_set')
+  }
+
   shadowsocks(host, config, callback) {
     if(host.constructor.name !== 'HostManager') {
       log.error("shadowsocks doesn't support per device policy", host);
@@ -677,6 +706,8 @@ module.exports = class {
         this.shadowsocks(host, policy[p]);
       } else if (p === "scisurf") {
         this.scisurf(host, policy[p]);
+      } else if (p === "whitelist") {
+        this.whitelist(host, policy[p]);
       } else if (p === "shield") {
         host.shield(policy[p]);
       } else if (p === "enhancedSpoof") {

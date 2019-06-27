@@ -379,3 +379,84 @@ async function run(listofcmds) {
     });
   }
 }
+
+// Rule = {
+//   family: 4,      // default 4
+//   table: "nat",   // default "filter"
+//   proto: "tcp",   // default "all"
+//   chain: "FW_BLOCK",
+//   match: [
+//     { name: "c_bm_39_set", spec: "src", type: "set" },
+//     { name: "c_bd_av_set", spec: "dst", type: "set" }
+//   ],
+//   jump: "FW_DROP"
+// }
+
+exports.Rule = class Rule {
+  constructor(table = 'filter') {
+    this.family = 4;
+    this.table = table;
+    this.proto = 'all';
+    this.match = [];
+  }
+
+  fam(v) { this.family = v; return this }
+  tab(t) { this.tables = t; return this }
+  pro(p) { this.proto = p; return this }
+  chn(c) { this.chain = c; return this }
+  mth(name, spec, type = "set") {
+    this.match.push({ name, spec, type })
+    return this
+  }
+  jmp(j) { this.jump = j; return this }
+
+  clone() {
+    return Object.assign(Object.create(Rule.prototype), this)
+  }
+
+  _rawCmd(operation) {
+    if (!this.chain) throw new Error("chain missing")
+    if (!operation) throw new Error("operation missing")
+
+    let cmd = [
+      'sudo',
+      this.family === 4 ? 'iptables' : 'ip6tables',
+      '-w',
+      '-t', this.table,
+      operation,
+      this.chain,
+      '-p', this.proto,
+    ]
+
+    this.match.forEach((match) => {
+      switch(match.type) {
+        case 'set':
+          cmd.push('-m set --match-set', match.name)
+          if (match.spec === 'both')
+            cmd.push('src,dst')
+          else
+            cmd.push(match.spec)
+
+        default:
+      }
+    })
+
+    cmd.push('-j', this.jump)
+
+    return cmd.join(' ');
+  }
+
+  toCmd(operation) {
+    const checkRule = this._rawCmd('-C')
+    const rule = this._rawCmd(operation)
+
+    switch (operation) {
+      case '-I':
+      case '-A':
+        return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
+
+      case '-D':
+        return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
+    }
+  }
+}

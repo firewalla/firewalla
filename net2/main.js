@@ -253,10 +253,6 @@ async function run() {
       return;
     }
 
-    sem.emitEvent({
-      type: 'IPTABLES_READY'
-    });
-
     await mode.reloadSetupMode() // make sure get latest mode from redis
     await ModeManager.apply()
 
