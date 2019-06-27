@@ -70,15 +70,13 @@ async function setupGlobalWhitelist(state) {
   try {
     let ruleSet = [
       new Rule().chn('FW_WHITELIST_PREROUTE').jmp('FW_WHITELIST'),
-      new Rule().chn('FORWARD').jmp('FW_WHITELIST_PREROUTE'),
       new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').jmp('FW_NAT_WHITELIST'),
-      new Rule('nat').chn('PREROUTING').jmp('FW_NAT_WHITELIST_PREROUTE'),
     ]
 
     let ruleSet6 = ruleSet.map(r => r.clone().fam(6))
 
     for (const rule of ruleSet.concat(ruleSet6)) {
-      const op = state ? (rule.jump.endsWith('WHITELIST') ? '-A' : '-I') : '-D';
+      const op = state ? '-A' : '-D';
       await exec(rule.toCmd(op));
     }
   } catch (err) {

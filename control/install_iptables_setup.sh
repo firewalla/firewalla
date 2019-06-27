@@ -125,6 +125,8 @@ sudo iptables -w -C FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLI
 sudo iptables -w -N FW_WHITELIST &> /dev/null
 sudo iptables -w -F FW_WHITELIST
 
+sudo iptables -w -C FORWARD -j FW_WHITELIST_PREROUTE &>/dev/null || sudo iptables -w -I FORWARD -j FW_WHITELIST_PREROUTE
+
 # device level whitelist
 sudo iptables -w -C FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST
 
@@ -218,6 +220,8 @@ sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELA
 
 sudo iptables -w -t nat -N FW_NAT_WHITELIST &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_WHITELIST
+
+sudo iptables -w -t nat -C PREROUTING -j FW_NAT_WHITELIST_PREROUTE &>/dev/null || sudo iptables -w -t nat -I PREROUTING -j FW_NAT_WHITELIST_PREROUTE
 
 # device level whitelist
 sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST
@@ -347,6 +351,8 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_WHITELIST &> /dev/null
   sudo ip6tables -w -F FW_WHITELIST
 
+  sudo ip6tables -w -C FORWARD -j FW_WHITELIST_PREROUTE &>/dev/null || sudo ip6tables -w -I FORWARD -j FW_WHITELIST_PREROUTE
+
   # device level whitelist
   sudo ip6tables -w -C FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST
 
@@ -438,6 +444,8 @@ if [[ -e /sbin/ip6tables ]]; then
 
   sudo ip6tables -w -t nat -N FW_NAT_WHITELIST &>/dev/null
   sudo ip6tables -w -t nat -F FW_NAT_WHITELIST
+
+  sudo ip6tables -w -t nat -C PREROUTING -j FW_NAT_WHITELIST_PREROUTE &>/dev/null || sudo ip6tables -w -t nat -I PREROUTING -j FW_NAT_WHITELIST_PREROUTE
 
   # device level whitelist
   sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST
