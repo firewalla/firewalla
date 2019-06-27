@@ -372,11 +372,6 @@ class netBot extends ControllerBot {
       // start VPN client globally
       this.hostManager.loadPolicy((err, data) => {
         if (err == null) {
-          let oldValue = {};
-          if (data["vpnClient"]) {
-            oldValue = JSON.parse(data["vpnClient"]);
-          }
-          value = Object.assign({}, oldValue, value);
           this.hostManager.setPolicy("vpnClient", value, (err, data) => {
             if (err == null) {
               if (callback != null)
@@ -3212,7 +3207,9 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup();
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                });
                 const result = await ovpnClient.start();
                 if (!result) {
                   await ovpnClient.stop();
@@ -3248,7 +3245,9 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup();
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                });
                 const stats = await ovpnClient.getStatistics();
                 await ovpnClient.stop();
                 this._vpnClient("0.0.0.0", {state: false});

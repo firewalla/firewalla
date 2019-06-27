@@ -318,6 +318,10 @@ class OpenVPNClient extends VPNClient {
       // add read permission in case it is owned by root
       const cmd = util.format("sudo chmod +r %s", statusLogPath);
       await execAsync(cmd);
+      if (!existsSync(statusLogPath)) {
+        log.warn(`status log for ${this.profileId} does not exist`);
+        return {};
+      }
       const content = await readFileAsync(statusLogPath, "utf8");
       const lines = content.split("\n");
       for (let line of lines) {

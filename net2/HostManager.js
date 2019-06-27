@@ -2677,7 +2677,10 @@ module.exports = class HostManager {
         }
         const ovpnClient = new OpenVPNClient({profileId: profileId});
         if (state === true) {
-          await ovpnClient.setup();
+          await ovpnClient.setup().catch((err) => {
+            // do not return false here since following start() operation should fail
+            log.error(`Failed to setup openvpn client for ${profileId}`, err);
+          });
           const result = await ovpnClient.start();
           if (result) {
             ovpnClient.once('link_broken', () => {
@@ -2697,7 +2700,9 @@ module.exports = class HostManager {
           }
           return result;
         } else {
-          await ovpnClient.setup();
+          await ovpnClient.setup().catch((err) => {
+            log.error(`Failed to setup openvpn client for ${profileId}`, err);
+          });
           await ovpnClient.stop();
         }
         break;
