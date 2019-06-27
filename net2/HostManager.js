@@ -579,10 +579,12 @@ class Host {
       if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
         return;
       }
+      /* This is taken care of by DnsLoopAvoidanceSensor
       if (dns && dns.includes(this.o.ipv4Addr)) {
         // do not monitor dns server's traffic
         return;
       }
+      */
       if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
         return;
       }
