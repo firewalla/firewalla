@@ -195,6 +195,10 @@ class DomainBlock {
 
     // load other addresses from rdns, critical to apply instant blocking
     const addresses = await dnsTool.getAddressesByDNS(domain).catch((err) => []);
+    log.info("zhijietest")
+    log.info(list)
+    log.info(addresses)
+    log.info(options)
     list.push.apply(list, addresses)  // concat arrays
 
     if(!options.exactMatch) {
