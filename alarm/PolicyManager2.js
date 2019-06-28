@@ -942,6 +942,10 @@ class PolicyManager2 {
 
       case "domain":
       case "dns":
+        log.info("zhijietest")
+        log.info(policy)
+        log.info("myGateway:"+sysManager.myGateway())
+        log.info("myGateway6:"+sysManager.myGateway6())
         if(scope) {
           await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
           await Block.addMacToSet(pid, scope);
