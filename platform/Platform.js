@@ -15,6 +15,7 @@
 
 'use strict';
 
+const log = require('../net2/logger.js')(__filename);
 const fConfig = require('../net2/config.js').getConfig();
 const fs = require('fs');
 const Promise = require('bluebird');
