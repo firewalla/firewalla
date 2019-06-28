@@ -215,6 +215,7 @@ check_hosts() {
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
         local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
         local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
+        local DEVICE_MAC=${DEVICE/host:mac:/""}
         local POLICY_MAC="policy:mac:${DEVICE_MAC}"
         local DEVICE_MONITORING=$(redis-cli hget $POLICY_MAC monitor)
         if [[ ! -n $DEVICE_MONITORING ]]; then
