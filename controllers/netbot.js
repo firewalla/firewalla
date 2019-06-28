@@ -725,7 +725,6 @@ class netBot extends ControllerBot {
         let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
         log.info("sendLog: cmdline", filename, password,cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
-          log.error("sendLog: unable to process encrypt-upload",err,out,code);
           if (err!=null) {
             log.error("sendLog: unable to process encrypt-upload",err,out,code);
           } else {
@@ -2935,7 +2934,7 @@ class netBot extends ControllerBot {
           if(iptool.isV4Format(ip)) {
             sem.emitEvent({
               type: "DeviceUpdate",
-              message: "Manual submit a new device via API",
+              message: `Manual submit a new device via API ${ip} ${bname}`,
               host: {
                 ipv4: ip,
                 ipv4Addr: ip,

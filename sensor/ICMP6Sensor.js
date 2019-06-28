@@ -91,7 +91,7 @@ class ICMP6Sensor extends Sensor {
       if (dstMac && ip.isV6Format(tgtIp)) {
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: "A new ipv6 is found @ ICMP6Sensor",
+          message: `A new ipv6 is found @ ICMP6Sensor ${tgtIp} ${dstMac}`,
           suppressAlarm: true,
           host: {
             ipv6Addr: [tgtIp],
