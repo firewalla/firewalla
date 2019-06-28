@@ -328,6 +328,11 @@ module.exports = class {
     })
   }
 
+  async getTimezone() {
+    const tz = await rclient.hgetAsync("sys:config", "timezone");
+    return tz;
+  }
+
   setTimezone(timezone, callback) {
     callback = callback || function() {}
 

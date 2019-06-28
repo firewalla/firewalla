@@ -30,6 +30,7 @@ const Promise = require('bluebird');
 
 const cronParser = require('cron-parser');
 const moment = require('moment');
+const SysManager = require('../../net2/SysManager.js');
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
@@ -130,12 +131,14 @@ class PolicyScheduler {
 
     try {
       log.info(`Registering policy ${policy.pid} for reoccuring`)
+      const sysManager = new SysManager();
+      const tz = await sysManager.getTimezone();
       const job = new CronJob(cronTime, () => {
         this.apply(policy)
       }, 
       () => {},
-      true // enable the job
-      );
+      true, // enable the job
+      tz); // set local timezone. Otherwise FireMain seems to use UTC in the first running after initail pairing.
       
       runningCronJobs[pid] = job // register job
 
