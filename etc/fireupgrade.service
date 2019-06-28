@@ -7,7 +7,7 @@ Before=firewalla.service
 [Service]
 User=pi
 Type=oneshot
-ExecStart=/home/pi/firewalla/scripts/fireupgrade.sh
+ExecStart=/usr/bin/crontab -r ; /home/pi/firewalla/scripts/fireupgrade.sh
 
 [Install]
 WantedBy=multi-user.target
