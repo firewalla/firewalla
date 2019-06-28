@@ -805,7 +805,6 @@ class PolicyManager2 {
     if(policy.disabled == 1) {
       return // ignore disabled policy rules
     }
-    log.info("zhijie28")
     // auto unenforce if expire time is set
     if (policy.expire) {
       if (policy.willExpireSoon())  {
