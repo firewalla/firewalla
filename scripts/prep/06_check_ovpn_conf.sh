@@ -13,9 +13,9 @@ if [ ! -s /etc/openvpn/crl.pem ]; then
 	  cd /etc/openvpn/easy-rsa
 	  source ./vars
 	  ./clean-all
+          rm /home/pi/ovpns/*
 	  (cd $FIREWALLA_HOME/vpn; sudo ./install2.sh server)
 	  sudo chmod 777 -R /etc/openvpn
-	  sudo bash $FIREWALLA_HOME/scripts/prep/06_check_ovpn_conf.sh
 	  cd -
   fi 
 
