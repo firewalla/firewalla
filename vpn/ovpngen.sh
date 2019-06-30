@@ -37,8 +37,16 @@ sudo chmod 777 -R /etc/openvpn
 cd /etc/openvpn/easy-rsa
 
 if [[ $(uname -m) == "aarch64" ]] && grep -w $LEGACY_NAME keys/${INDEX} &>/dev/null; then
-   # reset all 
-   sudo rm -fr keys
+  # reset all 
+  sudo rm -fr keys
+  # Change nextUpdate in openssl crl to 3600 days
+  if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
+    sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
+  fi
+  source ./vars
+  ./pkitool dummy
+  ./revoke-full dummy
+  cp keys/crl.pem ../crl.pem
 fi
 
 # Change nextUpdate in openssl crl to 3600 days
