@@ -5,6 +5,11 @@ if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && ! [[
   bash $FIREWALLA_HOME/scripts/reset-vpn-keys.sh
 fi 
 
+# Ensure nextUpdate in openssl crl to 3600 days
+if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
+  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
+fi
+
 if [ ! -s /etc/openvpn/crl.pem ]; then
   # create crl file with dummy revocation list
   cd /etc/openvpn/easy-rsa
@@ -59,11 +64,10 @@ if [ ! -f /etc/openvpn/client_conf/DEFAULT ]; then
   sed -i 's/COMPRESS_OPT/compress/' /etc/openvpn/client_conf/DEFAULT
 fi
 
-#sudo chmod 600 -R /etc/openvpn
-sudo chmod 777 /etc/openvpn
+sudo chmod 755 -R /etc/openvpn
 sudo chmod 644 /etc/openvpn/crl.pem
-sudo chmod 777 /etc/openvpn/client_conf
 sudo chmod 644 /etc/openvpn/client_conf/*
 
 sudo cp /home/pi/firewalla/extension/vpnclient/openvpn_client@.service.template /etc/systemd/system/openvpn_client@.service
 sudo systemctl daemon-reload
+sync

@@ -42,8 +42,7 @@ TA="ta.key"
 #Build the client key and then encrypt the key
 sudo chmod 777 -R /etc/openvpn
 cd /etc/openvpn/easy-rsa
-
-# Change nextUpdate in openssl crl to 3600 days
+# Ensure nextUpdate in openssl crl to 3600 days
 if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
   sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
 fi
@@ -146,9 +145,7 @@ echo "</tls-auth>" >> $NAME$FILEEXT
 
 # Copy the .ovpn profile to the home directory for convenient remote access
 cp /etc/openvpn/easy-rsa/keys/$NAME$FILEEXT ~/ovpns/$NAME$FILEEXT
-sudo chmod 600 -R /etc/openvpn
-sudo chmod 777 /etc/openvpn
-sudo chmod 777 /etc/openvpn/client_conf
+sudo chmod 755 -R /etc/openvpn
 sudo chmod 644 /etc/openvpn/crl.pem
 sudo chmod 644 /etc/openvpn/client_conf/*
 echo "$NAME$FILEEXT moved to home directory."
@@ -157,5 +154,5 @@ echo -n "$2" > ~/ovpns/$NAME$FILEEXT$PASSEXT
 cp ~/ovpns/$NAME$FILEEXT ~/ovpns/$ORIGINAL_NAME.ovpn
 cp ~/ovpns/$NAME$FILEEXT$PASSEXT ~/ovpns/$ORIGINAL_NAME.ovpn.password
 echo "$NAME" > ~/ovpns/.ovpn.cn
- 
+sync
 # Original script written by Eric Jodoin.
