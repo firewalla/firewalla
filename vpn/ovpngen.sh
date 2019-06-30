@@ -8,11 +8,13 @@ INDEX="index.txt"
 sudo chmod 777 -R /etc/openvpn
 if [[ $(uname -m) == "aarch64" ]] && grep -w $LEGACY_NAME /etc/openvpn/easy-rsa/keys/${INDEX} &>/dev/null; then
   cd /etc/openvpn/easy-rsa
+  curl -s -o /dev/null -w "%{http_code}" -X POST --header 'Content-Type: application/json' --header 'Accept: application/json' -d '{ "vpn": {"state": false }}' 'http://localhost:8834/v1/encipher/simple?command=set&item=policy&target=0.0.0.0'
   source ./vars
   ./clean-all
   (cd $FIREWALLA_HOME/vpn; sudo ./install2.sh server)
   sudo chmod 777 -R /etc/openvpn
   sudo bash $FIREWALLA_HOME/scripts/prep/06_check_ovpn_conf.sh 
+  curl -s -o /dev/null -w "%{http_code}" -X POST --header 'Content-Type: application/json' --header 'Accept: application/json' -d '{ "vpn": {"state": true }}' 'http://localhost:8834/v1/encipher/simple?command=set&item=policy&target=0.0.0.0'
   cd -
 fi
 
