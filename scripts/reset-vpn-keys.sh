@@ -11,6 +11,7 @@ fi
 if [[ $VPN_ON == "false" ]]; then
   source ./vars 
   ./clean-all
+  rm /home/pi/ovpns/*
   exit 0
 fi
 
