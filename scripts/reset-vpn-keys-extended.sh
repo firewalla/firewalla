@@ -13,7 +13,7 @@ if [[ -e keys ]] && [[ -e keys2 ]]; then
   fi
   rm -fr keys
   mv keys2 keys
-  rm ~/ovpns/*
+  rm /home/pi/ovpns/*
   sleep 15
   if [[ $VPN_ON == "true" ]]; then
     curl -s -o /dev/null -w "%{http_code}" -X POST --header 'Content-Type: application/json' --header 'Accept: application/json' -d '{ "vpn": {"state": true }}' 'http://localhost:8834/v1/encipher/simple?command=set&item=policy&target=0.0.0.0'
