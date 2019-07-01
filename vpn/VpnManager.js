@@ -373,11 +373,12 @@ class VpnManager {
         return;
       }
 
+      let originalName = clientname;
       // Original name remains unchanged even if client name is trailed by random numbers.
       // So that client ovpn file name will remain unchanged while its content has been updated.
       // always randomize the name when creating
 //      if (regenerate == true) {
-        clientname = clientname + VpnManager.generatePassword(15);
+      clientname = clientname + VpnManager.generatePassword(15);
 //      }
 
       if (password == null) {

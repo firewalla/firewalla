@@ -24,7 +24,7 @@ fi
 
 if [ ! -s /etc/openvpn/crl.pem ]; then
   # create crl file with dummy revocation list
-  cd /etc/openvpn/easy-rsa  
+  cd /etc/openvpn/easy-rsa
   source ./vars
   ./pkitool dummy
   ./revoke-full dummy
