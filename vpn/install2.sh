@@ -26,13 +26,14 @@ if [[ ${KEYS_FOLDER} == "keys" ]]; then
   cp -r /usr/share/easy-rsa /etc/openvpn
   sync
 
-  # Edit the EASY_RSA variable in the vars file to point to the new easy-rsa directory,
-  # And change from default 1024 encryption if desired
-  cd /etc/openvpn/easy-rsa
-  sed -i 's:"`pwd`":"/etc/openvpn/easy-rsa":' vars
-  if [ $ENCRYPT = 1024 ]; then
-   sed -i 's:KEY_SIZE=2048:KEY_SIZE=1024:' vars
-  fi
+fi
+
+# Edit the EASY_RSA variable in the vars file to point to the new easy-rsa directory,
+# And change from default 1024 encryption if desired
+cd /etc/openvpn/easy-rsa
+sed -i 's:"`pwd`":"/etc/openvpn/easy-rsa":' vars
+if [ $ENCRYPT = 1024 ]; then
+ sed -i 's:KEY_SIZE=2048:KEY_SIZE=1024:' vars
 fi
 
 sudo chmod 777 -R /etc/openvpn
@@ -60,10 +61,11 @@ echo "build-dh"
 ./build-dh
 
 # Make directory under home directory for .ovpn profiles
-mkdir -p ~/ovpns
-chmod 777 -R ~/ovpns
+mkdir -p /home/pi/ovpns
+sudo chown pi /home/pi/ovpns -R
 
 # Generate static HMAC key to defend against DDoS
 openvpn --genkey --secret $KEYS_FOLDER/ta.key
 touch /etc/openvpn/multi_profile_support
+sudo chmod 700 -R /etc/openvpn
 sync
