@@ -1,10 +1,10 @@
 #!/bin/bash
 
-if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && ![[ -e /etc/openvpn/multi_profile_support ]]; then
+sudo chmod 777 -R /etc/openvpn
+if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && ! [[ -e /etc/openvpn/multi_profile_support ]]; then
   bash $FIREWALLA_HOME/scripts/reset-vpn-keys.sh
 fi 
 
-sudo chmod 777 -R /etc/openvpn
 if [ ! -s /etc/openvpn/crl.pem ]; then
   # create crl file with dummy revocation list
   cd /etc/openvpn/easy-rsa
