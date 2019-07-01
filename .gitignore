@@ -115,3 +115,6 @@ api/db/token.json
 /test
 /.gitmodules
 /extension/frp/frpc.ini
+
+.tern-port
+.tern-project

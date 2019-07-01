@@ -526,6 +526,20 @@ class netBot extends ControllerBot {
     
   }
 
+  async _whitelist(ip, value, callback) {
+    if (ip === "0.0.0.0") {
+      await this.hostManager.loadPolicy()
+      await this.hostManager.setPolicyAsync("whitelist", value)
+    } else {
+      let host = await this.hostManager.getHostAsync(ip);
+
+      if (host != null) {
+        await host.loadPolicyAsync()
+        await host.setPolicyAsync("whitelist", value)
+      }
+    }
+  }
+
 
   _shadowsocks(ip, value, callback) {
     if(ip !== "0.0.0.0") {
@@ -1187,8 +1201,8 @@ class netBot extends ControllerBot {
     this.invalidateCache();
 
     if(extMgr.hasSet(msg.data.item)) {
-      async(() => {
-        const result = await (extMgr.set(msg.data.item, msg, msg.data.value))
+      (async () => {
+        const result = await extMgr.set(msg.data.item, msg, msg.data.value)
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -1306,6 +1320,10 @@ class netBot extends ControllerBot {
               this._shield(msg.target, msg.data.value.shield, (err, obj) => {
                 cb(err);
               });
+              break;
+            case "whitelist":
+              this._whitelist(msg.target, msg.data.value.whitelist)
+                .then(cb).catch(cb)
               break;
           default:
             let target = msg.target
