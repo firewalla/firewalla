@@ -11,6 +11,7 @@ if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ca.key ]; then
   if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ta.key ]; then
     if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/$INSTANCE_NAME.crt ]; then
       logger "FIREWALLA: OpenVPN Setup Install Already Done for $INSTANCE_NAME"
+      sudo chmod 700 -R /etc/openvpn
       exit 0
     fi
   fi
