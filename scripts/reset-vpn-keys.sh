@@ -15,4 +15,4 @@ if [[ $VPN_ON == "false" ]]; then
 fi
 
 cd $FIREWALLA_HOME/vpn
-nohup KEYS_FOLDER=keys2 sudo -E ./install2.sh server &
+nohup bash -c "KEYS_FOLDER=keys2 sudo -E ./install2.sh server" &> /tmp/install2.output &
