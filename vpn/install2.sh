@@ -5,10 +5,11 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 INSTANCE_NAME=$1
+: ${KEYS_FOLDER:=keys}
 
-if [ -f /etc/openvpn/easy-rsa/keys/ca.key ]; then
-  if [ -f /etc/openvpn/easy-rsa/keys/ta.key ]; then
-    if [ -f /etc/openvpn/easy-rsa/keys/$INSTANCE_NAME.crt ]; then
+if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ca.key ]; then
+  if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ta.key ]; then
+    if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/$INSTANCE_NAME.crt ]; then
       logger "FIREWALLA: OpenVPN Setup Install Already Done for $INSTANCE_NAME"
       exit 0
     fi
@@ -33,6 +34,7 @@ fi
 
 # source the vars file just edited
 source ./vars
+export KEY_DIR="$EASY_RSA/$KEYS_FOLDER"
 sync
 
 # Remove any previous keys
@@ -56,5 +58,6 @@ mkdir -p ~/ovpns
 chmod 777 -R ~/ovpns
 
 # Generate static HMAC key to defend against DDoS
-openvpn --genkey --secret keys/ta.key
+openvpn --genkey --secret $KEYS_FOLDER/ta.key
+touch /etc/openvpn/multi_profile_support
 sync
