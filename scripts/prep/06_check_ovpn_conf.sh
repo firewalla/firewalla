@@ -1,23 +1,13 @@
 #!/bin/bash
 
 sudo chmod 777 -R /etc/openvpn
+if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && ! [[ -e /etc/openvpn/multi_profile_support ]]; then
+  bash $FIREWALLA_HOME/scripts/reset-vpn-keys.sh
+fi 
+
 if [ ! -s /etc/openvpn/crl.pem ]; then
   # create crl file with dummy revocation list
   cd /etc/openvpn/easy-rsa
-
-  LEGACY_NAME="fishboneVPN1"
-  INDEX="index.txt"
-  sudo chmod 777 -R /etc/openvpn
-
-  if [[ $(uname -m) == "aarch64" ]] && grep -w $LEGACY_NAME /etc/openvpn/easy-rsa/keys/${INDEX} &>/dev/null; then
-	  cd /etc/openvpn/easy-rsa
-	  source ./vars
-	  ./clean-all
-          rm /home/pi/ovpns/*
-	  (cd $FIREWALLA_HOME/vpn; sudo ./install2.sh server)
-	  sudo chmod 777 -R /etc/openvpn
-	  cd -
-  fi 
 
   # Change nextUpdate in openssl crl to 3600 days
   if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
@@ -69,7 +59,7 @@ if [ ! -f /etc/openvpn/client_conf/DEFAULT ]; then
   sed -i 's/COMPRESS_OPT/compress/' /etc/openvpn/client_conf/DEFAULT
 fi
 
-sudo chmod 600 -R /etc/openvpn
+#sudo chmod 600 -R /etc/openvpn
 sudo chmod 777 /etc/openvpn
 sudo chmod 644 /etc/openvpn/crl.pem
 sudo chmod 777 /etc/openvpn/client_conf

@@ -5,10 +5,11 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 INSTANCE_NAME=$1
+: ${KEYS_FOLDER:=keys}
 
-if [ -f /etc/openvpn/easy-rsa/keys/ca.key ]; then
-  if [ -f /etc/openvpn/easy-rsa/keys/ta.key ]; then
-    if [ -f /etc/openvpn/easy-rsa/keys/$INSTANCE_NAME.crt ]; then
+if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ca.key ]; then
+  if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ta.key ]; then
+    if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/$INSTANCE_NAME.crt ]; then
       logger "FIREWALLA: OpenVPN Setup Install Already Done for $INSTANCE_NAME"
       exit 0
     fi
@@ -18,21 +19,28 @@ fi
 # Ask user for desired level of encryption
 ENCRYPT="1024"
 # Copy the easy-rsa files to a directory inside the new openvpn directory
-rm -r -f /etc/openvpn
-mkdir /etc/openvpn
-cp -r /usr/share/easy-rsa /etc/openvpn
-sync
 
-# Edit the EASY_RSA variable in the vars file to point to the new easy-rsa directory,
-# And change from default 1024 encryption if desired
-cd /etc/openvpn/easy-rsa
-sed -i 's:"`pwd`":"/etc/openvpn/easy-rsa":' vars
-if [ $ENCRYPT = 1024 ]; then
- sed -i 's:KEY_SIZE=2048:KEY_SIZE=1024:' vars
+if [[ ${KEYS_FOLDER} == "keys" ]]; then
+  rm -r -f /etc/openvpn
+  mkdir /etc/openvpn
+  cp -r /usr/share/easy-rsa /etc/openvpn
+  sync
+
+  # Edit the EASY_RSA variable in the vars file to point to the new easy-rsa directory,
+  # And change from default 1024 encryption if desired
+  cd /etc/openvpn/easy-rsa
+  sed -i 's:"`pwd`":"/etc/openvpn/easy-rsa":' vars
+  if [ $ENCRYPT = 1024 ]; then
+   sed -i 's:KEY_SIZE=2048:KEY_SIZE=1024:' vars
+  fi
 fi
+
+sudo chmod 777 -R /etc/openvpn
+cd /etc/openvpn/easy-rsa
 
 # source the vars file just edited
 source ./vars
+export KEY_DIR="$EASY_RSA/$KEYS_FOLDER"
 sync
 
 # Remove any previous keys
@@ -56,5 +64,6 @@ mkdir -p ~/ovpns
 chmod 777 -R ~/ovpns
 
 # Generate static HMAC key to defend against DDoS
-openvpn --genkey --secret keys/ta.key
+openvpn --genkey --secret $KEYS_FOLDER/ta.key
+touch /etc/openvpn/multi_profile_support
 sync
