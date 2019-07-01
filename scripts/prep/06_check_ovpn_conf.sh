@@ -59,7 +59,7 @@ if [ ! -f /etc/openvpn/client_conf/DEFAULT ]; then
   sed -i 's/COMPRESS_OPT/compress/' /etc/openvpn/client_conf/DEFAULT
 fi
 
-sudo chmod 600 -R /etc/openvpn
+#sudo chmod 600 -R /etc/openvpn
 sudo chmod 777 /etc/openvpn
 sudo chmod 644 /etc/openvpn/crl.pem
 sudo chmod 777 /etc/openvpn/client_conf

@@ -35,8 +35,8 @@ if [[ ${KEYS_FOLDER} == "keys" ]]; then
   fi
 fi
 
+sudo chmod 777 -R /etc/openvpn
 cd /etc/openvpn/easy-rsa
-chmod a+x *
 
 # source the vars file just edited
 source ./vars
