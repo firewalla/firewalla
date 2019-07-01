@@ -126,7 +126,13 @@ function getMultiProfileSupportFlag() {
     if(err) {
       multiProfileSupport = false;
     } else {
-      multiProfileSupport = true;
+      fs.access("/etc/openvpn/easy-rsa/keys2", fs.F_OK, (err) => {
+        if(err) {
+          multiProfileSupport = true;
+        } else {
+          multiProfileSupport = false;
+        }
+      })
     }
   })
 }
