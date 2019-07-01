@@ -35,6 +35,9 @@ if [[ ${KEYS_FOLDER} == "keys" ]]; then
   fi
 fi
 
+cd /etc/openvpn/easy-rsa
+chmod a+x *
+
 # source the vars file just edited
 source ./vars
 export KEY_DIR="$EASY_RSA/$KEYS_FOLDER"
