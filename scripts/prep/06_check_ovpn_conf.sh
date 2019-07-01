@@ -4,6 +4,21 @@ sudo chmod 777 -R /etc/openvpn
 if [ ! -s /etc/openvpn/crl.pem ]; then
   # create crl file with dummy revocation list
   cd /etc/openvpn/easy-rsa
+
+  LEGACY_NAME="fishboneVPN1"
+  INDEX="index.txt"
+  sudo chmod 777 -R /etc/openvpn
+
+  if [[ $(uname -m) == "aarch64" ]] && grep -w $LEGACY_NAME /etc/openvpn/easy-rsa/keys/${INDEX} &>/dev/null; then
+	  cd /etc/openvpn/easy-rsa
+	  source ./vars
+	  ./clean-all
+          rm /home/pi/ovpns/*
+	  (cd $FIREWALLA_HOME/vpn; sudo ./install2.sh server)
+	  sudo chmod 777 -R /etc/openvpn
+	  cd -
+  fi 
+
   # Change nextUpdate in openssl crl to 3600 days
   if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
     sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf

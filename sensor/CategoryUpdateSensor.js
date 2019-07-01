@@ -151,11 +151,11 @@ class CategoryUpdateSensor extends Sensor {
       await this.regularJob()
       await this.securityJob()
 
-      setInterval(this.regularJob, this.config.regularInterval * 1000)
+      setInterval(this.regularJob.bind(this), this.config.regularInterval * 1000)
 
-      setInterval(this.securityJob, this.config.securityInterval * 1000)
+      setInterval(this.securityJob.bind(this), this.config.securityInterval * 1000)
 
-      setInterval(this.countryJob, this.config.countryInterval * 1000)
+      setInterval(this.countryJob.bind(this), this.config.countryInterval * 1000)
     })
   }
 

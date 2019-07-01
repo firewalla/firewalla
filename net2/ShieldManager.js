@@ -110,8 +110,7 @@ class ShieldManager {
     const macEntries = await hostTool.getAllMACEntries();
     const allIpv4Addrs = {};
     const allIpv6Addrs = {};
-    for (let i in macEntries) {
-      const macEntry = macEntries[i];
+    for (const macEntry of macEntries) {
       const ipv4Addr = macEntry.ipv4Addr;
       if (ipv4Addr && ip.isV4Format(ipv4Addr)) {
         allIpv4Addrs[ipv4Addr] = 1;
@@ -120,8 +119,7 @@ class ShieldManager {
       if (macEntry.ipv6Addr)
         ipv6Addrs = JSON.parse(macEntry.ipv6Addr);
       if (ipv6Addrs && ipv6Addrs.length > 0) {
-        for (let j in ipv6Addrs) {
-          const ipv6Addr = ipv6Addrs[j];
+        for (const ipv6Addr of ipv6Addrs) {
           if (ipv6Addr && ip.isV6Format(ipv6Addr)) {
             allIpv6Addrs[ipv6Addr] = 1;
           }

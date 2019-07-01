@@ -579,10 +579,12 @@ class Host {
       if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
         return;
       }
+      /* This is taken care of by DnsLoopAvoidanceSensor
       if (dns && dns.includes(this.o.ipv4Addr)) {
         // do not monitor dns server's traffic
         return;
       }
+      */
       if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
         return;
       }
@@ -1204,6 +1206,19 @@ class Host {
   }
 
   // policy:mac:xxxxx
+  setPolicyAsync(name, data) {
+    return new Promise((resolve, reject) => {
+      this.setPolicy(name, data, (err, result) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+
+        resolve(result);
+      });
+    });
+  }
+
   setPolicy(name, data, callback) {
     callback = callback || function() {}
 
@@ -2662,7 +2677,10 @@ module.exports = class HostManager {
         }
         const ovpnClient = new OpenVPNClient({profileId: profileId});
         if (state === true) {
-          await ovpnClient.setup();
+          await ovpnClient.setup().catch((err) => {
+            // do not return false here since following start() operation should fail
+            log.error(`Failed to setup openvpn client for ${profileId}`, err);
+          });
           const result = await ovpnClient.start();
           if (result) {
             ovpnClient.once('link_broken', () => {
@@ -2682,7 +2700,9 @@ module.exports = class HostManager {
           }
           return result;
         } else {
-          await ovpnClient.setup();
+          await ovpnClient.setup().catch((err) => {
+            log.error(`Failed to setup openvpn client for ${profileId}`, err);
+          });
           await ovpnClient.stop();
         }
         break;

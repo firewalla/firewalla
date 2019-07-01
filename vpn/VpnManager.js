@@ -198,7 +198,7 @@ class VpnManager {
       this.localPort = "1194";
     }
     if (this.externalPort == null) {
-      this.externalPort = "1194";
+      this.externalPort = this.localPort;
     }
     if (this.instanceName == null) {
       this.instanceName = "server";
@@ -229,6 +229,8 @@ class VpnManager {
 
   async stop() {
     try {
+      if (this.refreshTask)
+        clearInterval(this.refreshTask);
       await this.removeUpnpPortMapping({
         protocol: 'udp',
         private: this.localPort,
@@ -282,10 +284,19 @@ class VpnManager {
 
     this.upnp.gw = sysManager.myGateway();
 
+    if (!this.refreshTask) {
+      this.refreshTask = setInterval(async () => {
+        // extend upnp lease once every 10 minutes in case router flushes it unexpectedly
+        await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla OpenVPN").catch((err) => {
+          log.error("Failed to set Upnp port mapping", err);
+        });
+      }, 600000);
+    }
+
     await this.removeUpnpPortMapping({
       protocol: 'udp',
       private: this.localPort,
-      public: this.localPort
+      public: this.externalPort
     }).catch((err)=> {
       log.error("Failed to remove Upnp port mapping", err);
     });
@@ -312,7 +323,7 @@ class VpnManager {
         serverNetwork: this.serverNetwork,
         netmask: this.netmask,
         localPort: this.localPort,
-        externalPort: this.localPort,
+        externalPort: this.externalPort,
         portmapped: this.portmapped
       };
     } catch (err) {
@@ -323,7 +334,7 @@ class VpnManager {
         serverNetwork: this.serverNetwork,
         netmask: this.netmask,
         localPort: this.localPort,
-        externalPort: this.localPort,
+        externalPort: this.externalPort,
         portmapped: this.portmapped
       };
     }
@@ -365,9 +376,10 @@ class VpnManager {
       let originalName = clientname;
       // Original name remains unchanged even if client name is trailed by random numbers.
       // So that client ovpn file name will remain unchanged while its content has been updated.
-      if (regenerate == true) {
-        clientname = clientname + VpnManager.generatePassword(10);
-      }
+      // always randomize the name when creating
+//      if (regenerate == true) {
+        clientname = clientname + VpnManager.generatePassword(15);
+//      }
 
       if (password == null) {
         password = VpnManager.generatePassword(5);

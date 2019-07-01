@@ -129,6 +129,9 @@ class SafeSearchPlugin extends Sensor {
 
       if (f.isMain()) {
         sclient.subscribe("System:IPChange");
+        setInterval(() => {
+          this.checkIfRestartNeeded()
+        }, 10 * 1000) // check restart request once every 10 seconds
       }
 
       await this.job();
@@ -136,6 +139,23 @@ class SafeSearchPlugin extends Sensor {
         return this.job();
       }, this.config.refreshInterval || 3600 * 1000); // one hour by default
     })
+  }
+
+  async checkIfRestartNeeded() {
+    const MIN_RESTART_INTERVAL = 10 // 10 seconds
+
+    if (this.needRestart) {
+      log.info("need restart is", this.needRestart);
+    }
+
+    if(this.needRestart && (new Date() / 1000 - this.needRestart) > MIN_RESTART_INTERVAL) {
+      this.needRestart = null
+      await this._rawRestartDeviceMasq().then(() => {
+        log.info("Devicemasq is restarted successfully");
+      }).catch((err) => {
+        log.error("Failed to restart devicemasq", err);
+      })
+    }
   }
 
   async job() {
@@ -409,19 +429,13 @@ class SafeSearchPlugin extends Sensor {
   /*
    * Safe Search DNS server will use local primary dns server as upstream server
    */
-  async startDeviceMasq() {
-    if(this.starting) {
-      return;
-    }
+  restartDeviceMasq() {
+    if (!this.needRestart)
+      this.needRestart = new Date() / 1000;
+  }
 
-    try {
-      this.starting = true;
-      await this.delay(5000);
-      this.starting = false;
-      return exec("sudo systemctl restart devicemasq");
-    } catch(err) {
-      log.error(`Failed to restart devicemasq, err: ${err}`);
-    }
+  async _rawRestartDeviceMasq() {
+    return exec("sudo systemctl restart devicemasq");
   }
 
   async stopDeviceMasq() {
@@ -443,7 +457,7 @@ class SafeSearchPlugin extends Sensor {
     const existingString = await this.loadConfigFile(this.getConfigFile(mac)).catch((err) => null);
     if(configString !== existingString || existingString === null) {
       await this.saveConfigFile(this.getConfigFile(mac), configString);
-      await this.startDeviceMasq();
+      this.restartDeviceMasq();
     }
     await this.delay(8 * 1000); // wait for a while before activating the dns redirect
     await exec(`sudo ipset -! add devicedns_mac_set ${mac}`);
@@ -453,7 +467,7 @@ class SafeSearchPlugin extends Sensor {
     await exec(`sudo ipset -! del devicedns_mac_set ${mac}`);
     const file = this.getConfigFile(mac);
     await this.deleteConfigFile(file);
-    await this.startDeviceMasq();
+    this.restartDeviceMasq();
   }
 
   // global on/off

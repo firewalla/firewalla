@@ -1,0 +1,8 @@
+{
+    "ping": {
+        "name": "PingAction"
+    },
+    "moff": {
+        "name": "MonitoringOffAction"
+    }
+}

@@ -372,11 +372,6 @@ class netBot extends ControllerBot {
       // start VPN client globally
       this.hostManager.loadPolicy((err, data) => {
         if (err == null) {
-          let oldValue = {};
-          if (data["vpnClient"]) {
-            oldValue = JSON.parse(data["vpnClient"]);
-          }
-          value = Object.assign({}, oldValue, value);
           this.hostManager.setPolicy("vpnClient", value, (err, data) => {
             if (err == null) {
               if (callback != null)
@@ -725,7 +720,6 @@ class netBot extends ControllerBot {
         let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
         log.info("sendLog: cmdline", filename, password,cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
-          log.error("sendLog: unable to process encrypt-upload",err,out,code);
           if (err!=null) {
             log.error("sendLog: unable to process encrypt-upload",err,out,code);
           } else {
@@ -1139,6 +1133,14 @@ class netBot extends ControllerBot {
                       });
                   }
               }
+          } else if (msg.control === 'cloud') {
+            log.error("Firewalla Cloud");
+            if(msg.command) {
+              const cloudManager = require('../extension/cloud/CloudManager.js');
+              cloudManager.run(msg.command, msg.info).catch((err) => {
+                log.error("Got error when handling cloud action, err:", err);
+              });
+            }
           }
       }
   }
@@ -2927,7 +2929,7 @@ class netBot extends ControllerBot {
           if(iptool.isV4Format(ip)) {
             sem.emitEvent({
               type: "DeviceUpdate",
-              message: "Manual submit a new device via API",
+              message: `Manual submit a new device via API ${ip} ${name}`,
               host: {
                 ipv4: ip,
                 ipv4Addr: ip,
@@ -3204,7 +3206,9 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup();
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                });
                 const result = await ovpnClient.start();
                 if (!result) {
                   await ovpnClient.stop();
@@ -3240,7 +3244,9 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup();
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                });
                 const stats = await ovpnClient.getStatistics();
                 await ovpnClient.stop();
                 this._vpnClient("0.0.0.0", {state: false});
