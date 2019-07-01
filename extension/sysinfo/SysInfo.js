@@ -55,6 +55,8 @@ let intelQueueSize = 0;
 
 let multiProfileSupport = false;
 
+getMultiProfileSupportFlag();
+
 async function update() {
   os.cpuUsage((v) => {
     log.debug( 'CPU Usage (%): ' + v );
