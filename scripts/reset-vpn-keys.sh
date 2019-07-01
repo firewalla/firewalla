@@ -9,6 +9,7 @@ if redis-cli hget policy:system "vpn" | json_pp | grep '"state" : true' &>/dev/n
 fi
 
 if [[ $VPN_ON == "false" ]]; then
+  redis-cli hset policy:system vpnAvaliable false   
   source ./vars 
   ./clean-all
   rm /home/pi/ovpns/*
