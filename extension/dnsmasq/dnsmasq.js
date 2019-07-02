@@ -1248,11 +1248,10 @@ module.exports = class DNSMASQ {
       } else {
         await this.stop(); // make sure iptables rules are also stopped..
       }
-      bone.log("error", {
-        version: sysManager.version(),
+      bone.logAsync("error", {
         type: 'DNSMASQ CRASH',
         msg: `dnsmasq failed to restart after ${this.failCount} retries`,
-      }, null);
+      });
     } else {
       try {
         let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
