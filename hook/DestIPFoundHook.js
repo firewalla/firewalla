@@ -324,7 +324,7 @@ class DestIPFoundHook extends Hook {
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
-      aggrIntelInfo.country = this.enrichCountry(ip) || ""; // empty string for unidentified country
+      aggrIntelInfo.country = aggrIntelInfo.country || this.enrichCountry(ip) || ""; // empty string for unidentified country
 
       // this.workaroundIntelUpdate(aggrIntelInfo);
 
