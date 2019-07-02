@@ -171,6 +171,10 @@ function disableFireBlue() {
 
 async function run() {
 
+  // periodically update cpu usage, so that latest info can be pulled at any time
+  const si = require('../extension/sysinfo/SysInfo.js');
+  si.startUpdating();
+
   const firewallaConfig = require('../net2/config.js').getConfig();
   sysManager.setConfig(firewallaConfig) // update sys config when start
 
