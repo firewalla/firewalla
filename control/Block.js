@@ -22,6 +22,9 @@ const iptool = require("ip");
 const Accounting = require('./Accounting.js');
 const accounting = new Accounting();
 
+const SysManager = require("../net2/SysManager.js")
+const sysManager = new SysManager()
+
 const exec = require('child-process-promise').exec
 
 const f = require('../net2/Firewalla.js')
@@ -150,7 +153,12 @@ function setupIpset(target, ipset, whitelist, remove = false) {
   } else if (iptool.isV6Format(ipAddr)) {
     ipset = ipset + '6';
   } 
-
+  const gateway6 = sysManager.myGateway6()
+  const gateway = sysManager.myGateway()
+  //Prevent gateway IP from being added into blocking IP set dynamically
+  if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {
+    return
+  }
   const action = remove ? Ipset.del : Ipset.add;
 
   log.info('setupIpset', action.constructor.name, ipset, target)
