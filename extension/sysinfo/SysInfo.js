@@ -49,7 +49,7 @@ let redisMemory = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 30 * 1000; // every 30 seconds
+let updateInterval = 60 * 1000; // every 30 seconds
 
 let releaseBranch = null;
 
@@ -120,20 +120,14 @@ function getDiskInfo() {
   });
 }
 
-function getMultiProfileSupportFlag() {
-  fs.access("/etc/openvpn/multi_profile_support", fs.F_OK, (err) => {
-    if(err) {
-      multiProfileSupport = false;
-    } else {
-      fs.access("/etc/openvpn/easy-rsa/keys2", fs.F_OK, (err) => {
-        if(err) {
-          multiProfileSupport = true;
-        } else {
-          multiProfileSupport = false;
-        }
-      })
-    }
-  })
+async function getMultiProfileSupportFlag() {
+  const cmd = "sudo bash -c 'test ! -e /etc/openvpn/easy-rsa/keys2 && test -e /etc/openvpn/multi_profile_support'"
+  try {
+    await exec(cmd);
+    multiProfileSupport = true;
+  } catch(err) {
+    multiProfileSupport = false;
+  }
 }
 
 function getIntelQueueSize() {
