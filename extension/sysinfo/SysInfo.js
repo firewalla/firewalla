@@ -59,6 +59,10 @@ let diskInfo = null;
 
 let intelQueueSize = 0;
 
+let multiProfileSupport = false;
+
+getMultiProfileSupportFlag();
+
 function update() {
   os.cpuUsage((v) => {
     log.debug( 'CPU Usage (%): ' + v );
@@ -72,6 +76,7 @@ function update() {
   getThreadInfo();
   getIntelQueueSize();
   getDiskInfo();
+  getMultiProfileSupportFlag();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -113,6 +118,22 @@ function getDiskInfo() {
 
     diskInfo = disks;
   });
+}
+
+function getMultiProfileSupportFlag() {
+  fs.access("/etc/openvpn/multi_profile_support", fs.F_OK, (err) => {
+    if(err) {
+      multiProfileSupport = false;
+    } else {
+      fs.access("/etc/openvpn/easy-rsa/keys2", fs.F_OK, (err) => {
+        if(err) {
+          multiProfileSupport = true;
+        } else {
+          multiProfileSupport = false;
+        }
+      })
+    }
+  })
 }
 
 function getIntelQueueSize() {
@@ -258,7 +279,8 @@ function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     diskInfo: diskInfo,
-    categoryStats: getCategoryStats()
+    categoryStats: getCategoryStats(),
+    multiProfileSupport: multiProfileSupport
   }
 
   return sysinfo;

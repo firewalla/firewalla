@@ -40,7 +40,10 @@ const exec = require('child-process-promise').exec
 
 const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial"];
 
-var bone = require("../lib/Bone.js");
+const bone = require("../lib/Bone.js");
+
+const sss = require('../extension/sysinfo/SysInfo.js');
+
 var systemDebug = false;
 
 function setSystemDebug(_systemDebug) {
@@ -675,7 +678,8 @@ module.exports = class {
         language: this.language,
         timezone: this.timezone,
         memory: data,
-        cpuTemperature: cpuTemperature
+        cpuTemperature: cpuTemperature,
+        sss: sss.getSysInfo()
       });
     });
   }
