@@ -66,6 +66,9 @@ const Queue = require('bee-queue')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const policyCapacity = platform.getPolicyCapacity();
 
+const Accounting = require('../control/Accounting.js');
+const accounting = new Accounting();
+
 const _ = require('lodash')
 
 const delay = require('../util/util.js').delay

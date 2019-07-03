@@ -116,6 +116,7 @@ module.exports = class {
    *  
    */
   getCapability(callback) {
+    callback = callback || function() { };
     try {
       upnpClient.externalIp((err, ip) => {
         if (err != null || ip == null) {
@@ -146,6 +147,7 @@ module.exports = class {
 
   addPortMapping(protocol, localPort, externalPort, description, callback) {
     protocol = protocol.toLowerCase()
+    callback = callback || function() { };
     this.getCapability(() => {
       try {
         if (this.upnpEnabled == true) {
@@ -289,6 +291,7 @@ module.exports = class {
   }
 
   getLocalPortMappings(description, callback) {
+    callback = callback || function() {};
     upnpClient.getMappings({
       // local: true,
       // description: description
@@ -298,11 +301,13 @@ module.exports = class {
   }
 
   getPortMappingsUPNP(callback) {
+    callback = callback || function() {};
     upnpClient.getMappings(callback);
   }
 
   hasPortMapping(protocol, localPort, externalPort, description, callback) {
     protocol = protocol.toLowerCase()
+    callback = callback || function() {};
     upnpClient.getMappings({
       // local: true
       // description: description
