@@ -105,7 +105,9 @@ class DomainBlock {
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if(addresses) {
       for (const addr of addresses) {
-        await Block.block(addr, blockSet).catch((err) => undefined);
+        try {
+          Block.block(addr, blockSet)
+        } catch(err) {}
       }
     }
   }
@@ -116,7 +118,9 @@ class DomainBlock {
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if(addresses) {
       for (const addr of addresses) {
-        await Block.unblock(addr, blockSet).catch((err) => undefined);
+        try {
+          Block.unblock(addr, blockSet)
+        } catch(err) {}
       }
     }
   }
