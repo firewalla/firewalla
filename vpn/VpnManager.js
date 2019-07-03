@@ -343,9 +343,7 @@ module.exports = class {
             let originalName = clientname;
             // Original name remains unchanged even if client name is trailed by random numbers.
             // So that client ovpn file name will remain unchanged while its content has been updated.
-            if (regenerate == true) {
                 clientname = clientname + this.generatePassword(10);
-            }
 
             if (password == null) {
                 password = this.generatePassword(5);
