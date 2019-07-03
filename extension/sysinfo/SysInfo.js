@@ -122,12 +122,12 @@ function getDiskInfo() {
 }
 
 async function getMultiProfileSupportFlag() {
-  const cmd = "sudo bash -c 'test ! -e /etc/openvpn/easy-rsa/keys2 && test -e /etc/openvpn/multi_profile_support'"
+  const cmd = "sudo bash -c 'test -e /etc/openvpn/easy-rsa/keys2/ta.key'"
   try {
     await exec(cmd);
-    multiProfileSupport = true;
-  } catch(err) {
     multiProfileSupport = false;
+  } catch(err) {
+    multiProfileSupport = true;
   }
 }
 
