@@ -3985,24 +3985,22 @@ class netBot extends ControllerBot {
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.error(msg,reason.stack);
-  bone.log("error",{
-    version: sysManager.version(),
+  bone.logAsync("error",{
     type:'FIREWALLA.UI.unhandledRejection',
     msg:msg,
     stack:reason.stack,
     err: JSON.stringify(reason)
-  },null);
+  });
 });
 
 process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
-  bone.log("error", {
-    version: sysManager.version(),
+  bone.logAsync("error", {
     type: 'FIREWALLA.UI.exception',
     msg: err.message,
     stack: err.stack,
     err: JSON.stringify(err)
-  }, null);
+  });
   setTimeout(() => {
     try {
         require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    

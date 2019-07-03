@@ -438,13 +438,12 @@ process.on('uncaughtException',(err)=>{
   if (err && err.message && err.message.includes("Redis connection")) {
     return;
   }
-  bone.log("error", {
-    version: firewallaConfig.version,
+  bone.logAsync("error", {
     type: 'FIREWALLA.KICKSTART.exception',
     msg: err.message,
     stack: err.stack,
     err: JSON.stringify(err)
-  }, null);
+  });
   setTimeout(()=>{
     cp.execSync("touch /home/pi/.firewalla/managed_reboot")
     process.exit(1);
@@ -454,11 +453,10 @@ process.on('uncaughtException',(err)=>{
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
-  bone.log("error", {
-    version: firewallaConfig.version,
+  bone.logAsync("error", {
     type: 'FIREWALLA.KICKSTART.unhandledRejection',
     msg: msg,
     stack: reason.stack,
     err: JSON.stringify(reason)
-  }, null);
+  });
 });

@@ -88,7 +88,6 @@ class CPUSensor extends Sensor {
         log.warn("CPU too hot, cloud alarm triggered", {current, high, low});
         await bone.logAsync("error",
           {
-            version: fc.getConfig().version,
             type: 'FIREWALLA.CPUSensor.HighTemperature',
             msg: { period, high, low, current }
           }
