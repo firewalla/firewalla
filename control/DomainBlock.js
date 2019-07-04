@@ -106,7 +106,7 @@ class DomainBlock {
     if(addresses) {
       for (const addr of addresses) {
         try {
-          Block.block(addr, blockSet)
+          await Block.block(addr, blockSet)
         } catch(err) {}
       }
     }

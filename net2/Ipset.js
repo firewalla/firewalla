@@ -128,12 +128,12 @@ async function create(name, type, v4 = true) {
 }
 
 function add(name, target) {
-  const cmd = `add -! ${name} ${target}`
+  const cmd = `add ${name} ${target}`
   enqueue(cmd);
 }
 
 function del(name, target) {
-  const cmd = `del -! ${name} ${target}`
+  const cmd = `del ${name} ${target}`
   enqueue(cmd);
 }
 

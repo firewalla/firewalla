@@ -212,8 +212,13 @@ class CountryUpdater extends CategoryUpdaterBase {
     }
 
     const ipset = iptool.isV4Format(ip) ?
-      this.getIPSetName(category) : 
-      this.getIPSetNameForIPV6(category)
+      this.getIPSetName(category) :
+      iptool.isV6Format(ip) ?  this.getIPSetNameForIPV6(category) : null
+
+    if (!ipset) {
+      log.error('Invalid IP', ip)
+      return
+    }
 
     const check = `sudo ipset test ${ipset} ${ip}`
 
