@@ -2,6 +2,12 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+sudo chmod 777 -R /etc/openvpn
+
+if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && [[ -e /etc/openvpn/easy-rsa/keys2 ]]; then
+  bash $FIREWALLA_HOME/scripts/reset-vpn-keys-extended.sh
+fi
+
 # ovpngen.sh <client name> <keypassword> <public ip> <local port> <original name> <compress algorithm>
 
 NAME=$1
