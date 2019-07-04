@@ -12,10 +12,13 @@ class RateLimit {
     if(instance === null) {
       instance = this;
 
+      this.lastExpireDate = null;
+      this.lastUsed = null;
+
       this.cleanup();
       setInterval(() => {
         this.cleanup();
-      });
+      }, cleanupInterval);
     }
 
     return instance;
@@ -26,17 +29,23 @@ class RateLimit {
   }
 
   async recordRate(headers = {}) {
-    const expireDate = headers["X-RateLimit-Reset"];
-    const limit = headers["X-RateLimit-Limit"];
-    const remaining = headers["X-RateLimit-Remaining"];
+    const expireDate = headers["x-ratelimit-reset"];
+    const limit = headers["x-ratelimit-limit"];
+    const remaining = headers["x-ratelimit-remaining"];
     if(!expireDate || !limit || !remaining) {
       return;
     }
 
     const used = limit - remaining;
 
-    // this records rate limit for every cycle
-    await rclient.zaddAsync(key, expireDate, used);
+    // time to eject to redis
+    if(this.lastExpireDate && this.lastExpireDate !== expireDate) {
+      // this records rate limit for every cycle
+      await rclient.zaddAsync(key, this.lastExpireDate, this.lastUsed);
+    }
+
+    this.lastExpireDate = expireDate;
+    this.lastUsed = used;
   }
 }
 
