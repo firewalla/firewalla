@@ -7,6 +7,10 @@ const key = "ratelimit";
 const cleanupInterval = 3600 * 1000;
 const max = 576;
 
+const _ = require('lodash');
+
+const log = require('../../net2/logger.js')(__filename);
+
 class RateLimit {
   constructor() {
     if(instance === null) {
@@ -51,6 +55,25 @@ class RateLimit {
     this.lastTS = ts;
     this.lastUsed = used;
     this.lastLimit = limit;
+  }
+
+  async getLastTS() {
+    const results = await rclient.zrangeAsync(key, -1, -1, "withscores");
+    if(_.isEmpty(results)) {
+      return null;
+    }
+
+    const payload = results[0];
+    const ts = Number(result[1]) * 30;
+
+    try {
+      const data = JSON.parse(payload);
+      data.ts = ts;
+      return data;
+    } catch(err) {
+      log.error(`Failed to parse rate limit payload: ${payload}, err: ${err}`);
+      return null;
+    }
   }
 }
 
