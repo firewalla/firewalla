@@ -19,6 +19,7 @@ class RateLimit {
       this.lastTS = null;
       this.lastUsed = null;
       this.lastLimit = null;
+      this.lastDuration = null;
 
       this.cleanup();
       setInterval(() => {
@@ -37,7 +38,8 @@ class RateLimit {
     const expireDate = headers["x-ratelimit-reset"];
     const limit = headers["x-ratelimit-limit"];
     const remaining = headers["x-ratelimit-remaining"];
-    if(!expireDate || !limit || !remaining) {
+    const duration = headers["x-ratelimit-duration"];
+    if(!expireDate || !limit || !remaining || !duration) {
       return;
     }
 
@@ -48,13 +50,18 @@ class RateLimit {
     // time to eject to redis
     if(this.lastTS && this.lastTS !== ts) {
       // this records rate limit for every cycle
-      const result = JSON.stringify({used: this.lastUsed, limit: this.lastLimit});
+      const result = JSON.stringify({
+        used: this.lastUsed, 
+        limit: this.lastLimit,
+        duration: this.lastDuration
+      });
       await rclient.zaddAsync(key, this.lastTS, result);
     }
 
     this.lastTS = ts;
     this.lastUsed = used;
     this.lastLimit = limit;
+    this.lastDuration = duration;
   }
 
   async getLastTS() {
