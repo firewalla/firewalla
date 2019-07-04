@@ -12,7 +12,7 @@ class RateLimit {
     if(instance === null) {
       instance = this;
 
-      this.lastExpireDate = null;
+      this.lastTS = null;
       this.lastUsed = null;
       this.lastLimit = null;
 
@@ -39,14 +39,16 @@ class RateLimit {
 
     const used = limit - remaining;
 
+    const ts = Math.floor(Number(expireDate) / 1000 / 30);
+
     // time to eject to redis
-    if(this.lastExpireDate && this.lastExpireDate !== expireDate) {
+    if(this.lastTS && this.lastTS !== ts) {
       // this records rate limit for every cycle
       const result = JSON.stringify({used: this.lastUsed, limit: this.lastLimit});
-      await rclient.zaddAsync(key, this.lastExpireDate, result);
+      await rclient.zaddAsync(key, this.lastTS, result);
     }
 
-    this.lastExpireDate = expireDate;
+    this.lastTS = ts;
     this.lastUsed = used;
     this.lastLimit = limit;
   }
