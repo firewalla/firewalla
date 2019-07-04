@@ -5,7 +5,7 @@ const rclient = require('../../util/redis_manager.js').getRedisClient();
 let instance = null;
 const key = "ratelimit";
 const cleanupInterval = 3600 * 1000;
-const max = 2016;
+const max = 576;
 
 class RateLimit {
   constructor() {
@@ -14,6 +14,7 @@ class RateLimit {
 
       this.lastExpireDate = null;
       this.lastUsed = null;
+      this.lastLimit = null;
 
       this.cleanup();
       setInterval(() => {
@@ -41,11 +42,13 @@ class RateLimit {
     // time to eject to redis
     if(this.lastExpireDate && this.lastExpireDate !== expireDate) {
       // this records rate limit for every cycle
-      await rclient.zaddAsync(key, this.lastExpireDate, this.lastUsed);
+      const result = JSON.stringify({used: this.lastUsed, limit: this.lastLimit});
+      await rclient.zaddAsync(key, this.lastExpireDate, result);
     }
 
     this.lastExpireDate = expireDate;
     this.lastUsed = used;
+    this.lastLimit = limit;
   }
 }
 
