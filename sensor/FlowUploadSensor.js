@@ -14,9 +14,6 @@
  */
 'use strict'
 
-let util = require('util')
-let async = require('asyncawait/async')
-let await = require('asyncawait/await')
 let zlib = require('zlib')
 let Promise = require('bluebird')
 
@@ -74,48 +71,46 @@ class FlowUploadSensor extends Sensor {
         }
     }
 
-    schedule() {
+    async schedule() {
         let start = this.startTime
         let end = new Date() / 1000 - this.config.offset
         //upload flow to cloud
         log.info("try to upload flows from "
-         + start + "(" + new Date(start * 1000).toUTCString() + ")" + 
-         " to " + end + "(" + new Date(end * 1000).toUTCString() + ")")
+            + start + "(" + new Date(start * 1000).toUTCString() + ")" +
+            " to " + end + "(" + new Date(end * 1000).toUTCString() + ")")
 
-         return async(() => {
-            try {
-                //set next start point
-                this.startTime = end + 0.001
-                
-                let macs = hostManager.getActiveMACs()
-                if (macs == null || macs.length == 0) {
-                    log.info("host manager not ready, wait to next round")
-                    return
-                }
-                let debug = sysManager.isSystemDebugOn()
-                let flows = await(this.getAllFlows(macs, start, end, !debug))
-                if (flows != null && flows.length > 0) {
-                    let limitedFlows = this.limitFlows(flows)
-                    limitedFlows.start = start
-                    limitedFlows.end = end 
+        try {
+            //set next start point
+            this.startTime = end + 0.001
 
-                  let data = JSON.stringify(limitedFlows)
-                  log.debug("original:", data)
-                  log.info("original length:" + data.length)
-                    
-                    let compressedData = await(this.compressData(data))
-                  log.debug("compressed:", compressedData)
-                  log.info("compressed length:" + compressedData.length)
-                    log.info("compress ratio:" + data.length / compressedData.length)
-
-                    this.uploadData(compressedData)
-                } else {
-                    log.info("empty flows, wait to next round")
-                }
-            } catch (err) {
-                log.error("upload flows failed:" + err.toString())
+            let macs = hostManager.getActiveMACs()
+            if (macs == null || macs.length == 0) {
+                log.info("host manager not ready, wait to next round")
+                return
             }
-          })();
+            let debug = sysManager.isSystemDebugOn()
+            let flows = await this.getAllFlows(macs, start, end, !debug)
+            if (flows != null && flows.length > 0) {
+                let limitedFlows = this.limitFlows(flows)
+                limitedFlows.start = start
+                limitedFlows.end = end
+
+                let data = JSON.stringify(limitedFlows)
+                log.debug("original:", data)
+                log.info("original length:" + data.length)
+
+                let compressedData = await this.compressData(data)
+                log.debug("compressed:", compressedData)
+                log.info("compressed length:" + compressedData.length)
+                log.info("compress ratio:" + data.length / compressedData.length)
+
+                this.uploadData(compressedData)
+            } else {
+                log.info("empty flows, wait to next round")
+            }
+        } catch (err) {
+            log.error("upload flows failed:" + err.toString())
+        }
     }
 
     uploadData(data) {
@@ -132,18 +127,16 @@ class FlowUploadSensor extends Sensor {
     }
 
     compressData(data) {
-        return async(() => {
-            return new Promise(function (resolve, reject) {
-                let input = new Buffer(data, 'utf8');
-                zlib.deflate(input, (err, output) => {
-                    if(err) {
-                        reject(err)
-                    } else {
-                        resolve(output.toString('base64'))
-                    }
-                })
+        return new Promise(function (resolve, reject) {
+            let input = new Buffer(data, 'utf8');
+            zlib.deflate(input, (err, output) => {
+                if (err) {
+                    reject(err)
+                } else {
+                    resolve(output.toString('base64'))
+                }
             })
-        })();
+        })
     }
 
     limitFlows(flows) {
@@ -169,22 +162,20 @@ class FlowUploadSensor extends Sensor {
         }
     }
 
-    getAllFlows(macs, start, end, needHash) {
-        return async(() => {
-            let flows = []
-            macs.forEach((mac) => {
-                let flow = await(this.getFlows(mac, start, end))
-                if (flow != null && flow.length > 0) {
-                    flows.push(
-                      {
+    async getAllFlows(macs, start, end, needHash) {
+        let flows = []
+        for (const mac of macs) {
+            let flow = await this.getFlows(mac, start, end)
+            if (flow != null && flow.length > 0) {
+                flows.push(
+                    {
                         flows: this.processFlow(flow, needHash),
-                        mac: needHash? flowUtil.hashMac(mac) : mac
-                      }
-                    )
-                }
-            })
-            return flows
-          })();
+                        mac: needHash ? flowUtil.hashMac(mac) : mac
+                    }
+                )
+            }
+        }
+        return flows
     }
 
     getSize(flows) {
@@ -195,18 +186,16 @@ class FlowUploadSensor extends Sensor {
         }
     }
 
-    getFlows(mac, start, end) {
-        return async(() => {
-            let ips = await (hostTool.getIPsByMac(mac));
-            let flows = [];
-            ips.forEach((ip) => {
-                let outgoingFlows = await (flowTool.queryFlows(ip, "in", start, end)); // in => outgoing
-                flows.push.apply(flows, outgoingFlows);
-                let incomingFlows = await (flowTool.queryFlows(ip, "out", start, end)); // out => incoming
-                flows.push.apply(flows, incomingFlows);
-            })
-            return flows
-        })()
+    async getFlows(mac, start, end) {
+        let ips = await hostTool.getIPsByMac(mac);
+        let flows = [];
+        for (const ip of ips) {
+            let outgoingFlows = await flowTool.queryFlows(ip, "in", start, end); // in => outgoing
+            flows.push.apply(flows, outgoingFlows);
+            let incomingFlows = await flowTool.queryFlows(ip, "out", start, end); // out => incoming
+            flows.push.apply(flows, incomingFlows);
+        }
+        return flows
     }
 
     aggregateFlows(flows) {

@@ -18,9 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const SSDPClient = require('node-ssdp').Client

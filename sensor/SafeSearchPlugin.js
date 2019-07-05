@@ -30,8 +30,6 @@ const safeSearchConfigFile = `${dnsConfigFolder}/safeSearch.conf`;
 
 const devicemasqConfigFolder = `${userConfigFolder}/devicemasq`;
 
-const pidFile = `${f.getRuntimeInfoFolder()}/safeSearch.dnsmasq.pid`;
-
 const configKey = "ext.safeSearch.config";
 
 const updateInterval = 3600 * 1000 // once per hour

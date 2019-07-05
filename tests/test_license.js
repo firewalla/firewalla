@@ -40,9 +40,9 @@ describe('License', function() {
 
   describe('.writeLicense', () => {
     beforeEach((done) => {
-      async(() => {
+      (async() =>{
         try {
-          await (fs.unlinkAsync(license.licensePath));
+          await fs.unlinkAsync(license.licensePath)
         } catch(err) {
           // ignore
         }
@@ -52,9 +52,9 @@ describe('License', function() {
     })
 
     afterEach((done) => {
-      async(() => {
+      (async() =>{
         try {
-          await (fs.unlinkAsync(license.licensePath));
+          await fs.unlinkAsync(license.licensePath)
         } catch(err) {
           // ignore
         }
@@ -64,14 +64,14 @@ describe('License', function() {
     })
 
     it('should write license correctly', (done) => {
-      async(() => {
-        await (license.writeLicense({test: 1}));
-        let l = await(license.getLicenseAsync());
+      (async() =>{
+        await license.writeLicense({test: 1})
+        let l = await license.getLicenseAsync()
         expect(l.test).to.equal(1);
 
         let testLicense = sample.sampleLicense;
-        await (license.writeLicense(testLicense));
-        let ll = await(license.getLicenseAsync());
+        await license.writeLicense(testLicense);
+        let ll = await license.getLicenseAsync();
         expect(ll.DATA.UUID).to.equal('4dfb749e-94a1-4756-867b-4cf2c3e292db');
         done();
       })();

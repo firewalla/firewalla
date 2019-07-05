@@ -22,9 +22,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const audit = require('../util/audit.js');
 const Bone = require('../lib/Bone.js');
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const Promise = require('bluebird');
 
 const minimatch = require('minimatch')
@@ -410,35 +407,33 @@ class PolicyManager2 {
     });
   }
 
-  checkAndSave(policy, callback) {
-    callback = callback || function() {}
+  async checkAndSave(policy, callback) {
+    callback = callback || function () { }
     if (!policy instanceof Policy) callback(new Error("Not Policy instance"));
-    async(()=>{
-      //FIXME: data inconsistence risk for multi-processes or multi-threads
-      try {
-        if(this.isFirewallaOrCloud(policy)) {
-          callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
-          return
-        }
-        let policies = await(this.getSamePolicies(policy))
-        if (policies && policies.length > 0) {
-          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-          const samePolicy = policies[0]
-          if(samePolicy.disabled && samePolicy.disabled == "1") {
-            // there is a policy in place and disabled, just need to enable it
-            await (this.enablePolicy(samePolicy))
-            callback(null, samePolicy, "duplicated_and_updated")
-          } else {
-            callback(null, samePolicy, "duplicated")
-          }
-        } else {
-          this.savePolicy(policy, callback);
-        }
-      } catch (err) {
-        log.error("failed to save policy:" + err)
-        callback(err)
+    //FIXME: data inconsistence risk for multi-processes or multi-threads
+    try {
+      if (this.isFirewallaOrCloud(policy)) {
+        callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
+        return
       }
-    })()
+      let policies = awaitthis.getSamePolicies(policy)
+      if (policies && policies.length > 0) {
+        log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+        const samePolicy = policies[0]
+        if (samePolicy.disabled && samePolicy.disabled == "1") {
+          // there is a policy in place and disabled, just need to enable it
+          await this.enablePolicy(samePolicy)
+          callback(null, samePolicy, "duplicated_and_updated")
+        } else {
+          callback(null, samePolicy, "duplicated")
+        }
+      } else {
+        this.savePolicy(policy, callback);
+      }
+    } catch (err) {
+      log.error("failed to save policy:" + err)
+      callback(err)
+    }
   }
 
   checkAndSaveAsync(policy) {

@@ -18,11 +18,6 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 
-const sem = require('../sensor/SensorEventManager.js').getInstance()
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird')
@@ -45,24 +40,22 @@ class APIRelaySensor extends Sensor {
     super();
   }
 
-  run() {
-    async(() => {
-      if(fc.isFeatureOn(featureName)) {
-        await (this.turnOn())
+  async run() {
+    if (fc.isFeatureOn(featureName)) {
+      await this.turnOn()
+    } else {
+      await this.turnOff()
+    }
+    fc.onFeature(featureName, (feature, status) => {
+      if (feature != featureName)
+        return
+
+      if (status) {
+        this.turnOn()
       } else {
-        await (this.turnOff())
+        this.turnOff()
       }
-      fc.onFeature(featureName, (feature, status) => {
-        if(feature != featureName)
-          return
-        
-        if(status) {
-          this.turnOn()
-        } else {
-          this.turnOff()
-        }
-      })          
-    })()        
+    })
   }
 
   apiRun() {
@@ -78,38 +71,34 @@ class APIRelaySensor extends Sensor {
     })
   }
 
-  turnOn() {
-    return async(() => {
-      const config = await (this.getRelayConfig())
-      config.internalPort = 8833 // api port
-      config.name =  "api-" + await (encipherTool.getGID())
-      config.protocol = "tcp"
-      
-      log.info("Starting api relay service...");
+  async turnOn() {
+    const config = await this.getRelayConfig()
+    config.internalPort = 8833 // api port
+    config.name = "api-" + await encipherTool.getGID()
+    config.protocol = "tcp"
 
-      const valid = this.validateConfig(config)
-      if(valid) {
-        const output = await (frp.createConfigFile(config))
-        if(output) {
-          const filePath = output.filePath
-          const port = output.port
-          await (frp.start())
-          if(!config.port && port) {
-            await (rclient.hsetAsync(configKey, "port", port))
-          }
-        } else {
-          return Promise.reject(new Error("Failed to create api relay config file"))
+    log.info("Starting api relay service...");
+
+    const valid = this.validateConfig(config)
+    if (valid) {
+      const output = await frp.createConfigFile(config)
+      if (output) {
+        const filePath = output.filePath
+        const port = output.port
+        await frp.start()
+        if (!config.port && port) {
+          await rclient.hsetAsync(configKey, "port", port)
         }
       } else {
-        return Promise.reject(new Error("Invalid API relay config"))
+        return Promise.reject(new Error("Failed to create api relay config file"))
       }
-    })()
+    } else {
+      return Promise.reject(new Error("Invalid API relay config"))
+    }
   }
 
-  turnOff() {
-    return async(() => {
-      frp.stop()
-    })()
+  async turnOff() {
+    return frp.stop()
   }
 
   validateConfig(config) {
@@ -124,12 +113,9 @@ class APIRelaySensor extends Sensor {
     return rclient.hgetallAsync(configKey)
   }
 
-  setRelayConfig(data) {
-    return async(() => {
-      await(rclient.delAsync(configKey))
+  async setRelayConfig(data) {
+      await rclient.delAsync(configKey)
       return rclient.hmsetAsync(configKey, data)  
-    })()
-    
   }
 }
 

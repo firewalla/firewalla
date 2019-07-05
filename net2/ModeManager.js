@@ -33,9 +33,6 @@ const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
 const firewalla = require('./Firewalla.js')
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 let util = require('util');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -60,22 +57,20 @@ const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
 
 let timer = null
 
-function _revert2None() {
-  return async(() => {
-    timer = null
-    let bootingComplete = await (firewalla.isBootingComplete())
-    let firstBindDone = await (firewalla.isFirstBindDone())
-    if(!bootingComplete && firstBindDone) {
-      log.warn("Revert back to none mode for safety")
-      return switchToNone()
-    }
-  })()
+async function _revert2None() {
+  timer = null
+  let bootingComplete = await firewalla.isBootingComplete()
+  let firstBindDone = await firewalla.isFirstBindDone()
+  if (!bootingComplete && firstBindDone) {
+    log.warn("Revert back to none mode for safety")
+    return switchToNone()
+  }
 }
 
-function _enforceSpoofMode() {
-  return async(() => {
-    let bootingComplete = await (firewalla.isBootingComplete())
-    let firstBindDone = await (firewalla.isFirstBindDone())
+async function _enforceSpoofMode() {
+  try {
+    let bootingComplete = await firewalla.isBootingComplete()
+    let firstBindDone = await firewalla.isFirstBindDone()
     
     if(!bootingComplete && firstBindDone) {
       if(timer) {
@@ -94,7 +89,7 @@ function _enforceSpoofMode() {
         sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
         if (sysManager.myDNS() && sysManager.myDNS().includes(sysManager.myGateway())) {
           // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
-          const gateway = await (hostTool.getMacEntryByIP(sysManager.myGateway()));
+          const gateway = await hostTool.getMacEntryByIP(sysManager.myGateway());
           if (gateway.ipv6Addr) {
             const gatewayIpv6Addrs = JSON.parse(gateway.ipv6Addr);
             log.info("Router also acts as dns, spoof all router's v6 addresses: ", gatewayIpv6Addrs);
@@ -105,7 +100,7 @@ function _enforceSpoofMode() {
           }
         }
       }
-      await (sm.startSpoofing())
+      await sm.startSpoofing()
       log.info("New Spoof is started");
     } else {
       // old style, might not work
@@ -113,9 +108,9 @@ function _enforceSpoofMode() {
       const spoofer = new Spoofer(config.monitoringInterface,{},true);
       return Promise.resolve();
     }
-  })().catch((err) => {
+  } catch(err) {
     log.error("Failed to start new spoof", err);
-  });
+  }
 }
 
 function _disableSpoofMode() {
@@ -444,45 +439,40 @@ function switchToManualSpoof() {
     });  
 }
 
-function switchToNone() {
+async function switchToNone() {
   log.info("Switching to none")
-  return async(() => {
-    await (Mode.noneModeOn())
-    await (_disableDHCPMode())
-    await (_disableSpoofMode())
-    return apply()
-  })()
+  await Mode.noneModeOn()
+  await _disableDHCPMode()
+  await _disableSpoofMode()
+  return apply()
 }
 
-function reapply() {
-  return async(() => {
-    let lastMode = await (Mode.getSetupMode())
-    log.info("Old mode is", lastMode)
+async function reapply() {
+  let lastMode = await Mode.getSetupMode()
+  log.info("Old mode is", lastMode)
 
-    switch(lastMode) {
+  switch (lastMode) {
     case "spoof":
     case "autoSpoof":
     case "manualSpoof":
-      await (_disableSpoofMode())
+      await _disableSpoofMode()
       break;
     case "dhcp":
-      await (_disableDHCPMode(lastMode))
+      await _disableDHCPMode(lastMode)
       break;
     case "dhcpSpoof":
-      await (_disableSpoofMode())
-      await (_disableDHCPMode(lastMode))
+      await _disableSpoofMode()
+      await _disableDHCPMode(lastMode)
       break;
     case "none":
       // do nothing
       break;
     default:
       break;
-    }
-    
-    await (Mode.reloadSetupMode())
-    return apply()
-  })()
-  
+  }
+
+  await Mode.reloadSetupMode()
+  return apply()
 }
 
 function mode() {
@@ -491,7 +481,7 @@ function mode() {
 
 // listen on mode change, if anyone update mode in redis, re-apply it
 function listenOnChange() {
-  sclient.on("message", (channel, message) => {
+  sclient.on("message", async (channel, message) => {
     if(channel === "Mode:Change") {
       if(curMode !== message) {
         log.info("Mode is changed to " + message);                
@@ -504,11 +494,9 @@ function listenOnChange() {
       let sm = new SpooferManager();
       sm.loadManualSpoofs(hostManager)
     } else if (channel === "NetworkInterface:Update") {
-      (async () => {
-        await (_changeToAlternativeIpSubnet());
-        await (_enableSecondaryInterface());
-        pclient.publishAsync("System:IPChange", "");
-      })()
+      await _changeToAlternativeIpSubnet()
+      await _enableSecondaryInterface()
+      pclient.publishAsync("System:IPChange", "");
     }
   });
   sclient.subscribe("Mode:Change");
@@ -562,11 +550,9 @@ function setDHCPAndPublish() {
     });
 }
 
-function setNoneAndPublish() {
-  async(() => {
-    await (Mode.noneModeOn())
-    await (publish(Mode.MODE_NONE))
-  })()
+async function setNoneAndPublish() {
+  await Mode.noneModeOn()
+  await publish(Mode.MODE_NONE)
 }
 
 module.exports = {

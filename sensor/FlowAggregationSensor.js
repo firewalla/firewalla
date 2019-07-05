@@ -18,16 +18,7 @@ let log = require('../net2/logger.js')(__filename);
 
 let util = require('util');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
 let Sensor = require('./Sensor.js').Sensor;
-
-const rclient = require('../util/redis_manager.js').getRedisClient()
-
-let Promise = require('bluebird');
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
 
 let flowTool = require('../net2/FlowTool')();
 let FlowAggrTool = require('../net2/FlowAggrTool');
@@ -66,28 +57,24 @@ class FlowAggregationSensor extends Sensor {
     this.config.flowRange = 24 * 3600 // 24 hours
     this.config.sumFlowExpireTime = 0.5 * 3600 // 30 minutes
     this.config.aggrFlowExpireTime = 24 * 3600 // 24 hours
-    
+
     this.firstTime = true; // some work only need to be done once, use this flag to check
   }
 
-  scheduledJob() {
+  async scheduledJob() {
     log.info("Generating summarized flows info...")
-    return async(() => {
-      let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
-      await (this.aggrAll(ts));
-      await (this.sumAll(ts));
-      await (this.updateAllHourlySummedFlows(ts));
-      this.firstTime = false;
-      log.info("Summarized flow generation is complete");
-    })();
+    let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
+    await this.aggrAll(ts)
+    await this.sumAll(ts)
+    await this.updateAllHourlySummedFlows(ts)
+    this.firstTime = false;
+    log.info("Summarized flow generation is complete");
   }
 
-  cleanupJob() {
+  async cleanupJob() {
     log.info("Cleaning up app/category flows...")
-    return async(() => {
-      await (appFlowTool.cleanupAppFlow())
-      await (categoryFlowTool.cleanupCategoryFlow())
-    })()
+    await appFlowTool.cleanupAppFlow()
+    await categoryFlowTool.cleanupCategoryFlow()
   }
 
   run() {
@@ -108,7 +95,7 @@ class FlowAggregationSensor extends Sensor {
   async trafficGroupByX(flows, x) {
     let traffic = {};
 
-    await Promise.all(flows.map(async flow => {
+    for (const flow of flows) {
       let destIP = flowTool.getDestIP(flow);
       let intel = await intelTool.getIntel(destIP);
 
@@ -151,7 +138,7 @@ class FlowAggregationSensor extends Sensor {
           t.upload += flowTool.getUploadTraffic(flow) || 0;
         }
       })
-    }));
+    };
 
     return traffic;
   }
@@ -195,7 +182,7 @@ class FlowAggregationSensor extends Sensor {
       // TODO: could have some enhancement here!
       // if the diff between ts and now is less than 60 seconds, return error
       // this is to ensure the flows are already processed and stored in redis before aggregation
-      return Promise.reject(new Error("aggregation too soon"));
+      throw new Error("aggregation too soon");
     }
 
     let macs = hostManager.getActiveMACs();
@@ -211,31 +198,29 @@ class FlowAggregationSensor extends Sensor {
   // this will be periodically called to update the summed flows in last 24 hours
   // for hours between -24 to -2, if any of these flows are created already, don't update
   // for the last hour, it will periodically update every 10 minutes;
-  updateAllHourlySummedFlows(ts) {
+  async updateAllHourlySummedFlows(ts) {
     // let now = Math.floor(new Date() / 1000);
     let now = ts; // actually it's NOT now, typically it's 3 mins earlier than NOW;
     let lastHourTick = Math.floor(now / 3600) * 3600;
 
-    return async(() => {
 
-      if(this.firstTime) {
-        // the 24th last hours -> the 2nd last hour
-        for(let i = 1; i < 24; i++) {
-          let ts = lastHourTick - i * 3600;
-          await (this.hourlySummedFlows(ts, {
-            skipIfExists: true
-          }));
-        }
-      }
-
-      // last hour and this hour
-      for(let i = -1; i < 1; i++) {
+    if (this.firstTime) {
+      // the 24th last hours -> the 2nd last hour
+      for (let i = 1; i < 24; i++) {
         let ts = lastHourTick - i * 3600;
-        await (this.hourlySummedFlows(ts, {
-          skipIfExists: false
-        }));
+        await this.hourlySummedFlows(ts, {
+          skipIfExists: true
+        })
       }
-    })();
+    }
+
+    // last hour and this hour
+    for (let i = -1; i < 1; i++) {
+      let ts = lastHourTick - i * 3600;
+      await this.hourlySummedFlows(ts, {
+        skipIfExists: false
+      })
+    }
 
   }
 
@@ -263,7 +248,7 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addSumFlow("upload", options);
     await flowAggrTool.addSumFlow("app", options);
 
-    await this.cleanupAppActivity(options); // to filter idle activities        
+    await this.cleanupAppActivity(options); // to filter idle activities
     await flowAggrTool.addSumFlow("category", options);
     await this.cleanupCategoryActivity(options);
 
@@ -294,7 +279,7 @@ class FlowAggregationSensor extends Sensor {
       // TODO: could have some enhancement here!
       // if the diff between ts and now is less than 60 seconds, return error
       // this is to ensure the flows are already processed and stored in redis before aggregation
-      return Promise.reject(new Error("sum too soon"));
+      throw new Error("sum too soon")
     }
 
     let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
@@ -412,8 +397,8 @@ class FlowAggregationSensor extends Sensor {
         return lastOne
       }
     }
-    
-    return recentActivity      
+
+    return recentActivity
   }
 
   async getIntel(flow) {
@@ -433,7 +418,7 @@ class FlowAggregationSensor extends Sensor {
   async recordApp(mac, traffic) {
     for(let app in traffic) {
       let object = traffic[app]
-      await (appFlowTool.addAppFlowObject(mac, app, object))
+      await appFlowTool.addAppFlowObject(mac, app, object)
     }
   }
 
@@ -446,7 +431,7 @@ class FlowAggregationSensor extends Sensor {
         continue
       }
       let object = traffic[category]
-      await (categoryFlowTool.addCategoryFlowObject(mac, category, object))
+      await categoryFlowTool.addCategoryFlowObject(mac, category, object)
     }
   }
 
@@ -472,41 +457,35 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
   }
 
-  getAppFlow(app, options) {
-    return async(() => {
-      let flows  = []
+  async getAppFlow(app, options) {
+    let flows = []
 
-      let macs = []
+    let macs = []
 
-      if(options.mac) {
-        macs = [options.mac]
-      } else {
-        macs = await (appFlowTool.getAppMacAddresses(app))
-      }
+    if (options.mac) {
+      macs = [options.mac]
+    } else {
+      macs = await appFlowTool.getAppMacAddresses(app)
+    }
 
-      const promises = macs.map((mac) => {
-        return async(() => {
-          let appFlows = await (appFlowTool.getAppFlow(mac, app, options))
-          appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
-          appFlows.forEach((f) => {
-            f.device = mac
-          })
-
-          flows.push.apply(flows, appFlows)
-        })()
+    for (const mac of macs) {
+      let appFlows = await appFlowTool.getAppFlow(mac, app, options)
+      appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+      appFlows.forEach((f) => {
+        f.device = mac
       })
 
-      await(promises)
-      
-      flows.sort((a, b) => {
-        return b.ts - a.ts
-      })
+      flows.push.apply(flows, appFlows)
+    }
 
-      return flows
-    })()
-  }  
-  
-  cleanupAppActivity(options) {
+    flows.sort((a, b) => {
+      return b.ts - a.ts
+    })
+
+    return flows
+  }
+
+  async cleanupAppActivity(options) {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
 
@@ -519,25 +498,24 @@ class FlowAggregationSensor extends Sensor {
       log.debug(`Cleaning up app activities between ${beginString} and ${endString}`)
     }
 
-    return async(() => {
-
+    try {
       if(options.skipIfExists) {
-        let exists = await (flowAggrTool.cleanedAppKeyExists(begin, end, options))
+        let exists = await flowAggrTool.cleanedAppKeyExists(begin, end, options)
         if(exists) {
           return
         }
       }
-      
-      let apps = await (appFlowTool.getApps('*')) // all mac addresses
+
+      let apps = await appFlowTool.getApps('*') // all mac addresses
 
       let allFlows = {}
 
-      apps.forEach((app) => {
-        let flows = await (this.getAppFlow(app, options))
+      for (const app of apps) {
+        let flows = await this.getAppFlow(app, options)
         if(flows.length > 0) {
           allFlows[app] = flows
         }
-      })
+      }
 
       // allFlows now contains all raw app activities during this range
 
@@ -545,104 +523,98 @@ class FlowAggregationSensor extends Sensor {
 
       if(Object.keys(allFlows).length > 0) {
         flowUtil.hashIntelFlows(allFlows, hashCache)
-        
-        let data = await (bone.flowgraphAsync('summarizeApp', allFlows))        
+
+        let data = await bone.flowgraphAsync('summarizeApp', allFlows)
         let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-        await (flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, options))
+        await flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, options)
       } else {
-        await (flowAggrTool.setCleanedAppActivity(begin, end, {}, options)) // if no data, set an empty {}
+        await flowAggrTool.setCleanedAppActivity(begin, end, {}, options) // if no data, set an empty {}
       }
-    })().catch((err) => {
+    } catch(err) {
       log.error(`Failed to clean app activity: `, err);
+    }
+  }
+
+  async getCategoryFlow(category, options) {
+    let flows = []
+
+    let macs = []
+
+    if (options.mac) {
+      macs = [options.mac]
+    } else {
+      macs = await categoryFlowTool.getCategoryMacAddresses(category)
+    }
+
+    for (const mac of macs) {
+      let categoryFlows = await categoryFlowTool.getCategoryFlow(mac, category, options)
+      categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+      categoryFlows.forEach((f) => {
+        f.device = mac
+      })
+
+      flows.push.apply(flows, categoryFlows)
+    }
+
+    flows.sort((a, b) => {
+      return b.ts - a.ts
     })
+
+    return flows
   }
 
-  getCategoryFlow(category, options) {
-    return async(() => {
-      let flows  = []
-
-      let macs = []
-
-      if(options.mac) {
-        macs = [options.mac]
-      } else {
-        macs = await (categoryFlowTool.getCategoryMacAddresses(category))
-      }
-
-      const promises = macs.map((mac) => {
-        return async(() => {
-          let categoryFlows = await (categoryFlowTool.getCategoryFlow(mac, category, options))
-          categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
-          categoryFlows.forEach((f) => {
-            f.device = mac
-          })
-
-          flows.push.apply(flows, categoryFlows)
-        })()
-      })
-
-      await(promises)
-      
-      flows.sort((a, b) => {
-        return b.ts - a.ts
-      })
-
-      return flows
-    })()
-  }
-  
   // TODO: Why call it cleanup? This looks confusing. It actually summarize different category flows, i.e., categoryflow:(mac:)?
-  cleanupCategoryActivity(options) {
+  async cleanupCategoryActivity(options) {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
 
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    if(options.mac) {
+    if (options.mac) {
       log.debug(`Cleaning up category activities between ${beginString} and ${endString} for device ${options.mac}`)
     } else {
       log.debug(`Cleaning up category activities between ${beginString} and ${endString}`)
     }
 
-    return async(() => {
+    try {
 
-      if(options.skipIfExists) {
-        let exists = await (flowAggrTool.cleanedCategoryKeyExists(begin, end, options))
-        if(exists) {
+      if (options.skipIfExists) {
+        let exists = await flowAggrTool.cleanedCategoryKeyExists(begin, end, options)
+        if (exists) {
           return
         }
       }
-      
-      let categorys = await (categoryFlowTool.getCategories('*')) // all mac addresses
+
+      let categories = await categoryFlowTool.getCategories('*') // all mac addresses
 
       let allFlows = {}
 
-      categorys.forEach((category) => {
-        let flows = await (this.getCategoryFlow(category, options))
-        if(flows.length > 0) {
+      for (const category of categories) {
+        let flows = await this.getCategoryFlow(category, options)
+        if (flows.length > 0) {
           allFlows[category] = flows
         }
-      })
+      }
 
       // allFlows now contains all raw category activities during this range
 
       let hashCache = {}
 
-      if(Object.keys(allFlows).length > 0) {
+      if (Object.keys(allFlows).length > 0) {
         flowUtil.hashIntelFlows(allFlows, hashCache)
-        
-        let data = await (bone.flowgraphAsync('summarizeActivity', allFlows))
-        
+
+        let data = await bone.flowgraphAsync('summarizeActivity', allFlows)
+
         let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
 
-        await (flowAggrTool.setCleanedCategoryActivity(begin, end, unhashedData, options))
+        await flowAggrTool.setCleanedCategoryActivity(begin, end, unhashedData, options)
       } else {
-        await (flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options)) // if no data, set an empty {}
+        await flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options) // if no data, set an empty {}
       }
-    })().catch((err) => {
+    } catch (err) {
       log.error(`Failed to clean category activity: `, err);
-    })
+    }
   }
 
 }

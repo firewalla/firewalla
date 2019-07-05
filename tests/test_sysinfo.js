@@ -47,9 +47,9 @@ describe('SysInfo', () => {
 
     it('should return the right sys infos', (done) => {
 
-      async(() => {
+      (async() =>{
         sysInfo.startUpdating();
-        await(delay(1000));
+        await delay(1000);
         let info = sysInfo.getSysInfo();
         let threadInfo = info.threadInfo;
         expect(threadInfo.count).to.below(400);

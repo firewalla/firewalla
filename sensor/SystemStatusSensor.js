@@ -18,13 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const exec = require('child-process-promise').exec
 
 const bone = require("../lib/Bone.js");
@@ -38,30 +31,26 @@ class SystemStatusSensor extends Sensor {
     log.info("heapsensor is running");
   }
 
-  job() {
-    (async () => {
-      const result = await this.dmesg()
-      if(result) {
-        await bone.logAsync("error", {
-          msg: result,
-          type: 'dmesg'
-        })
-      }
-    })()
+  async job() {
+    const result = await this.dmesg()
+    if (result) {
+      await bone.logAsync("error", {
+        msg: result,
+        type: 'dmesg'
+      })
+    }
   }
 
 
   // return null for succeed, other for error
 
-  dmesg() {
-    async(() => {
-      try {
-        await (exec("dmesg | fgrep 'mmc0: Card stuck in programming state! mmc_do_erase'"))
-        return "mmc0: Card stuck in programming state! mmc_do_erase"
-      } catch(err) {
-        return null
-      }
-    })()
+  async dmesg() {
+    try {
+      await exec("dmesg | fgrep 'mmc0: Card stuck in programming state! mmc_do_erase'")
+      return "mmc0: Card stuck in programming state! mmc_do_erase"
+    } catch (err) {
+      return null
+    }
   }
 
   run() {

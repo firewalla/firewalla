@@ -26,12 +26,8 @@ const log = require('../../net2/logger.js')(__filename)
 
 const CronJob = require('cron').CronJob;
 
-const Promise = require('bluebird');
-
 const cronParser = require('cron-parser');
 const moment = require('moment');
-
-const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 let instance = null;
 

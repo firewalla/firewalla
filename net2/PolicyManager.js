@@ -354,11 +354,11 @@ module.exports = class {
     const state = policy.state;
     const featureName = "upstream_dns";
     if (state === true) {
-      await (fc.enableDynamicFeature(featureName));
+      await fc.enableDynamicFeature(featureName);
       dnsmasq.setDefaultNameServers("00-upstream", ips);
       await dnsmasq.updateResolvConf();
     } else {
-      await (fc.disableDynamicFeature(featureName));
+      await fc.disableDynamicFeature(featureName);
       dnsmasq.unsetDefaultNameServers("00-upstream"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
       await dnsmasq.updateResolvConf();
     }

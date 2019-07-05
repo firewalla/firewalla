@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,6 @@ const Promise = require('bluebird');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('info');
 const bone = require("../lib/Bone.js");
-const firewalla = require("../net2/Firewalla.js");
 
 const flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
@@ -33,7 +32,7 @@ const QUERY_MAX_FLOW = 10000;
 var flowconfig = {
     activityDetectMin : 10,
     activityDetectMax : 60*60*5,
-}; 
+};
 
 let flowTool = require('./FlowTool')();
 
@@ -43,122 +42,122 @@ const intelTool = new IntelTool()
 const _ = require('lodash');
 
 class FlowGraph {
-    constructor(name,flowarray) {
-        if (flowarray) {
-            this.flowarray = flowarray;
-        } else {
-            this.flowarray = [];
-        }
-        this.name = name;
+  constructor(name,flowarray) {
+    if (flowarray) {
+      this.flowarray = flowarray;
+    } else {
+      this.flowarray = [];
+    }
+    this.name = name;
+  }
+
+
+  flowarraySorted(recent) {
+    if (recent == true) {
+      // sort by end timestamp in descending order
+      this.flowarray.sort(function (a, b) {
+        return Number(b[1]) - Number(a[1]);
+      })
+      return this.flowarray;
+    } else {
+      this.flowarray.sort(function (a, b) {
+        return Number(a[1]) - Number(b[1]);
+      })
+      return this.flowarray;
+    }
+  }
+
+
+  addFlow(flow) {
+    if (flow.flows == null) {
+      let flowStart = Math.ceil(Number(flow.__ts) - Number(flow.du));
+      let flowEnd = Math.ceil(Number(flow.__ts));
+      if (flow.__ts==null) {
+        flowStart = Math.ceil(Number(flow._ts) - Number(flow.du));
+        flowEnd = Math.ceil(Number(flow._ts));
+      }
+      let ob = Number(flow.ob);
+      let rb = Number(flow.rb);
+
+      this.addRawFlow(flowStart,flowEnd,ob,rb,flow.ct);
+    } else {
+      //log.info("$$$ before ",flow.flows);
+      for (let i in flow.flows) {
+        let f = flow.flows[i];
+        this.addRawFlow(f[0],f[1],f[2],f[3],1);
+      }
+      //log.info("$$$ after",this.flowarray);
+    }
+  }
+
+  addRawFlow(flowStart, flowEnd, ob,rb,ct) {
+    let insertindex = 0;
+
+    for (let i in this.flowarray) {
+      let e = this.flowarray[i];
+      if (flowStart < e[0]) {
+        break;
+      }
+      if (flowStart<e[1]) {
+        flowStart = e[0];
+        break;
+      }
+      insertindex = Number(i)+Number(1);
     }
 
-
-    flowarraySorted(recent) {
-        if (recent == true) {
-            // sort by end timestamp in descending order
-            this.flowarray.sort(function (a, b) {
-                return Number(b[1]) - Number(a[1]);
-            })
-            return this.flowarray;
-        } else {
-            this.flowarray.sort(function (a, b) {
-                return Number(a[1]) - Number(b[1]);
-            })
-            return this.flowarray;
+    let removed = Number(0);
+    for (let i = insertindex; i < this.flowarray.length; i++) {
+      let e = this.flowarray[Number(i)];
+      if (e[1] < flowEnd) {
+        ob += e[2];
+        rb += e[3];
+        ct += e[4];
+        removed++;
+        continue;
+      } else if (e[1] >= flowEnd) {
+        if (e[0] <= flowEnd) {
+          // [flowStart, flowEnd] has overlap with [e[0], e[1]]
+          ob += e[2];
+          rb += e[3];
+          ct += e[4];
+          flowEnd = e[1];
+          removed++;
         }
+        break;
+      }
     }
 
-
-    addFlow(flow) {
-         if (flow.flows == null) {
-             let flowStart = Math.ceil(Number(flow.__ts) - Number(flow.du));
-             let flowEnd = Math.ceil(Number(flow.__ts));
-             if (flow.__ts==null) {
-                 flowStart = Math.ceil(Number(flow._ts) - Number(flow.du));
-                 flowEnd = Math.ceil(Number(flow._ts));
-             }
-             let ob = Number(flow.ob);
-             let rb = Number(flow.rb);
-                
-             this.addRawFlow(flowStart,flowEnd,ob,rb,flow.ct);
-         } else {
-             //log.info("$$$ before ",flow.flows);
-             for (let i in flow.flows) {
-                 let f = flow.flows[i];
-                 this.addRawFlow(f[0],f[1],f[2],f[3],1);
-             }
-             //log.info("$$$ after",this.flowarray);
-         }
-    }
-
-    addRawFlow(flowStart, flowEnd, ob,rb,ct) {
-        let insertindex = 0;
-
-        for (let i in this.flowarray) {
-            let e = this.flowarray[i];
-            if (flowStart < e[0]) {
-                break;
-            }
-            if (flowStart<e[1]) {
-                flowStart = e[0];
-                break;
-            }
-            insertindex = Number(i)+Number(1);
-        }
-
-        let removed = Number(0);
-        for (let i = insertindex; i < this.flowarray.length; i++) {
-            let e = this.flowarray[Number(i)];
-            if (e[1] < flowEnd) {
-                ob += e[2];
-                rb += e[3];
-                ct += e[4];
-                removed++;
-                continue;
-            } else if (e[1] >= flowEnd) {
-                if (e[0] <= flowEnd) {
-                    // [flowStart, flowEnd] has overlap with [e[0], e[1]]
-                    ob += e[2];
-                    rb += e[3];
-                    ct += e[4];
-                    flowEnd = e[1];
-                    removed++;
-                }
-                break;
-            }
-        }
-
-        this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
+    this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
     //     log.info("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
-    }
+  }
 
 }
 
 module.exports = class FlowManager {
-    constructor(loglevel) {
-        if (instance == null) {
-            let cache = {};
-            instance = this;
-        }
-        return instance;
+  constructor(loglevel) {
+    if (instance == null) {
+      let cache = {};
+      instance = this;
     }
+    return instance;
+  }
 
-    
+
 
   // use redis hash to store last 24 hours stats
   recordLast24HoursStats(timestamp, downloadBytes, uploadBytes, target) {
-    
+
     if(!downloadBytes || !uploadBytes)
       return Promise.reject(new Error("either downloadBytes or uploadBytes is null"));
-    
+
     let key = 'stats:last24';
-    
+
     if(target)
       key = key + ":" + target;
 
     let downloadKey = key + ":download";
     let uploadKey = key + ":upload";
-    
+
     timestamp = timestamp - timestamp % 3600; // trim minutes and seconds...
     const now = Date.now() / 1000;
     const currentHour = ((now - now % 3600) / 3600);
@@ -183,28 +182,28 @@ module.exports = class FlowManager {
 
   /*
    * {
-   *   "1" : '{ "ts": "1494817200", "bytes": "200" }', 
+   *   "1" : '{ "ts": "1494817200", "bytes": "200" }',
    *   "2" : '{ "ts": "1494820800", "bytes": "300" }',
    *   ...
    * }
-   * 
+   *
    * TO
-   * 
-   * { 
-   *   "1494817200": "200", 
-   *   "1494820800": "300"... 
+   *
+   * {
+   *   "1494817200": "200",
+   *   "1494820800": "300"...
    * }
-   *   
+   *
    */
   getOrderedStats(stats) {
     let orderedStats = {};
 
     if(stats === null)
       return orderedStats;
-    
+
     let keys = Object.keys(stats);
 
-    
+
     for(let key in keys) {
       let v = stats[keys[key]];
       let o = JSON.parse(v);
@@ -229,10 +228,10 @@ module.exports = class FlowManager {
   last24HourDatabaseExists() {
     return rclient.existsAsync("stats:last24:download");
   }
-  
+
   getLast24HoursDownloadsStats(target) {
     let key = 'stats:last24';
-    
+
     if(target)
       key = key + ":" + target;
 
@@ -248,7 +247,7 @@ module.exports = class FlowManager {
 
   getLast24HoursUploadsStats(target) {
     let key = 'stats:last24';
-    
+
     if(target)
       key = key + ":" + target;
 
@@ -264,7 +263,7 @@ module.exports = class FlowManager {
 
   list24HoursTicks() {
     let list = [];
-    
+
     let tsnow = Math.ceil(Date.now()/1000);
     tsnow = tsnow-tsnow%3600;
 
@@ -301,8 +300,8 @@ module.exports = class FlowManager {
       });
   }
 
-  
-  
+
+
   // stats are 'hour', 'day'
   // stats:hour:mac_address score=bytes key=_ts-_ts%3600
   // target = 0.0.0.0 is system
@@ -353,7 +352,7 @@ module.exports = class FlowManager {
 
   parseGetStatsResult(result, db, from, to) {
     let bytes = 0;
-    
+
     if (result && result.length==2) {
       let array = result[1];
       log.debug("array:",array.length);
@@ -367,7 +366,7 @@ module.exports = class FlowManager {
         if (Number(to)!=-1 &&  clock>to) {
           continue;
         }
-        
+
         if (db[clock]) {
           db[clock] += Number(bytes);
         } else {
@@ -417,7 +416,7 @@ module.exports = class FlowManager {
 
   flowToLegacyFormat(flow) {
     let result = [];
-    
+
     return Object.keys(flow)
       .sort((a,b) => b-a)
       .map((key) => {
@@ -438,14 +437,14 @@ module.exports = class FlowManager {
 
     let download = this.getLast24HoursDownloadsStats();
     let upload = this.getLast24HoursUploadsStats();
-    
+
     return Promise.join(download, upload, (d, u) => {
       flowsummary.flowinbytes = this.flowToLegacyFormat(d);
       flowsummary.inbytes = this.sumBytes(d);
       flowsummary.flowoutbytes = this.flowToLegacyFormat(u);
       flowsummary.outbytes = this.sumBytes(u);
       return new Promise((resolve) => resolve(flowsummary));
-    });   
+    });
   }
 
   // no parameters accepted
@@ -455,7 +454,7 @@ module.exports = class FlowManager {
       return this.getSystemStats();
     }
 
-    
+
     host.flowsummary = {};
     host.flowsummary.inbytes = 0;
     host.flowsummary.outbytes = 0;
@@ -463,11 +462,11 @@ module.exports = class FlowManager {
 
     let tsnow = Math.ceil(Date.now()/1000);
     tsnow = tsnow-tsnow%3600;
-    
+
     host.flowsummary.tophour = tsnow;
 
     const mac = host.o.mac;
-    let downloadPromiseList = [this.getLast24HoursDownloadsStats(mac)]; // you may be wondering why a single element list is used here. 
+    let downloadPromiseList = [this.getLast24HoursDownloadsStats(mac)]; // you may be wondering why a single element list is used here.
     // It is changed from a previous implementation which aggregates stats by ip addresses, and a host may have multiple ip addresses. The promise list is retained to avoid changing code structure too much.
 
 
@@ -487,410 +486,410 @@ module.exports = class FlowManager {
             host.flowsummary.flowoutbytes = legacyFormat2;
             host.flowsummary.outbytes = this.sumBytes(sum2);
           });
-      });  
-  }
-  
-    getStats(target,type,from,to,callback) {
-      let outdb = {};
-      let indb = {};
-      let inbytes = 0;
-      let outbytes = 0;
-      let lotsofkeys = 24*30*6;  //half months ... of data 
-      log.debug("Getting stats:",type,target,from,to);
-
-      let multi = rclient.multi();
-
-      let len = iplist.length;
-
-      let inkey = "stats:"+type+":in:"+target;
-      let outkey = "stats:"+type+":out:"+target;
-        
-      multi.zscan(inkey, 0, 'count', lotsofkeys);
-      multi.zscan(outkey, 0, 'count', lotsofkeys);
-
-      multi.exec((err, results) => {
-
-        if(err) {
-          log.error("Failed to get stats from db: " + err);
-          callback(err);
-          return;
-        }
-        
-        for(var i = 0; i < results.length; i++) {
-          if(i%2 === 0) {
-            inbytes += this.parseGetStatsResult(results[i], indb, from);
-          } else {
-            outbytes += this.parseGetStatsResult(results[i], outdb, to);
-          }
-        }
-
-        let tsnow = Math.ceil(Date.now()/1000);
-        tsnow = tsnow-tsnow%3600;
-        let flowdata = {tophour:tsnow, from:from, to:to,type:type, flowinbytes:[], flowoutbytes:[],inbytes:inbytes,outbytes:outbytes};
-        
-        let keys = Object.keys(outdb); // or loop over the object to get the array
-        keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-        for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
-          let key = keys[i];
-          flowdata.flowoutbytes.push({size:outdb[key],ts:keys[i]});
-        }  
-        keys = Object.keys(indb); // or loop over the object to get the array
-        keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-        for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
-          let key = keys[i];
-          flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
-        }  
-        //log.info("FLOW DATA IS: ",flowdata,outdb,indb);
-        callback(err, flowdata);
       });
+  }
+
+  getStats(target,type,from,to,callback) {
+    let outdb = {};
+    let indb = {};
+    let inbytes = 0;
+    let outbytes = 0;
+    let lotsofkeys = 24*30*6;  //half months ... of data
+    log.debug("Getting stats:",type,target,from,to);
+
+    let multi = rclient.multi();
+
+    let len = iplist.length;
+
+    let inkey = "stats:"+type+":in:"+target;
+    let outkey = "stats:"+type+":out:"+target;
+
+    multi.zscan(inkey, 0, 'count', lotsofkeys);
+    multi.zscan(outkey, 0, 'count', lotsofkeys);
+
+    multi.exec((err, results) => {
+
+      if(err) {
+        log.error("Failed to get stats from db: " + err);
+        callback(err);
+        return;
+      }
+
+      for(var i = 0; i < results.length; i++) {
+        if(i%2 === 0) {
+          inbytes += this.parseGetStatsResult(results[i], indb, from);
+        } else {
+          outbytes += this.parseGetStatsResult(results[i], outdb, to);
+        }
+      }
+
+      let tsnow = Math.ceil(Date.now()/1000);
+      tsnow = tsnow-tsnow%3600;
+      let flowdata = {tophour:tsnow, from:from, to:to,type:type, flowinbytes:[], flowoutbytes:[],inbytes:inbytes,outbytes:outbytes};
+
+      let keys = Object.keys(outdb); // or loop over the object to get the array
+      keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
+      for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
+        let key = keys[i];
+        flowdata.flowoutbytes.push({size:outdb[key],ts:keys[i]});
+      }
+      keys = Object.keys(indb); // or loop over the object to get the array
+      keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
+      for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
+        let key = keys[i];
+        flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
+      }
+      //log.info("FLOW DATA IS: ",flowdata,outdb,indb);
+      callback(err, flowdata);
+    });
+  }
+
+  //
+  // {
+  //    mostflow: { flow:, std:}
+  //    leastflow: { flow:,std:}
+  //    total:
+  // }
+  //
+  // tx here means to outside
+  // rx means inside
+  getFlowCharacteristics(_flows, direction, minlength, sdv) {
+    log.debug("====== Calculating Flow spec of flows", _flows.length, direction, minlength, sdv);
+    if (minlength == null) {
+      minlength = 500000;
+    }
+    if (sdv == null) {
+      sdv = 4;
+    }
+    if (_flows.length <= 0) {
+      return null;
     }
 
-    // 
-    // {
-    //    mostflow: { flow:, std:}
-    //    leastflow: { flow:,std:}
-    //    total:
-    // }   
-    // 
-    // tx here means to outside
-    // rx means inside
-    getFlowCharacteristics(_flows, direction, minlength, sdv) {
-        log.debug("====== Calculating Flow spec of flows", _flows.length, direction, minlength, sdv);
-        if (minlength == null) {
-            minlength = 500000;
+    let flowspec = {};
+    let flows = [];
+    flowspec.direction = direction;
+    flowspec.txRanked = [];
+    flowspec.rxRanked = [];
+    flowspec.txRatioRanked = [];
+
+    let txratios = [];
+    let rxvalues = [];
+    let txvalues = [];
+
+    for (let flow of _flows) {
+      if (flow.rb < minlength && flow.ob < minlength) {
+        continue;
+      }
+      flows.push(flow);
+
+      if (flow.fd == "in") {
+        txvalues.push(flow.ob);
+      } else if (flow.fd == "out") {
+        txvalues.push(flow.rb);
+      }
+      if (flow.fd == "in") {
+        rxvalues.push(flow.rb);
+      } else if (flow.fd == "out") {
+        rxvalues.push(flow.ob);
+      }
+
+      if (flow.fd == "in") {
+        flow.txratio = flow.ob / flow.rb;
+        if (flow.rb == 0) {
+          flow.txratio = Math.min(flow.ob, 10); // ???
         }
-        if (sdv == null) {
-            sdv = 4;
+      } else if (flow.fd == "out") {
+        flow.txratio = flow.rb / flow.ob;
+        if (flow.ob == 0) {
+          flow.txratio = Math.min(flow.rb); // ???
         }
-        if (_flows.length <= 0) {
-            return null;
+      } else {
+        log.error("FlowManager:FlowSummary:Error", flow);
+      }
+      txratios.push(flow.txratio);
+    }
+
+
+    if (flows.length <= 1) {
+      // Need to take care of this condition
+      log.debug("FlowManager:FlowSummary", "not enough flows");
+      if (flows.length == 1) {
+        flowspec.rxRanked.push(flows[0]);
+        flowspec.txRanked.push(flows[0]);
+        if (flows[0].txratio > 1.5) {
+          flowspec.txRatioRanked.push(flows[0]);
         }
+        flowspec.onlyflow = true;
+      }
+      return flowspec;
+    }
 
-        let flowspec = {};
-        let flows = [];
-        flowspec.direction = direction;
-        flowspec.txRanked = [];
-        flowspec.rxRanked = [];
-        flowspec.txRatioRanked = [];
+    flowspec.txStdev = stats.stdev(txvalues);
+    flowspec.rxStdev = stats.stdev(rxvalues);
+    flowspec.txRatioStdev = stats.stdev(txratios)
 
-        let txratios = [];
-        let rxvalues = [];
-        let txvalues = [];
+    if (flowspec.txStdev == 0) {
+      flowspec.txStdev = 1;
+    }
+    if (flowspec.rxStdev == 0) {
+      flowspec.rxStdev = 1;
+    }
+    if (flowspec.txRatioStdev == 0) {
+      flowspec.txRatioStdev = 1;
+    }
 
-        for (let flow of _flows) {
-            if (flow.rb < minlength && flow.ob < minlength) {
-                continue;
-            }
-            flows.push(flow);
+    log.debug("txStd Deviation", flowspec.txStdev);
+    log.debug("rxStd Deviation", flowspec.rxStdev);
+    log.debug("txRatioStd Deviation", flowspec.txRatioStdev);
+    for (let flow of flows) {
+      if (flow.fd == "in") {
+        flow['rxStdev'] = flow.rb / flowspec.rxStdev;
+        flow['txStdev'] = flow.ob / flowspec.txStdev;
+        flow['txRatioStdev'] = flow.txratio / flowspec.txRatioStdev;
+      } else if (flow.fd == "out") {
+        flow['rxStdev'] = flow.ob / flowspec.txStdev;
+        flow['txStdev'] = flow.rb / flowspec.rxStdev;
+        flow['txRatioStdev'] = flow.txratio / flowspec.txRatioStdev;
+      }
+    }
 
-            if (flow.fd == "in") {
-                txvalues.push(flow.ob);
-            } else if (flow.fd == "out") {
-                txvalues.push(flow.rb);
-            }
-            if (flow.fd == "in") {
-                rxvalues.push(flow.rb);
-            } else if (flow.fd == "out") {
-                rxvalues.push(flow.ob);
-            }
+    // save top 5 results to 'Ranked' array
+    ['rx', 'tx', 'txRatio'].forEach(category => {
+      let cStdev = `${category}Stdev`;
+      let cRanked = `${category}Ranked`;
 
-            if (flow.fd == "in") {
-                flow.txratio = flow.ob / flow.rb;
-                if (flow.rb == 0) {
-                    flow.txratio = Math.min(flow.ob, 10); // ???
-                }
-            } else if (flow.fd == "out") {
-                flow.txratio = flow.rb / flow.ob;
-                if (flow.ob == 0) {
-                    flow.txratio = Math.min(flow.rb); // ???
-                }
-            } else {
-                log.error("FlowManager:FlowSummary:Error", flow);
-            }
-            txratios.push(flow.txratio);
-        }
-
-
-        if (flows.length <= 1) {
-            // Need to take care of this condition
-            log.debug("FlowManager:FlowSummary", "not enough flows");
-            if (flows.length == 1) {
-                flowspec.rxRanked.push(flows[0]);
-                flowspec.txRanked.push(flows[0]);
-                if (flows[0].txratio > 1.5) {
-                    flowspec.txRatioRanked.push(flows[0]);
-                }
-                flowspec.onlyflow = true;
-            }
-            return flowspec;
-        }
-
-        flowspec.txStdev = stats.stdev(txvalues);
-        flowspec.rxStdev = stats.stdev(rxvalues);
-        flowspec.txRatioStdev = stats.stdev(txratios)
-
-        if (flowspec.txStdev == 0) {
-            flowspec.txStdev = 1;
-        }
-        if (flowspec.rxStdev == 0) {
-            flowspec.rxStdev = 1;
-        }
-        if (flowspec.txRatioStdev == 0) {
-            flowspec.txRatioStdev = 1;
-        }
-
-        log.debug("txStd Deviation", flowspec.txStdev);
-        log.debug("rxStd Deviation", flowspec.rxStdev);
-        log.debug("txRatioStd Deviation", flowspec.txRatioStdev);
-        for (let flow of flows) {
-            if (flow.fd == "in") {
-                flow['rxStdev'] = flow.rb / flowspec.rxStdev;
-                flow['txStdev'] = flow.ob / flowspec.txStdev;
-                flow['txRatioStdev'] = flow.txratio / flowspec.txRatioStdev;
-            } else if (flow.fd == "out") {
-                flow['rxStdev'] = flow.ob / flowspec.txStdev;
-                flow['txStdev'] = flow.rb / flowspec.rxStdev;
-                flow['txRatioStdev'] = flow.txratio / flowspec.txRatioStdev;
-            }
-        }
-
-      // save top 5 results to 'Ranked' array
-      ['rx', 'tx', 'txRatio'].forEach(category => {
-        let cStdev = `${category}Stdev`;
-        let cRanked = `${category}Ranked`;
-
-        flows.sort(function (a, b) {
-            return Number(b[cStdev]) - Number(a[cStdev]);
-        })
-        let max = 5;
-        log.debug(category);
-        for (let flow of flows) {
-            if (flow[cStdev] < sdv) {
-                continue;
-            }
-            if (category == 'txRatio' && flow.txratio < 1) {
-                continue;
-            }
-            log.debug(flow);
-            flowspec[cRanked].push(flow);
-            max--;
-            if (max < 0) {
-                break;
-            }
-        }
+      flows.sort(function (a, b) {
+        return Number(b[cStdev]) - Number(a[cStdev]);
       })
+      let max = 5;
+      log.debug(category);
+      for (let flow of flows) {
+        if (flow[cStdev] < sdv) {
+          continue;
+        }
+        if (category == 'txRatio' && flow.txratio < 1) {
+          continue;
+        }
+        log.debug(flow);
+        flowspec[cRanked].push(flow);
+        max--;
+        if (max < 0) {
+          break;
+        }
+      }
+    })
 
-        return flowspec;
+    return flowspec;
+  }
+
+  async summarizeActivityFromConnections(flows) {
+    let appdb = {};
+    let activitydb = {};
+
+    for (let i in flows) {
+      let flow = flows[i];
+      if (flow.du<flowconfig.activityDetectMin) {
+        continue;
+      }
+      if (flow.du>flowconfig.activityDetectMax) {
+        continue;
+      }
+      if (flow.flows) {
+        let fg = new FlowGraph("raw");
+        //log.info("$$$ Before",flow.flows);
+        for (let i in flow.flows) {
+          let f = flow.flows[i];
+          let count = f[4];
+          if (count ==null) {
+            count =1;
+          }
+          fg.addRawFlow(f[0],f[1],f[2],f[3],count);
+        }
+        flow.flows = fg.flowarray;
+        //log.info("$$$ After",flow.flows);
+      }
+      if (flow.appr) {
+        if (appdb[flow.appr]) {
+          appdb[flow.appr].push(flow);
+        } else {
+          appdb[flow.appr] = [flow];
+        }
+      } else if (flow.intel && flow.intel.category && flow.intel.category!="intel") {
+        if (activitydb[flow.intel.category]) {
+          activitydb[flow.intel.category].push(flow);
+        } else {
+          activitydb[flow.intel.category] = [flow];
+        }
+      }
     }
 
-    async summarizeActivityFromConnections(flows) {
-        let appdb = {};
-        let activitydb = {};
-
-        for (let i in flows) {
-            let flow = flows[i];
-            if (flow.du<flowconfig.activityDetectMin) {
-                continue;
-            }
-            if (flow.du>flowconfig.activityDetectMax) {
-                continue;
-            }
-            if (flow.flows) {
-                 let fg = new FlowGraph("raw");
-                 //log.info("$$$ Before",flow.flows);
-                 for (let i in flow.flows) {
-                       let f = flow.flows[i];
-                       let count = f[4];
-                       if (count ==null) {
-                           count =1;
-                       }
-                       fg.addRawFlow(f[0],f[1],f[2],f[3],count);
-                 }
-                 flow.flows = fg.flowarray;
-                 //log.info("$$$ After",flow.flows);
-            }
-            if (flow.appr) {
-                if (appdb[flow.appr]) {
-                    appdb[flow.appr].push(flow);
-                } else {
-                    appdb[flow.appr] = [flow];
-                }
-            } else if (flow.intel && flow.intel.category && flow.intel.category!="intel") {
-                if (activitydb[flow.intel.category]) {
-                    activitydb[flow.intel.category].push(flow);
-                } else {
-                    activitydb[flow.intel.category] = [flow];
-                }
-            }
-        }
-
-/*
+    /*
         onsole.log("--------------appsdb ---- ");
         log.info(appdb);
         log.info("--------------activitydb---- ");
         log.info(activitydb);
-*/
-        //log.info(activitydb);
- 
-        let flowobj = {id:0,app:{},activity:{}};
-        let hasFlows = false;
+        */
+    //log.info(activitydb);
 
-        for (let i in appdb) {
-            let f = new FlowGraph(i);
-            for (let j in appdb[i]) {
-                f.addFlow(appdb[i][j]);
-                hasFlows = true;
-            }
-            // f.name is i, which is the name of app
-            flowobj.app[f.name]= f.flowarraySorted(true);
-            for (let k in flowobj.app[f.name]) {
-                let _f = flowobj.app[f.name][k];
-            }
-        }
-        for (let i in activitydb) {
-            let f = new FlowGraph(i);
-            for (let j in activitydb[i]) {
-                f.addFlow(activitydb[i][j]);
-                hasFlows = true;
-            }
-            flowobj.activity[f.name]=f.flowarraySorted(true);;
-            for (let k in flowobj.activity[f.name]) {
-                let _f = flowobj.activity[f.name][k];
-            }
-         
-        }
-        // linear these flows
-       
-        if (!hasFlows) {
-            return null;
-        }
+    let flowobj = {id:0,app:{},activity:{}};
+    let hasFlows = false;
 
-        //log.info("### Cleaning",flowobj);
-
-        return new Promise((resolve, reject) => {
-          bone.flowgraph("clean", [flowobj],(err,data)=>{
-            resolve(data);
-          });
-        });
-    }
-
-    
-    isFlowValid(flow) {
-      let o = flow;
-      
-      if (o == null) {
-        log.error("Host:Flows:Sorting:Parsing", flow);
-        return false;
+    for (let i in appdb) {
+      let f = new FlowGraph(i);
+      for (let j in appdb[i]) {
+        f.addFlow(appdb[i][j]);
+        hasFlows = true;
       }
-      if (o.rb == null || o.ob == null) {
-        return false
-      }
-      if (o.rb == 0 && o.ob ==0) {
-        // ignore zero length flows
-        return false;
-      }
-      if (o.f === "s") {
-        // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
-        return false;
-      }
-      
-      return true;
-    }
-    
-    flowStringToJSON(flow) {
-      try {
-        return JSON.parse(flow);
-      } catch(err) {
-        return null;
+      // f.name is i, which is the name of app
+      flowobj.app[f.name]= f.flowarraySorted(true);
+      for (let k in flowobj.app[f.name]) {
+        let _f = flowobj.app[f.name][k];
       }
     }
-       
-    mergeFlow(targetFlow, flow) {
-      targetFlow.rb += flow.rb;
-      targetFlow.ct += flow.ct;
-      targetFlow.ob += flow.ob;
-      targetFlow.du += flow.du;
-      if (targetFlow.ts < flow.ts) {
-        targetFlow.ts = flow.ts;
+    for (let i in activitydb) {
+      let f = new FlowGraph(i);
+      for (let j in activitydb[i]) {
+        f.addFlow(activitydb[i][j]);
+        hasFlows = true;
       }
-      if (flow.pf) {
-        for (let k in flow.pf) {
-          if (targetFlow.pf[k] != null) {
-            targetFlow.pf[k].rb += flow.pf[k].rb;
-            targetFlow.pf[k].ob += flow.pf[k].ob;
-            targetFlow.pf[k].ct += flow.pf[k].ct;
-          } else {
-            targetFlow.pf[k] = flow.pf[k]
-          }
-        }
+      flowobj.activity[f.name]=f.flowarraySorted(true);;
+      for (let k in flowobj.activity[f.name]) {
+        let _f = flowobj.activity[f.name][k];
       }
-      if (flow.flows) {
-        if (targetFlow.flows) {
-          targetFlow.flows = targetFlow.flows.concat(flow.flows);
+
+    }
+    // linear these flows
+
+    if (!hasFlows) {
+      return null;
+    }
+
+    //log.info("### Cleaning",flowobj);
+
+    return new Promise((resolve, reject) => {
+      bone.flowgraph("clean", [flowobj],(err,data)=>{
+        resolve(data);
+      });
+    });
+  }
+
+
+  isFlowValid(flow) {
+    let o = flow;
+
+    if (o == null) {
+      log.error("Host:Flows:Sorting:Parsing", flow);
+      return false;
+    }
+    if (o.rb == null || o.ob == null) {
+      return false
+    }
+    if (o.rb == 0 && o.ob ==0) {
+      // ignore zero length flows
+      return false;
+    }
+    if (o.f === "s") {
+      // short packet flag, maybe caused by arp spoof leaking, ignore these packets
+      return false;
+    }
+
+    return true;
+  }
+
+  flowStringToJSON(flow) {
+    try {
+      return JSON.parse(flow);
+    } catch(err) {
+      return null;
+    }
+  }
+
+  mergeFlow(targetFlow, flow) {
+    targetFlow.rb += flow.rb;
+    targetFlow.ct += flow.ct;
+    targetFlow.ob += flow.ob;
+    targetFlow.du += flow.du;
+    if (targetFlow.ts < flow.ts) {
+      targetFlow.ts = flow.ts;
+    }
+    if (flow.pf) {
+      for (let k in flow.pf) {
+        if (targetFlow.pf[k] != null) {
+          targetFlow.pf[k].rb += flow.pf[k].rb;
+          targetFlow.pf[k].ob += flow.pf[k].ob;
+          targetFlow.pf[k].ct += flow.pf[k].ct;
         } else {
-          targetFlow.flows = flow.flows;
+          targetFlow.pf[k] = flow.pf[k]
         }
       }
     }
-    
-    // append to existing flow or create new
-    appendFlow(conndb, flowObject) {
-      let o = flowObject;
-      
-      let key = "";
-      if (o.sh == o.lh) {
-        key = o.dh + ":" + o.fd;
+    if (flow.flows) {
+      if (targetFlow.flows) {
+        targetFlow.flows = targetFlow.flows.concat(flow.flows);
       } else {
-        key = o.sh + ":" + o.fd;
+        targetFlow.flows = flow.flows;
       }
-      //     let key = o.sh+":"+o.dh+":"+o.fd;
-      let flow = conndb[key];
-      if (flow == null) {
-        conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other.
-      } else {
-        this.mergeFlow(flow, o);
-      }
-    }   
-  
-    // conns in last 24 hours
-    // 2018.11.13 This function is not used
-    recentOutgoingConnections(mac, interval) {
-      interval = interval || 3600 * 24;
-      
-      let key = "flow:conn:in:" + mac;
-      let to = new Date() / 1000;
-      let from = to - interval;
-      
-      return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , QUERY_MAX_FLOW])
-        .then((results) => {
-        
+    }
+  }
+
+  // append to existing flow or create new
+  appendFlow(conndb, flowObject) {
+    let o = flowObject;
+
+    let key = "";
+    if (o.sh == o.lh) {
+      key = o.dh + ":" + o.fd;
+    } else {
+      key = o.sh + ":" + o.fd;
+    }
+    //     let key = o.sh+":"+o.dh+":"+o.fd;
+    let flow = conndb[key];
+    if (flow == null) {
+      conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other.
+    } else {
+      this.mergeFlow(flow, o);
+    }
+  }
+
+  // conns in last 24 hours
+  // 2018.11.13 This function is not used
+  recentOutgoingConnections(mac, interval) {
+    interval = interval || 3600 * 24;
+
+    let key = "flow:conn:in:" + mac;
+    let to = new Date() / 1000;
+    let from = to - interval;
+
+    return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , QUERY_MAX_FLOW])
+      .then((results) => {
+
         if(results === null || results.length === 0)
           return [];
-        
+
         let flowObjects = results
-                            .map((x) => this.flowStringToJSON(x))
-                            .filter((x) => this.isFlowValid(x));
-        
+          .map((x) => this.flowStringToJSON(x))
+          .filter((x) => this.isFlowValid(x));
+
         let conndb = {};
-        
+
         flowObjects.forEach((flowObject) => {
-          this.appendFlow(conndb, flowObject);  
+          this.appendFlow(conndb, flowObject);
         });
-        
+
         let connArray = [];
-        
+
         for(let i in conndb) {
           connArray.push(conndb[i]);
         }
-        
+
         return connArray;
-        
-        }).catch((err) => {
+
+      }).catch((err) => {
         log.error("Failed to query flow data for ip", ip, ":", err, err.stack);
         return;
       });
-    }
-    
+  }
+
   async summarizeConnections(mac, direction, from, to, sortby, hours, resolve, saveStats) {
     let sorted = [];
     try {
@@ -995,7 +994,7 @@ module.exports = class FlowManager {
 
       for (let m in conndb) {
         sorted.push(conndb[m]);
-      }      
+      }
 
       // trim to reduce size
       sorted.forEach(flowTool.trimFlow);
@@ -1039,7 +1038,7 @@ module.exports = class FlowManager {
             let _sorted = [];
             for (let i in sorted) {
               if (flowUtil.checkFlag(sorted[i], 'x')) {
-                //log.info("DroppingFlow",sorted[i]); 
+                //log.info("DroppingFlow",sorted[i]);
               } else {
                 _sorted.push(sorted[i]);
               }
@@ -1070,14 +1069,14 @@ module.exports = class FlowManager {
 
       let intels = [];
 
-      for(const url of urls) {      
+      for(const url of urls) {
         const intel = await intelTool.getURLIntel(url);
         if(intel) {
           intel.url = url;
           intels.push(intel);
         }
       }
-      
+
       if(!_.isEmpty(intels)) {
         flow.urls = intels;
       }
@@ -1130,115 +1129,115 @@ module.exports = class FlowManager {
 
 
 
-    toStringShort(obj) {
-        //  // "{\"ts\":1464328076.816846,\"sh\":\"192.168.2.192\",\"dh\":\"224.0.0.251\",\"ob\":672001,\"rb\":0,\"ct\":1,\"fd\":\"in\",\"lh\":\"192.168.2.192\",\"bl\":3600}"
-        let ts = Date.now() / 1000;
-        let t = ts - obj.ts
-        t = (t / 60).toFixed(1);
-        let _ts = Date.now() / 1000;
-        let _t = _ts - obj._ts
-        _t = (_t / 60).toFixed(1);
-        let org = "";
-        if (obj.org) {
-            org = "(" + obj.org + ")";
-        }
-        let appr = "";
-        if (obj.appr) {
-            appr = "#" + obj.appr + "#";
-        }
-        return t+"("+_t+")" + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
+  toStringShort(obj) {
+    //  // "{\"ts\":1464328076.816846,\"sh\":\"192.168.2.192\",\"dh\":\"224.0.0.251\",\"ob\":672001,\"rb\":0,\"ct\":1,\"fd\":\"in\",\"lh\":\"192.168.2.192\",\"bl\":3600}"
+    let ts = Date.now() / 1000;
+    let t = ts - obj.ts
+    t = (t / 60).toFixed(1);
+    let _ts = Date.now() / 1000;
+    let _t = _ts - obj._ts
+    _t = (_t / 60).toFixed(1);
+    let org = "";
+    if (obj.org) {
+      org = "(" + obj.org + ")";
+    }
+    let appr = "";
+    if (obj.appr) {
+      appr = "#" + obj.appr + "#";
+    }
+    return t+"("+_t+")" + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
+  }
+
+  toStringShortShort2(obj, type, interest) {
+    let sname = obj.sh;
+    if (obj.shname) {
+      sname = obj.shname;
+    }
+    let name = obj.dh;
+    if (type == 'txdata' || type =='out') {
+      if (obj.appr && obj.appr.length > 2) {
+        name = obj.appr;
+      } else if (obj.dhname && obj.dhname.length > 2) {
+        name = obj.dhname;
+      }
+    } else {
+      if (obj.appr && obj.appr.length > 2) {
+        name = obj.appr;
+      } else if (obj.org && obj.org.length > 2) {
+        name = obj.org;
+      } else if (obj.dhname && obj.dhname.length > 2) {
+        name = obj.dhname;
+      }
     }
 
-    toStringShortShort2(obj, type, interest) {
-        let sname = obj.sh;
-        if (obj.shname) {
-            sname = obj.shname;
-        }
-        let name = obj.dh;
-        if (type == 'txdata' || type =='out') {
-            if (obj.appr && obj.appr.length > 2) {
-                name = obj.appr;
-            } else if (obj.dhname && obj.dhname.length > 2) {
-                name = obj.dhname;
-            }
-        } else {
-            if (obj.appr && obj.appr.length > 2) {
-                name = obj.appr;
-            } else if (obj.org && obj.org.length > 2) {
-                name = obj.org;
-            } else if (obj.dhname && obj.dhname.length > 2) {
-                name = obj.dhname;
-            }
-        }
+    //let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
+    let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
+    let dtime = "";
 
-        //let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
-        let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
-        let dtime = "";
-
-        if (time>5) {
-            dtime = time+" min ago, ";
-        }
-
-        if (type == null) {
-            return name + "min : rx " + obj.rb + ", tx " + obj.ob;
-        } else if (type == "rxdata" || type == "in") {
-            if (interest == 'txdata') {
-                return dtime+sname + " transferred to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
-            }
-            return dtime+sname + " transferred to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
-        } else if (type == "txdata" || type == "out") {
-            if (interest == 'txdata') {
-                return dtime+sname + " transferred to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
-            }
-            return dtime+sname + " transferred to " + name + ", " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
-        }
+    if (time>5) {
+      dtime = time+" min ago, ";
     }
 
-    toStringShortShort(obj, type) {
-        let sname = obj.sh;
-        if (obj.shname) {
-            sname = obj.shname;
-        }
-        let name = obj.dh;
-        if (obj.appr && obj.appr.length > 2) {
-            name = obj.appr;
-        } else if (obj.org && obj.org.length > 2) {
-            name = obj.org;
-        } else if (obj.dhname && obj.dhname.length > 2) {
-            name = obj.dhname;
-        }
+    if (type == null) {
+      return name + "min : rx " + obj.rb + ", tx " + obj.ob;
+    } else if (type == "rxdata" || type == "in") {
+      if (interest == 'txdata') {
+        return dtime+sname + " transferred to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+      }
+      return dtime+sname + " transferred to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+    } else if (type == "txdata" || type == "out") {
+      if (interest == 'txdata') {
+        return dtime+sname + " transferred to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+      }
+      return dtime+sname + " transferred to " + name + ", " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+    }
+  }
 
-        let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
-
-        if (type == null) {
-            return name + "min : rx " + obj.rb + ", tx " + obj.ob;
-        } else if (type == "rxdata") {
-            return time + "min: " + sname + "->" + name + " " + obj.rb + " bytes";
-        } else if (type == "txdata") {
-            return time + "min: " + sname + "->" + name + " : " + obj.ob + " bytes";
-        }
+  toStringShortShort(obj, type) {
+    let sname = obj.sh;
+    if (obj.shname) {
+      sname = obj.shname;
+    }
+    let name = obj.dh;
+    if (obj.appr && obj.appr.length > 2) {
+      name = obj.appr;
+    } else if (obj.org && obj.org.length > 2) {
+      name = obj.org;
+    } else if (obj.dhname && obj.dhname.length > 2) {
+      name = obj.dhname;
     }
 
-    sort(sorted, sortby) {
-        if (sortby == "time") {
-            sorted.sort(function (a, b) {
-                return Number(b.ts) - Number(a.ts);
-            })
-        } else if (sortby == "rxdata") {
-            sorted.sort(function (a, b) {
-                return Number(b.rb) - Number(a.rb);
-            })
-        } else if (sortby == "txdata") {
-            sorted.sort(function (a, b) {
-                return Number(b.ob) - Number(a.ob);
-            })
-        } else if (sortby == "duration") {
-            sorted.sort(function (a, b) {
-                return Number(b.du) - Number(a.du);
-            })
-        }
-        return sorted;
+    let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
+
+    if (type == null) {
+      return name + "min : rx " + obj.rb + ", tx " + obj.ob;
+    } else if (type == "rxdata") {
+      return time + "min: " + sname + "->" + name + " " + obj.rb + " bytes";
+    } else if (type == "txdata") {
+      return time + "min: " + sname + "->" + name + " : " + obj.ob + " bytes";
     }
+  }
+
+  sort(sorted, sortby) {
+    if (sortby == "time") {
+      sorted.sort(function (a, b) {
+        return Number(b.ts) - Number(a.ts);
+      })
+    } else if (sortby == "rxdata") {
+      sorted.sort(function (a, b) {
+        return Number(b.rb) - Number(a.rb);
+      })
+    } else if (sortby == "txdata") {
+      sorted.sort(function (a, b) {
+        return Number(b.ob) - Number(a.ob);
+      })
+    } else if (sortby == "duration") {
+      sorted.sort(function (a, b) {
+        return Number(b.du) - Number(a.du);
+      })
+    }
+    return sorted;
+  }
 
   removeFlowsAll(mac) {
     // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated

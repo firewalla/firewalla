@@ -143,13 +143,11 @@ class SSClient {
   // prepare the chnroute files
   async prepareCHNRoute() {
     log.info("Preparing CHNRoute...");
-    (async () => {
-      await delay(60000);
-      const code = "CN";
-      await countryUpdater.activateCountry(code);
-      const chain = `FW_SHADOWSOCKS_${this.name}`;
-      await exec(wrapIptables(`sudo iptables -w -t nat -I ${chain} -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
-    })();
+    await delay(60000);
+    const code = "CN";
+    await countryUpdater.activateCountry(code);
+    const chain = `FW_SHADOWSOCKS_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -I ${chain} -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
   }
 
   isStarted() {

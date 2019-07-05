@@ -1183,7 +1183,7 @@ module.exports = class DNSMASQ {
     }
     try {
       log.info("Disabling DHCP mode: " + mode);
-      await (this.start(true)); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
+      await this.start(true); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
       log.info("DHCP mode is disabled");
     } catch (err) {
       log.error("Failed to restart dnsmasq when disabling DHCP: " + err);
