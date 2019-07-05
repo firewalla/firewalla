@@ -372,11 +372,6 @@ class netBot extends ControllerBot {
       // start VPN client globally
       this.hostManager.loadPolicy((err, data) => {
         if (err == null) {
-          let oldValue = {};
-          if (data["vpnClient"]) {
-            oldValue = JSON.parse(data["vpnClient"]);
-          }
-          value = Object.assign({}, oldValue, value);
           this.hostManager.setPolicy("vpnClient", value, (err, data) => {
             if (err == null) {
               if (callback != null)
@@ -426,13 +421,11 @@ class netBot extends ControllerBot {
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      var newValue = {};
+      let oldValue = {};
       if (data["vpn"]) {
-        newValue = JSON.parse(data["vpn"]);
+        oldValue = JSON.parse(data["vpn"]);
       }
-      Object.keys(value).forEach((k) => {
-        newValue[k] = value[k];
-      });
+      const newValue = Object.assign({}, oldValue, value);
       this.hostManager.setPolicy("vpn", newValue, (err, data) => {
         if (err == null) {
           if (callback != null)
@@ -531,6 +524,20 @@ class netBot extends ControllerBot {
       })
     }
     
+  }
+
+  async _whitelist(ip, value, callback) {
+    if (ip === "0.0.0.0") {
+      await this.hostManager.loadPolicy()
+      await this.hostManager.setPolicyAsync("whitelist", value)
+    } else {
+      let host = await this.hostManager.getHostAsync(ip);
+
+      if (host != null) {
+        await host.loadPolicyAsync()
+        await host.setPolicyAsync("whitelist", value)
+      }
+    }
   }
 
 
@@ -727,7 +734,6 @@ class netBot extends ControllerBot {
         let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
         log.info("sendLog: cmdline", filename, password,cmdline);
         require('child_process').exec(cmdline, (err, out, code) => {
-          log.error("sendLog: unable to process encrypt-upload",err,out,code);
           if (err!=null) {
             log.error("sendLog: unable to process encrypt-upload",err,out,code);
           } else {
@@ -1141,6 +1147,14 @@ class netBot extends ControllerBot {
                       });
                   }
               }
+          } else if (msg.control === 'cloud') {
+            log.error("Firewalla Cloud");
+            if(msg.command) {
+              const cloudManager = require('../extension/cloud/CloudManager.js');
+              cloudManager.run(msg.command, msg.info).catch((err) => {
+                log.error("Got error when handling cloud action, err:", err);
+              });
+            }
           }
       }
   }
@@ -1187,8 +1201,8 @@ class netBot extends ControllerBot {
     this.invalidateCache();
 
     if(extMgr.hasSet(msg.data.item)) {
-      async(() => {
-        const result = await (extMgr.set(msg.data.item, msg, msg.data.value))
+      (async () => {
+        const result = await extMgr.set(msg.data.item, msg, msg.data.value)
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -1306,6 +1320,10 @@ class netBot extends ControllerBot {
               this._shield(msg.target, msg.data.value.shield, (err, obj) => {
                 cb(err);
               });
+              break;
+            case "whitelist":
+              this._whitelist(msg.target, msg.data.value.whitelist)
+                .then(cb).catch(cb)
               break;
           default:
             let target = msg.target
@@ -1636,6 +1654,39 @@ class netBot extends ControllerBot {
           })
         }
         break;
+      case "flows":
+        (async () => {
+          // options:
+          //  count: number of alarms returned, default 100
+          //  ts: timestamp used to query alarms, default to now
+          //  asc: return results in ascending order, default to false
+          //  begin/end: time range used to query, will be ommitted when ts is set
+
+          let options = Object.assign({}, msg.data);
+
+          if (msg.target && msg.target != '0.0.0.0') {
+            let host = await this.hostManager.getHostAsync(msg.target);
+            if (!host || !host.o.mac) {
+              let error = new Error("Invalid Host");
+              error.code = 404;
+              throw error;
+            }
+            options.mac = host.o.mac
+          }
+
+          options.begin = options.begin || options.start;
+
+          let flows = await flowTool.prepareRecentFlows({}, options)
+          let data = {
+            count: flows.length,
+            flows,
+            nextTs: flows[flows.length - 1].ts
+          }
+          this.simpleTxData(msg, data, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
       case "vpn":
       case "vpnreset":
         let regenerate = false
@@ -1659,36 +1710,30 @@ class netBot extends ControllerBot {
             log.error("Failed to load system policy for VPN", err);
             this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
           } else {
-            // this should set local port of VpnManager, which will be used in getOvpnFile
-            const vpnManager = new VpnManager('info'); // VpnManager is a singleton
-            vpnManager.configure(JSON.parse(data["vpn"]), false, (err) => {
-              if (err != null) {
-                log.error("Failed to configure VPN", err);
-                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-              } else {
-                vpnManager.getOvpnFile("fishboneVPN1", null, regenerate, compAlg, (err, ovpnfile, password) => {
-                  if (err == null) {
-                    datamodel.code = 200;
-                    datamodel.data = {
-                      ovpnfile: ovpnfile,
-                      password: password,
-                      portmapped: this.hostManager.policy['vpnPortmapped']
-                    };
+            const vpnConfig = JSON.parse(data["vpn"] || "{}");
+            let externalPort = "1194";
+            if (vpnConfig && vpnConfig.externalPort)
+              externalPort = vpnConfig.externalPort;
+            VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, compAlg, externalPort, (err, ovpnfile, password) => {
+              if (err == null) {
+                datamodel.code = 200;
+                datamodel.data = {
+                  ovpnfile: ovpnfile,
+                  password: password,
+                  portmapped: JSON.parse(data['vpnPortmapped'] || "false")
+                };
 
-                    (async () => {
-                      const doublenat = await rclient.getAsync("ext.doublenat");
-                      if(doublenat !== null) {
-                        datamodel.data.doublenat = doublenat;
-                      }
-                      this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-                    })();
-
-                  } else {
-                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                (async () => {
+                  const doublenat = await rclient.getAsync("ext.doublenat");
+                  if (doublenat !== null) {
+                    datamodel.data.doublenat = doublenat;
                   }
-                });
+                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                })();
+              } else {
+                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
               }
-            }); 
+            });
           }
         });
         break;
@@ -2339,6 +2384,7 @@ class netBot extends ControllerBot {
     }
 
     let mac = host.o.mac;
+    options.mac = mac;
 
     // load 24 hours download/upload trend
     await flowManager.getStats2(host);
@@ -2348,7 +2394,7 @@ class netBot extends ControllerBot {
       jsonobj = host.toJson();
 
       await Promise.all([
-        flowTool.prepareRecentFlowsForHost(jsonobj, mac, options),
+        flowTool.prepareRecentFlows(jsonobj, options),
         netBotTool.prepareTopUploadFlowsForHost(jsonobj, mac, options),
         netBotTool.prepareTopDownloadFlowsForHost(jsonobj, mac, options),
         netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options),
@@ -2901,7 +2947,7 @@ class netBot extends ControllerBot {
           if(iptool.isV4Format(ip)) {
             sem.emitEvent({
               type: "DeviceUpdate",
-              message: "Manual submit a new device via API",
+              message: `Manual submit a new device via API ${ip} ${name}`,
               host: {
                 ipv4: ip,
                 ipv4Addr: ip,
@@ -3178,7 +3224,9 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup();
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                });
                 const result = await ovpnClient.start();
                 if (!result) {
                   await ovpnClient.stop();
@@ -3214,7 +3262,9 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup();
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                });
                 const stats = await ovpnClient.getStatistics();
                 await ovpnClient.stop();
                 this._vpnClient("0.0.0.0", {state: false});
@@ -3935,24 +3985,22 @@ class netBot extends ControllerBot {
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.error(msg,reason.stack);
-  bone.log("error",{
-    version: sysManager.version(),
+  bone.logAsync("error",{
     type:'FIREWALLA.UI.unhandledRejection',
     msg:msg,
     stack:reason.stack,
     err: JSON.stringify(reason)
-  },null);
+  });
 });
 
 process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
-  bone.log("error", {
-    version: sysManager.version(),
+  bone.logAsync("error", {
     type: 'FIREWALLA.UI.exception',
     msg: err.message,
     stack: err.stack,
     err: JSON.stringify(err)
-  }, null);
+  });
   setTimeout(() => {
     try {
         require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    

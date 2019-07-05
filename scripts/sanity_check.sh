@@ -216,9 +216,14 @@ check_hosts() {
         local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
         local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
         local DEVICE_MAC=${DEVICE/host:mac:/""}
-        local DEVICE_MONITORING=$(redis-cli hget $DEVICE spoofing)
+        local POLICY_MAC="policy:mac:${DEVICE_MAC}"
+        local DEVICE_MONITORING=$(redis-cli hget $POLICY_MAC monitor)
         if [[ ! -n $DEVICE_MONITORING ]]; then
-            DEVICE_MONITORING="false"
+            if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP; then
+                DEVICE_MONITORING="true"
+            else
+                DEVICE_MONITORING="N/A"
+            fi
         fi
         local DEVICE_B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts $DEVICE_IP)
         local DEVICE_B7_MONITORING=""

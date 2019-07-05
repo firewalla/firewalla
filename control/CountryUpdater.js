@@ -35,7 +35,6 @@ const iptool = require("ip");
 const util = require('util')
 const fs = require('fs');
 const writeFileAsync = util.promisify(fs.writeFile);
-const readFileAsync = util.promisify(fs.readFile);
 
 const Ipset = require('../net2/Ipset.js')
 

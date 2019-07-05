@@ -105,13 +105,12 @@ process.on('uncaughtException',(err)=>{
   if (err && err.message && err.message.includes("Redis connection")) {
     return;
   }
-  bone.log("error", {
-    version: config.version,
+  bone.logAsync("error", {
     type: 'FIREWALLA.MAIN.exception',
     msg: err.message,
     stack: err.stack,
     err: JSON.stringify(err)
-  }, null);
+  });
   setTimeout(()=>{
     try {
       cp.execSync("touch /home/pi/.firewalla/managed_reboot")
@@ -124,13 +123,12 @@ process.on('uncaughtException',(err)=>{
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
-  bone.log("error", {
-    version: config.version,
+  bone.logAsync("error", {
     type: 'FIREWALLA.MAIN.unhandledRejection',
     msg: msg,
     stack: reason.stack,
     err: JSON.stringify(reason)
-  }, null);
+  });
 });
 
 async function resetModeInInitStage() {
@@ -170,6 +168,10 @@ function disableFireBlue() {
 }
 
 async function run() {
+
+  // periodically update cpu usage, so that latest info can be pulled at any time
+  const si = require('../extension/sysinfo/SysInfo.js');
+  si.startUpdating();
 
   const firewallaConfig = require('../net2/config.js').getConfig();
   sysManager.setConfig(firewallaConfig) // update sys config when start
@@ -253,10 +255,6 @@ async function run() {
       return;
     }
 
-    sem.emitEvent({
-      type: 'IPTABLES_READY'
-    });
-
     await mode.reloadSetupMode() // make sure get latest mode from redis
     await ModeManager.apply()
 
@@ -312,8 +310,6 @@ async function run() {
 /*
   Bug: when two firewalla's are on the same network, this will change the upnp
   setting.  Need to fix this later.
-
-  this will kick off vpnManager, and later policy manager should stop the VpnManager if needed
 */
   setTimeout(()=>{
     var vpnManager = new VpnManager();
@@ -321,7 +317,7 @@ async function run() {
       if (err != null) {
         log.error("Failed to load system policy for VPN", err);
       } else {
-        var vpnConfig = {};
+        var vpnConfig = {state: false}; // default value
         if(data && data["vpn"]) {
           vpnConfig = JSON.parse(data["vpn"]);
         }
@@ -330,15 +326,19 @@ async function run() {
             log.info("Unable to install vpn server instance: server", err);
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
-            vpnManager.configure(vpnConfig, true, (err) => {
-              if (err != null) {
-                log.error("Failed to configure VPN manager", err);
+            (async () => {
+              const conf = await vpnManager.configure(vpnConfig, true);
+              if (conf == null) {
+                log.error("Failed to configure VPN manager");
                 vpnConfig.state = false;
                 hostManager.setPolicy("vpn", vpnConfig);
               } else {
-                hostManager.setPolicy("vpnAvaliable", true);
+                hostManager.setPolicy("vpnAvaliable", true, (err) => { // old typo, DO NOT fix it for backward compatibility.
+                  vpnConfig = Object.assign({}, vpnConfig, conf);
+                  hostManager.setPolicy("vpn", vpnConfig);
+                });
               }
-            });
+            })();
           }
         });
       }

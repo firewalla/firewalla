@@ -16,14 +16,6 @@
 
 let log = require('./logger.js')(__filename);
 
-let Promise = require('bluebird');
-
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
-let util = require('util');
-
 let instance = null;
 class AppTool {
   constructor() {

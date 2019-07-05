@@ -133,19 +133,6 @@ class DNSMASQSensor extends Sensor {
             }
           });
 
-          /*
-          sem.on("VPNSubnetChanged", (event) => {
-            if (!this.started) {
-              this._bufferEvent(event);
-            } else {
-              const subnet = event.vpnSubnet;
-              if (subnet) {
-                dnsmasq.updateVpnIptablesRules(subnet);
-              }
-            }
-          });
-          */
-
           this.registered = true;
         }
 

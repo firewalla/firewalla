@@ -43,7 +43,7 @@ let redisMemory = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 30 * 1000; // every 30 seconds
+let updateInterval = 60 * 1000; // every 30 seconds
 
 let releaseBranch = null;
 
@@ -52,6 +52,10 @@ let threadInfo = {};
 let diskInfo = null;
 
 let intelQueueSize = 0;
+
+let multiProfileSupport = false;
+
+getMultiProfileSupportFlag();
 
 async function update() {
   os.cpuUsage((v) => {
@@ -66,6 +70,7 @@ async function update() {
   await getThreadInfo();
   await getIntelQueueSize();
   await getDiskInfo();
+  getMultiProfileSupportFlag();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -114,6 +119,16 @@ function getDiskInfo() {
       resolve();
     });
   })
+}
+
+async function getMultiProfileSupportFlag() {
+  const cmd = "sudo bash -c 'test -e /etc/openvpn/easy-rsa/keys2/ta.key'"
+  try {
+    await exec(cmd);
+    multiProfileSupport = false;
+  } catch(err) {
+    multiProfileSupport = true;
+  }
 }
 
 async function getIntelQueueSize() {
@@ -231,7 +246,8 @@ function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     diskInfo: diskInfo,
-    categoryStats: getCategoryStats()
+    categoryStats: getCategoryStats(),
+    multiProfileSupport: multiProfileSupport
   }
 
   return sysinfo;

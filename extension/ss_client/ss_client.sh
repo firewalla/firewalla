@@ -20,7 +20,7 @@ fi
 : ${FW_SS_CLIENT_ADDRESS:="0.0.0.0"}
 
 : ${FW_OVERTURE_BINARY:="${DIR}/bin.$(uname -m)/overture"}
-: ${FW_OVERTURE_CONFIG:="${DIR}/overture.config.json"}
+: ${FW_OVERTURE_CONFIG:="${HOME}/.firewalla/run/overture.${NAME}.config.json"}
 : ${FW_OVERTURE_IPSET:="c_bd_country:CN_set"}
 
 : ${FW_REMOTE_DNS:="8.8.8.8"}

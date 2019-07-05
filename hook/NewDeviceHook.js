@@ -68,7 +68,7 @@ class NewDeviceHook extends Hook {
 
       sem.emitEvent({
         type: "DeviceUpdate",
-        message: "A new device found @ NewDeviceHook",
+        message: `A new device found @ NewDeviceHook ${result.mac} ${name}`,
         host: result
       });
       // d.processHost(result, (err, host, newHost) => {

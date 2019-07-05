@@ -61,7 +61,7 @@ class CategoryUpdateSensor extends Sensor {
 
   async countryJob() {
     const countryList = this.loadCategoryFromBone('country:list');
-    rc.saddAsync('', countryList);
+    rc.saddAsync('country:list', countryList);
     
     const activeCountries = countryUpdater.getActiveCountries();
     log.info('Active countries', activeCountries);
@@ -138,9 +138,6 @@ class CategoryUpdateSensor extends Sensor {
 
   run() {
     sem.once('IPTABLES_READY', async() => {
-      await this.regularJob()
-      await this.securityJob()
-
       // initial round of country list update is triggered by this event
       // also triggers dynamic list and ipset update here
       // to make sure blocking takes effect immediately
@@ -151,11 +148,14 @@ class CategoryUpdateSensor extends Sensor {
         await countryUpdater.recycleIPSet(category, false)
       })
 
-      setInterval(this.regularJob, this.config.regularInterval * 1000)
+      await this.regularJob()
+      await this.securityJob()
 
-      setInterval(this.securityJob, this.config.securityInterval * 1000)
+      setInterval(this.regularJob.bind(this), this.config.regularInterval * 1000)
 
-      setInterval(this.countryJob, this.config.countryInterval * 1000)
+      setInterval(this.securityJob.bind(this), this.config.securityInterval * 1000)
+
+      setInterval(this.countryJob.bind(this), this.config.countryInterval * 1000)
     })
   }
 

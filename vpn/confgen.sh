@@ -10,7 +10,9 @@ DNS=$3
 : ${DNS:="8.8.8.8"}
 SERVER_NETWORK=$4
 : ${SERVER_NETWORK="10.8.0.0"}
-LOCAL_PORT=$5
+NETMASK=$5
+: ${NETMASK="255.255.255.0"}
+LOCAL_PORT=$6
 : ${LOCAL_PORT="1194"}
 
 chmod 777 /etc/openvpn
@@ -19,6 +21,10 @@ if [ ! -s /etc/openvpn/crl.pem ]; then
   # create crl file with dummy revocation list
   chmod 777 -R /etc/openvpn
   cd /etc/openvpn/easy-rsa
+  # Change nextUpdate in openssl crl to 3600 days
+  if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
+    sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
+  fi
   source ./vars
   ./pkitool dummy
   ./revoke-full dummy
@@ -26,6 +32,24 @@ if [ ! -s /etc/openvpn/crl.pem ]; then
   chmod 600 -R /etc/openvpn
   cd -
 fi
+
+crl_expr=$(date -d "$(openssl crl -in /etc/openvpn/crl.pem -noout -nextupdate | cut -d= -f2)" +%s)
+current_time=$(date +%s)
+crl_expr_days_left=$((($crl_expr - $current_time) / 86400))
+logger "CRL expiration days left: $crl_expr_days_left"
+
+if [[ $crl_expr_days_left -lt 30 ]]; then
+  # refresh crl next update time by create and revoke dummy certificate. The new crl next update time should be 3600 days later
+  chmod 777 -R /etc/openvpn
+  cd /etc/openvpn/easy-rsa
+  source ./vars
+  ./pkitool dummy
+  ./revoke-full dummy
+  cp keys/crl.pem ../crl.pem
+  chmod 600 -R /etc/openvpn
+  cd - 
+fi
+
 chmod 644 /etc/openvpn/crl.pem
 
 if [ ! -d /etc/openvpn/client_conf ]; then
@@ -42,9 +66,9 @@ fi
 chmod 644 /etc/openvpn/client_conf/*
 
 if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
-  # make sure that server config with same instance name, server network and local port
+  # make sure that server config with same instance name, server network , netmask and local port
   # will not be regenerated
-  grep -q "server $SERVER_NETWORK" /etc/openvpn/$INSTANCE_NAME.conf
+  grep -q "server $SERVER_NETWORK $NETMASK" /etc/openvpn/$INSTANCE_NAME.conf
   same_network=$?
   grep -q "port $LOCAL_PORT" /etc/openvpn/$INSTANCE_NAME.conf
   same_port=$?
@@ -78,6 +102,8 @@ sed -i "s=MY_DNS=$DNS=" /etc/openvpn/$INSTANCE_NAME.conf
 # sed 's/MYDNS/'$DNS'/' <$FIREWALLA_HOME/vpn/server_config.txt.tmp >/etc/openvpn/server.conf
 # Set server network
 sed -i "s=SERVER_NETWORK=$SERVER_NETWORK=" /etc/openvpn/$INSTANCE_NAME.conf
+# Set netmask
+sed -i "s=NETMASK=$NETMASK=" /etc/openvpn/$INSTANCE_NAME.conf
 # Set local port
 sed -i "s=LOCAL_PORT=$LOCAL_PORT=" /etc/openvpn/$INSTANCE_NAME.conf
 # Set server instance

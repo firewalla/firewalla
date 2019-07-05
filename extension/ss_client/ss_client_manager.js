@@ -1,6 +1,7 @@
 'use strict';
 
 let instance = null;
+const log = require('../../net2/logger.js')(__filename);
 
 const SSClient = require('./ss_client.js');
 const rclient = require('../../util/redis_manager').getRedisClient();
@@ -22,6 +23,10 @@ class SSClientManager {
       key = `scisurf.${name}.config`;
     }
     const configString = await rclient.getAsync(key);
+    if(!configString) {
+      return null;
+    }
+    
     try {
       let config = JSON.parse(configString);
       if(config.servers && Array.isArray(config.servers)) {

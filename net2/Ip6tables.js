@@ -162,11 +162,53 @@ function flush() {
   });
 }
 
+function _getDNSRedirectChain(type) {
+  type = type || "local";
+  let chain = "PREROUTING_DNS_DEFAULT";
+  switch (type) {
+    case "local":
+      chain = "PREROUTING_DNS_DEFAULT";
+      break;
+    case "vpn":
+      chain = "PREROUTING_DNS_VPN";
+      break;
+    case "vpnClient":
+      chain = "PREROUTING_DNS_VPN_CLIENT";
+      break;
+    default:
+      chain = "PREROUTING_DNS_DEFAULT";
+  }
+  return chain;
+}
+
+async function dnsFlushAsync(type) {
+  type = type || "local";
+  const chain = _getDNSRedirectChain(type);
+  let rule = {
+    sudo: true,
+    chain: chain,
+    action: '-F',
+    table: 'nat',
+    checkBeforeAction: false
+  };
+
+  return new Promise((resolve, reject) => {
+    newRule(rule, (err) => {
+      if (err) {
+        log.error("Failed to apply rule: ", rule);
+        reject(err);  
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 // run() is deleted as same functionality is provided in Iptables.run() 
 
-function dnsRedirectAsync(server, port) {
+function dnsRedirectAsync(server, port, type) {
   return new Promise((resolve, reject) => {
-    dnsRedirect(server, port, (err) => {
+    dnsRedirect(server, port, type, (err) => {
       if(err) {
         reject(err)
       } else {
@@ -176,10 +218,12 @@ function dnsRedirectAsync(server, port) {
   })
 }
 
-function dnsRedirect(server, port, cb) {
+function dnsRedirect(server, port, type, cb) {
+  type = type || "local";
+  const chain = _getDNSRedirectChain(type);
   let rule = {
     sudo: true,
-    chain: 'PREROUTING',
+    chain: chain,
     action: '-A',
     table: 'nat',
     protocol: 'udp',
@@ -201,9 +245,9 @@ function dnsRedirect(server, port, cb) {
   })
 }
 
-function dnsUnredirectAsync(server, port) {
+function dnsUnredirectAsync(server, port, type) {
   return new Promise((resolve, reject) => {
-    dnsUnredirect(server, port, (err) => {
+    dnsUnredirect(server, port, type, (err) => {
       if(err) {
         reject(err)
       } else {
@@ -213,10 +257,12 @@ function dnsUnredirectAsync(server, port) {
   })
 }
 
-function dnsUnredirect(server, port, cb) {
+function dnsUnredirect(server, port, type, cb) {
+  type = type || "local";
+  const chain = _getDNSRedirectChain(type);
   let rule = {
     sudo: true,
-    chain: 'PREROUTING',
+    chain: chain,
     action: '-D',
     table: 'nat',
     protocol: 'udp',
@@ -240,4 +286,5 @@ function dnsUnredirect(server, port, cb) {
 
 exports.dnsRedirectAsync = dnsRedirectAsync
 exports.dnsUnredirectAsync = dnsUnredirectAsync
+exports.dnsFlushAsync = dnsFlushAsync
 exports.flush = flush 

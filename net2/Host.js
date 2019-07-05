@@ -465,10 +465,13 @@ class Host {
       if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
         return;
       }
+
+      /* This is taken care of by DnsLoopAvoidanceSensor
       if (dns && dns.includes(this.o.ipv4Addr)) {
         // do not monitor dns server's traffic
         return;
       }
+      */
       if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
         return;
       }
@@ -1077,6 +1080,10 @@ class Host {
     // deprecated, do nothing
   }
 
+  setPolicyAsync(name, data) {
+    return util.promisify(this.setPolicy).bind(this)(name, data)
+  }
+
   // policy:mac:xxxxx
   setPolicy(name, data, callback) {
     callback = callback || function() {}
@@ -1108,49 +1115,6 @@ class Host {
         }
         this.policy.acl = acls;
       }
-    } else if (name === "blockin") { // legacy logic handling, code can be removed in the future
-      if(this.o && this.o.mac) {
-        if(data) {
-          (async () => {
-            // TODO: performance enhancement needed
-            let rule = await pm2.findPolicy(this.o.mac, "mac")
-            if(rule) { // already created
-              callback(null, {blockin: true});
-            } else {
-              // need to create one
-              let rule = new Policy({
-                target: this.o.mac,
-                type: "mac"
-              })
-
-              let resultPolicyRule = await pm2.checkAndSaveAsync(rule)
-              if(resultPolicyRule) {
-                callback(null, {blockin: true})
-              } else {
-                callback(new Error("failed to apply blockin"))
-              }
-            }
-          })().catch((err) => {
-            callback(err, null)
-          })
-
-        } else {
-          (async () => {
-            // TODO: performance enhancement needed
-            let rule = await pm2.findPolicy(this.o.mac, "mac")
-            if(rule) { // already created
-              await pm2.disableAndDeletePolicy(rule.pid)
-            }
-
-            callback(null, {blockin: false});
-          })().catch((err) => {
-            callback(err, null)
-          })
-        }
-      }
-
-      return // no need to save policy for blockin case, it's already routed to new policy model
-
     } else {
       if (this.policy[name] != null && this.policy[name] == data) {
         callback(null, null);
@@ -1207,6 +1171,10 @@ class Host {
         callback(err, null);
     });
 
+  }
+
+  loadPolicyAsync() {
+    return util.promisify(this.loadPolicy).bind(this)()
   }
 
   loadPolicy(callback) {

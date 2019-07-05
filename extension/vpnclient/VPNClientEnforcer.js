@@ -181,20 +181,20 @@ class VPNClientEnforcer {
       // round robin rule for multiple dns servers
       if (i == 0) {
         // no need to use statistic module for the first rule
-        let cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        let cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
         });
-        cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
         });
       } else {
-        let cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        let cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
         });
-        cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
         });
@@ -212,20 +212,20 @@ class VPNClientEnforcer {
       // round robin rule for multiple dns servers
       if (i == 0) {
         // no need to use statistic module for the first rule
-        let cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        let cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
         });
-        cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
         });
       } else {
-        let cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        let cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
         });
-        cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
         });

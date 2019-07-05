@@ -39,10 +39,10 @@ class SystemStatusSensor extends Sensor {
   }
 
   job() {
-    async(() => {
-      const result = await (this.dmesg())
+    (async () => {
+      const result = await this.dmesg()
       if(result) {
-        bone.log("error", {
+        await bone.logAsync("error", {
           msg: result,
           type: 'dmesg'
         })

@@ -282,7 +282,7 @@ class NmapSensor extends Sensor {
 
       sem.emitEvent({
         type: "DeviceUpdate",
-        message: "Found a device via NmapSensor",
+        message: `Found a device via NmapSensor ${hostInfo.ipv4} ${hostInfo.mac}`,
         suppressEventLogging: true,
         suppressAlarm: this.suppressAlarm,
         host: hostInfo

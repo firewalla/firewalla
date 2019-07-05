@@ -115,7 +115,7 @@ class SafeSearchPlugin extends Sensor {
       sclient.on("message", (channel, message) => {
         switch (channel) {
           case "System:IPChange":
-            if (this._localIP) {
+            if (fc.isFeatureOn("safe_search")) {
               (async () => {
                 await this.removeIptablesRules();
                 await this.addIptablesRules();
@@ -129,6 +129,9 @@ class SafeSearchPlugin extends Sensor {
 
       if (f.isMain()) {
         sclient.subscribe("System:IPChange");
+        setInterval(() => {
+          this.checkIfRestartNeeded()
+        }, 10 * 1000) // check restart request once every 10 seconds
       }
 
       await this.job();
@@ -136,6 +139,23 @@ class SafeSearchPlugin extends Sensor {
         return this.job();
       }, this.config.refreshInterval || 3600 * 1000); // one hour by default
     })
+  }
+
+  async checkIfRestartNeeded() {
+    const MIN_RESTART_INTERVAL = 10 // 10 seconds
+
+    if (this.needRestart) {
+      log.info("need restart is", this.needRestart);
+    }
+
+    if(this.needRestart && (new Date() / 1000 - this.needRestart) > MIN_RESTART_INTERVAL) {
+      this.needRestart = null
+      await this._rawRestartDeviceMasq().then(() => {
+        log.info("Devicemasq is restarted successfully");
+      }).catch((err) => {
+        log.error("Failed to restart devicemasq", err);
+      })
+    }
   }
 
   async job() {
@@ -409,19 +429,13 @@ class SafeSearchPlugin extends Sensor {
   /*
    * Safe Search DNS server will use local primary dns server as upstream server
    */
-  async startDeviceMasq() {
-    if(this.starting) {
-      return;
-    }
+  restartDeviceMasq() {
+    if (!this.needRestart)
+      this.needRestart = new Date() / 1000;
+  }
 
-    try {
-      this.starting = true;
-      await this.delay(5000);
-      this.starting = false;
-      return exec("sudo systemctl restart devicemasq");
-    } catch(err) {
-      log.error(`Failed to restart devicemasq, err: ${err}`);
-    }
+  async _rawRestartDeviceMasq() {
+    return exec("sudo systemctl restart devicemasq");
   }
 
   async stopDeviceMasq() {
@@ -443,7 +457,7 @@ class SafeSearchPlugin extends Sensor {
     const existingString = await this.loadConfigFile(this.getConfigFile(mac)).catch((err) => null);
     if(configString !== existingString || existingString === null) {
       await this.saveConfigFile(this.getConfigFile(mac), configString);
-      await this.startDeviceMasq();
+      this.restartDeviceMasq();
     }
     await this.delay(8 * 1000); // wait for a while before activating the dns redirect
     await exec(`sudo ipset -! add devicedns_mac_set ${mac}`);
@@ -453,7 +467,7 @@ class SafeSearchPlugin extends Sensor {
     await exec(`sudo ipset -! del devicedns_mac_set ${mac}`);
     const file = this.getConfigFile(mac);
     await this.deleteConfigFile(file);
-    await this.startDeviceMasq();
+    this.restartDeviceMasq();
   }
 
   // global on/off
@@ -471,13 +485,12 @@ class SafeSearchPlugin extends Sensor {
 
   async addIptablesRules() {
     const localIP = sysManager.myIp();
-    this._localIP = localIP;
     const deviceDNS = `${localIP}:8863`;
 
     const ipv6s = sysManager.myIp6();
 
     for(const protocol of ["tcp", "udp"]) {
-      const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
+      const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING_DNS_SAFE_SEARCH -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
       const cmd = wrapIptables(deviceDNSRule);
       await exec(cmd).catch(() => undefined);
 
@@ -487,7 +500,7 @@ class SafeSearchPlugin extends Sensor {
 
           const deviceDNS6 = `[${ip6}]:8863`;
 
-          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
+          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING_DNS_SAFE_SEARCH -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
           const cmd = wrapIptables(deviceDNSRule);
           await exec(cmd).catch(() => undefined);
         }
@@ -496,32 +509,15 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async removeIptablesRules() {
-    let localIP = sysManager.myIp();
-    if (this._localIP) {
-      localIP = this._localIP;
-    }
-    const deviceDNS = `${localIP}:8863`;
+    let cmd = `sudo iptables -w -t nat -F PREROUTING_DNS_SAFE_SEARCH`;
+    await exec(cmd).catch((err) => {
+      log.error("Failed to flush chain PREROUTING_DNS_SAFE_SEARCH in iptables", err);
+    });
 
-    const ipv6s = sysManager.myIp6();
-
-    for(const protocol of ["tcp", "udp"]) {
-      const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-      const cmd = wrapIptables(deviceDNSRule);
-      await exec(cmd).catch(() => undefined);
-
-      for(const ip6 of ipv6s || []) {
-        if (ip6.startsWith("fe80::")) {
-          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-
-          const deviceDNS6 = `[${ip6}]:8863`;
-
-          const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
-          const cmd = wrapIptables(deviceDNSRule);
-          await exec(cmd).catch(() => undefined);
-        }
-      }
-    }
-    this._localIP = null;
+    cmd = `sudo ip6tables -w -t nat -F PREROUTING_DNS_SAFE_SEARCH`;
+    await exec(cmd).catch((err) => {
+      log.error("Failed to flush chain PREROUTING_DNS_SAFE_SEARCH in ip6tables", err);
+    });
   }
 }
 

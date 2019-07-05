@@ -89,6 +89,29 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
+      /* This is taken care of by DnsLoopAvoidanceSensor
+      */
+  setPolicyAsync(name, data) {
+    return util.promisify(this.setPolicy).bind(this)(name, data)
+  }
+
+  setPolicyAsync(name, data) {
+    return new Promise((resolve, reject) => {
+      this.setPolicy(name, data, (err, result) => {
+        if(err) {
+          reject(err);
+          return;
+        }
+
+        resolve(result);
+      });
+    });
+  }
+
+  loadPolicyAsync() {
+    return util.promisify(this.loadPolicy).bind(this)()
+  }
+
 module.exports = class HostManager {
   // type is 'server' or 'client'
   constructor(name, type, loglevel) {
@@ -1260,10 +1283,14 @@ module.exports = class HostManager {
     }
   }
 
+  setPolicyAsync(name, data) {
+    return util.promisify(this.setPolicy).bind(this)(name, data)
+  }
+
   setPolicy(name, data, callback) {
 
     let savePolicyWrapper = (name, data, callback) => {
-      this.savePolicy((err, data) => {
+      this.savePolicy((err) => {
         if (err == null) {
           let obj = {};
           obj[name] = data;
@@ -1364,7 +1391,10 @@ module.exports = class HostManager {
         }
         const ovpnClient = new OpenVPNClient({profileId: profileId});
         if (state === true) {
-          await ovpnClient.setup();
+          await ovpnClient.setup().catch((err) => {
+            // do not return false here since following start() operation should fail
+            log.error(`Failed to setup openvpn client for ${profileId}`, err);
+          });
           const result = await ovpnClient.start();
           if (result) {
             ovpnClient.once('link_broken', () => {
@@ -1384,7 +1414,9 @@ module.exports = class HostManager {
           }
           return result;
         } else {
-          await ovpnClient.setup();
+          await ovpnClient.setup().catch((err) => {
+            log.error(`Failed to setup openvpn client for ${profileId}`, err);
+          });
           await ovpnClient.stop();
         }
         break;

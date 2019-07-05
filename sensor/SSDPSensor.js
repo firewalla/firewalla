@@ -96,7 +96,7 @@ class SSDPSensor extends Sensor {
       
       sem.emitEvent({
         type: "DeviceUpdate",
-        message: "Found a device via ssdp",
+        message: `Found a device via ssdp ${ip} ${mac}`,
         host: host
       })
       

@@ -58,7 +58,8 @@ class FWDiag {
 
   async getGatewayName(gatewayIP) {
     const cmd = `arp ${gatewayIP} | tail -n 1 | awk '{print $1}'`; 
-    const result = await exec(cmd);
+    // return empty if command execute failed
+    const result = await exec(cmd).catch(() => "");
     const name = result.stdout;
     return name.replace(/\n$/, '')
   }

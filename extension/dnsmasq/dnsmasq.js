@@ -553,29 +553,15 @@ module.exports = class DNSMASQ {
     const started = await this.checkStatus();
     if (!started)
       return;
-    const oldDns = `${this._currentLocalIP}:8853`;
     if (oldVpnSubnet != newVpnSubnet || force === true) {
-      if (oldVpnSubnet != null && oldDns != null) {
-        // remove iptables rule for old vpn subnet
-        await iptables.dnsChangeAsync(oldVpnSubnet, oldDns, false);
-      }
-      // then add new iptables rule for new vpn subnet. If newVpnSubnet is null, no new rule is added
-      if (newVpnSubnet) {
-        await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
-      }
+      // remove iptables rule for old vpn subnet
+      await iptables.dnsFlushAsync('vpn');
     }
+    // then add new iptables rule for new vpn subnet. If newVpnSubnet is null, no new rule is added
     if (newVpnSubnet) {
-      // newVpnSubnet is null means to delete previous nat rule. The previous vpn subnet should be kept in case of reloading
+      // newVpnSubnet is null means to delete previous nat rule. The previous vpn subnet should be kept in case of dnsmasq reloading
+      await iptables.dnsChangeAsync(newVpnSubnet, dns, 'vpn', true);
       this.vpnSubnet = newVpnSubnet;
-    }
-  }
-
-  async _update_local_interface_iptables_rules() {
-    // if dnsmasq is stopped, no need to update iptables rules
-    const started = await this.checkStatus();
-    if (started) {
-      await this._remove_iptables_rules();
-      await this._add_iptables_rules();
     }
   }
 
@@ -598,14 +584,8 @@ module.exports = class DNSMASQ {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
 
-      await iptables.dnsChangeAsync(subnet, dns, true);
+      await iptables.dnsChangeAsync(subnet, dns, 'local', true);
     }
-
-    /* this will be done in DNSMASQSensor on demand.
-    if(fConfig.vpnInterface && fConfig.vpnInterface.subnet) {
-      await iptables.dnsChangeAsync(fConfig.vpnInterface.subnet, dns, true);
-    }
-    */
   }
 
   async _add_ip6tables_rules() {
@@ -615,26 +595,10 @@ module.exports = class DNSMASQ {
       let ip6 = ipv6s[index]
       if (ip6.startsWith("fe80::")) {
         // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-        await ip6tables.dnsRedirectAsync(ip6, 8853)
+        await ip6tables.dnsRedirectAsync(ip6, 8853, 'local');
       }
     }
   }
-
-  async _remove_ip6tables_rules() {
-    try {
-      let ipv6s = sysManager.myIp6();
-
-      for (let index in ipv6s) {
-        let ip6 = ipv6s[index]
-        if (ip6.startsWith("fe80:")) {
-          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-          await ip6tables.dnsUnredirectAsync(ip6, 8853)
-        }
-      }
-    } catch (err) {
-      log.error("Error when remove ip6tables rules", err);
-    }
-  }    
 
   async add_iptables_rules() {
     let dnses = sysManager.myDNS();
@@ -663,27 +627,19 @@ module.exports = class DNSMASQ {
   
   async _remove_iptables_rules() {
     try {
-      let subnets = await networkTool.getLocalNetworkSubnets() || [];
-      // remove rules corresponding to local subnets that are previous added
-      if (this._redirectedLocalSubnets && this._redirectedLocalSubnets.length > 0)
-        subnets = this._redirectedLocalSubnets;
-      let localIP = sysManager.myIp();
-      if (this._currentLocalIP)
-        localIP = this._currentLocalIP;
-      let dns = `${localIP}:8853`;
-
-      for (const subnet of subnets) {
-        log.info("Remove dns rule: ", subnet, dns);
-        try {
-          await iptables.dnsChangeAsync(subnet, dns, false);
-        } catch(e) { /*Ignore Erros*/ }
-      }
+      await iptables.dnsFlushAsync('local');
       this._redirectedLocalSubnets = [];
       this._currentLocalIP = null;
-
-      await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
     } catch (err) {
       log.error("Error when removing iptable rules", err);
+    }
+  }
+
+  async _remove_ip6tables_rules() {
+    try {
+      await ip6tables.dnsFlushAsync('local');
+    } catch (err) {
+      log.error("Error when remove ip6tables rules", err);
     }
   }
 
@@ -857,7 +813,7 @@ module.exports = class DNSMASQ {
     }
     */
 
-    hosts = hosts.filter((x) => x.mac != null);
+    hosts = hosts.filter((x) => (x && x.mac) != null);
     hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
 
     let hostsList = [];
@@ -1292,11 +1248,10 @@ module.exports = class DNSMASQ {
       } else {
         await this.stop(); // make sure iptables rules are also stopped..
       }
-      bone.log("error", {
-        version: sysManager.version(),
+      bone.logAsync("error", {
         type: 'DNSMASQ CRASH',
         msg: `dnsmasq failed to restart after ${this.failCount} retries`,
-      }, null);
+      });
     } else {
       try {
         let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");

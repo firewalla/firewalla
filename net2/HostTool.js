@@ -261,7 +261,7 @@ class HostTool {
 
   async getAllMACs() {
     let keys = await rclient.keysAsync("host:mac:*");
-    return keys.map((key) => key.replace("host:mac:", ""));
+    return keys.map((key) => key.replace("host:mac:", "")).filter(Boolean);
   }
 
   async getAllMACEntries() {
@@ -277,7 +277,7 @@ class HostTool {
   async getAllIPs() {
     let allIPs = [];
 
-    let macs = await this.getAllMACs();
+    let macKeys = await this.getAllMACs();
 
     for (const mac of macKeys) {
       let ips = await this.getIPsByMac(mac);
@@ -346,7 +346,7 @@ class HostTool {
   async updateIPv6Host(host, ipv6Addr, skipTimeUpdate) {
     skipTimeUpdate = skipTimeUpdate || false;
     if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
-      for (const addr in ipv6Addr) {
+      for (const addr of ipv6Addr) {
         let key = this.getIPv6HostKey(addr)
 
         let existingData = await rclient.hgetallAsync(key)

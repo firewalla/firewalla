@@ -179,10 +179,12 @@ class OpenVPNClient extends VPNClient {
         }
       })
     }
+    /* comp-lzo is still compatible in 2.4.x. Need to check the value of comp-lzo for proper convertion, e.g. comp-lzo (yes)-> compress lzo, comp-lzo no -> compress ...
     if (version.startsWith("2.4.")) {
       // 'comp-lzo' is deprecated in 2.4.x
       revisedContent = revisedContent.replace(/comp\-lzo/g, "compress lzo");
     }
+    */
     await writeFileAsync(ovpnPath, revisedContent, 'utf8');
   }
 
@@ -242,7 +244,7 @@ class OpenVPNClient extends VPNClient {
             resolve(true);
           } else {
             const now = Date.now();
-            if (now - startTime > 20000) {
+            if (now - startTime > 30000) {
               log.error("Failed to establish tunnel for OpenVPN client, stop it...");
               clearInterval(establishmentTask);
               resolve(false);
@@ -316,6 +318,10 @@ class OpenVPNClient extends VPNClient {
       // add read permission in case it is owned by root
       const cmd = util.format("sudo chmod +r %s", statusLogPath);
       await execAsync(cmd);
+      if (!existsSync(statusLogPath)) {
+        log.warn(`status log for ${this.profileId} does not exist`);
+        return {};
+      }
       const content = await readFileAsync(statusLogPath, "utf8");
       const lines = content.split("\n");
       for (let line of lines) {
