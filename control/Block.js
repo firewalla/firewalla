@@ -148,11 +148,11 @@ function setupIpset(target, ipset, whitelist, remove = false) {
     // ports
   } else if (iptool.isV4Format(ipAddr)) {
     // ip.isV6Format() will return true on v4 addresses
-    // ip.isV6Format() will return true for number 
+    // ip.isV6Format() will return true for number
     // TODO: we should consider deprecate ip library
   } else if (iptool.isV6Format(ipAddr)) {
     ipset = ipset + '6';
-  } 
+  }
   const gateway6 = sysManager.myGateway6()
   const gateway = sysManager.myGateway()
   //Prevent gateway IP from being added into blocking IP set dynamically
@@ -161,9 +161,9 @@ function setupIpset(target, ipset, whitelist, remove = false) {
   }
   const action = remove ? Ipset.del : Ipset.add;
 
-  log.info('setupIpset', action.constructor.name, ipset, target)
+  log.debug('setupIpset', action.prototype.constructor.name, ipset, target)
 
-  action(ipset, target)
+  return action(ipset, target)
 }
 
 async function setupRules(macTag, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
@@ -207,10 +207,10 @@ async function setupRules(macTag, dstTag, dstType, allow = false, destroy = fals
     }
 
     const op = destroy ? '-D' : '-I'
-    await exec(outRule.toCmd(op)) 
-    await exec(outRule6.toCmd(op)) 
-    await exec(natOutRule.toCmd(op)) 
-    await exec(natOutRule6.toCmd(op)) 
+    await exec(outRule.toCmd(op))
+    await exec(outRule6.toCmd(op))
+    await exec(natOutRule.toCmd(op))
+    await exec(natOutRule6.toCmd(op))
 
 
     if (destroy) {

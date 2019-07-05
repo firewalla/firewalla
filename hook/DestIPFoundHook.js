@@ -232,7 +232,7 @@ class DestIPFoundHook extends Hook {
 
   async updateCountryIP(intel) {
     if(intel.host && intel.country) {
-      await countryUpdater.updateIP(intel.country, intel.host)
+      await countryUpdater.updateIP(intel.country, intel.ip)
     }
   }
 
@@ -412,7 +412,7 @@ class DestIPFoundHook extends Hook {
       if(f.isReservedBlockingIP(ip)) {
         return; // reserved black hole and blue hole...
       }
-      
+
       this.appendNewFlow(ip, fd);
     });
 

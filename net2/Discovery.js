@@ -279,7 +279,7 @@ module.exports = class {
     log.info("Discovery:Mac:Scan:IpChanged", key, ip, newmac);
     rclient.hgetall(key, (err, data) => {
       log.info("Discovery:Mac:Scan:IpChanged2", key, ip, newmac, JSON.stringify(data));
-      if (err == null && data.ipv4 == ip) {
+      if (err == null && data && data.ipv4 == ip) {
         rclient.hdel(key, 'name');
         rclient.hdel(key, 'bname');
         rclient.hdel(key, 'ipv4');

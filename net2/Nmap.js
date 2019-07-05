@@ -100,7 +100,7 @@ module.exports = class {
   }
 
   scan(range /*Must be v4 CIDR*/, fast, callback) {
-    if (!ip.isV4Format(range.split('/')[0])) {
+    if (!range || !ip.isV4Format(range.split('/')[0])) {
       callback(null, [], []);
       return;
     }

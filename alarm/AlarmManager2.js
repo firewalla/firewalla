@@ -624,22 +624,13 @@ module.exports = class {
     }
   }
 
-  getAlarm(alarmID) {
-    return new Promise((resolve, reject) => {
-      this.idsToAlarms([alarmID], (err, results) => {
-        if(err) {
-          reject(err);
-          return;
-        }
+  async getAlarm(alarmID) {
+    const results = this.idsToAlarmsAsync([alarmID])
+    if(results == null || results.length === 0) {
+      throw new Error("alarm not exists");
+    }
 
-        if(results == null || results.length === 0) {
-          reject(new Error("alarm not exists"));
-          return;
-        }
-
-        resolve(results[0]);
-      });
-    });
+    return results[0];
   }
 
   idsToAlarms(ids, callback) {
@@ -655,7 +646,7 @@ module.exports = class {
         callback(err);
         return;
       }
-      callback(null, results.map((r) => this.jsonToAlarm(r)));
+      callback(null, results.map((r) => this.jsonToAlarm(r)).filter(Boolean));
     });
   }
 

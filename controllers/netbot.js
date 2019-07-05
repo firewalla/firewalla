@@ -847,75 +847,76 @@ class netBot extends ControllerBot {
     });
 
     sem.on('Alarm:NewAlarm', async (event) => {
-      let alarm;
+      let alarm, notifMsg;
       try {
         alarm = await am2.getAlarm(event.alarmID)
+        notifMsg = alarm.localizedNotification();
       }
       catch(err) {
-        log.error("Failed to fetch alarm", event)
+        log.error("Failed to fetch alarm", event, err)
+        return
       }
 
-      let notifMsg = alarm.localizedNotification();
-      if (notifMsg) {
-        log.info("Sending notification: " + JSON.stringify(alarm));
-        if (this.hostManager.policy && this.hostManager.policy["notify"]) {
-          if (this.hostManager.policy['notify']['state'] == false) {
-            log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", alarm);
+      if (!notifMsg) return;
+
+      log.info("Sending notification: " + JSON.stringify(alarm));
+      if (this.hostManager.policy && this.hostManager.policy["notify"]) {
+        if (this.hostManager.policy['notify']['state'] == false) {
+          log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", alarm);
+          return;
+        }
+        if (alarm.type) {
+          let alarmType = alarm.type;
+          if (alarmType === "ALARM_LARGE_UPLOAD") {
+            alarmType = "ALARM_BEHAVIOR";
+          }
+          if (this.hostManager.policy["notify"][alarmType] === false ||
+            this.hostManager.policy["notify"][alarmType] === 0
+          ) {
+            log.info("ALARM_NOTIFY_BLOCKED", alarm);
             return;
           }
-          if (alarm.type) {
-            let alarmType = alarm.type;
-            if (alarmType === "ALARM_LARGE_UPLOAD") {
-              alarmType = "ALARM_BEHAVIOR";
-            }
-            if (this.hostManager.policy["notify"][alarmType] === false ||
-              this.hostManager.policy["notify"][alarmType] === 0
-            ) {
-              log.info("ALARM_NOTIFY_BLOCKED", alarm);
-              return;
-            }
-          }
         }
-
-        log.info("ALARM_NOTIFY_PASSED");
-
-        notifMsg = {
-          title: i18n.__(alarm.getNotifType()),
-          body: notifMsg
-        }
-
-        let data = {
-          gid: this.primarygid,
-          notifType: "ALARM"
-        };
-
-        if (alarm.aid) {
-          data.aid = alarm.aid;
-          data.alarmID = alarm.alarmID;
-        }
-
-        if (alarm.result_method === "auto" && alarm.result === "block") {
-          data.category = "com.firewalla.category.autoblockalarm";
-        } else {
-          if (alarm.getManagementType() === "") {
-            // default category
-            data.category = "com.firewalla.category.alarm";
-          } else {
-            data.category = "com.firewalla.category.alarm." + alarm.getManagementType();
-          }
-        }
-
-        // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
-        if (alarm["p.monkey"] && alarm["p.monkey"] == 1) {
-          notifMsg.title = `[Monkey] ${notifMsg.title}`;
-        }
-
-        const pa = alarm.cloudAction();
-        if(pa && f.isDevelopmentVersion()) {
-          notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
-        }
-        this.tx2(this.primarygid, "test", notifMsg, data);
       }
+
+      log.info("ALARM_NOTIFY_PASSED");
+
+      notifMsg = {
+        title: i18n.__(alarm.getNotifType()),
+        body: notifMsg
+      }
+
+      let data = {
+        gid: this.primarygid,
+        notifType: "ALARM"
+      };
+
+      if (alarm.aid) {
+        data.aid = alarm.aid;
+        data.alarmID = alarm.alarmID;
+      }
+
+      if (alarm.result_method === "auto" && alarm.result === "block") {
+        data.category = "com.firewalla.category.autoblockalarm";
+      } else {
+        if (alarm.getManagementType() === "") {
+          // default category
+          data.category = "com.firewalla.category.alarm";
+        } else {
+          data.category = "com.firewalla.category.alarm." + alarm.getManagementType();
+        }
+      }
+
+      // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
+      if (alarm["p.monkey"] && alarm["p.monkey"] == 1) {
+        notifMsg.title = `[Monkey] ${notifMsg.title}`;
+      }
+
+      const pa = alarm.cloudAction();
+      if(pa && f.isDevelopmentVersion()) {
+        notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
+      }
+      this.tx2(this.primarygid, "test", notifMsg, data);
 
     });
 

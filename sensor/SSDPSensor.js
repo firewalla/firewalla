@@ -49,7 +49,7 @@ class SSDPSensor extends Sensor {
           return;
         }
       } catch(e) {
-        log.error("Invalid SSDP location", headers, statusCode, rinfo);
+        log.error("Invalid SSDP location", headers, statusCode, rinfo, e);
         return;
       }
 
@@ -75,7 +75,7 @@ class SSDPSensor extends Sensor {
       
       if(err) {
         // not found, ignore this host
-        log.error("Not able to found mac address for host:", ip, mac);
+        log.error("Not able to found mac address for host:", ip, mac, err);
         return;
       }
 
