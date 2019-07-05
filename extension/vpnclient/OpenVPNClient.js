@@ -230,16 +230,13 @@ class OpenVPNClient extends VPNClient {
               await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main");
             } catch (err) {
               // these routes may not exist depending on server config
-              log.error("Failed to remove default vpn client route", err);
+              log.warn("Failed to remove default vpn client route", err);
             }
             clearInterval(establishmentTask);
             const intf = this.getInterfaceName();
             // add vpn client specific routes
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
-            await this._processPushOptions();
-            if (this._dnsServers && this._dnsServers.length > 0) {
-              await vpnClientEnforcer.enforceDNSRedirect(intf, this._dnsServers);
-            }
+            await this._processPushOptions("start");
             this._started = true;
             resolve(true);
           } else {
@@ -259,26 +256,13 @@ class OpenVPNClient extends VPNClient {
     });
   }
 
-  async _processPushOptions() {
+  async _processPushOptions(status) {
     const pushOptionsFile = this._getPushOptionsPath();
-    this._dnsServers = [];
     if (fs.existsSync(pushOptionsFile)) {
       const content = await readFileAsync(pushOptionsFile, "utf8");
       if (!content)
         return;
-      const dnsServers = [];
-      for (let line of content.split("\n")) {
-        const options = line.split(/\s+/);
-        switch (options[0]) {
-          case "dhcp-option":
-            if (options[1] === "DNS") {
-              dnsServers.push(options[2]);
-            }
-            break;
-          default:
-        }
-      }
-      this._dnsServers = dnsServers;
+      this.emit(`push_options_${status}`, content);
     }
   }
 
@@ -287,10 +271,7 @@ class OpenVPNClient extends VPNClient {
     const intf = this.getInterfaceName();
     this._started = false;
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
-    await this._processPushOptions();
-    if (this._dnsServers && this._dnsServers.length > 0) {
-      await vpnClientEnforcer.unenforceDNSRedirect(intf, this._dnsServers);
-    }
+    await this._processPushOptions("stop");
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);

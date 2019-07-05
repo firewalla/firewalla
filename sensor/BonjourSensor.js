@@ -133,6 +133,8 @@ class BonjourSensor extends Sensor {
             if (!mac) {
               if (ipAddr === sysManager.myIp()) {
                 resolve(sysManager.myMAC());
+              } else if (ipAddr === sysManager.myWifiIp()) {
+                resolve(sysManager.myWifiMAC());
               } else {
                 log.error("Not able to find mac address for host:", ipAddr, mac);
                 resolve(null);
@@ -183,7 +185,7 @@ class BonjourSensor extends Sensor {
     if (!mac)
       return;
 
-    log.info("Found a bonjour service from host:", mac, service.name);
+    log.info("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let host = {
       mac: mac,
