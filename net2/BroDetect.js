@@ -1017,7 +1017,10 @@ module.exports = class {
             return;
           }
           tmpspec.mac = mac;
-          this.activeMac[mac] = tmpspec.lh;
+          if (tmpspec.lh === tmpspec.sh) {
+            // record device as active if and only if device originates the connection
+            this.activeMac[mac] = tmpspec.lh;
+          }
           let key = "flow:conn:" + tmpspec.fd + ":" + mac;
           let strdata = JSON.stringify(tmpspec);
 
@@ -1098,7 +1101,9 @@ module.exports = class {
             if (!mac) {
               log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
             } else {
-              // this.activeMac[mac] = spec.lh; // do not update active mac here since there is latency for flow stash processing
+              /* do not mark as active for stashed flows due to latency of processing flow stash
+              this.activeMac[mac] = spec.lh;
+              */
               let key = "flow:conn:" + spec.fd + ":" + mac;
               let strdata = JSON.stringify(spec);
               let ts = spec._ts; // this is the last time when this flowspec is updated

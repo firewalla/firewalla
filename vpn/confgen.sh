@@ -15,21 +15,20 @@ NETMASK=$5
 LOCAL_PORT=$6
 : ${LOCAL_PORT="1194"}
 
-chmod 777 /etc/openvpn
+chmod 777 -R /etc/openvpn
+
+# Ensure nextUpdate in openssl crl to 3600 days
+if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
+  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
+fi
 
 if [ ! -s /etc/openvpn/crl.pem ]; then
   # create crl file with dummy revocation list
-  chmod 777 -R /etc/openvpn
   cd /etc/openvpn/easy-rsa
-  # Change nextUpdate in openssl crl to 3600 days
-  if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
-    sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
-  fi
   source ./vars
   ./pkitool dummy
   ./revoke-full dummy
   cp keys/crl.pem ../crl.pem
-  chmod 600 -R /etc/openvpn
   cd -
 fi
 
@@ -40,29 +39,26 @@ logger "CRL expiration days left: $crl_expr_days_left"
 
 if [[ $crl_expr_days_left -lt 30 ]]; then
   # refresh crl next update time by create and revoke dummy certificate. The new crl next update time should be 3600 days later
-  chmod 777 -R /etc/openvpn
   cd /etc/openvpn/easy-rsa
   source ./vars
   ./pkitool dummy
   ./revoke-full dummy
   cp keys/crl.pem ../crl.pem
-  chmod 600 -R /etc/openvpn
   cd - 
 fi
 
-chmod 644 /etc/openvpn/crl.pem
-
 if [ ! -d /etc/openvpn/client_conf ]; then
   # create client config dir
-  chmod 777 /etc/openvpn
   mkdir -p /etc/openvpn/client_conf
 fi
-chmod 777 /etc/openvpn/client_conf
 
 if [ ! -f /etc/openvpn/client_conf/DEFAULT ]; then
   sed 's/COMP_LZO_OPT/comp-lzo no/' < $FIREWALLA_HOME/vpn/client_conf.txt > /etc/openvpn/client_conf/DEFAULT
   sed -i 's/COMPRESS_OPT/compress/' /etc/openvpn/client_conf/DEFAULT
 fi
+
+chmod 755 -R /etc/openvpn
+chmod 644 /etc/openvpn/crl.pem
 chmod 644 /etc/openvpn/client_conf/*
 
 if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
@@ -88,6 +84,7 @@ if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
   actualsize=$(wc -c <"/etc/openvpn/$INSTANCE_NAME.conf")
   if [[ $same_network -eq 0 && $same_port -eq 0 && $actualsize -ge $minimumsize ]]; then
     logger "FIREWALLA: OpenVPN Config Already Done for $INSTANCE_NAME"
+    sync
     exit 0
   fi
 fi
