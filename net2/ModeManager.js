@@ -107,7 +107,7 @@ function _enforceSpoofMode() {
     } else {
       // old style, might not work
       const Spoofer = require('./Spoofer.js');
-      const spoofer = new Spoofer(config.monitoringInterface,{},true,true);
+      const spoofer = new Spoofer(config.monitoringInterface,{},true);
       return Promise.resolve();
     }
   })().catch((err) => {
@@ -123,7 +123,7 @@ function _disableSpoofMode() {
   } else {
     // old style, might not work
     var Spoofer = require('./Spoofer.js');
-    let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
+    let spoofer = new Spoofer(config.monitoringInterface,{},true);
     return Promise.all([
       spoofer.clean(),
       spoofer.clean7()
