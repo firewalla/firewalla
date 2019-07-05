@@ -79,7 +79,7 @@ describe('Test mode feature', function() {
 
     delay(0)
       .then(() => {
-        ModeManager.switchToDHCP()
+        ModeManager.setDHCPAndPublish()
           .then(() => {
             delay(2000)
               .then(() => {
@@ -103,7 +103,7 @@ describe('Test mode feature', function() {
   it('should enable spoofing and disable dhcp when mode is switched to spoofing', (done) => {
     setTimeout(done, 10000);
 
-    ModeManager.switchToSpoof()
+    ModeManager.setSpoofAndPublish()
       .then(() => {
         cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
           expect(err).to.not.null;

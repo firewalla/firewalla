@@ -25,6 +25,7 @@
   },
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
+  "monitoringWifiInterface": "wlan0",
   "newSpoof": true,
   "timing": {
     "alarm.cooldown": 900,
@@ -37,6 +38,11 @@
     "intf": "eth0:0",
     "ip": "192.168.218.1/24",
     "ip2": "192.168.168.1/24"
+  },
+  "wifiInterface": {
+    "intf": "wlan0",
+    "ip": "10.0.218.1/24",
+    "mode": "router"
   },
   "vpnInterface": {
     "subnet": "10.8.0.0/24"
@@ -469,7 +475,8 @@
     "DnsLoopAvoidanceSensor": {},
     "DataMigrationSensor": {
       "migrationCodeNames": ["clairvoyant", "bipartite_graph"]
-    }
+    },
+    "WirelessInterfaceSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},

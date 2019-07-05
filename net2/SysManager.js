@@ -450,6 +450,12 @@ module.exports = class {
     }
   }
 
+  monitoringWifiInterface() {
+    if (this.config) {
+      return this.sysinfo && this.sysinfo[this.config.monitoringWifiInterface];
+    }
+  }
+
   myIp() {
     if(this.monitoringInterface()) {
       return this.monitoringInterface().ip_address;
@@ -473,6 +479,14 @@ module.exports = class {
   myIp2() {
     if(this.monitoringInterface2()) {
       return this.monitoringInterface2().ip_address;
+    } else {
+      return undefined;
+    }
+  }
+
+  myWifiIp() {
+    if (this.monitoringWifiInterface()) {
+      return this.monitoringWifiInterface().ip_address;
     } else {
       return undefined;
     }
@@ -511,11 +525,31 @@ module.exports = class {
     }
   }
 
+  myWifiIpMask() {
+    if(this.monitoringWifiInterface()) {
+      let mask =  this.monitoringWifiInterface().netmask;
+      if (mask.startsWith("Mask:")) {
+        mask = mask.substr(5);
+      }
+      return mask;
+    } else {
+      return undefined;
+    }
+  }
+
   myMAC() {
     if (this.monitoringInterface() && this.monitoringInterface().mac_address) {
       return this.monitoringInterface().mac_address.toUpperCase();
     } else {
-      return null;
+      return undefined;
+    }
+  }
+
+  myWifiMAC() {
+    if (this.monitoringWifiInterface() && this.monitoringWifiInterface().mac_address) {
+      return this.monitoringWifiInterface().mac_address.toUpperCase();
+    } else {
+      return undefined;
     }
   }
 
@@ -559,6 +593,14 @@ module.exports = class {
     }
   }
 
+  myWifiSubnet() {
+    if (this.monitoringWifiInterface()) {
+      return this.monitoringWifiInterface().subnet;
+    } else {
+      return undefined;
+    }
+  }
+
   mySubnetNoSlash() {
     let subnet = this.mySubnet();
     return subnet.substring(0, subnet.indexOf('/'));
@@ -576,7 +618,8 @@ module.exports = class {
     if (!iptool.isV4Format(ip4)) return false;
     else return (
       iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
-      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4)
+      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) ||
+      this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4)
     )
   }
 

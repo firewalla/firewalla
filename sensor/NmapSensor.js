@@ -259,6 +259,8 @@ class NmapSensor extends Sensor {
     if(!host.mac) {
       if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp()) {
         host.mac = sysManager.myMAC()
+      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp()) {
+        host.mac = sysManager.myWifiMAC();
       } else if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
         return // do nothing on secondary ip
       } else {
