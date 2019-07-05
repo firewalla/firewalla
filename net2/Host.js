@@ -176,7 +176,7 @@ class Host {
       }
       */
 
-      //await(this.saveAsync());
+      //await this.saveAsync();
       log.debug("Host:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
     } catch(err) {
       log.error("Got error when cleanV6", err)

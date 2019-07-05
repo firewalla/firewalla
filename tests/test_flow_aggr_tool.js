@@ -22,9 +22,6 @@ let assert = chai.assert;
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
@@ -91,9 +88,9 @@ describe('FlowAggrTool', () => {
   describe('.addSumFlow', () => {
 
     afterEach((done) => {
-      async(() => {
-        await (flowAggrTool.removeAllFlowKeys(sample.hostMac, "download", 600));
-        await (flowAggrTool.removeAllSumFlows(sample.hostMac, "download"));
+      (async() =>{
+        await flowAggrTool.removeAllFlowKeys(sample.hostMac, "download", 600);
+        await flowAggrTool.removeAllSumFlows(sample.hostMac, "download");
         done();
       })();
     });
@@ -103,19 +100,17 @@ describe('FlowAggrTool', () => {
       let begin = flowAggrTool.getIntervalTick(ts, 600);
       let end = flowAggrTool.getLargerIntervalTick(ts + 24* 3600, 600);
 
-      async(() => {
-        await (sample.createSampleAggrFlows());
-        let result = await (
-          flowAggrTool.addSumFlow("download", {
-            begin: begin,
-            end: end,
-            interval: 600,
-            mac: sample.hostMac
-          })
-        );
+      (async() =>{
+        await sample.createSampleAggrFlows();
+        let result = await flowAggrTool.addSumFlow("download", {
+          begin: begin,
+          end: end,
+          interval: 600,
+          mac: sample.hostMac
+        })
         expect(result).to.above(0);
 
-        let traffic = await (flowAggrTool.getSumFlow(sample.hostMac, "download", begin, end, -1));
+        let traffic = await flowAggrTool.getSumFlow(sample.hostMac, "download", begin, end, -1);
         expect(traffic.length).to.equal(2);
         expect(traffic[0]).to.equal(sample.destIP);
         expect(traffic[1]).to.equal("500");
@@ -126,10 +121,10 @@ describe('FlowAggrTool', () => {
 
   describe('.getLastSumFlow .setLastSumFlow', (done) => {
     it('should be able to get the same value that was set to database', (done) => {
-      async(() => {
+      (async() =>{
         let testData = "XXXXXXXXXXX";
-        await (flowAggrTool.setLastSumFlow(sample.hostMac, "download", testData));
-        let key = await (flowAggrTool.getLastSumFlow(sample.hostMac, "download"));
+        await flowAggrTool.setLastSumFlow(sample.hostMac, "download", testData);
+        let key = await flowAggrTool.getLastSumFlow(sample.hostMac, "download");
         expect(key).to.equal(testData);
         done();
       })();

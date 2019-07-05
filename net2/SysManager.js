@@ -17,10 +17,7 @@ const log = require('./logger.js')(__filename);
 
 const util = require('util');
 const iptool = require('ip');
-const os = require('os');
-const network = require('network');
 var instance = null;
-const fs = require('fs');
 const license = require('../util/license.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -31,9 +28,6 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 const exec = require('child-process-promise').exec
 
@@ -339,15 +333,15 @@ module.exports = class {
       pclient.publish("System:TimezoneChange", timezone);
 
       // TODO: each running process may not be set to the target timezone until restart
-      async(() => {
+      (async() =>{
         try {
           let cmd = `sudo timedatectl set-timezone ${timezone}`
-          await (exec(cmd))
+          await exec(cmd)
 
           // TODO: we can improve in the future that only restart if new timezone is different from old one
           // but the impact is low since calling this settimezone function is very rare
           let cronRestartCmd = "sudo systemctl restart cron.service"
-          await (exec(cronRestartCmd))
+          await exec(cronRestartCmd)
 
           callback(null)
         } catch(err) {

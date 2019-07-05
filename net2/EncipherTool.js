@@ -18,11 +18,6 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 let instance = null;
 
 class EncipherTool {

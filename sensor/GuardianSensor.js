@@ -18,12 +18,8 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 
-const sem = require('../sensor/SensorEventManager.js').getInstance()
-
 const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
-
-const fc = require('../net2/config.js')
 
 const configServerKey = "ext.guardian.socketio.server";
 const configAdminStatusKey = "ext.guardian.socketio.adminStatus";

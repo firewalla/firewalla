@@ -11,8 +11,6 @@ var bodyParser = require('body-parser');
 var swagger = require("swagger-node-express");
 const passport = require('passport');
 const fs = require('fs');
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 let log = require('../net2/logger.js')(__filename, 'info')
 
@@ -49,7 +47,7 @@ router.use(bodyParser.json());
 const cloudWrapper = require('./routes/fastencipher2').cloudWrapper
 
 async function netbotHandler(gid, mtype, data) {
-  let controller = await(cloudWrapper.getNetBotController(gid));
+  let controller = await cloudWrapper.getNetBotController(gid);
   let msg = {
     mtype: 'msg',
     message: {
@@ -61,7 +59,7 @@ async function netbotHandler(gid, mtype, data) {
       type: 'jsondata'
     }
   }
-  return await(controller.msgHandlerAsync(gid, msg));
+  return controller.msgHandlerAsync(gid, msg);
 }
 
 fs.readdirSync('./routes/pro').forEach(file => {

@@ -18,17 +18,7 @@
 let instance = null;
 const log = require('../../net2/logger.js')(__filename)
 
-const f = require('../../net2/Firewalla.js')
-const fHome = f.getFirewallaHome()
-
-const fConfig = require('../../net2/config.js').getConfig()
-
 const rclient = require('../../util/redis_manager.js').getRedisClient()
-
-const Promise = require('bluebird')
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
 
 const SysManager = require('../../net2/SysManager')
 const sysManager = new SysManager()
@@ -36,11 +26,6 @@ const sysManager = new SysManager()
 const ShieldManager = require('../../net2/ShieldManager.js');
 let shieldManager = null;
 
-const rp = require('request-promise')
-
-const exec = require('child-process-promise').exec
-
-const fs = require('fs')
 const iptable = require("../../net2/Iptables.js");
 
 // Configurations
@@ -68,15 +53,15 @@ class PortForward {
       this.channel = new c('debug');
       this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, (channel, type, ip, obj) => {
         if (type == "Extension:PortForwarding") {
-          async(()=>{
+          (async()=>{
             if (obj!=null) {
               if (obj.state == false) {
-                await (this.removePort(obj));
+                await this.removePort(obj)
               } else {
-                await (this.addPort(obj));
+                await this.addPort(obj)
               }
               // TODO: config should be saved after rule successfully applied
-              await (this.saveConfig());
+              await this.saveConfig()
             }
           })();
         }
@@ -97,23 +82,21 @@ class PortForward {
     return rclient.setAsync(configKey, string)
   }
 
-  loadConfig() {
-    return async(() => {
-      let json = await (rclient.getAsync(configKey))
-      log.info("PortForwarder:Config:",json);
-      if(json) {
-        try {
-          let config = JSON.parse(json)
-          this.config = config
-        } catch(err) {
-          log.error("PortForwarder:Failed to parse config:", json, err);
-          this.config = {maps:[]};
-        }
-      } else {
-        log.info("PortForwarder:EmptyConfig");
-        this.config = {maps:[]};
+  async loadConfig() {
+    let json = await rclient.getAsync(configKey)
+    log.info("PortForwarder:Config:", json);
+    if (json) {
+      try {
+        let config = JSON.parse(json)
+        this.config = config
+      } catch (err) {
+        log.error("PortForwarder:Failed to parse config:", json, err);
+        this.config = { maps: [] };
       }
-    })()
+    } else {
+      log.info("PortForwarder:EmptyConfig");
+      this.config = { maps: [] };
+    }
   }
 
   setConfig(config) {
@@ -145,13 +128,13 @@ class PortForward {
   }
 
   // save config should follow this
-  addPort(map,init) {
-    return async(()=>{
+  async addPort(map, init) {
+    try {
       if (init == false || init == null) {
         let old = this.find(map);
-        if (old>=0) {
+        if (old >= 0) {
           if (this.config.maps[old].state == true) {
-            log.info("PORTMAP:addPort Duplicated MAP",map);
+            log.info("PORTMAP:addPort Duplicated MAP", map);
             return;
           } else {
             this.config.maps[old] = map;
@@ -160,19 +143,19 @@ class PortForward {
           this.config.maps.push(map);
         }
       }
-      
-      log.info("PORTMAP: Add",map);
+
+      log.info("PORTMAP: Add", map);
       if (!shieldManager)
         shieldManager = new ShieldManager();
-      await (shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport));
+      await shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport)
       map.state = true;
       const dupMap = JSON.parse(JSON.stringify(map))
       dupMap.destIP = sysManager.myIp()
-      let state = await (iptable.portforwardAsync(dupMap));
+      let state = await iptable.portforwardAsync(dupMap)
       return state;
-    })().catch((err) => {
+    } catch (err) {
       log.error("Failed to add port mapping:", err);
-    }) 
+    }
   }
 
   // save config should follow this
@@ -196,36 +179,32 @@ class PortForward {
     }
   }
 
-  restore() {
-    return async(()=>{
+  async restore() {
+    try {
       log.info("PortForwarder:ApplyConfig ...")
       if (this.config && this.config.maps) {
         for (let i in this.config.maps) {
           let map = this.config.maps[i];
-          log.info("Restoring Map: ",map);
-          await (this.addPort(map,true));
+          log.info("Restoring Map: ", map);
+          await this.addPort(map, true)
         }
       }
-    })().catch((err)=>{
-    });
+    } catch (err) { };
   }
 
-  start() {
+  async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
     shieldManager = new ShieldManager();
-    return async(() => {
-      await (this.loadConfig())
-      await (this.restore())
-    })()
+    await this.loadConfig()
+    await this.restore()
   }
 
-  stop() {
+  async stop() {
     log.info("Stopping ip6in4...")
-    return async(() => {
-      await (this.saveConfig())
-      
-    })().catch((err) => {
-    })
+    try {
+      await this.saveConfig()
+    } catch (err) {
+    }
   }
 }
 

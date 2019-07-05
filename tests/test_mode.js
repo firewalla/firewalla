@@ -35,9 +35,6 @@ let Promise = require('bluebird');
 
 let Bootstrap = require('../net2/Bootstrap');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -51,16 +48,16 @@ describe('Test mode feature', function() {
   this.timeout(10000);
 
   beforeEach((done) => {
-    async(() => {
-      await (Bootstrap.bootstrap());
+    (async() =>{
+      await Bootstrap.bootstrap();
       sem.clearAllSubscriptions();
       s.registered = false;
       s.run()
       sem.emitEvent({
         type: 'IPTABLES_READY'
       })
-      await (delay(2000))
-      await (ModeManager.enableSecondaryInterface())
+      await delay(2000)
+      await ModeManager.enableSecondaryInterface()
       done();
     })();
   });

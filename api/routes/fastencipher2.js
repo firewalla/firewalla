@@ -22,16 +22,9 @@ let encryption = new Encryption();
 let CloudWrapper = require('../lib/CloudWrapper');
 let cloudWrapper = new CloudWrapper();
 
-let f = require('../../net2/Firewalla.js');
-
 let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
-
 
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
@@ -44,9 +37,9 @@ router.post('/message/:gid',
     (req, res, next) => {
       let gid = req.params.gid;
       
-      async(() => {
-        let controller = await(cloudWrapper.getNetBotController(gid));
-        let response = await(controller.msgHandlerAsync(gid, req.body));
+      (async() =>{
+        let controller = await cloudWrapper.getNetBotController(gid);
+        let response = await controller.msgHandlerAsync(gid, req.body);
         res.body = JSON.stringify(response);
         next();
       })()

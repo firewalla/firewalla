@@ -19,7 +19,6 @@ let log = require('../../net2/logger.js')(__filename);
 
 let express = require('express');
 let router = express.Router();
-let bodyParser = require('body-parser')
 
 let HostManager = require('../../net2/HostManager.js');
 let hostManager = new HostManager('api', 'client', 'info');
@@ -33,14 +32,8 @@ let flowTool = new FlowTool();
 let HostTool = require('../../net2/HostTool');
 let hostTool = new HostTool();
 
-
-let Promise = require('bluebird');
-
 let NetBotTool = require('../../net2/NetBotTool');
 let netBotTool = new NetBotTool();
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
 
 router.get('/all',
            (req, res, next) => {
@@ -111,13 +104,13 @@ router.get('/:host',
 router.post('/:host/manualSpoofOn',
            (req, res, next) => {
              let host = req.params.host;
-             async(() => {
-               let h = await (hostTool.getIPv4Entry(host))
+             (async() =>{
+               let h = await hostTool.getIPv4Entry(host)
                let mac = h.mac
-               await (hostTool.updateMACKey({
+               await hostTool.updateMACKey({
                  mac: mac,
                  manualSpoof: "1"
-               }))
+               })
                res.json({})
              })().catch((err) => {
              res.status(500).json({error: err});
@@ -127,13 +120,13 @@ router.post('/:host/manualSpoofOn',
 router.post('/:host/manualSpoofOff',
            (req, res, next) => {
              let host = req.params.host;
-             async(() => {
-               let h = await (hostTool.getIPv4Entry(host))
+             (async() =>{
+               let h = await hostTool.getIPv4Entry(host)
                let mac = h.mac
-               await (hostTool.updateMACKey({
+               await hostTool.updateMACKey({
                  mac: mac,
                  manualSpoof: "0"
-               }))
+               })
                res.json({})
              })().catch((err) => {
                res.status(500).json({error: err});
@@ -159,13 +152,13 @@ router.get('/:host/topDownload',
     let host = req.params.host;
     let json = {};
 
-    return async(() => {
-      let h = await (hostManager.getHostAsync(host));
+    return (async() =>{
+      let h = await hostManager.getHostAsync(host);
       let mac = h.o && h.o.mac;
       if(!mac) {
         return;
       }
-      await (netBotTool.prepareTopDownloadFlowsForHost(json, mac));
+      await netBotTool.prepareTopDownloadFlowsForHost(json, mac);
     })()
     .then(() => res.json(json))
     .catch((err) => {
@@ -180,13 +173,13 @@ router.get('/:host/topUpload',
     let host = req.params.host;
     let json = {};
 
-    return async(() => {
-      let h = await (hostManager.getHostAsync(host));
+    return (async() =>{
+      let h = await hostManager.getHostAsync(host);
       let mac = h.o && h.o.mac;
       if(!mac) {
         return;
       }
-      await (netBotTool.prepareTopUploadFlowsForHost(json, mac));
+      await netBotTool.prepareTopUploadFlowsForHost(json, mac);
     })()
     .then(() => res.json(json))
     .catch((err) => {

@@ -27,9 +27,6 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird')
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const SysManager = require('../../net2/SysManager')
 const sysManager = new SysManager()
 
@@ -65,18 +62,16 @@ class IPV6In4 {
     return rclient.setAsync(configKey, string)
   }
 
-  loadConfig() {
-    return async(() => {
-      let json = await (rclient.getAsync(configKey))
-      if(json) {
-        try {
-          let config = JSON.parse(json)
-          this.config = config
-        } catch(err) {
-          log.error("Failed to parse config:", json, err);
-        }
+  async loadConfig() {
+    let json = await rclient.getAsync(configKey)
+    if (json) {
+      try {
+        let config = JSON.parse(json)
+        this.config = config
+      } catch (err) {
+        log.error("Failed to parse config:", json, err);
       }
-    })()
+    }
   }
 
   // Example:
@@ -101,7 +96,7 @@ class IPV6In4 {
     return Object.keys(this.config).length !== 0 && this.config.constructor === Object
   }
   
-  updatePublicIP() {
+  async updatePublicIP() {
     if(!this.config.username || !this.config.password || !this.config.tunnelID)
       return Promise.reject(new Error("Invalid username/password/tunnelID"))
 
@@ -120,103 +115,93 @@ class IPV6In4 {
 
     console.log(options)
     
-    return async(() => {
-      const response = await (rp.get(options))
-      console.log(response)
-    })()
+    const response = await rp.get(options)
+    console.log(response)
   }
 
-  enableTunnel() {
+  async enableTunnel() {
     log.info("Enabling tunnel...")
-    return async(() => {
-      let myip = sysManager.myIp()
-      let intf = fConfig.monitoringInterface || "eth0"
+    let myip = sysManager.myIp()
+    let intf = fConfig.monitoringInterface || "eth0"
 
+    try {
+      await exec("sudo ip tunnel del he-ipv6") // drop any existing tunnel
+    } catch (err) {
+      // do nothing
+    }
+
+    if (this.config.v6Client && this.config.v6Local && this.config.v4Server) {
       try {
-        await (exec("sudo ip tunnel del he-ipv6")) // drop any existing tunnel
-      } catch(err) {
+        await exec(`sudo ip addr del ${this.config.v6Local} dev ${intf}`)
+      } catch (err) {
         // do nothing
       }
-
-      if(this.config.v6Client && this.config.v6Local && this.config.v4Server) {
-        try {
-          await (exec(`sudo ip addr del ${this.config.v6Local} dev ${intf}`))
-        } catch (err) {
-          // do nothing
-        }
-        await (exec(`sudo ip tunnel add he-ipv6 mode sit remote ${this.config.v4Server} local ${myip} ttl 255`))
-        await (exec(`sudo ip link set he-ipv6 up`))
-        await (exec(`sudo ip addr add ${this.config.v6Client} dev he-ipv6`))
-        await (exec(`sudo ip addr add ${this.config.v6Local} dev ${intf}`))
-        await (exec(`sudo ip route add ::/0 dev he-ipv6`))
-      } else {
-        return Promise.reject(new Error("Invalid v6Local/v4Server/v6Client"))
-      }      
-    })()
+      await exec(`sudo ip tunnel add he-ipv6 mode sit remote ${this.config.v4Server} local ${myip} ttl 255`)
+      await exec(`sudo ip link set he-ipv6 up`)
+      await exec(`sudo ip addr add ${this.config.v6Client} dev he-ipv6`)
+      await exec(`sudo ip addr add ${this.config.v6Local} dev ${intf}`)
+      await exec(`sudo ip route add ::/0 dev he-ipv6`)
+    } else {
+      return Promise.reject(new Error("Invalid v6Local/v4Server/v6Client"))
+    }
   }
 
-  disableTunnel() {
+  async disableTunnel() {
     log.info("Disabling tunnel...")
-    return async(() => {
-      let intf = fConfig.monitoringInterface || "eth0"
-      
-      try {
-        await (exec(`sudo ip addr del ${this.config.v6Local} dev ${inf}`))
-      } catch(err) {
-        // do nothing
-      }
+    let intf = fConfig.monitoringInterface || "eth0"
 
-      try {
-        await (exec("sudo ip tunnel del he-ipv6")) // drop any existing tunnel
-      } catch(err) {
-        // do nothing
-      }
-      
-    })
+    try {
+      await exec(`sudo ip addr del ${this.config.v6Local} dev ${intf}`)
+    } catch (err) {
+      // do nothing
+    }
+
+    try {
+      await exec("sudo ip tunnel del he-ipv6") // drop any existing tunnel
+    } catch (err) {
+      // do nothing
+    }
+
   }
 
-  setupRADVD() {
+  async setupRADVD() {
     log.info("setting up radvd service...")
-    return async(() => {
-      
-      if(!this.config.v6Prefix) {
-        return Promise.reject(new Error("IPv6 Prefix is required"))
-      }
 
-      await (exec(`${__dirname}/radvd_install.sh`))
-      
-      let data = await (readFileAsync(radvdTemplate, { encoding: 'utf8' }))
-      // replace the placeholders with real values
-      data = data.replace("__IPV6_PREFIX__", this.config.v6Prefix)
+    if (!this.config.v6Prefix) {
+      return Promise.reject(new Error("IPv6 Prefix is required"))
+    }
 
-      let dns = this.config.v6DNS || ""
-      data = data.replace("__IPV6_DNS__", dns)
+    await exec(`${__dirname}/radvd_install.sh`)
 
-      await (writeFileAsync(radvdTempFile, data, {encoding: 'utf8' }))
+    let data = await readFileAsync(radvdTemplate, { encoding: 'utf8' })
+    // replace the placeholders with real values
+    data = data.replace("__IPV6_PREFIX__", this.config.v6Prefix)
 
-      // node can't write to the destination file directly as it requires 'sudo'
-      await (exec(`sudo cp ${radvdTempFile} ${radvdDestination}`))      
-    })()
+    let dns = this.config.v6DNS || ""
+    data = data.replace("__IPV6_DNS__", dns)
+
+    await writeFileAsync(radvdTempFile, data, { encoding: 'utf8' })
+
+    // node can't write to the destination file directly as it requires 'sudo'
+    await exec(`sudo cp ${radvdTempFile} ${radvdDestination}`)
   }
 
-  start() {
+  async start() {
     log.info("Starting ip6in4...")
-    return async(() => {
-      await (this.loadConfig())
-      await (this.setupRADVD())
-      await (exec("sudo systemctl restart radvd"))
-      await (this.enableTunnel())
-    })()
+    await this.loadConfig()
+    await this.setupRADVD()
+    await exec("sudo systemctl restart radvd")
+    await this.enableTunnel()
   }
 
-  stop() {
+  async stop() {
     log.info("Stopping ip6in4...")
-    return async(() => {
-      await (exec("which radvd && sudo systemctl stop radvd"))
-      await (this.disableTunnel())
-    })().catch((err) => {
+    try {
+      await exec("which radvd && sudo systemctl stop radvd")
+      await this.disableTunnel()
+    } catch(err) {
       log.error("Failed to stop ip6in4 due to err:", err);
-    })
+    }
   }
 }
 

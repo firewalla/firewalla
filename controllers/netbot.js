@@ -90,9 +90,6 @@ const uuid = require('uuid');
 
 const async2 = require('async');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const NM = require('../ui/NotifyManager.js');
 const nm = new NM();
 
@@ -1399,7 +1396,7 @@ class netBot extends ControllerBot {
           return
         }
 
-        async(() => {
+        (async() => {
           let ip = null
 
           if(hostTool.isMacAddress(msg.target)) {
@@ -1411,7 +1408,7 @@ class netBot extends ControllerBot {
               mac: macAddress
             }
 
-            await (hostTool.updateMACKey(macObject, true))
+            await hostTool.updateMACKey(macObject, true)
 
             this.simpleTxData(msg, {}, null, callback)
             
@@ -1421,7 +1418,7 @@ class netBot extends ControllerBot {
             ip = msg.target
           }
 
-          let host = await (this.hostManager.getHostAsync(ip))
+          let host = await this.hostManager.getHostAsync(ip)
 
           if(!host) {
             this.simpleTxData(msg, {}, new Error("invalid host"), callback)
@@ -1506,8 +1503,8 @@ class netBot extends ControllerBot {
         flag = "1"
       }
 
-      async(() => {
-        await (rclient.hsetAsync("sys:config", "includeNameInNotification", flag))
+      (async() => {
+        await rclient.hsetAsync("sys:config", "includeNameInNotification", flag)
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
@@ -1519,9 +1516,9 @@ class netBot extends ControllerBot {
       let err = null;
       
       if (v4.mode) {
-        async(() => {
+        (async() => {
           let mode = require('../net2/Mode.js')
-          let curMode = await (mode.getSetupMode())        
+          let curMode = await mode.getSetupMode()
           if(v4.mode === curMode) {
             this.simpleTxData(msg, {}, err, callback);
             return
@@ -1594,23 +1591,21 @@ class netBot extends ControllerBot {
   }
 
 
-  processAppInfo(appInfo) {
-    return async(() => {
+  async processAppInfo(appInfo) {
       if(appInfo.language) {
         if(sysManager.language !== appInfo.language) {
-          await (sysManager.setLanguageAsync(appInfo.language))
+          await sysManager.setLanguageAsync(appInfo.language)
         }
       }
 
       if(appInfo.deviceName && appInfo.eid) {
         const keyName = "sys:ept:memberNames"
-        await (rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName))
+        await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
 
         const keyName2 = "sys:ept:member:lastvisit"
-        await (rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000)))
+        await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000))
       }
 
-    })()
   }
 
   getHandler(gid, msg, appInfo, callback) {
@@ -1629,8 +1624,8 @@ class netBot extends ControllerBot {
     // target = ip address
     // data.item = [app, alarms, host]
     if(extMgr.hasGet(msg.data.item)) {
-      async(() => {
-        const result = await (extMgr.get(msg.data.item, msg, msg.data.value))
+      (async() => {
+        const result = await extMgr.get(msg.data.item, msg, msg.data.value)
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -1911,11 +1906,11 @@ class netBot extends ControllerBot {
         const offset = value && value.offset
         const limit = value && value.limit
 
-        async(() => {
-          const archivedAlarms = await(am2.loadArchivedAlarms({
+        (async() => {
+          const archivedAlarms = awaitam2.loadArchivedAlarms({
             offset: offset,
             limit: limit
-          }))
+          })
           this.simpleTxData(msg,
             {
               alarms: archivedAlarms,
@@ -2059,7 +2054,7 @@ class netBot extends ControllerBot {
       case "includedDomains":
         (async () => {
           const category = value.category
-          const domains = await (categoryUpdater.getIncludedDomains(category))
+          const domains = await categoryUpdater.getIncludedDomains(category)
           this.simpleTxData(msg, {domains: domains}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -2068,7 +2063,7 @@ class netBot extends ControllerBot {
       case "excludedDomains":
         (async () => {
           const category = value.category
-          const domains = await (categoryUpdater.getExcludedDomains(category))
+          const domains = await categoryUpdater.getExcludedDomains(category)
           this.simpleTxData(msg, {domains: domains}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -2255,9 +2250,8 @@ class netBot extends ControllerBot {
     }
   }
 
-  validateFlowAppIntel(json) {
-    return async(() => {
-      // await (bone.flowgraphAsync(...))
+  async validateFlowAppIntel(json) {
+      // await bone.flowgraphAsync(...)
       let flows = json.flows
 
       let hashCache = {}
@@ -2269,7 +2263,7 @@ class netBot extends ControllerBot {
 
         let data;
         try {
-          data = await(bone.flowgraphAsync('summarizeApp', appFlows))
+          data = await bone.flowgraphAsync('summarizeApp', appFlows)
         } catch (err) {
           log.error("Error when summarizing flowgraph for app", err);
         }
@@ -2278,12 +2272,10 @@ class netBot extends ControllerBot {
           flows.appDetails = flowUtil.unhashIntelFlows(data, hashCache)
         }
       }
-    })()
   }
 
-  validateFlowCategoryIntel(json) {
-    return async(() => {
-      // await (bone.flowgraphAsync(...))
+  async validateFlowCategoryIntel(json) {
+      // await bone.flowgraphAsync(...)
       let flows = json.flows
 
       let hashCache = {}
@@ -2295,7 +2287,7 @@ class netBot extends ControllerBot {
         
         let data;
         try {
-          data = await(bone.flowgraphAsync('summarizeActivity', categoryFlows))
+          data = await bone.flowgraphAsync('summarizeActivity', categoryFlows)
         } catch (err) {
           log.error("Error when summarizing flowgraph for activity", err);
         }
@@ -2304,7 +2296,6 @@ class netBot extends ControllerBot {
           flows.categoryDetails = flowUtil.unhashIntelFlows(data, hashCache)
         }
       }
-    })()
   }
 
   
@@ -2509,7 +2500,7 @@ class netBot extends ControllerBot {
 
     switch (msg.data.item) {
       case "upgrade":
-        async(() => {
+        (async() =>{
           sysTool.upgradeToLatest()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2517,7 +2508,7 @@ class netBot extends ControllerBot {
         })
         break
       case "shutdown":
-        async(() => {
+        (async() =>{
           sysTool.shutdownServices()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2525,7 +2516,7 @@ class netBot extends ControllerBot {
         })
         break
       case "reboot":
-        async(() => {
+        (async() =>{
           sysTool.rebootServices()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2533,7 +2524,7 @@ class netBot extends ControllerBot {
         })
         break
       case "resetpolicy":
-        async(() => {
+        (async() =>{
           sysTool.resetPolicy()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2685,8 +2676,8 @@ class netBot extends ControllerBot {
         });
 
       case "alarm:ignore":
-        async(() => {
-          await (am2.ignoreAlarm(value.alarmID))
+        (async() => {
+          await am2.ignoreAlarm(value.alarmID)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to ignore alarm:", err)
@@ -2695,8 +2686,8 @@ class netBot extends ControllerBot {
         break
 
       case "alarm:report":
-        async(() => {
-          await (am2.reportBug(value.alarmID, value.feedback))
+        (async() => {
+          await am2.reportBug(value.alarmID, value.feedback)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to report bug on alarm:", err)
@@ -2741,14 +2732,14 @@ class netBot extends ControllerBot {
         break;
 
       case "policy:update":
-        async(() => {
+        (async() => {
           const policy = value
 
           const pid = policy.pid
-          const oldPolicy = await (pm2.getPolicy(pid))
-          await (pm2.updatePolicyAsync(policy))
-          const newPolicy = await (pm2.getPolicy(pid))
-          await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
+          const oldPolicy = await pm2.getPolicy(pid)
+          await pm2.updatePolicyAsync(policy)
+          const newPolicy = await pm2.getPolicy(pid)
+          await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
           this.simpleTxData(msg, newPolicy, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
@@ -2756,10 +2747,10 @@ class netBot extends ControllerBot {
 
         break;    
       case "policy:delete":
-        async(() => {
-          let policy = await (pm2.getPolicy(value.policyID))
+        (async() => {
+          let policy = await pm2.getPolicy(value.policyID)
           if(policy) {
-            await (pm2.disableAndDeletePolicy(value.policyID))
+            await pm2.disableAndDeletePolicy(value.policyID)
             policy.deleted = true // policy is marked ask deleted
             this.simpleTxData(msg, policy, null, callback);          
           } else {
@@ -2770,12 +2761,12 @@ class netBot extends ControllerBot {
         })                 
         break;
       case "policy:enable":
-        async(() => {
+        (async() => {
           const policyID = value.policyID
           if(policyID) {
-            let policy = await (pm2.getPolicy(value.policyID))
+            let policy = await pm2.getPolicy(value.policyID)
             if(policy) {
-              await (pm2.enablePolicy(policy))
+              await pm2.enablePolicy(policy)
               this.simpleTxData(msg, policy, null, callback);
             } else {
               this.simpleTxData(msg, null, new Error("invalid policy"), callback);
@@ -2788,12 +2779,12 @@ class netBot extends ControllerBot {
         })
         break;
       case "policy:disable":
-        async(() => {
+        (async() => {
           const policyID = value.policyID
           if(policyID) {
-            let policy = await (pm2.getPolicy(value.policyID))
+            let policy = await pm2.getPolicy(value.policyID)
             if(policy) {
-              await (pm2.disablePolicy(policy))
+              await pm2.disablePolicy(policy)
               this.simpleTxData(msg, policy, null, callback);
             } else {
               this.simpleTxData(msg, null, new Error("invalid policy"), callback);
@@ -2856,10 +2847,10 @@ class netBot extends ControllerBot {
       case "reset":
         break;
       case "startSupport":
-        async(() => {
-          await (frp.start())
+        (async() => {
+          await frp.start()
           let config = frp.getConfig();
-          let newPassword = await(ssh.resetRandomPasswordAsync())
+          let newPassword = await ssh.resetRandomPasswordAsync()
           sysManager.setSSHPassword(newPassword); // in-memory update
           config.password = newPassword
           this.simpleTxData(msg, config, null, callback)
@@ -2868,9 +2859,9 @@ class netBot extends ControllerBot {
         })
         break;
       case "stopSupport":
-        async(() => {
-          await (frp.stop())
-          let newPassword = await(ssh.resetRandomPasswordAsync())
+        (async() => {
+          await frp.stop()
+          let newPassword = await ssh.resetRandomPasswordAsync()
           sysManager.setSSHPassword(newPassword); // in-memory update
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -2878,7 +2869,7 @@ class netBot extends ControllerBot {
         })
         break;
       case "setManualSpoof":
-        async(() => {
+        (async() => {
           let mac = value.mac
           let manualSpoof = value.manualSpoof ? "1" : "0"
 
@@ -2887,14 +2878,14 @@ class netBot extends ControllerBot {
             return
           }
 
-          await (hostTool.updateMACKey({
+          await hostTool.updateMACKey({
             mac: mac,
             manualSpoof: manualSpoof
-          }))
+          })
 
           let mode = require('../net2/Mode.js')
           if(mode.isManualSpoofModeOn()) {
-            await (new SpooferManager().loadManualSpoof(mac))
+            await new SpooferManager().loadManualSpoof(mac)
           }
 
           this.simpleTxData(msg, {}, null, callback)
@@ -2903,16 +2894,16 @@ class netBot extends ControllerBot {
         })
         break
       case "manualSpoofUpdate":
-        async(() => {
+        (async() => {
           let modeManager = require('../net2/ModeManager.js');
-          await (modeManager.publishManualSpoofUpdate())
+          await modeManager.publishManualSpoofUpdate()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })
         break
       case "isSpoofRunning":
-        async(() => {
+        (async() => {
           let timeout = value.timeout
 
           let running = false
@@ -2923,15 +2914,15 @@ class netBot extends ControllerBot {
             while(new Date() / 1000 < begin + timeout) {
               const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
               log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-              running = await (new SpooferManager().isSpoofRunning())
+              running = await new SpooferManager().isSpoofRunning()
               if(running) {
                 break
               }
-              await(delay(1000))
+              await delay(1000)
             }
 
           } else {
-            running = await (new SpooferManager().isSpoofRunning())
+            running = await new SpooferManager().isSpoofRunning()
           }
 
           this.simpleTxData(msg, {running: running}, null, callback)
@@ -2940,7 +2931,7 @@ class netBot extends ControllerBot {
         })
         break
       case "spoofMe":
-        async(() => {
+        (async() => {
           let ip = value.ip
           let name = value.name
 
@@ -2967,12 +2958,12 @@ class netBot extends ControllerBot {
         })
         break
       case "validateSpoof": {
-        async(() => {
+        (async () => {
           let ip = value.ip
           let timeout = value.timeout || 60 // by default, wait for 60 seconds
 
           // add current ip to spoof list
-          await (new SpooferManager().directSpoof(ip))
+          await new SpooferManager().directSpoof(ip)
 
           let begin = new Date() / 1000;
 
@@ -2980,11 +2971,11 @@ class netBot extends ControllerBot {
 
           while(new Date() / 1000 < begin + timeout) {
             log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-            result = await (new SpooferManager().isSpoof(ip))
+            result = await new SpooferManager().isSpoof(ip)
             if(result) {
               break
             }
-            await(delay(1000))
+            await delay(1000)
           }
 
           this.simpleTxData(msg, {
@@ -2997,23 +2988,23 @@ class netBot extends ControllerBot {
         break
       }
       case "spoof": {
-        async(() => {
+        (async() => {
           let ip = value.ip
 
 
         })()
       }
       case "bootingComplete":
-        async(() => {
-          await (f.setBootingComplete())
+        (async() => {
+          await f.setBootingComplete()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })      
         break
       case "resetBootingComplete":
-        async(() => {
-          await (f.resetBootingComplete())
+        (async() => {
+          await f.resetBootingComplete()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
@@ -3021,15 +3012,15 @@ class netBot extends ControllerBot {
         break
 
       case "joinBeta":
-        async(() => {
-          await (this.switchBranch("beta"))
+        (async() => {
+          await this.switchBranch("beta")
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
       case "leaveBeta":
-        async(() => {
-          await (this.switchBranch("prod"))
+        (async() =>{
+          await this.switchBranch("prod")
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3037,8 +3028,8 @@ class netBot extends ControllerBot {
       case "switchBranch":
         let target = value.target
 
-        async(() => {
-          await (this.switchBranch(target))
+        (async() =>{
+          await this.switchBranch(target)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3076,9 +3067,9 @@ class netBot extends ControllerBot {
       }        
       case "enableFeature": {
         const featureName = value.featureName
-        async(() => {
+        (async() =>{
           if(featureName) {
-            await (fc.enableDynamicFeature(featureName))
+            await fc.enableDynamicFeature(featureName)
           }
         })().then(() => {
           this.simpleTxData(msg, {}, null, callback)
@@ -3090,9 +3081,9 @@ class netBot extends ControllerBot {
       }      
       case "disableFeature": {
         const featureName = value.featureName
-        async(() => {
+        (async() =>{
           if(featureName) {
-            await (fc.disableDynamicFeature(featureName))
+            await fc.disableDynamicFeature(featureName)
           }
         })().then(() => {
           this.simpleTxData(msg, {}, null, callback)
@@ -3104,9 +3095,9 @@ class netBot extends ControllerBot {
       }      
       case "clearFeatureDynamicFlag": {
         const featureName = value.featureName
-        async(() => {
+        (async() =>{
           if(featureName) {
-            await (fc.clearDynamicFeature(featureName))
+            await fc.clearDynamicFeature(featureName)
           }
         })().then(() => {
           this.simpleTxData(msg, {}, null, callback)
@@ -3117,7 +3108,7 @@ class netBot extends ControllerBot {
         break
       }
       case "releaseMonkey": {
-        async(() => {
+        (async() =>{
           sem.emitEvent({
             type: "ReleaseMonkey",
             message: "Release a monkey to test system",
@@ -3134,7 +3125,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          await (categoryUpdater.addIncludedDomain(category,domain))
+          await categoryUpdater.addIncludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
@@ -3150,7 +3141,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          await (categoryUpdater.removeIncludedDomain(category,domain))
+          await categoryUpdater.removeIncludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
@@ -3166,7 +3157,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          await (categoryUpdater.addExcludedDomain(category,domain))
+          await categoryUpdater.addExcludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
@@ -3182,7 +3173,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          await (categoryUpdater.removeExcludedDomain(category,domain))
+          await categoryUpdater.removeExcludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
@@ -3720,12 +3711,11 @@ class netBot extends ControllerBot {
     }
   }
 
-  switchBranch(target) {
-    return async(() => {
-      let targetBranch = null
-      let prodBranch = await (f.getProdBranch())
-      
-      switch(target) {
+  async switchBranch(target) {
+    let targetBranch = null
+    let prodBranch = await f.getProdBranch()
+
+    switch (target) {
       case "dev":
         targetBranch = "master";
         break;
@@ -3738,13 +3728,12 @@ class netBot extends ControllerBot {
       case "prod":
         targetBranch = prodBranch
         break
-      }
+    }
 
-      log.info("Going to switch to branch", targetBranch);
+    log.info("Going to switch to branch", targetBranch);
 
-      await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
-      sysTool.upgradeToLatest()
-    })()
+    await exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
+    sysTool.upgradeToLatest()
   }
 
   simpleTxData(msg, data, err, callback) {

@@ -34,9 +34,6 @@ Promise.promisify(muk);
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let gmt = require('../util/DeviceMgmtTool');
 
 let Firewalla = require('../net2/Firewalla.js');
@@ -65,16 +62,16 @@ describe('Test device management tool class', function() {
   this.timeout(10000);
 
   beforeEach((done) => {
-    async(() => {
+    (async() =>{
 
-      await (fs.mkdirAsync(tempDir));
-      await (fs.mkdirAsync(tempWorkDir));
-      await (fs.mkdirAsync(logDir));
-      await (fs.mkdirAsync(logDir1));
-      await (fs.mkdirAsync(logDir2));
-      await (fs.writeFileAsync(logFile1, "test"));
-      await (fs.writeFileAsync(logFile2, "test"));
-      await (rclient.setAsync("key.test", "test"));
+      await fs.mkdirAsync(tempDir)
+      await fs.mkdirAsync(tempWorkDir)
+      await fs.mkdirAsync(logDir)
+      await fs.mkdirAsync(logDir1)
+      await fs.mkdirAsync(logDir2)
+      await fs.writeFileAsync(logFile1, "test")
+      await fs.writeFileAsync(logFile2, "test")
+      await rclient.setAsync("key.test", "test")
       process.env['FIREWALLA_UPPER_DIR'] = tempDir;
       process.env['FIREWALLA_UPPER_WORK_DIR'] = tempWorkDir;
       process.env['FIREWALLA_LOG_DIR'] = logDir;
@@ -87,56 +84,56 @@ describe('Test device management tool class', function() {
   });
 
   afterEach((done) => {
-    async(() => {
+    (async() =>{
       muk.restore();
-      await (fs.rmdirAsync(tempDir + ".bak"));
-      await (fs.rmdirAsync(tempWorkDir + ".bak"));
-      await (fs.rmdirAsync(logDir1));
-      await (fs.rmdirAsync(logDir2));
-      await (fs.rmdirAsync(logDir));
+      await fs.rmdirAsync(tempDir + ".bak")
+      await fs.rmdirAsync(tempWorkDir + ".bak")
+      await fs.rmdirAsync(logDir1)
+      await fs.rmdirAsync(logDir2)
+      await fs.rmdirAsync(logDir)
       done();
     })();
   });
 
   it('should rename upper dir and work dir, redis data, log data if restore function is called', (done) => {
-    async(() => {
-      await (gmt.resetDevice());
+    (async() =>{
+      await gmt.resetDevice()
       try {
-        await (fs.statAsync(tempDir));
+        await fs.statAsync(tempDir)
         assert.fail('temp dir should not exist');
       } catch (err) {
         expect(err).to.not.null;
         expect(err.code).to.equal('ENOENT');
       }
       try {
-        await (fs.statAsync(tempWorkDir));
+        await fs.statAsync(tempWorkDir)
         assert.fail('temp work dir should not exist');
       } catch (err) {
         expect(err).to.not.null;
         expect(err.code).to.equal('ENOENT');
       }
       try {
-        await (fs.statAsync(logFile1));
+        await fs.statAsync(logFile1)
         assert.fail('log file 1 should not exist');
       } catch (err) {
         expect(err).to.not.null;
         expect(err.code).to.equal('ENOENT');
       }
       try {
-        await (fs.statAsync(logFile2));
+        await fs.statAsync(logFile2)
         assert.fail('log file 2 should not exist');
       } catch (err) {
         expect(err).to.not.null;
         expect(err.code).to.equal('ENOENT');
       }
       try {
-        await (fs.statAsync(logDir1));
-        await (fs.statAsync(logDir2));
+        await fs.statAsync(logDir1)
+        await fs.statAsync(logDir2)
       } catch (err) {
         assert.fail('log dir1 and dir2 should exist');
       }
       try {
-        let keys = await (rclient.keysAsync("*"));
+        let keys = await rclient.keysAsync("*")
         if(keys.length > 0)
           console.log(keys);
         expect(keys.length).to.equal(0); // all keys should be gone

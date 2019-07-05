@@ -364,12 +364,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
       let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
-      return (async () => {
+      try {
         await exec(cmd4);
         await exec(cmd6);
-      })().catch((err) => {
+      } catch(err) {
         log.error(`Failed to filter ipset by category ${category} domain pattern ${domain}, err: ${err}`)
-      })
+      }
     }
   }
 

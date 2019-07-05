@@ -1,4 +1,3 @@
-const util = require('util');
 const Promise = require('bluebird');
 
 const log = require("../../net2/logger")('intel');

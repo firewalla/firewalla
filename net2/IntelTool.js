@@ -18,10 +18,6 @@ let log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let Promise = require('bluebird');
-
-let async2 = require('async');
-
 let bone = require('../lib/Bone.js');
 
 let util = require('util');
@@ -302,28 +298,26 @@ class IntelTool {
     return util.format("host:ext.x509:%s", ip);
   }
 
-  getSSLCertificate(ip) {
+  async getSSLCertificate(ip) {
     let certKey = this.getSSLCertKey(ip);
 
-    return (async() => {
-      let sslInfo = await rclient.hgetallAsync(certKey);
-      if(sslInfo) {
-        let subject = sslInfo.subject;
-        if(subject) {
-          let result = this._parseX509Subject(subject);
-          if(result) {
-            sslInfo.CN = result.CN || ""
-            sslInfo.OU = result.OU || ""
-            sslInfo.O = result.O || ""
-          }
+    let sslInfo = await rclient.hgetallAsync(certKey);
+    if (sslInfo) {
+      let subject = sslInfo.subject;
+      if (subject) {
+        let result = this._parseX509Subject(subject);
+        if (result) {
+          sslInfo.CN = result.CN || ""
+          sslInfo.OU = result.OU || ""
+          sslInfo.O = result.O || ""
         }
-
-        return sslInfo;
-      } else {
-        return undefined;
       }
 
-    })();
+      return sslInfo;
+    } else {
+      return undefined;
+    }
+
   }
 
   updateSSLExpire(ip, expire) {

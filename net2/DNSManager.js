@@ -28,11 +28,6 @@ const sysManager = new SysManager('info');
 const _async = require('async');
 var instance = null;
 
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const IntelTool = require('../net2/IntelTool.js')
 const intelTool = new IntelTool()
 
@@ -299,24 +294,24 @@ module.exports = class DNSManager {
 
       resolve++;
 
-      async(() => {
+      (async() =>{
         const _ipsrc = o[ipsrc]
         const _ipdst = o[ipdst]
 
         if(sysManager.isLocalIP(_ipsrc)) {
           enrichDeviceCount++;
-          await(this.enrichDeviceIP(_ipsrc, o, "src"))
+          await this.enrichDeviceIP(_ipsrc, o, "src")
         } else {
           enrichDstCount++;
-          await (this.enrichDestIP(_ipsrc, o, "src"))
+          await this.enrichDestIP(_ipsrc, o, "src")
         }
 
         if(sysManager.isLocalIP(_ipdst)) {
           enrichDeviceCount++;
-          await(this.enrichDeviceIP(_ipdst, o, "dst"))
+          await this.enrichDeviceIP(_ipdst, o, "dst")
         } else {
           enrichDstCount++;
-          await (this.enrichDestIP(_ipdst, o, "dst"))
+          await this.enrichDestIP(_ipdst, o, "dst")
         }
       })().finally(() => {
         cb()
@@ -330,9 +325,9 @@ module.exports = class DNSManager {
     });
   }
 
-  enrichDeviceIP(ip, flowObject, srcOrDest) {
-    return async(() => {
-      const macEntry = await (hostTool.getMacEntryByIP(ip))
+  async enrichDeviceIP(ip, flowObject, srcOrDest) {
+    try {
+      const macEntry = await hostTool.getMacEntryByIP(ip)
       if(macEntry) {
         if(srcOrDest === "src") {
           flowObject["shname"] = getPreferredBName(macEntry)
@@ -342,14 +337,14 @@ module.exports = class DNSManager {
 
         flowObject.mac = macEntry.mac
       }
-    })().catch((err) => {
+    } catch(err) {
       // do nothing
-    })
+    }
   }
 
-  enrichDestIP(ip, flowObject, srcOrDest) {
-    return async(() => {
-      const intel = await (intelTool.getIntel(ip))
+  async enrichDestIP(ip, flowObject, srcOrDest) {
+    try {
+      const intel = await intelTool.getIntel(ip)
       if(intel) {
         if(intel.host) {
           if(srcOrDest === "src") {
@@ -374,8 +369,8 @@ module.exports = class DNSManager {
 
         flowObject.intel = intel
       }
-    })().catch((err) => {
+    } catch(err) {
       // do nothing
-    })
+    }
   }
 }
