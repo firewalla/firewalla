@@ -89,29 +89,6 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
-      /* This is taken care of by DnsLoopAvoidanceSensor
-      */
-  setPolicyAsync(name, data) {
-    return util.promisify(this.setPolicy).bind(this)(name, data)
-  }
-
-  setPolicyAsync(name, data) {
-    return new Promise((resolve, reject) => {
-      this.setPolicy(name, data, (err, result) => {
-        if(err) {
-          reject(err);
-          return;
-        }
-
-        resolve(result);
-      });
-    });
-  }
-
-  loadPolicyAsync() {
-    return util.promisify(this.loadPolicy).bind(this)()
-  }
-
 module.exports = class HostManager {
   // type is 'server' or 'client'
   constructor(name, type, loglevel) {

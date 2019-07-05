@@ -32,9 +32,7 @@ const ShieldManager = require('./ShieldManager.js');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
-const Policy = require('../alarm/Policy.js');
-const PolicyManager2 = require('../alarm/PolicyManager2.js');
-const pm2 = new PolicyManager2();
+const util = require('util')
 
 const f = require('./Firewalla.js');
 
