@@ -617,8 +617,8 @@ module.exports = class {
     if (!iptool.isV4Format(ip4)) return false;
     else return (
       iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
-      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) ||
-      this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4)
+      (this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) || false) ||
+      (this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) || false)
     )
   }
 
