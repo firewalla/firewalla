@@ -82,6 +82,8 @@ exports.dnsChange = dnsChange;
 exports.dnsChangeAsync = util.promisify(dnsChange);
 exports.dnsFlush = dnsFlush;
 exports.dnsFlushAsync = util.promisify(dnsFlush);
+exports.portForwardFlush = portForwardFlush;
+exports.portForwardFlushAsync = util.promisify(portForwardFlush);
 exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
@@ -228,11 +230,10 @@ function iptables(rule, callback) {
             action = "-D";
         }
 
-        let cmd = "iptables";
         let cmdline = "";
 
         let getCommand = function(action, protocol, destIP, dport, toIP, toPort) {
-          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
+          return `sudo iptables -w -t nat ${action} PREROUTING_PORT_FORWARD -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
         }
 
         switch(action) {
@@ -256,7 +257,19 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
-
+    } else if (rule.type === "port_forward_flush") {
+      const cmdline = `sudo iptables -w -t nat -F PREROUTING_PORT_FORWARD`;
+      log.debug("IPTABLE:PORT_FORWARD_FLUSH:Running commandline: ", cmdline);
+      cp.exec(cmdline, (err, stdout, stderr) => {
+        if (err) {
+          log.error("IPTABLE:PORT_FORWARD_FLUSH:Error", cmdline, err);
+        }
+        if (callback) {
+          callback(err, null);
+        }
+        running = false;
+        newRule(null, null);
+      });
     } else {
       log.error("Invalid rule type:", rule.type);
       if (callback) {
@@ -337,6 +350,12 @@ function _getDNSRedirectChain(type) {
       chain = "PREROUTING_DNS_DEFAULT";
   }
   return chain;
+}
+
+function portForwardFlush(callback) {
+  newRule({
+    type: 'port_forward_flush',
+  }, callback);
 }
 
 function dnsFlush(srcType, callback) {

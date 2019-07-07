@@ -264,6 +264,11 @@ sudo iptables -w -t nat -N PREROUTING_DNS_VPN_CLIENT &> /dev/null
 sudo iptables -w -t nat -F PREROUTING_DNS_VPN_CLIENT
 sudo iptables -w -t nat -C PREROUTING -j PREROUTING_DNS_VPN_CLIENT || sudo iptables -w -t nat -I PREROUTING -j PREROUTING_DNS_VPN_CLIENT
 
+# create port forward chain in PREROUTING, this is used in ipv4 only
+sudo iptables -w -t nat -N PREROUTING_PORT_FORWARD &> /dev/null
+sudo iptables -w -t nat -F PREROUTING_PORT_FORWARD
+sudo iptables -w -t nat -C PREROUTING -j PREROUTING_PORT_FORWARD || sudo iptables -w -t nat -I PREROUTING -j PREROUTING_PORT_FORWARD
+
 if [[ -e /.dockerenv ]]; then
   sudo iptables -w -C OUTPUT -j FW_BLOCK &>/dev/null || sudo iptables -w -A OUTPUT -j FW_BLOCK
 fi

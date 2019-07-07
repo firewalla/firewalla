@@ -18,10 +18,20 @@
 let instance = null;
 const log = require('../../net2/logger.js')(__filename)
 
+const f = require('../../net2/Firewalla.js')
+
 const rclient = require('../../util/redis_manager.js').getRedisClient()
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+
+const async = require('asyncawait/async')
+const await = require('asyncawait/await')
 
 const SysManager = require('../../net2/SysManager')
 const sysManager = new SysManager()
+
+const HostTool = require('../../net2/HostTool.js');
+const hostTool = new HostTool();
+const ipTool = require('ip');
 
 const ShieldManager = require('../../net2/ShieldManager.js');
 let shieldManager = null;
@@ -49,31 +59,112 @@ class PortForward {
   constructor() {
     if(!instance) {
       this.config = {maps:[]}
-      let c = require('../../net2/MessageBus.js');
-      this.channel = new c('debug');
-      this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, (channel, type, ip, obj) => {
-        if (type == "Extension:PortForwarding") {
-          (async()=>{
-            if (obj!=null) {
-              if (obj.state == false) {
-                await this.removePort(obj)
-              } else {
-                await this.addPort(obj)
+      if (f.isMain()) {
+        let c = require('../../net2/MessageBus.js');
+        this.channel = new c('debug');
+        this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, (channel, type, ip, obj) => {
+          if (type == "Extension:PortForwarding") {
+            (async ()=>{
+              if (obj!=null) {
+                if (obj.state == false) {
+                  await this.removePort(obj);
+                } else {
+                  await this.addPort(obj);
+                }
+                // TODO: config should be saved after rule successfully applied
+                await this.refreshConfig();
               }
-              // TODO: config should be saved after rule successfully applied
-              await this.saveConfig()
-            }
-          })();
-        }
-      });
+            })();
+          }
+        });
 
+        sclient.on("message", (channel, message) => {
+          switch (channel) {
+            case "System:IPChange":
+              (async () => {
+                if (sysManager.myIp() !== this._selfIP) {
+                  log.info(`Firewalla IP changed from ${this._selfIP} to ${sysManager.myIp()}, refresh all rules...`);
+                  await iptable.portForwardFlushAsync();
+                  await this.restore();
+                  this._selfIP = sysManager.myIp();
+                }
+              })().catch((err) => {
+                log.error("Failed to refresh port forward rules for System:IPChange", err);
+              })
+              break;
+            default:
+          }
+        })
+      }
       instance = this
     }
 
     return instance
   }
 
-  saveConfig() {
+  async refreshConfig() {
+    if (this.config == null || this.config.maps == null)
+      return;
+    const mapsCopy = JSON.parse(JSON.stringify(this.config.maps));
+    const updatedMaps = [];
+    for (let map of mapsCopy) {
+      if (!map.toIP) {
+        log.error("toIP is not defined: ", map);
+        await this.removePort(map);
+        continue;
+      }
+      if (!map.toMac) {
+        // need to convert toIP to mac address of the internal host. Legacy port forwarding rules only contain IP address.
+        const mac = await hostTool.getMacByIP(map.toIP);
+        if (!mac) {
+          log.error("No corresponding MAC address found: ", map);
+          await this.removePort(map);
+          continue;
+        }
+        const macEntry = await hostTool.getMACEntry(mac);
+        if (!macEntry) {
+          log.error("MAC entry is not found: ", map);
+          await this.removePort(map);
+          continue;
+        }
+        const ipv4Addr = macEntry.ipv4Addr;
+        if (!ipv4Addr || ipv4Addr !== map.toIP) {
+          // the toIP is already taken over by another device
+          log.error("IP address is already taken by other device: ", map);
+          await this.removePort(map);
+          continue;
+        }
+        map.toMac = mac;
+        updatedMaps.push(map);
+      } else {
+        // update IP of the device from host:mac:* entries
+        const macEntry = await hostTool.getMACEntry(map.toMac);
+        if (!macEntry) {
+          log.error("MAC entry is not found: ", map);
+          await this.removePort(map);
+          continue;
+        }
+        const ipv4Addr = macEntry.ipv4Addr;
+        if (ipv4Addr !== map.toIP) {
+          // remove old port forwarding rule with legacy IP address
+          log.info("IP address has changed, remove old rule: ", map);
+          await this.removePort(map);
+          if (ipv4Addr) {
+            // add new port forwarding rule with updated IP address
+            map.toIP = ipv4Addr;
+            log.info("IP address has changed, add new rule: ", map);
+            await this.addPort(map);
+          }
+        }
+        map.toIP = ipv4Addr; // ensure the latest ipv4 address is synced no matter if it is changed
+        updatedMaps.push(map);
+      }
+    }
+    this.config.maps = updatedMaps;
+    await this.saveConfig();
+  }
+
+  async saveConfig() {
     if (this.config == null) {
         return;
     }
@@ -144,6 +235,11 @@ class PortForward {
         }
       }
 
+      if (!this._isSecondaryInterfaceIP(map.toIP)) {
+        log.warn("IP is not in secondary network, port forward will not be applied: ", map);
+        return;
+      }
+      
       log.info("PORTMAP: Add", map);
       if (!shieldManager)
         shieldManager = new ShieldManager();
@@ -151,8 +247,7 @@ class PortForward {
       map.state = true;
       const dupMap = JSON.parse(JSON.stringify(map))
       dupMap.destIP = sysManager.myIp()
-      let state = await iptable.portforwardAsync(dupMap)
-      return state;
+      await iptable.portforwardAsync(dupMap)
     } catch (err) {
       log.error("Failed to add port mapping:", err);
     }
@@ -173,7 +268,7 @@ class PortForward {
 
       // we call remove anyway ... even there is no entry
       dupMap.destIP = sysManager.myIp()
-      let state = await iptable.portforwardAsync(dupMap);
+      await iptable.portforwardAsync(dupMap);
 
       old = this.find(map);
     }
@@ -194,17 +289,34 @@ class PortForward {
 
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
+    this._selfIP = sysManager.myIp();
     shieldManager = new ShieldManager();
+  
     await this.loadConfig()
     await this.restore()
+    await this.refreshConfig()
+    if (f.isMain()) {
+      sclient.subscribe("System:IPChange");
+      setInterval(() => {
+        this.refreshConfig();
+      }, 60000); // refresh config once every minute
+    }
   }
 
   async stop() {
-    log.info("Stopping ip6in4...")
-    try {
-      await this.saveConfig()
-    } catch (err) {
+    log.info("PortForwarder:Stopping PortForwarder ...")
+    await this.saveConfig().catch((err) => {
+    })
+  }
+
+  _isSecondaryInterfaceIP(ip) {
+    const ip2 = sysManager.myIp2();
+    const ipMask2 = sysManager.myIpMask2();
+    
+    if(ip && ip2 && ipMask2) {
+      return ipTool.subnet(ip2, ipMask2).contains(ip);
     }
+    return false;
   }
 }
 
