@@ -265,6 +265,58 @@ async function run() {
     ModeManager.listenOnChange();
     await portforward.start();
 
+    // initialize VPN after Iptables is flushed
+    const vpnManager = new VpnManager();
+    hostManager.loadPolicy((err, data) => {
+      if (err != null) {
+        log.error("Failed to load system policy for VPN", err);
+      } else {
+        var vpnConfig = {state: false}; // default value
+        if(data && data["vpn"]) {
+          vpnConfig = JSON.parse(data["vpn"]);
+        }
+        vpnManager.install("server", (err)=>{
+          if (err!=null) {
+            log.info("Unable to install vpn server instance: server", err);
+            hostManager.setPolicy("vpnAvaliable",false);
+          } else {
+            (async () => {
+              const conf = await vpnManager.configure(vpnConfig, true);
+              if (conf == null) {
+                log.error("Failed to configure VPN manager");
+                vpnConfig.state = false;
+                hostManager.setPolicy("vpn", vpnConfig);
+              } else {
+                hostManager.setPolicy("vpnAvaliable", true, (err) => { // old typo, DO NOT fix it for backward compatibility.
+                  vpnConfig = Object.assign({}, vpnConfig, conf);
+                  hostManager.setPolicy("vpn", vpnConfig);
+                });
+              }
+            })();
+          }
+        });
+      }
+    });
+
+    // ensure getHosts is called after Iptables is flushed
+    hostManager.getHosts((err,result)=>{
+      let listip = [];
+      for (let i in result) {
+//        log.info(result[i].toShortString());
+        result[i].on("Notice:Detected",(type,ip,obj)=>{
+          log.info("=================================");
+          log.info("Notice :", type,ip,obj);
+          log.info("=================================");
+        });
+        result[i].on("Intel:Detected",(type,ip,obj)=>{
+          log.info("=================================");
+          log.info("Notice :", type,ip,obj);
+          log.info("=================================");
+        });
+	//            result[i].spoof(true);
+      }
+    });
+
     let PolicyManager2 = require('../alarm/PolicyManager2.js');
     let pm2 = new PolicyManager2();
     await pm2.setupPolicyQueue()
@@ -309,65 +361,6 @@ async function run() {
         }
     }
   },1000*60);
-
-/*
-  Bug: when two firewalla's are on the same network, this will change the upnp
-  setting.  Need to fix this later.
-*/
-  setTimeout(()=>{
-    var vpnManager = new VpnManager();
-    hostManager.loadPolicy((err, data) => {
-      if (err != null) {
-        log.error("Failed to load system policy for VPN", err);
-      } else {
-        var vpnConfig = {state: false}; // default value
-        if(data && data["vpn"]) {
-          vpnConfig = JSON.parse(data["vpn"]);
-        }
-        vpnManager.install("server", (err)=>{
-          if (err!=null) {
-            log.info("Unable to install vpn server instance: server", err);
-            hostManager.setPolicy("vpnAvaliable",false);
-          } else {
-            (async () => {
-              const conf = await vpnManager.configure(vpnConfig, true);
-              if (conf == null) {
-                log.error("Failed to configure VPN manager");
-                vpnConfig.state = false;
-                hostManager.setPolicy("vpn", vpnConfig);
-              } else {
-                hostManager.setPolicy("vpnAvaliable", true, (err) => { // old typo, DO NOT fix it for backward compatibility.
-                  vpnConfig = Object.assign({}, vpnConfig, conf);
-                  hostManager.setPolicy("vpn", vpnConfig);
-                });
-              }
-            })();
-          }
-        });
-      }
-    });
-  },10000);
-
-  setTimeout(()=>{
-    hostManager.getHosts((err,result)=>{
-      let listip = [];
-      for (let i in result) {
-//        log.info(result[i].toShortString());
-        result[i].on("Notice:Detected",(type,ip,obj)=>{
-          log.info("=================================");
-          log.info("Notice :", type,ip,obj);
-          log.info("=================================");
-        });
-        result[i].on("Intel:Detected",(type,ip,obj)=>{
-          log.info("=================================");
-          log.info("Notice :", type,ip,obj);
-          log.info("=================================");
-        });
-	//            result[i].spoof(true);
-      }
-    });
-
-  },20 * 1000);
 
 
   // finally need to check if firehttpd should be started
