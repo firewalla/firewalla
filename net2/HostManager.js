@@ -86,6 +86,8 @@ const FlowTool = require('./FlowTool.js');
 const flowTool = new FlowTool();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');	
+const vpnClientEnforcer = new VPNClientEnforcer();
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
