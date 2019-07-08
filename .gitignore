@@ -122,3 +122,4 @@ api/db/token.json
 /bin/bitbridge7.rc
 /extension/frp/frpc.support.ini
 /extension/frp/frpc.support.service
+/extension/dnsmasq/dnsmasq.sh
