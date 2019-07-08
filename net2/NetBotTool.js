@@ -85,7 +85,7 @@ class NetBotTool {
   }
 
   // app
-  prepareAppActivitiesFlows(json, options) {
+  async prepareAppActivitiesFlows(json, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
