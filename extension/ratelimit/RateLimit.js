@@ -71,7 +71,7 @@ class RateLimit {
     }
 
     const payload = results[0];
-    const ts = Number(result[1]) * 30;
+    const ts = Number(results[1]) * 30;
 
     try {
       const data = JSON.parse(payload);

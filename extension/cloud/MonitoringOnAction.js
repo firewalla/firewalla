@@ -5,7 +5,8 @@ const log = require('../../net2/logger.js')(__filename);
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 
-class MonitoringOffAction extends CloudAction {
+class MonitoringOnAction extends CloudAction {
+
   requiredKeys() {
     return ["hostID"];
   }
@@ -26,9 +27,9 @@ class MonitoringOffAction extends CloudAction {
       return false;
     }
 
-    await host.setPolicyAsync("monitor", false);
+    await host.setPolicyAsync("monitor", true);
     return true;
   }
 }
 
-module.exports = MonitoringOffAction;
+module.exports = MonitoringOnAction;
