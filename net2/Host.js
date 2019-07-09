@@ -1033,6 +1033,7 @@ class Host {
     return await this.getHost(ip);
   }
 
+  // looks like this function is never used
   async getHost(ip) {
     let key = "host:ip4:" + ip;
     log.debug("Discovery:FindHostWithIP", key, ip);
@@ -1062,8 +1063,6 @@ class Host {
         this.notice = result
         result = await rclient.zrevrangebyscoreAsync(["flow:http:in:" + ip, end, start, "LIMIT", 0, 10]);
         this.http = result;
-        let {connections, activities} = flowManager.summarizeConnections(data.mac, "in", end, start, "rxdata", 1, true,false);
-        this.conn = connections;
         return this;
       } else {
         return null;
