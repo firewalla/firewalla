@@ -62,7 +62,7 @@ class CategoryUpdateSensor extends Sensor {
   async countryJob() {
     const countryList = this.loadCategoryFromBone('country:list');
     rc.saddAsync('country:list', countryList);
-    
+
     const activeCountries = countryUpdater.getActiveCountries();
     log.info('Active countries', activeCountries);
     for (const country of activeCountries) {
