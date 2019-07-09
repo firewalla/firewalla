@@ -313,7 +313,7 @@ async function inviteFirstAdmin(gid) {
       log.error("Failed to submit diag info", err);
     });
 
-    await launchService2(gid, null);
+    await launchService2(gid);
   } else {
     log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
 
