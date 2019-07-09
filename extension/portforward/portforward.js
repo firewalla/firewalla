@@ -22,9 +22,7 @@ const f = require('../../net2/Firewalla.js')
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const SysManager = require('../../net2/SysManager')
 const sysManager = new SysManager()
@@ -59,43 +57,46 @@ class PortForward {
   constructor() {
     if(!instance) {
       this.config = {maps:[]}
-      if (f.isMain()) {
-        let c = require('../../net2/MessageBus.js');
-        this.channel = new c('debug');
-        this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, (channel, type, ip, obj) => {
-          if (type == "Extension:PortForwarding") {
-            (async ()=>{
-              if (obj!=null) {
-                if (obj.state == false) {
-                  await this.removePort(obj);
-                } else {
-                  await this.addPort(obj);
+      sem.once('IPTABLES_READY', () => {
+        if (f.isMain()) {
+          let c = require('../../net2/MessageBus.js');
+          this.channel = new c('debug');
+          this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, (channel, type, ip, obj) => {
+            if (type == "Extension:PortForwarding") {
+              (async ()=>{
+                if (obj!=null) {
+                  if (obj.state == false) {
+                    await this.removePort(obj);
+                  } else {
+                    await this.addPort(obj);
+                  }
+                  // TODO: config should be saved after rule successfully applied
+                  await this.refreshConfig();
                 }
-                // TODO: config should be saved after rule successfully applied
-                await this.refreshConfig();
-              }
-            })();
-          }
-        });
-
-        sclient.on("message", (channel, message) => {
-          switch (channel) {
-            case "System:IPChange":
-              (async () => {
-                if (sysManager.myIp() !== this._selfIP) {
-                  log.info(`Firewalla IP changed from ${this._selfIP} to ${sysManager.myIp()}, refresh all rules...`);
-                  await iptable.portForwardFlushAsync();
-                  await this.restore();
-                  this._selfIP = sysManager.myIp();
-                }
-              })().catch((err) => {
-                log.error("Failed to refresh port forward rules for System:IPChange", err);
-              })
-              break;
-            default:
-          }
-        })
-      }
+              })();
+            }
+          });
+  
+          sclient.on("message", (channel, message) => {
+            switch (channel) {
+              case "System:IPChange":
+                (async () => {
+                  if (sysManager.myIp() !== this._selfIP) {
+                    log.info(`Firewalla IP changed from ${this._selfIP} to ${sysManager.myIp()}, refresh all rules...`);
+                    await iptable.portForwardFlushAsync();
+                    await this.restore();
+                    this._selfIP = sysManager.myIp();
+                  }
+                })().catch((err) => {
+                  log.error("Failed to refresh port forward rules for System:IPChange", err);
+                })
+                break;
+              default:
+            }
+          });
+          sclient.subscribe("System:IPChange");
+        }
+      })    
       instance = this
     }
 
@@ -296,7 +297,6 @@ class PortForward {
     await this.restore()
     await this.refreshConfig()
     if (f.isMain()) {
-      sclient.subscribe("System:IPChange");
       setInterval(() => {
         this.refreshConfig();
       }, 60000); // refresh config once every minute

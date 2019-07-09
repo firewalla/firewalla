@@ -38,6 +38,7 @@ const familyFilterFile = FILTER_DIR + "/family_filter.conf";
 
 const pclient = require('../../util/redis_manager.js').getPublishClient();
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
@@ -130,48 +131,50 @@ module.exports = class DNSMASQ {
         restart: 0
       }
 
-      if (f.isMain()) {
-        setInterval(() => {
-          this.checkIfRestartNeeded()
-        }, 10 * 1000) // every 10 seconds
+      sem.once('IPTABLES_READY', () => {
+        if (f.isMain()) {
+          setInterval(() => {
+            this.checkIfRestartNeeded()
+          }, 10 * 1000) // every 10 seconds
+    
+          setInterval(() => {
+            this.checkIfWriteHostsFile();
+          }, 10 * 1000);
   
-        setInterval(() => {
-          this.checkIfWriteHostsFile();
-        }, 10 * 1000);
-
-        process.on('exit', () => {
-          this.shouldStart = false;
-          this.stop();
-        });
-
-        sclient.on("message", (channel, message) => {
-          switch (channel) {
-            case "System:IPChange":
-              (async () => {
-                const started = await this.checkStatus();
-                if (started)
-                  await this.start(false); // raw restart dnsmasq to refresh all confs and iptables
-              })();
-              break;
-            case "DHCPReservationChanged":
-              this.onDHCPReservationChanged();
-              break;
-            case "System:VPNSubnetChanged":
-              (async () => {
-                const newVpnSubnet = message;
-                if (newVpnSubnet)
-                  await this.updateVpnIptablesRules(newVpnSubnet, true);
-              })();
-              break;
-            default:
-            //log.warn("Unknown message channel: ", channel, message);
-          }
-        });
-
-        sclient.subscribe("System:IPChange");
-        sclient.subscribe("DHCPReservationChanged");
-        sclient.subscribe("System:VPNSubnetChanged");
-      }
+          process.on('exit', () => {
+            this.shouldStart = false;
+            this.stop();
+          });
+  
+          sclient.on("message", (channel, message) => {
+            switch (channel) {
+              case "System:IPChange":
+                (async () => {
+                  const started = await this.checkStatus();
+                  if (started)
+                    await this.start(false); // raw restart dnsmasq to refresh all confs and iptables
+                })();
+                break;
+              case "DHCPReservationChanged":
+                this.onDHCPReservationChanged();
+                break;
+              case "System:VPNSubnetChanged":
+                (async () => {
+                  const newVpnSubnet = message;
+                  if (newVpnSubnet)
+                    await this.updateVpnIptablesRules(newVpnSubnet, true);
+                })();
+                break;
+              default:
+              //log.warn("Unknown message channel: ", channel, message);
+            }
+          });
+  
+          sclient.subscribe("System:IPChange");
+          sclient.subscribe("DHCPReservationChanged");
+          sclient.subscribe("System:VPNSubnetChanged");
+        }
+      })
     }
 
     return instance;
