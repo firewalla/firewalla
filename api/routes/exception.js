@@ -25,9 +25,6 @@ let em = new EM();
 let AM2 = require('../../alarm/AlarmManager2');
 let am2 = new AM2();
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 router.get('/list', (req, res, next) => {
   em.loadExceptions((err, list) => {
     if(err) {
@@ -103,9 +100,9 @@ router.post('/match',
              let alarmID = req.query.alarmID
              let exceptionID = req.query.exceptionID
              
-             async(() => {
-               let alarm = await (am2.getAlarm(alarmID))
-               let exception = await (em.getException(exceptionID))
+             (async() =>{
+               let alarm = await am2.getAlarm(alarmID)
+               let exception = await em.getException(exceptionID)
                if(exception.match(alarm)) {
                  res.json({matched: true})
                } else {

@@ -22,9 +22,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const audit = require('../util/audit.js');
 const Bone = require('../lib/Bone.js');
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const Promise = require('bluebird');
 
 const minimatch = require('minimatch')
@@ -52,7 +49,7 @@ const ht = new HostTool()
 const DomainIPTool = require('../control/DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 
-const domainBlock = require('../control/DomainBlock.js')()
+const domainBlock = require('../control/DomainBlock.js')();
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -65,6 +62,9 @@ const Queue = require('bee-queue')
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const policyCapacity = platform.getPolicyCapacity();
+
+const Accounting = require('../control/Accounting.js');
+const accounting = new Accounting();
 
 const _ = require('lodash')
 
@@ -117,71 +117,70 @@ class PolicyManager2 {
       log.info("policy queue is cleaned up")
     })
 
-    this.queue.process((job, done) => {
+    this.queue.process(async (job) => {
       const event = job.data;
       const policy = new Policy(event.policy);
       const oldPolicy = event.oldPolicy ? new Policy(event.oldPolicy) : null;
       const action = event.action
 
       if(this.shouldFilter(policy)) {
-        done();
         return;
       }
 
       switch(action) {
       case "enforce": {
-        return async(() => {
+        try {
           log.info("START ENFORCING POLICY", policy.pid, action);
-          await(this.enforce(policy))
-        })().catch((err) => {
+          await this.enforce(policy)
+        } catch(err) {
           log.error("enforce policy failed:" + err, policy)
-        }).finally(() => {
+        } finally {
           log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
-          done()
-        })
+          return
+        }
         break
       }
 
       case "unenforce": {
-        return async(() => {
+        try {
           log.info("START UNENFORCING POLICY", policy.pid, action);
-          await(this.unenforce(policy))
-        })().catch((err) => {
+          await this.unenforce(policy)
+        } catch(err) {
           log.error("unenforce policy failed:" + err, policy)
-        }).finally(() => {
+        } finally {
           log.info("COMPLETE UNENFORCING POLICY", policy.pid, action);
-          done()
-        })
+          return
+        }
         break
       }
 
       case "reenforce": {
-        return async(() => {
+        try {
           if(!oldPolicy) {
             // do nothing
           } else {
             log.info("START REENFORCING POLICY", policy.pid, action);
 
-            await(this.unenforce(oldPolicy))
-            await(this.enforce(policy))
+            await this.unenforce(oldPolicy)
+            await this.enforce(policy)
           }
-        })().catch((err) => {
+        } catch(err) {
           log.error("reenforce policy failed:" + err, policy)
-        }).finally(() => {
+        } finally {
           log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
-          done()
-        })
+          return
+        }
         break
       }
 
       case "incrementalUpdate": {
-        return async(() => {
-          const list = await (domainIPTool.getAllIPMappings())
-          list.forEach((l) => {
+        try {
+          const list = await domainIPTool.getAllIPMappings()
+          for (const l of list) {
             const matchDomain = l.match(/ipmapping:domain:(.*)/)
             if(matchDomain) {
               const domain = matchDomain[1]
-              await (domainBlock.incrementalUpdateIPMapping(domain, {}))
+              await domainBlock.incrementalUpdateIPMapping(domain, {})
               return
             }
 
@@ -189,14 +188,14 @@ class PolicyManager2 {
             if (matchBlockSetDomain) {
               const blockSet = matchBlockSetDomain[1];
               const domain = matchBlockSetDomain[2];
-              await (domainBlock.incrementalUpdateIPMapping(domain, {blockSet: blockSet}))
+              await domainBlock.incrementalUpdateIPMapping(domain, {blockSet: blockSet})
               return;
             }
 
             const matchExactDomain = l.match(/ipmapping:exactdomain:(.*)/)
             if(matchExactDomain) {
               const domain = matchExactDomain[1]
-              await (domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1}))
+              await domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1})
               return
             }
 
@@ -204,21 +203,20 @@ class PolicyManager2 {
             if (matchBlockSetExactDomain) {
               const blockSet = matchBlockSetExactDomain[1];
               const domain = matchBlockSetExactDomain[2];
-              await (domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1, blockSet: blockSet}));
+              await domainBlock.incrementalUpdateIPMapping(domain, {exactMatch: 1, blockSet: blockSet});
             }
-          })
-        })().catch((err) => {
+          }
+        } catch(err) {
           log.error("incremental update policy failed:", err);
-        }).finally(() => {
+        } finally {
           log.info("COMPLETE incremental update policy");
-          done()
-        })
+          return
+        }
       }
 
       default:
         log.error("unrecoganized policy enforcement action:" + action)
-        done()
-        break
+        return
       }
     })
 
@@ -409,35 +407,33 @@ class PolicyManager2 {
     });
   }
 
-  checkAndSave(policy, callback) {
-    callback = callback || function() {}
+  async checkAndSave(policy, callback) {
+    callback = callback || function () { }
     if (!policy instanceof Policy) callback(new Error("Not Policy instance"));
-    async(()=>{
-      //FIXME: data inconsistence risk for multi-processes or multi-threads
-      try {
-        if(this.isFirewallaOrCloud(policy)) {
-          callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
-          return
-        }
-        let policies = await(this.getSamePolicies(policy))
-        if (policies && policies.length > 0) {
-          log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
-          const samePolicy = policies[0]
-          if(samePolicy.disabled && samePolicy.disabled == "1") {
-            // there is a policy in place and disabled, just need to enable it
-            await (this.enablePolicy(samePolicy))
-            callback(null, samePolicy, "duplicated_and_updated")
-          } else {
-            callback(null, samePolicy, "duplicated")
-          }
-        } else {
-          this.savePolicy(policy, callback);
-        }
-      } catch (err) {
-        log.error("failed to save policy:" + err)
-        callback(err)
+    //FIXME: data inconsistence risk for multi-processes or multi-threads
+    try {
+      if (this.isFirewallaOrCloud(policy)) {
+        callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
+        return
       }
-    })()
+      let policies = awaitthis.getSamePolicies(policy)
+      if (policies && policies.length > 0) {
+        log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
+        const samePolicy = policies[0]
+        if (samePolicy.disabled && samePolicy.disabled == "1") {
+          // there is a policy in place and disabled, just need to enable it
+          await this.enablePolicy(samePolicy)
+          callback(null, samePolicy, "duplicated_and_updated")
+        } else {
+          callback(null, samePolicy, "duplicated")
+        }
+      } else {
+        this.savePolicy(policy, callback);
+      }
+    } catch (err) {
+      log.error("failed to save policy:" + err)
+      callback(err)
+    }
   }
 
   checkAndSaveAsync(policy) {
@@ -726,10 +722,8 @@ class PolicyManager2 {
   }
 
   // cleanup before use
-  cleanupPolicyData() {
-    return async(() => {
-      await (domainIPTool.removeAllDomainIPMapping())
-    })()
+  async cleanupPolicyData() {
+    await domainIPTool.removeAllDomainIPMapping()
   }
 
   async enforceAllPolicies() {
@@ -905,6 +899,42 @@ class PolicyManager2 {
     return policy;
   }
 
+  generateTaget(policy) {
+    const { type, target, protocol, ip, net, port } = policy
+    if (!_.isEmpty(target)) return target
+
+    if (!_.isEmpty(ip) && !_.isArray(ip)) ip = [ip]
+    if (!_.isEmpty(ip) && !_.isArray(net)) net = [net]
+    if (!_.isEmpty(ip) && !_.isArray(port)) port = [port]
+
+    switch (type) {
+      case 'ip':
+        return ip
+      case 'net':
+        return net
+      case 'remotePort':
+        return port
+      case 'remoteIpPort':
+        let res = []
+        for (const i of ip)
+          for (const p of port)
+            if (protocol)
+              res.push(`${i},${protocol}:${p}`)
+            else
+              res.push(`${i}:${p}`)
+        return res
+      case 'remoteNetPort':
+        let res = []
+        for (const n of net)
+          for (const p of port)
+            if (protocol)
+              res.push(`${n},${protocol}:${p}`)
+            else
+              res.push(`${n}:${p}`)
+        return res
+    }
+  }
+
   async _enforce(policy) {
     log.info("Enforce policy:", policy.pid, policy.type, policy.target, policy.scope, policy.whitelist);
 
@@ -922,30 +952,46 @@ class PolicyManager2 {
 
     switch(type) {
       case "ip":
+      case "net":
+      case "remotePort":
+      case "remoteIpPort":
+      case "remoteNetPort":
         if (scope) {
-          await Block.setupRules(pid, pid, "hash:ip", whitelist);
-          await Block.addMacToSet(pid, scope);
+          const setType = {
+            'ip': 'hash:ip',
+            'net': 'hash:net',
+            'remotePort': 'bitmap:port',
+            'remoteIpPort': 'hash:ip,port',
+            'remoteNetPort': 'hash:net,port'
+          }
+
+          await Block.setupRules(pid, pid, setType[type], whitelist);
+          await Block.addMacToSet(scope, Block.getMacSet(pid));
           await Block.block(target, Block.getDstSet(pid), whitelist)
         } else {
-          if (policy.whitelist) await Block.enableGlobalWhitelist()
-          await Block.block(target, null, whitelist)
+          const setMap = {
+            'ip': 'ip_set',
+            'net': 'net_set',
+            'remotePort': 'remote_port_set',
+            'remoteIpPort': 'remote_ip_port_set',
+            'remoteNetPort': 'remote_net_port_set'
+          }
+          const set = (whitelist ? 'whitelist_' : 'blocked_') + setMap[type]
+
+          await Block.block(target, set, whitelist)
         }
         break;
 
       case "mac":
-        if (whitelist) {
-          await Block.enableGlobalWhitelist();
-          await Block.blockMac(target, "whitelist_mac_set");
-        } else {
-          await Block.blockMac(target);
-        }
+        await Block.addMacToSet([target], null, whitelist)
+        accounting.addBlockedDevice(target);
         break;
 
       case "domain":
       case "dns":
         if(scope) {
           await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
-          await Block.addMacToSet(pid, scope);
+          await Block.addMacToSet(scope, Block.getMacSet(pid));
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
@@ -959,7 +1005,6 @@ class PolicyManager2 {
             // whitelist rule should not add dnsmasq filter rule
             options.no_dnsmasq_entry = true;
             options.no_dnsmasq_reload = true;
-            await Block.enableGlobalWhitelist();
           }
           await domainBlock.blockDomain(target, options);
         }
@@ -969,7 +1014,6 @@ class PolicyManager2 {
         let data = await this.parseDevicePortRule(target);
         if(data) {
           if (whitelist) {
-            await Block.enableGlobalWhitelist();
             await Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
           } else {
             await Block.blockPublicPort(data.ip, data.port, data.protocol)
@@ -979,7 +1023,7 @@ class PolicyManager2 {
 
       case "category":
         await Block.setupRules(scope && pid, target, "hash:ip", whitelist);
-        await Block.addMacToSet(pid, scope);
+        await Block.addMacToSet(scope, Block.getMacSet(pid));
 
         if (!scope && !whitelist && target === 'default_c') try {
           await categoryUpdater.iptablesRedirectCategory(target)
@@ -988,20 +1032,10 @@ class PolicyManager2 {
         }
         break;
 
-      case "net":
-        if (scope) {
-          await Block.setupRules(pid, pid, "hash:net", whitelist);
-          await Block.addMacToSet(pid, scope);
-          await Block.block(target, Block.getDstSet(pid), whitelist)
-        } else {
-          await Block.block(target, null, whitelist)
-        }
-        break;
-
       case "country":
         await countryUpdater.activateCountry(target);
         await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", whitelist);
-        await Block.addMacToSet(pid, scope);
+        await Block.addMacToSet(scope, Block.getMacSet(pid));
         break;
 
       default:
@@ -1039,32 +1073,40 @@ class PolicyManager2 {
 
     switch(type) {
       case "ip":
+      case "net":
+      case "remotePort":
+      case "remoteIpPort":
+      case "remoteNetPort":
         if (scope) {
           await Block.destroyRules(pid, pid, whitelist);
         } else {
-          if (policy.whitelist) await Block.disableGlobalWhitelist()
-          await Block.unblock(target, null, whitelist)
+          const setMap = {
+            'ip': 'ip_set',
+            'net': 'net_set',
+            'remotePort': 'remote_port_set',
+            'remoteIpPort': 'remote_ip_port_set',
+            'remoteNetPort': 'remote_net_port_set'
+          }
+          const set = (whitelist ? 'whitelist_' : 'blocked_') + setMap[type]
+
+          await Block.unblock(target, set, whitelist)
         }
         break;
 
       case "mac":
-        if (whitelist) {
-          await Block.disableGlobalWhitelist();
-          await Block.unblockMac(target, "whitelist_mac_set");
-        } else {
-          await Block.unblockMac(target)
-        }
+        await Block.delMacFromSet([target], null, whitelist)
+        accounting.removeBlockedDevice(target);
         break;
 
       case "domain":
       case "dns":
         if(scope) {
-          await (domainBlock.unblockDomain(target, {
+          await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
             no_dnsmasq_entry: true,
             no_dnsmasq_reload: true
-          }))
+          })
           // destroy domain dst cache, since there may be various domain dst cache in different policies
           await Block.destroyRules(pid, pid, whitelist);
         } else {
@@ -1073,17 +1115,15 @@ class PolicyManager2 {
             options.blockSet = "whitelist_domain_set";
             options.no_dnsmasq_entry = true;
             options.no_dnsmasq_reload = true;
-            await Block.disableGlobalWhitelist();
           }
           await domainBlock.unblockDomain(target, options);
         }
         break;
 
       case "devicePort":
-        let data = await (this.parseDevicePortRule(target))
+        let data = await this.parseDevicePortRule(target)
         if(data) {
           if (whitelist) {
-            await Block.disableGlobalWhitelist();
             await Block.unblockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
           } else {
             await Block.unblockPublicPort(data.ip, data.port, data.protocol);
@@ -1098,15 +1138,6 @@ class PolicyManager2 {
           await categoryUpdater.iptablesUnredirectCategory(target)
         } catch(err) {
           log.error("Failed to redirect default_c traffic", err)
-        }
-        break;
-
-      case "net":
-        if (scope) {
-          await Block.destroyRules(pid, pid, whitelist);
-        } else {
-          if (policy.whitelist) await Block.disableGlobalWhitelist()
-          await Block.unblock(target, null, whitelist)
         }
         break;
 

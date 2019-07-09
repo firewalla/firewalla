@@ -378,7 +378,7 @@ class VpnManager {
       // So that client ovpn file name will remain unchanged while its content has been updated.
       // always randomize the name when creating
 //      if (regenerate == true) {
-        clientname = clientname + VpnManager.generatePassword(15);
+      clientname = clientname + VpnManager.generatePassword(15);
 //      }
 
       if (password == null) {

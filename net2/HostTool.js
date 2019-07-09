@@ -49,18 +49,14 @@ class HostTool {
     return instance;
   }
 
-  macExists(mac) {
-    return rclient.existsAsync("host:mac:" + mac)
-      .then((result) => {
-        return result == 1
-      });
+  async macExists(mac) {
+    const result = await rclient.existsAsync("host:mac:" + mac)
+    return result == 1
   }
 
-  ipv4Exists(ip) {
-    return rclient.existsAsync("host:ip4:" + ip)
-      .then((result) => {
-        return result == 1
-      });
+  async ipv4Exists(ip) {
+    const result = await rclient.existsAsync("host:ip4:" + ip)
+    return result == 1
   }
 
   getIPv4Entry(ip) {
@@ -91,12 +87,10 @@ class HostTool {
     return hostEntry.ipv4;
   }
 
-  updateDHCPInfo(mac, type, info) {
+  async updateDHCPInfo(mac, type, info) {
     let key = "dhcp:" + mac + ":" + type;
-    return rclient.hmsetAsync(key, info)
-      .then(() => {
-        return rclient.expireAsync(key, 86400);
-      });
+    await rclient.hmsetAsync(key, info);
+    await rclient.expireAsync(key, 86400);
   }
 
   updateBackupName(mac, name) {
@@ -105,25 +99,23 @@ class HostTool {
     return rclient.hsetAsync(key, "bname", name)
   }
 
-  updateIPv4Host(host) {
+  async updateIPv4Host(host) {
     let uid = host.uid;
     let key = this.getHostKey(uid);
 
     let hostCopy = JSON.parse(JSON.stringify(host))
-    
+
     if(hostCopy.ipv6Addr) {
       delete hostCopy.ipv6Addr
     }
 
     this.cleanupData(hostCopy);
 
-    return rclient.hmsetAsync(key, hostCopy)
-      .then(() => {
-        return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
-      });
+    await rclient.hmsetAsync(key, hostCopy)
+    await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
   }
 
-  updateMACKey(host, skipUpdatingExpireTime) {
+  async updateMACKey(host, skipUpdatingExpireTime) {
 
     let hostCopy = JSON.parse(JSON.stringify(host))
 
@@ -135,19 +127,18 @@ class HostTool {
 
     if(hostCopy.ipv6Addr && hostCopy.ipv6Addr.constructor.name === "Array") {
       hostCopy.ipv6Addr = JSON.stringify(hostCopy.ipv6Addr);
-    }    
-    
+    }
+
     this.cleanupData(hostCopy);
 
     let key = this.getMacKey(hostCopy.mac);
-    return rclient.hmsetAsync(key, hostCopy)
-      .then(() => {
-        if(skipUpdatingExpireTime) {
-          return;
-        } else {
-          return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
-        }
-      })
+    await rclient.hmsetAsync(key, hostCopy)
+
+    if(skipUpdatingExpireTime) {
+      return;
+    } else {
+      return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
+    }
   }
 
   updateKeysInMAC(mac, hash) {
@@ -173,7 +164,7 @@ class HostTool {
       return rclient.delAsync(this.getHostKey(ip));
     } else {
       return rclient.delAsync(this.getIPv6HostKey(ip));
-    }    
+    }
   }
 
   getMacKey(mac) {
@@ -296,10 +287,10 @@ class HostTool {
       // do nothing if activity or mac is null
       return Promise.resolve()
     }
-    
+
     let key = this.getMacKey(mac)
     let string = JSON.stringify(activity)
-    
+
     return rclient.hsetAsync(key, "recentActivity", string)
   }
 
@@ -327,22 +318,19 @@ class HostTool {
   getIPv6Entry(ip) {
     if(!ip)
       return Promise.reject("invalid ip addr");
-    
+
     let key = this.getIPv6HostKey(ip)
     return rclient.hgetallAsync(key);
   }
-  
+
   getIPv6HostKey(ip) {
-    let key = "host:ip6:" + ip;
-    return key
+    return "host:ip6:" + ip;
   }
 
-  ipv6Exists(ip) {
-    let key = this.getIPv6HostKey(ip)
-    return rclient.existsAsync(key)
-      .then((result) => {
-        return result == 1
-      });
+  async ipv6Exists(ip) {
+    const key = this.getIPv6HostKey(ip)
+    const result = await rclient.existsAsync(key)
+    return result == 1
   }
 
   async updateIPv6Host(host, ipv6Addr, skipTimeUpdate) {
@@ -387,11 +375,11 @@ class HostTool {
   // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
   // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
 
-  /* 
+  /*
    * ipv6 differs from ipv4, which it will randomly generate IP addresses, and use them
-   * in very short term.  It is pretty hard to detect how long these will be used, so 
+   * in very short term.  It is pretty hard to detect how long these will be used, so
    * we just hard code max number of ipv6 address
-   * 
+   *
    * we will use 8 for now
    */
 
@@ -406,7 +394,7 @@ class HostTool {
           ipv6array.unshift(v6addr);
       }
       log.info("V6 Overflow Check Removed: ", removed);
- 
+
       if (unspoof && removed && removed.length>0) {
           _async.eachLimit(removed, 10, (ip6, cb) => {
               rclient.srem("monitored_hosts6", ip6,(err)=>{
@@ -567,7 +555,7 @@ class HostTool {
         if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
           activeHosts[ip] = host
         }
-      }      
+      }
     }
 
     return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)

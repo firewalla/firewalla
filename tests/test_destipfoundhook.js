@@ -22,9 +22,6 @@ let assert = chai.assert;
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');

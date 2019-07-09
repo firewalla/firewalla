@@ -22,6 +22,8 @@ const util = require('util');
 const routing = require('../routing/routing.js');
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
+const Config = require('../../net2/config.js');
+let fConfig = Config.getConfig();
 
 const iptables = require('../../net2/Iptables.js');
 const wrapIptables = iptables.wrapIptables;
@@ -38,24 +40,24 @@ const createdIpset = [];
 class VPNClientEnforcer {
   constructor() {
     if (instance == null) {
+      this.enabledHosts = {};
+      if (process.title === "FireMain") {
+        setInterval(() => {
+          try {
+            log.info("Check and refresh routing rule for VPN client...");
+            this._periodicalRefreshRule();
+          } catch (err) {
+            log.error("Failed to refresh routing rule for VPN client: ", err);
+          }
+        }, 60 * 1000); // once every minute
+      }
       instance = this;
-    }
-    this.enabledHosts = {};
-    if (process.title === "FireMain") {
-      setInterval(() => {
-        try {
-          log.info("Check and refresh routing rule for VPN client...");
-          this._periodicalRefreshRule();
-        } catch (err) {
-          log.error("Failed to refresh routing rule for VPN client: ", err);
-        }
-      }, 60 * 1000); // once every minute
     }
     return instance;
   }
 
-  _getRoutingTableName(intf) {
-    return `${VPN_CLIENT_RULE_TABLE_PREFIX}_${intf}`;
+  _getRoutingTableName(vpnIntf) {
+    return `${VPN_CLIENT_RULE_TABLE_PREFIX}_${vpnIntf}`;
   }
 
   async _ensureCreateIpset(ipset) {
@@ -65,28 +67,54 @@ class VPNClientEnforcer {
     }
   }
 
-  async enableVPNAccess(mac, mode, intf) {
-    if (!intf)
-      throw "interface is not defined";
-    const tableName = this._getRoutingTableName(intf);
-    const vpnClientIpset = this._getVPNClientIPSetName(intf);
+  async enableInterfaceVPNAccess(fromIntf, vpnIntf) {
+    // assume interface name will not change after it is enabled
+    if (!fromIntf)
+      throw "src interface is not defined";
+    if (!vpnIntf)
+      throw "VPN interface is not defined";
+    const tableName = this._getRoutingTableName(vpnIntf);
+
+    // ensure customized routing table is created
+    await routing.createCustomizedRoutingTable(tableName);
+    // this is system policy, not per-device policy. It is applied to a specific incoming interface
+    log.info(`Add vpn client routing rule for incoming interface ${fromIntf} to ${vpnIntf}`);
+    await routing.createPolicyRoutingRule("all", fromIntf, tableName);
+  }
+
+  async disableInterfaceVPNAccess(fromIntf, vpnIntf) {
+    // assume interface name will not change after it is enabled
+    if (!fromIntf)
+      throw "src interface is not defined";
+    if (!vpnIntf)
+      throw "VPN interface is not defined";
+    const tableName = this._getRoutingTableName(vpnIntf);
+
+    // ensure customized routing table is created
+    await routing.createCustomizedRoutingTable(tableName);
+    // this is system policy, not per-device policy. It is applied to a specific incoming interface
+    log.info(`Remove vpn client routing rule for incoming interface ${fromIntf} to ${vpnIntf}`);
+    await routing.removePolicyRoutingRule("all", fromIntf, tableName);
+  }
+
+  async enableVPNAccess(mac, mode, vpnIntf) {
+    if (!vpnIntf)
+      throw "VPN interface is not defined";
+    const tableName = this._getRoutingTableName(vpnIntf);
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
     const host = await hostTool.getMACEntry(mac);
     const legacyHost = this.enabledHosts[mac] || null;
-    const currentRoute = await routing.testRoute("8.8.8.8", host.ipv4Addr, "eth0"); // FIXME: hard code eth0 here
-    if (currentRoute && currentRoute.dev === intf) {
-      log.info("VPN Access is already granted to " + mac);
-      await this._ensureCreateIpset(vpnClientIpset);
-      const cmd = `sudo ipset add -! ${vpnClientIpset} ${host.ipv4Addr}`;
-      await execAsync(cmd);
-      return;
-    }
+    
     // ensure customized routing table is created
     await routing.createCustomizedRoutingTable(tableName);
     host.vpnClientMode = mode;
     let legacyVpnClientIpset = null;
-    if (legacyHost && legacyHost.vpnClientIntf)
+    let legacyTableName = null;
+    if (legacyHost && legacyHost.vpnClientIntf) {
       legacyVpnClientIpset = this._getVPNClientIPSetName(legacyHost.vpnClientIntf);
-    host.vpnClientIntf = intf;
+      legacyTableName = this._getRoutingTableName(legacyHost.vpnClientIntf);
+    }
+    host.vpnClientIntf = vpnIntf;
     this.enabledHosts[mac] = host;
     switch (mode) {
       case "dhcp":
@@ -95,19 +123,20 @@ class VPNClientEnforcer {
         // enforcement takes effect if devcie ip address is in overlay network or dhcp spoof mode is on
         if (this._isSecondaryInterfaceIP(host.ipv4Addr) || await mode.isDHCPSpoofModeOn()) {
           try {
-            // remove previous policy routing rule and ipset presence if present
-            await routing.removePolicyRoutingRule(host.ipv4Addr);
-            if (legacyVpnClientIpset) {
+            // remove previous policy routing rule and ipset presence if present. This usually happens in case of profile switch
+            if (legacyHost && legacyHost.ipv4Addr && legacyTableName)
+              await routing.removePolicyRoutingRule(legacyHost.ipv4Addr, fConfig.monitoringInterface, legacyTableName);
+            if (legacyVpnClientIpset && legacyHost && legacyHost.ipv4Addr) {
               await this._ensureCreateIpset(legacyVpnClientIpset);
-              const cmd = `sudo ipset del -! ${legacyVpnClientIpset} ${host.ipv4Addr}`;
+              const cmd = `sudo ipset del -! ${legacyVpnClientIpset} ${legacyHost.ipv4Addr}`;
               await execAsync(cmd);
             }
           } catch (err) {
-            log.error("Failed to remove policy routing rule for " + host.ipv4Addr, err);
+            log.error("Failed to remove policy routing rule for " + legacyHost.ipv4Addr, err);
           }
           if (host.spoofing === "true") {
-            log.info("Add vpn client routing rule for " + host.ipv4Addr);
-            await routing.createPolicyRoutingRule(host.ipv4Addr, tableName);
+            log.info(`Add vpn client routing rule for ${host.ipv4Addr} to ${vpnIntf}`);
+            await routing.createPolicyRoutingRule(host.ipv4Addr, fConfig.monitoringInterface, tableName);
             await this._ensureCreateIpset(vpnClientIpset);
             const cmd = `sudo ipset add -! ${vpnClientIpset} ${host.ipv4Addr}`;
             await execAsync(cmd);
@@ -124,25 +153,25 @@ class VPNClientEnforcer {
   async disableVPNAccess(mac) {
     if (this.enabledHosts[mac]) {
       const host = this.enabledHosts[mac];
-      const intf = host.vpnClientIntf;
-      const tableName = this._getRoutingTableName(intf);
-      const vpnClientIpset = this._getVPNClientIPSetName(intf);
+      const vpnIntf = host.vpnClientIntf;
+      const tableName = this._getRoutingTableName(vpnIntf);
+      const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
       try {
-        await routing.removePolicyRoutingRule(host.ipv4Addr, tableName);
+        await routing.removePolicyRoutingRule(host.ipv4Addr, fConfig.monitoringInterface, tableName); // remove ip rule from host address regardless of src interface
         await this._ensureCreateIpset(vpnClientIpset);
         const cmd = `sudo ipset del -! ${vpnClientIpset} ${host.ipv4Addr}`;
         await execAsync(cmd);
       } catch (err) {
-        log.error("Failed to disable VPN access for " + host.ipv4Addr, err);
+        log.error(`Failed to disable VPN access for ${host.ipv4Addr} to ${vpnIntf}`, err);
       }
       delete this.enabledHosts[mac];
     }
   }
 
-  async enforceVPNClientRoutes(remoteIP, intf) {
-    if (!intf)
+  async enforceVPNClientRoutes(remoteIP, vpnIntf) {
+    if (!vpnIntf)
       throw "Interface is not specified";
-    const tableName = this._getRoutingTableName(intf);
+    const tableName = this._getRoutingTableName(vpnIntf);
     // ensure customized routing table is created
     await routing.createCustomizedRoutingTable(tableName);
     // add routes from main routing table to vpn client table except default route
@@ -156,25 +185,83 @@ class VPNClientEnforcer {
       }
     }));
     // then add remote IP as gateway of default route to vpn client table
-    await routing.addRouteToTable("default", remoteIP, intf, tableName);
+    await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName);
   }
 
-  async flushVPNClientRoutes(intf) {
-    if (!intf)
+  async flushVPNClientRoutes(vpnIntf) {
+    if (!vpnIntf)
       throw "Interface is not specified";
-    const tableName = this._getRoutingTableName(intf);
+    const tableName = this._getRoutingTableName(vpnIntf);
     await routing.createCustomizedRoutingTable(tableName);
     await routing.flushRoutingTable(tableName);
   }
 
-  _getVPNClientIPSetName(intf) {
-    return `vpn_client_${intf}_set`;
+  _getVPNClientIPSetName(vpnIntf) {
+    return `vpn_client_${vpnIntf}_set`;
   }
 
-  async enforceDNSRedirect(intf, dnsServers) {
-    if (!intf || !dnsServers || dnsServers.length == 0)
+  async enforceInterfaceDNSRedirect(srcIntf, vpnIntf, dnsServers) {
+    if (!srcIntf || !vpnIntf || dnsServers.length == 0)
       return;
-    const vpnClientIpset = this._getVPNClientIPSetName(intf);
+    for (let i in dnsServers) {
+      const dnsServer = dnsServers[i];
+      // round robin rule for multiple dns servers
+      if (i == 0) {
+        // no need to use statistic module for the first rule
+        let cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -i ${srcIntf} -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        await execAsync(cmd).catch((err) => {
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, src intf: ${srcIntf}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
+        });
+        cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -i ${srcIntf} -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        await execAsync(cmd).catch((err) => {
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, src intf: ${srcIntf}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
+        });
+      } else {
+        let cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -i ${srcIntf} -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        await execAsync(cmd).catch((err) => {
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, src intf: ${srcIntf}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
+        });
+        cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -i ${srcIntf} -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        await execAsync(cmd).catch((err) => {
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, src intf: ${srcIntf}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
+        });
+      }
+    }
+  }
+
+  async unenforceInterfaceDNSRedirect(srcIntf, vpnIntf, dnsServers) {
+    if (!srcIntf || !vpnIntf || dnsServers.length == 0)
+      return;
+    for (let i in dnsServers) {
+      const dnsServer = dnsServers[i];
+      // round robin rule for multiple dns servers
+      if (i == 0) {
+        // no need to use statistic module for the first rule
+        let cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -i ${srcIntf} -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        await execAsync(cmd).catch((err) => {
+          log.error(`Failed to unenforce DNS redirect rule: ${cmd}, src intf: ${srcIntf}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
+        });
+        cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -i ${srcIntf} -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        await execAsync(cmd).catch((err) => {
+          log.error(`Failed to unenforce DNS redirect rule: ${cmd}, src intf: ${srcIntf}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
+        });
+      } else {
+        let cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -i ${srcIntf} -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        await execAsync(cmd).catch((err) => {
+          log.error(`Failed to unenforce DNS redirect rule: ${cmd}, src intf: ${srcIntf}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
+        });
+        cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -i ${srcIntf} -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        await execAsync(cmd).catch((err) => {
+          log.error(`Failed to unenforce DNS redirect rule: ${cmd}, src intf: ${srcIntf}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
+        });
+      }
+    }
+  }
+
+  async enforceDNSRedirect(vpnIntf, dnsServers) {
+    if (!vpnIntf || !dnsServers || dnsServers.length == 0)
+      return;
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
     await this._ensureCreateIpset(vpnClientIpset);
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
@@ -183,29 +270,29 @@ class VPNClientEnforcer {
         // no need to use statistic module for the first rule
         let cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
-          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
         cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
-          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
       } else {
         let cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
-          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
         cmd = wrapIptables(`sudo iptables -w -t nat -I PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
-          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
       }
     }
   }
 
-  async unenforceDNSRedirect(intf, dnsServers) {
-    if (!intf || !dnsServers || dnsServers.length == 0)
+  async unenforceDNSRedirect(vpnIntf, dnsServers) {
+    if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
-    const vpnClientIpset = this._getVPNClientIPSetName(intf);
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
     await this._ensureCreateIpset(vpnClientIpset);
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
@@ -214,20 +301,20 @@ class VPNClientEnforcer {
         // no need to use statistic module for the first rule
         let cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
-          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
         cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
-          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
       } else {
         let cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
-          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
         cmd = wrapIptables(`sudo iptables -w -t nat -D PREROUTING_DNS_VPN_CLIENT -m set --match-set ${vpnClientIpset} src -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
-          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${intf}, dnsServer: ${dnsServer}`, err);
+          log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
       }
     }
@@ -250,7 +337,7 @@ class VPNClientEnforcer {
             // policy routing rule should be removed anyway if ip address is changed or ip address is not assigned by secondary interface
             // or host is not monitored
             try {
-              await routing.removePolicyRoutingRule(oldHost.ipv4Addr, tableName);
+              await routing.removePolicyRoutingRule(oldHost.ipv4Addr, fConfig.monitoringInterface, tableName);
               await this._ensureCreateIpset(vpnClientIpset);
               const cmd = `sudo ipset del -! ${vpnClientIpset} ${oldHost.ipv4Addr}`;
               await execAsync(cmd);
@@ -259,7 +346,7 @@ class VPNClientEnforcer {
             }
           }
           if ((this._isSecondaryInterfaceIP(host.ipv4Addr) || await mode.isDHCPSpoofModeOn()) && host.spoofing === "true") {
-            await routing.createPolicyRoutingRule(host.ipv4Addr, tableName);
+            await routing.createPolicyRoutingRule(host.ipv4Addr, fConfig.monitoringInterface || "eth0", tableName);
             await this._ensureCreateIpset(vpnClientIpset);
             const cmd = `sudo ipset add -! ${vpnClientIpset} ${host.ipv4Addr}`;
             await execAsync(cmd);

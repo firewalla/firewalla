@@ -33,9 +33,6 @@ const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
 const firewalla = require('./Firewalla.js')
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 let util = require('util');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -52,30 +49,25 @@ const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 
 const fs = require('fs');
-const writeFileAsync = util.promisify(fs.writeFile);
-const readFileAsync = util.promisify(fs.readFile);
-const unlinkAsync = util.promisify(fs.unlink);
 
 const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
 
 let timer = null
 
-function _revert2None() {
-  return async(() => {
-    timer = null
-    let bootingComplete = await (firewalla.isBootingComplete())
-    let firstBindDone = await (firewalla.isFirstBindDone())
-    if(!bootingComplete && firstBindDone) {
-      log.warn("Revert back to none mode for safety")
-      return switchToNone()
-    }
-  })()
+async function _revert2None() {
+  timer = null
+  let bootingComplete = await firewalla.isBootingComplete()
+  let firstBindDone = await firewalla.isFirstBindDone()
+  if (!bootingComplete && firstBindDone) {
+    log.warn("Revert back to none mode for safety")
+    return switchToNone()
+  }
 }
 
-function _enforceSpoofMode() {
-  return async(() => {
-    let bootingComplete = await (firewalla.isBootingComplete())
-    let firstBindDone = await (firewalla.isFirstBindDone())
+async function _enforceSpoofMode() {
+  try {
+    let bootingComplete = await firewalla.isBootingComplete()
+    let firstBindDone = await firewalla.isFirstBindDone()
     
     if(!bootingComplete && firstBindDone) {
       if(timer) {
@@ -94,7 +86,7 @@ function _enforceSpoofMode() {
         sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
         if (sysManager.myDNS() && sysManager.myDNS().includes(sysManager.myGateway())) {
           // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
-          const gateway = await (hostTool.getMacEntryByIP(sysManager.myGateway()));
+          const gateway = await hostTool.getMacEntryByIP(sysManager.myGateway());
           if (gateway.ipv6Addr) {
             const gatewayIpv6Addrs = JSON.parse(gateway.ipv6Addr);
             log.info("Router also acts as dns, spoof all router's v6 addresses: ", gatewayIpv6Addrs);
@@ -105,17 +97,17 @@ function _enforceSpoofMode() {
           }
         }
       }
-      await (sm.startSpoofing())
+      await sm.startSpoofing()
       log.info("New Spoof is started");
     } else {
       // old style, might not work
       const Spoofer = require('./Spoofer.js');
-      const spoofer = new Spoofer(config.monitoringInterface,{},true,true);
+      const spoofer = new Spoofer(config.monitoringInterface,{},true);
       return Promise.resolve();
     }
-  })().catch((err) => {
+  } catch(err) {
     log.error("Failed to start new spoof", err);
-  });
+  }
 }
 
 function _disableSpoofMode() {
@@ -126,107 +118,12 @@ function _disableSpoofMode() {
   } else {
     // old style, might not work
     var Spoofer = require('./Spoofer.js');
-    let spoofer = new Spoofer(config.monitoringInterface,{},true,true);
+    let spoofer = new Spoofer(config.monitoringInterface,{},true);
     return Promise.all([
       spoofer.clean(),
       spoofer.clean7()
     ]);
   }
-}
-
-// for ipv4 only
-async function _saveSimpleModeNetworkSettings() {
-  const ipSubnet = sysManager.mySubnet();
-  const gateway = sysManager.myGateway();
-  const simpleIpFile = firewalla.getHiddenFolder() + "/run/simple_ip";
-  let cmd = "";
-  if (fs.existsSync(simpleIpFile)) {
-    // simple_ip file already exists. This is likely an update of alternative ip/subnet and should not override simple_ip file
-    log.info("simple_ip file already exists. No need to override it.");
-  } else {
-    await writeFileAsync(simpleIpFile, ipSubnet);
-  }
-
-  const simpleGwFile = firewalla.getHiddenFolder() + "/run/simple_gw";
-  if (fs.existsSync(simpleGwFile)) {
-    // simple_gw file already exists. This is likely an update of alternative gateway and should not override simple_gw file
-    log.info("simple_gw file already exists. No need to override it.");
-  } else {
-    await writeFileAsync(simpleGwFile, gateway);
-  }
-
-  const simpleResolvFile = firewalla.getHiddenFolder() + "/run/simple_resolv.conf";
-  if (fs.existsSync(simpleResolvFile)) {
-    // simple_resolv.conf already exists. This is likely an update of alternative dns and should not override simple_resolv.conf file
-    log.info("simple_resolv.conf file already exists. No need to override it.");
-  } else {
-    cmd = util.format("cp /etc/resolv.conf %s", simpleResolvFile);
-    await execAsync(cmd);
-  }
-}
-
-// for ipv4 only
-async function _restoreSimpleModeNetworkSettings() {
-  const oldIpSubnet = sysManager.myIp();
-  let cmd = "";
-
-  const simpleIpFile = firewalla.getHiddenFolder() + "/run/simple_ip";
-  if (fs.existsSync(simpleIpFile)) {
-    // delete old ip from eth0
-    const simpleIpSubnet = await readFileAsync(simpleIpFile, "utf8");
-    try {
-      cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
-      log.info("Command to remove old ip assignment: " + cmd);
-      await execAsync(cmd);
-      // dns rule change is done in dnsmasq.js
-    } catch (err) {
-      log.warn(util.format("Old ip subnet %s is not found on eth0."), oldIpSubnet);
-    }
-
-    cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", simpleIpSubnet);
-    log.info("Command to restore simple ip assignment: " + cmd);
-    await execAsync(cmd);
-    // dns rule change is done in dnsmasq.js
-    await unlinkAsync(simpleIpFile); // remove simple_ip file
-    const savedIpFile = firewalla.getHiddenFolder() + "/run/saved_ip";
-    cmd = util.format("sudo bash -c 'echo %s > %s'", simpleIpSubnet, savedIpFile);
-    await execAsync(cmd);
-  } else {
-    log.info("simple_ip file is not found. No need to update ip address.");
-  }
-
-  const simpleGwFile = firewalla.getHiddenFolder() + "/run/simple_gw";
-  if (fs.existsSync(simpleGwFile)) {
-    // update default route
-    const simpleGateway = await readFileAsync(simpleGwFile, "utf8");
-    cmd = util.format("sudo /sbin/ip route replace default via %s dev eth0", simpleGateway);
-    log.info("Command to update simple gateway assignment: " + cmd);
-    await execAsync(cmd);
-    await unlinkAsync(simpleGwFile); // remove simple_gw file
-    const savedGwFile = firewalla.getHiddenFolder() + "/run/saved_gw";
-    cmd = util.format("sudo bash -c 'echo %s > %s'", simpleGateway, savedGwFile);
-    await execAsync(cmd);
-  } else {
-    log.info("simple_gw file is not found. No need to udpate default route.");
-  }
-
-  const simpleResolvFile = firewalla.getHiddenFolder() + "/run/simple_resolv.conf";
-  if (fs.existsSync(simpleResolvFile)) {
-    cmd = util.format("sudo cp %s /etc/resolv.conf", simpleResolvFile);
-    await execAsync(cmd);
-    await unlinkAsync(simpleResolvFile); // remove simple_resolv.conf file
-  } else {
-    log.info("simple_resolv.conf file is not found. No need to update dns.");
-  }
-
-  return new Promise((resolve, reject) => {
-    // rescan all interfaces to reflect network changes
-    d.discoverInterfaces(() => {
-      sysManager.update(() => {
-        resolve();
-      });
-    });
-  });
 }
 
 async function _changeToAlternativeIpSubnet() {
@@ -283,14 +180,8 @@ async function _changeToAlternativeIpSubnet() {
     await execAsync(cmd);
   }
 
-  return new Promise((resolve, reject) => {
-    // rescan all interfaces to reflect network changes
-    d.discoverInterfaces(() => {
-      sysManager.update(() => {
-        resolve();
-      });
-    });
-  });
+  await d.discoverInterfacesAsync();
+  await sysManager.updateAsync();
 }
 
 async function _enableSecondaryInterface() {
@@ -322,21 +213,11 @@ async function _enforceDHCPMode(mode) {
   } catch (err) {
     log.warn("Failed to kill dhclient");
   }
-  sem.emitEvent({
-    type: 'StartDHCP',
-    mode: mode,
-    message: "Enabling DHCP Mode"
-  });
   return Promise.resolve();
 }
 
 function _disableDHCPMode(mode) {
   mode = mode || "dhcp";
-  sem.emitEvent({
-    type: 'StopDHCP',
-    mode: mode,
-    message: "Disabling DHCP Mode"
-  });
   return Promise.resolve();
 }
 
@@ -403,86 +284,39 @@ async function apply() {
       // not supported
       throw new Error(util.format("mode %s is not supported", mode));
   }
+  sem.emitEvent({
+    type: 'Mode:Applied',
+    mode: mode,
+    message: `Mode is applied: ${mode}`
+  });
 }
 
-function switchToDHCP() {
-  log.info("Switching to DHCP")
-  
-  return Mode.dhcpModeOn()
-    .then(() => {
-      return _disableSpoofMode()
-        .then(() => {
-          return apply();
-        });
-    });
-}
+async function reapply() {
+  let lastMode = await Mode.getSetupMode()
+  log.info("Old mode is", lastMode)
 
-function switchToSpoof() {
-  log.info("Switching to legacy spoof")
-  return switchToAutoSpoof()
-}
-
-function switchToAutoSpoof() {
-  log.info("Switching to auto spoof")
-  return Mode.autoSpoofModeOn()
-    .then(() => {
-      return _disableDHCPMode()
-        .then(() => {
-          return apply();
-        });
-    });
-}
-
-function switchToManualSpoof() {
-  log.info("Switching to manual spoof")
-  return Mode.manualSpoofModeOn()
-    .then(() => {
-      return _disableDHCPMode()
-        .then(() => {
-          return apply();
-        });
-    });  
-}
-
-function switchToNone() {
-  log.info("Switching to none")
-  return async(() => {
-    await (Mode.noneModeOn())
-    await (_disableDHCPMode())
-    await (_disableSpoofMode())
-    return apply()
-  })()
-}
-
-function reapply() {
-  return async(() => {
-    let lastMode = await (Mode.getSetupMode())
-    log.info("Old mode is", lastMode)
-
-    switch(lastMode) {
+  switch (lastMode) {
     case "spoof":
     case "autoSpoof":
     case "manualSpoof":
-      await (_disableSpoofMode())
+      await _disableSpoofMode()
       break;
     case "dhcp":
-      await (_disableDHCPMode(lastMode))
+      await _disableDHCPMode(lastMode)
       break;
     case "dhcpSpoof":
-      await (_disableSpoofMode())
-      await (_disableDHCPMode(lastMode))
+      await _disableSpoofMode()
+      await _disableDHCPMode(lastMode)
       break;
     case "none":
       // do nothing
       break;
     default:
       break;
-    }
-    
-    await (Mode.reloadSetupMode())
-    return apply()
-  })()
-  
+  }
+
+  await Mode.reloadSetupMode()
+  return apply()
 }
 
 function mode() {
@@ -491,7 +325,7 @@ function mode() {
 
 // listen on mode change, if anyone update mode in redis, re-apply it
 function listenOnChange() {
-  sclient.on("message", (channel, message) => {
+  sclient.on("message", async (channel, message) => {
     if(channel === "Mode:Change") {
       if(curMode !== message) {
         log.info("Mode is changed to " + message);                
@@ -504,11 +338,9 @@ function listenOnChange() {
       let sm = new SpooferManager();
       sm.loadManualSpoofs(hostManager)
     } else if (channel === "NetworkInterface:Update") {
-      (async () => {
-        await (_changeToAlternativeIpSubnet());
-        await (_enableSecondaryInterface());
-        pclient.publishAsync("System:IPChange", "");
-      })()
+      await _changeToAlternativeIpSubnet()
+      await _enableSecondaryInterface()
+      pclient.publishAsync("System:IPChange", "");
     }
   });
   sclient.subscribe("Mode:Change");
@@ -562,20 +394,13 @@ function setDHCPAndPublish() {
     });
 }
 
-function setNoneAndPublish() {
-  async(() => {
-    await (Mode.noneModeOn())
-    await (publish(Mode.MODE_NONE))
-  })()
+async function setNoneAndPublish() {
+  await Mode.noneModeOn()
+  await publish(Mode.MODE_NONE)
 }
 
 module.exports = {
   apply:apply,
-  switchToDHCP:switchToDHCP,
-  switchToSpoof:switchToSpoof,
-  switchToManualSpoof: switchToManualSpoof,
-  switchToAutoSpoof: switchToAutoSpoof,
-  switchToNone: switchToNone,
   mode: mode,
   listenOnChange: listenOnChange,
   publish: publish,

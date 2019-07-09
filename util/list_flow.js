@@ -17,9 +17,6 @@
 
 const flowTool = require('../net2/FlowTool.js')()
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const program = require('commander');
 
 program.version('0.0.2')
@@ -34,13 +31,13 @@ if(!ip) {
   process.exit(1)
 }
 
-async(() => {
-  let conns = await (flowTool.getRecentConnections(ip, "in", {
+(async() =>{
+  let conns = await flowTool.getRecentConnections(ip, "in", {
     end: new Date() / 1000,
     begin: new Date() / 1000 - 86400,
     no_merge: true,
     maxRecentFlow: 999999999
-  }))
+  })
   
   conns = conns.sort((a, b) => a.ts - b.ts)
 

@@ -48,9 +48,6 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 let Promise = require('bluebird');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -65,18 +62,18 @@ module.exports = class {
       eptcloud = new cloud(eptname);
       this.eptcloud = eptcloud;
 
-      async(() => {
+      (async() => {
 
         log.info("[Boot] Waiting for security keys to be ready");
         // key ready
-        await(eptcloud.utilKeyReady());
+        await eptcloud.utilKeyReady();
 
         log.info("[Boot] Loading security keys");
-        await(eptcloud.loadKeys());
+        await eptcloud.loadKeys();
 
         log.info("[Boot] Waiting for cloud token to be ready");
         // token ready
-        await(Bone.waitUntilCloudReadyAsync());
+        await Bone.waitUntilCloudReadyAsync();
 
         log.info("[Boot] Setting up communication channel with cloud");
         this.tryingInit();
@@ -92,15 +89,13 @@ module.exports = class {
     return instance;
   }
 
-  tryingInit() {
-    return async(() => {
-      try {
-        await(this.init());
-      } catch(err) {
-        await(delay(3000));
-        return this.tryingInit();
-      };
-    })();
+  async tryingInit() {
+    try {
+      await this.init();
+    } catch (err) {
+      await delay(3000);
+      return this.tryingInit();
+    };
   }
 
   isGroupLoaded(gid) {
@@ -139,7 +134,7 @@ module.exports = class {
               if(nbControllers[groupID]) {
                 return;
               }
-              rclient.setAsync("groupName", group.name);              
+              rclient.setAsync("groupName", group.name);
               let NetBotController = require("../../controllers/netbot.js");
               let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
               nbConfig.controller = config.controllers[0];

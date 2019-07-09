@@ -12,24 +12,19 @@ let jsonfile = require('jsonfile')
 let jsWriteFile = Promise.promisify(jsonfile.writeFile);
 let jsReadFile = Promise.promisify(jsonfile.readFile);
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let license = null;
 let signature = null;
 
-function getLicenseAsync() {
-  return async(() => {
-    try {
-      return await (jsReadFile(licensePath));
-    } catch (err) {
-      if (err.code === 'ENOENT') {
-        return getLegacyLicense();
-      } else {
-        return null;
-      }
+async function getLicenseAsync() {
+  try {
+    return jsReadFile(licensePath);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return getLegacyLicense();
+    } else {
+      return null;
     }
-  })();
+  }
 }
 
 function getLicense() {

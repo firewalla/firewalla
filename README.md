@@ -8,11 +8,14 @@
 
 ## Software Image
 ### Firewalla Blue
-* Image in Beta Testing (invitation only)
-* You can pre-order Firewalla Blue at https://www.indiegogo.com/projects/firewalla-blue-cybersecurity-for-home-business
+* https://github.com/firewalla/firewalla/releases/download/v1.963/firewalla.blue.stable.0.28.img.gz
+  * sha256sum: 98e7110c26a9ff4b14eb2edb43aeffbcd1c058baef801d53799d64912202204b
+* Flash image to micro sd card, and put into Firewalla Blue
+  * Guide: https://help.firewalla.com/hc/en-us/articles/115004796633-Tutorial-Flashing-Image
+* You can order Firewalla Blue at https://firewalla.com
 ### Firewalla Red
-* https://github.com/firewalla/firewalla/releases/download/v1.957/fos.release_6_14.armv7l.img.gz
-  * sha256sum: 896014e839a7198249b62b266664baaab529e1d8034261e1fa4a9599161288e4
+* https://github.com/firewalla/firewalla/releases/download/v1.958/fos.release_6_16.armv7l.img.gz
+  * sha256sum: 7425195a1b04ff5fbe11910dc8cd31ceb8af0364e7cf0e5813dadc7ef8063273
 * Flash image to micro sd card, and put into Firewalla Red
   * Guide: https://help.firewalla.com/hc/en-us/articles/115004796633-Tutorial-Flashing-Image
 * You can order Firewalla Red at https://firewalla.com

@@ -1,5 +1,22 @@
+/*    Copyright 2019 Firewalla LLC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+'use strict';
+
 const log = require('./logger.js')(__filename);
-const { exec } = require('child-process-promise');
+const { exec, spawn } = require('child-process-promise');
 
 const maxIpsetQueue = 158;
 const ipsetInterval = 3000;
@@ -19,18 +36,18 @@ function enqueue(ipsetCmd) {
   if (ipsetCmd != null) {
     ipsetQueue.push(ipsetCmd);
   }
-  if (ipsetProcessing == false && ipsetQueue.length>0 && (ipsetQueue.length>maxIpsetQueue || ipsetCmd == null)) {
+  if (ipsetProcessing == false && ipsetQueue.length > 0 && (ipsetQueue.length > maxIpsetQueue || ipsetCmd == null)) {
     ipsetProcessing = true;
     let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
     ipsetQueue = [];
-    let child = require('child_process').spawn('sudo',['ipset', 'restore', '-!']);
+    let child = require('child_process').spawn('sudo', ['ipset', 'restore', '-!']);
     child.stdin.setEncoding('utf-8');
-    child.on('exit',(code,signal)=>{
+    child.on('exit', (code, signal) => {
       ipsetProcessing = false;
       log.info("Control:Ipset:Processing:END", code);
       enqueue(null);
     });
-    child.on('error',(code,signal)=>{
+    child.on('error', (code, signal) => {
       ipsetProcessing = false;
       log.info("Control:Ipset:Processing:Error", code);
       enqueue(null);
@@ -39,7 +56,7 @@ function enqueue(ipsetCmd) {
     child.stderr.on('data', (data) => {
       log.error("ipset restore error: " + data);
     });
-    child.stdin.on('error', (err) =>{
+    child.stdin.on('error', (err) => {
       errorOccurred = true;
       log.error("Failed to write to stdin", err);
     });
@@ -70,13 +87,13 @@ function enqueue(ipsetCmd) {
     log.info("Control:Ipset:Processing:Launched", _ipsetQueue.length);
   } else {
     if (ipsetTimerSet == false) {
-      setTimeout(()=>{
-        if (ipsetQueue.length>0) {
+      setTimeout(() => {
+        if (ipsetQueue.length > 0) {
           log.info("Control:Ipset:Timer", ipsetQueue.length);
           enqueue(null);
         }
         ipsetTimerSet = false;
-      },ipsetInterval);
+      }, ipsetInterval);
       ipsetTimerSet = true;
     }
   }
@@ -92,8 +109,40 @@ async function flush(setName) {
     await exec(`sudo ipset flush ${setName}`);
 }
 
+async function create(name, type, v4 = true) {
+  let options
+  switch(type) {
+    case 'bitmap:port':
+      options = 'range 0-65535';
+      break;
+    case 'hash:mac':
+      options = 'hashsize 128 maxelem 65536'
+      break;
+    default:
+      let family = 'family inet';
+      if (!v4) family = family + '6';
+      options = family + ' hashsize 128 maxelem 65536'
+  }
+  const cmd = `sudo ipset create -! ${name} ${type} ${options}`
+  return exec(cmd)
+}
+
+function add(name, target) {
+  const cmd = `add -! ${name} ${target}`
+  enqueue(cmd);
+}
+
+function del(name, target) {
+  const cmd = `del -! ${name} ${target}`
+  enqueue(cmd);
+}
+
 module.exports = {
   enqueue,
   isReferenced,
-  destroy 
+  destroy,
+  flush,
+  create,
+  add,
+  del
 }

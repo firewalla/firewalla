@@ -61,36 +61,36 @@ describe('DeviceHook', () => {
     this.timeout(15000);
 
     beforeEach((done) => {
-      async(() => {
+      (async() =>{
         muk(samba, 'getSambaName', (ip) => {
           let entries = ip.split(".");
           let last = entries[entries.length - 1];
           return "samba" + last;
         })
-        await (Bootstrap.bootstrap());
+        await Bootstrap.bootstrap()
         done();
       })();
     })
 
     afterEach((done) => {
-      async(() => {
-        await (sample.removeSampleHost());
+      (async() =>{
+        await sample.removeSampleHost()
         muk.restore();
         done();
       })();
     })
 
     it('should get the right samba name and store to redis', (done) => {
-      async(() => {
+      (async() =>{
         sem.emitEvent({
           type: 'NewDeviceFound',
           host: sample.newDeviceHost,
           suppressAlarm: true
         })
 
-        await (delay(8000));
+        await delay(8000)
 
-        let macEntry = await (hostTool.getMACEntry(sample.hostMac));
+        let macEntry = await hostTool.getMACEntry(sample.hostMac)
         expect(macEntry.bname.slice(0,5)).to.equal('samba');
         done();
       })();

@@ -31,9 +31,6 @@ let bone = require("../lib/Bone.js");
 
 let flowUtil = require("../net2/FlowUtil.js");
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const fc = require('../net2/config.js')
 
 const Samba = require('../extension/samba/samba.js');
@@ -57,13 +54,13 @@ class DeviceHook extends Hook {
     super();
   }
 
-  processDeviceUpdate(event) {
+  async processDeviceUpdate(event) {
     let host = event.host
     let mac = host.mac
     let ipv4Addr = host.ipv4Addr
     let ipv6Addr = host.ipv6Addr
 
-    if(!mac) { // ignore if no mac
+    if (!mac) { // ignore if no mac
       log.info("Invalid MAC address for process device update:", event);
       return;
     }
@@ -71,19 +68,19 @@ class DeviceHook extends Hook {
     mac = mac.toUpperCase()
     host.mac = mac // make sure the MAC is upper case
 
-    return async(() => {
+    try {
 
       // 0. update a special name key for source
-      if(host.from) {
+      if (host.from) {
         let skey = `${host.from}Name`
         host[skey] = host.bname
         host.lastFrom = host.from
         delete host.from
       }
-            
+
       // 1. if this is a brand new mac address => NewDeviceFound
-      let found = await (hostTool.macExists(mac))
-      if(!found) {
+      let found = await hostTool.macExists(mac)
+      if (!found) {
         log.info(`A new device is found: '${mac}' `)
         sem.emitEvent({
           type: "NewDeviceFound",
@@ -96,9 +93,9 @@ class DeviceHook extends Hook {
 
       // 2. if this is an existing mac address, and it has same ipv4 address => RegularDeviceInfoUpdate
       // it may update redis ip6 keys if additional ip addresses are added
-      if(ipv4Addr) {
-        let ip4Entry = await(hostTool.getIPv4Entry(ipv4Addr))
-        if(ip4Entry && ip4Entry.mac === mac) {
+      if (ipv4Addr) {
+        let ip4Entry = await hostTool.getIPv4Entry(ipv4Addr)
+        if (ip4Entry && ip4Entry.mac === mac) {
           sem.emitEvent({
             type: "RegularDeviceInfoUpdate",
             message: "Refresh device status @ DeviceHook",
@@ -107,11 +104,11 @@ class DeviceHook extends Hook {
             host: host
           });
           return
-        }        
+        }
 
         // 3. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is owned by nobody in redis) => OldDeviceChangedToNewIP
         // it may update redis ip6 keys if additional ip addresses are added
-        if(!ip4Entry) {
+        if (!ip4Entry) {
           sem.emitEvent({
             type: "OldDeviceChangedToNewIP",
             message: "An old device used a new IP @ DeviceHook",
@@ -123,7 +120,7 @@ class DeviceHook extends Hook {
 
         // 4. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is already owned by someone in redis) => OldDeviceTakenOverOtherDeviceIP
         // it may update redis ip6 keys if additional ip addresses are added
-        if(ip4Entry && ip4Entry.mac !== mac) {
+        if (ip4Entry && ip4Entry.mac !== mac) {
           sem.emitEvent({
             type: "OldDeviceTakenOverOtherDeviceIP",
             message: "An old device used IP used to be other device @ DeviceHook",
@@ -138,19 +135,19 @@ class DeviceHook extends Hook {
         // 5. if this is an existing mac address, and it has no ipv4 address (only ipv6 addresses)
 
         // Then just update the ipv6 entries
-        if(ipv6Addr) {
-          await (hostTool.updateIPv6Host(host,ipv6Addr)) // v6
-          let newIPv6Addr = await (this.updateIPv6EntriesForMAC(ipv6Addr, mac))
-          let newHost = extend({}, host, {ipv6Addr: newIPv6Addr})
-           
+        if (ipv6Addr) {
+          await hostTool.updateIPv6Host(host, ipv6Addr) // v6
+          let newIPv6Addr = await this.updateIPv6EntriesForMAC(ipv6Addr, mac)
+          let newHost = extend({}, host, { ipv6Addr: newIPv6Addr })
+
           log.debug("DeviceHook:IPv6Update:", JSON.stringify(newIPv6Addr));
-          await (hostTool.updateMACKey(newHost)) // mac
+          await hostTool.updateMACKey(newHost) // mac
         }
       }
-      
-    })().catch((err) => {
+
+    } catch (err) {
       log.error("Failed to process DeviceUpdate event:", err);
-    })
+    }
   }
 
   run() {
@@ -175,8 +172,8 @@ class DeviceHook extends Hook {
         let ip = host.ipv4 || host.ipv4Addr
         if(ip) {
           // need to get mac address first
-          async(() => {
-            let theMac = await (l2.getMACAsync(ip))
+          (async() =>{
+            let theMac = await l2.getMACAsync(ip)
             host.mac = theMac
             this.processDeviceUpdate(event)
           })().catch((err) => {
@@ -216,7 +213,7 @@ class DeviceHook extends Hook {
 
         // v4
         if(enrichedHost.ipv4Addr) {
-          let previousEntry = await(hostTool.getIPv4Entry(enrichedHost.ipv4Addr))
+          let previousEntry = await hostTool.getIPv4Entry(enrichedHost.ipv4Addr)
           if (previousEntry && enrichedHost.ipv4Addr === sysManager.myGateway()) {
             // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
             log.info("Suspected spoofing device detected: " + enrichedHost.mac);
@@ -278,7 +275,7 @@ class DeviceHook extends Hook {
           if (err) {
             log.error("Failed to get host after it is detected.");
           }
-          if (host) {
+          if (host && host.ipv4Addr !== sysManager.myIp() && host.ipv4Addr !== sysManager.myIp2() && host.ipv4Addr !== sysManager.myWifiIp()) {
             host.spoof(true);
           }
         });
@@ -523,42 +520,40 @@ class DeviceHook extends Hook {
    * out from its old possition
    */
 
-  updateIPv6EntriesForMAC(ipv6Addr, mac) {
-    return async(() => {
-      let existingIPv6Addresses = await(hostTool.getIPv6AddressesByMAC(mac)) || []
-      let linklocalAddrs = [];
-      let globalAddrs=[];
-      
-      existingIPv6Addresses.forEach((addr) => {
-          if (addr.startsWith("fe80")) {
-              linklocalAddrs.push(addr);
-          } else {
-              globalAddrs.push(addr);
-          }
-      });
+  async updateIPv6EntriesForMAC(ipv6Addr, mac) {
+    let existingIPv6Addresses = await hostTool.getIPv6AddressesByMAC(mac) || []
+    let linklocalAddrs = [];
+    let globalAddrs = [];
 
-      ipv6Addr.forEach((addr) => {
-        let addrList = globalAddrs;
-        let max = MAX_IPV6_ADDRESSES;
-        if (addr.startsWith("fe80")) {
-            addrList = linklocalAddrs;
-            max = MAX_LINKLOCAL_IPV6_ADDRESSES;
-        }
-        let index = addrList.indexOf(addr);
-        if(index > -1) {
-          addrList.splice(index,1);
-        }
-        addrList.push(addr) // found new ip address
-        if(addrList.length > max) {
-            let removed = addrList.shift()
-//            log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
-        }
-      })
+    existingIPv6Addresses.forEach((addr) => {
+      if (addr.startsWith("fe80")) {
+        linklocalAddrs.push(addr);
+      } else {
+        globalAddrs.push(addr);
+      }
+    });
 
-//      log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
-      
-      return linklocalAddrs.concat(globalAddrs);
-    })()
+    ipv6Addr.forEach((addr) => {
+      let addrList = globalAddrs;
+      let max = MAX_IPV6_ADDRESSES;
+      if (addr.startsWith("fe80")) {
+        addrList = linklocalAddrs;
+        max = MAX_LINKLOCAL_IPV6_ADDRESSES;
+      }
+      let index = addrList.indexOf(addr);
+      if (index > -1) {
+        addrList.splice(index, 1);
+      }
+      addrList.push(addr) // found new ip address
+      if (addrList.length > max) {
+        let removed = addrList.shift()
+//      log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
+      }
+    })
+
+//  log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
+
+    return linklocalAddrs.concat(globalAddrs);
   }
 
   createAlarmAsync(host, type) {

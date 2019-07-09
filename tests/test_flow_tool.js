@@ -22,9 +22,6 @@ let assert = chai.assert;
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
@@ -47,9 +44,9 @@ describe('FlowTool', () => {
 
   describe('.addFlow', () => {
     it('flow should exist if flow is added', (done) => {
-      async(() => {
-        await(flowTool.addFlow("10.0.1.1", "in", flow))
-        let result = await(flowTool.flowExists("10.0.1.1", "in", flow));
+      (async() =>{
+        await flowTool.addFlow("10.0.1.1", "in", flow)
+        let result = await flowTool.flowExists("10.0.1.1", "in", flow);
         expect(result).to.be.true;
         done();
       })();
@@ -58,9 +55,9 @@ describe('FlowTool', () => {
 
   describe('.removeFlow', () => {
     it('flow should NOT exist if flow is removed', (done) => {
-      async(() => {
-        let removeResult = await(flowTool.removeFlow("10.0.1.1", "in", flow));
-        let result = await(flowTool.flowExists("10.0.1.1", "in", flow));
+      (async() =>{
+        let removeResult = await flowTool.removeFlow("10.0.1.1", "in", flow);
+        let result = await flowTool.flowExists("10.0.1.1", "in", flow);
         expect(result).to.be.false;
         done();
       })();
@@ -69,25 +66,25 @@ describe('FlowTool', () => {
 
   describe('.getRecentOutgoingConnections', () => {
     beforeEach((done) => {
-      async(() => {
-        await (sample.createSampleFlows());
-        await (sample.addSampleIntelInfo());
+      (async() =>{
+        await sample.createSampleFlows();
+        await sample.addSampleIntelInfo();
         done();
       })();
 
     })
 
     afterEach((done) => {
-      async(() => {
-        await (sample.removeSampleFlows());
-        await (sample.removeSampleIntelInfo());
+      (async() =>{
+        await sample.removeSampleFlows();
+        await sample.removeSampleIntelInfo();
         done();
       })();
     })
 
     it('should list recent outgoing flows correctly', (done) => {
-      async(() => {
-        let flows = await (flowTool.getRecentOutgoingConnections(sample.hostIP));
+      (async() =>{
+        let flows = await flowTool.getRecentOutgoingConnections(sample.hostIP);
         expect(flows.length).to.equal(1);
         let flow = flows[0];
         expect(flow.ip).to.equal(sample.destIP);
@@ -116,25 +113,25 @@ describe('FlowTool', () => {
 
   describe('.getRecentIncomingConnections', () => {
     beforeEach((done) => {
-      async(() => {
-        await (sample.createSampleFlows());
-        await (sample.addSampleIntelInfo());
+      (async() =>{
+        await sample.createSampleFlows();
+        await sample.addSampleIntelInfo();
         done();
       })();
 
     })
 
     afterEach((done) => {
-      async(() => {
-        await (sample.removeSampleFlows());
-        await (sample.removeSampleIntelInfo());
+      (async() =>{
+        await sample.removeSampleFlows();
+        await sample.removeSampleIntelInfo();
         done();
       })();
     })
 
     it('should list recent incoming flows correctly', (done) => {
-      async(() => {
-        let flows = await (flowTool.getRecentIncomingConnections(sample.hostIP));
+      (async() =>{
+        let flows = await flowTool.getRecentIncomingConnections(sample.hostIP);
         expect(flows.length).to.equal(1);
         let flow = flows[0];
         expect(flow.ip).to.equal(sample.destIP2);
@@ -148,27 +145,27 @@ describe('FlowTool', () => {
 
   describe('.getAllRecentOutgoingConnections', () => {
     beforeEach((done) => {
-      async(() => {
-        await (sample.createSampleHost());
-        await (sample.createSampleFlows());
-        await (sample.addSampleIntelInfo());
+      (async() =>{
+        await sample.createSampleHost();
+        await sample.createSampleFlows();
+        await sample.addSampleIntelInfo();
         done();
       })();
 
     })
 
     afterEach((done) => {
-      async(() => {
-        await (sample.removeSampleFlows());
-        await (sample.removeSampleIntelInfo());
-        await (sample.removeSampleHost());
+      (async() =>{
+        await sample.removeSampleFlows();
+        await sample.removeSampleIntelInfo();
+        await sample.removeSampleHost();
         done();
       })();
     })
 
     it('should list recent incoming flows correctly', (done) => {
-      async(() => {
-        let flows = await (flowTool.getAllRecentOutgoingConnections());
+      (async() =>{
+        let flows = await flowTool.getAllRecentOutgoingConnections();
         expect(flows.length).to.equal(1);
         let flow = flows[0];
         expect(flow.ip).to.equal(sample.destIP);

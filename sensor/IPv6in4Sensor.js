@@ -18,11 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const extensionManager = require('./ExtensionManager.js')
 
 const IPV6In4 = require('../extension/ipv6in4/ipv6in4.js')
@@ -62,27 +57,22 @@ class IPv6in4Sensor extends Sensor {
     }
   }
   
-  start() {
-    return async(() => {
-      await (ipv6.start())
+  async start() {
+    await ipv6.start()
 
-      process.nextTick(() => {
-        this.scheduledJob()
-      })
+    process.nextTick(() => {
+      this.scheduledJob()
+    })
 
-      this.timer =  setInterval(() => {
-        this.scheduledJob();
-      }, updateInterval);      
-      
-    })()
+    this.timer = setInterval(() => {
+      this.scheduledJob();
+    }, updateInterval);
   }
 
-  stop() {
-    return async(() => {
-      await (ipv6.stop())
-      clearTimeout(this.timer)
-      this.timer = null
-    })()
+  async stop() {
+    await ipv6.stop()
+    clearTimeout(this.timer)
+    this.timer = null
   }
 }
 

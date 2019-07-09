@@ -350,12 +350,11 @@ module.exports = class {
       `sudo grep frpc /var/log/syslog | tail -n 20`
     ).toString('utf8');
 
-    bone.log("error", {
-      version: sysManager.version(),
+    bone.logAsync("error", {
       type: this._getServiceName(),
       msg: message,
       stack: syslog
-    }, null);
+    });
   }
 
 

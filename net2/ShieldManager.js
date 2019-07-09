@@ -23,6 +23,7 @@ const hostTool = new HostTool();
 const ip = require('ip');
 
 const exec = require('child-process-promise').exec
+const Ipset = require('./Ipset.js')
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -123,18 +124,16 @@ class ShieldManager {
           if (ipv6Addr && ip.isV6Format(ipv6Addr)) {
             allIpv6Addrs[ipv6Addr] = 1;
           }
-        }  
+        }
       }
     }
     for (let ip in allIpv4Addrs) {
-      log.info("Add ip to trusted_ip_set: " + ip);
-      const cmd = util.format("sudo ipset add -! trusted_ip_set %s", ip);
-      await exec(cmd);
+      log.debug("Add ip to trusted_ip_set: " + ip);
+      await Ipset.add('trusted_ip_set', ip)
     }
     for (let ip in allIpv6Addrs) {
-      log.info("Add ip to trusted_ip_set6: " + ip);
-      const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ip);
-      await exec(cmd);
+      log.debug("Add ip to trusted_ip_set6: " + ip);
+      await Ipset.add('trusted_ip_set6', ip)
     }
   }
 
@@ -256,7 +255,7 @@ class ShieldManager {
         delete this.protected_macs[mac];
       } else {
         log.warn("Device " + mac + " is not protected, no need to deactivate shield.");
-      }      
+      }
     }
   }
 }
