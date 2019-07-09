@@ -86,12 +86,6 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.forceInfo("FireKick Starting ");
 log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
-
 (async() => {
   await rclient.delAsync("firekick:pairing:message");
   await sysManager.setConfig(firewallaConfig)

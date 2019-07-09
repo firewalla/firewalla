@@ -1024,38 +1024,30 @@ module.exports = class FlowManager {
       })
     }
 
-    if (resolve == true) {
-      log.debug("flows:sorted Query dns manager");
-      return new Promise((resolve, reject) => {
-        dnsManager.query(sorted, "sh", "dh", (err) => {
-          if (err != null) {
-            log.error("flow:conn unable to map dns", err);
-          }
-          log.debug("flows:sorted Query dns manager returnes");
-          (async () => {
-            const activities = await this.summarizeActivityFromConnections(sorted);
-            //log.info("Activities",activities);
-            let _sorted = [];
-            for (let i in sorted) {
-              if (flowUtil.checkFlag(sorted[i], 'x')) {
-                //log.info("DroppingFlow",sorted[i]);
-              } else {
-                _sorted.push(sorted[i]);
-              }
-            }
-            resolve({
-              connections: _sorted,
-              activities: activities
-            });
-          })();
-        });
-      });
-    } else {
+    if (!resolve)
       return {
         connections: sorted,
         activities: null
       };
+
+    log.debug("flows:sorted Query dns manager");
+    await dnsManager.query(sorted, "sh", "dh")
+      .catch(err => log.error("flow:conn unable to map dns", err))
+    log.debug("flows:sorted Query dns manager returnes");
+    const activities = await this.summarizeActivityFromConnections(sorted);
+    //log.info("Activities",activities);
+    let _sorted = [];
+    for (let i in sorted) {
+      if (flowUtil.checkFlag(sorted[i], 'x')) {
+        //log.info("DroppingFlow",sorted[i]);
+      } else {
+        _sorted.push(sorted[i]);
+      }
     }
+    return {
+      connections: _sorted,
+      activities: activities
+    };
   }
 
   async enrichHttpFlowsInfo(flows) {

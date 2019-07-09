@@ -28,7 +28,7 @@ const ip6table = require('./Ip6tables.js');
 const Block = require('../control/Block.js');
 
 const CronJob = require('cron').CronJob;
-const async = require('async');
+const asyncNative = require('../util/asyncNative.js');
 
 const VpnManager = require('../vpn/VpnManager.js');
 
@@ -65,6 +65,8 @@ const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+
+const util = require('util')
 
 /*
 127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
@@ -485,7 +487,7 @@ module.exports = class {
       return; // doesn't support per-device policy
     }
 
-    if (config.state == true) {      
+    if (config.state == true) {
       (async () => {
         const client = await ssClientManager.getSSClient();
         await client.start();
@@ -805,85 +807,7 @@ module.exports = class {
       callback(null, null);
   }
 
-
-  // policy { dst, src, done (true/false), state (true/false) }
-
-  executeAcl(host, ip, policy, callback) {
-    if (policy == null) {
-      if (callback) {
-        callback(null, null);
-      }
-      return;
-    }
-    log.debug("PolicyManager:ApplyingAcl", policy);
-    if (host.appliedAcl == null) {
-      host.appliedAcl = {};
-    }
-
-    /* iterate policies and see if anything need to be modified */
-    for (let p in policy) {
-      let block = policy[p];
-      if (block._src || block._dst) {
-        let newblock = JSON.parse(JSON.stringify(block));
-        block.state = false;
-        if (block._src) {
-          newblock.src = block._src;
-          delete block._src;
-          delete newblock._src;
-        }
-        if (block._dst) {
-          newblock.dst = block._dst;
-          delete block._dst;
-          delete newblock._dst;
-        }
-        policy.push(newblock);
-        log.info("PolicyManager:ModifiedACL", block, newblock);
-      }
-    }
-
-    async.eachLimit(policy, 10, async.ensureAsync((block, cb) => {
-      if (policy.done != null && policy.done == true) {
-        cb();
-      } else {
-        let {mac, protocol, src, dst, sport, dport, state} = block;
-        if (dst != null && src != null) {
-          let aclkey = dst + "," + src;
-          if (protocol != null) {
-            aclkey = dst + "," + src + "," + protocol + "," + sport + "," + dport;
-          }
-          if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == state) {
-            cb();
-          } else {
-            this.block(mac, protocol, src, dst, sport, dport, state, (err) => {
-              if (err == null) {
-                if (state == false) {
-                  block.done = true;
-                }
-              }
-              if (block.duplex && block.duplex == true) {
-                this.block(mac, protocol, dst, src, dport, sport, state, (err) => {
-                  cb();
-                });
-              } else {
-                cb();
-              }
-            });
-            host.appliedAcl[aclkey] = block;
-          }
-        } else {
-          cb();
-        }
-      }
-    }), (err) => {
-      let changed = false;
-      for (var i = policy.length - 1; i >= 0; i--) {
-        if (policy[i].done && policy[i].done == true) {
-          policy.splice(i, 1);
-          changed = true;
-        }
-      }
-      log.debug("Return policy splied");
-      callback(null, changed);
-    });
+  executeAsync(host, ip, policy) {
+    return util.promisify(this.execute).bind(this)(host, ip, policy)
   }
 }

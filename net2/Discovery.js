@@ -22,7 +22,6 @@ const linux = require('../util/linux.js');
 const Nmap = require('./Nmap.js');
 var instances = {};
 
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const l2 = require('../util/Layer2.js');
@@ -31,8 +30,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-
-const async = require('async');
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
@@ -100,18 +97,16 @@ module.exports = class {
   discoverMac(mac, callback) {
     callback = callback || function () { }
 
-    this.discoverInterfaces((err, list) => {
+    this.discoverInterfaces(async (err, list) => {
       log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces);
       let found = null;
-      async.eachLimit(this.config.discovery.networkInterfaces, 1, (name, cb) => {
+      for (const name of this.config.discovery.networkInterfaces) {
         let intf = this.interfaces[name];
         if (intf == null) {
-          async.setImmediate(cb);
-          return;
+          continue;
         }
         if (found) {
-          async.setImmediate(cb);
-          return;
+          break;
         }
         if (intf != null) {
           log.debug("Prepare to scan subnet", intf);
@@ -122,12 +117,8 @@ module.exports = class {
           log.info("Start scanning network ", intf.subnet, "to look for mac", mac);
 
           // intf.subnet is in v4 CIDR notation
-          this.nmap.scan(intf.subnet, true, (err, hosts, ports) => {
-            if (err) {
-              log.error("Failed to scan: " + err);
-              cb();
-              return;
-            }
+          try {
+            let hosts = await this.nmap.scanAsync(intf.subnet, true)
 
             this.hosts = [];
 
@@ -135,29 +126,29 @@ module.exports = class {
               let host = hosts[i];
               if (host.mac && host.mac === mac) {
                 found = host;
-                cb();
-                return;
+                break;
               }
             }
-            cb();
-          });
+          } catch (err) {
+            log.error("Failed to scan: " + err);
+            continue
+          }
         }
-      }, (err) => {
-        log.info("Discovery::DiscoveryMAC:Found", found);
-        if (found) {
-          callback(null, found);
-        } else {
-          this.getAndSaveArpTable((err, arpList, arpTable) => {
-            log.info("discoverMac:miss", mac);
-            if (arpTable[mac]) {
-              log.info("discoverMac:found via ARP", arpTable[mac]);
-              callback(null, arpTable[mac]);
-            } else {
-              callback(null, null);
-            }
-          });
-        }
-      });
+      }
+      log.info("Discovery::DiscoveryMAC:Found", found);
+      if (found) {
+        callback(null, found);
+      } else {
+        this.getAndSaveArpTable((err, arpList, arpTable) => {
+          log.info("discoverMac:miss", mac);
+          if (arpTable[mac]) {
+            log.info("discoverMac:found via ARP", arpTable[mac]);
+            callback(null, arpTable[mac]);
+          } else {
+            callback(null, null);
+          }
+        });
+      }
     });
   }
 
@@ -497,53 +488,6 @@ module.exports = class {
         callback(null, null);
       }
     });
-  }
-
-  ping6ForDiscovery(intf, obj, callback) {
-    this.process = require('child_process').exec("ping6 -c2 -I eth0 ff02::1", (err, out, code) => {
-      async.eachLimit(obj.ip6_addresses, 5, (o, cb) => {
-        let pcmd = "ping6 -B -c 2 -I eth0 -I " + o + "  ff02::1";
-        log.info("Discovery:v6Neighbor:Ping6", pcmd);
-        require('child_process').exec(pcmd, (err) => {
-          cb();
-        });
-      }, (err) => {
-        callback(err);
-      });
-    });
-  }
-
-  neighborDiscoveryV6(intf, obj) {
-    if (obj.ip6_addresses == null || obj.ip6_addresses.length <= 1) {
-      log.info("Discovery:v6Neighbor:NoV6", intf, obj);
-      return;
-    }
-    this.ping6ForDiscovery(intf, obj, (err) => {
-      let cmdline = 'ip -6 neighbor show';
-      log.info("Running commandline: ", cmdline);
-
-      this.process = require('child_process').exec(cmdline, (err, out, code) => {
-        let lines = out.split("\n");
-        async.eachLimit(lines, 1, (o, cb) => {
-          log.info("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
-          let parts = o.split(" ");
-          if (parts[2] == intf) {
-            let v6addr = parts[0];
-            let mac = parts[4].toUpperCase();
-            if (mac == "FAILED" || mac.length < 16) {
-              async.setImmediate(cb);
-            } else {
-              this.addV6Host(v6addr, mac, (err) => {
-                cb();
-              });
-            }
-          } else {
-            async.setImmediate(cb);
-          }
-        }, (err) => { });
-      });
-    });
-
   }
 
   fetchHosts(callback) {

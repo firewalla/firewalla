@@ -40,7 +40,7 @@ function getPreferredBName(hostObject) {
   if(hostObject.dhcpName) {
     return hostObject.dhcpName
   }
-  
+
   if(hostObject.bonjourName) {
     return hostObject.bonjourName
   }

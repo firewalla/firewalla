@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2019 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -12,24 +12,19 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+'use strict';
+const log = require('../net2/logger.js')(__filename);
 
-'use strict'
+async function eachLimit(list, limit, producer) {
+  let rest = list.slice(limit);
+  await Promise.all(list.slice(0, limit).map(async item => {
+    await producer(item);
+    while (rest.length) {
+      await producer(rest.shift());
+    }
+  }));
+}
 
-const AlarmManager2 = require('../alarm/AlarmManager2.js')
-const am2 = new AlarmManager2()
-
-const program = require('commander');
-
-program.version('0.0.2')
-  .option('--alarm [alarm]', 'alarm id to resend notification');
-
-program.parse(process.argv);
-
-if(program.alarm) {
-  let alarmID = program.alarm;
-
-  (async() =>{
-    await am2.notifAlarm(alarmID)
-    process.exit(0)
-  })()
+module.exports = {
+  eachLimit
 }

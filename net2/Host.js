@@ -23,8 +23,6 @@ const exec = require('child-process-promise').exec
 const Spoofer = require('./Spoofer.js');
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-const DNSManager = require('./DNSManager.js');
-const dnsManager = new DNSManager('error');
 const FlowManager = require('./FlowManager.js');
 const flowManager = new FlowManager('debug');
 
@@ -592,32 +590,24 @@ class Host {
     });
   }
 
-  applyPolicy(callback) {
-    this.loadPolicy((err, data) => {
-      log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
-      let policy = JSON.parse(JSON.stringify(this.policy));
-      // check for global
-      if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
-        policy.monitor = false;
-      }
-      let PolicyManager = require('./PolicyManager.js');
-      let policyManager = new PolicyManager('info');
+  async applyPolicyAsync() {
+    await this.loadPolicyAsync()
+    log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
+    let policy = JSON.parse(JSON.stringify(this.policy));
+    // check for global
+    if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
+      policy.monitor = false;
+    }
+    let PolicyManager = require('./PolicyManager.js');
+    let policyManager = new PolicyManager('info');
 
-      policyManager.execute(this, this.o.ipv4Addr, policy, (err) => {
-        dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
-          policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
-            if (err == null && changed == true) {
-              this.savePolicy(callback);
-            } else {
-              if (callback) {
-                callback(null,null);
-              }
-            }
-          });
-        });
-      });
-    });
+    await policyManager.execute(this, this.o.ipv4Addr, policy)
   }
+
+  applyPolicy(callback) {
+    return util.callbackify(this.applyPolicyAsync).bind(this)(callback || function(){})
+  }
+
 
   // type:
   //  { 'human': 0-100
@@ -803,30 +793,30 @@ class Host {
   syncToMac(callback) {
     //TODO
     /*
-                if (this.o.mac) {
-                    let mackey = "host:mac:"+this.o.mac.toUpperCase();
-                        rclient.hgetall(key, (err,data)=> {
-                            if ( err == null) {
-                                if (data!=null) {
-                                    data.ipv4 = host.ipv4Addr;
-                                    data.lastActiveTimestamp = Date.now()/1000;
-                                    if (host.macVendor) {
-                                        data.macVendor = host.macVendor;
-                                    }
-                               } else {
-                                   data = {};
-                                   data.ipv4 = host.ipv4Addr;
-                                   data.lastActiveTimestamp = Date.now()/1000;
-                                   data.firstFoundTimestamp = data.lastActiveTimestamp;
-                                   if (host.macVendor) {
-                                        data.macVendor = host.macVendor;
-                                   }
-                               }
-                               rclient.hmset(key,data, (err,result)=> {
-                         });
+    if (this.o.mac) {
+        let mackey = "host:mac:"+this.o.mac.toUpperCase();
+            rclient.hgetall(key, (err,data)=> {
+                if ( err == null) {
+                    if (data!=null) {
+                        data.ipv4 = host.ipv4Addr;
+                        data.lastActiveTimestamp = Date.now()/1000;
+                        if (host.macVendor) {
+                            data.macVendor = host.macVendor;
+                        }
+                   } else {
+                       data = {};
+                       data.ipv4 = host.ipv4Addr;
+                       data.lastActiveTimestamp = Date.now()/1000;
+                       data.firstFoundTimestamp = data.lastActiveTimestamp;
+                       if (host.macVendor) {
+                            data.macVendor = host.macVendor;
+                       }
+                   }
+                   rclient.hmset(key,data, (err,result)=> {
+             });
 
-                }
-                */
+    }
+    */
 
   }
 
@@ -1171,8 +1161,8 @@ class Host {
 
   }
 
-  loadPolicyAsync() {
-    return util.promisify(this.loadPolicy).bind(this)()
+  savePolicyAsync() {
+    return util.promisify(this.savePolicy).bind(this)()
   }
 
   loadPolicy(callback) {
@@ -1200,6 +1190,10 @@ class Host {
         }
       }
     });
+  }
+
+  loadPolicyAsync() {
+    return util.promisify(this.loadPolicy).bind(this)()
   }
 
   isFlowAllowed(flow) {

@@ -121,7 +121,7 @@ module.exports = class {
               return;
             }
 
-            log.info("Found %d groups this device has joined", groups.length);
+            log.info(`Found ${groups.length} groups this device has joined`);
 
             if(groups.length === 0) {
               log.error("Wating for kickstart process to create group");

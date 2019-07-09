@@ -32,7 +32,6 @@ const publicIp = require('public-ip');
 const fs = require('fs');
 const network = require('network');
 const ip = require('ip');
-const async = require('async');
 
 const util = require('util');
 
