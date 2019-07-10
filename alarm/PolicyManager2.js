@@ -416,7 +416,7 @@ class PolicyManager2 {
         callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
         return
       }
-      let policies = awaitthis.getSamePolicies(policy)
+      let policies = await this.getSamePolicies(policy)
       if (policies && policies.length > 0) {
         log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
         const samePolicy = policies[0]
