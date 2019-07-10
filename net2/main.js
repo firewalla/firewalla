@@ -401,7 +401,6 @@ sem.on("ChangeLogLevel", (event) => {
 });
 
 async function cleanUpLeftoverConfig(){
-  log.info("tstststst")
   try{
     const userConfigFolder = firewalla.getUserConfigFolder(),
           dnsConfigFolder = `${userConfigFolder}/dns`,
@@ -410,12 +409,10 @@ async function cleanUpLeftoverConfig(){
     const cleanupPromises = configFolders.map(configFolder => {
       (async () => {
       const files = await readdir(configFolder)
-      log.info("files", files)
       files.map(filename => unlink(`${configFolder}/${filename}`));
       })()
     })
     await Promise.all(cleanupPromises)
-    log.info("clean up leftover config")
   }catch(err){
     log.info("clean up leftover config", err)
   }
