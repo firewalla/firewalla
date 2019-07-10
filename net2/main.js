@@ -72,7 +72,7 @@ if(!bone.isAppConnected()) {
 }
 
 resetModeInInitStage()
-cleanUpLeftoverConfig()
+await cleanUpLeftoverConfig()
 run0()
 
 function run0() {
@@ -398,6 +398,7 @@ sem.on("ChangeLogLevel", (event) => {
 });
 
 async function cleanUpLeftoverConfig(){
+  log.info("tstststst")
   try{
     const userConfigFolder = firewalla.getUserConfigFolder(),
           dnsConfigFolder = `${userConfigFolder}/dns`,
@@ -407,6 +408,6 @@ async function cleanUpLeftoverConfig(){
     Promise.all(cleanupPromises)
     log.info("clean up leftover config")
   }catch(err){
-    log.warn("clean up leftover config", err)
+    log.info("clean up leftover config", err)
   }
 }
