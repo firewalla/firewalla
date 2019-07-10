@@ -144,7 +144,7 @@ function setupIpset(target, ipset, whitelist, remove = false) {
   const ipAddr = ipSpliterIndex > 0 ? target.substring(0, ipSpliterIndex) : target;
 
   // check and add v6 suffix
-  if (ipAddr.match(/^\d+(-\d+)?/)) {
+  if (ipAddr.match(/^\d+(-\d+)?$/)) {
     // ports
   } else if (iptool.isV4Format(ipAddr)) {
     // ip.isV6Format() will return true on v4 addresses
