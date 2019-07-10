@@ -407,8 +407,8 @@ async function cleanUpLeftoverConfig(){
     const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
     const cleanupPromises = configFolders.map(configFolder => {
       (async () => {
-      const files = await readdir(configFolder)
-      files.map(filename => unlink(`${configFolder}/${filename}`));
+        const files = await readdir(configFolder)
+        files.map(filename => unlink(`${configFolder}/${filename}`));
       })()
     })
     await Promise.all(cleanupPromises)
