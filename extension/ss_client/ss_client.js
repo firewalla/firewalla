@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,7 @@
 'use strict';
 
 const log = require("../../net2/logger.js")(__filename, "info");
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
 const fs = require('fs');
 const jsonfile = require('jsonfile');
@@ -55,7 +56,7 @@ class SSClient {
     if(!config) {
       throw new Error("Invalid name or config when new SSClient");
     }
-    
+
     this.name = config.name || "default";
     this.config = config;
     this.started = false;
@@ -63,10 +64,10 @@ class SSClient {
 
     log.info(`Creating ss client ${this.name}...`);//, config: ${require('util').inspect(this.config, {depth: null})}, options, ${require('util').inspect(this.options, {depth: null})}`);
   }
-  
+
   // This only starts the service, call redirectTraffic to redirect devices traffic
   async start() {
-    log.info("Starting SS backend service...");    
+    log.info("Starting SS backend service...");
     await this._createConfigFile();
     await exec(`sudo systemctl restart ss_client@${this.name}`);
     log.info("Started SS backend service.");
@@ -79,7 +80,7 @@ class SSClient {
     log.info(`Stopped SS backend service ${this.name}.`);
   }
 
-    
+
   async redirectTraffic() {
     // set dnsmasq upstream to overture
     const upstreamDNS = `127.0.0.1#${OVERTURE_PORT}`;
@@ -115,7 +116,7 @@ class SSClient {
     await this.prepareServiceConfig();
     await this.prepareCHNRoute();
   }
-  
+
   async prepareOvertureConfig() {
     const localDNSServers = sysManager.myDNS();
     if(_.isEmpty(localDNSServers)) {
@@ -143,17 +144,21 @@ class SSClient {
   // prepare the chnroute files
   async prepareCHNRoute() {
     log.info("Preparing CHNRoute...");
-    await delay(60000);
-    const code = "CN";
-    await countryUpdater.activateCountry(code);
-    const chain = `FW_SHADOWSOCKS_${this.name}`;
-    await exec(wrapIptables(`sudo iptables -w -t nat -I ${chain} -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
+
+    // intended non-blocking execution
+    (async() => {
+      await delay(60000);
+      const code = "CN";
+      await countryUpdater.activateCountry(code);
+      const chain = `FW_SHADOWSOCKS_${this.name}`;
+      await exec(wrapIptables(`sudo iptables -w -t nat -I ${chain} -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
+    })()
   }
 
   isStarted() {
     return this.started;
   }
-  
+
   async statusCheck() {
   }
 
@@ -176,7 +181,7 @@ class SSClient {
       return null;
     }
   }
-  
+
   async clearConfig() {
     return rclient.delAsync(ssConfigKey);
   }
