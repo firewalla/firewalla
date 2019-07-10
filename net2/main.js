@@ -30,6 +30,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
 
+const fsExtra = require('fs-extra')
+
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 function updateTouchFile() {
@@ -70,8 +72,8 @@ if(!bone.isAppConnected()) {
 }
 
 resetModeInInitStage()
-
-run0();
+cleanUpLeftoverConfig()
+run0()
 
 function run0() {
   if (bone.cloudready()==true &&
@@ -394,3 +396,17 @@ sem.on("ChangeLogLevel", (event) => {
     }
   }
 });
+
+async function cleanUpLeftoverConfig(){
+  try{
+    const userConfigFolder = firewalla.getUserConfigFolder(),
+          dnsConfigFolder = `${userConfigFolder}/dns`,
+          devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
+    const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
+    const cleanupPromises = configFolders.map(configFolder => fsExtra.emptyDir(configFolder))
+    Promise.all(cleanupPromises)
+    log.info("clean up leftover config")
+  }catch(err){
+    log.warn("clean up leftover config", err)
+  }
+}
