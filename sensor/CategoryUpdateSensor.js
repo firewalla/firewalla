@@ -16,6 +16,8 @@
 
 const log = require('../net2/logger.js')(__filename);
 
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
 const fc = require('../net2/config.js')
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -61,8 +63,8 @@ class CategoryUpdateSensor extends Sensor {
 
   async countryJob() {
     const countryList = this.loadCategoryFromBone('country:list');
-    rc.saddAsync('country:list', countryList);
-    
+    rclient.saddAsync('country:list', countryList);
+
     const activeCountries = countryUpdater.getActiveCountries();
     log.info('Active countries', activeCountries);
     for (const country of activeCountries) {
