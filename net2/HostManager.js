@@ -133,12 +133,21 @@ module.exports = class HostManager {
 
       let c = require('./MessageBus.js');
       this.subscriber = new c(loglevel);
+      this.iptablesReady = false;
 
       // ONLY register for these events if hostmanager type IS server
       if(this.type === "server") {
+        sem.once('IPTABLES_READY', () => {
+          log.info("Iptables is ready");
+          this.iptablesReady = true;
+        })
 
         log.info("Subscribing Scan:Done event...")
         this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
+          if (!this.iptablesReady) {
+            log.warn("Iptables is not ready yet");
+            return;
+          }
           log.info("New Host May be added rescan");
           this.getHosts((err, result) => {
             if (this.callbacks[type]) {
@@ -150,6 +159,10 @@ module.exports = class HostManager {
           if (this.type != "server") {
             return;
           };
+          if (!this.iptablesReady) {
+            log.warn("Iptables is not ready yet");
+            return;
+          }
 
           this.safeExecPolicy()
 

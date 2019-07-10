@@ -1100,7 +1100,7 @@ class netBot extends ControllerBot {
   }
 
   boneMsgHandler(msg) {
-      log.info("Bone Message",JSON.stringify(msg));
+      log.debug("Bone Message",JSON.stringify(msg));
       if (msg.type == "MSG" && msg.title) {
           let notifyMsg = {
              title: msg.title,
@@ -1147,11 +1147,14 @@ class netBot extends ControllerBot {
               }
           } else if (msg.control === 'cloud') {
             log.error("Firewalla Cloud");
-            if(msg.command) {
-              const cloudManager = require('../extension/cloud/CloudManager.js');
-              cloudManager.run(msg.command, msg.info).catch((err) => {
-                log.error("Got error when handling cloud action, err:", err);
-              });
+            // cloud commands will never / ever be ran on production 
+            if (sysManager.isSystemDebugOn() || !f.isProduction()) {
+              if (msg.command) {
+                const cloudManager = require('../extension/cloud/CloudManager.js');
+                cloudManager.run(msg.command, msg.info).catch((err) => {
+                  log.error("Got error when handling cloud action, err:", err);
+                });
+              }
             }
           }
       }

@@ -5,9 +5,10 @@ const log = require('../../net2/logger.js')(__filename);
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 
-class MonitoringOffAction extends CloudAction {
+class RenameDeviceAction extends CloudAction {
+
   requiredKeys() {
-    return ["hostID"];
+    return ["hostID", "targetName"];
   }
 
   async run(info = {}) {
@@ -22,13 +23,20 @@ class MonitoringOffAction extends CloudAction {
     const hm = new HostManager('cli', 'client');
     const host = await hm.getHostAsync(mac);
     if(!host) {
-      log.error(`Host not found for mac ${mac}`);
+      log.error(`Host not found for host id ${info.hostID}`);
       return false;
     }
 
-    await host.setPolicyAsync("monitor", false);
+    if(host.o) {
+      host.o.cloudName = info.targetName;
+    }
+
+    const cloudName = info.targetName;
+
+    await hostTool.updateMACKey({mac, cloudName}, true);
+
     return true;
   }
 }
 
-module.exports = MonitoringOffAction;
+module.exports = RenameDeviceAction;

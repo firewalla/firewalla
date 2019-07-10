@@ -877,6 +877,10 @@ class Host {
   getNameCandidates() {
     let names = []
 
+    if(this.o.cloudName) {
+      names.push(this.o.cloudName);
+    }
+
     if(this.o.dhcpName) {
       names.push(this.o.dhcpName)
     }
