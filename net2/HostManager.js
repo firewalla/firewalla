@@ -1230,35 +1230,6 @@ module.exports = class HostManager {
     });
   }
 
-  appendACL(name, data) {
-    if (this.policy.acl == null) {
-      this.policy.acl = [data];
-    } else {
-      let acls = this.policy.acl;
-      let found = false;
-      if (acls) {
-        for (let i in acls) {
-          let acl = acls[i];
-          log.debug("comparing ", acl, data);
-          if (acl.src == data.src && acl.dst == data.dst && acl.sport == data.sport && acl.dport == data.dport) {
-            if (acl.state == data.state) {
-              log.debug("System:setPolicy:Nochange", name, data);
-              return;
-            } else {
-              acl.state = data.state;
-              found = true;
-              log.debug("System:setPolicy:Changed", name, data);
-            }
-          }
-        }
-      }
-      if (found == false) {
-        acls.push(data);
-      }
-      this.policy.acl = acls;
-    }
-  }
-
   setPolicyAsync(name, data) {
     return util.promisify(this.setPolicy).bind(this)(name, data)
   }
@@ -1285,52 +1256,23 @@ module.exports = class HostManager {
     }
 
     this.loadPolicy((err, __data) => {
-      if (name == "acl") {
-        // when adding acl, enrich acl policy with source IP => MAC address mapping.
-        // so that iptables can block with MAC Address, which is more accurate
-        //
-        // will always associate a mac with the
-        let localIP = null;
-        if (sysManager.isLocalIP(data.src)) {
-          localIP = data.src;
+      if (this.policy[name] != null && this.policy[name] == data) {
+        log.debug("System:setPolicy:Nochange", name, data);
+        if (callback) {
+          callback(null, null);
         }
-        if (sysManager.isLocalIP(data.dst)) {
-          localIP = data.dst;
-        }
-
-        if(localIP) {
-          this.getHost(localIP, (err, host) => {
-            if(!err) {
-              data.mac = host.o.mac; // may add more attributes in the future
-            }
-            this.appendACL(name, data);
-            savePolicyWrapper(name, data, callback);
-          });
-        } else {
-          this.appendACL(name, data);
-          savePolicyWrapper(name, data, callback);
-        }
-
-      } else {
-        if (this.policy[name] != null && this.policy[name] == data) {
-          log.debug("System:setPolicy:Nochange", name, data);
-          if (callback) {
-            callback(null, null);
-          }
-          return;
-        }
-        this.policy[name] = data;
-        log.debug("System:setPolicy:Changed", name, data);
-
-        savePolicyWrapper(name, data, callback);
+        return;
       }
+      this.policy[name] = data;
+      log.debug("System:setPolicy:Changed", name, data);
+
+      savePolicyWrapper(name, data, callback);
 
     });
   }
 
   async spoof(state) {
     log.debug("System:Spoof:", state, this.spoofing);
-    let gateway = sysManager.monitoringInterface().gateway;
     if (state == false) {
       // flush all ip addresses
       log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
@@ -1360,7 +1302,7 @@ module.exports = class HostManager {
     const state = policy.state;
     const appliedInterfaces = policy.appliedInterfaces || [];
     switch (type) {
-      case "openvpn": 
+      case "openvpn": {
         const profileId = policy.openvpn && policy.openvpn.profileId;
         if (!profileId) {
           log.error("profileId is not specified", policy);
@@ -1471,6 +1413,7 @@ module.exports = class HostManager {
           await ovpnClient.stop();
         }
         break;
+      }
       default:
         log.warn("Unsupported VPN type: " + type);
     }

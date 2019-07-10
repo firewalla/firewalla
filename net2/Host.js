@@ -1076,42 +1076,13 @@ class Host {
   setPolicy(name, data, callback) {
     callback = callback || function() {}
 
-    if (name == "acl") {
-      if (this.policy.acl == null) {
-        this.policy.acl = [data];
-      } else {
-        let acls = JSON.parse(this.policy.acl);
-        let found = false;
-        if (acls) {
-          for (let i in acls) {
-            let acl = acls[i];
-            if (acl.src == data.src && acl.dst == data.dst) {
-              if (acl.add == data.add) {
-                callback(null, null);
-                log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
-                return;
-              } else {
-                acl.add = data.add;
-                found = true;
-                log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
-              }
-            }
-          }
-        }
-        if (found == false) {
-          acls.push(data);
-        }
-        this.policy.acl = acls;
-      }
-    } else {
-      if (this.policy[name] != null && this.policy[name] == data) {
-        callback(null, null);
-        log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
-        return;
-      }
-      this.policy[name] = data;
-      log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
+    if (this.policy[name] != null && this.policy[name] == data) {
+      callback(null, null);
+      log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
+      return;
     }
+    this.policy[name] = data;
+    log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
     this.savePolicy((err, data) => {
       if (err == null) {
         let obj = {};
