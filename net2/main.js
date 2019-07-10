@@ -29,8 +29,10 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
+const util = require('util');
+const readdir = util.promisify(fs.readdir);
+const unlink = util.promisify(fs.unlink);
 
-const fsExtra = require('fs-extra')
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -405,7 +407,13 @@ async function cleanUpLeftoverConfig(){
           dnsConfigFolder = `${userConfigFolder}/dns`,
           devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
     const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
-    const cleanupPromises = configFolders.map(configFolder => fsExtra.emptyDir(configFolder))
+    const cleanupPromises = configFolders.map(configFolder => {
+      (async () => {
+      const files = await readdir(configFolder)
+      log.info("files", files)
+      files.map(filename => unlink(`${configFolder}/${filename}`));
+      })()
+    })
     await Promise.all(cleanupPromises)
     log.info("clean up leftover config")
   }catch(err){
