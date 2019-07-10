@@ -73,7 +73,7 @@ if(!bone.isAppConnected()) {
 
 resetModeInInitStage()
 log.info("zhijietest")
-await cleanUpLeftoverConfig()
+cleanUpLeftoverConfig()
 run0()
 
 function run0() {
@@ -406,7 +406,7 @@ async function cleanUpLeftoverConfig(){
           devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
     const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
     const cleanupPromises = configFolders.map(configFolder => fsExtra.emptyDir(configFolder))
-    Promise.all(cleanupPromises)
+    await Promise.all(cleanupPromises)
     log.info("clean up leftover config")
   }catch(err){
     log.info("clean up leftover config", err)
