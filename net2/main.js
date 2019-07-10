@@ -72,6 +72,7 @@ if(!bone.isAppConnected()) {
 }
 
 resetModeInInitStage()
+log.info("zhijietest")
 await cleanUpLeftoverConfig()
 run0()
 
