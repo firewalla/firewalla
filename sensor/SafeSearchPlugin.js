@@ -322,7 +322,7 @@ class SafeSearchPlugin extends Sensor {
     if(ip) {
       return targetDomains.map((targetDomain) => {
         return this.getDNSMasqEntry(macAddress, ip, targetDomain);
-      });
+      })
     } else {
       return [];
     }

@@ -18,7 +18,7 @@ var instance = null;
 const log = require("./logger.js")("PolicyManager");
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-
+const fs = require('fs');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const fc = require('../net2/config.js');
 
@@ -41,6 +41,9 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 const firewalla = require('../net2/Firewalla.js');
+
+const userConfigFolder = firewalla.getUserConfigFolder();
+const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
 
 let externalAccessFlag = false;
 
@@ -255,7 +258,7 @@ module.exports = class {
     });
   }
 
-  family(ip, state, callback) {
+  family(host, ip, state, callback) {
     const ver = features.getVersion('familyMode');
     switch (ver) {
       case 'v2':
@@ -263,22 +266,17 @@ module.exports = class {
         break;
       case 'v1':
       default:
-        this.familyV1(ip, state, callback);
+        this.familyV1(host, ip, state, callback);
     }
   }
 
-  familyV1(ip, state, callback) {
+  async familyV1(host, ip, state, callback) {
     callback = callback || function () {
-    }
-
-    if (ip !== "0.0.0.0") {
-      callback(null)
-      return
     }
 
     // rm family_filter.conf from v2
     log.info('Dnsmasq: remove family_filter.conf from v2');
-    require('fs').unlink(firewalla.getUserConfigFolder() + '/dns/family_filter.conf', err => {
+    fs.unlink(firewalla.getUserConfigFolder() + '/dns/family_filter.conf', err => {
       if (err) {
         if (err.code === 'ENOENT') {
           log.info('Dnsmasq: No family_filter.conf, skip remove');
@@ -287,19 +285,43 @@ module.exports = class {
         }
       }
     });
-
+    let macAddress = host && host.o && host.o.mac;
     this.familyDnsAddr((err, dnsaddrs) => {
-      log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
-      if (state == true) {
-        dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf().then(() => callback());
-      } else {
-        dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf().then(() => callback());
+      log.debug("PolicyManager:Family:IPTABLE", macAddress, ip, state, dnsaddrs.join(" "));
+      if (ip == "0.0.0.0") {
+        if (state == true) {
+          dnsmasq.setDefaultNameServers("family", dnsaddrs);
+          dnsmasq.updateResolvConf().then(() => callback());
+        } else {
+          dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
+          dnsmasq.updateResolvConf().then(() => callback());
+        }
+      } else if(macAddress){
+        this.applyFamilyProtectPerDevice(macAddress, state, dnsaddrs)
       }
     });
   }
 
+  async applyFamilyProtectPerDevice(macAddress, state, dnsaddrs){
+    log.debug("======================applyFamilyProtectPerDevice===========================\n")
+    log.debug(macAddress, state, dnsaddrs)
+    const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`
+    const dnsmasqentry = `server=${dnsaddrs[0]}%${macAddress.toUpperCase()}\n`
+    if (state == true) {
+      await fs.writeFile(configFile, dnsmasqentry)
+    } else {
+      await fs.unlink(configFile,err => {
+        if (err) {
+          if (err.code === 'ENOENT') {
+            log.info(`Dnsmasq: No ${configFile}, skip remove`);
+          } else {
+            log.warn(`Dnsmasq: Error when remove ${configFile}`, err);
+          }
+        }
+      })
+    }
+    dnsmasq.start(true)
+  }
   familyV2(ip, state, callback) {
     callback = callback || function () {
     }
@@ -649,7 +671,6 @@ module.exports = class {
   }
 
   execute(host, ip, policy, callback) {
-
     if (host.oper == null) {
       host.oper = {};
     }
@@ -662,12 +683,11 @@ module.exports = class {
         callback(null, null);
       return;
     }
-
     log.debug("PolicyManager:Execute:", ip, policy);
 
     for (let p in policy) {
       if (host.oper[p] != null && JSON.stringify(host.oper[p]) === JSON.stringify(policy[p])) {
-        log.debug("PolicyManager:AlreadyApplied", p, host.oper[p]);
+        log.info("PolicyManager:AlreadyApplied", p, host.oper[p]);
         if (p === "monitor") {
           host.spoof(policy[p]);
         }
@@ -694,7 +714,7 @@ module.exports = class {
         this.hblock(host, policy[p]);
         //    this.block(null,ip,null,null,policy[p]);
       } else if (p === "family") {
-        this.family(ip, policy[p], null);
+        this.family(host, ip, policy[p], null);
       } else if (p === "adblock") {
         this.adblock(ip, policy[p], null);
       } else if (p === "upstreamDns") {
