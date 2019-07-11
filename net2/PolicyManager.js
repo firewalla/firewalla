@@ -485,7 +485,7 @@ module.exports = class {
       return; // doesn't support per-device policy
     }
 
-    if (config.state == true) {      
+    if (config.state == true) {
       (async () => {
         const client = await ssClientManager.getSSClient();
         await client.start();
@@ -497,9 +497,9 @@ module.exports = class {
       })
 
     } else {
-      
       (async () => {
         const client = await ssClientManager.getSSClient();
+        if (!client) return
         await client.unRedirectTraffic();
         await client.stop();
         log.info("SciSurf feature is disabled successfully for traffic redirection");
