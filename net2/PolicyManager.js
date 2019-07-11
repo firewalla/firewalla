@@ -270,7 +270,7 @@ module.exports = class {
     }
   }
 
-  async familyV1(host, ip, state, callback) {
+  familyV1(host, ip, state, callback) {
     callback = callback || function () {
     }
 
