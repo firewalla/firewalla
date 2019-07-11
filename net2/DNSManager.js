@@ -313,7 +313,9 @@ module.exports = class DNSManager {
           enrichDstCount++;
           await this.enrichDestIP(_ipdst, o, "dst")
         }
-      })().finally(() => {
+      })().catch((err) => {
+        log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
+      }).then(() => {
         cb()
       })
     }, (err) => {
