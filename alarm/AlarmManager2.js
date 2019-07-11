@@ -625,7 +625,7 @@ module.exports = class {
   }
 
   async getAlarm(alarmID) {
-    const results = this.idsToAlarmsAsync([alarmID])
+    const results = await this.idsToAlarmsAsync([alarmID])
     if(results == null || results.length === 0) {
       throw new Error("alarm not exists");
     }

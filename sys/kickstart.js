@@ -58,6 +58,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const util = require('util');
+const writeFileAsync = util.promisify(fs.writeFile);
 
 const f = require('../net2/Firewalla.js');
 
@@ -312,7 +313,7 @@ async function inviteFirstAdmin(gid) {
       log.error("Failed to submit diag info", err);
     });
 
-    await launchService2(gid, null);
+    await launchService2(gid);
   } else {
     log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
 
@@ -329,12 +330,22 @@ async function inviteFirstAdmin(gid) {
 }
 
 
-function launchService2(gid,callback) {
-  fs.writeFileSync('/home/pi/.firewalla/ui.conf',JSON.stringify({gid:gid}),'utf-8');
+async function launchService2(gid) {
+  await writeFileAsync('/home/pi/.firewalla/ui.conf', JSON.stringify({gid:gid}), 'utf8');
 
   // don't start bro until app is linked
-  cp.execSync("sudo systemctl start brofish");
-  cp.execSync("sudo systemctl enable brofish"); // even auto-start for future reboots
+  await exec("sudo systemctl is-active brofish").catch((err) => {
+    // need to restart brofish
+    log.info("Restart brofish.service ...");
+    return exec("sudo systemctl restart brofish").catch((err) => { // use restart instead. use 'start' may be trapped due to 'TimeoutStartSec' in brofish.service
+      log.error("Failed to restart brofish", err);
+    });
+  }).then(() => {
+    log.info("Enable brofish.service ...");
+    return exec("sudo systemctl enable brofish").catch((err) => { // even auto-start for future reboots
+      log.error("Failed to enable brofish", err);
+    });
+  })
 
   // // start fire api
   // if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
@@ -376,7 +387,9 @@ function login() {
           await inviteFirstAdmin(gid)
 
           await platform.turnOffPowerLED();
-          await exec("sleep 2; sudo systemctl stop firekick")
+          exec("sleep 2; sudo systemctl stop firekick").catch((err) => {
+            // this command will kill the program itself, catch this error silently
+          }) 
 
         } else {
           log.error("Invalid gid");
