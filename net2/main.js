@@ -29,9 +29,6 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
-const util = require('util');
-const readdir = util.promisify(fs.readdir);
-const unlink = util.promisify(fs.unlink);
 
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -74,7 +71,6 @@ if(!bone.isAppConnected()) {
 }
 
 resetModeInInitStage()
-cleanUpLeftoverConfig()
 run0()
 
 function run0() {
@@ -243,6 +239,7 @@ async function run() {
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
+  dnsmasq.cleanUpLeftoverConfig()
 
   // Launch PortManager
 
@@ -398,21 +395,3 @@ sem.on("ChangeLogLevel", (event) => {
     }
   }
 });
-
-async function cleanUpLeftoverConfig(){
-  try{
-    const userConfigFolder = firewalla.getUserConfigFolder(),
-          dnsConfigFolder = `${userConfigFolder}/dns`,
-          devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
-    const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
-    const cleanupPromises = configFolders.map(configFolder => {
-      (async () => {
-        const files = await readdir(configFolder)
-        files.map(filename => unlink(`${configFolder}/${filename}`));
-      })()
-    })
-    await Promise.all(cleanupPromises)
-  }catch(err){
-    log.info("clean up leftover config", err)
-  }
-}
