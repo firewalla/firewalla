@@ -585,6 +585,7 @@
     "upstream_dns": false,
     "insane_mode": false,
     "cpu_monitor": true,
+    "speed_test": false,
     "safe_search": false
   },
   "hiddenFeatures": [
