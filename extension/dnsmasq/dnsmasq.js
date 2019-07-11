@@ -1285,7 +1285,7 @@ module.exports = class DNSMASQ {
 
   async cleanUpLeftoverConfig(){
     try{
-      const userConfigFolder = firewalla.getUserConfigFolder(),
+      const userConfigFolder = f.getUserConfigFolder(),
             dnsConfigFolder = `${userConfigFolder}/dns`,
             devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
       const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
