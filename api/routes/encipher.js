@@ -140,7 +140,7 @@ router.post('/simple', (req, res, next) => {
     const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
 
 //    const c = JSON.parse(content)
-    body.message.obj.data.value = content
+    body.message.obj.data.value = content;
 
     (async() =>{
       let controller = await cloudWrapper.getNetBotController(gid)
