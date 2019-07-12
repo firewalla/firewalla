@@ -1285,7 +1285,7 @@ class netBot extends ControllerBot {
           default:
             let target = msg.target
             let policyData = value[o]
-
+            log.info("=============",target,policyData,o)
             if (target === "0.0.0.0") {
               this.hostManager.loadPolicy((err, data) => {
                 if(err) {
