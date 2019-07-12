@@ -49,42 +49,39 @@ class FamilyProtectPlugin extends Sensor {
             applyPolicy: this.applyPolicy
         });
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        sem.once('IPTABLES_READY', async () => {
-            log.info("IPTABLES_READY")
-            log.info("isFeatureOn", fc.isFeatureOn("family_protect"))
-            if (fc.isFeatureOn("family_protect")) {
+        log.info("isFeatureOn", fc.isFeatureOn("family_protect"))
+        if (fc.isFeatureOn("family_protect")) {
+            await this.globalOn();
+        } else {
+            await this.globalOff();
+        }
+        fc.onFeature("family_protect", async (feature, status) => {
+            log.info("family_protect status change", feature, status)
+            if (feature !== "family_protect") {
+                return;
+            }
+            if (status) {
                 await this.globalOn();
             } else {
                 await this.globalOff();
             }
-            fc.onFeature("family_protect", async (feature, status) => {
-                log.info("family_protect status change", feature, status)
-                if (feature !== "family_protect") {
-                    return;
-                }
-                if (status) {
-                    await this.globalOn();
-                } else {
-                    await this.globalOff();
-                }
-            })
-
-            sem.on('FAMILYPROTECT_REFRESH', (event) => {
-                log.info("FAMILYPROTECT_REFRESH")
-                this.applyFamilyProtect();
-            });
-
-            if (f.isMain()) {
-                setInterval(() => {
-                    this.checkIfRestartNeeded()
-                }, 10 * 1000) // check restart request once every 10 seconds
-            }
-
-            await this.job();
-            this.timer = setInterval(async () => {
-                return this.job();
-            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
         })
+
+        sem.on('FAMILYPROTECT_REFRESH', (event) => {
+            log.info("FAMILYPROTECT_REFRESH")
+            this.applyFamilyProtect();
+        });
+
+        if (f.isMain()) {
+            setInterval(() => {
+                this.checkIfRestartNeeded()
+            }, 10 * 1000) // check restart request once every 10 seconds
+        }
+
+        await this.job();
+        this.timer = setInterval(async () => {
+            return this.job();
+        }, this.config.refreshInterval || 3600 * 1000); // one hour by default
     }
 
     async checkIfRestartNeeded() {
