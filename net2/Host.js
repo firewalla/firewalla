@@ -23,8 +23,6 @@ const exec = require('child-process-promise').exec
 const Spoofer = require('./Spoofer.js');
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-const DNSManager = require('./DNSManager.js');
-const dnsManager = new DNSManager('error');
 const FlowManager = require('./FlowManager.js');
 const flowManager = new FlowManager('debug');
 
@@ -592,32 +590,24 @@ class Host {
     });
   }
 
-  applyPolicy(callback) {
-    this.loadPolicy((err, data) => {
-      log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
-      let policy = JSON.parse(JSON.stringify(this.policy));
-      // check for global
-      if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
-        policy.monitor = false;
-      }
-      let PolicyManager = require('./PolicyManager.js');
-      let policyManager = new PolicyManager('info');
+  async applyPolicyAsync() {
+    await this.loadPolicyAsync()
+    log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
+    let policy = JSON.parse(JSON.stringify(this.policy));
+    // check for global
+    if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
+      policy.monitor = false;
+    }
+    let PolicyManager = require('./PolicyManager.js');
+    let policyManager = new PolicyManager('info');
 
-      policyManager.execute(this, this.o.ipv4Addr, policy, (err) => {
-        dnsManager.queryAcl(this.policy.acl,(err,acls)=> {
-          policyManager.executeAcl(this, this.o.ipv4Addr, acls, (err, changed) => {
-            if (err == null && changed == true) {
-              this.savePolicy(callback);
-            } else {
-              if (callback) {
-                callback(null,null);
-              }
-            }
-          });
-        });
-      });
-    });
+    await policyManager.execute(this, this.o.ipv4Addr, policy)
   }
+
+  applyPolicy(callback) {
+    return util.callbackify(this.applyPolicyAsync).bind(this)(callback || function(){})
+  }
+
 
   // type:
   //  { 'human': 0-100
@@ -803,30 +793,30 @@ class Host {
   syncToMac(callback) {
     //TODO
     /*
-                if (this.o.mac) {
-                    let mackey = "host:mac:"+this.o.mac.toUpperCase();
-                        rclient.hgetall(key, (err,data)=> {
-                            if ( err == null) {
-                                if (data!=null) {
-                                    data.ipv4 = host.ipv4Addr;
-                                    data.lastActiveTimestamp = Date.now()/1000;
-                                    if (host.macVendor) {
-                                        data.macVendor = host.macVendor;
-                                    }
-                               } else {
-                                   data = {};
-                                   data.ipv4 = host.ipv4Addr;
-                                   data.lastActiveTimestamp = Date.now()/1000;
-                                   data.firstFoundTimestamp = data.lastActiveTimestamp;
-                                   if (host.macVendor) {
-                                        data.macVendor = host.macVendor;
-                                   }
-                               }
-                               rclient.hmset(key,data, (err,result)=> {
-                         });
+    if (this.o.mac) {
+        let mackey = "host:mac:"+this.o.mac.toUpperCase();
+            rclient.hgetall(key, (err,data)=> {
+                if ( err == null) {
+                    if (data!=null) {
+                        data.ipv4 = host.ipv4Addr;
+                        data.lastActiveTimestamp = Date.now()/1000;
+                        if (host.macVendor) {
+                            data.macVendor = host.macVendor;
+                        }
+                   } else {
+                       data = {};
+                       data.ipv4 = host.ipv4Addr;
+                       data.lastActiveTimestamp = Date.now()/1000;
+                       data.firstFoundTimestamp = data.lastActiveTimestamp;
+                       if (host.macVendor) {
+                            data.macVendor = host.macVendor;
+                       }
+                   }
+                   rclient.hmset(key,data, (err,result)=> {
+             });
 
-                }
-                */
+    }
+    */
 
   }
 
@@ -1089,42 +1079,13 @@ class Host {
   setPolicy(name, data, callback) {
     callback = callback || function() {}
 
-    if (name == "acl") {
-      if (this.policy.acl == null) {
-        this.policy.acl = [data];
-      } else {
-        let acls = JSON.parse(this.policy.acl);
-        let found = false;
-        if (acls) {
-          for (let i in acls) {
-            let acl = acls[i];
-            if (acl.src == data.src && acl.dst == data.dst) {
-              if (acl.add == data.add) {
-                callback(null, null);
-                log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
-                return;
-              } else {
-                acl.add = data.add;
-                found = true;
-                log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
-              }
-            }
-          }
-        }
-        if (found == false) {
-          acls.push(data);
-        }
-        this.policy.acl = acls;
-      }
-    } else {
-      if (this.policy[name] != null && this.policy[name] == data) {
-        callback(null, null);
-        log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
-        return;
-      }
-      this.policy[name] = data;
-      log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
+    if (this.policy[name] != null && this.policy[name] == data) {
+      callback(null, null);
+      log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
+      return;
     }
+    this.policy[name] = data;
+    log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
     this.savePolicy((err, data) => {
       if (err == null) {
         let obj = {};
@@ -1174,8 +1135,8 @@ class Host {
 
   }
 
-  loadPolicyAsync() {
-    return util.promisify(this.loadPolicy).bind(this)()
+  savePolicyAsync() {
+    return util.promisify(this.savePolicy).bind(this)()
   }
 
   loadPolicy(callback) {
@@ -1203,6 +1164,10 @@ class Host {
         }
       }
     });
+  }
+
+  loadPolicyAsync() {
+    return util.promisify(this.loadPolicy).bind(this)()
   }
 
   isFlowAllowed(flow) {

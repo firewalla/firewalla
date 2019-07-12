@@ -211,7 +211,7 @@ class App {
     this.app.use('/' + STATIC_PATH, express.static(path.join(__dirname, STATIC_PATH)));
 
     this.app.use('/log', (req, res) => {
-      const filename = "/home/pi/logs/FireKick.log"
+      const filename = "/home/pi/logs/FireKick.log";
       (async() =>{
         const gid = await this.getFullGID()
         await fs.accessAsync(filename, fs.constants.F_OK)

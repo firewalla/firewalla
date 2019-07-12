@@ -81,7 +81,7 @@ exports.create = async function(config) {
   let secondarySubnet = ip.cidrSubnet(secondaryIpSubnet);
   let legacyIpSubnet = null;
 
-  let list = await linux.get_network_interfaces_list_async()
+  let list = await linux.get_network_interfaces_list()
 
   list = (list || []).filter(function(x) {
     return is_interface_valid(x);

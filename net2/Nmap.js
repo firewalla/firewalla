@@ -139,6 +139,11 @@ module.exports = class {
     this.scanQueue(obj);
   }
 
+  // ports are not returned
+  scanAsync(range, fast) {
+    return util.promisify(this.scan).bind(this)(range, fast)
+  }
+
   nmapScan(cmdline, requiremac, callback) {
     this.process = require('child_process').exec(
       cmdline,

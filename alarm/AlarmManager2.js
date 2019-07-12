@@ -665,7 +665,7 @@ module.exports = class {
 
   // This function will only return when there is new alarm data or timeout
   async fetchNewAlarms(sinceTS, {timeout}) {
-    const alarms = this.loadAlarmsByTimestamp(sinceTS);
+    const alarms = await this.loadAlarmsByTimestamp(sinceTS);
     timeout = timeout || 60;
 
     if(alarms.length > 0) {
