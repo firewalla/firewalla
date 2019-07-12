@@ -164,11 +164,13 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async systemStart(dnsaddrs) {
+        log.info("systemStart", dnsaddrs)
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
         dnsmasq.updateResolvConf();
     }
 
     async systemStop(dnsaddrs) {
+        log.info("systemStop", dnsaddrs)
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
         dnsmasq.updateResolvConf();
     }
