@@ -50,12 +50,15 @@ class FamilyProtectPlugin extends Sensor {
         });
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
         sem.once('IPTABLES_READY', async () => {
+            log.info("IPTABLES_READY")
+            log.info("isFeatureOn", fc.isFeatureOn("family_protect"))
             if (fc.isFeatureOn("family_protect")) {
                 await this.globalOn();
             } else {
                 await this.globalOff();
             }
             fc.onFeature("family_protect", async (feature, status) => {
+                log.info("family_protect status change", feature, status)
                 if (feature !== "family_protect") {
                     return;
                 }
@@ -67,6 +70,7 @@ class FamilyProtectPlugin extends Sensor {
             })
 
             sem.on('FAMILYPROTECT_REFRESH', (event) => {
+                log.info("FAMILYPROTECT_REFRESH")
                 this.applyFamilyProtect();
             });
 
@@ -100,6 +104,7 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async job() {
+        log.info("family protect job")
         await this.applyFamilyProtect();
     }
 
@@ -108,7 +113,7 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async applyPolicy(host, ip, policy) {
-        log.info("Applying policy:", ip, policy);
+        log.info("Applying family protect policy:", ip, policy);
         try {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
@@ -134,6 +139,7 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async applyFamilyProtect() {
+        log.info("applyFamilyProtect")
         await this.applySystemFamilyProtect();
         for (const macAddress in this.enabledMacAddresses) {
             await this.applyDeviceFamilyProtect(macAddress);
@@ -141,6 +147,7 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async applySystemFamilyProtect() {
+        log.info("Applying family protect on system level");
         this.familyDnsAddr((err, dnsaddrs) => {
             if (this.systemSwitch && this.adminSystemSwitch) {
                 return this.systemStart(dnsaddrs);
