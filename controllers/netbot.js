@@ -1160,7 +1160,7 @@ class netBot extends ControllerBot {
 
     // invalidate cache
     this.invalidateCache();
-    log.inf("zhijietest")
+    log.info("zhijietest")
     if(extMgr.hasSet(msg.data.item)) {
       log.info("zhijietest",msg)
       (async () => {
