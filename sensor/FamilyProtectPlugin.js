@@ -45,7 +45,7 @@ class FamilyProtectPlugin extends Sensor {
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
         this.enabledMacAddresses = {};
-        extensionManager.registerExtension("familyProtect", this, {
+        extensionManager.registerExtension("family", this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
             stop: this.stop
