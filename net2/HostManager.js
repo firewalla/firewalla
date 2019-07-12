@@ -1585,8 +1585,9 @@ module.exports = class HostManager {
               }
               if (!skipHosts) {
                 log.info("Apply host policies...");
-                log.info("hots.all", this.hosts.all)
                 for (let i in this.hosts.all) {
+                  log.info("host key",i)
+                  if(i.indexOf('family')>-1)log.info(this.hosts.all[i])
                   this.hosts.all[i].applyPolicy();
                 }
               }
