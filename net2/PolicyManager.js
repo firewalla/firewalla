@@ -714,7 +714,7 @@ module.exports = class {
         this.hblock(host, policy[p]);
         //    this.block(null,ip,null,null,policy[p]);
       } else if (p === "family") {
-        this.family(host, ip, policy[p], null);
+        // this.family(host, ip, policy[p], null);
       } else if (p === "adblock") {
         this.adblock(ip, policy[p], null);
       } else if (p === "upstreamDns") {
