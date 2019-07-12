@@ -284,45 +284,45 @@ class netBot extends ControllerBot {
     }
   }
 
-  _family(ip, value, callback) {
-    if (ip === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy("family", value, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-              callback(err, "Unable to block ip " + ip);
-          }
-        });
-      });
-    } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy("family", value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success:" + ip);
-                } else {
-                  if (callback != null)
-                    callback(err, "Unable to block ip " + ip);
-                }
-              });
-            } else {
-              if (callback != null)
-                callback("error", "Unable to block ip " + ip);
-            }
-          });
-        } else {
-          if (callback != null)
-            callback("error", "host not found");
-        }
-      });
-    }
-  }
+  // _family(ip, value, callback) {
+  //   if (ip === "0.0.0.0") {
+  //     this.hostManager.loadPolicy((err, data) => {
+  //       this.hostManager.setPolicy("family", value, (err, data) => {
+  //         if (err == null) {
+  //           if (callback != null)
+  //             callback(null, "Success");
+  //         } else {
+  //           if (callback != null)
+  //             callback(err, "Unable to block ip " + ip);
+  //         }
+  //       });
+  //     });
+  //   } else {
+  //     this.hostManager.getHost(ip, (err, host) => {
+  //       if (host != null) {
+  //         host.loadPolicy((err, data) => {
+  //           if (err == null) {
+  //             host.setPolicy("family", value, (err, data) => {
+  //               if (err == null) {
+  //                 if (callback != null)
+  //                   callback(null, "Success:" + ip);
+  //               } else {
+  //                 if (callback != null)
+  //                   callback(err, "Unable to block ip " + ip);
+  //               }
+  //             });
+  //           } else {
+  //             if (callback != null)
+  //               callback("error", "Unable to block ip " + ip);
+  //           }
+  //         });
+  //       } else {
+  //         if (callback != null)
+  //           callback("error", "host not found");
+  //       }
+  //     });
+  //   }
+  // }
 
   _adblock(ip, value, callback) {
     if (ip === "0.0.0.0") {
@@ -1247,11 +1247,11 @@ class netBot extends ControllerBot {
                 cb(err);
               });
               break;
-            case "family":
-              this._family(msg.target, value.family, (err, obj) => {
-                cb(err);
-              });
-              break;
+            // case "family":
+            //   this._family(msg.target, value.family, (err, obj) => {
+            //     cb(err);
+            //   });
+            //   break;
             case "adblock":
               this._adblock(msg.target, value.adblock, (err, obj) => {
                 cb(err);
