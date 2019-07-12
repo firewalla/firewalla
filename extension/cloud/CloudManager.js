@@ -3,6 +3,7 @@
 const config = require('./CloudManagerConfig.json');
 const bone = require('../../lib/Bone.js');
 const log = require('../../net2/logger.js')(__filename);
+const _ = require('lodash');
 
 class CloudManager {
   constructor() {
@@ -19,6 +20,16 @@ class CloudManager {
         const A = require(`./${className}.js`);
         const a = new A();
         log.info(`Running action ${className}...`);
+        const requiredKeys = a.requiredKeys();
+        if(!_.isEmpty(requiredKeys)) {
+          for(const key of requiredKeys) {
+            if(! key in info) {
+              log.error("missing key", key);
+              const result = false;
+              return bone.cloudActionCallback({ action, info, result });
+            }
+          }
+        }
         const result = await a.run(info);
         return bone.cloudActionCallback({ action, info, result });
       } catch (err) {

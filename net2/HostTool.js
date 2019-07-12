@@ -24,6 +24,8 @@ const sysManager = new SysManager('info');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const Hashes = require('../util/Hashes.js');
+
 let instance = null;
 
 const maxV6Addr = 8;
@@ -498,6 +500,18 @@ class HostTool {
       const intelEntry = await intelTool.getIntel(ip)
       return intelEntry && intelEntry.host
     }
+  }
+
+  async findMacByMacHash(hash) {
+    const allMacs = await this.getAllMACs();    
+    for(const mac of allMacs) {
+      const hashObject = Hashes.getHashObject(mac);
+      if(hashObject && hashObject.hash === hash) {
+        return mac;
+      }
+    }
+
+    return null;
   }
 
   filterOldDevices(hostList) {

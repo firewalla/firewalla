@@ -87,10 +87,6 @@ async function setupGlobalWhitelist(state) {
   }
 }
 
-async function setupDeviceWhitelist(device, state) {
-
-}
-
 async function setupCategoryEnv(category, dstType = "hash:ip") {
   if(!category) {
     return;
@@ -140,11 +136,11 @@ function unblock(target, ipset, whitelist = false) {
 }
 
 function setupIpset(target, ipset, whitelist, remove = false) {
-  const ipSpliterIndex = target.search(/[/,:]/)
+  const ipSpliterIndex = target.search(/[/,]/)
   const ipAddr = ipSpliterIndex > 0 ? target.substring(0, ipSpliterIndex) : target;
 
   // check and add v6 suffix
-  if (ipAddr.match(/^\d+(-\d+)?/)) {
+  if (ipAddr.match(/^\d+(-\d+)?$/)) {
     // ports
   } else if (iptool.isV4Format(ipAddr)) {
     // ip.isV6Format() will return true on v4 addresses

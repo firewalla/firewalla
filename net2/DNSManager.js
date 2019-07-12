@@ -206,7 +206,9 @@ module.exports = class DNSManager {
           // enrichDstCount++;
           await this.enrichDestIP(_ipdst, o, "dst")
         }
-      } catch(err) { }
+      } catch(err) {
+        log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
+      }
     })
       // .catch((err) => {
       //   log.debug("DNS:QUERY:RESOLVED:COUNT[",tid,"] (", resolve,"/",list.length,"):", enrichDeviceCount, enrichDstCount, Math.ceil(Date.now() / 1000) - start,start);

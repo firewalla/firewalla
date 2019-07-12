@@ -28,6 +28,8 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
+const rateLimit = require('../../extension/ratelimit/RateLimit.js');
+
 let cpuUsage = 0;
 let memUsage = 0;
 let realMemUsage = 0;
@@ -38,6 +40,8 @@ let peakTemp = 0;
 
 let conn = 0;
 let peakConn = 0;
+
+let rateLimitInfo = null;
 
 let redisMemory = 0;
 
@@ -70,7 +74,8 @@ async function update() {
   await getThreadInfo();
   await getIntelQueueSize();
   await getDiskInfo();
-  getMultiProfileSupportFlag();
+  await getRateLimitInfo();
+  await getMultiProfileSupportFlag();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -99,6 +104,10 @@ async function getThreadInfo() {
   } catch(err) {
     log.error("Failed to get thread info", err);
   }
+}
+
+async function getRateLimitInfo() {
+  rateLimitInfo = await rateLimit.getLastTS();
 }
 
 function getDiskInfo() {
@@ -248,6 +257,10 @@ function getSysInfo() {
     diskInfo: diskInfo,
     categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport
+  }
+
+  if(rateLimitInfo) {
+    sysinfo.rateLimitInfo = rateLimitInfo;
   }
 
   return sysinfo;

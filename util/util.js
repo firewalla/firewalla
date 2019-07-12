@@ -36,7 +36,10 @@ function getPreferredBName(hostObject) {
     return hostObject.name // always use user customized name first
   }
 
-  // TODO: preferred name needs to be improved in the future
+  if(hostObject.cloudName) {
+    return hostObject.cloudName
+  }
+
   if(hostObject.dhcpName) {
     return hostObject.dhcpName
   }
