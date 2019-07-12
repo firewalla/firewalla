@@ -110,7 +110,7 @@ class PolicyManager2 {
     })
 
     this.queue.on('failed', (job, err) => {
-      log.error(`Job ${job.id} ${job.name} failed with error ${err.message}`);
+      log.error(`Job ${job.id} ${JSON.stringify(job.data)} failed with error ${err.message}`);
     });
 
     this.queue.destroy(() => {

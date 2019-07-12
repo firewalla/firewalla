@@ -314,9 +314,9 @@ module.exports = class {
       })
 
     } else {
-
       (async () => {
         const client = await ssClientManager.getSSClient();
+        if (!client) return
         await client.unRedirectTraffic();
         await client.stop();
         log.info("SciSurf feature is disabled successfully for traffic redirection");

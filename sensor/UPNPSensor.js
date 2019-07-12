@@ -93,9 +93,9 @@ class UPNPSensor extends Sensor {
           log.error("Error getting mappings", err);
         }
 
-        if (!results || results.length == 0) {
+        if (!results) {
+          results = []
           log.info("No upnp mapping found in network");
-          return;
         }
 
         const key = "sys:scan:nat";

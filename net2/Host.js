@@ -390,7 +390,7 @@ class Host {
       const state = policy.state;
       const profileId = policy.profileId;
       if (!profileId) {
-        log.error("VPN client profileId is not specified for " + this.o.mac);
+        log.warn("VPN client profileId is not specified for " + this.o.mac);
         return false;
       }
       const ovpnClient = new OpenVPNClient({profileId: profileId});
