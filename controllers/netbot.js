@@ -1161,7 +1161,6 @@ class netBot extends ControllerBot {
     // invalidate cache
     this.invalidateCache();
     if(extMgr.hasSet(msg.data.item)) {
-      log.info("zhijietest",msg)
       (async () => {
         const result = await extMgr.set(msg.data.item, msg, msg.data.value)
         this.simpleTxData(msg, result, null, callback)
