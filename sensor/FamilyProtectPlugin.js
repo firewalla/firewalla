@@ -65,32 +65,11 @@ class FamilyProtectPlugin extends Sensor {
                 await this.globalOff();
             }
         })
-        if (f.isMain()) {
-            setInterval(() => {
-                this.checkIfRestartNeeded()
-            }, 10 * 1000) // check restart request once every 10 seconds
-        }
 
         await this.job();
         this.timer = setInterval(async () => {
             return this.job();
         }, this.config.refreshInterval || 3600 * 1000); // one hour by default
-    }
-
-    async checkIfRestartNeeded() {
-        const MIN_RESTART_INTERVAL = 10; // 10 seconds
-        if (this.needRestart) {
-            log.info("need restart is", this.needRestart);
-        }
-
-        if (this.needRestart && (new Date() / 1000 - this.needRestart) > MIN_RESTART_INTERVAL) {
-            this.needRestart = null
-            await this._rawRestartDeviceMasq().then(() => {
-                log.info("dnsmasq is restarted successfully");
-            }).catch((err) => {
-                log.error("Failed to restart devicemasq", err);
-            })
-        }
     }
 
     async job() {
@@ -167,22 +146,12 @@ class FamilyProtectPlugin extends Sensor {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
         dnsmasq.updateResolvConf();
     }
-    restartDeviceMasq() {
-        if (!this.needRestart) {
-            this.needRestart = new Date() / 1000;
-        }
-    }
-
-    async _rawRestartDeviceMasq() {
-        return exec("sudo systemctl restart dnsmasq");
-    }
 
     async perDeviceStart(macAddress, dnsaddrs) {
         const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
         const dnsmasqentry = `server=${dnsaddrs[0]}%${macAddress.toUpperCase()}\n`;
         await fs.writeFile(configFile, dnsmasqentry);
-        this.restartDeviceMasq();
-        await this.delay(8 * 1000); // wait for a while before activating the dns redirect
+        dnsmasq.restartDnsmasq();
     }
 
     async perDeviceStop(macAddress, dnsaddrs) {
@@ -196,7 +165,7 @@ class FamilyProtectPlugin extends Sensor {
                 }
             }
         })
-        this.restartDeviceMasq();
+        dnsmasq.restartDnsmasq();
     }
 
     // global on/off
