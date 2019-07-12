@@ -572,7 +572,7 @@ module.exports = class {
         }
         continue;
       }
-
+      log.info("zhijietstsatwatat", p)
       // If any extension support this 'applyPolicy' hook, call it
       if (extensionManager.hasExtension(p)) {
         let hook = extensionManager.getHook(p, "applyPolicy")

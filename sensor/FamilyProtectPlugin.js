@@ -46,7 +46,9 @@ class FamilyProtectPlugin extends Sensor {
         this.adminSystemSwitch = false;
         this.enabledMacAddresses = {};
         extensionManager.registerExtension("familyProtect", this, {
-            applyPolicy: this.applyPolicy
+            applyPolicy: this.applyPolicy,
+            start: this.start,
+            stop: this.stop
         });
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
         log.info("isFeatureOn", fc.isFeatureOn("family_protect"))
