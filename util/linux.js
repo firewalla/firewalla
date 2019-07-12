@@ -85,8 +85,8 @@ exports.gateway_ip6 = function(cb) {
   trim_exec(cmd, cb);
 };
 
-exports.gateway_ip6_sync = function() {
-  var cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }'"
+exports.gateway_ip6_sync = function() {  
+  const cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }' | head -n 1"
   return trim_exec_sync(cmd);
 };
 
