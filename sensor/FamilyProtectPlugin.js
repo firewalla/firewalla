@@ -41,6 +41,7 @@ const fc = require('../net2/config.js');
 
 class FamilyProtectPlugin extends Sensor {
     async run() {
+        log.info("FamilyProtectPlugin run")
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
         this.enabledMacAddresses = {};
@@ -166,12 +167,12 @@ class FamilyProtectPlugin extends Sensor {
 
     async systemStart(dnsaddrs) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf().then(() => callback());
+        dnsmasq.updateResolvConf();
     }
 
     async systemStop(dnsaddrs) {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf().then(() => callback());
+        dnsmasq.updateResolvConf();
     }
     restartDeviceMasq() {
         if (!this.needRestart) {
