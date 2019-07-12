@@ -185,13 +185,16 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async perDeviceStart(macAddress, dnsaddrs) {
+        log.info("perDeviceStart", macAddress, dnsaddrs)
         const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
         const dnsmasqentry = `server=${dnsaddrs[0]}%${macAddress.toUpperCase()}\n`;
         await fs.writeFile(configFile, dnsmasqentry);
+        this.restartDeviceMasq();
         await this.delay(8 * 1000); // wait for a while before activating the dns redirect
     }
 
     async perDeviceStop(macAddress, dnsaddrs) {
+        log.info("perDeviceStart", macAddress, dnsaddrs)
         const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
         await fs.unlink(configFile, err => {
             if (err) {
