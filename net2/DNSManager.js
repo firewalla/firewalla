@@ -42,7 +42,7 @@ var instance = null;
 
 
 module.exports = class DNSManager {
-  constructor(loglevel) {
+  constructor() {
     if (instance == null) {
       instance = this;
     }
@@ -68,7 +68,7 @@ module.exports = class DNSManager {
        })
   }
 
-  async resolveLocalHostAsync(ip, callback) {
+  async resolveLocalHostAsync(ip) {
     let mac;
 
     if (iptool.isV4Format(ip)) {
@@ -132,8 +132,6 @@ module.exports = class DNSManager {
       hostManager = new HostManager("cli", 'client', 'info');
     }
 
-    let now = Date.now();
-
     if (list == null || list.length == 0) {
       return;
     }
@@ -187,10 +185,9 @@ module.exports = class DNSManager {
 
       // resolve++;
 
+      const _ipsrc = o[ipsrc]
+      const _ipdst = o[ipdst]
       try {
-        const _ipsrc = o[ipsrc]
-        const _ipdst = o[ipdst]
-
         if(sysManager.isLocalIP(_ipsrc)) {
           // enrichDeviceCount++;
           await this.enrichDeviceIP(_ipsrc, o, "src")
