@@ -98,7 +98,7 @@ router.post('/delete',
 router.post('/match',
            (req, res, next) => {
              let alarmID = req.query.alarmID
-             let exceptionID = req.query.exceptionID
+             let exceptionID = req.query.exceptionID;
              
              (async() =>{
                let alarm = await am2.getAlarm(alarmID)

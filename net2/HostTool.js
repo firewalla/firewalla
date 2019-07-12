@@ -14,7 +14,7 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -28,9 +28,9 @@ const Hashes = require('../util/Hashes.js');
 
 let instance = null;
 
-let maxV6Addr = 8;
+const maxV6Addr = 8;
 
-var _async = require('async');
+const asyncNative = require('../util/asyncNative.js');
 
 const iptool = require('ip');
 
@@ -383,109 +383,87 @@ class HostTool {
    * we will use 8 for now
    */
 
-  ipv6Insert(ipv6array,v6addr,unspoof,callback) {
-      let removed = ipv6array.splice(maxV6Addr,1000);
-      log.info("V6 Overflow Check: ", ipv6array, v6addr);
-      if (v6addr) {
-          let oldindex = ipv6array.indexOf(v6addr);
-          if (oldindex != -1) {
-             ipv6array.splice(oldindex,1);
-          }
-          ipv6array.unshift(v6addr);
+  async ipv6Insert(ipv6array, v6addr, unspoof) {
+    let removed = ipv6array.splice(maxV6Addr, 1000);
+    log.info("V6 Overflow Check: ", ipv6array, v6addr);
+    if (v6addr) {
+      let oldindex = ipv6array.indexOf(v6addr);
+      if (oldindex != -1) {
+        ipv6array.splice(oldindex, 1);
       }
-      log.info("V6 Overflow Check Removed: ", removed);
+      ipv6array.unshift(v6addr);
+    }
+    log.info("V6 Overflow Check Removed:", removed);
 
-      if (unspoof && removed && removed.length>0) {
-          _async.eachLimit(removed, 10, (ip6, cb) => {
-              rclient.srem("monitored_hosts6", ip6,(err)=>{
-                  log.info("V6 Overflow Removed for real", ip6,err);
-                  cb();
-              });
-          }, (err) => {
-              callback(removed);
-          });
-      } else {
-          callback(null);
-      }
+    if (unspoof && removed && removed.length > 0) {
+      await asyncNative.eachLimit(removed, 10, async (ip6) => {
+        await rclient.sremAsync("monitored_hosts6", ip6)
+        log.info("V6 Overflow Removed for real", ip6);
+      })
+      return removed;
+    } else {
+      return null
+    }
   }
 
-  linkMacWithIPv6(v6addr, mac, callback) {
-    require('child_process').exec("ping6 -c 3 -I eth0 "+v6addr, (err, out, code) => {
-    });
+  async linkMacWithIPv6(v6addr, mac) {
+    await require('child-process-promise').exec("ping6 -c 3 -I eth0 " + v6addr)
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
     sysManager.setNeighbor(v6addr);
-    rclient.hgetall(v6key, (err, data) => {
-      log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, data, err);
-      if (err == null) {
-        if (data != null) {
-          data.mac = mac;
-          data.lastActiveTimestamp = Date.now() / 1000;
-        } else {
-          data = {};
-          data.mac = mac;
-          data.lastActiveTimestamp = Date.now() / 1000;
-          data.firstFoundTimestamp = data.lastActiveTimestamp;
-        }
-        rclient.hmset(v6key, data, (err, result) => {
-          log.debug("++++++ Discover:v6Neighbor:Scan:find", err, result);
-          let mackey = "host:mac:" + mac;
-          rclient.expireat(v6key, parseInt((+new Date) / 1000) + 604800); // 7 days
-          rclient.hgetall(mackey, (err, data) => {
-            log.info("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
-            if (err == null) {
-              if (data != null) {
-                let ipv6array = [];
-                if (data.ipv6Addr) {
-                  ipv6array = JSON.parse(data.ipv6Addr);
-                }
-
-                // only keep around 5 ipv6 around
-                /*
-                ipv6array = ipv6array.slice(0,8)
-                let oldindex = ipv6array.indexOf(v6addr);
-                if (oldindex != -1) {
-                  ipv6array.splice(oldindex,1);
-                }
-                ipv6array.unshift(v6addr);
-                */
-                this.ipv6Insert(ipv6array,v6addr,true,(removed)=>{
-                  data.mac = mac.toUpperCase();
-                  data.ipv6Addr = JSON.stringify(ipv6array);
-                  data.lastActiveTimestamp = Date.now() / 1000;
-                  log.info("HostTool:Writing Data:", mackey, data);
-                  rclient.hmset(mackey, data, (err, result) => {
-                    callback(err, null);
-                  });
-                });
-                //v6 at times will discver neighbors that not there ...
-                //so we don't update last active here
-                //data.lastActiveTimestamp = Date.now() / 1000;
-              } else {
-                data = {};
-                data.mac = mac.toUpperCase();
-                data.ipv6Addr = JSON.stringify([v6addr]);;
-                data.lastActiveTimestamp = Date.now() / 1000;
-                data.firstFoundTimestamp = data.lastActiveTimestamp;
-                log.info("HostTool:Writing Data:", mackey, data);
-                rclient.hmset(mackey, data, (err, result) => {
-                  callback(err, null);
-                });
-              }
-            } else {
-              log.error("Discover:v6Neighbor:Scan:Find:Error", err);
-              callback(null, null);
-            }
-          });
-
-        });
-      } else {
-        log.error("!!!!!!!!!!! Discover:v6Neighbor:Scan:Find:Error", err);
-        callback(null, null);
+    let ip6Host = await rclient.hgetallAsync(v6key)
+    log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host, err);
+    if (ip6Host != null) {
+      ip6Host.mac = mac;
+      ip6Host.lastActiveTimestamp = Date.now() / 1000;
+    } else {
+      ip6Host = {};
+      ip6Host.mac = mac;
+      ip6Host.lastActiveTimestamp = Date.now() / 1000;
+      ip6Host.firstFoundTimestamp = ip6Host.lastActiveTimestamp;
+    }
+    let result = await rclient.hmsetAsync(v6key, ip6Host)
+    log.debug("++++++ Discover:v6Neighbor:Scan:find", result);
+    let mackey = "host:mac:" + mac;
+    await rclient.expireatAsync(v6key, parseInt((+new Date) / 1000) + 604800); // 7 days
+    let macHost = await rclient.hgetallAsync(mackey)
+    log.info("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, macHost);
+    if (macHost != null) {
+      let ipv6array = [];
+      if (macHost.ipv6Addr) {
+        ipv6array = JSON.parse(macHost.ipv6Addr);
       }
-    });
+
+      // only keep around 5 ipv6 around
+      /*
+      ipv6array = ipv6array.slice(0,8)
+      let oldindex = ipv6array.indexOf(v6addr);
+      if (oldindex != -1) {
+        ipv6array.splice(oldindex,1);
+      }
+      ipv6array.unshift(v6addr);
+      */
+      await this.ipv6Insert(ipv6array, v6addr, true)
+      macHost.mac = mac.toUpperCase();
+      macHost.ipv6Addr = JSON.stringify(ipv6array);
+      macHost.lastActiveTimestamp = Date.now() / 1000;
+      log.info("HostTool:Writing macHost:", mackey, macHost);
+      await rclient.hmsetAsync(mackey, macHost)
+      //v6 at times will discver neighbors that not there ...
+      //so we don't update last active here
+      //macHost.lastActiveTimestamp = Date.now() / 1000;
+    } else {
+      macHost = {};
+      macHost.mac = mac.toUpperCase();
+      macHost.ipv6Addr = JSON.stringify([v6addr]);;
+      macHost.lastActiveTimestamp = Date.now() / 1000;
+      macHost.firstFoundTimestamp = macHost.lastActiveTimestamp;
+      log.info("HostTool:Writing macHost:", mackey, macHost);
+      await rclient.hmsetAsync(mackey, macHost)
+    }
+
   }
 
   async getIPv6AddressesByMAC(mac) {

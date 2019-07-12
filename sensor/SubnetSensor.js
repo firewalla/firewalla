@@ -62,7 +62,7 @@ class SubnetSensor extends Sensor {
             );
 
             am2.enqueueAlarm(alarm);
-            log.info('Created a subnet alarm', enriched.aid, 'for subnet', intf.subnet);
+            log.info('Created a subnet alarm', alarm.aid, 'for subnet', intf.subnet);
           }
         }
       };
