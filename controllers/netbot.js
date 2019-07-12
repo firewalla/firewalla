@@ -2501,7 +2501,6 @@ class netBot extends ControllerBot {
     }
 
     let value = msg.data.value;
-
     switch (msg.data.item) {
       case "upgrade":
         (async() =>{

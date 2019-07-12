@@ -66,12 +66,6 @@ class FamilyProtectPlugin extends Sensor {
                 await this.globalOff();
             }
         })
-
-        sem.on('FAMILYPROTECT_REFRESH', (event) => {
-            log.info("FAMILYPROTECT_REFRESH")
-            this.applyFamilyProtect();
-        });
-
         if (f.isMain()) {
             setInterval(() => {
                 this.checkIfRestartNeeded()
