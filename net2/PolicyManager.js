@@ -18,7 +18,6 @@ var instance = null;
 const log = require("./logger.js")("PolicyManager");
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-const fs = require('fs');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const fc = require('../net2/config.js');
 
@@ -572,7 +571,6 @@ module.exports = class {
         }
         continue;
       }
-      log.info("zhijietstsatwatat", p)
       // If any extension support this 'applyPolicy' hook, call it
       if (extensionManager.hasExtension(p)) {
         let hook = extensionManager.getHook(p, "applyPolicy")

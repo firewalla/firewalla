@@ -41,7 +41,6 @@ const fc = require('../net2/config.js');
 
 class FamilyProtectPlugin extends Sensor {
     async run() {
-        log.info("FamilyProtectPlugin run")
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
         this.enabledMacAddresses = {};
@@ -51,14 +50,12 @@ class FamilyProtectPlugin extends Sensor {
             stop: this.stop
         });
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        log.info("isFeatureOn", fc.isFeatureOn("family_protect"))
         if (fc.isFeatureOn("family_protect")) {
             await this.globalOn();
         } else {
             await this.globalOff();
         }
         fc.onFeature("family_protect", async (feature, status) => {
-            log.info("family_protect status change", feature, status)
             if (feature !== "family_protect") {
                 return;
             }
@@ -97,7 +94,6 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async job() {
-        log.info("family protect job")
         await this.applyFamilyProtect();
     }
 
@@ -132,7 +128,6 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async applyFamilyProtect() {
-        log.info("applyFamilyProtect")
         await this.applySystemFamilyProtect();
         for (const macAddress in this.enabledMacAddresses) {
             await this.applyDeviceFamilyProtect(macAddress);
@@ -140,7 +135,6 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async applySystemFamilyProtect() {
-        log.info("Applying family protect on system level");
         this.familyDnsAddr((err, dnsaddrs) => {
             if (this.systemSwitch && this.adminSystemSwitch) {
                 return this.systemStart(dnsaddrs);
@@ -151,7 +145,6 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async applyDeviceFamilyProtect(macAddress) {
-        log.info("Applying family protect on device", macAddress);
         this.familyDnsAddr((err, dnsaddrs) => {
             try {
                 if (this.enabledMacAddresses[macAddress]) {
@@ -166,13 +159,11 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async systemStart(dnsaddrs) {
-        log.info("systemStart", dnsaddrs)
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
         dnsmasq.updateResolvConf();
     }
 
     async systemStop(dnsaddrs) {
-        log.info("systemStop", dnsaddrs)
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
         dnsmasq.updateResolvConf();
     }
@@ -187,7 +178,6 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async perDeviceStart(macAddress, dnsaddrs) {
-        log.info("perDeviceStart", macAddress, dnsaddrs)
         const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
         const dnsmasqentry = `server=${dnsaddrs[0]}%${macAddress.toUpperCase()}\n`;
         await fs.writeFile(configFile, dnsmasqentry);
@@ -196,7 +186,6 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async perDeviceStop(macAddress, dnsaddrs) {
-        log.info("perDeviceStart", macAddress, dnsaddrs)
         const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
         await fs.unlink(configFile, err => {
             if (err) {

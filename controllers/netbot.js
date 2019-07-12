@@ -1160,7 +1160,6 @@ class netBot extends ControllerBot {
 
     // invalidate cache
     this.invalidateCache();
-    log.info("zhijietest")
     if(extMgr.hasSet(msg.data.item)) {
       log.info("zhijietest",msg)
       (async () => {
@@ -1173,7 +1172,6 @@ class netBot extends ControllerBot {
     }
 
     let value = msg.data.value;
-    log.info("asfsdfasdfsadfsa", msg)
     switch (msg.data.item) {
       case "policy":
         async2.eachLimit(Object.keys(value), 1, async2.ensureAsync((o, cb) => {
@@ -1285,7 +1283,6 @@ class netBot extends ControllerBot {
           default:
             let target = msg.target
             let policyData = value[o]
-            log.info("=============",target,policyData,o)
             if (target === "0.0.0.0") {
               this.hostManager.loadPolicy((err, data) => {
                 if(err) {
