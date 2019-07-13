@@ -126,7 +126,7 @@ class FamilyProtectPlugin extends Sensor {
     async applyDeviceFamilyProtect(macAddress) {
         this.familyDnsAddr((err, dnsaddrs) => {
             try {
-                if (this.enabledMacAddresses[macAddress]) {
+                if (this.enabledMacAddresses[macAddress] && this.adminSystemSwitch) {
                     return this.perDeviceStart(macAddress, dnsaddrs)
                 } else {
                     return this.perDeviceStop(macAddress, dnsaddrs);

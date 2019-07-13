@@ -349,7 +349,7 @@ class SafeSearchPlugin extends Sensor {
     log.info("Applying safe search on device", macAddress);
 
     try {
-      if(this.enabledMacAddresses[macAddress]) {
+      if(this.enabledMacAddresses[macAddress] && this.adminSystemSwitch) {
         const config = await this.getSafeSearchConfig();
         return this.perDeviceStart(macAddress, config)
       } else {
