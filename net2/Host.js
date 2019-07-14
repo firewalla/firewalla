@@ -859,21 +859,6 @@ class Host {
     return ip + "\t" + name + " (" + Math.ceil((now - this.o.lastActiveTimestamp) / 60) + "m)" + " " + this.o.mac;
   }
 
-  getPreferredBName() {
-
-    // TODO: preferred name needs to be improved in the future
-    if(this.o.dhcpName) {
-      return this.o.dhcpName
-    }
-
-    if(this.o.bonjourName) {
-      return this.o.bonjourName
-    }
-
-
-    return this.o.bname
-  }
-
   getNameCandidates() {
     let names = []
 
@@ -925,7 +910,7 @@ class Host {
       json.ip = this.o.ipv4;
     }
 
-    let preferredBName = this.getPreferredBName()
+    const preferredBName = getPreferredBName(this.o)
 
     if (preferredBName) {
       json.bname = preferredBName
