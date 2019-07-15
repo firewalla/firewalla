@@ -472,13 +472,13 @@ class SafeSearchPlugin extends Sensor {
   async globalOn() {
     await this.addIptablesRules();
     this.adminSystemSwitch = true;
-    await this.applySystemSafeSearch();
+    await this.applySafeSearch();
   }
 
   async globalOff() {
     await this.removeIptablesRules();
     this.adminSystemSwitch = false;
-    await this.applySystemSafeSearch();
+    await this.applySafeSearch();
   }
 
   async addIptablesRules() {
