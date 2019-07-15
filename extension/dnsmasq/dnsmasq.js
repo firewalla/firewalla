@@ -1292,7 +1292,11 @@ module.exports = class DNSMASQ {
       const cleanupPromises = configFolders.map(configFolder => {
         (async () => {
           const files = await fs.readdirAsync(configFolder)
-          files.map(filename => fs.unlinkAsync(`${configFolder}/${filename}`));
+          files.map(filename => {
+            if(filename.indexOf('safeSearch')>-1){
+              fs.unlinkAsync(`${configFolder}/${filename}`)
+            }
+          });
         })()
       })
       await Promise.all(cleanupPromises)
