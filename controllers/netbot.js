@@ -2498,6 +2498,7 @@ class netBot extends ControllerBot {
         })
         break
       case "spoofMe":
+        log.info("zhijie test", value)
         (async() => {
           let ip = value.ip
           let name = value.name
