@@ -114,7 +114,7 @@ module.exports = class DNSMASQ {
         adblock: undefined,
         family: undefined
       };
-
+      
       this.reloadCount = {
         adblock: 0,
         family: 0
@@ -130,7 +130,9 @@ module.exports = class DNSMASQ {
         writeHostsFile: 0,
         restart: 0
       }
-
+      this.level = {
+        adblock: undefined
+      }
       sem.once('IPTABLES_READY', () => {
         if (f.isMain()) {
           setInterval(() => {
@@ -300,7 +302,6 @@ module.exports = class DNSMASQ {
     let preState = this.state[type];
     let nextState = this.nextState[type];
     this.state[type] = nextState;
-
     log.info(`in reloadFilter(${type}): preState: ${preState}, nextState: ${this.state[type]}, this.reloadCount: ${this.reloadCount[type]++}`);
 
     if (nextState === true) {
@@ -326,8 +327,9 @@ module.exports = class DNSMASQ {
     }
   }
 
-  controlFilter(type, state) {
+  controlFilter(type, state, level) {
     this.nextState[type] = state;
+    this.level[type] = level;
     log.info(`${type} nextState is: ${this.nextState[type]}`);
     if (this.state[type] !== undefined) {
       // already timer running, clear existing ones before trigger next round immediately
@@ -692,9 +694,9 @@ module.exports = class DNSMASQ {
       if (type === "family") {
         targetIP = BLUE_HOLE_IP
       }
-
+      const tag = this.level[type] == "system" ? "" : "$ad_block";
       hashes.forEach((hash) => {
-        let line = util.format("hash-address=/%s/%s\n", hash.replace(/\//g, '.'), targetIP)
+        let line = util.format("hash-address=/%s/%s/%s\n", hash.replace(/\//g, '.'), targetIP, tag)
         writer.write(line);
       });
       
