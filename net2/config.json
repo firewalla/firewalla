@@ -78,7 +78,8 @@
     "GuardianSensor": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
-    "FamilyProtectPlugin": {}
+    "FamilyProtectPlugin": {},
+    "AdblockPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -373,6 +374,7 @@
       }
     },
     "FamilyProtectPlugin": {},
+    "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "ICMP6Sensor": {},
