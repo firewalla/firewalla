@@ -1282,4 +1282,26 @@ module.exports = class DNSMASQ {
       }
     }
   }
+
+  async cleanUpLeftoverConfig(){
+    try{
+      const userConfigFolder = f.getUserConfigFolder(),
+            dnsConfigFolder = `${userConfigFolder}/dns`,
+            devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
+      const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
+      const cleanupPromises = configFolders.map(configFolder => {
+        (async () => {
+          const files = await fs.readdirAsync(configFolder)
+          files.map(filename => {
+            if(filename.indexOf('safeSearch')>-1){
+              fs.unlinkAsync(`${configFolder}/${filename}`)
+            }
+          });
+        })()
+      })
+      await Promise.all(cleanupPromises)
+    }catch(err){
+      log.info("clean up leftover config", err)
+    }
+  }
 };
