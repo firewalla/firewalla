@@ -871,7 +871,6 @@ class netBot extends ControllerBot {
 
     // invalidate cache
     this.invalidateCache();
-
     if(extMgr.hasSet(msg.data.item)) {
       (async () => {
         const result = await extMgr.set(msg.data.item, msg, msg.data.value)
@@ -883,7 +882,6 @@ class netBot extends ControllerBot {
     }
 
     let value = msg.data.value;
-
     switch (msg.data.item) {
       case "policy":
         (async() => {
@@ -2061,7 +2059,6 @@ class netBot extends ControllerBot {
     }
 
     let value = msg.data.value;
-
     switch (msg.data.item) {
       case "upgrade":
         (async() =>{

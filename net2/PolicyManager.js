@@ -18,7 +18,6 @@ var instance = null;
 const log = require("./logger.js")("PolicyManager");
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const fc = require('../net2/config.js');
 
@@ -36,8 +35,6 @@ const upnp = new UPNP();
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
-
-const firewalla = require('../net2/Firewalla.js');
 
 let externalAccessFlag = false;
 
@@ -104,95 +101,6 @@ module.exports = class {
     sem.emitEvent({
       type: 'IPTABLES_READY'
     });
-  }
-
-  familyDnsAddr(callback) {
-    firewalla.getBoneInfo((err, data) => {
-      if (data && data.config && data.config.dns && data.config.dns.familymode) {
-        callback(null, data.config.dns.familymode);
-      } else {
-        callback(null, FAMILY_DNS);
-      }
-    });
-  }
-
-  family(ip, state, callback) {
-    const ver = features.getVersion('familyMode');
-    switch (ver) {
-      case 'v2':
-        this.familyV2(ip, state, callback);
-        break;
-      case 'v1':
-      default:
-        this.familyV1(ip, state, callback);
-    }
-  }
-
-  familyV1(ip, state, callback) {
-    callback = callback || function () {
-    }
-
-    if (ip !== "0.0.0.0") {
-      callback(null)
-      return
-    }
-
-    // rm family_filter.conf from v2
-    log.info('Dnsmasq: remove family_filter.conf from v2');
-    require('fs').unlink(firewalla.getUserConfigFolder() + '/dns/family_filter.conf', err => {
-      if (err) {
-        if (err.code === 'ENOENT') {
-          log.info('Dnsmasq: No family_filter.conf, skip remove');
-        } else {
-          log.warn('Dnsmasq: Error when remove family_filter.conf', err);
-        }
-      }
-    });
-
-    this.familyDnsAddr((err, dnsaddrs) => {
-      log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
-      if (state == true) {
-        dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf().then(() => callback());
-      } else {
-        dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf().then(() => callback());
-      }
-    });
-  }
-
-  familyV2(ip, state, callback) {
-    callback = callback || function () {
-    }
-
-    if (ip !== "0.0.0.0") {
-      callback(null)
-      return
-    }
-
-    this.familyDnsAddr((err, dnsaddrs) => {
-      log.info("PolicyManager:Family:IPTABLE", ip, state, dnsaddrs.join(" "));
-      if (state === true) {
-        dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf().then(callback);
-
-        // auto redirect all porn traffic in v2 mode
-        categoryUpdater.iptablesRedirectCategory("porn").catch((err) => {
-          log.error("Failed to redirect porn traffic, err", err);
-        })
-      } else {
-        dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf().then(callback);
-
-        // auto redirect all porn traffic in v2 mode
-        categoryUpdater.iptablesUnredirectCategory("porn").catch((err) => {
-          log.error("Failed to unredirect porn traffic, err", err);
-        })
-      }
-    });
-
-    log.info("PolicyManager:Family:Dnsmasq", ip, state);
-    dnsmasq.controlFilter('family', state);
   }
 
   adblock(ip, state, callback) {
@@ -466,7 +374,6 @@ module.exports = class {
   }
 
   execute(host, ip, policy, callback) {
-
     if (host.oper == null) {
       host.oper = {};
     }
@@ -479,7 +386,6 @@ module.exports = class {
         callback(null, null);
       return;
     }
-
     log.debug("PolicyManager:Execute:", ip, policy);
 
     for (let p in policy) {
@@ -490,7 +396,6 @@ module.exports = class {
         }
         continue;
       }
-
       // If any extension support this 'applyPolicy' hook, call it
       if (extensionManager.hasExtension(p)) {
         let hook = extensionManager.getHook(p, "applyPolicy")
@@ -502,10 +407,7 @@ module.exports = class {
           }
         }
       }
-
-      if (p === "family") {
-        this.family(ip, policy[p], null);
-      } else if (p === "adblock") {
+      if (p === "adblock") {
         this.adblock(ip, policy[p], null);
       } else if (p === "upstreamDns") {
         (async () => {
@@ -546,7 +448,6 @@ module.exports = class {
     }
 
     // put dnsmasq logic at the end, as it is foundation feature
-    // e.g. adblock/family feature might configure something in dnsmasq
 
     if (policy["dnsmasq"]) {
       if (host.oper["dnsmasq"] != null &&
