@@ -171,12 +171,12 @@ class FamilyProtectPlugin extends Sensor {
     // global on/off
     async globalOn() {
         this.adminSystemSwitch = true;
-        await this.applySystemFamilyProtect();
+        await this.applyFamilyProtect();
     }
 
     async globalOff() {
         this.adminSystemSwitch = false;
-        await this.applySystemFamilyProtect();
+        await this.applyFamilyProtect();
     }
 
     familyDnsAddr(callback) {
