@@ -43,9 +43,6 @@ const sysManager = new SysManager('info');
 
 const l2 = require('../util/Layer2.js');
 
-
-var _async = require('async');
-
 const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 
@@ -164,10 +161,10 @@ class DeviceHook extends Hook {
 
     sem.on("DeviceUpdate", (event) => {
       let host = event.host
-      let mac = host.mac;      
+      let mac = host.mac;
 
       if(mac != null) {
-        this.processDeviceUpdate(event)        
+        this.processDeviceUpdate(event)
       } else {
         let ip = host.ipv4 || host.ipv4Addr
         if(ip) {
@@ -184,17 +181,17 @@ class DeviceHook extends Hook {
 
     });
 
-    sem.on("IPv6DeviceInfoUpdate",(event)=>{
+    sem.on("IPv6DeviceInfoUpdate", async (event)=>{
       let host = event.host;
 
-      
+
       if (host.ipv6Addr && host.ipv6Addr.length>0) {
-        log.info(util.format("A new IPv6DeviceInfoUpdate device %s - %s - %s is found!", host.ipv6Addr, host.mac));
-        
-        _async.eachLimit(host.ipv6Addr, 1, (v6, cb) => {
-          hostTool.linkMacWithIPv6(v6,host.mac,cb);    
-        }, (err) => {
-        });
+        log.info(`A new IPv6DeviceInfoUpdate device ${host.ipv6Addr} - ${host.mac} is found!`);
+
+        for (const v6 of host.ipv6Addr) {
+          await hostTool.linkMacWithIPv6(v6, host.mac)
+            .catch(log.error)
+        }
       }
     });
 
@@ -293,12 +290,12 @@ class DeviceHook extends Hook {
       (async() => {
         let macData = await hostTool.getMACEntry(host.mac);
         let currentTimestamp = new Date() / 1000;
-        
+
         let firstFoundTimestamp = macData.firstFoundTimestamp;
         let lastActiveTimestamp = macData.lastActiveTimestamp;
         if(!firstFoundTimestamp)
           firstFoundTimestamp = currentTimestamp;
-        
+
         let enrichedHost = extend({}, host, {
           uid: host.ipv4Addr,
           firstFoundTimestamp: firstFoundTimestamp,
@@ -314,7 +311,7 @@ class DeviceHook extends Hook {
         if(enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
         }
-        
+
         if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
           // Become active again after a while, create a DeviceBackOnlineAlarm
           log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
@@ -333,13 +330,13 @@ class DeviceHook extends Hook {
         }
 
         await hostTool.updateMACKey(enrichedHost); // mac
-        
+
 
         log.info("MAC entry is updated with new IP");
-        
+
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
         let hostManager = new HostManager("cli", 'server', 'info')
-        hostManager.getHost(host.ipv4Addr);                                     
+        hostManager.getHost(host.ipv4Addr);
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err);
       })
@@ -353,12 +350,12 @@ class DeviceHook extends Hook {
       (async() => {
         let macData = await hostTool.getMACEntry(host.mac);
         let currentTimestamp = new Date() / 1000;
-        
+
         let firstFoundTimestamp = macData.firstFoundTimestamp;
         let lastActiveTimestamp = macData.lastActiveTimestamp;
         if(!firstFoundTimestamp)
           firstFoundTimestamp = currentTimestamp;
-        
+
         let enrichedHost = extend({}, host, {
           uid: host.ipv4Addr,
           firstFoundTimestamp: firstFoundTimestamp,
@@ -406,7 +403,7 @@ class DeviceHook extends Hook {
         // Another issue in this scenario is that this could mess up flow-device mappings
         // which could only be fix once flow is associated with mac address
         await hostTool.removeDupIPv4FromMacEntry(event.oldMac, host.ipv4Addr);
-        
+
         log.info("MAC entry is updated with new IP");
 
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
@@ -462,7 +459,7 @@ class DeviceHook extends Hook {
             }
           }
         }
-        
+
         await hostTool.updateMACKey(enrichedHost); // host:mac:.....
 
         // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
@@ -486,12 +483,12 @@ class DeviceHook extends Hook {
         //       log.error("Failed to create mac entry:", err, err.stack);
         //     })
 
-        // })        
+        // })
       })().catch((err) => {
         log.error("Failed to create host entry:", err, err.stack);
       });
-    
-      
+
+
     });
 
     sem.on("DeviceOffline", (event) => {
@@ -514,7 +511,7 @@ class DeviceHook extends Hook {
     });
   }
 
-  /* 
+  /*
    * ipv6 address fields works like a queue.  oldest discovered ipv6 address
    * at index 0.  any newly discovered ip must be placed at the end by taking
    * out from its old possition
@@ -578,7 +575,7 @@ class DeviceHook extends Hook {
     }
     return false; // by default return false, a conservative fallback
   }
-  
+
   createAlarm(host, type) {
     type = type || "new_device";
 

@@ -135,12 +135,12 @@ router.post('/simple', (req, res, next) => {
   body.message.obj.data.alarmduration= req.query.alarmduration
   body.message.obj.data.direction = req.query.direction
 
-  
+
   try {
     const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
 
 //    const c = JSON.parse(content)
-    body.message.obj.data.value = content
+    body.message.obj.data.value = content;
 
     (async() =>{
       let controller = await cloudWrapper.getNetBotController(gid)
@@ -157,8 +157,11 @@ router.post('/simple', (req, res, next) => {
       });
 
   } catch(err) {
-    res.status(400).send({error: err})
-  }  
+    res.status(400).send({
+      error: err.message,
+      stack: err.stack
+    })
+  }
 })
 
 module.exports = router;

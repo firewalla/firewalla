@@ -41,7 +41,7 @@ function print(flow, app, category) {
 }
 
 if(program.ip) {
-  let ip = program.ip
+  let ip = program.ip;
 
   (async() =>{
 

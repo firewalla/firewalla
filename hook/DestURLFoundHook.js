@@ -14,11 +14,11 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
-let Hook = require('./Hook.js');
+const Hook = require('./Hook.js');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -26,12 +26,10 @@ const f = require("../net2/Firewalla.js")
 
 const Promise = require('bluebird');
 
-let DNSManager = require('../net2/DNSManager.js');
-let dnsManager = new DNSManager('info'); 
-let IntelTool = require('../net2/IntelTool');
-let intelTool = new IntelTool();
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 
-let flowUtil = require('../net2/FlowUtil.js');
+const flowUtil = require('../net2/FlowUtil.js');
 
 const sl = require('../sensor/SensorLoader.js');
 

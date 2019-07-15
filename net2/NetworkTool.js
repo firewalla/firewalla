@@ -93,29 +93,25 @@ class NetworkTool {
   //     dns: ['192.168.10.1'],
   //   },
   // ]
-  listInterfaces() {
-    return new Promise((resolve, reject) => {
-      linux.get_network_interfaces_list((err, list) => {
-        if (list == null || list.length <= 0) {
-          log.error('Discovery::Interfaces', 'No interfaces found');
-          resolve([]);
-          return;
-        }
+  async listInterfaces() {
+    let list = await linux.get_network_interfaces_list()
+    if (list == null || list.length <= 0) {
+      log.error('Discovery::Interfaces', 'No interfaces found');
+      return [];
+    }
 
-        list = list.filter(this._is_interface_valid);
+    list = list.filter(this._is_interface_valid);
 
-        list.forEach(i => {
-          log.info('Found interface', i.name, i.ip_address);
+    list.forEach(i => {
+      log.info('Found interface', i.name, i.ip_address);
 
-          i.gateway = require('netroute').getGateway(i.name);
-          i.subnet = this._getSubnet(i.name, 'IPv4');
-          i.gateway6 = linux.gateway_ip6_sync();
-          i.dns = dns.getServers();
-        });
-
-        resolve(list);
-      });
+      i.gateway = require('netroute').getGateway(i.name);
+      i.subnet = this._getSubnet(i.name, 'IPv4');
+      i.gateway6 = linux.gateway_ip6_sync();
+      i.dns = dns.getServers();
     });
+
+    return list
   }
 
   // same as listInterfaces() but filters out non-local interfaces

@@ -278,13 +278,13 @@ module.exports = class {
     return delay(500)
   }
 
-  _start() {
+  async _start() {
     const serviceName = this._getServiceName();
     const serviceFilePath = this._getServiceFilePath();
     const configFilePath = this._getConfigPath();
     const frpCmd = `${frpDirectory}/frpc.${firewalla.getPlatform()}`;
     /*
-    // TODO: ini file needs to be customized before being used
+      // TODO: ini file needs to be customized before being used
     const args = ["-c", configFilePath];
 
     this.cp = spawn(cmd, args, {cwd: frpDirectory, encoding: 'utf8', detached: true});
@@ -293,21 +293,20 @@ module.exports = class {
     log.info("frp process id: " + childPid);
     */
 
-    return new Promise(async (resolve, reject) => {
-      // generate service spec file 
-      let templateData = await readFile(serviceTemplateFile, 'utf8');
-      templateData = templateData.replace(/FRPC_COMMAND/g, frpCmd);
-      templateData = templateData.replace(/FRPC_CONF/g, configFilePath);
-      await writeFile(serviceFilePath, templateData, 'utf8');
+    // generate service spec file
+    let templateData = await readFile(serviceTemplateFile, 'utf8');
+    templateData = templateData.replace(/FRPC_COMMAND/g, frpCmd);
+    templateData = templateData.replace(/FRPC_CONF/g, configFilePath);
+    await writeFile(serviceFilePath, templateData, 'utf8');
 
-      spawnSync('sudo', ['cp', serviceFilePath, '/etc/systemd/system/']);
-      const cp = spawn('sudo', ['systemctl', 'start', serviceName]);
-      let hasTimeout = true;
+    spawnSync('sudo', ['cp', serviceFilePath, '/etc/systemd/system/']);
+    const cp = spawn('sudo', ['systemctl', 'start', serviceName]);
+    let hasTimeout = true;
+    cp.stderr.on('data', (data) => {
+      log.error(data.toString())
+    })
 
-      cp.stderr.on('data', (data) => {
-        log.error(data.toString())
-      })
-      
+    return new Promise((resolve, reject) => {
       cp.on('exit', (code, signal) => {
         if (code === 0) {
           log.info("Service " + serviceName + " started successfully");
@@ -319,7 +318,7 @@ module.exports = class {
           log.error("Failed to start " + serviceName, code, signal);
         }
       })
-      
+
       /*
       process.on('exit', () => {
         this._stop();
@@ -334,6 +333,7 @@ module.exports = class {
           reject(new Error("Failed to start frp"));
         }
       })
+
     })
   }
 

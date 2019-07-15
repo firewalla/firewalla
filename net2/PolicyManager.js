@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,9 +27,6 @@ const ip6table = require('./Ip6tables.js');
 
 const Block = require('../control/Block.js');
 
-const CronJob = require('cron').CronJob;
-const async = require('async');
-
 const VpnManager = require('../vpn/VpnManager.js');
 
 const extensionManager = require('../sensor/ExtensionManager.js')
@@ -53,10 +50,6 @@ const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 let FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
 let ADBLOCK_DNS = ["8.8.8.8"]; // these are just backup servers
 
-const ip = require('ip');
-
-const b = require('../control/Block.js');
-
 const features = require('../net2/features');
 
 const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
@@ -66,32 +59,12 @@ const categoryUpdater = new CategoryUpdater()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-/*
-127.0.0.1:6379> hgetall policy:mac:28:6A:BA:1E:14:EE
-1) "blockin"
-2) "false"
-3) "blockout"
-4) "false"
-5) "family"
-6) "false"
-7) "monitor"
-8) "true"
-
-'block'
-{[
-  'id':'uid',
-  'state':true/false
-  'app:'...',
-  'cron':'...',
-  'timezone':'',
-]}
-
-*/
+const util = require('util')
 
 let iptablesReady = false
 
 module.exports = class {
-  constructor(loglevel) {
+  constructor() {
     if (instance == null) {
       instance = this;
     }
@@ -124,125 +97,13 @@ module.exports = class {
     iptable.run(defaultTable);
 
     // Setup iptables so that it's ready for blocking
-    await require('../control/Block.js').setupBlockChain();
+    await Block.setupBlockChain();
 
     iptablesReady = true
 
     sem.emitEvent({
       type: 'IPTABLES_READY'
     });
-  }
-
-  block(mac, protocol, src, dst, sport, dport, state, callback) {
-    if (state == true) {
-      if (sysManager.isMyServer(dst) || sysManager.isMyServer(src)) {
-        log.error("PolicyManager:block:blockself", src, dst, state);
-        callback(null);
-        return;
-      }
-    }
-    if (ip.isV4Format(src) && ip.isV4Format(dst)) {
-      this.block4(mac, protocol, src, dst, sport, dport, state, callback);
-    } else {
-      // there is a problem with these kind of block.  Ipv6 blocking is not
-      // supported for incoming (dst is home and src is some where in
-      // internet
-      if (ip.isV4Format(dst)) {
-        callback(null, null);
-        return;
-      }
-      this.block6(mac, protocol, src, dst, sport, dport, state, callback);
-    }
-  }
-
-  block4(mac, protocol, src, dst, sport, dport, state, callback) {
-    let action = '-A';
-    if (state == false || state == null) {
-      action = "-D";
-    }
-    let p = {
-      action: action,
-      chain: "FORWARD",
-      sudo: true,
-    };
-
-    if (src && src != "0.0.0.0") {
-      if (sysManager.isLocalIP(src) && mac) {
-        p.mac = mac;
-      } else {
-        p.src = src;
-      }
-    }
-    if (dst && dst != "0.0.0.0") {
-      p.dst = dst;
-    }
-    if (dport) {
-      p.dport = dport;
-    }
-    if (sport) {
-      p.sport = sport;
-    }
-    if (protocol) {
-      p.protocol = protocol;
-    }
-
-    log.info("PolicyManager:Block:IPTABLE4", JSON.stringify(p), src, dst, sport, dport, state);
-    if (state == true) {
-      p.action = "-D";
-      iptable.drop(p, null);
-      let p2 = JSON.parse(JSON.stringify(p));
-      p2.action = "-A";
-      iptable.drop(p2, callback);
-    } else {
-      iptable.drop(p, callback);
-    }
-
-  }
-
-  block6(mac, protocol, src, dst, sport, dport, state, callback) {
-    let action = '-A';
-    if (state == false || state == null) {
-      action = "-D";
-    }
-    let p = {
-      action: action,
-      chain: "FORWARD",
-      sudo: true,
-    };
-
-    if (src) {
-      if (sysManager.isLocalIP(src) && mac) {
-        p.mac = mac;
-      } else {
-        p.src = src;
-      }
-    }
-    if (dst) {
-      p.dst = dst;
-    }
-
-    if (dport) {
-      p.dport = dport;
-    }
-    if (sport) {
-      p.sport = sport;
-    }
-    if (protocol) {
-      p.protocol = protocol;
-    }
-
-    log.info("PolicyManager:Block:IPTABLE6", JSON.stringify(p), src, dst, sport, dport, state);
-    if (state == true) {
-      p.action = "-D";
-      ip6table.drop(p);
-      let p2 = JSON.parse(JSON.stringify(p));
-      p2.action = "-A";
-      ip6table.drop(p2, callback);
-    } else {
-      p.action = "-D";
-      ip6table.drop(p, callback);
-    }
-
   }
 
   familyDnsAddr(callback) {
@@ -314,7 +175,7 @@ module.exports = class {
       if (state === true) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
         dnsmasq.updateResolvConf().then(callback);
-        
+
         // auto redirect all porn traffic in v2 mode
         categoryUpdater.iptablesRedirectCategory("porn").catch((err) => {
           log.error("Failed to redirect porn traffic, err", err);
@@ -379,36 +240,6 @@ module.exports = class {
     return resp;
   }
 
-  hblock(host, state) {
-    log.info("PolicyManager:Block:IPTABLE", host.name(), host.o.ipv4Addr, state);
-    if (state) {
-      b.blockMac(host.o.mac);
-    } else {
-      b.unblockMac(host.o.mac);
-    }
-    /*
-   
-           this.block(null,null, host.o.ipv4Addr, null, null, state, (err, data) => {
-              this.block(null,host.o.ipv4Addr, null, null, null, state, (err, data) => {
-               for (let i in host.ipv6Addr) {
-                   this.block6(null,null, host.ipv6Addr[i], null, null, state,(err,data)=>{
-                       this.block6(null,host.ipv6Addr[i],null, null, null, state,(err,data)=>{
-                       });
-                   });
-               }
-             });
-           });
-   */
-  }
-
-  hfamily(host, state, callback) {
-    log.info("PolicyManager:Family:IPTABLE", host.name());
-    this.family(host.o.ipv4Addr, state, callback);
-    for (let i in host.ipv6Addr) {
-      this.family(host.ipv6Addr[i], state, callback);
-    }
-  }
-
   async vpnClient(host, policy) {
     const updatedPolicy = JSON.parse(JSON.stringify(policy));
     const result = await host.vpnClient(policy);
@@ -445,38 +276,24 @@ module.exports = class {
     if (conf == null) {
       log.error("PolicyManager:VPN", "Failed to configure vpn");
       return;
-    } else {
-      if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
-        conf = await vpnManager.stop();
-        log.error("PolicyManager:VPN", "VPN Not avaliable");
-        const updatedConfig = Object.assign({}, config, conf);
-        host.setPolicy("vpn", updatedConfig);
-        return;
-      }
-      if (config.state == true) {
-        conf = await vpnManager.start();
-        // vpnManager.start() will return latest status of VPN server, which needs to be updated and re-enforced in system policy
-        const updatedConfig = Object.assign({}, config, conf);
-        host.setPolicy("vpn", updatedConfig, (err) => {
-          if (updatedConfig.portmapped) {
-            host.setPolicy("vpnPortmapped", true);
-          } else {
-            host.setPolicy("vpnPortmapped", false);
-          }
-        });
-      } else {
-        conf = await vpnManager.stop();
-        // vpnManager.stop() will return latest status of VPN server, which needs to be updated and re-enforced in system policy
-        const updatedConfig = Object.assign({}, config, conf);
-        host.setPolicy("vpn", updatedConfig, (err) => {
-          if (updatedConfig.portmapped) {
-            host.setPolicy("vpnPortmapped", true);
-          } else {
-            host.setPolicy("vpnPortmapped", false);
-          }
-        });
-      }
     }
+
+    if (policies.vpnAvaliable == null || policies.vpnAvaliable == false) {
+      conf = await vpnManager.stop();
+      log.error("PolicyManager:VPN", "VPN Not avaliable");
+      const updatedConfig = Object.assign({}, config, conf);
+      await host.setPolicyAsync("vpn", updatedConfig);
+      return;
+    }
+    if (config.state == true) {
+      conf = await vpnManager.start();
+    } else {
+      conf = await vpnManager.stop();
+    }
+    // vpnManager.start() will return latest status of VPN server, which needs to be updated and re-enforced in system policy
+    const updatedConfig = Object.assign({}, config, conf);
+    await host.setPolicyAsync("vpn", updatedConfig)
+    await host.setPolicyAsync("vpnPortmapped", updatedConfig.portmapped);
   }
 
   scisurf(host, config) {
@@ -485,7 +302,7 @@ module.exports = class {
       return; // doesn't support per-device policy
     }
 
-    if (config.state == true) {      
+    if (config.state == true) {
       (async () => {
         const client = await ssClientManager.getSSClient();
         await client.start();
@@ -497,9 +314,9 @@ module.exports = class {
       })
 
     } else {
-      
       (async () => {
         const client = await ssClientManager.getSSClient();
+        if (!client) return
         await client.unRedirectTraffic();
         await client.stop();
         log.info("SciSurf feature is disabled successfully for traffic redirection");
@@ -531,7 +348,7 @@ module.exports = class {
       return Block.delMacFromSet([host.o.mac], 'device_whitelist_set')
   }
 
-  shadowsocks(host, config, callback) {
+  shadowsocks(host, config) {
     if(host.constructor.name !== 'HostManager') {
       log.error("shadowsocks doesn't support per device policy", host);
       return; // doesn't support per-device policy
@@ -565,7 +382,7 @@ module.exports = class {
     }
   }
 
-  dnsmasq(host, config, callback) {
+  dnsmasq(host, config) {
     if(host.constructor.name !== 'HostManager') {
       // per-device dnsmasq policy
       host._dnsmasq(config);
@@ -633,7 +450,7 @@ module.exports = class {
 
   }
 
-  externalAccess(host, config, callback) {
+  externalAccess(host, config) {
     if(host.constructor.name !== 'HostManager') {
       log.error("externalAccess doesn't support per device policy", host);
       return; // doesn't support per-device policy
@@ -686,14 +503,7 @@ module.exports = class {
         }
       }
 
-      if (p === "acl") {
-        continue;
-      } else if (p === "blockout") {
-        this.block(null, null, ip, null, null, null, policy[p]);
-      } else if (p === "blockin") {
-        this.hblock(host, policy[p]);
-        //    this.block(null,ip,null,null,policy[p]);
-      } else if (p === "family") {
+      if (p === "family") {
         this.family(ip, policy[p], null);
       } else if (p === "adblock") {
         this.adblock(ip, policy[p], null);
@@ -727,51 +537,6 @@ module.exports = class {
         this.ipAllocation(host, policy[p]);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
-      } else if (p === "block") {
-        if (host.policyJobs != null) {
-          for (let key in host.policyJobs) {
-            let job = host.policyJobs[key];
-            job.stop();
-          }
-          host.policyJobs = {};
-        } else {
-          host.policyJobs = {};
-        }
-        let block = policy[p];
-        // for now always block according to cron
-
-        let id = block['id'];
-        if (id == null) {
-          log.info("PolicyManager:Cron:Remove", block);
-          continue;
-        }
-        if (block['cron'] == null && block['timezone'] == null) {
-          continue;
-        }
-        if (block['cron'].length < 6) {
-          log.info("PolicyManager:Cron:Remove", block);
-          continue;
-        }
-        //host.policyJobs[id]= new CronJob('00 30 11 * * 1-5', function() {
-
-        log.info("PolicyManager:Cron:Install", block);
-        host.policyJobs[id] = new CronJob(block.cron, () => {
-            log.info("PolicyManager:Cron:On=====", block);
-            this.block(null, null, ip, null, null, null, true);
-            if (block.duration) {
-              setTimeout(() => {
-                log.info("PolicyManager:Cron:Done=====", block);
-                this.block(null, null, ip, null, null, null, false);
-              }, block.duration * 1000 * 60);
-            }
-          }, () => {
-            /* This function is executed when the job stops */
-            log.info("PolicyManager:Cron:Off=====", block);
-            this.block(null, null, ip, null, null, null, false);
-          },
-          true, /* Start the job right now */
-          block.timeZone /* Time zone of this job. */
-        );
       }
 
       if (p !== "dnsmasq") {
@@ -805,85 +570,7 @@ module.exports = class {
       callback(null, null);
   }
 
-
-  // policy { dst, src, done (true/false), state (true/false) }
-
-  executeAcl(host, ip, policy, callback) {
-    if (policy == null) {
-      if (callback) {
-        callback(null, null);
-      }
-      return;
-    }
-    log.debug("PolicyManager:ApplyingAcl", policy);
-    if (host.appliedAcl == null) {
-      host.appliedAcl = {};
-    }
-
-    /* iterate policies and see if anything need to be modified */
-    for (let p in policy) {
-      let block = policy[p];
-      if (block._src || block._dst) {
-        let newblock = JSON.parse(JSON.stringify(block));
-        block.state = false;
-        if (block._src) {
-          newblock.src = block._src;
-          delete block._src;
-          delete newblock._src;
-        }
-        if (block._dst) {
-          newblock.dst = block._dst;
-          delete block._dst;
-          delete newblock._dst;
-        }
-        policy.push(newblock);
-        log.info("PolicyManager:ModifiedACL", block, newblock);
-      }
-    }
-
-    async.eachLimit(policy, 10, async.ensureAsync((block, cb) => {
-      if (policy.done != null && policy.done == true) {
-        cb();
-      } else {
-        let {mac, protocol, src, dst, sport, dport, state} = block;
-        if (dst != null && src != null) {
-          let aclkey = dst + "," + src;
-          if (protocol != null) {
-            aclkey = dst + "," + src + "," + protocol + "," + sport + "," + dport;
-          }
-          if (host.appliedAcl[aclkey] && host.appliedAcl[aclkey].state == state) {
-            cb();
-          } else {
-            this.block(mac, protocol, src, dst, sport, dport, state, (err) => {
-              if (err == null) {
-                if (state == false) {
-                  block.done = true;
-                }
-              }
-              if (block.duplex && block.duplex == true) {
-                this.block(mac, protocol, dst, src, dport, sport, state, (err) => {
-                  cb();
-                });
-              } else {
-                cb();
-              }
-            });
-            host.appliedAcl[aclkey] = block;
-          }
-        } else {
-          cb();
-        }
-      }
-    }), (err) => {
-      let changed = false;
-      for (var i = policy.length - 1; i >= 0; i--) {
-        if (policy[i].done && policy[i].done == true) {
-          policy.splice(i, 1);
-          changed = true;
-        }
-      }
-      log.debug("Return policy splied");
-      callback(null, changed);
-    });
+  executeAsync(host, ip, policy) {
+    return util.promisify(this.execute).bind(this)(host, ip, policy)
   }
 }
