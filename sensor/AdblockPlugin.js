@@ -52,7 +52,6 @@ class AdblockPlugin extends Sensor {
             stop: this.stop
         });
         const isPolicyEnabled = await spt.isPolicyEnabled('adblock');
-        log.info('zhijie adblock', isPolicyEnabled)
         if (isPolicyEnabled) {
             await fc.enableDynamicFeature("adblock");
         }

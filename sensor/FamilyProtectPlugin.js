@@ -52,7 +52,6 @@ class FamilyProtectPlugin extends Sensor {
             stop: this.stop
         });
         const isPolicyEnabled = await spt.isPolicyEnabled('family');
-        log.info('zhijie family', isPolicyEnabled)
         if (isPolicyEnabled) {
             await fc.enableDynamicFeature("family");
         }
