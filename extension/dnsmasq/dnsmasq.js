@@ -694,7 +694,7 @@ module.exports = class DNSMASQ {
       if (type === "family") {
         targetIP = BLUE_HOLE_IP
       }
-      const tag = this.level[type] == "system" ? "" : "/$ad_block";
+      const tag = this.level[type] == "system" ? "" : "$ad_block";
       hashes.forEach((hash) => {
         let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), targetIP, tag)
         writer.write(line);
