@@ -39,13 +39,10 @@ const exec = require('child-process-promise').exec;
 
 const fc = require('../net2/config.js');
 
-const rclient = require('../util/redis_manager.js').getRedisClient();
+const spt = require('../net2/SystemPolicyTool')();
 
 class FamilyProtectPlugin extends Sensor {
     async run() {
-        rclient.hgetall("policy:system",(err,result)=>{
-            log.info("zhijie policy:system",result)
-        });
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
         this.enabledMacAddresses = {};
@@ -54,6 +51,11 @@ class FamilyProtectPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
+        const isPolicyEnabled = await spt.isPolicyEnabled('family');
+        log.info('zhijie family', isPolicyEnabled)
+        if (isPolicyEnabled) {
+            await fc.enableDynamicFeature("family");
+        }
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
         if (fc.isFeatureOn("family_protect")) {
             await this.globalOn();
@@ -91,11 +93,6 @@ class FamilyProtectPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
-                    if (!fc.isFeatureOn("family_protect")) {
-                        await fc.enableDynamicFeature("family_protect");
-                        return;
-                    }
-
                 } else {
                     this.systemSwitch = false;
                 }

@@ -39,6 +39,8 @@ const exec = require('child-process-promise').exec;
 
 const fc = require('../net2/config.js');
 
+const spt = require('../net2/SystemPolicyTool')();
+
 class AdblockPlugin extends Sensor {
     async run() {
         this.systemSwitch = false;
@@ -49,6 +51,12 @@ class AdblockPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
+        const isPolicyEnabled = await spt.isPolicyEnabled('adblock');
+        log.info('zhijie adblock', isPolicyEnabled)
+        if (isPolicyEnabled) {
+            await fc.enableDynamicFeature("adblock");
+        }
+
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
         if (fc.isFeatureOn("adblock")) {
             this.globalOn();
@@ -85,10 +93,6 @@ class AdblockPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
-                    if (!fc.isFeatureOn("adblock")) {
-                        await fc.enableDynamicFeature("adblock");
-                        return;
-                    }
                 } else {
                     this.systemSwitch = false;
                 }
