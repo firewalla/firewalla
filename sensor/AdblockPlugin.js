@@ -77,7 +77,7 @@ class AdblockPlugin extends Sensor {
     }
 
     async apiRun() {
-
+        log.info("zhijie test")
     }
 
     applyPolicy(host, ip, policy) {
@@ -110,6 +110,7 @@ class AdblockPlugin extends Sensor {
     }
 
     applyAdblock() {
+        log.info("sdfsadfsdafsda")
         this.applySystemAdblock();
         this.applyDeviceAdblock();
     }
@@ -140,11 +141,13 @@ class AdblockPlugin extends Sensor {
 
     // global on/off
     globalOn() {
+        log.info("adblock globalOn")
         this.adminSystemSwitch = true;
         this.applyAdblock();
     }
 
     globalOff() {
+        log.info("adblock globalOff")
         this.adminSystemSwitch = false;
         this.applyAdblock();
     }
