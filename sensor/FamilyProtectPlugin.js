@@ -44,10 +44,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 class FamilyProtectPlugin extends Sensor {
     async run() {
         rclient.hgetall("policy:system",(err,result)=>{
-            if (result && result.notify != null) {
-                const config = JSON.parse(result.notify);
-                log.info("zhijie policy:system",config)
-            }
+            log.info("zhijie policy:system",result)
         });
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
