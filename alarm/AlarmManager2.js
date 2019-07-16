@@ -1006,7 +1006,9 @@ module.exports = class {
 
         //BLOCK
         switch (alarm.type) {
-          case "ALARM_NEW_DEVICE":
+        case "ALARM_NEW_DEVICE":
+        case "ALARM_DEVICE_OFFLINE":
+        case "ALARM_DEVICE_BACK_ONLINE":
             p.type = "mac";
             p.target = alarm["p.device.mac"];
             break;
