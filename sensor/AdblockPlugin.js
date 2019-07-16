@@ -41,6 +41,7 @@ const fc = require('../net2/config.js');
 
 class AdblockPlugin extends Sensor {
     async run() {
+        log.info("zhijietest run");
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
         this.enabledMacAddresses = [];
