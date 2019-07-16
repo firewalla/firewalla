@@ -131,7 +131,7 @@ class AdblockPlugin extends Sensor {
                 }
             })
         } else {
-            const adblocktagset = `mac-address-tag=%${macAddressArr.join("%")}$ad_block`;
+            const adblocktagset = `mac-address-tag=%${macAddressArr.join("%")}$ad_block\n`;
             await fs.writeFile(configFile, adblocktagset);
         }
         dnsmasq.controlFilter('adblock', this.adminSystemSwitch, this.systemSwitch ? "system" : "device");
