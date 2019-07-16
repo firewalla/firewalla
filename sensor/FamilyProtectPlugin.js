@@ -39,8 +39,16 @@ const exec = require('child-process-promise').exec;
 
 const fc = require('../net2/config.js');
 
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
 class FamilyProtectPlugin extends Sensor {
     async run() {
+        rclient.hgetall("policy:system",(err,result)=>{
+            if (result && result.notify != null) {
+                const config = JSON.parse(result.notify);
+                log.info("zhijie policy:system",config)
+            }
+        });
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
         this.enabledMacAddresses = {};
