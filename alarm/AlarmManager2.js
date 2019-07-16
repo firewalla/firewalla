@@ -1097,7 +1097,7 @@ module.exports = class {
         }
 
         if(!p.type || !p.target) {
-          callback(new Error("invalid block: type:" + p.type + ", target: " + p.target));
+          callback(new Error("Unsupported Action!"));
           return;
         }
 
@@ -1323,7 +1323,7 @@ module.exports = class {
         }
 
         if (!i_type || !i_target) {
-          callback(new Error("invalid block"));
+          callback(new Error("Unsupported Action!"));
           return;
         }
 
