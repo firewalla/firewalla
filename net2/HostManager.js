@@ -765,18 +765,6 @@ module.exports = class HostManager {
     }
   }
 
-  async groupNameForInit(json) {
-    const groupName = await rclient.getAsync("groupName");
-    if(groupName) {
-      json.groupName = groupName;
-    }
-  }
-
-  async asyncBasicDataForInit(json) {
-    const speed = await platform.getNetworkSpeed();
-    json.nicSpeed = speed;
-  }
-
   async encipherMembersForInit(json) {
     let members = await rclient.smembersAsync("sys:ept:members")
     if(members && members.length > 0) {
