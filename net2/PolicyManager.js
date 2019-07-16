@@ -103,19 +103,6 @@ module.exports = class {
     });
   }
 
-  adblock(ip, state, callback) {
-    callback = callback || function () {
-    }
-
-    if (ip !== "0.0.0.0") {
-      callback(null)
-      return
-    }
-
-    log.info("PolicyManager:Adblock:Dnsmasq", ip, state);
-    dnsmasq.controlFilter('adblock', state);
-  }
-
   async upstreamDns(policy) {
 
     log.info("PolicyManager:UpstreamDns:Dnsmasq", policy);
@@ -407,9 +394,7 @@ module.exports = class {
           }
         }
       }
-      if (p === "adblock") {
-        this.adblock(ip, policy[p], null);
-      } else if (p === "upstreamDns") {
+      if (p === "upstreamDns") {
         (async () => {
           try {
             await this.upstreamDns(policy[p]);
