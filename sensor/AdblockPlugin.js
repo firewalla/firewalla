@@ -154,4 +154,4 @@ class AdblockPlugin extends Sensor {
     }
 }
 
-module.exports = FamilyProtectPlugin
+module.exports = AdblockPlugin
