@@ -79,7 +79,7 @@ class AdblockPlugin extends Sensor {
     async apiRun() {
     }
 
-    applyPolicy(host, ip, policy) {
+    async applyPolicy(host, ip, policy) {
         log.info("Applying adblock policy:", ip, policy);
         try {
             if (ip === '0.0.0.0') {
