@@ -1085,6 +1085,10 @@ module.exports = class {
                   p.type = info.type;
                   p.target = info.target;
                   break;
+              case "country":
+                p.type = info.type;
+                p.target = info.target;
+                break;
                 default:
                   break
               }
@@ -1294,21 +1298,25 @@ module.exports = class {
 
             if (userFeedback) {
               switch (userFeedback.type) {
-                case "domain":
-                case "dns":
-                  i_type = "dns"
-                  i_target = userFeedback.target
-                  break
-                case "ip":
-                  i_type = "ip"
-                  i_target = userFeedback.target
-                  break
-                case "category":
-                  i_type = "category";
-                  i_target = userFeedback.target;
-                  break;
-                default:
-                  break
+              case "domain":
+              case "dns":
+                i_type = "dns"
+                i_target = userFeedback.target
+                break
+              case "ip":
+                i_type = "ip"
+                i_target = userFeedback.target
+                break
+              case "category":
+                i_type = "category";
+                i_target = userFeedback.target;
+                break;
+              case "country":
+                i_type="country";
+                i_target = userFeedback.target;
+                break;
+              default:
+                break
               }
             }
             break;
@@ -1351,7 +1359,12 @@ module.exports = class {
             e["p.dest.category"] = i_target;
             e["target_name"] = i_target;
             e["target_ip"] = alarm["p.dest.ip"];
-            break;
+          break;
+        case "country":
+          e["p.dest.country"] = i_target;
+          e["target_name"] = i_target;
+          e["target_ip"] = alarm["p.dest.ip"];
+          break;
           case "devicePort":
             e["p.device.mac"] = alarm["p.device.mac"];
             if (alarm.type === 'ALARM_UPNP') {
