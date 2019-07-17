@@ -612,24 +612,16 @@ class Host {
   //    'type': 'Phone','desktop','server','thing'
   //    'subtype: 'ipad', 'iphone', 'nest'
   //
-  calculateDType(callback) {
-    rclient.smembers("host:user_agent:" + this.o.ipv4Addr, (err, results) => {
-      if (results != null) {
-        let human = results.length / 100.0;
-        this.dtype = {
-          'human': human
-        };
-        this.save();
-        if (callback) {
-          callback(null, this.dtype);
-        }
-      } else {
-        if (callback) {
-          callback(err, null);
-        }
-      }
-      this.syncToMac(null);
-    });
+  async calculateDType() {
+    let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr);
+    if (!results) return null
+
+    let human = results.length / 100.0;
+    this.dtype = {
+      'human': human
+    };
+    await this.saveAsync();
+    return this.dtype
   }
 
   /*
@@ -691,21 +683,19 @@ class Host {
     return _neighbors;
   }
 
-  identifyDevice(force, callback) {
+  async identifyDevice(force) {
     if (this.mgr.type != "server") {
-      if (callback)
-        callback(null, null);
       return;
     }
-    if (force==false  && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
+    if (!force && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
       log.debug("HOST:IDENTIFY too early", this.o._identifyExpiration);
-      if (callback)
-        callback(null, null);
       return;
     }
     log.info("HOST:IDENTIFY",this.o.mac);
     // need to have if condition, not sending too much info if the device is ...
     // this may be used initially _identifyExpiration
+
+    await this.calculateDType();
 
     let obj = {
       deviceClass: 'unknown',
@@ -724,7 +714,8 @@ class Host {
       pname: this.o.pname,
       ua_name : this.o.ua_name,
       ua_os_name : this.o.ua_os_name,
-      name : this.name()
+      name : this.name(),
+      monitored: this.policy['monitor']
     };
 
     // Do not pass vendor info to cloud if vendor is unknown, this can force cloud to validate vendor oui info again.
@@ -736,92 +727,47 @@ class Host {
       obj.deviceClass = "mobile";
     }
     try {
-      this.packageTopNeighbors(60,(err,neighbors)=>{
-        if (neighbors) {
-          obj.neighbors = this.hashNeighbors(neighbors);
-        }
-        rclient.smembers("host:user_agent:" + this.o.ipv4Addr, (err, results) => {
-          if (results != null) {
-            obj.agents = results;
-            bone.device("identify", obj, (err, data) => {
-              if (data != null) {
-                log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
+      let neighbors = await util.promisify(this.packageTopNeighbors).bind(this)(60)
+      if (neighbors) {
+        obj.neighbors = this.hashNeighbors(neighbors);
+      }
+      let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr)
 
-                // pretty much set everything from cloud to local
-                for (let field in data) {
-                  let value = data[field]
-                  if(value.constructor.name === 'Array' ||
-                    value.constructor.name === 'Object') {
-                    this.o[field] = JSON.stringify(value)
-                  } else {
-                    this.o[field] = value
-                  }
-                }
+      if (!results) return obj;
 
-                if (data._vendor!=null && (this.o.macVendor == null || this.o.macVendor === 'Unknown')) {
-                  this.o.macVendor = data._vendor;
-                }
-                if (data._name!=null) {
-                  this.o.pname = data._name;
-                }
-                if (data._deviceType) {
-                  this.o._deviceType = data._deviceType
-                }
-                this.save();
-              }
-            });
+      obj.agents = results;
+      let data = await util.promisify(bone.device)("identify", obj)
+      if (data != null) {
+        log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
+
+        // pretty much set everything from cloud to local
+        for (let field in data) {
+          let value = data[field]
+          if(value.constructor.name === 'Array' ||
+            value.constructor.name === 'Object') {
+            this.o[field] = JSON.stringify(value)
           } else {
-            if (callback) {
-              callback(err, obj);
-            }
+            this.o[field] = value
           }
-        });
-      });
+        }
+
+        if (data._vendor!=null && (this.o.macVendor == null || this.o.macVendor === 'Unknown')) {
+          this.o.macVendor = data._vendor;
+        }
+        if (data._name!=null) {
+          this.o.pname = data._name;
+        }
+        if (data._deviceType) {
+          this.o._deviceType = data._deviceType
+        }
+        await this.saveAsync();
+      }
+
     } catch (e) {
       log.error("HOST:IDENTIFY:ERROR", obj, e);
-      if (callback) {
-        callback(e, null);
-      }
     }
     return obj;
   }
-
-  // sync properties to mac address, macs will not change ip's will
-  //
-  syncToMac(callback) {
-    //TODO
-    /*
-    if (this.o.mac) {
-        let mackey = "host:mac:"+this.o.mac.toUpperCase();
-            rclient.hgetall(key, (err,data)=> {
-                if ( err == null) {
-                    if (data!=null) {
-                        data.ipv4 = host.ipv4Addr;
-                        data.lastActiveTimestamp = Date.now()/1000;
-                        if (host.macVendor) {
-                            data.macVendor = host.macVendor;
-                        }
-                   } else {
-                       data = {};
-                       data.ipv4 = host.ipv4Addr;
-                       data.lastActiveTimestamp = Date.now()/1000;
-                       data.firstFoundTimestamp = data.lastActiveTimestamp;
-                       if (host.macVendor) {
-                            data.macVendor = host.macVendor;
-                       }
-                   }
-                   rclient.hmset(key,data, (err,result)=> {
-             });
-
-    }
-    */
-
-  }
-
-
-  listen(tell) {}
-
-  stopListen() {}
 
   clean() {
     this.callbacks = {};
