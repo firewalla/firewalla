@@ -130,8 +130,8 @@ module.exports = class DNSMASQ {
         writeHostsFile: 0,
         restart: 0
       }
-      this.level = {
-        adblock: undefined
+      this.dnsTag = {
+        adblock: "$ad_block"
       }
       sem.once('IPTABLES_READY', () => {
         if (f.isMain()) {
@@ -327,9 +327,8 @@ module.exports = class DNSMASQ {
     }
   }
 
-  controlFilter(type, state, level) {
+  controlFilter(type, state) {
     this.nextState[type] = state;
-    this.level[type] = level;
     log.info(`${type} nextState is: ${this.nextState[type]}`);
     if (this.state[type] !== undefined) {
       // already timer running, clear existing ones before trigger next round immediately
@@ -694,7 +693,7 @@ module.exports = class DNSMASQ {
       if (type === "family") {
         targetIP = BLUE_HOLE_IP
       }
-      const tag = this.level[type] == "system" ? "" : "$ad_block";
+      const tag = this.dnsTag[type] ? this.dnsTag[type] : "";
       hashes.forEach((hash) => {
         let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), targetIP, tag)
         writer.write(line);

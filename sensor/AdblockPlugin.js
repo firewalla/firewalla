@@ -26,6 +26,10 @@ const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
+const deviceConfigFile = `${dnsmasqConfigFolder}/adblock_mac_set.conf`;
+const systemConfigFile = `${dnsmasqConfigFolder}/adblock_system.conf`;
+const dnsTag = "$ad_block";
+const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 const updateInterval = 3600 * 1000 // once per hour
 
 const fs = require('fs');
@@ -120,30 +124,26 @@ class AdblockPlugin extends Sensor {
         this.applyDeviceAdblock();
     }
 
-    applySystemAdblock() {
-        dnsmasq.controlFilter('adblock', this.adminSystemSwitch, this.systemSwitch ? "system" : "device");
+    async applySystemAdblock() {
+        if (this.systemSwitch && this.adminSystemSwitch) {
+            const adblocktagset = `mac-address-tag=%${systemLevelMac}${dnsTag}\n`;
+            await fs.writeFile(systemConfigFile, adblocktagset);
+        } else {
+            await fs.unlink(systemConfigFile);
+        }
+        dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
     }
 
     async applyDeviceAdblock() {
         const macAddressArr = this.enabledMacAddresses;
-        const configFile = `${dnsmasqConfigFolder}/adblock_mac_set.conf`;
-        if (macAddressArr.length == 0) {
-            await fs.unlink(configFile, err => {
-                if (err) {
-                    if (err.code === 'ENOENT') {
-                        log.info(`Dnsmasq: No ${configFile}, skip remove`);
-                    } else {
-                        log.warn(`Dnsmasq: Error when remove ${configFile}`, err);
-                    }
-                }
-            })
+        if (macAddressArr.length > 0 && this.adminSystemSwitch) {
+            const adblocktagset = `mac-address-tag=%${macAddressArr.join("%")}${dnsTag}\n`;
+            await fs.writeFile(deviceConfigFile, adblocktagset);
         } else {
-            const adblocktagset = `mac-address-tag=%${macAddressArr.join("%")}$ad_block\n`;
-            await fs.writeFile(configFile, adblocktagset);
+            await fs.unlink(deviceConfigFile);
         }
-        dnsmasq.controlFilter('adblock', this.adminSystemSwitch, this.systemSwitch ? "system" : "device");
+        dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
     }
-
     // global on/off
     globalOn() {
         this.adminSystemSwitch = true;
