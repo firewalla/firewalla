@@ -18,15 +18,12 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const extensionManager = require('./ExtensionManager.js')
 
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
-const updateInterval = 3600 * 1000 // once per hour
 
 const FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
 const fs = require('fs');
@@ -155,7 +152,7 @@ class FamilyProtectPlugin extends Sensor {
         dnsmasq.updateResolvConf();
     }
 
-    async systemStop(dnsaddrs) {
+    async systemStop() {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
         dnsmasq.updateResolvConf();
     }
@@ -167,7 +164,7 @@ class FamilyProtectPlugin extends Sensor {
         dnsmasq.restartDnsmasq();
     }
 
-    async perDeviceStop(macAddress, dnsaddrs) {
+    async perDeviceStop(macAddress) {
         const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
         await fs.unlink(configFile, err => {
             if (err) {

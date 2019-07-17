@@ -18,8 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const extensionManager = require('./ExtensionManager.js')
 
 const f = require('../net2/Firewalla.js');
@@ -30,7 +28,6 @@ const deviceConfigFile = `${dnsmasqConfigFolder}/adblock_mac_set.conf`;
 const systemConfigFile = `${dnsmasqConfigFolder}/adblock_system.conf`;
 const dnsTag = "$ad_block";
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
-const updateInterval = 3600 * 1000 // once per hour
 
 const fs = require('fs');
 const Promise = require('bluebird');
