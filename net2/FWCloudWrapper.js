@@ -13,29 +13,28 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require("./logger.js")(__filename);
+const log = require("./logger.js")(__filename);
 
-let Promise = require('bluebird');
 
-let cloud = require('../encipher');
+const cloud = require('../encipher');
 
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 
-let storage = require('node-persist');
+const storage = require('node-persist');
 
-let Firewalla = require('../net2/Firewalla');
-let configContent = require('fs').readFileSync(Firewalla.getFirewallaHome() + "/config/netbot.config");
-let config = JSON.parse(configContent);
+const Firewalla = require('../net2/Firewalla');
+const configContent = require('fs').readFileSync(Firewalla.getFirewallaHome() + "/config/netbot.config");
+const config = JSON.parse(configContent);
 
-let dbPath = Firewalla.getUserHome() + "/.encipher/db";
+const dbPath = Firewalla.getUserHome() + "/.encipher/db";
 storage.initSync({
   'dir': dbPath
 });
 
-let eptname = config.endpoint_name;
-let eptcloud = new cloud(eptname, null);
+const eptname = config.endpoint_name;
+const eptcloud = new cloud(eptname, null);
 eptcloud.debug(false);
 
 function getCloud() {

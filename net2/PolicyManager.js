@@ -103,12 +103,8 @@ module.exports = class {
     });
   }
 
-  adblock(ip, state, callback) {
-    callback = callback || function () {
-    }
-
+  adblock(ip, state) {
     if (ip !== "0.0.0.0") {
-      callback(null)
       return
     }
 
@@ -408,7 +404,7 @@ module.exports = class {
         }
       }
       if (p === "adblock") {
-        this.adblock(ip, policy[p], null);
+        this.adblock(ip, policy[p]);
       } else if (p === "upstreamDns") {
         (async () => {
           try {

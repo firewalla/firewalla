@@ -47,7 +47,7 @@ class CPUSensor extends Sensor {
       }
 
       if(status) {
-        await this.turnOn();    
+        await this.turnOn();
       } else {
         await this.turnOff();
       }

@@ -83,7 +83,7 @@ class BoneSensor extends Sensor {
           type: 'CloudReCheckin',
           message: "",
         });
-      });      
+      });
     });
   }
 
@@ -99,7 +99,7 @@ class BoneSensor extends Sensor {
     const curUrl = await this.getCloudInstanceURL();
     if(curUrl === url) {
       return;
-    }    
+    }
 
     log.info(`Applying new cloud url: ${url}`);
 
@@ -151,7 +151,7 @@ class BoneSensor extends Sensor {
 
     log.debug("Checking in Cloud...", sysInfo);
 
-    // First checkin usually have no meaningful data ... 
+    // First checkin usually have no meaningful data ...
     //
     try {
       if (this.lastCheckedIn) {

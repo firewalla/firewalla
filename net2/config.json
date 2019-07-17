@@ -131,7 +131,7 @@
     "CategoryUpdateSensor": {
       "regularInterval": 28800,
       "securityInterval": 14400,
-      "countryInterval": 864000
+      "countryInterval": 86400
     },
     "AutoBlocksRevalidationSensor": {
     },
