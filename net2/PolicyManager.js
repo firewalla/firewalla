@@ -44,8 +44,6 @@ const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 
-let ADBLOCK_DNS = ["8.8.8.8"]; // these are just backup servers
-
 const features = require('../net2/features');
 
 const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
