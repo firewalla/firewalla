@@ -833,7 +833,6 @@ class netBot extends ControllerBot {
 
   scanStart(callback) {
     this.hostManager.getHosts((err, result) => {
-      let listip = [];
       this.hosts = result;
       for (let i in result) {
 //        log.info(result[i].toShortString());
@@ -912,12 +911,12 @@ class netBot extends ControllerBot {
 
               if (target === "0.0.0.0") {
                 await this.hostManager.loadPolicyAsync()
-                await this.hostManager.setPolicy(o, policyData);
+                await this.hostManager.setPolicyAsync(o, policyData);
               } else {
                 let host = await this.hostManager.getHostAsync(target)
                 if (host) {
                   await host.loadPolicyAsync()
-                  await host.setPolicy(o, policyData)
+                  await host.setPolicyAsync(o, policyData)
                 } else {
                   throw new Error('Invalid host')
                 }
@@ -1409,14 +1408,13 @@ class netBot extends ControllerBot {
         });
         break;
       case "alarm":
-        let alarmID = value.alarmID;
-        am2.getAlarm(alarmID)
+        am2.getAlarm(value.alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
       case "alarmDetail": {
-        const alarmID = value.alarmID;
         (async () => {
+          const alarmID = value.alarmID;
           if(alarmID) {
             const basic = await am2.getAlarm(alarmID);
             const detail = (await am2.getAlarmDetail(alarmID)) || {};
@@ -2829,7 +2827,7 @@ class netBot extends ControllerBot {
       case "saveOvpnProfile": {
         let type = value.type || "openvpn";
         switch (type) {
-          case "openvpn":
+          case "openvpn": {
             const content = value.content;
             let profileId = value.profileId;
             const password = value.password;
@@ -2881,6 +2879,7 @@ class netBot extends ControllerBot {
               })
             }
             break;
+          }
           default:
             this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
         }
@@ -2891,8 +2890,8 @@ class netBot extends ControllerBot {
         const type = value.type || "openvpn";
         switch (type) {
           case "openvpn":
-            const profileId = value.profileId;
             (async () => {
+              const profileId = value.profileId;
               if (!profileId || profileId === "") {
                 this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' is not specified"}, callback);
               } else {
@@ -3070,7 +3069,7 @@ class netBot extends ControllerBot {
           }
           const currentConfig = fc.getConfig(true);
           switch (network) {
-            case "secondary":
+            case "secondary": {
               const currentSecondaryInterface = currentConfig.secondaryInterface;
               const updatedConfig = {intf: "eth0:0"};
               const ipAddress = intf.ipAddress;
@@ -3099,7 +3098,8 @@ class netBot extends ControllerBot {
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
               this.simpleTxData(msg, {}, null, callback);
               break;
-            case "alternative":
+            }
+            case "alternative": {
               const currentAlternativeInterface = currentConfig.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
               const updatedAltConfig = {gateway: intf.gateway};
               const altIpAddress = intf.ipAddress;
@@ -3116,7 +3116,8 @@ class netBot extends ControllerBot {
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
               this.simpleTxData(msg, {}, null, callback);
               break;
-            case "wifi":
+            }
+            case "wifi": {
               const currentWifiInterface = currentConfig.wifiInterface;
               const updatedWifiConfig = {intf: "wlan0"};
               const wifiIpAddress = intf.ipAddress;
@@ -3134,6 +3135,7 @@ class netBot extends ControllerBot {
                 this._dnsmasq("0.0.0.0", {wifiDnsServers: dnsServers, wifiDhcpRange: dhcpRange});
               this.simpleTxData(msg, {}, null, callback);
               break;
+            }
             default:
               log.error("Unknown network type in networkInterface:update, " + network);
               this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network}, callback);

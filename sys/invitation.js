@@ -19,7 +19,6 @@ const log = require('../net2/logger.js')(__filename);
 const uuid = require("uuid");
 
 const intercomm = require('../lib/intercomm.js');
-const utils = require('../lib/utils.js');
 const { delay } = require('../util/util.js');
 const network = require('network');
 const qrcode = require('qrcode-terminal');
@@ -283,7 +282,7 @@ class FWInvitation {
     });
 
     if (intercomm.bcapable() != false) {
-      intercomm.bpublish(gid, obj.r, config.serviceType);
+      intercomm.bpublish(this.gid, obj.r, config.serviceType);
     }
 
     const cmd = "awk '{print $1}' /proc/uptime";

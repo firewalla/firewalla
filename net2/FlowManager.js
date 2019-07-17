@@ -274,34 +274,6 @@ module.exports = class FlowManager {
     return list;
   }
 
-  // stats:type:in:ip => stats:last24
-  migrateFromOldTableForHost(ip) {
-    let downloadKey = "stats:"+type+":in:"+ip;
-    let uploadKey = "stats:"+type+":out:"+ip;
-
-    let ticks = this.list24HoursTicks();
-
-    let downloadPromises = ticks.map((tick) => rclient.zscoreAsync(downloadKey, tick));
-    let uploadPromises = ticks.map((tick) => rclient.zscoreAsync(uploadKey, tick));
-
-    return Promise.all(downloadPromises)
-      .then((downloadBytesList) => {
-        Promise.all(uploadPromises)
-          .then((uploadBytesList) => {
-            let pList = [];
-            for(let i in ticks) {
-              let ip2 = ip;
-              if(ip2 === "0.0.0.0")
-                ip2 = null;
-              pList.push(this.recordLast24HoursStats(ticks[i], downloadBytesList[i], uploadBytesList[i], ip2));
-            }
-            return Promise.all(pList);
-          });
-      });
-  }
-
-
-
   // stats are 'hour', 'day'
   // stats:hour:mac_address score=bytes key=_ts-_ts%3600
   // target = 0.0.0.0 is system

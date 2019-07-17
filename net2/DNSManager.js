@@ -149,7 +149,6 @@ module.exports = class DNSManager {
           log.debug("### NOT LOOKUP6 ==:", o);
           flowUtil.addFlag(o, 'l'); //
           //flowUtil.addFlag(o,'x'); // need to revist on if need to ignore this flow ... most likely these flows are very short lived
-          // cb();
           // return;
         }
       }
