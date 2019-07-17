@@ -44,6 +44,9 @@ const exec = require('child-process-promise').exec;
 const fc = require('../net2/config.js');
 
 const spt = require('../net2/SystemPolicyTool')();
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const updateFeature = "adblock";
+const updateFlag = "2";
 
 class AdblockPlugin extends Sensor {
     async run() {
@@ -55,9 +58,12 @@ class AdblockPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
-        const isPolicyEnabled = await spt.isPolicyEnabled('adblock');
-        if (isPolicyEnabled) {
-            await fc.enableDynamicFeature("adblock");
+        if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
+            const isPolicyEnabled = await spt.isPolicyEnabled('adblock');
+            if (isPolicyEnabled) {
+                await fc.enableDynamicFeature("adblock");
+            }
+            await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
         }
 
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);

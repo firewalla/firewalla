@@ -28,6 +28,7 @@ const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
 const updateInterval = 3600 * 1000 // once per hour
 
+const FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -40,6 +41,9 @@ const exec = require('child-process-promise').exec;
 const fc = require('../net2/config.js');
 
 const spt = require('../net2/SystemPolicyTool')();
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const updateFeature = "family";
+const updateFlag = "2";
 
 class FamilyProtectPlugin extends Sensor {
     async run() {
@@ -51,9 +55,12 @@ class FamilyProtectPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
-        const isPolicyEnabled = await spt.isPolicyEnabled('family');
-        if (isPolicyEnabled) {
-            await fc.enableDynamicFeature("family");
+        if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
+            const isPolicyEnabled = await spt.isPolicyEnabled('family');
+            if (isPolicyEnabled) {
+                await fc.enableDynamicFeature("family");
+            }
+            await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
         }
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
         if (fc.isFeatureOn("family_protect")) {
