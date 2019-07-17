@@ -666,6 +666,7 @@ module.exports = class HostManager {
   async getCheckInAsync() {
     let json = {};
     let requiredPromises = [
+      this.getHostsAsync(),
       this.policyDataForInit(json),
       this.extensionDataForInit(json),
       this.modeForInit(json),
@@ -678,6 +679,8 @@ module.exports = class HostManager {
     this.basicDataForInit(json, {});
 
     await Promise.all(requiredPromises);
+
+    json.hostCount = this.hosts.all.length;
 
     let firstBinding = await rclient.getAsync("firstBinding")
     if(firstBinding) {
