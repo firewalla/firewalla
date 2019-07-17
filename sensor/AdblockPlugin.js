@@ -129,7 +129,15 @@ class AdblockPlugin extends Sensor {
             const adblocktagset = `mac-address-tag=%${systemLevelMac}${dnsTag}\n`;
             await fs.writeFile(systemConfigFile, adblocktagset);
         } else {
-            await fs.unlink(systemConfigFile);
+            await fs.unlink(systemConfigFile, err => {
+                if (err) {
+                    if (err.code === 'ENOENT') {
+                        log.info(`Dnsmasq: No ${systemConfigFile}, skip remove`);
+                    } else {
+                        log.warn(`Dnsmasq: Error when remove ${systemConfigFile}`, err);
+                    }
+                }
+            });
         }
         dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
     }
@@ -140,7 +148,15 @@ class AdblockPlugin extends Sensor {
             const adblocktagset = `mac-address-tag=%${macAddressArr.join("%")}${dnsTag}\n`;
             await fs.writeFile(deviceConfigFile, adblocktagset);
         } else {
-            await fs.unlink(deviceConfigFile);
+            await fs.unlink(deviceConfigFile, err => {
+                if (err) {
+                    if (err.code === 'ENOENT') {
+                        log.info(`Dnsmasq: No ${deviceConfigFile}, skip remove`);
+                    } else {
+                        log.warn(`Dnsmasq: Error when remove ${deviceConfigFile}`, err);
+                    }
+                }
+            });
         }
         dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
     }
