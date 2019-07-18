@@ -287,7 +287,7 @@ class VpnManager {
     if (!this.refreshTask) {
       this.refreshTask = setInterval(async () => {
         // extend upnp lease once every 10 minutes in case router flushes it unexpectedly
-        await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla OpenVPN").catch((err) => {
+        await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
           log.error("Failed to set Upnp port mapping", err);
         });
       }, 600000);
@@ -311,7 +311,7 @@ class VpnManager {
       await execAsync(util.format("sudo systemctl %s openvpn@%s", op, this.instanceName));
       this.started = true;
       await this.setIptables();
-      this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla OpenVPN").catch((err) => {
+      this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
         log.error("Failed to set Upnp port mapping", err);
         return false;
       });
