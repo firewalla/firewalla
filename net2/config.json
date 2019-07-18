@@ -77,7 +77,8 @@
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "VPNCheckPlugin": {},
-    "SafeSearchPlugin": {}
+    "SafeSearchPlugin": {},
+    "FamilyProtectPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -130,7 +131,7 @@
     "CategoryUpdateSensor": {
       "regularInterval": 28800,
       "securityInterval": 14400,
-      "countryInterval": 864000
+      "countryInterval": 86400
     },
     "AutoBlocksRevalidationSensor": {
     },
@@ -371,6 +372,7 @@
         "duckduckgo": "on"
       }
     },
+    "FamilyProtectPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "ICMP6Sensor": {},
@@ -586,7 +588,8 @@
     "insane_mode": false,
     "cpu_monitor": true,
     "speed_test": false,
-    "safe_search": false
+    "safe_search": false,
+    "family_protect": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

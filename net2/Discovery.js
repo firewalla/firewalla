@@ -14,17 +14,10 @@
  */
 'use strict';
 const log = require('./logger.js')(__filename);
-const ip = require('ip');
-const os = require('os');
-const dns = require('dns');
-const network = require('network');
-const linux = require('../util/linux.js');
 const Nmap = require('./Nmap.js');
 var instances = {};
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const l2 = require('../util/Layer2.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 

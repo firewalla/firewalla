@@ -322,7 +322,7 @@ class SafeSearchPlugin extends Sensor {
     if(ip) {
       return targetDomains.map((targetDomain) => {
         return this.getDNSMasqEntry(macAddress, ip, targetDomain);
-      });
+      })
     } else {
       return [];
     }
@@ -349,7 +349,7 @@ class SafeSearchPlugin extends Sensor {
     log.info("Applying safe search on device", macAddress);
 
     try {
-      if(this.enabledMacAddresses[macAddress]) {
+      if(this.enabledMacAddresses[macAddress] && this.adminSystemSwitch) {
         const config = await this.getSafeSearchConfig();
         return this.perDeviceStart(macAddress, config)
       } else {
@@ -472,13 +472,13 @@ class SafeSearchPlugin extends Sensor {
   async globalOn() {
     await this.addIptablesRules();
     this.adminSystemSwitch = true;
-    await this.applySystemSafeSearch();
+    await this.applySafeSearch();
   }
 
   async globalOff() {
     await this.removeIptablesRules();
     this.adminSystemSwitch = false;
-    await this.applySystemSafeSearch();
+    await this.applySafeSearch();
   }
 
   async addIptablesRules() {

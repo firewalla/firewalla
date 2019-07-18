@@ -29,4 +29,3 @@ for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
 done
 
 wait $PIDS
-

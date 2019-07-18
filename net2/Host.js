@@ -23,8 +23,6 @@ const exec = require('child-process-promise').exec
 const Spoofer = require('./Spoofer.js');
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-const FlowManager = require('./FlowManager.js');
-const flowManager = new FlowManager('debug');
 
 const ShieldManager = require('./ShieldManager.js');
 
@@ -489,7 +487,7 @@ class Host {
               log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
-              log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name);
+              log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
             })
         })
       } else {
@@ -501,7 +499,7 @@ class Host {
             log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
             this.spoofing = false;
           }).catch((err) => {
-            log.error("Failed to unspoof", this.o.ipv4Addr, this.o.mac, this.o.name);
+            log.error("Failed to unspoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
           })
       }
 
@@ -523,7 +521,7 @@ class Host {
             spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
               log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
             }).catch((err)=>{
-              log.error("Failed to spoof", this.ipv6Addr);
+              log.error("Failed to spoof", this.ipv6Addr, err);
             })
             if (i>20) {
               log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr);
@@ -601,7 +599,7 @@ class Host {
     let PolicyManager = require('./PolicyManager.js');
     let policyManager = new PolicyManager('info');
 
-    await policyManager.execute(this, this.o.ipv4Addr, policy)
+    await policyManager.executeAsync(this, this.o.ipv4Addr, policy)
   }
 
   applyPolicy(callback) {

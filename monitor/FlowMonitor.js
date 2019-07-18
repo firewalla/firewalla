@@ -95,20 +95,8 @@ module.exports = class FlowMonitor {
       this.recordedFlows = {};
 
       instance = this;
-
-      // flowManager.last24HourDatabaseExists()
-      //   .then((result) => {
-      //     if(!result) {
-      //       // need to migrate from legacy
-      //       log.info("Migrating stats from old version to new version");
-      //       hostManager.migrateStats()
-      //         .then(() => {
-      //           log.info("Stats are migrated to new format");
-      //         });
-      //     }
-      //   });
     }
-    
+
     // largeTransferGuard stores the latest flow time for each device/dest.ip/dest.port
     // combination, aim to elimates duplicate LargeTransferAlarm
     if (!this.largeTransferGuard) this.largeTransferGuard = {};

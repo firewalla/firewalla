@@ -158,7 +158,7 @@ module.exports = class HostManager {
         this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
           if (this.type != "server") {
             return;
-          };
+          }
           if (!this.iptablesReady) {
             log.warn("Iptables is not ready yet");
             return;
@@ -486,18 +486,14 @@ module.exports = class HostManager {
       });
   }
 
-  legacyHostsStats(json) {
+  async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
-    let promises = this.hosts.all.map((host) => flowManager.getStats2(host))
-    return Promise.all(promises)
-      .then(() => {
-        return this.hostPolicyRulesForInit(json)
-          .then(() => {
-            this.hostsInfoForInit(json);
-            return json;
-          })
-      });
+    let promises = this.hosts.all.map((host) => flowManager.getStats2(host));
+    await Promise.all(promises);
+    await this.hostPolicyRulesForInit(json);
+    await this.hostsInfoForInit(json);
+    return json;
   }
 
   async dhcpRangeForInit(network, json) {
@@ -657,18 +653,6 @@ module.exports = class HostManager {
     }
   }
 
-  migrateStats() {
-    let ipList = [];
-    for(let index in this.hosts.all) {
-      ipList.push.apply(ipList, this.hosts.all[index].getAllIPs());
-    }
-
-    ipList.push("0.0.0.0"); // system one
-
-    // total ip list to migrate
-    return Promise.all(ipList.map((ip) => flowManager.migrateFromOldTableForHost(ip)));
-  }
-
   async getCloudURL(json) {
     const url = await rclient.getAsync("sys:bone:url");
     if(json && json.ept && json.ept.url && json.ept.url !== url)  {
@@ -682,6 +666,7 @@ module.exports = class HostManager {
   async getCheckInAsync() {
     let json = {};
     let requiredPromises = [
+      this.getHostsAsync(),
       this.policyDataForInit(json),
       this.extensionDataForInit(json),
       this.modeForInit(json),
@@ -693,7 +678,9 @@ module.exports = class HostManager {
 
     this.basicDataForInit(json, {});
 
-    await requiredPromises;
+    await Promise.all(requiredPromises);
+
+    json.hostCount = this.hosts.all.length;
 
     let firstBinding = await rclient.getAsync("firstBinding")
     if(firstBinding) {
@@ -763,18 +750,6 @@ module.exports = class HostManager {
     } catch (err) {
       log.error("Failed to get guessed routers:", err);
     }
-  }
-
-  async groupNameForInit(json) {
-    const groupName = await rclient.getAsync("groupName");
-    if(groupName) {
-      json.groupName = groupName;
-    }
-  }
-
-  async asyncBasicDataForInit(json) {
-    const speed = await platform.getNetworkSpeed();
-    json.nicSpeed = speed;
   }
 
   async encipherMembersForInit(json) {
