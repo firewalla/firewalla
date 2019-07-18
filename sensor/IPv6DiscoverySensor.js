@@ -23,21 +23,12 @@ const asyncNative = require('../util/asyncNative.js');
 
 const log = require('../net2/logger.js')(__filename);
 
-const util = require('util');
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
 
 const networkTool = require('../net2/NetworkTool')();
-const cp = require('child_process');
 const execAsync = require('child-process-promise').exec
-
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
-const Firewalla = require('../net2/Firewalla');
-
-const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
 
 
 class IPv6DiscoverySensor extends Sensor {
@@ -61,7 +52,7 @@ class IPv6DiscoverySensor extends Sensor {
     },1000*60*5); // start the first run in 5 minutes
   }
 
-  async checkAndRunOnce(fastMode) {
+  async checkAndRunOnce() {
     log.info("Starting IPv6DiscoverySensor Scanning",new Date()/1000);
     if (this.isSensorEnabled()) {
       const results = await networkTool.getLocalNetworkInterface()
@@ -110,8 +101,8 @@ class IPv6DiscoverySensor extends Sensor {
     let cmdline = 'ip -6 neighbor show';
     log.info("Running commandline: ", cmdline);
 
-    const out = await execAsync(cmdline)
-    let lines = out.split("\n");
+    const { stdout } = await execAsync(cmdline)
+    let lines = stdout.split("\n");
     let macHostMap = {};
     for (const o of lines) {
       log.info("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);

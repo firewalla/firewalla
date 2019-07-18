@@ -26,14 +26,23 @@ function extend(target) {
   return target;
 }
 
-function getPreferredBName(hostObject) {
-
+function getPreferredName(hostObject) {
   if (hostObject==null) {
     return null
   }
 
   if(hostObject.name) {
     return hostObject.name // always use user customized name first
+  }
+
+  return getPreferredBName(hostObject);
+}
+
+
+function getPreferredBName(hostObject) {
+
+  if (hostObject==null) {
+    return null;
   }
 
   if(hostObject.spoofMeName) {
@@ -78,5 +87,6 @@ function delay(t) {
 module.exports = {
   extend:extend,
   getPreferredBName: getPreferredBName,
+  getPreferredName: getPreferredName,
   delay: delay
 }

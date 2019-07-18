@@ -183,9 +183,7 @@ fi
 
 
 cd /home/pi/firewalla
-cd .git
-sudo chown -R pi *
-cd ..
+sudo chown -R pi /home/pi/firewalla/.git
 branch=$(git rev-parse --abbrev-ref HEAD)
 
 # continue to try upgrade even github api is not successfully.

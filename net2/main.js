@@ -30,6 +30,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
 
+
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 function updateTouchFile() {
@@ -70,8 +71,7 @@ if(!bone.isAppConnected()) {
 }
 
 resetModeInInitStage()
-
-run0();
+run0()
 
 function run0() {
   if (bone.cloudready()==true &&
@@ -239,6 +239,7 @@ async function run() {
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
+  dnsmasq.cleanUpLeftoverConfig()
 
   // Launch PortManager
 
