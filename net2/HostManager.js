@@ -491,7 +491,7 @@ module.exports = class HostManager {
 
     let promises = this.hosts.all.map((host) => flowManager.getStats2(host));
     await Promise.all(promises);
-    await this.hostPolicyRulesForInit(json);
+    await this.hostPolicyRulesForInit();
     await this.hostsInfoForInit(json);
     return json;
   }
@@ -632,7 +632,7 @@ module.exports = class HostManager {
     });
   }
 
-  async hostPolicyRulesForInit(json) {
+  async hostPolicyRulesForInit() {
     log.info("Reading individual host policy rules");
 
     await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
@@ -936,62 +936,43 @@ module.exports = class HostManager {
   // take hosts list, get mac address, look up mac table, and see if
   // ipv6 or ipv4 addresses needed updating
 
-  syncHost(host, save, callback) {
+  async syncHost(host, save) {
     if (host.o.mac == null) {
       log.error("HostManager:Sync:Error:MacNull", host.o.mac, host.o.ipv4Addr, host.o);
-      callback("mac", null);
-      return;
+      throw new Error("No mac")
     }
     let mackey = "host:mac:" + host.o.mac;
-    host.identifyDevice(false,null);
-    host.calculateDType((err, data) => {
-      rclient.hgetall(mackey, (err, data) => {
-        if (data == null || err != null) {
-          callback(err, null);
-          return;
-        }
-        if (data.ipv6Addr == null) {
-          callback(null, null);
-          return;
-        }
+    await host.identifyDevice(false);
+    let data = await rclient.hgetallAsync(mackey)
+    if (!data || !data.ipv6Addr) return;
 
-        let ipv6array = JSON.parse(data.ipv6Addr);
-        if (host.ipv6Addr == null) {
-          host.ipv6Addr = [];
-        }
+    let ipv6array = JSON.parse(data.ipv6Addr);
+    if (host.ipv6Addr == null) {
+      host.ipv6Addr = [];
+    }
 
-        let needsave = false;
+    let needsave = false;
 
-        //log.debug("=======>",host.o.ipv4Addr, host.ipv6Addr, ipv6array);
-        for (let i in ipv6array) {
-          if (host.ipv6Addr.indexOf(ipv6array[i]) == -1) {
-            host.ipv6Addr.push(ipv6array[i]);
-            needsave = true;
-          }
-        }
+    //log.debug("=======>",host.o.ipv4Addr, host.ipv6Addr, ipv6array);
+    for (let i in ipv6array) {
+      if (host.ipv6Addr.indexOf(ipv6array[i]) == -1) {
+        host.ipv6Addr.push(ipv6array[i]);
+        needsave = true;
+      }
+    }
 
-        sysManager.setNeighbor(host.o.ipv4Addr);
+    sysManager.setNeighbor(host.o.ipv4Addr);
 
-        for (let j in host.ipv6Addr) {
-          sysManager.setNeighbor(host.ipv6Addr[j]);
-        }
+    for (let j in host.ipv6Addr) {
+      sysManager.setNeighbor(host.ipv6Addr[j]);
+    }
 
-        host.redisfy();
-        if (needsave == true && save == true) {
-          rclient.hmset(mackey, {
-            ipv6Addr: host.o.ipv6Addr
-          }, (err, data) => {
-            callback(err);
-          });
-        } else {
-          callback(null);
-        }
+    host.redisfy();
+    if (needsave == true && save == true) {
+      await rclient.hmsetAsync(mackey, {
+        ipv6Addr: host.o.ipv6Addr
       });
-    });
-  }
-
-  syncHostAsync(host, save) {
-    return util.promisify(this.syncHost).bind(this)(host, save)
+    }
   }
 
   getHostsAsync() {
@@ -1142,11 +1123,11 @@ module.exports = class HostManager {
             }
           }
           await hostbymac.cleanV6()
-          await this.syncHostAsync(hostbymac, true)
           if (this.type == "server") {
             await hostbymac.applyPolicyAsync()
           }
-          hostbymac._mark = true;
+          // call apply policy before to ensure policy data is loaded before device indentification
+          await this.syncHost(hostbymac, true)
         })
         let removedHosts = [];
         /*
