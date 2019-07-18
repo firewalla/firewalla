@@ -130,7 +130,7 @@
     "CategoryUpdateSensor": {
       "regularInterval": 28800,
       "securityInterval": 14400,
-      "countryInterval": 864000
+      "countryInterval": 86400
     },
     "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {},
@@ -589,6 +589,7 @@
     "upstream_dns": false,
     "insane_mode": false,
     "cpu_monitor": true,
+    "speed_test": false,
     "safe_search": false,
     "family_protect": false
   },

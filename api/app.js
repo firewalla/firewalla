@@ -43,6 +43,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use("/ss", require('./routes/ss.js'));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);

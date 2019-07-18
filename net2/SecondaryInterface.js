@@ -17,10 +17,7 @@
 const linux = require('../util/linux.js');
 const ip = require('ip');
 const os = require('os');
-const dns = require('dns');
-const network = require('network');
 const log = require('./logger.js')(__filename, 'info');
-const util = require('util');
 const f = require('./Firewalla.js');
 const fc = require('./config.js');
 const { exec } = require('child-process-promise')

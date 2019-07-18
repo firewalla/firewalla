@@ -6,16 +6,12 @@
 
 const log = require("../../net2/logger.js")(__filename, "info");
 
-const fs = require('fs');
 const util = require('util');
 
 const f = require('../../net2/Firewalla.js');
-const fHome = f.getFirewallaHome();
 const logFolder = f.getLogFolder();
 
 const config = require("../../net2/config.js").getConfig();
-
-const userID = f.getUserID();
 
 const df = require('node-df');
 
@@ -31,7 +27,6 @@ const platform = platformLoader.getPlatform();
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
 let cpuUsage = 0;
-let memUsage = 0;
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -48,8 +43,6 @@ let redisMemory = 0;
 let updateFlag = 0;
 
 let updateInterval = 60 * 1000; // every 30 seconds
-
-let releaseBranch = null;
 
 let threadInfo = {};
 
