@@ -36,6 +36,10 @@ function getPreferredBName(hostObject) {
     return hostObject.name // always use user customized name first
   }
 
+  if(hostObject.spoofMeName) {
+    return hostObject.spoofMeName
+  }
+
   if(hostObject.cloudName) {
     return hostObject.cloudName
   }
