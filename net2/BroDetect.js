@@ -266,10 +266,15 @@ module.exports = class {
         ip = macEntry && macEntry.ipv4Addr;
       }
       if (ip) {
+        const mac = await l2.getMACAsync(ip).catch((err) => {
+          return null;
+        }); // get mac from link layer, avoid stale mac-ip mapping from host:mac. Otherwise stale data will be read from host:mac and written back to it, wich causes host:mac may never be updated properly
+        if (!mac)
+          continue;
         const host = {
           ipv4: ip,
           ipv4Addr: ip,
-          mac: key,
+          mac: mac,
           from: "macHeartbeat"
         };
         sem.emitEvent({
