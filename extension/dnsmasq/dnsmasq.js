@@ -1148,7 +1148,8 @@ module.exports = class DNSMASQ {
     this.shouldStart = false
 
     await this.updateResolvConf();
-    await this.rawStop();
+    // no need to stop dnsmasq, this.rawStart() will restart dnsmasq. Otherwise, there is a cooldown before restart, causing dns outage during that cool down window.
+    // await this.rawStop(); 
     try {
       await this.rawStart();
     } catch (err) {

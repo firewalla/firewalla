@@ -1264,7 +1264,10 @@ module.exports = class HostManager {
           log.error("profileId is not specified", policy);
           return false;
         }
+        let settings = policy.openvpn && policy.openvpn.settings || {};
         const ovpnClient = new OpenVPNClient({profileId: profileId});
+        await ovpnClient.saveSettings(settings);
+        settings = await ovpnClient.loadSettings(); // settings is merged with default settings
         // apply vpn client access to interfaces in appliedInterfaces
         const supportedInterfaces = {
           wifi: fConfig.monitoringWifiInterface
@@ -1284,10 +1287,14 @@ module.exports = class HostManager {
           return false;
         }
         if (state === true) {
+          let setupResult = true;
           await ovpnClient.setup().catch((err) => {
             // do not return false here since following start() operation should fail
             log.error(`Failed to setup openvpn client for ${profileId}`, err);
+            setupResult = false;
           });
+          if (!setupResult)
+            return false;
           ovpnClient.once('push_options_start', async (content) => {
             const dnsServers = [];
             for (let line of content.split("\n")) {
@@ -1306,13 +1313,22 @@ module.exports = class HostManager {
             }
             // redirect dns to vpn channel
             if (dnsServers.length > 0) {
-              await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-              // set/clear dns redirection of all supported interfaces accordingly
-              for (let supportedInterface in supportedInterfaces) {
-                const intfName = supportedInterfaces[supportedInterface];
-                if (appliedInterfaces.includes(supportedInterface)) {
-                  await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                } else {
+              if (settings.routeDNS) {
+                await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+                // set/clear dns redirection of all supported interfaces accordingly
+                for (let supportedInterface in supportedInterfaces) {
+                  const intfName = supportedInterfaces[supportedInterface];
+                  if (appliedInterfaces.includes(supportedInterface)) {
+                    await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+                  } else {
+                    await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+                  }
+                }
+              } else {
+                await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+                // clear dns redirect for all supported interfaces
+                for (let supportedInterface in supportedInterfaces) {
+                  const intfName = supportedInterfaces[supportedInterface];
                   await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
                 }
               }
@@ -1337,6 +1353,7 @@ module.exports = class HostManager {
           }
           return result;
         } else {
+          // proceed to stop anyway even if setup is failed
           await ovpnClient.setup().catch((err) => {
             log.error(`Failed to setup openvpn client for ${profileId}`, err);
           });
@@ -1356,8 +1373,8 @@ module.exports = class HostManager {
                 }
               }
             }
-            // remove dns redirect rule
             if (dnsServers.length > 0) {
+              // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
               await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
               // clear dns redirect for all supported interfaces
               for (let supportedInterface in supportedInterfaces) {
