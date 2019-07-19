@@ -52,7 +52,7 @@
   },
   "dns": {
     "defaultDNSServer": "8.8.8.8",
-    "fallbackDNSServers" : [
+    "fallbackDNSServers": [
       "8.8.8.8",
       "1.1.1.1"
     ],
@@ -77,8 +77,7 @@
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "VPNCheckPlugin": {},
-    "SafeSearchPlugin": {},
-    "FamilyProtectPlugin": {}
+    "SafeSearchPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -133,8 +132,7 @@
       "securityInterval": 14400,
       "countryInterval": 86400
     },
-    "AutoBlocksRevalidationSensor": {
-    },
+    "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
     "SafeSearchPlugin": {
@@ -373,6 +371,7 @@
       }
     },
     "FamilyProtectPlugin": {},
+    "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "ICMP6Sensor": {},
@@ -476,7 +475,10 @@
     "IPChangeSensor": {},
     "DnsLoopAvoidanceSensor": {},
     "DataMigrationSensor": {
-      "migrationCodeNames": ["clairvoyant", "bipartite_graph"]
+      "migrationCodeNames": [
+        "clairvoyant",
+        "bipartite_graph"
+      ]
     },
     "WirelessInterfaceSensor": {}
   },

@@ -44,9 +44,6 @@ const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 
-let FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
-let ADBLOCK_DNS = ["8.8.8.8"]; // these are just backup servers
-
 const features = require('../net2/features');
 
 const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
@@ -101,15 +98,6 @@ module.exports = class {
     sem.emitEvent({
       type: 'IPTABLES_READY'
     });
-  }
-
-  adblock(ip, state) {
-    if (ip !== "0.0.0.0") {
-      return
-    }
-
-    log.info("PolicyManager:Adblock:Dnsmasq", ip, state);
-    dnsmasq.controlFilter('adblock', state);
   }
 
   async upstreamDns(policy) {
@@ -403,9 +391,7 @@ module.exports = class {
           }
         }
       }
-      if (p === "adblock") {
-        this.adblock(ip, policy[p]);
-      } else if (p === "upstreamDns") {
+      if (p === "upstreamDns") {
         (async () => {
           try {
             await this.upstreamDns(policy[p]);
