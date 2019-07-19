@@ -1799,11 +1799,12 @@ class netBot extends ControllerBot {
         break;
       }
       case "country:supported":
-        rc.smembersAsync('country:list').then(list => {
+        rclient.smembersAsync('country:list').then(list => {
           this.simpleTxData(msg, {supported: list}, null, callback);
         }).catch(err => {
           this.simpleTxData(msg, {}, err, callback);
         })
+        break;
 
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);

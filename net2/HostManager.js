@@ -1479,7 +1479,7 @@ module.exports = class HostManager {
   getActiveHumanDevices() {
     const HUMAN_TRESHOLD = 0.05
 
-    this.hosts.all.filter((host) => {
+    this.hosts.all.filter((h) => {
       if(h.o && h.o.mac) {
         const dtype = h.o.dtype
         try {
