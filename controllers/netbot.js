@@ -2765,8 +2765,8 @@ class netBot extends ControllerBot {
           return;
         }
         const matches = cn.match(/^[a-zA-Z0-9]+/g);
-        if (cn.length > 16 || matches == null || matches.length != 1 || matches[0] !== cn) {
-          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 16 characters"}, callback);
+        if (cn.length > 32 || matches == null || matches.length != 1 || matches[0] !== cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters"}, callback);
           return;
         }
         const settings = value.settings || {};
