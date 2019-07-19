@@ -1249,10 +1249,6 @@ class netBot extends ControllerBot {
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
-        let compAlg = "";
-        if (value) {
-          compAlg = compAlg || value.compress;
-        }
         this.hostManager.loadPolicy((err, data) => {
           let datamodel = {
             type: 'jsonmsg',
@@ -1270,26 +1266,30 @@ class netBot extends ControllerBot {
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
-            VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, compAlg, externalPort, (err, ovpnfile, password) => {
-              if (err == null) {
-                datamodel.code = 200;
-                datamodel.data = {
-                  ovpnfile: ovpnfile,
-                  password: password,
-                  portmapped: JSON.parse(data['vpnPortmapped'] || "false")
-                };
-
-                (async () => {
-                  const doublenat = await rclient.getAsync("ext.doublenat");
-                  if (doublenat !== null) {
-                    datamodel.data.doublenat = doublenat;
-                  }
+            VpnManager.configureClient("fishboneVPN1", null).then(() => {
+              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, (err, ovpnfile, password) => {
+                if (err == null) {
+                  datamodel.code = 200;
+                  datamodel.data = {
+                    ovpnfile: ovpnfile,
+                    password: password,
+                    portmapped: JSON.parse(data['vpnPortmapped'] || "false")
+                  };
+                  (async () => {
+                    const doublenat = await rclient.getAsync("ext.doublenat");
+                    if (doublenat !== null) {
+                      datamodel.data.doublenat = doublenat;
+                    }
+                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                  })();
+                } else {
                   this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-                })();
-              } else {
-                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-              }
-            });
+                }
+              });
+            }).catch((err) => {
+              log.error("Failed to get ovpn profile", err);
+              this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+            })
           }
         });
         break;
@@ -1724,10 +1724,10 @@ class netBot extends ControllerBot {
                       pass = lines[1];
                     }
                   }
-
+                  const settings = await ovpnClient.loadSettings();
                   const status = await ovpnClient.status();
                   const stats = await ovpnClient.getStatistics();
-                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, user: user, pass: pass, status: status, stats: stats}, null, callback);
+                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, user: user, pass: pass, settings: settings, status: status, stats: stats}, null, callback);
                 }
               }
             })().catch((err) => {
@@ -1778,8 +1778,10 @@ class netBot extends ControllerBot {
                       pass = lines[1];
                     }
                   }
+                  const settings = await ovpnClient.loadSettings();
                   profile.user = user;
                   profile.pass = pass;
+                  profile.settings = settings;
                   const status = await ovpnClient.status();
                   profile.status = status;
                   const stats = await ovpnClient.getStatistics();
@@ -2755,6 +2757,98 @@ class netBot extends ControllerBot {
         tokenManager.revokeToken(gid);
         break;
       }
+      case "vpnProfile:grant": {
+        const cn = value.cn;
+        const regenerate = value.regenerate || false;
+        if (!cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' is not specified."}, callback);
+          return;
+        }
+        const matches = cn.match(/^[a-zA-Z0-9]+/g);
+        if (cn.length > 16 || matches == null || matches.length != 1 || matches[0] !== cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 16 characters"}, callback);
+          return;
+        }
+        const settings = value.settings || {};
+        (async () => {
+          const systemPolicy = await this.hostManager.loadPolicyAsync();
+          const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+          let externalPort = "1194";
+          if (vpnConfig && vpnConfig.externalPort)
+            externalPort = vpnConfig.externalPort;
+          await VpnManager.configureClient(cn, settings).then(() => {
+            VpnManager.getOvpnFile(cn, null, regenerate, externalPort, (err, ovpnfile, password) => {
+              if (!err) {
+                this.simpleTxData(msg, {ovpnfile: ovpnfile, password: password, settings: settings}, null, callback);
+              } else {
+                this.simpleTxData(msg, null, err, callback);
+              }
+            });
+          }).catch((err) => { // usually caused by invalid configuration
+            log.error("Failed to grant vpn profile to " + cn, err);
+            this.simpleTxData(msg, null, {code: 400, msg: err}, callback);
+          })
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnProfile:delete": {
+        const cn = value.cn;
+        if (!cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' is not specified."}, callback);
+          return;
+        }
+        (async () => {
+          await VpnManager.revokeOvpnFile(cn);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnProfile:get": {
+        const cn = value.cn;
+        if (!cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' is not specified."}, callback);
+          return;
+        }
+        (async () => {
+          const settings = await VpnManager.getSettings(cn);
+          if (!settings) {
+            this.simpleTxData(msg, {}, {code: 404, msg: `VPN profile of ${cn} does not exist`}, callback);
+            return;
+          }
+          const systemPolicy = await this.hostManager.loadPolicyAsync();
+          const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+          let externalPort = "1194";
+          if (vpnConfig && vpnConfig.externalPort)
+            externalPort = vpnConfig.externalPort;
+          VpnManager.getOvpnFile(cn, null, false, externalPort, (err, ovpnfile, password) => {
+            if (!err) {
+              this.simpleTxData(msg, {ovpnfile: ovpnfile, password: password, settings: settings}, null, callback);
+            } else {
+              this.simpleTxData(msg, null, err, callback);
+            }
+          });
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnProfile:list": {
+        (async () => {
+          const allSettings = await VpnManager.getAllSettings();
+          const vpnProfiles = [];
+          for (let cn in allSettings) {
+            vpnProfiles.push({cn: cn, settings: allSettings[cn]});
+          }
+          this.simpleTxData(msg, vpnProfiles, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
       case "startVpnClient": {
         const type = value.type;
         if (!type) {
@@ -2769,20 +2863,19 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup().catch((err) => {
-                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                await ovpnClient.setup().then(async () => {
+                  const result = await ovpnClient.start();
+                  if (!result) {
+                    await ovpnClient.stop();
+                    // HTTP 408 stands for request timeout
+                    this.simpleTxData(msg, {}, {code: 408, msg: "Failed to start vpn client within 30 seconds."}, callback);
+                  } else {
+                    this.simpleTxData(msg, {}, null, callback);
+                  }  
+                }).catch((err) => {
+                  log.error(`Failed to start openvpn client for ${profileId}`, err);
+                  this.simpleTxData(msg, {}, {code: 400, msg: err}, callback);
                 });
-                const result = await ovpnClient.start();
-                if (!result) {
-                  await ovpnClient.stop();
-                  // set state to false in system policy
-                  this._vpnClient("0.0.0.0", {state: false});
-                  // HTTP 408 stands for request timeout
-                  this.simpleTxData(msg, {}, {code: 408, msg: "Failed to start vpn client within 20 seconds."}, callback);
-                } else {
-                  this._vpnClient("0.0.0.0", {state: true});
-                  this.simpleTxData(msg, {}, null, callback);
-                }
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
               });
@@ -2807,13 +2900,14 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup().catch((err) => {
-                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                await ovpnClient.setup().then(async () => {
+                  const stats = await ovpnClient.getStatistics();
+                  await ovpnClient.stop();
+                  this.simpleTxData(msg, {stats: stats}, null, callback);
+                }).catch((err) => {
+                  log.error(`Failed to stop openvpn client for ${profileId}`, err);
+                  this.simpleTxData(msg, {}, {code: 400, msg: err}, callback);
                 });
-                const stats = await ovpnClient.getStatistics();
-                await ovpnClient.stop();
-                this._vpnClient("0.0.0.0", {state: false});
-                this.simpleTxData(msg, {stats: stats}, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
               })
@@ -2834,6 +2928,7 @@ class netBot extends ControllerBot {
             const password = value.password;
             const user = value.user;
             const pass = value.pass;
+            const settings = value.settings;
             if (!content) {
               this.simpleTxData(msg, {}, {code: 400, msg: "'content' should be specified"}, callback);
               return;
@@ -2871,9 +2966,16 @@ class netBot extends ControllerBot {
                   }
                   if (user && pass) {
                     const userPassPath = ovpnClient.getUserPassPath();
-                    await writeFileAsync(userPassPath, `${user}\n${pass}`);
+                    await writeFileAsync(userPassPath, `${user}\n${pass}`, 'utf8');
                   }
-                  this.simpleTxData(msg, {}, null, callback);
+                  if (settings) {
+                    await ovpnClient.saveSettings(settings);
+                  }
+                  await ovpnClient.setup().then(() => {
+                    this.simpleTxData(msg, {}, null, callback);
+                  }).catch((err) => {
+                    this.simpleTxData(msg, {}, {code: 400, msg: err}, callback);
+                  })
                 }
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);

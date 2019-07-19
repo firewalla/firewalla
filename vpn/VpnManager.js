@@ -32,6 +32,10 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
 const Promise = require('bluebird');
 const execAsync = util.promisify(cp.exec);
+const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+const readdirAsync = util.promisify(fs.readdir);
+const statAsync = util.promisify(fs.stat);
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
@@ -302,7 +306,7 @@ class VpnManager {
     });
     this.portmapped = false;
     let op = "start";
-    if (this.needRestart) {
+    if (!this.started || this.needRestart) {
       op = "restart";
       this.needRestart = false;
     }
@@ -357,11 +361,128 @@ class VpnManager {
     return "10." + seg1 + "." + seg2 + ".0";
   }
 
-  static getOvpnFile(clientname, password, regenerate, compressAlg, externalPort, callback) {
-    let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, clientname);
-    let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, clientname);
-    if (compressAlg == null)
-      compressAlg = "";
+  static getSettingsDirectoryPath(commonName) {
+    return `${process.env.HOME}/ovpns/${commonName}`;
+  }
+
+  static async configureClient(commonName, settings) {
+    settings = settings || {};
+    const configRC = [];
+    const configCCD = [];
+    configCCD.push("comp-lzo no"); // disable compression in client-config-dir
+    configCCD.push("push \"comp-lzo no\"");
+    const clientSubnets = [];
+    for (let key in settings) {
+      const value = settings[key];
+      switch (key) {
+        case "clientSubnets":
+          // value is array of cidr subnets
+          for (let cidr of value) {
+            // add iroute to client config file
+            const subnet = ip.cidrSubnet(cidr);
+            configCCD.push(`iroute ${subnet.networkAddress} ${subnet.subnetMask}`);
+            clientSubnets.push(`${subnet.networkAddress}/${subnet.subnetMaskLength}`);
+          }
+          configRC.push(`CLIENT_SUBNETS="${clientSubnets.join(',')}"`);
+          break;
+        default:
+      }
+    }
+    // check if there is conflict between client subnets and Firewalla's subnets
+    const mySubnet = sysManager.mySubnet();
+    const mySubnet2 = sysManager.mySubnet2();
+    for (let clientSubnet of clientSubnets) {
+      const ipSubnets = clientSubnet.split('/');
+      if (ipSubnets.length != 2)
+        throw `${clientSubnet} is not a valid CIDR subnet`;
+      const ipAddr = ipSubnets[0];
+      const maskLength = ipSubnets[1];
+      if (!ip.isV4Format(ipAddr))
+        throw `${clientSubnet} is not a valid CIDR subnet`;
+      if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
+        throw `${clientSubnet} is not a valid CIDR subnet`;
+      const clientSubnetCidr = ip.cidrSubnet(clientSubnet);
+      if (mySubnet) {
+        const mySubnetCidr = ip.cidrSubnet(mySubnet);
+        if (mySubnetCidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnetCidr.firstAddress))
+          throw `${clientSubnet} conflicts with Firewalla's primary subnet`;
+      }
+      if (mySubnet2) {
+        const mySubnet2Cidr = ip.cidrSubnet(mySubnet2);
+        if (mySubnet2Cidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnet2Cidr.firstAddress))
+          throw `${clientSubnet} conflicts with Firewalla's secondary subnet`;
+      }
+    }
+    // save settings to files
+    await execAsync(`mkdir -p ${VpnManager.getSettingsDirectoryPath(commonName)}`);
+    const configRCFile = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.rc`;
+    const configJSONFile = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.json`;
+    const configCCDFileTmp = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.ccd`;
+    const configCCDFile = `/etc/openvpn/client_conf/${commonName}`;
+    await writeFileAsync(configRCFile, configRC.join('\n'), 'utf8');
+    await writeFileAsync(configJSONFile, JSON.stringify(settings), 'utf8');
+    await writeFileAsync(configCCDFileTmp, configCCD.join('\n'), 'utf8');
+    await execAsync(`sudo cp ${configCCDFileTmp} ${configCCDFile}`);
+    const cmd = `sudo chmod 644 /etc/openvpn/client_conf/${commonName}`;
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to change permisson: ${cmd}`, err);
+    });
+  }
+
+  static async getSettings(commonName) {
+    const configJSONFile = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.json`;
+    if (fs.existsSync(configJSONFile)) {
+      const config = await readFileAsync(configJSONFile, 'utf8').then((str) => {
+        return JSON.parse(str);
+      }).catch((err) => {
+        log.error("Failed to read settings from " + configJSONFile, err);
+        return {};
+      })
+      return config;
+    } else {
+      return null;
+    }
+  }
+
+  static async getAllSettings() {
+    const settingsDirectory = `${process.env.HOME}/ovpns`;
+    await execAsync(`mkdir -p ${settingsDirectory}`);
+    const allSettings = {};
+    const filenames = await readdirAsync(settingsDirectory, 'utf8');
+    for (let filename of filenames) {
+      const fileEntry = await statAsync(`${settingsDirectory}/${filename}`);
+      if (fileEntry.isDirectory()) {
+        // directory contains .json and .rc file
+        const settingsFilePath = `${VpnManager.getSettingsDirectoryPath(filename)}/${filename}.json`;
+        if (fs.existsSync(settingsFilePath)) {
+          const settings = await readFileAsync(settingsFilePath, 'utf8').then((content) => {
+            return JSON.parse(content)
+          }).catch((err) => {
+            log.error("Failed to read settings from " + settingsFilePath, err);
+            return null;
+          });
+          if (settings)
+            allSettings[filename] = settings;
+        }
+      }
+    }
+    return allSettings;
+  }
+
+  static async revokeOvpnFile(commonName) {
+    if (!commonName || commonName.trim().length == 0)
+      return;
+    const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s; sync'", fHome, vpnLockFile, commonName);
+    log.info("VPNManager:Revoke", cmd);
+    await execAsync(cmd).catch((err) => {
+      log.error("Failed to revoke VPN profile " + commonName, err);
+    });
+  }
+
+  static getOvpnFile(commonName, password, regenerate, externalPort, callback) {
+    let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
+    let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
 
     log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
 
@@ -372,14 +493,6 @@ class VpnManager {
         callback(null, ovpn, password);
         return;
       }
-
-      let originalName = clientname;
-      // Original name remains unchanged even if client name is trailed by random numbers.
-      // So that client ovpn file name will remain unchanged while its content has been updated.
-      // always randomize the name when creating
-//      if (regenerate == true) {
-      clientname = clientname + VpnManager.generatePassword(15);
-//      }
 
       if (password == null) {
         password = VpnManager.generatePassword(5);
@@ -397,8 +510,8 @@ class VpnManager {
 
       const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-      let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s %s'; sync",
-        fHome, vpnLockFile, clientname, password, ip, externalPort, originalName, compressAlg);
+      let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s'; sync",
+        fHome, vpnLockFile, commonName, password, ip, externalPort);
       log.info("VPNManager:GEN", cmd);
       exec(cmd, (err, stdout, stderr) => {
         if (err) {

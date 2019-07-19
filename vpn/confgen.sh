@@ -52,10 +52,7 @@ if [ ! -d /etc/openvpn/client_conf ]; then
   mkdir -p /etc/openvpn/client_conf
 fi
 
-if [ ! -f /etc/openvpn/client_conf/DEFAULT ]; then
-  sed 's/COMP_LZO_OPT/comp-lzo no/' < $FIREWALLA_HOME/vpn/client_conf.txt > /etc/openvpn/client_conf/DEFAULT
-  sed -i 's/COMPRESS_OPT/compress/' /etc/openvpn/client_conf/DEFAULT
-fi
+cp $FIREWALLA_HOME/vpn/client_conf.txt /etc/openvpn/client_conf/DEFAULT
 
 chmod 755 -R /etc/openvpn
 chmod 644 /etc/openvpn/crl.pem
@@ -80,6 +77,21 @@ if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
     # ensure client-config-dir is enabled in server config
     echo -e "\nclient-config-dir /etc/openvpn/client_conf" >> /etc/openvpn/$INSTANCE_NAME.conf
   fi
+  grep -q -w "client-connect" /etc/openvpn/$INSTANCE_NAME.conf
+  ccs_enabled=$?
+  if [[ $ccs_enabled -ne 0 ]]; then
+    # ensure client-connect is enabled in server config
+    echo -e "\nclient-connect /home/pi/firewalla/vpn/client_connected.sh" >> /etc/openvpn/$INSTANCE_NAME.conf
+  fi
+  grep -q -w "client-disconnect" /etc/openvpn/$INSTANCE_NAME.conf
+  cds_enabled=$?
+  if [[ $cds_enabled -ne 0 ]]; then
+    # ensure client-disconnect is enabled in server config
+    echo -e "\nclient-disconnect /home/pi/firewalla/vpn/client_disconnected.sh" >> /etc/openvpn/$INSTANCE_NAME.conf
+  fi
+  sudo sed -i 's/^user .*//' /etc/openvpn/$INSTANCE_NAME.conf # remove user constraints
+  sudo sed -i 's/^group .*//' /etc/openvpn/$INSTANCE_NAME.conf # remove group constraints
+  sudo sed -i 's/^dev tun.*/dev tun_fwvpn/' /etc/openvpn/$INSTANCE_NAME.conf # explicitly specify tun interface name
   minimumsize=100
   actualsize=$(wc -c <"/etc/openvpn/$INSTANCE_NAME.conf")
   if [[ $same_network -eq 0 && $same_port -eq 0 && $actualsize -ge $minimumsize ]]; then

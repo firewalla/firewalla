@@ -168,15 +168,18 @@ class VPNClientEnforcer {
     }
   }
 
-  async enforceVPNClientRoutes(remoteIP, vpnIntf) {
+  async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], overrideDefaultRoute = true) {
     if (!vpnIntf)
       throw "Interface is not specified";
     const tableName = this._getRoutingTableName(vpnIntf);
     // ensure customized routing table is created
     await routing.createCustomizedRoutingTable(tableName);
-    // add routes from main routing table to vpn client table except default route
+    // add routes from main routing table to vpn client table
     await routing.flushRoutingTable(tableName);
-    let cmd = "ip route list | grep -v default";
+    let cmd = "ip route list";
+    if (overrideDefaultRoute)
+      // do not copy default route from main routing table
+      cmd = "ip route list | grep -v default";
     const routes = await execAsync(cmd);
     await Promise.all(routes.stdout.split('\n').map(async route => {
       if (route.length > 0) {
@@ -184,8 +187,18 @@ class VPNClientEnforcer {
         await execAsync(cmd);
       }
     }));
-    // then add remote IP as gateway of default route to vpn client table
-    await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName);
+    for (let routedSubnet of routedSubnets) {
+      const cidr = ipTool.cidrSubnet(routedSubnet);
+      // change subnet to ip route acceptable format
+      const formattedSubnet = `${cidr.networkAddress}/${cidr.subnetMaskLength}`;
+      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName).catch((err) => {
+        log.error(`Failed to add '${formattedSubnet} via ${remoteIP} dev ${vpnIntf} table ${tableName}`, err);
+      });
+    }
+    if (overrideDefaultRoute) {
+      // then add remote IP as gateway of default route to vpn client table
+      await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName);
+    }
   }
 
   async flushVPNClientRoutes(vpnIntf) {
