@@ -2766,28 +2766,36 @@ class netBot extends ControllerBot {
         }
         const matches = cn.match(/^[a-zA-Z0-9]+/g);
         if (cn.length > 32 || matches == null || matches.length != 1 || matches[0] !== cn) {
-          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters"}, callback);
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters."}, callback);
           return;
         }
         const settings = value.settings || {};
         (async () => {
-          const systemPolicy = await this.hostManager.loadPolicyAsync();
-          const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
-          let externalPort = "1194";
-          if (vpnConfig && vpnConfig.externalPort)
-            externalPort = vpnConfig.externalPort;
-          await VpnManager.configureClient(cn, settings).then(() => {
-            VpnManager.getOvpnFile(cn, null, regenerate, externalPort, (err, ovpnfile, password) => {
-              if (!err) {
-                this.simpleTxData(msg, {ovpnfile: ovpnfile, password: password, settings: settings}, null, callback);
-              } else {
-                this.simpleTxData(msg, null, err, callback);
-              }
+          const allSettings = await VpnManager.getAllSettings();
+          if (Object.keys(allSettings).filter((name) => {
+            return name !== "fishboneVPN1";
+          }).length >= 1) {
+            // Only one customized VPN profile is supported currently besides default VPN profile fishboneVPN1
+            this.simpleTxData(msg, {}, {code:401, msg: 'Only one customized VPN profile is supported.'}, callback);
+          } else {
+            const systemPolicy = await this.hostManager.loadPolicyAsync();
+            const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+            let externalPort = "1194";
+            if (vpnConfig && vpnConfig.externalPort)
+              externalPort = vpnConfig.externalPort;
+            await VpnManager.configureClient(cn, settings).then(() => {
+              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, (err, ovpnfile, password) => {
+                if (!err) {
+                  this.simpleTxData(msg, {ovpnfile: ovpnfile, password: password, settings: settings}, null, callback);
+                } else {
+                  this.simpleTxData(msg, null, err, callback);
+                }
+              });
+            }).catch((err) => { // usually caused by invalid configuration
+              log.error("Failed to grant vpn profile to " + cn, err);
+              this.simpleTxData(msg, null, {code: 400, msg: err}, callback);
             });
-          }).catch((err) => { // usually caused by invalid configuration
-            log.error("Failed to grant vpn profile to " + cn, err);
-            this.simpleTxData(msg, null, {code: 400, msg: err}, callback);
-          })
+          }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
@@ -2816,7 +2824,7 @@ class netBot extends ControllerBot {
         (async () => {
           const settings = await VpnManager.getSettings(cn);
           if (!settings) {
-            this.simpleTxData(msg, {}, {code: 404, msg: `VPN profile of ${cn} does not exist`}, callback);
+            this.simpleTxData(msg, {}, {code: 404, msg: `VPN profile of ${cn} does not exist.`}, callback);
             return;
           }
           const systemPolicy = await this.hostManager.loadPolicyAsync();
