@@ -15,5 +15,5 @@ if [[ -n $CLIENT_SUBNETS ]]; then # CLIENT_SUBNETS are cidr subnets separated wi
     sudo ip r add $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn
   done
 fi
-
-exit 0
+# If previous add routing is failed, usually due to the routing already exists, this scripts will return non-zero exit value. The client will not be able to connect.
+# This is as expected since only one client with the same common name is permitted to connect at the same time. client_disconnected.sh script will remote the routing when client is disconnected.

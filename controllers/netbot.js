@@ -2773,7 +2773,7 @@ class netBot extends ControllerBot {
         (async () => {
           const allSettings = await VpnManager.getAllSettings();
           if (Object.keys(allSettings).filter((name) => {
-            return name !== "fishboneVPN1";
+            return name !== "fishboneVPN1" && name !== cn;
           }).length >= 1) {
             // Only one customized VPN profile is supported currently besides default VPN profile fishboneVPN1
             this.simpleTxData(msg, {}, {code:401, msg: 'Only one customized VPN profile is supported.'}, callback);
