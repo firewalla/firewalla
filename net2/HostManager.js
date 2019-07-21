@@ -491,7 +491,7 @@ module.exports = class HostManager {
 
     let promises = this.hosts.all.map((host) => flowManager.getStats2(host));
     await Promise.all(promises);
-    await this.hostPolicyRulesForInit(json);
+    await this.hostPolicyRulesForInit();
     await this.hostsInfoForInit(json);
     return json;
   }
@@ -632,7 +632,7 @@ module.exports = class HostManager {
     });
   }
 
-  async hostPolicyRulesForInit(json) {
+  async hostPolicyRulesForInit() {
     log.info("Reading individual host policy rules");
 
     await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
@@ -936,62 +936,43 @@ module.exports = class HostManager {
   // take hosts list, get mac address, look up mac table, and see if
   // ipv6 or ipv4 addresses needed updating
 
-  syncHost(host, save, callback) {
+  async syncHost(host, save) {
     if (host.o.mac == null) {
       log.error("HostManager:Sync:Error:MacNull", host.o.mac, host.o.ipv4Addr, host.o);
-      callback("mac", null);
-      return;
+      throw new Error("No mac")
     }
     let mackey = "host:mac:" + host.o.mac;
-    host.identifyDevice(false,null);
-    host.calculateDType((err, data) => {
-      rclient.hgetall(mackey, (err, data) => {
-        if (data == null || err != null) {
-          callback(err, null);
-          return;
-        }
-        if (data.ipv6Addr == null) {
-          callback(null, null);
-          return;
-        }
+    await host.identifyDevice(false);
+    let data = await rclient.hgetallAsync(mackey)
+    if (!data || !data.ipv6Addr) return;
 
-        let ipv6array = JSON.parse(data.ipv6Addr);
-        if (host.ipv6Addr == null) {
-          host.ipv6Addr = [];
-        }
+    let ipv6array = JSON.parse(data.ipv6Addr);
+    if (host.ipv6Addr == null) {
+      host.ipv6Addr = [];
+    }
 
-        let needsave = false;
+    let needsave = false;
 
-        //log.debug("=======>",host.o.ipv4Addr, host.ipv6Addr, ipv6array);
-        for (let i in ipv6array) {
-          if (host.ipv6Addr.indexOf(ipv6array[i]) == -1) {
-            host.ipv6Addr.push(ipv6array[i]);
-            needsave = true;
-          }
-        }
+    //log.debug("=======>",host.o.ipv4Addr, host.ipv6Addr, ipv6array);
+    for (let i in ipv6array) {
+      if (host.ipv6Addr.indexOf(ipv6array[i]) == -1) {
+        host.ipv6Addr.push(ipv6array[i]);
+        needsave = true;
+      }
+    }
 
-        sysManager.setNeighbor(host.o.ipv4Addr);
+    sysManager.setNeighbor(host.o.ipv4Addr);
 
-        for (let j in host.ipv6Addr) {
-          sysManager.setNeighbor(host.ipv6Addr[j]);
-        }
+    for (let j in host.ipv6Addr) {
+      sysManager.setNeighbor(host.ipv6Addr[j]);
+    }
 
-        host.redisfy();
-        if (needsave == true && save == true) {
-          rclient.hmset(mackey, {
-            ipv6Addr: host.o.ipv6Addr
-          }, (err, data) => {
-            callback(err);
-          });
-        } else {
-          callback(null);
-        }
+    host.redisfy();
+    if (needsave == true && save == true) {
+      await rclient.hmsetAsync(mackey, {
+        ipv6Addr: host.o.ipv6Addr
       });
-    });
-  }
-
-  syncHostAsync(host, save) {
-    return util.promisify(this.syncHost).bind(this)(host, save)
+    }
   }
 
   getHostsAsync() {
@@ -1142,11 +1123,11 @@ module.exports = class HostManager {
             }
           }
           await hostbymac.cleanV6()
-          await this.syncHostAsync(hostbymac, true)
           if (this.type == "server") {
             await hostbymac.applyPolicyAsync()
           }
-          hostbymac._mark = true;
+          // call apply policy before to ensure policy data is loaded before device indentification
+          await this.syncHost(hostbymac, true)
         })
         let removedHosts = [];
         /*
@@ -1283,7 +1264,10 @@ module.exports = class HostManager {
           log.error("profileId is not specified", policy);
           return false;
         }
+        let settings = policy.openvpn && policy.openvpn.settings || {};
         const ovpnClient = new OpenVPNClient({profileId: profileId});
+        await ovpnClient.saveSettings(settings);
+        settings = await ovpnClient.loadSettings(); // settings is merged with default settings
         // apply vpn client access to interfaces in appliedInterfaces
         const supportedInterfaces = {
           wifi: fConfig.monitoringWifiInterface
@@ -1303,10 +1287,14 @@ module.exports = class HostManager {
           return false;
         }
         if (state === true) {
+          let setupResult = true;
           await ovpnClient.setup().catch((err) => {
             // do not return false here since following start() operation should fail
             log.error(`Failed to setup openvpn client for ${profileId}`, err);
+            setupResult = false;
           });
+          if (!setupResult)
+            return false;
           ovpnClient.once('push_options_start', async (content) => {
             const dnsServers = [];
             for (let line of content.split("\n")) {
@@ -1325,13 +1313,22 @@ module.exports = class HostManager {
             }
             // redirect dns to vpn channel
             if (dnsServers.length > 0) {
-              await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-              // set/clear dns redirection of all supported interfaces accordingly
-              for (let supportedInterface in supportedInterfaces) {
-                const intfName = supportedInterfaces[supportedInterface];
-                if (appliedInterfaces.includes(supportedInterface)) {
-                  await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                } else {
+              if (settings.routeDNS) {
+                await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+                // set/clear dns redirection of all supported interfaces accordingly
+                for (let supportedInterface in supportedInterfaces) {
+                  const intfName = supportedInterfaces[supportedInterface];
+                  if (appliedInterfaces.includes(supportedInterface)) {
+                    await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+                  } else {
+                    await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+                  }
+                }
+              } else {
+                await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+                // clear dns redirect for all supported interfaces
+                for (let supportedInterface in supportedInterfaces) {
+                  const intfName = supportedInterfaces[supportedInterface];
                   await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
                 }
               }
@@ -1356,6 +1353,7 @@ module.exports = class HostManager {
           }
           return result;
         } else {
+          // proceed to stop anyway even if setup is failed
           await ovpnClient.setup().catch((err) => {
             log.error(`Failed to setup openvpn client for ${profileId}`, err);
           });
@@ -1375,8 +1373,8 @@ module.exports = class HostManager {
                 }
               }
             }
-            // remove dns redirect rule
             if (dnsServers.length > 0) {
+              // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
               await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
               // clear dns redirect for all supported interfaces
               for (let supportedInterface in supportedInterfaces) {
@@ -1498,7 +1496,7 @@ module.exports = class HostManager {
   getActiveHumanDevices() {
     const HUMAN_TRESHOLD = 0.05
 
-    this.hosts.all.filter((host) => {
+    this.hosts.all.filter((h) => {
       if(h.o && h.o.mac) {
         const dtype = h.o.dtype
         try {

@@ -2,16 +2,13 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-LEGACY_NAME="fishboneVPN1"
-INDEX="index.txt"
-
 sudo chmod 777 -R /etc/openvpn
 
 if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && [[ -e /etc/openvpn/easy-rsa/keys2 ]]; then
   bash $FIREWALLA_HOME/scripts/reset-vpn-keys-extended.sh
 fi
 
-# ovpngen.sh <client name> <keypassword> <public ip> <local port> <original name> <compress algorithm>
+# ovpngen.sh <common name> <keypassword> <public ip> <external port>
 
 NAME=$1
 echo "Please enter a Name for the Client:"
@@ -20,15 +17,10 @@ echo $NAME
 PUBLIC_IP=$3
 sed 's/PUBLIC_IP/'$PUBLIC_IP'/' <$FIREWALLA_HOME/vpn/Default.txt >/etc/openvpn/easy-rsa/keys/Default.txt # Default.txt is temporarily used to generate ovpn file
 # Set local port
-LOCAL_PORT=$4
-: ${LOCALPORT:="1194"}
-sed -i "s/LOCAL_PORT/$LOCAL_PORT/" /etc/openvpn/easy-rsa/keys/Default.txt
+EXTERNAL_PORT=$4
+: ${EXTERNAL_PORT:="1194"}
+sed -i "s/EXTERNAL_PORT/$EXTERNAL_PORT/" /etc/openvpn/easy-rsa/keys/Default.txt
 
-ORIGINAL_NAME=$5
-: ${ORIGINAL_NAME:=$NAME}
-
-COMPRESS_ALG=$6
-: ${COMPRESS_ALG=""}
  
 # Default Variable Declarations 
 DEFAULT="Default.txt" 
@@ -53,34 +45,13 @@ if [ -f ~/ovpns/.ovpn.cn ]; then
   PREVIOUS_CN=`cat ~/ovpns/.ovpn.cn`
   echo "revoke previous CN: $PREVIOUS_CN"
   ./revoke-full $PREVIOUS_CN
-  sudo cp keys/crl.pem /etc/openvpn/crl.pem
-  sudo chmod 644 /etc/openvpn/crl.pem
-else
-  # Invalidate all previous client profiles
-  cat /etc/openvpn/easy-rsa/keys/index.txt | grep "^V" | grep fishboneVPN1 | cut -d/ -f7 | cut -d= -f2 | while read -r line; do
-    echo "revoke legacy CN: $line"
-    ./revoke-full $line
-  done
-  sudo cp keys/crl.pem /etc/openvpn/crl.pem
-  sudo chmod 644 /etc/openvpn/crl.pem
+  rm ~/ovpns/.ovpn.cn
 fi
-
-# create client config file in client-conf-dir
-if [[ "x$COMPRESS_ALG" == "x" ]]; then
-  sed 's/COMP_LZO_OPT/comp-lzo no/' < $FIREWALLA_HOME/vpn/client_conf.txt > /etc/openvpn/client_conf/$NAME
-  sed -i 's/COMPRESS_OPT/compress/' /etc/openvpn/client_conf/$NAME
-  sudo chmod 644 /etc/openvpn/client_conf/$NAME
-else
-  if [[ $COMPRESS_ALG == "lzo" ]]; then
-    sed 's/COMP_LZO_OPT/comp-lzo/' < $FIREWALLA_HOME/vpn/client_conf.txt > /etc/openvpn/client_conf/$NAME
-    sed -i 's/COMPRESS_OPT/compress lzo/' /etc/openvpn/client_conf/$NAME
-    sudo chmod 644 /etc/openvpn/client_conf/$NAME
-  else
-    sed 's/COMP_LZO_OPT/comp-lzo no/' < $FIREWALLA_HOME/vpn/client_conf.txt > /etc/openvpn/client_conf/$NAME
-    sed -i 's/COMPRESS_OPT/compress '$COMPRESS_ALG'/' /etc/openvpn/client_conf/$NAME
-    sudo chmod 644 /etc/openvpn/client_conf/$NAME
-  fi
-fi
+# Invalidate previous profile with same common name anyway
+echo "revoke previous CN: $NAME"
+./revoke-full $NAME
+sudo cp keys/crl.pem /etc/openvpn/crl.pem
+sudo chmod 644 /etc/openvpn/crl.pem
 
 echo "build key pass"
 #./build-key-pass $NAME
@@ -151,8 +122,5 @@ sudo chmod 644 /etc/openvpn/client_conf/*
 echo "$NAME$FILEEXT moved to home directory."
 PASSEXT=".password"
 echo -n "$2" > ~/ovpns/$NAME$FILEEXT$PASSEXT
-cp ~/ovpns/$NAME$FILEEXT ~/ovpns/$ORIGINAL_NAME.ovpn
-cp ~/ovpns/$NAME$FILEEXT$PASSEXT ~/ovpns/$ORIGINAL_NAME.ovpn.password
-echo "$NAME" > ~/ovpns/.ovpn.cn
 sync
 # Original script written by Eric Jodoin.

@@ -21,7 +21,9 @@ const cp = require('child_process');
 const Promise = require('bluebird');
 const util = require('util');
 const f = require('../../net2/Firewalla.js');
-
+const SysManager = require('../../net2/SysManager');
+const sysManager = new SysManager();
+const ipTool = require('ip');
 
 const instances = {};
 
@@ -68,6 +70,34 @@ class OpenVPNClient extends VPNClient {
       this.ovpnPath = ovpnPath;
       await this._reviseProfile(this.ovpnPath);
     } else throw util.format("ovpn file %s is not found", ovpnPath);
+    const settings = await this.loadSettings();
+    // check settings
+    if (settings.serverSubnets && Array.isArray(settings.serverSubnets)) {
+      const mySubnet = sysManager.mySubnet();
+      const mySubnet2 = sysManager.mySubnet2();
+      for (let serverSubnet of settings.serverSubnets) {
+        const ipSubnets = serverSubnet.split('/');
+        if (ipSubnets.length != 2)
+          throw `${serverSubnet} is not a valid CIDR subnet`;
+        const ipAddr = ipSubnets[0];
+        const maskLength = ipSubnets[1];
+        if (!ipTool.isV4Format(ipAddr))
+          throw `${serverSubnet} is not a valid CIDR subnet`;
+        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
+          throw `${serverSubnet} is not a valid CIDR subnet`;
+        const serverSubnetCidr = ipTool.cidrSubnet(serverSubnet);
+        if (mySubnet) {
+          const mySubnetCidr = ipTool.cidrSubnet(mySubnet);
+          if (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress))
+            throw `${serverSubnet} conflicts with Firewalla's primary subnet`;
+        }
+        if (mySubnet2) {
+          const mySubnet2Cidr = ipTool.cidrSubnet(mySubnet2);
+          if (mySubnet2Cidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnet2Cidr.firstAddress))
+            throw `${serverSubnet} conflicts with Firewalla's secondary subnet`;
+        }
+      }
+    }
   }
 
   getProfilePath() {
@@ -83,6 +113,38 @@ class OpenVPNClient extends VPNClient {
   getUserPassPath() {
     const path = f.getHiddenFolder() + "/run/ovpn_profile/" + this.profileId + ".userpass";
     return path;
+  }
+
+  getSettingsPath() {
+    const path = f.getHiddenFolder() + "/run/ovpn_profile/" + this.profileId + ".settings";
+    return path;
+  }
+
+  async saveSettings(settings) {
+    const settingsPath = this.getSettingsPath();
+    let defaultSettings = {
+      serverSubnets: [],
+      overrideDefaultRoute: true,
+      routeDNS: true
+    }; // default settings
+    const mergedSettings = Object.assign({}, defaultSettings, settings);
+    this.settings = mergedSettings;
+    await writeFileAsync(settingsPath, JSON.stringify(mergedSettings), 'utf8');
+  }
+
+  async loadSettings() {
+    const settingsPath = this.getSettingsPath();
+    let settings = {
+      serverSubnets: [],
+      overrideDefaultRoute: true,
+      routeDNS: true
+    }; // default settings
+    if (fs.existsSync(settingsPath)) {
+      const settingsContent = await readFileAsync(settingsPath, 'utf8');
+      settings = Object.assign({}, settings, JSON.parse(settingsContent));
+    }
+    this.settings = settings;
+    return settings;
   }
 
   _getPushOptionsPath() {
@@ -213,7 +275,7 @@ class OpenVPNClient extends VPNClient {
     if (!this.profileId) {
       throw "OpenVPN client is not setup properly. Profile id is missing."
     }
-    let cmd = util.format("sudo systemctl restart \"%s@%s\"", SERVICE_NAME, this.profileId);
+    let cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
@@ -235,7 +297,8 @@ class OpenVPNClient extends VPNClient {
             clearInterval(establishmentTask);
             const intf = this.getInterfaceName();
             // add vpn client specific routes
-            await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf);
+            const settings = await this.loadSettings();
+            await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
             await this._processPushOptions("start");
             this._started = true;
             resolve(true);

@@ -49,6 +49,10 @@ function getPreferredBName(hostObject) {
     return hostObject.cloudName
   }
 
+  if(hostObject.spoofMeName) {
+    return hostObject.spoofMeName
+  }
+
   if(hostObject.dhcpName) {
     return hostObject.dhcpName
   }

@@ -37,33 +37,39 @@ const wrapIptables = require('./Iptables.js').wrapIptables;
 class ShieldManager {
   constructor() {
     if (!instance) {
-      sclient.on("message", (channel, message) => {
-        switch (channel) {
-          case "System:VPNSubnetChanged":
-            const newVpnSubnet = message;
-            this._updateVPNOutgoingRules(newVpnSubnet);
-            break;
-          default:
-
-        }
-      });
+      this.trustedIpv4Addrs = {};
+      this.trustedIpv6Addrs = {};
       if (firewalla.isMain()) {
+        sclient.on("message", (channel, message) => {
+          switch (channel) {
+            case "System:VPNSubnetChanged":
+              const newVpnSubnet = message;
+              this._updateVPNOutgoingRules(newVpnSubnet);
+              break;
+            default:
+  
+          }
+        });
         sclient.subscribe("System:VPNSubnetChanged");
 
         sem.on("DeviceUpdate", (event) => {
           (async () => {
             // add/update device ip address to trusted_ip_set/trusted_ip_set6
             const host = event.host;
-            if (host.ipv4Addr) {
+            if (host.ipv4Addr && !this.trustedIpv4Addrs[host.ipv4Addr]) {
               log.info("Update device ip in trusted_ip_set: " + host.ipv4Addr);
               const cmd = util.format("sudo ipset add -! trusted_ip_set %s", host.ipv4Addr);
               await exec(cmd);
+              this.trustedIpv4Addrs[host.ipv4Addr] = 1;
             }
             if (host.ipv6Addr && host.ipv6Addr.length > 0) {
               for (let v6Addr of host.ipv6Addr) {
+                if (this.trustedIpv6Addrs[v6Addr])
+                  continue;
                 log.info("Update device ip in trusted_ip_set6: " + v6Addr);
                 const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", v6Addr);
                 await exec(cmd);
+                this.trustedIpv6Addrs[v6Addr] = 1;
               };
             }
             // update ip address to protected_ip_set/protected_ip_set6
@@ -128,12 +134,18 @@ class ShieldManager {
       }
     }
     for (let ip in allIpv4Addrs) {
-      log.debug("Add ip to trusted_ip_set: " + ip);
-      await Ipset.add('trusted_ip_set', ip)
+      if (this.trustedIpv4Addrs[ip])
+        continue;
+      log.info("Add ip to trusted_ip_set: " + ip);
+      await Ipset.add('trusted_ip_set', ip);
+      this.trustedIpv4Addrs[ip] = 1;
     }
     for (let ip in allIpv6Addrs) {
-      log.debug("Add ip to trusted_ip_set6: " + ip);
-      await Ipset.add('trusted_ip_set6', ip)
+      if (this.trustedIpv6Addrs[ip])
+        continue;
+      log.info("Add ip to trusted_ip_set6: " + ip);
+      await Ipset.add('trusted_ip_set6', ip);
+      this.trustedIpv6Addrs[ip] = 1;
     }
   }
 
@@ -182,6 +194,7 @@ class ShieldManager {
           await this.deactivateShield(mac);
         } else {
           log.info("IP addresses of " + mac + " are not changed.");
+          return; // no need to call ipset command if ip addresses are not changed.
         }
       }
       

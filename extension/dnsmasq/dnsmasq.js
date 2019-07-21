@@ -114,7 +114,7 @@ module.exports = class DNSMASQ {
         adblock: undefined,
         family: undefined
       };
-
+      
       this.reloadCount = {
         adblock: 0,
         family: 0
@@ -130,7 +130,9 @@ module.exports = class DNSMASQ {
         writeHostsFile: 0,
         restart: 0
       }
-
+      this.dnsTag = {
+        adblock: "$ad_block"
+      }
       sem.once('IPTABLES_READY', () => {
         if (f.isMain()) {
           setInterval(() => {
@@ -300,7 +302,6 @@ module.exports = class DNSMASQ {
     let preState = this.state[type];
     let nextState = this.nextState[type];
     this.state[type] = nextState;
-
     log.info(`in reloadFilter(${type}): preState: ${preState}, nextState: ${this.state[type]}, this.reloadCount: ${this.reloadCount[type]++}`);
 
     if (nextState === true) {
@@ -692,9 +693,9 @@ module.exports = class DNSMASQ {
       if (type === "family") {
         targetIP = BLUE_HOLE_IP
       }
-
+      const tag = this.dnsTag[type] ? this.dnsTag[type] : "";
       hashes.forEach((hash) => {
-        let line = util.format("hash-address=/%s/%s\n", hash.replace(/\//g, '.'), targetIP)
+        let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), targetIP, tag)
         writer.write(line);
       });
 
@@ -1147,7 +1148,8 @@ module.exports = class DNSMASQ {
     this.shouldStart = false
 
     await this.updateResolvConf();
-    await this.rawStop();
+    // no need to stop dnsmasq, this.rawStart() will restart dnsmasq. Otherwise, there is a cooldown before restart, causing dns outage during that cool down window.
+    // await this.rawStop(); 
     try {
       await this.rawStart();
     } catch (err) {
