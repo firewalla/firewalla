@@ -232,7 +232,7 @@ function destroyRules(macTag, dstTag, whitelist, destroyDstCache = true) {
 }
 
 async function addMacToSet(macAddresses, ipset = null, whitelist = false) {
-  ipset = ipset || (whitelist ? 'blocked_mac_set' : 'whitelist_mac_set')
+  ipset = ipset || (whitelist ? 'whitelist_mac_set' : 'blocked_mac_set');
 
   for (const mac of macAddresses || []) {
     await Ipset.add(ipset, mac);
@@ -240,7 +240,7 @@ async function addMacToSet(macAddresses, ipset = null, whitelist = false) {
 }
 
 async function delMacFromSet(macAddresses, ipset = null, whitelist = false) {
-  ipset = ipset || (whitelist ? 'blocked_mac_set' : 'whitelist_mac_set')
+  ipset = ipset || (whitelist ? 'whitelist_mac_set' : 'blocked_mac_set');
 
   for (const mac of macAddresses || []) {
     await Ipset.del(ipset, mac);
