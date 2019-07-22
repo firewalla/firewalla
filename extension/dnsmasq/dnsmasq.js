@@ -286,7 +286,7 @@ module.exports = class DNSMASQ {
       await fs.accessAsync(filterTmp, fs.constants.F_OK);
       await fs.renameAsync(filterTmp, filter);
     } catch (err) {
-      log.error(`${filterTmp} ${err ? 'does not exist' : 'exists'}`);
+      log.error('Error when updating filter', err);
     }
   }
 
