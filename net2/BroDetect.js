@@ -259,23 +259,22 @@ module.exports = class {
   
   async _activeMacHeartbeat() {
     for (let mac in this.activeMac) {
-      let ip = this.activeMac[mac];
+      let entry = this.activeMac[mac];
       let host = {
         mac: mac,
         from: "macHeartbeat"
       };
-      if (!iptool.isV4Format(ip)) {
-        if (iptool.isV6Format(ip)) {
-          host.ipv6Addr = ip;
-        }
-      } else {
-        host.ipv4 = ip;
-        host.ipv4Addr = ip;
+      if (entry.ipv4Addr && iptool.isV4Format(entry.ipv4Addr)) {
+        host.ipv4 = entry.ipv4Addr;
+        host.ipv4Addr = entry.ipv4Addr;
+      }
+      if (entry.ipv6Addr && Array.isArray(entry.ipv6Addr) && entry.ipv6Addr.length > 0) {
+        host.ipv6Addr = entry.ipv6Addr;
       }
       if (host.ipv4Addr || host.ipv6Addr) {
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: `Device network activity heartbeat ${host.ip} ${host.mac}`,
+          message: `Device network activity heartbeat ${host.ipv4Addr || host.ipv6Addr} ${host.mac}`,
           host: host
         });
       }
@@ -1043,7 +1042,17 @@ module.exports = class {
       if (tmpspec) {
         if (tmpspec.lh === tmpspec.sh) {
           // record device as active if and only if device originates the connection
-          this.activeMac[localMac] = tmpspec.lh;
+          let macIPEntry = this.activeMac[localMac];
+          if (!macIPEntry)
+            macIPEntry = {ipv6Addr: []};
+          if (iptool.isV4Format(tmpspec.lh)) {
+            macIPEntry.ipv4Addr = tmpspec.lh;
+          } else {
+            if (iptool.isV6Format(tmpspec.lh)) {
+              macIPEntry.ipv6Addr.push(tmpspec.lh);
+            }
+          }
+          this.activeMac[localMac] = macIPEntry;
         }
         let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
         let strdata = JSON.stringify(tmpspec);
@@ -1119,9 +1128,6 @@ module.exports = class {
           }
           spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
-          /* do not mark as active for stashed flows due to latency of processing flow stash
-          this.activeMac[spec.mac] = spec.lh;
-          */
           let key = "flow:conn:" + spec.fd + ":" + localMac;
           let strdata = JSON.stringify(spec);
           let ts = spec._ts; // this is the last time when this flowspec is updated
