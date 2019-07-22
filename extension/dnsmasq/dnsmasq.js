@@ -114,7 +114,7 @@ module.exports = class DNSMASQ {
         adblock: undefined,
         family: undefined
       };
-      
+
       this.reloadCount = {
         adblock: 0,
         family: 0
@@ -199,7 +199,7 @@ module.exports = class DNSMASQ {
 
   // in format 127.0.0.1#5353
   async setUpstreamDNS(dns) {
-    if(dns === upstreamDNS) {
+    if (dns === upstreamDNS) {
       log.info("upstreamdns is same as dns, ignored. (" + dns + ")");
       return;
     }
@@ -209,7 +209,7 @@ module.exports = class DNSMASQ {
 
     let enabled = await this.checkStatus();
 
-    if(enabled) {
+    if (enabled) {
       try {
         await this.start(true); // only need to change firemasq service unit file and restart firemasq, no need to update iptables
         log.info("dnsmasq is restarted to apply new upstream dns");
@@ -242,7 +242,7 @@ module.exports = class DNSMASQ {
     })
 
     // add fallback dns servers in case every previous dns server is broken
-    if(FALLBACK_DNS_SERVERS) {
+    if (FALLBACK_DNS_SERVERS) {
       FALLBACK_DNS_SERVERS.forEach((dns) => {
         if (effectiveNameServers && !effectiveNameServers.includes(dns))
           effectiveNameServers.push(dns);
@@ -282,7 +282,9 @@ module.exports = class DNSMASQ {
 
     log.info(`${type} filter file is `, filter);
     log.info(`${type} tmp filter file is `, filterTmp);
-    await fs.renameAsync(filterTmp, filter);
+    if (fs.existsSync(filterTmp)) {
+      await fs.renameAsync(filterTmp, filter);
+    }
   }
 
   _scheduleNextReload(type, oldNextState, curNextState) {
@@ -290,7 +292,7 @@ module.exports = class DNSMASQ {
       // no need immediate reload when next state not changed during reloading
       this.nextReloadFilter[type].forEach(t => clearTimeout(t));
       this.nextReloadFilter[type].length = 0;
-      log.info(`schedule next reload for ${type} in ${RELOAD_INTERVAL/1000}s`);
+      log.info(`schedule next reload for ${type} in ${RELOAD_INTERVAL / 1000}s`);
       this.nextReloadFilter[type].push(setTimeout(this._reloadFilter.bind(this), RELOAD_INTERVAL, type));
     } else {
       log.warn(`${type}'s next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
@@ -453,7 +455,7 @@ module.exports = class DNSMASQ {
     let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
     log.info("Command to get current name server: ", cmd);
 
-    let {stdout, stderr} = await execAsync(cmd);
+    let { stdout, stderr } = await execAsync(cmd);
 
     if (!stdout || stdout === '') {
       return [];
@@ -498,19 +500,19 @@ module.exports = class DNSMASQ {
     } catch (err) {
       // no such file, need to crate one
       //log.error("Error when fs.stat", filterFile, err);
-      if(err.code !== "ENOENT") {
+      if (err.code !== "ENOENT") {
         throw err;
       }
       noent = true;
     }
 
     // to update only if filter file has not been updated recently or doesn't exsit
-    if(force || noent || (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
+    if (force || noent || (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
       try {
         await fs.statAsync(filterFileTmp);
         await fs.unlinkAsync(filterFileTmp);
       } catch (err) {
-        if(err.code !== "ENOENT") {
+        if (err.code !== "ENOENT") {
           throw err;
         }
       }
@@ -710,7 +712,7 @@ module.exports = class DNSMASQ {
     try {
       await execAsync(cmd);
       return true;
-    } catch(err) {
+    } catch (err) {
       return false;
     }
   }
@@ -722,10 +724,10 @@ module.exports = class DNSMASQ {
       log.info("need restart is", this.needRestart);
     }
 
-    if(this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
+    if (this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
       this.needRestart = null
       this.rawRestart((err) => {
-        if(err) {
+        if (err) {
           log.error("Failed to restart dnsmasq")
         } else {
           log.info("dnsmasq restarted:", this.counter.restart);
@@ -735,13 +737,13 @@ module.exports = class DNSMASQ {
   }
 
   checkIfWriteHostsFile() {
-    if(this.needWriteHostsFile) {
+    if (this.needWriteHostsFile) {
       log.info("need writeHostsFile is", this.needWriteHostsFile);
     }
-    if(this.shouldStart && this.needWriteHostsFile) {
+    if (this.shouldStart && this.needWriteHostsFile) {
       this.needWriteHostsFile = null;
       this.writeHostsFile().then((reload) => {
-        if(reload) {
+        if (reload) {
           this.reloadDnsmasq();
         }
       });
@@ -763,7 +765,7 @@ module.exports = class DNSMASQ {
   }
 
   async reloadDnsmasq() {
-    this.counter.reloadDnsmasq ++;
+    this.counter.reloadDnsmasq++;
     log.info("start to reload dnsmasq (-HUP):", this.counter.reloadDnsmasq);
     try {
       await execAsync('sudo systemctl reload firemasq');
@@ -844,12 +846,12 @@ module.exports = class DNSMASQ {
     let shouldUpdate = false;
     const _hostsHash = this.computeHash(_hosts);
 
-    if(this.lastHostsHash !== _hostsHash) {
+    if (this.lastHostsHash !== _hostsHash) {
       shouldUpdate = true;
       this.lastHostsHash = _hostsHash;
     }
 
-    if(shouldUpdate === false) {
+    if (shouldUpdate === false) {
       log.info("No need to update hosts file, skipped");
       return false;
     }
@@ -868,7 +870,7 @@ module.exports = class DNSMASQ {
 
     cmd = await this.prepareDnsmasqCmd(cmd);
 
-    if(upstreamDNS) {
+    if (upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
       cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
     }
@@ -877,7 +879,7 @@ module.exports = class DNSMASQ {
 
     await this.writeHostsFile();
 
-    if(f.isDocker()) {
+    if (f.isDocker()) {
       await this.restartDnsmasqDocker();
     } else {
       await this.restartDnsmasq();
@@ -887,7 +889,7 @@ module.exports = class DNSMASQ {
   async restartDnsmasqDocker() {
     try {
       childProcess.execSync("sudo pkill dnsmasq")
-    } catch(err) {
+    } catch (err) {
       // do nothing
     }
 
@@ -1221,10 +1223,10 @@ module.exports = class DNSMASQ {
       log.debug(`Verifying DNS connectivity via ${domain}...`)
 
       try {
-        let {stdout, stderr} = await execAsync(cmd);
+        let { stdout, stderr } = await execAsync(cmd);
         if (stderr !== "" || stdout === "") {
           let error = new Error(`Error verifying dns connectivity to ${domain}`);
-          Object.assign(error, {stdout, stderr});
+          Object.assign(error, { stdout, stderr });
           throw error;
         } else {
           log.debug("DNS connectivity looks good")
@@ -1251,11 +1253,11 @@ module.exports = class DNSMASQ {
       return;
     }
 
-    this.failCount ++
+    this.failCount++
     log.warn(`DNS status check has failed ${this.failCount} times`);
 
     if (this.failCount > 8) {
-      if(!f.isProductionOrBeta()) {
+      if (!f.isProductionOrBeta()) {
         pclient.publishAsync("DNS:DOWN", this.failCount);
       }
       if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
@@ -1271,9 +1273,9 @@ module.exports = class DNSMASQ {
       });
     } else {
       try {
-        let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
+        let { stdout, stderr } = await execAsync("ps aux | grep dns[m]asq");
         log.info("dnsmasq running status: \n", stdout, stderr)
-      } catch(e) {
+      } catch (e) {
         log.error("Failed to query process list of dnsmasq", e)
       }
 
@@ -1286,24 +1288,24 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async cleanUpLeftoverConfig(){
-    try{
+  async cleanUpLeftoverConfig() {
+    try {
       const userConfigFolder = f.getUserConfigFolder(),
-            dnsConfigFolder = `${userConfigFolder}/dns`,
-            devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
+        dnsConfigFolder = `${userConfigFolder}/dns`,
+        devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
       const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
       const cleanupPromises = configFolders.map(configFolder => {
         (async () => {
           const files = await fs.readdirAsync(configFolder)
           files.map(filename => {
-            if(filename.indexOf('safeSearch')>-1){
+            if (filename.indexOf('safeSearch') > -1) {
               fs.unlinkAsync(`${configFolder}/${filename}`)
             }
           });
         })()
       })
       await Promise.all(cleanupPromises)
-    }catch(err){
+    } catch (err) {
       log.info("clean up leftover config", err)
     }
   }
