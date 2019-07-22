@@ -41,11 +41,13 @@ fi
 
 source ./vars
 if [ -f ~/ovpns/.ovpn.cn ]; then
-  # Invalidate previous profile
+  # Invalidate previous profile starts with $NAME, this is specifically for default VPN profile fishboneVPN1xxx
   PREVIOUS_CN=`cat ~/ovpns/.ovpn.cn`
-  echo "revoke previous CN: $PREVIOUS_CN"
-  ./revoke-full $PREVIOUS_CN
-  rm ~/ovpns/.ovpn.cn
+  if [[ $PREVIOUS_CN == $NAME* ]]; then
+    echo "revoke previous CN: $PREVIOUS_CN"
+    ./revoke-full $PREVIOUS_CN
+    rm ~/ovpns/.ovpn.cn
+  fi
 fi
 # Invalidate previous profile with same common name anyway
 echo "revoke previous CN: $NAME"
