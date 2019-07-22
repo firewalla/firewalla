@@ -182,8 +182,8 @@ module.exports = class {
       this.connLog = new Tail(this.config.bro.conn.path, '\n');
       if (this.connLog != null) {
         log.debug("Initializing watchers: connInitialized", this.config.bro.conn.path);
-        this.connLog.on('line', (data) => {
-          this.processConnData(data);
+        this.connLog.on('line', async (data) => {
+          await this.processConnData(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -193,8 +193,8 @@ module.exports = class {
       this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
       if (this.connLogdev != null) {
         log.debug("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
-        this.connLogdev.on('line', (data) => {
-          this.processConnData(data);
+        this.connLogdev.on('line', async (data) => {
+          await this.processConnData(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -623,7 +623,7 @@ module.exports = class {
   }
 
   // Only log ipv4 packets for now
-  processConnData(data) {
+  async processConnData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -818,12 +818,24 @@ module.exports = class {
         return;
       }
 
+      if (!localMac) {
+        // this happens on older bro which does not support mac logging
+        localMac = await l2.getMACAsync(lhost).catch((err) => {
+          log.error("Failed to get MAC address from link layer for " + lhost);
+          return null;
+        }); // Don't worry about performance issue, this function has internal cache
+        if (!localMac) {
+          localMac = await hostTool.getMacByIPWithCache(lhost).catch((err) => {
+            log.error("Failed to get MAC address from cache for " + lhost, err);
+            return null;
+          });
+        }
+      }
       if (!localMac || localMac.constructor.name !== "String") {
-        log.error("Mac address is not found or invalid", obj);
         return;
       }
       localMac = localMac.toUpperCase();
-
+      
       // Mark all flows that are partially completed.
       // some of these flows may be valid
       //
