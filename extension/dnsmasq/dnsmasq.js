@@ -282,8 +282,11 @@ module.exports = class DNSMASQ {
 
     log.info(`${type} filter file is `, filter);
     log.info(`${type} tmp filter file is `, filterTmp);
-    if (fs.existsSync(filterTmp)) {
+    try {
+      await fs.accessAsync(filterTmp, fs.constants.F_OK);
       await fs.renameAsync(filterTmp, filter);
+    } catch (err) {
+      log.error(`${filterTmp} ${err ? 'does not exist' : 'exists'}`);
     }
   }
 
