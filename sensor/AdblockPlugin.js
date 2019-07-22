@@ -130,17 +130,17 @@ class AdblockPlugin extends Sensor {
     async applySystemAdblock() {
         if (this.systemSwitch && this.adminSystemSwitch) {
             const adblocktagset = `mac-address-tag=%${systemLevelMac}${dnsTag}\n`;
-            await fs.writeFile(systemConfigFile, adblocktagset);
+            await fs.writeFileAsync(systemConfigFile, adblocktagset);
         } else {
-            await fs.unlink(systemConfigFile, err => {
-                if (err) {
-                    if (err.code === 'ENOENT') {
-                        log.info(`Dnsmasq: No ${systemConfigFile}, skip remove`);
-                    } else {
-                        log.warn(`Dnsmasq: Error when remove ${systemConfigFile}`, err);
-                    }
+            try {
+                await fs.unlinkAsync(systemConfigFile);
+            } catch (err) {
+                if (err.code === 'ENOENT') {
+                    log.info(`Dnsmasq: No ${systemConfigFile}, skip remove`);
+                } else {
+                    log.warn(`Dnsmasq: Error when remove ${systemConfigFile}`, err);
                 }
-            });
+            }
         }
         dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
     }
@@ -148,20 +148,23 @@ class AdblockPlugin extends Sensor {
     async applyDeviceAdblock() {
         const macAddressArr = this.enabledMacAddresses;
         if (macAddressArr.length > 0 && this.adminSystemSwitch) {
-            const adblocktagset = `mac-address-tag=%${macAddressArr.join("%")}${dnsTag}\n`;
-            await fs.writeFile(deviceConfigFile, adblocktagset);
+            let adblocktagset = "";
+            macAddressArr.forEach((macAddress) => {
+                adblocktagset += `mac-address-tag=%${macAddress}${dnsTag}\n`
+            })
+            await fs.writeFileAsync(deviceConfigFile, adblocktagset);
         } else {
-            await fs.unlink(deviceConfigFile, err => {
-                if (err) {
-                    if (err.code === 'ENOENT') {
-                        log.info(`Dnsmasq: No ${deviceConfigFile}, skip remove`);
-                    } else {
-                        log.warn(`Dnsmasq: Error when remove ${deviceConfigFile}`, err);
-                    }
+            try {
+                await fs.unlinkAsync(deviceConfigFile);
+            } catch (err) {
+                if (err.code === 'ENOENT') {
+                    log.info(`Dnsmasq: No ${deviceConfigFile}, skip remove`);
+                } else {
+                    log.warn(`Dnsmasq: Error when remove ${deviceConfigFile}`, err);
                 }
-            });
+            }
         }
-        dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
+        dnsmasq.restartDnsmasq();
     }
     // global on/off
     globalOn() {
