@@ -21,6 +21,8 @@ const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
 
+const { delay } = require('../../util/util.js');
+
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
 
 const FILTER_FILE = {
@@ -358,7 +360,7 @@ module.exports = class DNSMASQ {
 
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
-      await this.delay(1000);  // try again later
+      await delay(1000);  // try again later
     }
     this.workingInProgress = true;
 
@@ -382,7 +384,7 @@ module.exports = class DNSMASQ {
   async removePolicyFilterEntry(domain) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress");
-      await this.delay(1000);  // try again later
+      await delay(1000);  // try again later
     }
     this.workingInProgress = true;
 
@@ -461,10 +463,6 @@ module.exports = class DNSMASQ {
 
     let list = stdout.split('\n');
     return list.filter((x, i) => list.indexOf(x) === i);
-  }
-
-  async delay(t) {
-    return new Promise(resolve => setTimeout(resolve, t));
   }
 
   async reload() {
@@ -891,7 +889,7 @@ module.exports = class DNSMASQ {
       // do nothing
     }
 
-    const p = spawn('/bin/bash', ['-c', cmd])
+    const p = spawn('/bin/bash', ['-c', 'sudo service dnsmasq restart'])
 
     p.stdout.on('data', (data) => {
       log.info("DNSMASQ STDOUT:", data.toString());
@@ -901,12 +899,11 @@ module.exports = class DNSMASQ {
       log.info("DNSMASQ STDERR:", data.toString());
     })
 
-    await this.delay(1000);
+    await delay(1000);
   }
 
   async restartDnsmasq() {
     try {
-      //await execAsync("sudo systemctl restart firemasq");
       if (!this.needRestart)
         this.needRestart = new Date() / 1000;
       if (!statusCheckTimer) {
