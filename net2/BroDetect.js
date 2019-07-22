@@ -820,10 +820,12 @@ module.exports = class {
 
       if (!localMac) {
         // this happens on older bro which does not support mac logging
-        localMac = await l2.getMACAsync(lhost).catch((err) => {
-          log.error("Failed to get MAC address from link layer for " + lhost);
-          return null;
-        }); // Don't worry about performance issue, this function has internal cache
+        if (iptool.isV4Format(lhost)) {
+          localMac = await l2.getMACAsync(lhost).catch((err) => {
+            log.error("Failed to get MAC address from link layer for " + lhost);
+            return null;
+          }); // Don't worry about performance issue, this function has internal cache
+        }
         if (!localMac) {
           localMac = await hostTool.getMacByIPWithCache(lhost).catch((err) => {
             log.error("Failed to get MAC address from cache for " + lhost, err);
