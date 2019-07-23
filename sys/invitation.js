@@ -36,9 +36,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
-
 const iptool = require('ip');
 
 const clientMgmt = require('../mgmt/ClientMgmt.js');
