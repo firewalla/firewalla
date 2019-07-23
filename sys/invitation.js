@@ -262,13 +262,12 @@ class FWInvitation {
       icOptions.interface = myIp;
     }
     
-    const intercomm = require('../lib/intercomm.js')(icOptions);
-    this.intercomm = intercomm;
+    this.intercomm = require('../lib/intercomm.js')(icOptions);
     
-    if (intercomm.bcapable()==false) {
+    if (this.intercomm.bcapable()==false) {
       txtfield.verifymode = "qr";
     } else {
-      intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
+      this.intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
     }
 
     if(this.firstTime) {
@@ -288,13 +287,13 @@ class FWInvitation {
 
       log.info("TXT:", txtfield);
       const serial = platform.getBoardSerial();
-      this.service = intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
+      this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
       this.displayBonjourMessage(txtfield);
       this.storeBonjourMessage(txtfield);
     });
 
-    if (intercomm.bcapable() != false) {
-      intercomm.bpublish(this.gid, obj.r, config.serviceType);
+    if (this.intercomm.bcapable() != false) {
+      this.intercomm.bpublish(this.gid, obj.r, config.serviceType);
     }
 
     const cmd = "awk '{print $1}' /proc/uptime";
@@ -331,11 +330,10 @@ class FWInvitation {
   }
 
   stopBroadcast() {
-    const intercomm = this.intercomm;
-    if(intercomm) {
-      this.service && intercomm.stop(this.service);
-      intercomm.bcapable() && intercomm.bstop();
-      intercomm.bye();
+    if(this.intercomm) {
+      this.service && this.intercomm.stop(this.service);
+      this.intercomm.bcapable() && this.intercomm.bstop();
+      this.intercomm.bye();
       this.unsetBonjourMessage();      
     }    
   }
