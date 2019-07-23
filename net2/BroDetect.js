@@ -182,8 +182,8 @@ module.exports = class {
       this.connLog = new Tail(this.config.bro.conn.path, '\n');
       if (this.connLog != null) {
         log.debug("Initializing watchers: connInitialized", this.config.bro.conn.path);
-        this.connLog.on('line', (data) => {
-          this.processConnData(data);
+        this.connLog.on('line', async (data) => {
+          await this.processConnData(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -193,8 +193,8 @@ module.exports = class {
       this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
       if (this.connLogdev != null) {
         log.debug("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
-        this.connLogdev.on('line', (data) => {
-          this.processConnData(data);
+        this.connLogdev.on('line', async (data) => {
+          await this.processConnData(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -259,23 +259,22 @@ module.exports = class {
   
   async _activeMacHeartbeat() {
     for (let mac in this.activeMac) {
-      let ip = this.activeMac[mac];
+      let entry = this.activeMac[mac];
       let host = {
         mac: mac,
         from: "macHeartbeat"
       };
-      if (!iptool.isV4Format(ip)) {
-        if (iptool.isV6Format(ip)) {
-          host.ipv6Addr = ip;
-        }
-      } else {
-        host.ipv4 = ip;
-        host.ipv4Addr = ip;
+      if (entry.ipv4Addr && iptool.isV4Format(entry.ipv4Addr)) {
+        host.ipv4 = entry.ipv4Addr;
+        host.ipv4Addr = entry.ipv4Addr;
+      }
+      if (entry.ipv6Addr && Array.isArray(entry.ipv6Addr) && entry.ipv6Addr.length > 0) {
+        host.ipv6Addr = entry.ipv6Addr;
       }
       if (host.ipv4Addr || host.ipv6Addr) {
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: `Device network activity heartbeat ${host.ip} ${host.mac}`,
+          message: `Device network activity heartbeat ${host.ipv4Addr || host.ipv6Addr} ${host.mac}`,
           host: host
         });
       }
@@ -623,7 +622,7 @@ module.exports = class {
   }
 
   // Only log ipv4 packets for now
-  processConnData(data) {
+  async processConnData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -818,12 +817,33 @@ module.exports = class {
         return;
       }
 
+      if (localMac.toUpperCase() === sysManager.myMAC()) {
+        // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
+        if (lhost !== sysManager.myIp() && lhost !== sysManager.myIp2() && !(sysManager.myIp6() && sysManager.myIp6().includes(lhost))) {
+          log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
+          localMac = null; // discard local mac from bro log since it is not correct
+        }
+      }
+      if (!localMac) {
+        // this can also happen on older bro which does not support mac logging
+        if (iptool.isV4Format(lhost)) {
+          localMac = await l2.getMACAsync(lhost).catch((err) => {
+            log.error("Failed to get MAC address from link layer for " + lhost);
+            return null;
+          }); // Don't worry about performance issue, this function has internal cache
+        }
+        if (!localMac) {
+          localMac = await hostTool.getMacByIPWithCache(lhost).catch((err) => {
+            log.error("Failed to get MAC address from cache for " + lhost, err);
+            return null;
+          });
+        }
+      }
       if (!localMac || localMac.constructor.name !== "String") {
-        log.error("Mac address is not found or invalid", obj);
         return;
       }
       localMac = localMac.toUpperCase();
-
+      
       // Mark all flows that are partially completed.
       // some of these flows may be valid
       //
@@ -1029,7 +1049,17 @@ module.exports = class {
       if (tmpspec) {
         if (tmpspec.lh === tmpspec.sh) {
           // record device as active if and only if device originates the connection
-          this.activeMac[localMac] = tmpspec.lh;
+          let macIPEntry = this.activeMac[localMac];
+          if (!macIPEntry)
+            macIPEntry = {ipv6Addr: []};
+          if (iptool.isV4Format(tmpspec.lh)) {
+            macIPEntry.ipv4Addr = tmpspec.lh;
+          } else {
+            if (iptool.isV6Format(tmpspec.lh)) {
+              macIPEntry.ipv6Addr.push(tmpspec.lh);
+            }
+          }
+          this.activeMac[localMac] = macIPEntry;
         }
         let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
         let strdata = JSON.stringify(tmpspec);
@@ -1105,9 +1135,6 @@ module.exports = class {
           }
           spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
-          /* do not mark as active for stashed flows due to latency of processing flow stash
-          this.activeMac[spec.mac] = spec.lh;
-          */
           let key = "flow:conn:" + spec.fd + ":" + localMac;
           let strdata = JSON.stringify(spec);
           let ts = spec._ts; // this is the last time when this flowspec is updated
