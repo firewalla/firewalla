@@ -23,7 +23,7 @@ var cloud = require('encipher');
 var program = require('commander');
 var qrcode = require('qrcode-terminal');
 var publicIp = require('public-ip');
-var intercomm = require('../lib/intercomm.js');
+var intercomm = require('../lib/intercomm.js')();
 
 var ControllerBot = require('../lib/ControllerBot.js');
 

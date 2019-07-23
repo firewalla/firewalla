@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const uuid = require("uuid");
 
-const intercomm = require('../lib/intercomm.js');
+
 const { delay } = require('../util/util.js');
 const network = require('network');
 const qrcode = require('qrcode-terminal');
@@ -39,6 +39,9 @@ const platform = platformLoader.getPlatform();
 const clientMgmt = require('../mgmt/ClientMgmt.js');
 
 const config = require('../net2/config.js').getConfig();
+
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager();
 
 const FW_SERVICE = "Firewalla";
 const FW_SERVICE_TYPE = "fb";
@@ -253,6 +256,15 @@ class FWInvitation {
       this.diag.broadcastInfo = txtfield
     }
 
+    const myIp = sysManager.myIp();
+    const icOptions = {};
+    if(myIp) {
+      icOptions.interface = myIp;
+    }
+    
+    const intercomm = require('../lib/intercomm.js')(icOptions);
+    this.intercomm = intercomm;
+    
     if (intercomm.bcapable()==false) {
       txtfield.verifymode = "qr";
     } else {
@@ -319,10 +331,13 @@ class FWInvitation {
   }
 
   stopBroadcast() {
-    this.service && intercomm.stop(this.service);
-    intercomm.bcapable() && intercomm.bstop();
-    intercomm.bye();
-    this.unsetBonjourMessage();
+    const intercomm = this.intercomm;
+    if(intercomm) {
+      this.service && intercomm.stop(this.service);
+      intercomm.bcapable() && intercomm.bstop();
+      intercomm.bye();
+      this.unsetBonjourMessage();      
+    }    
   }
 }
 
