@@ -160,21 +160,21 @@ class FamilyProtectPlugin extends Sensor {
     async perDeviceStart(macAddress, dnsaddrs) {
         const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
         const dnsmasqentry = `server=${dnsaddrs[0]}%${macAddress.toUpperCase()}\n`;
-        await fs.writeFile(configFile, dnsmasqentry);
+        await fs.writeFileAsync(configFile, dnsmasqentry);
         dnsmasq.restartDnsmasq();
     }
 
     async perDeviceStop(macAddress) {
         const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
-        await fs.unlink(configFile, err => {
-            if (err) {
-                if (err.code === 'ENOENT') {
-                    log.info(`Dnsmasq: No ${configFile}, skip remove`);
-                } else {
-                    log.warn(`Dnsmasq: Error when remove ${configFile}`, err);
-                }
+        try {
+            await fs.unlinkAsync(configFile);
+        } catch (err) {
+            if (err.code === 'ENOENT') {
+                log.info(`Dnsmasq: No ${configFile}, skip remove`);
+            } else {
+                log.warn(`Dnsmasq: Error when remove ${configFile}`, err);
             }
-        })
+        }
         dnsmasq.restartDnsmasq();
     }
 
