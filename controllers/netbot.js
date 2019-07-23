@@ -1130,7 +1130,7 @@ class netBot extends ControllerBot {
       });
       break;
     default:
-        this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
+        this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
     }
   }
@@ -3374,7 +3374,7 @@ class netBot extends ControllerBot {
       }
       default:
         // unsupported action
-        this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
+        this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);
         break;
     }
   }
