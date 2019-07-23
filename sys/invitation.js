@@ -36,6 +36,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
+const iptool = require('ip');
+
 const clientMgmt = require('../mgmt/ClientMgmt.js');
 
 const config = require('../net2/config.js').getConfig();
@@ -284,6 +286,11 @@ class FWInvitation {
 
     network.get_private_ip((err, ip) => {
       txtfield.ipaddress = ip;
+      const ip2 = sysManager.myIp2();
+      const otherAddrs = [];
+      if (ip2 && iptool.isV4Format(ip2))
+        otherAddrs.push(ip2);
+      txtfield.ipaddresses = otherAddrs.join(",");
 
       log.info("TXT:", txtfield);
       const serial = platform.getBoardSerial();
