@@ -825,7 +825,7 @@ module.exports = class {
         }
       }
       if (!localMac) {
-        // this happens on older bro which does not support mac logging
+        // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
           localMac = await l2.getMACAsync(lhost).catch((err) => {
             log.error("Failed to get MAC address from link layer for " + lhost);
