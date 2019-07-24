@@ -34,6 +34,7 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 
 const readFileAsync = util.promisify(fs.readFile);
 const writeFileAsync = util.promisify(fs.writeFile);
+const existsAsync = util.promisify(fs.exists);
 const execAsync = util.promisify(cp.exec);
 
 const SERVICE_NAME = "openvpn_client";
@@ -66,7 +67,7 @@ class OpenVPNClient extends VPNClient {
     if (!profileId)
       throw "profileId is not set";
     const ovpnPath = this.getProfilePath();
-    if (fs.existsSync(ovpnPath)) {
+    if (await existsAsync(ovpnPath)) {
       this.ovpnPath = ovpnPath;
       await this._reviseProfile(this.ovpnPath);
     } else throw util.format("ovpn file %s is not found", ovpnPath);
@@ -139,7 +140,7 @@ class OpenVPNClient extends VPNClient {
       overrideDefaultRoute: true,
       routeDNS: true
     }; // default settings
-    if (fs.existsSync(settingsPath)) {
+    if (await existsAsync(settingsPath)) {
       const settingsContent = await readFileAsync(settingsPath, 'utf8');
       settings = Object.assign({}, settings, JSON.parse(settingsContent));
     }
@@ -156,7 +157,7 @@ class OpenVPNClient extends VPNClient {
   }
 
   async _parseProfile(ovpnPath) {
-    if (fs.existsSync(ovpnPath)) {
+    if (await existsAsync(ovpnPath)) {
       const content = await readFileAsync(ovpnPath, 'utf8');
       const lines = content.split("\n");
       this._intfType = "tun";
@@ -201,7 +202,7 @@ class OpenVPNClient extends VPNClient {
       }
     }
     // add private key password file to profile if present
-    if (fs.existsSync(this.getPasswordPath())) {
+    if (await existsAsync(this.getPasswordPath())) {
       if (!revisedContent.match(/^askpass.*$/gm)) {
         revisedContent = `askpass ${this.getPasswordPath()}\n${revisedContent}`;
       } else {
@@ -209,7 +210,7 @@ class OpenVPNClient extends VPNClient {
       }
     }
     // add user/pass file to profile if present
-    if (fs.existsSync(this.getUserPassPath())) {
+    if (await existsAsync(this.getUserPassPath())) {
       if (!revisedContent.match(/^auth-user-pass.*$/gm)) {
         revisedContent = `auth-user-pass ${this.getUserPassPath()}\n${revisedContent}`;
       } else {
@@ -321,7 +322,7 @@ class OpenVPNClient extends VPNClient {
 
   async _processPushOptions(status) {
     const pushOptionsFile = this._getPushOptionsPath();
-    if (fs.existsSync(pushOptionsFile)) {
+    if (await existsAsync(pushOptionsFile)) {
       const content = await readFileAsync(pushOptionsFile, "utf8");
       if (!content)
         return;
@@ -362,7 +363,7 @@ class OpenVPNClient extends VPNClient {
       // add read permission in case it is owned by root
       const cmd = util.format("sudo chmod +r %s", statusLogPath);
       await execAsync(cmd);
-      if (!existsSync(statusLogPath)) {
+      if (!await existsAsync(statusLogPath)) {
         log.warn(`status log for ${this.profileId} does not exist`);
         return {};
       }
