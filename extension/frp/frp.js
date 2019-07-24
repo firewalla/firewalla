@@ -100,7 +100,6 @@ module.exports = class {
       if (channel === "System:RemoteSupport") {
         try {
           message = JSON.parse(message) || {}
-          //code:1 means port is already being used
           this.startCode = message.code
         } catch (err) {
           log.warn("System:RemoteSupport error:", err)
