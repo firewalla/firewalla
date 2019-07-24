@@ -274,7 +274,7 @@ module.exports = class {
 
   _getRandomPort(base, length) {
     base = base || 9000
-    length = length || 1000
+    length = length || 3000
     return Math.floor(Math.random() * length) + base
   }
 
