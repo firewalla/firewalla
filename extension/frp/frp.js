@@ -43,7 +43,11 @@ const fs = require('fs')
 const readFile = util.promisify(fs.readFile)
 const writeFile = util.promisify(fs.writeFile)
 const unlink = util.promisify(fs.unlink)
+
+const FRPERRORCODE = 1
+const FRPSUCCESSCODE = 0
 const FRPINITCODE = -1
+const FRPTRYCOUNT = 3
 
 function delay(t) {
   return new Promise(function (resolve) {
@@ -425,6 +429,27 @@ module.exports = class {
       }, CHECK_INTERVAL);
 
     log.info(this._getServiceName(), "health checker started");
+  }
+
+  async remoteSupportStart() {
+    let tryStartFrpCount = FRPTRYCOUNT,
+      errMsg = [], config;
+    do {
+      tryStartFrpCount--;
+      await this.start();
+      config = this.getConfig();
+      if (config.startCode == FRPSUCCESSCODE) {
+        tryStartFrpCount = 0;
+      } else {
+        await this.stop();
+        if (config.startCode == FRPINITCODE) {
+          errMsg.push("Time out.");
+        } else if (config.startCode == FRPERRORCODE) {
+          errMsg.push(`Port: ${config.port} is already beging used.`);
+        }
+      }
+    } while (tryStartFrpCount > 0)
+    return { config: config, errMsg: errMsg }
   }
 }
 

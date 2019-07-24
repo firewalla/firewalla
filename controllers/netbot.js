@@ -136,12 +136,7 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const conncheck = require('../diagnostic/conncheck.js');
 
 const { delay } = require('../util/util.js')
-
-const FRPERRORCODE = 1
 const FRPSUCCESSCODE = 0
-const FRPINITCODE = -1
-const FRPTRYCOUNT = 3
-
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback) {
@@ -2418,32 +2413,15 @@ class netBot extends ControllerBot {
         break;
       case "startSupport":
         (async() => {
-          let tryStartFrpCount = FRPTRYCOUNT,
-              errMsg = [];
-          do {
-            tryStartFrpCount--;
-            await frp.start();
-            let config = frp.getConfig();
-            if(config.startCode == FRPSUCCESSCODE){
-              let newPassword = await ssh.resetRandomPasswordAsync();
-              sysManager.setSSHPassword(newPassword); // in-memory update
-              config.password = newPassword;
-              tryStartFrpCount = 0;
-              this.simpleTxData(msg, config, null, callback);
-            }else{
-              await frp.stop();
-              if(config.startCode == FRPINITCODE){
-                errMsg.push("Time out.");
-              }else if(config.startCode == FRPERRORCODE){
-                errMsg.push(`Port: ${config.port} is already beging used.`);
-              }
-              if(tryStartFrpCount == 0){
-                log.info(errMsg.join("\n"));
-                this.simpleTxData(msg, config, errMsg.join("\n"), callback);
-              }
-            }
-          } while(tryStartFrpCount > 0)
-          
+          let {config,errMsg} = await frp.remoteSupportStart();
+          if(config.startCode == FRPSUCCESSCODE){
+            let newPassword = await ssh.resetRandomPasswordAsync();
+            sysManager.setSSHPassword(newPassword); // in-memory update
+            config.password = newPassword;
+            this.simpleTxData(msg, config, null, callback);
+          }else{
+            this.simpleTxData(msg, config, errMsg.join(";"), callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
