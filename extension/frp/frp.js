@@ -43,6 +43,7 @@ const fs = require('fs')
 const readFile = util.promisify(fs.readFile)
 const writeFile = util.promisify(fs.writeFile)
 const unlink = util.promisify(fs.unlink)
+const FRPINITCODE = -1
 
 function delay(t) {
   return new Promise(function (resolve) {
@@ -80,7 +81,7 @@ module.exports = class {
     this.started = false
     this.serviceTag = "SSH"
     this.configComplete = false;
-    this.startCode = -1;
+    this.startCode = FRPINITCODE;
 
     // if frp service is started during execution of async block, inconsistency may occur?
     (async () => {
@@ -333,7 +334,7 @@ module.exports = class {
             const start = new Date() / 1000;
             const CHECKTIMEOUT = 30;
             const timerId = setInterval(() => {
-              if (this.startCode != -1) {
+              if (this.startCode != FRPINITCODE) {
                 clearInterval(timerId);
                 resolve();
               } else if ((new Date() / 1000) - start > CHECKTIMEOUT) {

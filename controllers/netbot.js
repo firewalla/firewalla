@@ -137,6 +137,11 @@ const conncheck = require('../diagnostic/conncheck.js');
 
 const { delay } = require('../util/util.js')
 
+const FRPERRORCODE = 1
+const FRPSUCCESSCODE = 0
+const FRPINITCODE = -1
+const FRPTRYCOUNT = 3
+
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback) {
@@ -2413,13 +2418,13 @@ class netBot extends ControllerBot {
         break;
       case "startSupport":
         (async() => {
-          let tryStartFrpCount = 3,
+          let tryStartFrpCount = FRPTRYCOUNT,
               errMsg = [];
           do {
             tryStartFrpCount--;
             await frp.start();
             let config = frp.getConfig();
-            if(config.startCode == 0){
+            if(config.startCode == FRPSUCCESSCODE){
               let newPassword = await ssh.resetRandomPasswordAsync();
               sysManager.setSSHPassword(newPassword); // in-memory update
               config.password = newPassword;
@@ -2427,9 +2432,9 @@ class netBot extends ControllerBot {
               this.simpleTxData(msg, config, null, callback);
             }else{
               await frp.stop();
-              if(config.startCode == -1){
+              if(config.startCode == FRPINITCODE){
                 errMsg.push("Time out.");
-              }else if(config.startCode == 1){
+              }else if(config.startCode == FRPERRORCODE){
                 errMsg.push(`Port: ${config.port} is already beging used.`);
               }
               if(tryStartFrpCount == 0){
