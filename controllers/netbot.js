@@ -2413,12 +2413,27 @@ class netBot extends ControllerBot {
         break;
       case "startSupport":
         (async() => {
-          await frp.start()
-          let config = frp.getConfig();
-          let newPassword = await ssh.resetRandomPasswordAsync()
-          sysManager.setSSHPassword(newPassword); // in-memory update
-          config.password = newPassword
-          this.simpleTxData(msg, config, null, callback)
+          let tryStartFrpCount = 3;
+          do {
+            tryStartFrpCount--;
+            await frp.start()
+            let config = frp.getConfig();
+            log.info("Trying to start remote support...")
+            if(config.started){
+              let newPassword = await ssh.resetRandomPasswordAsync()
+              sysManager.setSSHPassword(newPassword); // in-memory update
+              config.password = newPassword
+              tryStartFrpCount = 0
+              this.simpleTxData(msg, config, null, callback)
+            }else{
+              if(tryStartFrpCount == 0){
+                this.simpleTxData(msg, config, `${config.port} is already being used. Please try again.`, callback)
+              }else{
+                await frp.stop()
+              }
+            }
+          } while(tryStartFrpCount > 0)
+          
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
