@@ -2414,29 +2414,27 @@ class netBot extends ControllerBot {
       case "startSupport":
         (async() => {
           let tryStartFrpCount = 3,
-              tryPorts = [];
+              errMsg = [];
           do {
             tryStartFrpCount--;
-            await frp.start()
+            await frp.start();
             let config = frp.getConfig();
             if(config.startCode == 0){
-              let newPassword = await ssh.resetRandomPasswordAsync()
+              let newPassword = await ssh.resetRandomPasswordAsync();
               sysManager.setSSHPassword(newPassword); // in-memory update
-              config.password = newPassword
-              tryStartFrpCount = 0
-              this.simpleTxData(msg, config, null, callback)
+              config.password = newPassword;
+              tryStartFrpCount = 0;
+              this.simpleTxData(msg, config, null, callback);
             }else{
-              await frp.stop()
-              tryPorts.push(config.port);
-              let errMsg = "";
+              await frp.stop();
+              if(config.startCode == -1){
+                errMsg.push("Time out.");
+              }else if(config.startCode == 1){
+                errMsg.push(`Port: ${config.port} is already beging used.`);
+              }
               if(tryStartFrpCount == 0){
-                if(config.startCode == -1){
-                  errMsg = "Time out."
-                }else if(config.startCode == 1){
-                  errMsg = `Ports: ${tryPorts.join(",")} are already beging used.`
-                }
-                log.info(errMsg);
-                this.simpleTxData(msg, config, errMsg, callback)
+                log.info(errMsg.join("\n"));
+                this.simpleTxData(msg, config, errMsg.join("\n"), callback);
               }
             }
           } while(tryStartFrpCount > 0)
