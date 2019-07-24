@@ -1,4 +1,3 @@
-
 /*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
@@ -81,6 +80,7 @@ module.exports = class {
     this.started = false
     this.serviceTag = "SSH"
     this.configComplete = false;
+    this.startCode = -1;
 
     // if frp service is started during execution of async block, inconsistency may occur?
     (async () => {
@@ -96,9 +96,7 @@ module.exports = class {
         try {
           message = JSON.parse(message) || {}
           //code:1 means port is already being used
-          if (message.code == 1) {
-            this._stop()
-          }
+          this.startCode = message.code
         } catch (err) {
           log.warn("System:RemoteSupport error:", err)
         }
@@ -264,7 +262,8 @@ module.exports = class {
       started: this.started,
       port: this.port,
       server: this.server(),
-      user: this.user()
+      user: this.user(),
+      startCode: this.startCode
     }
   }
 
@@ -328,12 +327,21 @@ module.exports = class {
           this.started = true;
           hasTimeout = false;
           this._startHealthChecker();
-          if(this.name == "support"){
-            // wait for 3 seconds for connecting server
-            delay(3000).then(()=>{
-              resolve();
-            })
-          }else{
+          if (this.name == "support") {
+            // waiting for service to confirm the port being used or not
+            // if the port already being used, will publish message to channel "System:RemoteSupport"
+            const start = new Date() / 1000;
+            const CHECKTIMEOUT = 30;
+            const timerId = setInterval(() => {
+              if (this.startCode != -1) {
+                clearInterval(timerId);
+                resolve();
+              } else if ((new Date() / 1000) - start > CHECKTIMEOUT) {
+                clearInterval(timerId)
+                resolve();
+              }
+            }, 1 * 1000)//every one second check the message from service
+          } else {
             resolve();
           }
         } else {
