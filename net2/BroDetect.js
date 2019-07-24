@@ -817,7 +817,7 @@ module.exports = class {
         return;
       }
 
-      if (localMac.toUpperCase() === sysManager.myMAC()) {
+      if (localMac && localMac.toUpperCase() === sysManager.myMAC()) {
         // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
         if (lhost !== sysManager.myIp() && lhost !== sysManager.myIp2() && !(sysManager.myIp6() && sysManager.myIp6().includes(lhost))) {
           log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
