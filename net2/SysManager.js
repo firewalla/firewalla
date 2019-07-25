@@ -13,16 +13,14 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-var iptool = require('ip');
-var os = require('os');
-var network = require('network');
+const util = require('util');
+const iptool = require('ip');
 var instance = null;
-var fs = require('fs');
-var license = require('../util/license.js');
+const license = require('../util/license.js');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -30,11 +28,6 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
-
-let Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 const exec = require('child-process-promise').exec
 
@@ -137,7 +130,7 @@ module.exports = class {
           this.publicIp = event.ip;
       });
       sem.on("DDNS:Updated", (event) => {
-        log.info("Updating DDNS:", event, {});
+        log.info("Updating DDNS:", event);
         if(event.ddns) {
           this.ddns = event.ddns;
         }
@@ -167,6 +160,8 @@ module.exports = class {
       },1000*60*20);
     }
     this.update(null);
+
+    this.updateAsync = util.promisify(this.update)
     return instance;
   }
 
@@ -327,6 +322,11 @@ module.exports = class {
     })
   }
 
+  async getTimezone() {
+    const tz = await rclient.hgetAsync("sys:config", "timezone");
+    return tz;
+  }
+
   setTimezone(timezone, callback) {
     callback = callback || function() {}
 
@@ -338,19 +338,19 @@ module.exports = class {
       pclient.publish("System:TimezoneChange", timezone);
 
       // TODO: each running process may not be set to the target timezone until restart
-      async(() => {
+      (async() =>{
         try {
           let cmd = `sudo timedatectl set-timezone ${timezone}`
-          await (exec(cmd))
+          await exec(cmd)
 
           // TODO: we can improve in the future that only restart if new timezone is different from old one
           // but the impact is low since calling this settimezone function is very rare
           let cronRestartCmd = "sudo systemctl restart cron.service"
-          await (exec(cronRestartCmd))
+          await exec(cronRestartCmd)
 
           callback(null)
         } catch(err) {
-          log.error("Failed to set timezone:", err, {})
+          log.error("Failed to set timezone:", err);
           callback(err)
         }
       })()
@@ -417,7 +417,7 @@ module.exports = class {
       .then(() => {
         this.config = config;
       }).catch((err) => {
-        log.error("Failed to set sys:network:info in redis", err, {});
+        log.error("Failed to set sys:network:info in redis", err);
       });
   }
 
@@ -449,6 +449,12 @@ module.exports = class {
     }
   }
 
+  monitoringWifiInterface() {
+    if (this.config) {
+      return this.sysinfo && this.sysinfo[this.config.monitoringWifiInterface];
+    }
+  }
+
   myIp() {
     if(this.monitoringInterface()) {
       return this.monitoringInterface().ip_address;
@@ -472,6 +478,14 @@ module.exports = class {
   myIp2() {
     if(this.monitoringInterface2()) {
       return this.monitoringInterface2().ip_address;
+    } else {
+      return undefined;
+    }
+  }
+
+  myWifiIp() {
+    if (this.monitoringWifiInterface()) {
+      return this.monitoringWifiInterface().ip_address;
     } else {
       return undefined;
     }
@@ -510,11 +524,31 @@ module.exports = class {
     }
   }
 
-  myMAC() {
-    if (this.monitoringInterface()) {
-      return this.monitoringInterface().mac_address;
+  myWifiIpMask() {
+    if(this.monitoringWifiInterface()) {
+      let mask =  this.monitoringWifiInterface().netmask;
+      if (mask.startsWith("Mask:")) {
+        mask = mask.substr(5);
+      }
+      return mask;
     } else {
-      return null;
+      return undefined;
+    }
+  }
+
+  myMAC() {
+    if (this.monitoringInterface() && this.monitoringInterface().mac_address) {
+      return this.monitoringInterface().mac_address.toUpperCase();
+    } else {
+      return undefined;
+    }
+  }
+
+  myWifiMAC() {
+    if (this.monitoringWifiInterface() && this.monitoringWifiInterface().mac_address) {
+      return this.monitoringWifiInterface().mac_address.toUpperCase();
+    } else {
+      return undefined;
     }
   }
 
@@ -558,6 +592,14 @@ module.exports = class {
     }
   }
 
+  myWifiSubnet() {
+    if (this.monitoringWifiInterface()) {
+      return this.monitoringWifiInterface().subnet;
+    } else {
+      return undefined;
+    }
+  }
+
   mySubnetNoSlash() {
     let subnet = this.mySubnet();
     return subnet.substring(0, subnet.indexOf('/'));
@@ -575,7 +617,8 @@ module.exports = class {
     if (!iptool.isV4Format(ip4)) return false;
     else return (
       iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
-      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4)
+      (this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) || false) ||
+      (this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) || false)
     )
   }
 
@@ -731,39 +774,19 @@ module.exports = class {
     return false;
   }
 
-
-  isLocalIP4(intf, ip) {
-    if (this.sysinfo[intf]==null) {
-      return false;
-    }
-
-    let subnet = this.sysinfo[intf].subnet;
-    if (subnet == null) {
-      return false;
-    }
-
-    if (this.isMulticastIP(ip)) {
-      return true;
-    }
-
-    return iptool.cidrSubnet(subnet).contains(ip);
-  }
-
   isLocalIP(ip) {
+    if (!ip) {
+      log.warn("SysManager:WARN:isLocalIP empty ip");
+      // TODO: we should throw error here
+      return false;
+    }
+
     if (iptool.isV4Format(ip)) {
-
-      this.subnet = this.sysinfo[this.config.monitoringInterface].subnet;
-
-      if (this.subnet == null) {
-        log.error("SysManager:Error getting subnet ");
+      if (this.isMulticastIP4(ip)) {
         return true;
       }
+      return this.inMySubnets4(ip);
 
-      if (this.isMulticastIP(ip)) {
-        return true;
-      }
-
-      return iptool.cidrSubnet(this.subnet).contains(ip) || this.isLocalIP4(this.config.monitoringInterface2,ip);
     } else if (iptool.isV6Format(ip)) {
       if (ip.startsWith('::')) {
         return true;
@@ -779,8 +802,9 @@ module.exports = class {
       }
       return this.inMySubnet6(ip);
     } else {
-      log.debug("SysManager:ERROR:isLocalIP", ip);
-      return true;
+      log.error("SysManager:ERROR:isLocalIP", ip);
+      // TODO: we should throw error here
+      return false;
     }
   }
 
@@ -790,13 +814,6 @@ module.exports = class {
     } else {
       return false;
     }
-  }
-
-  ignoreIP(ip) {
-    if (this.isDNS(ip)) {
-      return true;
-    }
-    return false;
   }
 
   isSystemDomain(ipOrDomain) {

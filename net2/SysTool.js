@@ -16,11 +16,6 @@
 
 const log = require('./logger.js')(__filename);
 
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const exec = require('child-process-promise').exec
 
 let firewalla = require('../net2/Firewalla.js');
@@ -79,7 +74,7 @@ class SysTool {
 
   async cleanIntel() {
     await exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
-    await exec("redis-cli keys 'dns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+    await exec("redis-cli keys 'rdns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
     await exec("redis-cli del intel:security:tracking").catch(() => undefined);
   }
 }

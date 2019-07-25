@@ -19,7 +19,6 @@ let log = require("../../net2/logger.js")(__filename, "info");
 
 let express = require('express');
 let router = express.Router();
-const passport = require('passport')
 
 let SysManager = require('../../net2/SysManager.js');
 let sysManager = new SysManager('info');
@@ -30,18 +29,10 @@ let zlib = require('zlib');
 
 let Firewalla = require('../../net2/Firewalla.js');
 
-let Promise = require('bluebird');
-
 let NetBotTool = require('../../net2/NetBotTool');
 let netBotTool = new NetBotTool();
 
 let flowTool = require('../../net2/FlowTool')();
-
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
-const jsonfile = require('jsonfile')
 
 
 /* system api */
@@ -155,14 +146,14 @@ router.get('/apps',
     let begin = end - 3600;
     let json = {};
 
-    async(() => {
-      await (netBotTool.prepareDetailedAppFlows(json, {
+    (async() =>{
+      await netBotTool.prepareDetailedAppFlows(json, {
         begin: begin,
         end: end
-      }))
+      })
       res.json(json)
     })().catch((err) => {
-      log.error("Failed to process /apps: ", err, err.stack, {})
+      log.error("Failed to process /apps: ", err, err.stack);
       res.status(500).send({error: err});
     })
   }
@@ -175,14 +166,14 @@ router.get('/categories',
     let begin = end - 3600;
     let json = {};
 
-    async(() => {
-      await (netBotTool.prepareDetailedCategoryFlows(json, {
+    (async() =>{
+      await netBotTool.prepareDetailedCategoryFlows(json, {
         begin: begin,
         end: end
-      }))
+      })
       res.json(json)
     })().catch((err) => {
-      log.error("Failed to process /categories: ", err, err.stack, {})
+      log.error("Failed to process /categories: ", err, err.stack);
       res.status(500).send({error: err});
     })
   }
@@ -190,15 +181,13 @@ router.get('/categories',
 
 router.get('/perfstat',
           function(req, res, next) {
-            sysInfo.getPerfStats((err, stat) => {
-              if(err) {
-                res.status(500);
-                res.send('server error');
-                return;
-              }
-
+            sysInfo.getPerfStats().then(stat => {
               res.json(stat);
-            });
+            }).catch(err => {
+              log.error(err);
+              res.status(500);
+              res.send('server error');
+            })
           });
 
 router.get('/heapdump',
@@ -237,7 +226,7 @@ router.get('/heapdump',
                 res.download(file);
               }
             } catch (err) {
-              log.error("Failed to parse payload of heapdump_done message: ", message, err, {});
+              log.error("Failed to parse payload of heapdump_done message: ", message, err);
             }
           }
         });

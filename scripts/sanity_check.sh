@@ -132,7 +132,7 @@ get_redis_key_with_no_ttl() {
         COLOR="\e[91m"
     fi
 
-    printf "$COLOR %s $UNCOLOR\n" $NOTTL
+    echo -e "$COLOR $NOTTL $UNCOLOR"
 }
 
 check_system_config() {
@@ -145,7 +145,7 @@ check_system_config() {
     check_each_system_config "vpn" $(redis-cli hget policy:system vpn)
     check_each_system_config "Redis Usage" $(redis-cli info | grep memory_human | awk -F: '{print $2}')
     check_each_system_config "Redis Total Key" $(redis-cli dbsize)
-    check_each_system_config "Redis key without ttl"  $(get_redis_key_with_no_ttl)
+    check_each_system_config "Redis key without ttl"  "$(get_redis_key_with_no_ttl)"
 
     echo ""
     echo ""
@@ -153,13 +153,16 @@ check_system_config() {
 
 check_policies() {
     echo "----------------------- Blocking Rules ------------------------------"
-    local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" )
-    printf "%5s %30s %10s %25s %10s\n" "Rule" "Target" "Type" "Device" "Expire"
+    local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
+    printf "%5s %30s %10s %25s %10s %15s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
         local TYPE=$(redis-cli hget $RULE type)
         local SCOPE=$(redis-cli hget $RULE scope)
+        local ALARM_ID=$(redis-cli hget $RULE aid)
+        local FLOW_DESCRIPTION=$(redis-cli hget $RULE flowDescription)
+
         if [[ ! -n $SCOPE ]]; then
             SCOPE="All Devices"
         fi
@@ -167,9 +170,20 @@ check_policies() {
         if [[ ! -n $EXPIRE ]]; then
             EXPIRE="Infinite"
         fi
-        printf "%5s %30s %10s %25s %10s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE"
+        local CRONTIME=$(redis-cli hget $RULE cronTime)
+        if [[ ! -n $CRONTIME ]]; then
+            CRONTIME="Always"
+        fi
+        if [[ -n $ALARM_ID ]]; then
+            RULE_ID="* $RULE_ID"
+        elif [[ -n $FLOW_DESCRIPTION ]]; then
+            RULE_ID="** $RULE_ID"
+        fi        
+        printf "%8s %30s %10s %25s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME"
     done
 
+    echo ""
+    echo "Note: * - created from alarm, ** - created from network flow"
     echo ""
     echo ""
 }
@@ -202,9 +216,14 @@ check_hosts() {
         local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
         local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
         local DEVICE_MAC=${DEVICE/host:mac:/""}
-        local DEVICE_MONITORING=$(redis-cli hget $DEVICE spoofing)
+        local POLICY_MAC="policy:mac:${DEVICE_MAC}"
+        local DEVICE_MONITORING=$(redis-cli hget $POLICY_MAC monitor)
         if [[ ! -n $DEVICE_MONITORING ]]; then
-            DEVICE_MONITORING="false"
+            if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP; then
+                DEVICE_MONITORING="true"
+            else
+                DEVICE_MONITORING="N/A"
+            fi
         fi
         local DEVICE_B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts $DEVICE_IP)
         local DEVICE_B7_MONITORING=""
@@ -249,11 +268,61 @@ check_iptables() {
     echo ""
 }
 
-check_systemctl_services
-check_rejection
-check_exception
-check_reboot
-check_system_config
-check_policies
+check_sys_features() {
+    echo "---------------------- System Features ------------------"
+
+    local HKEYS=$(redis-cli hkeys sys:features)
+
+    for hkey in $HKEYS; do
+      check_each_system_config $hkey $(redis-cli hget sys:features $hkey)
+    done
+
+    echo ""
+    echo ""
+}
+
+check_sys_config() {
+    echo "---------------------- System Configs ------------------"
+
+    local HKEYS=$(redis-cli hkeys sys:config)
+
+    for hkey in $HKEYS; do
+      check_each_system_config $hkey $(redis-cli hget sys:config $hkey)
+    done
+
+    echo ""
+    echo ""
+}
+
+usage() {
+    return
+}
+
+FAST=false
+while [ "$1" != "" ]; do
+    case $1 in
+        -f | --fast )           shift
+                                FAST=true
+                                ;;
+        -h | --help )           usage
+                                exit
+                                ;;
+        * )                     usage
+                                exit 1
+    esac
+    shift
+done
+
+
+if [ "$FAST" == false ]; then
+    check_systemctl_services
+    check_rejection
+    check_exception
+    check_reboot
+    check_system_config
+    check_sys_features
+    check_sys_config
+    check_policies
+    check_iptables
+fi
 check_hosts
-check_iptables

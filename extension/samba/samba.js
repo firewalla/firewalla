@@ -19,9 +19,6 @@ let log = require("../../net2/logger.js")(__filename);
 
 let exec = require('child-process-promise').exec;
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let util = require('util');
 
 class Samba {
@@ -32,31 +29,28 @@ class Samba {
     return instance;
   }
 
-  getSambaName(ip) {
+  async getSambaName(ip) {
     let cmd = util.format("nbtscan -e %s | head -n 1 | awk '{print $2}'", ip);
-    log.info("Running command:", cmd, {});
+    log.info("Running command:", cmd);
 
-    return async(() => {
-      let exists = await (this.nbtscanExists());
-      if(!exists)
-        return undefined; // empty string means not having samba name or not supported
+    let exists = await this.nbtscanExists()
+    if (!exists)
+      return undefined; // empty string means not having samba name or not supported
 
-      let result = await (exec(cmd));
+    let result = await exec(cmd)
 
-      if(!result.stdout) {
-        return undefined;
-      }
+    if (!result.stdout) {
+      return undefined;
+    }
 
-      let output = result.stdout
-      output = output.trim()
+    let output = result.stdout
+    output = output.trim()
 
-      if(output === '<unknown>') {
-        return undefined
-      } else {
-        return output
-      }
-      
-    })();
+    if (output === '<unknown>') {
+      return undefined
+    } else {
+      return output
+    }
   }
 
   nbtscanExists() {

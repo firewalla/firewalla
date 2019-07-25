@@ -13,7 +13,7 @@ server SERVER_NETWORK 255.255.255.0
 # Add route to Client routing table for the OpenVPN Server
 #push "route 10.8.0.1 255.255.255.255"
 # Add route to Client routing table for the OpenVPN Subnet
-#push "route SERVER_NETWORK 255.255.255.0"
+#push "route SERVER_NETWORK NETMASK"
 # your local subnet
 #push "route LOCAL_IP 255.255.255.0"
 # Set your primary domain name server address to Google DNS 8.8.8.8
@@ -29,8 +29,6 @@ crl-verify /etc/openvpn/crl.pem
 client-config-dir /etc/openvpn/client_conf
 cipher AES-128-CBC
 comp-lzo
-user nobody
-group nogroup
 persist-key
 persist-tun
 status /var/log/openvpn-status-SERVER_INSTANCE.log 20

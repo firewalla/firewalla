@@ -22,9 +22,6 @@ let assert = chai.assert;
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
@@ -52,8 +49,8 @@ describe('DeviceNameUpdateSensor', () => {
   describe('.job', () => {
 
     beforeEach((done) => {
-      async(() => {
-        await (sample.createSampleHost());
+      (async() =>{
+        await sample.createSampleHost();
         muk(samba, 'getSambaName', (ip) => {
           let entries = ip.split(".");
           let last = entries[entries.length - 1];
@@ -64,17 +61,17 @@ describe('DeviceNameUpdateSensor', () => {
     })
 
     afterEach((done) => {
-      async(() => {
-        await (sample.removeSampleHost());
+      (async() =>{
+        await sample.removeSampleHost();
         muk.restore();
         done();
       })();
     })
 
     it('should get the right samba name and store to redis', (done) => {
-      async(() => {
-        await (sensor.job());
-        let macEntry = await (hostTool.getMACEntry(sample.hostMac));
+      (async() =>{
+        await sensor.job();
+        let macEntry = await hostTool.getMACEntry(sample.hostMac);
         expect(macEntry.bname.slice(0,5)).to.equal('samba');
         done();
       })();

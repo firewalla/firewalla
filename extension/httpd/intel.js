@@ -1,4 +1,3 @@
-const util = require('util');
 const Promise = require('bluebird');
 
 const log = require("../../net2/logger")('intel');
@@ -18,7 +17,7 @@ class Intel {
       log.info(`local intel for ${dn} is: ${intel}`);
       return intel;
     } catch (err) {
-      log.error("Error when check intel:", err, {});
+      log.error("Error when check intel:", err);
     }
   }
 

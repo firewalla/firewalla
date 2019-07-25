@@ -14,18 +14,13 @@
  */
 'use strict'
 
-var spawn = require('child_process').spawn;
-var StringDecoder = require('string_decoder').StringDecoder;
 var ipTool = require('ip');
 
 let l2 = require('../util/Layer2.js');
 
 var instance = null;
 
-var debugging = false;
 let log = require("./logger.js")(__filename, 'info');
-
-let firewalla = require('./Firewalla.js');
 
 let monitoredKey = "monitored_hosts";
 let unmonitoredKey = "unmonitored_hosts";
@@ -39,17 +34,11 @@ let unmonitoredKey6 = "unmonitored_hosts6";
 
 const SysManager = require('./SysManager.js');
 
-let Promise = require('bluebird');
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let cp = require('child-process-promise');
 
 let mode = require('./Mode.js')
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 
 module.exports = class {
 
@@ -497,9 +486,7 @@ module.exports = class {
         });
     }
 
-  constructor(intf, config, clean, debug) {
-
-        debugging = debug;
+  constructor(intf, config, clean) {
 
         // Warning, should not clean default ACL's applied to ip tables
         // there is one applied for ip6 spoof, can't be deleted

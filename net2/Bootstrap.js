@@ -38,9 +38,6 @@ let license = require('../util/license.js');
 
 let bootstrapped = false;
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 /*
   1. cloud login
   2. load config
@@ -51,14 +48,14 @@ function bootstrap() {
   if(bootstrapped)
     return Promise.resolve();
 
-  return async(() => {
-    await (cw.getCloud().loadKeys());
-    await (cw.login());
-    await (bone.waitUntilCloudReadyAsync())
-    await (sysManager.setConfig(firewallaConfig))
-    let sysInfo = await (sysManager.getSysInfoAsync())
-    log.debug("License:", license.getLicense(), {});
-    await (bone.checkinAsync(firewallaConfig, license.getLicense(), sysInfo));
+  return (async() =>{
+    await cw.getCloud().loadKeys()
+    await cw.login()
+    await bone.waitUntilCloudReadyAsync()
+    await sysManager.setConfig(firewallaConfig)
+    let sysInfo = await sysManager.getSysInfoAsync()
+    log.debug("License:", license.getLicense());
+    await bone.checkinAsync(firewallaConfig, license.getLicense(), sysInfo);
   })()
 
     .then(() => {

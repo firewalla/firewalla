@@ -18,24 +18,20 @@
 const log = require("../../net2/logger")('diag');
 
 const express = require('express');
-const https = require('https');
-const qs = require('querystring');
 const path = require('path');
 
 const port = 8835
 
 const Promise = require('bluebird')
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const exec = require('child-process-promise').exec
 const fs = require('fs')
-const config = require('../../net2/config.js');
 Promise.promisifyAll(fs)
 
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
+
+const { wrapIptables } = require('../../net2/Iptables.js')
 
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
@@ -68,67 +64,63 @@ class App {
     return new Date() / 1000
   }
 
-  getSystemServices() {
+  async getSystemServices() {
     const fireKickCmd = "systemctl is-active firekick"
     const fireMainCmd = "systemctl is-active firemain"
     const fireApiCmd = "systemctl is-active fireapi"
     const fireMonCmd = "systemctl is-active firemon"
 
-    return async(() => {
-      try {
-        await (exec(fireKickCmd))
-      } catch(err) {
-        log.error("firekick is not alive", err, {})
-        return errorCodes.firekick
-      }
+    try {
+      await exec(fireKickCmd)
+    } catch (err) {
+      log.error("firekick is not alive", err);
+      return errorCodes.firekick
+    }
 
-      try {
-        await (exec(fireMainCmd))
-      } catch(err) {
-        log.error("firemain is not alive", err, {})
-        return errorCodes.firemain
-      }
-      
-      try {
-        await (exec(fireApiCmd))
-      } catch(err) {
-        log.error("fireapi is not alive", err, {})
-        return errorCodes.fireapi
-      }
+    try {
+      await exec(fireMainCmd)
+    } catch (err) {
+      log.error("firemain is not alive", err);
+      return errorCodes.firemain
+    }
 
-      try {
-        await (exec(fireMonCmd))
-      } catch(err) {
-        log.error("firemon is not alive", err, {})
-        return errorCodes.firemon
-      }
+    try {
+      await exec(fireApiCmd)
+    } catch (err) {
+      log.error("fireapi is not alive", err);
+      return errorCodes.fireapi
+    }
 
-      return 0
-    })()
+    try {
+      await exec(fireMonCmd)
+    } catch (err) {
+      log.error("firemon is not alive", err);
+      return errorCodes.firemon
+    }
+
+    return 0
   }
 
   getCloudConnectivity() {
     return this.connected
   }
 
-  getSystemMemory() {
-    return async(() => {
-      const result = await (exec("free -m"))
-      const stdout = result.stdout
-      const lines = stdout.split(/\n/g)
+  async getSystemMemory() {
+    const result = await exec("free -m")
+    const stdout = result.stdout
+    const lines = stdout.split(/\n/g)
 
-      for(var i = 0; i < lines.length; i++) {
-        lines[i] = lines[i].split(/\s+/)
-      }
+    for (var i = 0; i < lines.length; i++) {
+      lines[i] = lines[i].split(/\s+/)
+    }
 
-      const allMem = parseInt(lines[1][1])
+    const allMem = parseInt(lines[1][1])
 
-      if(allMem > 490) {
-        return 0
-      } else {
-        return errorCodes.memory
-      }
-    })()    
+    if (allMem > 490) {
+      return 0
+    } else {
+      return errorCodes.memory
+    }
   }
 
   getNodeVersion() {
@@ -139,59 +131,50 @@ class App {
     return require('os').uptime()
   }
 
-  getDatabase() {
-    return async(() => {
-      try {
-        await (exec("systemctl is-active redis-server"))
-      } catch(err) {
-        log.error("Failed to check database", err, {})
-        return errorCodes.database
-      }
+  async getDatabase() {
+    try {
+      await exec("systemctl is-active redis-server")
+    } catch (err) {
+      log.error("Failed to check database", err);
+      return errorCodes.database
+    }
 
-      return 0
-    })()
+    return 0
   }
 
-  getGID() {
-    return async(() => {
-      try {
-        const gid = await (exec("redis-cli hget sys:ept gid"))
-        return gid && gid.stdout && gid.stdout.substring(0,8)
-      } catch(err) {
-        log.error("Failed to get gid", err, {})
-        return null
-      }
-    })()
+  async getGID() {
+    try {
+      const gid = await exec("redis-cli hget sys:ept gid")
+      return gid && gid.stdout && gid.stdout.substring(0, 8)
+    } catch (err) {
+      log.error("Failed to get gid", err);
+      return null
+    }
   }
 
-  getFullGID() {
-    return async(() => {
-      try {
-        const gid = await (exec("redis-cli hget sys:ept gid"))
-        return gid && gid.stdout && gid.stdout.replace("\n", "")
-      } catch(err) {
-        log.error("Failed to get gid", err, {})
-        return null
-      }
-    })()
+  async getFullGID() {
+    try {
+      const gid = await exec("redis-cli hget sys:ept gid")
+      return gid && gid.stdout && gid.stdout.replace("\n", "")
+    } catch (err) {
+      log.error("Failed to get gid", err);
+      return null
+    }
   }
 
-  getPrimaryIP() {
-    return async(() => {
-      const eth0s = require('os').networkInterfaces()["eth0"]
+  async getPrimaryIP() {
+    const eth0s = require('os').networkInterfaces()["eth0"]
 
-      if(eth0s) {
-        for (let index = 0; index < eth0s.length; index++) {
-          const eth0 = eth0s[index]
-          const secondaryIntfIP = (config.getConfig().secondaryInterface.ip).split('/')[0];
-          if(eth0.family == "IPv4" && eth0.address != secondaryIntfIP) {
-            return eth0.address
-          }
+    if (eth0s) {
+      for (let index = 0; index < eth0s.length; index++) {
+        const eth0 = eth0s[index]
+        if (eth0.family == "IPv4") {
+          return eth0.address
         }
       }
+    }
 
-      return ''
-    })()
+    return ''
   }
 
   async getQRImage() {
@@ -228,12 +211,12 @@ class App {
     this.app.use('/' + STATIC_PATH, express.static(path.join(__dirname, STATIC_PATH)));
 
     this.app.use('/log', (req, res) => {
-      const filename = "/home/pi/logs/FireKick.log"
-      async(() => {
-        const gid = await (this.getFullGID())
-        await (fs.accessAsync(filename, fs.constants.F_OK))
+      const filename = "/home/pi/logs/FireKick.log";
+      (async() =>{
+        const gid = await this.getFullGID()
+        await fs.accessAsync(filename, fs.constants.F_OK)
         //tail -n 1000 /home/pi/logs/FireKick.log | sed -r   "s/0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"
-        const result = await (exec(`tail -n 1000 ${filename}`)).stdout
+        const result = (await exec(`tail -n 1000 ${filename}`)).stdout
         let lines = result.split("\n")
         lines = lines.map((originLine) => {
           let line = originLine
@@ -248,7 +231,7 @@ class App {
         res.setHeader('content-type', 'text/plain');
         res.end(lines.join("\n"))
       })().catch((err) => {
-        log.error("Failed to fetch log", err, {})
+        log.error("Failed to fetch log", err);
         res.status(404).send('')
       })
     });
@@ -264,18 +247,18 @@ class App {
     this.app.use('*', (req, res) => {
       log.info("Got a request in *")
     
-      return async(() => {
+      return (async() =>{
         const time = this.getSystemTime()
-        const ip = await (this.getPrimaryIP())
-        const gid = await (this.getGID())
-        const database = await(this.getDatabase())
+        const ip = await this.getPrimaryIP()
+        const gid = await this.getGID()
+        const database = await this.getDatabase()
         const uptime = this.getUptime()
         const nodeVersion = this.getNodeVersion()
-        const memory = await(this.getSystemMemory())
+        const memory = await this.getSystemMemory()
         const connected = this.getCloudConnectivity()
-        const systemServices = await(this.getSystemServices())
+        const systemServices = await this.getSystemServices()
         const expireDate = this.expireDate;
-        const qrImagePath = await (this.getQRImage());
+        const qrImagePath = await this.getQRImage()
         
         let success = true
         let values = {
@@ -330,10 +313,24 @@ class App {
         res.render('welcome', values)
         
       })().catch((err) => {
-        log.error("Failed to process request", err, {})
+        log.error("Failed to process request", err);
         res.status(500).send({})
       })
     })
+  }
+
+  async iptablesRedirection(create = true) {
+    const findInf = await exec(`ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/`);
+    const ips = findInf.stdout.split('\n')
+
+    const action = create ? '-A' : '-D';
+
+    for (const ip of ips) {
+      if (!ip) continue;
+
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports 8835`);
+      await exec(cmd);
+    }
   }
 
   start() {

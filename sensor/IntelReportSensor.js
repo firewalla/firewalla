@@ -61,7 +61,7 @@ class IntelReportSensor extends Sensor {
       })
 
       await alarmManager2.enrichDeviceInfo(alarm);
-      await alarmManager2.checkAndSaveAsync(alarm);
+      await alarmManager2.enqueueAlarm(alarm);
     }
   }
 
@@ -79,7 +79,7 @@ class IntelReportSensor extends Sensor {
       "p.firstDomain": top10[0].domain
     })
 
-    await alarmManager2.checkAndSaveAsync(alarm);
+    await alarmManager2.enqueueAlarm(alarm);
   }
   
   async blackHoleHistory() {

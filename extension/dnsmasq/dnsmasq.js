@@ -15,12 +15,11 @@ const ip = require('ip');
 const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
-const exec = require('child-process-promise').exec;
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
-const dhcp = require('../dhcp/dhcp.js');
+const Mode = require('../../net2/Mode.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dns";
 
@@ -39,11 +38,13 @@ const familyFilterFile = FILTER_DIR + "/family_filter.conf";
 
 const pclient = require('../../util/redis_manager.js').getPublishClient();
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
 
-const fConfig = require('../../net2/config.js').getConfig();
+const Config = require('../../net2/config.js');
+let fConfig = Config.getConfig(true);
 
 const bone = require("../../lib/Bone.js");
 
@@ -58,13 +59,10 @@ const altPidFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.pid";
 const startScriptFile = __dirname + "/dnsmasq.sh";
 
 const configFile = __dirname + "/dnsmasq.conf";
-const altConfigFile = __dirname + "/dnsmasq-alt.conf";
 
 const hostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
-const altHostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt-hosts";
 
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
-const altResolvFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.resolv.conf";
 
 const interfaceDhcpRange = {};
 
@@ -94,7 +92,7 @@ module.exports = class DNSMASQ {
 
       instance = this;
 
-      this.dhcpMode = false;
+      this.mode = null;
       this.minReloadTime = new Date() / 1000;
       this.deleteInProgress = false;
       this.shouldStart = false;
@@ -132,49 +130,53 @@ module.exports = class DNSMASQ {
         writeHostsFile: 0,
         restart: 0
       }
-
-      if (f.isMain()) {
-        setInterval(() => {
-          this.checkIfRestartNeeded()
-        }, 10 * 1000) // every 10 seconds
-  
-        setInterval(() => {
-          this.checkIfWriteHostsFile();
-        }, 10 * 1000);
-
-        process.on('exit', () => {
-          this.shouldStart = false;
-          this.stop();
-        });
-
-        sclient.on("message", (channel, message) => {
-          switch (channel) {
-            case "System:IPChange":
-              (async () => {
-                const started = await this.checkStatus();
-                if (started)
-                  await this.start(false); // raw restart dnsmasq to refresh all confs and iptables
-              })();
-              break;
-            case "DHCPReservationChanged":
-              this.onDHCPReservationChanged();
-              break;
-            case "System:VPNSubnetChanged":
-              (async () => {
-                const newVpnSubnet = message;
-                if (newVpnSubnet)
-                  await this.updateVpnIptablesRules(newVpnSubnet, true);
-              })();
-              break;
-            default:
-            //log.warn("Unknown message channel: ", channel, message);
-          }
-        });
-
-        sclient.subscribe("System:IPChange");
-        sclient.subscribe("DHCPReservationChanged");
-        sclient.subscribe("System:VPNSubnetChanged");
+      this.dnsTag = {
+        adblock: "$ad_block"
       }
+      sem.once('IPTABLES_READY', () => {
+        if (f.isMain()) {
+          setInterval(() => {
+            this.checkIfRestartNeeded()
+          }, 10 * 1000) // every 10 seconds
+
+          setInterval(() => {
+            this.checkIfWriteHostsFile();
+          }, 10 * 1000);
+
+          process.on('exit', () => {
+            this.shouldStart = false;
+            this.stop();
+          });
+
+          sclient.on("message", (channel, message) => {
+            switch (channel) {
+              case "System:IPChange":
+                (async () => {
+                  const started = await this.checkStatus();
+                  if (started)
+                    await this.start(false); // raw restart dnsmasq to refresh all confs and iptables
+                })();
+                break;
+              case "DHCPReservationChanged":
+                this.onDHCPReservationChanged();
+                break;
+              case "System:VPNSubnetChanged":
+                (async () => {
+                  const newVpnSubnet = message;
+                  if (newVpnSubnet)
+                    await this.updateVpnIptablesRules(newVpnSubnet, true);
+                })();
+                break;
+              default:
+              //log.warn("Unknown message channel: ", channel, message);
+            }
+          });
+
+          sclient.subscribe("System:IPChange");
+          sclient.subscribe("DHCPReservationChanged");
+          sclient.subscribe("System:VPNSubnetChanged");
+        }
+      })
     }
 
     return instance;
@@ -197,7 +199,7 @@ module.exports = class DNSMASQ {
 
   // in format 127.0.0.1#5353
   async setUpstreamDNS(dns) {
-    if(dns === upstreamDNS) {
+    if (dns === upstreamDNS) {
       log.info("upstreamdns is same as dns, ignored. (" + dns + ")");
       return;
     }
@@ -206,8 +208,8 @@ module.exports = class DNSMASQ {
     upstreamDNS = dns;
 
     let enabled = await this.checkStatus();
-    
-    if(enabled) {
+
+    if (enabled) {
       try {
         await this.start(true); // only need to change firemasq service unit file and restart firemasq, no need to update iptables
         log.info("dnsmasq is restarted to apply new upstream dns");
@@ -225,59 +227,46 @@ module.exports = class DNSMASQ {
     let alternativeIntfNameServers = interfaceNameServers.alternative || [];
 
     let effectiveNameServers = nameservers;
-    let alternativeNameServers = [];
     // different interface specific nameservers take effect in different mode
-    if (this.dhcpMode) {
+    if (this.mode === Mode.MODE_DHCP) {
       effectiveNameServers = effectiveNameServers.concat(secondaryIntfNameServers); // specified interface dns servers are listed after default name servers, e.g., OpenDNS, upstream DNS
-      alternativeNameServers = alternativeIntfNameServers;
     } else {
+      // for simple or dhcp spoof mode
       effectiveNameServers = effectiveNameServers.concat(alternativeIntfNameServers);
-      alternativeNameServers = secondaryIntfNameServers;
     }
-    
+
     // add local dns as a fallback in dnsmasq's resolv.conf
     sysManager.myDNS().forEach((dns) => {
       if (effectiveNameServers && !effectiveNameServers.includes(dns))
         effectiveNameServers.push(dns);
-      if (alternativeNameServers && !alternativeNameServers.includes(dns))
-        alternativeNameServers.push(dns);
     })
 
     // add fallback dns servers in case every previous dns server is broken
-    if(FALLBACK_DNS_SERVERS) {
+    if (FALLBACK_DNS_SERVERS) {
       FALLBACK_DNS_SERVERS.forEach((dns) => {
         if (effectiveNameServers && !effectiveNameServers.includes(dns))
           effectiveNameServers.push(dns);
-        if (alternativeNameServers && !alternativeNameServers.includes(dns))
-          alternativeNameServers.push(dns);
       })
     }
 
     if (!effectiveNameServers || effectiveNameServers.length === 0) {
       effectiveNameServers = [DEFAULT_DNS_SERVER];  // use google dns by default, should not reach this code
     }
-    if (!alternativeNameServers || alternativeNameServers.length === 0) {
-      alternativeNameServers = [DEFAULT_DNS_SERVER];
-    }
 
     let effectiveEntries = effectiveNameServers.map(ip => "nameserver " + ip);
     let effectiveConfig = effectiveEntries.join('\n') + "\n";
 
-    let alternativeEntries = alternativeNameServers.map(ip => "nameserver " + ip);
-    let alternativeConfig = alternativeEntries.join('\n') + "\n";
-
     try {
       await fs.writeFileAsync(resolvFile, effectiveConfig);
-      await fs.writeFileAsync(altResolvFile, alternativeConfig);
     } catch (err) {
-      log.error("Error when updating resolv.conf:", resolveFile, altResolvFile, "error msg:", err.message, {});
+      log.error("Error when updating resolv.conf:", resolvFile, "error msg:", err.message);
       throw err;
     }
 
     try {
       await execAsync("pkill -SIGHUP dnsmasq");
     } catch (err) {
-      // ignore error if dnsmasq not exists 
+      // ignore error if dnsmasq not exists
     }
   }
 
@@ -286,14 +275,19 @@ module.exports = class DNSMASQ {
     if (!result) {
       return;
     }
-      
+
     // needs update
     const filter = FILTER_FILE[type];
     const filterTmp = FILTER_FILE[type + 'Tmp'];
 
     log.info(`${type} filter file is `, filter);
     log.info(`${type} tmp filter file is `, filterTmp);
-    await fs.renameAsync(filterTmp, filter);
+    try {
+      await fs.accessAsync(filterTmp, fs.constants.F_OK);
+      await fs.renameAsync(filterTmp, filter);
+    } catch (err) {
+      log.error('Error when updating filter', err);
+    }
   }
 
   _scheduleNextReload(type, oldNextState, curNextState) {
@@ -301,29 +295,28 @@ module.exports = class DNSMASQ {
       // no need immediate reload when next state not changed during reloading
       this.nextReloadFilter[type].forEach(t => clearTimeout(t));
       this.nextReloadFilter[type].length = 0;
-      log.info(`schedule next reload for ${type} in ${RELOAD_INTERVAL/1000}s`);
+      log.info(`schedule next reload for ${type} in ${RELOAD_INTERVAL / 1000}s`);
       this.nextReloadFilter[type].push(setTimeout(this._reloadFilter.bind(this), RELOAD_INTERVAL, type));
     } else {
       log.warn(`${type}'s next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
       setImmediate(this._reloadFilter.bind(this), type);
     }
   }
-  
+
   _reloadFilter(type) {
     let preState = this.state[type];
     let nextState = this.nextState[type];
     this.state[type] = nextState;
-
     log.info(`in reloadFilter(${type}): preState: ${preState}, nextState: ${this.state[type]}, this.reloadCount: ${this.reloadCount[type]++}`);
 
     if (nextState === true) {
       log.info(`Start to update ${type} filters.`);
       this.updateFilter(type, true)
-        .then(result => {
+        .then(() => {
           log.info(`Update ${type} filters successful.`);
           this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type]));
         }).catch(err => {
-          log.error(`Update ${type} filters Failed!`, err, {});
+          log.error(`Update ${type} filters Failed!`, err);
         });
     } else {
       if (preState === false && nextState === false) {
@@ -334,7 +327,7 @@ module.exports = class DNSMASQ {
 
       log.info(`Start to clean up ${type} filters.`);
       this.cleanUpFilter(type)
-        .catch(err => log.error(`Error when clean up ${type} filters`, err, {}))
+        .catch(err => log.error(`Error when clean up ${type} filters`, err))
         .then(() => this.reload().then(() => this._scheduleNextReload(type, nextState, this.nextState[type])));
     }
   }
@@ -360,7 +353,7 @@ module.exports = class DNSMASQ {
         // ignore
         log.info(`Filter file '${file}' not exist, ignore`);
       } else {
-        log.error(`Failed to remove filter file: '${file}'`, err, {})
+        log.error(`Failed to remove filter file: '${file}'`, err);
       }
     }
   }
@@ -375,7 +368,7 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
 
     let entry = null;
-    
+
     if (options.use_blue_hole) {
       entry = util.format("address=/%s/%s\n", domain, BLUE_HOLE_IP)
     } else {
@@ -385,7 +378,7 @@ module.exports = class DNSMASQ {
     try {
       await fs.appendFileAsync(policyFilterFile, entry);
     } catch (err) {
-      log.error("Failed to add policy filter entry into file:", err, {});
+      log.error("Failed to add policy filter entry into file:", err);
     } finally {
       this.workingInProgress = false;
     }
@@ -408,7 +401,7 @@ module.exports = class DNSMASQ {
 
       await fs.writeFileAsync(policyFilterFile, newData);
     } catch (err) {
-      log.error("Failed to write policy data file:", err, {});
+      log.error("Failed to write policy data file:", err);
     } finally {
       this.workingInProgress = false; // make sure the flag is reset back
     }
@@ -460,13 +453,13 @@ module.exports = class DNSMASQ {
     });
     return list
   }
-  
+
   async getCurrentNameServerList() {
     let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
     log.info("Command to get current name server: ", cmd);
 
-    let {stdout, stderr} = await execAsync(cmd);
-    
+    let { stdout, stderr } = await execAsync(cmd);
+
     if (!stdout || stdout === '') {
       return [];
     }
@@ -486,20 +479,20 @@ module.exports = class DNSMASQ {
       await self.start(false);
       log.info("Dnsmasq reload complete.");
     } catch (err) {
-      log.error("Got error when reloading dnsmasq:", err, {})
+      log.error("Got error when reloading dnsmasq:", err);
     }
   }
-  
+
   async _updateTmpFilter(type, force) {
     let mkdirp = util.promisify(require('mkdirp'));
 
     try {
       await mkdirp(FILTER_DIR);
     } catch (err) {
-      log.error("Error when mkdir:", FILTER_DIR, err, {});
+      log.error("Error when mkdir:", FILTER_DIR, err);
       return;
     }
-    
+
     const filterFile = FILTER_FILE[type];
     const filterFileTmp = FILTER_FILE[type + 'Tmp'];
 
@@ -509,24 +502,24 @@ module.exports = class DNSMASQ {
       stats = await fs.statAsync(filterFile);
     } catch (err) {
       // no such file, need to crate one
-      //log.error("Error when fs.stat", filterFile, err, {});
-      if(err.code !== "ENOENT") {
+      //log.error("Error when fs.stat", filterFile, err);
+      if (err.code !== "ENOENT") {
         throw err;
       }
       noent = true;
     }
-        
+
     // to update only if filter file has not been updated recently or doesn't exsit
-    if(force || noent || (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
+    if (force || noent || (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
       try {
         await fs.statAsync(filterFileTmp);
         await fs.unlinkAsync(filterFileTmp);
       } catch (err) {
-        if(err.code !== "ENOENT") {
+        if (err.code !== "ENOENT") {
           throw err;
         }
       }
-      
+
       let hashes = null;
       try {
         hashes = await this._loadFilterFromBone(type);
@@ -534,23 +527,23 @@ module.exports = class DNSMASQ {
         log.error("Error when load filter from bone", err);
         return;
       }
-      
+
       try {
         await this._writeHashFilterFile(type, hashes, filterFileTmp);
       } catch (err) {
-        log.error("Error when writing hashes into filter file", err, {});
+        log.error("Error when writing hashes into filter file", err);
         return;
       }
 
       try {
         await this._writeHashIntoRedis(type, hashes);
       } catch (err) {
-        log.error("Error when writing hashes into filter redis", err, {});
+        log.error("Error when writing hashes into filter redis", err);
         return;
       }
-      
+
       return true; // successfully updated hash filter files
-    } 
+    }
   }
 
   async _loadFilterFromBone(type) {
@@ -558,16 +551,8 @@ module.exports = class DNSMASQ {
 
     log.info(`Load data set from bone: ${name}`);
 
-    return new Promise((resolve, reject) => {
-      bone.hashset(name, (err, data) => {
-        if (err) {
-          reject(err);
-        } else {
-          let d = JSON.parse(data)
-          resolve(d);
-        }
-      });
-    });
+    let data = await bone.hashsetAsync(name);
+    return JSON.parse(data);
   }
 
   async updateVpnIptablesRules(newVpnSubnet, force) {
@@ -577,29 +562,15 @@ module.exports = class DNSMASQ {
     const started = await this.checkStatus();
     if (!started)
       return;
-    const oldDns = `${this._currentLocalIP}:8853`;
     if (oldVpnSubnet != newVpnSubnet || force === true) {
-      if (oldVpnSubnet != null && oldDns != null) {
-        // remove iptables rule for old vpn subnet
-        await iptables.dnsChangeAsync(oldVpnSubnet, oldDns, false);
-      }
-      // then add new iptables rule for new vpn subnet. If newVpnSubnet is null, no new rule is added
-      if (newVpnSubnet) {
-        await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
-      }
+      // remove iptables rule for old vpn subnet
+      await iptables.dnsFlushAsync('vpn');
     }
+    // then add new iptables rule for new vpn subnet. If newVpnSubnet is null, no new rule is added
     if (newVpnSubnet) {
-      // newVpnSubnet is null means to delete previous nat rule. The previous vpn subnet should be kept in case of reloading
+      // newVpnSubnet is null means to delete previous nat rule. The previous vpn subnet should be kept in case of dnsmasq reloading
+      await iptables.dnsChangeAsync(newVpnSubnet, dns, 'vpn', true);
       this.vpnSubnet = newVpnSubnet;
-    }
-  }
-
-  async _update_local_interface_iptables_rules() {
-    // if dnsmasq is stopped, no need to update iptables rules
-    const started = await this.checkStatus();
-    if (started) {
-      await this._remove_iptables_rules();
-      await this._add_iptables_rules();
     }
   }
 
@@ -610,26 +581,24 @@ module.exports = class DNSMASQ {
     await this._add_iptables_rules();
     await this._add_ip6tables_rules();
   }
-  
+
   async _add_iptables_rules() {
     let subnets = await networkTool.getLocalNetworkSubnets() || [];
     let localIP = sysManager.myIp();
-    this._currentLocalIP = localIP;
     let dns = `${localIP}:8853`;
 
-    this._redirectedLocalSubnets = subnets;
     for (let index = 0; index < subnets.length; index++) {
       const subnet = subnets[index];
       log.info("Add dns rule: ", subnet, dns);
 
-      await iptables.dnsChangeAsync(subnet, dns, true);
+      await iptables.dnsChangeAsync(subnet, dns, 'local', true);
     }
 
-    /* this will be done in DNSMASQSensor on demand.
-    if(fConfig.vpnInterface && fConfig.vpnInterface.subnet) {
-      await iptables.dnsChangeAsync(fConfig.vpnInterface.subnet, dns, true);
+    const wifiSubnet = fConfig.wifiInterface && fConfig.wifiInterface.ip;
+    if (wifiSubnet) {
+      log.info("Add dns rule: ", wifiSubnet, dns);
+      await iptables.dnsChangeAsync(wifiSubnet, dns, 'local', true);
     }
-    */
   }
 
   async _add_ip6tables_rules() {
@@ -639,26 +608,10 @@ module.exports = class DNSMASQ {
       let ip6 = ipv6s[index]
       if (ip6.startsWith("fe80::")) {
         // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-        await ip6tables.dnsRedirectAsync(ip6, 8853)
+        await ip6tables.dnsRedirectAsync(ip6, 8853, 'local');
       }
     }
   }
-
-  async _remove_ip6tables_rules() {
-    try {
-      let ipv6s = sysManager.myIp6();
-
-      for (let index in ipv6s) {
-        let ip6 = ipv6s[index]
-        if (ip6.startsWith("fe80:")) {
-          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-          await ip6tables.dnsUnredirectAsync(ip6, 8853)
-        }
-      }
-    } catch (err) {
-      log.error("Error when remove ip6tables rules", err, {});
-    }
-  }    
 
   async add_iptables_rules() {
     let dnses = sysManager.myDNS();
@@ -667,12 +620,12 @@ module.exports = class DNSMASQ {
 
     let rule = util.format("DNS_IPS=\"%s\" LOCAL_IP=%s bash %s", dnsString, localIP, require('path').resolve(__dirname, "add_iptables.template.sh"));
     log.info("Command to add iptables rules: ", rule);
-    
+
     try {
       await execAsync(rule);
       log.info("DNSMASQ:IPTABLES", "Iptables rules are added successfully");
     } catch (err) {
-      log.error("DNSMASQ:IPTABLES:Error", "Failed to add iptables rules:", err, {});
+      log.error("DNSMASQ:IPTABLES:Error", "Failed to add iptables rules:", err);
       throw err;
     }
   }
@@ -684,28 +637,20 @@ module.exports = class DNSMASQ {
     await this._remove_iptables_rules()
     await this._remove_ip6tables_rules();
   }
-  
+
   async _remove_iptables_rules() {
     try {
-      let subnets = await networkTool.getLocalNetworkSubnets() || [];
-      // remove rules corresponding to local subnets that are previous added
-      if (this._redirectedLocalSubnets && this._redirectedLocalSubnets.length > 0)
-        subnets = this._redirectedLocalSubnets;
-      let localIP = sysManager.myIp();
-      if (this._currentLocalIP)
-        localIP = this._currentLocalIP;
-      let dns = `${localIP}:8853`;
-
-      subnets.forEach(async subnet => {
-        log.info("Remove dns rule: ", subnet, dns);
-        await iptables.dnsChangeAsync(subnet, dns, false, true);
-      })
-      this._redirectedLocalSubnets = [];
-      this._currentLocalIP = null;
-
-      await require('../../control/Block.js').unblock(BLACK_HOLE_IP);
+      await iptables.dnsFlushAsync('local');
     } catch (err) {
-      log.error("Error when removing iptable rules", err, {});
+      log.error("Error when removing iptable rules", err);
+    }
+  }
+
+  async _remove_ip6tables_rules() {
+    try {
+      await ip6tables.dnsFlushAsync('local');
+    } catch (err) {
+      log.error("Error when remove ip6tables rules", err);
     }
   }
 
@@ -730,7 +675,7 @@ module.exports = class DNSMASQ {
     let key = `dns:hashset:${type}`;
     await Promise.map(hashes, async hash => redis.saddAsync(key, hash));
     let count = await redis.scardAsync(key);
-    log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`); 
+    log.info(`Finished writing hash into redis for type: ${type}, count: ${count}`);
   }
 
   async _writeHashFilterFile(type, hashes, file) {
@@ -743,22 +688,22 @@ module.exports = class DNSMASQ {
         log.info("Finished writing hash filter file", file);
         resolve();
       });
-      
+
       writer.on('error', err => {
         reject(err);
-      }); 
+      });
 
       let targetIP = BLACK_HOLE_IP
 
       if (type === "family") {
         targetIP = BLUE_HOLE_IP
       }
-
+      const tag = this.dnsTag[type] ? this.dnsTag[type] : "";
       hashes.forEach((hash) => {
-        let line = util.format("hash-address=/%s/%s\n", hash.replace(/\//g, '.'), targetIP)
+        let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), targetIP, tag)
         writer.write(line);
       });
-      
+
       writer.end();
     });
   }
@@ -770,7 +715,7 @@ module.exports = class DNSMASQ {
     try {
       await execAsync(cmd);
       return true;
-    } catch(err) {
+    } catch (err) {
       return false;
     }
   }
@@ -779,13 +724,13 @@ module.exports = class DNSMASQ {
     const MINI_RESTART_INTERVAL = 10 // 10 seconds
 
     if (this.needRestart) {
-      log.info("need restart is", this.needRestart, {});
+      log.info("need restart is", this.needRestart);
     }
 
-    if(this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
+    if (this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
       this.needRestart = null
-      this.rawRestart((err) => {        
-        if(err) {
+      this.rawRestart((err) => {
+        if (err) {
           log.error("Failed to restart dnsmasq")
         } else {
           log.info("dnsmasq restarted:", this.counter.restart);
@@ -795,40 +740,40 @@ module.exports = class DNSMASQ {
   }
 
   checkIfWriteHostsFile() {
-    if(this.needWriteHostsFile) {
-      log.info("need writeHostsFile is", this.needWriteHostsFile, {});
+    if (this.needWriteHostsFile) {
+      log.info("need writeHostsFile is", this.needWriteHostsFile);
     }
-    if(this.shouldStart && this.needWriteHostsFile) {
+    if (this.shouldStart && this.needWriteHostsFile) {
       this.needWriteHostsFile = null;
       this.writeHostsFile().then((reload) => {
-        if(reload) {
+        if (reload) {
           this.reloadDnsmasq();
-        }        
+        }
       });
     }
   }
 
   onDHCPReservationChanged() {
-    if (this.dhcpMode) {
+    if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
       this.needWriteHostsFile = true;
       log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
     }
   }
 
   onSpoofChanged() {
-    if (this.dhcpMode) {
+    if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
       this.needWriteHostsFile = true;
       log.debug("Spoof status changed, set needWriteHostsFile to true");
     }
   }
 
   async reloadDnsmasq() {
-    this.counter.reloadDnsmasq ++;
+    this.counter.reloadDnsmasq++;
     log.info("start to reload dnsmasq (-HUP):", this.counter.reloadDnsmasq);
     try {
       await execAsync('sudo systemctl reload firemasq');
     } catch (err) {
-      log.error("Unable to reload firemasq service", err, {});
+      log.error("Unable to reload firemasq service", err);
     }
     log.info("Dnsmasq has been Reloaded:", this.counter.reloadDnsmasq);
   }
@@ -842,8 +787,8 @@ module.exports = class DNSMASQ {
     this.counter.writeHostsFile++;
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
-    let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
-    let cidrSec = ip.cidrSubnet(sysManager.mySubnet2());
+    // let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
+    // let cidrSec = ip.cidrSubnet(sysManager.mySubnet2());
     let lease_time = '24h';
 
     let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));
@@ -857,7 +802,7 @@ module.exports = class DNSMASQ {
       let _hosts = Object.entries(static_hosts).map(kv => {
         let mac = kv[0], ip = kv[1];
         let h = {mac, ip};
-        
+
         if (cidrPri.contains(ip)) {
           h.spoofing = 'false';
         } else if (cidrSec.contains(ip)) {
@@ -866,7 +811,7 @@ module.exports = class DNSMASQ {
           h = null;
         }
         //log.debug("static host:", util.inspect(h));
-        
+
         let idx = hosts.findIndex(h => h.mac === mac);
         if (idx > -1 && h) {
           hosts[idx] = h;
@@ -879,46 +824,44 @@ module.exports = class DNSMASQ {
     }
     */
 
-    hosts = hosts.filter((x) => x.mac != null);
+    hosts = hosts.filter((x) => (x && x.mac) != null);
     hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
 
-    let hostsList = hosts.map(h => (h.spoofing === 'false') ?
-      `${h.mac},set:unmonitor,ignore` :
-      `${h.mac},set:monitor,${h.staticSecIp ? h.staticSecIp + ',' : ''}${lease_time}`
-    );
+    let hostsList = [];
 
-    let altHostsList = hosts.map(h => (h.spoofing === 'false') ?
-      `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
-      `${h.mac},set:monitor,ignore`
-    );
+    if (this.mode === Mode.MODE_DHCP) {
+      hostsList = hosts.map(h => (h.spoofing === 'false') ?
+        `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
+        `${h.mac},set:monitor,${h.staticSecIp ? h.staticSecIp + ',' : ''}${lease_time}`
+      );
+    }
+
+    if (this.mode === Mode.MODE_DHCP_SPOOF) {
+      hostsList = hosts.map(h => (h.spoofing === 'false') ?
+        `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
+        `${h.mac},set:monitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}`
+      );
+    }
+
 
     let _hosts = hostsList.join("\n") + "\n";
-    let _altHosts = altHostsList.join("\n") + "\n";
 
     let shouldUpdate = false;
     const _hostsHash = this.computeHash(_hosts);
-    const _altHostsHash = this.computeHash(_altHosts);
 
-    if(this.lastHostsHash !== _hostsHash) {
+    if (this.lastHostsHash !== _hostsHash) {
       shouldUpdate = true;
       this.lastHostsHash = _hostsHash;
     }
 
-    if(this.lastAltHostsHash !== _altHostsHash) {
-      shouldUpdate = true;
-      this.lastAltHostsHash = _altHostsHash;
-    }
-
-    if(shouldUpdate === false) {
+    if (shouldUpdate === false) {
       log.info("No need to update hosts file, skipped");
       return false;
     }
 
     log.debug("HostsFile:", util.inspect(hostsList));
-    log.debug("HostsAltFile:", util.inspect(altHostsList));
 
     fs.writeFileSync(hostsFile, _hosts);
-    fs.writeFileSync(altHostsFile, _altHosts);
     log.info("Hosts file has been updated:", this.counter.writeHostsFile)
 
     return true;
@@ -927,52 +870,40 @@ module.exports = class DNSMASQ {
   async rawStart() {
     // use restart to ensure the latest configuration is loaded
     let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
-    let cmdAlt = null;
 
-    if (this.dhcpMode && (!sysManager.myIp2() || !sysManager.myIpMask2())) {
-      log.warn("DHCPFeature is enabled but secondary network interface is not setup");
-    }
+    cmd = await this.prepareDnsmasqCmd(cmd);
 
-    if(this.dhcpMode && sysManager.myIp2() && sysManager.myIpMask2()) {
-      log.info("DHCP feature is enabled");
-
-      cmd = await this.prepareDnsmasqCmd(cmd);
-      cmdAlt = await this.prepareAltDnsmasqCmd();
-    }
-
-    if(upstreamDNS) {
+    if (upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
       cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
-      if(cmdAlt) 
-        cmdAlt = util.format("%s --server=%s --no-resolv", cmdAlt, upstreamDNS);
     }
 
-    this.writeStartScript(cmd, cmdAlt);
+    this.writeStartScript(cmd);
 
     await this.writeHostsFile();
 
-    if(f.isDocker()) {
+    if (f.isDocker()) {
       await this.restartDnsmasqDocker();
     } else {
       await this.restartDnsmasq();
     }
   }
-  
+
   async restartDnsmasqDocker() {
     try {
       childProcess.execSync("sudo pkill dnsmasq")
-    } catch(err) {
+    } catch (err) {
       // do nothing
     }
 
     const p = spawn('/bin/bash', ['-c', cmd])
 
     p.stdout.on('data', (data) => {
-      log.info("DNSMASQ STDOUT:", data.toString(), {})
+      log.info("DNSMASQ STDOUT:", data.toString());
     })
 
     p.stderr.on('data', (data) => {
-      log.info("DNSMASQ STDERR:", data.toString(), {})
+      log.info("DNSMASQ STDERR:", data.toString());
     })
 
     await this.delay(1000);
@@ -990,18 +921,16 @@ module.exports = class DNSMASQ {
         log.info("Status check timer installed")
       }
     } catch (err) {
-      log.error("Got error when restarting firemasq:", err, {})
+      log.error("Got error when restarting firemasq:", err);
     }
   }
 
-  writeStartScript(cmd, cmdAlt) {
+  writeStartScript(cmd) {
     log.info("Command to start dnsmasq: ", cmd);
-    log.info("Command to start alternative dnsmasq: ", cmd);
 
     let content = [
       '#!/bin/bash',
       cmd + " &",
-      cmdAlt ? cmdAlt + " &" : "",
       'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT',
       'for job in `jobs -p`; do wait $job; echo "$job exited"; done',
       ''
@@ -1016,32 +945,33 @@ module.exports = class DNSMASQ {
       end: end
     };
   }
-  
-  getDefaultDhcpRange(network) {
-    if (network === "alternative") {
-      let cidr = ip.cidrSubnet(sysManager.mySubnet());
-      let firstAddr = ip.toLong(cidr.firstAddress);
-      let lastAddr = ip.toLong(cidr.lastAddress);
-      let midAddr = firstAddr + (lastAddr - firstAddr) / 5;
 
-      let rangeBegin = ip.fromLong(midAddr);
-      let rangeEnd = ip.fromLong(lastAddr - 3);
-      return {
-        begin: rangeBegin,
-        end: rangeEnd
-      };
+  getDefaultDhcpRange(network) {
+    let subnet = null;
+    if (network === "alternative") {
+      subnet = ip.cidrSubnet(sysManager.mySubnet());
     }
     if (network === "secondary") {
       const subnet2 = sysManager.mySubnet2() || "192.168.218.1/24";
-      const prefix = subnet2.substring(0, subnet2.lastIndexOf("."));
-      let rangeBegin = util.format("%s.50", prefix);
-      let rangeEnd = util.format("%s.250", prefix);
-      return {
-        begin: rangeBegin,
-        end: rangeEnd
-      };
+      subnet = ip.cidrSubnet(subnet2);
     }
-    return null;
+    if (network === "wifi") {
+      fConfig = Config.getConfig(true);
+      if (fConfig && fConfig.wifiInterface && fConfig.wifiInterface.ip)
+        subnet = ip.cidrSubnet(fConfig.wifiInterface.ip);
+    }
+
+    if (!subnet)
+      return null;
+    const firstAddr = ip.toLong(subnet.firstAddress);
+    const lastAddr = ip.toLong(subnet.lastAddress);
+    const midAddr = firstAddr + (lastAddr - firstAddr) / 5;
+    let rangeBegin = ip.fromLong(midAddr);
+    let rangeEnd = ip.fromLong(lastAddr - 3);
+    return {
+      begin: rangeBegin,
+      end: rangeEnd
+    };
   }
 
   getDhcpRange(network) {
@@ -1053,71 +983,124 @@ module.exports = class DNSMASQ {
   }
 
   async prepareDnsmasqCmd(cmd) {
-    let {begin, end} = this.getDhcpRange("secondary");
-    let routerIP = sysManager.myIp2();
-    const mask = sysManager.myIpMask2();
-
-    cmd = util.format("%s --dhcp-range=%s,%s,%s,%s",
-      cmd,
-      begin,
-      end,
-      mask,
-      fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
-    );
-
-    // reserve ip address which was used by Firewalla in simple mode if secondary ip subnet is same as that in previous simple mode
-    const simpleIpFile = f.getHiddenFolder() + "/run/simple_ip";
-    const simpleIpFileExists = fs.existsSync(simpleIpFile);
-    if (simpleIpFileExists) {
-      const simpleIpSubnet = await fs.readFileAsync(simpleIpFile, "utf8");
-      const simpleIp = simpleIpSubnet.split('/')[0];
-      const secondarySubnet = ip.subnet(sysManager.myIp2(), sysManager.myIpMask2());
-      if (secondarySubnet.contains(simpleIp)) // previous simple ip is contained in current secondary ip subnet, need to reserve this ip address
-        cmd = util.format("%s --dhcp-host=%s,%s", cmd, sysManager.myMAC(), simpleIp);
-    }
-
-    // By default, dnsmasq sends some standard options to DHCP clients,
-    // the netmask and broadcast address are set to the same as the host running dnsmasq
-    // and the DNS server and default route are set to the address of the machine running dnsmasq.
-    cmd = util.format("%s --dhcp-option=3,%s", cmd, routerIP);
-
+    fConfig = Config.getConfig(true);
+    const secondaryRange = this.getDhcpRange("secondary");
+    const secondaryRouterIp = sysManager.myIp2();
+    const secondaryMask = sysManager.myIpMask2();
+    let secondaryDnsServers = sysManager.myDNS().join(',');
     if (interfaceNameServers.secondary && interfaceNameServers.secondary.length != 0) {
       // if secondary dns server is set, use specified dns servers in dhcp response
-      const dnsServers = interfaceNameServers.secondary.join(',');
-      cmd = util.format("%s --dhcp-option=6,%s", cmd, dnsServers);
-    } else {
-      const dnsServers = sysManager.myDNS().join(',');
-      cmd = util.format("%s --dhcp-option=6,%s", cmd, dnsServers);
+      secondaryDnsServers = interfaceNameServers.secondary.join(',');
     }
-    return cmd;
-  }
 
-  async prepareAltDnsmasqCmd() {
-    let cmdAlt = `${dnsmasqBinary}.${f.getPlatform()} -k -u ${userID} -C ${altConfigFile} -r ${resolvFile} --local-service`;
-    let gw = sysManager.myGateway();
-    let mask = sysManager.myIpMask();
-
-    let {begin, end} = this.getDhcpRange("alternative");
-
-    cmdAlt = util.format("%s --dhcp-range=%s,%s,%s,%s",
-      cmdAlt,
-      begin,
-      end,
-      mask,
-      fConfig.dhcp && fConfig.dhcp.leaseTime || "24h" // default 24 hours lease time
-    );
-
-    cmdAlt = util.format("%s --dhcp-option=3,%s", cmdAlt, gw);
-
+    const alternativeRange = this.getDhcpRange("alternative");
+    const alternativeRouterIp = sysManager.myGateway();
+    const alternativeMask = sysManager.myIpMask();
+    let alternativeDnsServers = sysManager.myDNS().join(',');
     if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {
       // if alternative dns server is set, use specified dns servers in dhcp response
-      const dnsServers = interfaceNameServers.alternative.join(',');
-      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dnsServers);
-    } else {
-      const dnsServers = sysManager.myDNS().join(',');
-      cmdAlt = util.format("%s --dhcp-option=6,%s", cmdAlt, dnsServers);
+      alternativeDnsServers = interfaceNameServers.alternative.join(',');
     }
-    return cmdAlt;
+
+    let wifiDnsServers = sysManager.myDNS().join(',');
+    if (interfaceNameServers.wifi && interfaceNameServers.wifi.length != 0) {
+      // if wifi dns server is set, use specified dns servers in dhcp response
+      wifiDnsServers = interfaceNameServers.wifi.join(',');
+    }
+
+    const leaseTime = fConfig.dhcp && fConfig.dhcp.leaseTime || "24h";
+    const monitoringInterface = fConfig.monitoringInterface || "eth0";
+
+    if (fConfig.wifiInterface) {
+      const wifiIntf = fConfig.wifiInterface;
+      const mode = wifiIntf.mode || "router";
+      const intf = wifiIntf.intf || "wlan0";
+
+      switch (mode) {
+        case "router":
+          // need to setup dhcp service on wifi interface for router mode
+          if (!wifiIntf.ip)
+            break;
+          const cidr = ip.cidrSubnet(wifiIntf.ip);
+          const wifiRouterIp = wifiIntf.ip.split('/')[0];
+          const wifiNetmask = cidr.subnetMask;
+          const wifiRange = this.getDhcpRange("wifi");
+          if (!wifiRouterIp || !wifiNetmask || !wifiRange)
+            break;
+          cmd = util.format("%s --dhcp-range=tag:%s,%s,%s,%s,%s",
+            cmd,
+            intf,
+            wifiRange.begin,
+            wifiRange.end,
+            wifiNetmask,
+            leaseTime
+          );
+          // wifi interface ip as router
+          cmd = util.format("%s --dhcp-option=tag:%s,3,%s", cmd, intf, wifiRouterIp);
+          // same dns servers as secondary interface
+          cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, intf, wifiDnsServers);
+          break;
+        case "bridge":
+          break;
+        default:
+      }
+    }
+
+    if (this.mode === Mode.MODE_DHCP) {
+      log.info("DHCP feature is enabled");
+      // allocate secondary interface ip to monitored hosts and new hosts
+      cmd = util.format("%s --dhcp-range=tag:%s,tag:!unmonitor,%s,%s,%s,%s",
+        cmd,
+        monitoringInterface,
+        secondaryRange.begin,
+        secondaryRange.end,
+        secondaryMask,
+        leaseTime
+      );
+
+      // allocate primary(alternative) interface ip to unmonitored hosts
+      cmd = util.format("%s --dhcp-range=tag:%s,tag:unmonitor,%s,%s,%s,%s",
+        cmd,
+        monitoringInterface,
+        alternativeRange.begin,
+        alternativeRange.end,
+        alternativeMask,
+        leaseTime
+      );
+
+      // secondary interface ip as router for monitored hosts and new hosts
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, secondaryRouterIp);
+
+      // gateway ip as router for unmonitored hosts
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,3,%s", cmd, monitoringInterface, alternativeRouterIp);
+
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,6,%s", cmd, monitoringInterface, secondaryDnsServers);
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,6,%s", cmd, monitoringInterface, alternativeDnsServers);
+    }
+
+
+    if (this.mode === Mode.MODE_DHCP_SPOOF) {
+      log.info("DHCP spoof feature is enabled");
+      // allocate primary(alternative) interface ip to all hosts from monitoring interface, no matter it is monitored, unmonitored or new hosts
+      cmd = util.format("%s --dhcp-range=tag:%s,%s,%s,%s,%s",
+        cmd,
+        monitoringInterface,
+        alternativeRange.begin,
+        alternativeRange.end,
+        alternativeMask,
+        leaseTime
+      );
+
+      // Firewalla's ip as router for monitored hosts and new hosts. In case Firewalla's ip is changed, a thorough restart is required
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, sysManager.myIp());
+
+      // gateway ip as router for unmonitored hosts
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,3,%s", cmd, monitoringInterface, alternativeRouterIp);
+
+      cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, monitoringInterface, alternativeDnsServers);
+    }
+
+    return cmd;
   }
 
   async rawStop() {
@@ -1138,7 +1121,7 @@ module.exports = class DNSMASQ {
         log.info("status check timer is stopped")
       }
     } catch (err) {
-      log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code:", err, {});
+      log.error("DNSMASQ:START:Error", "Failed to stop dnsmasq, error code:", err);
     }
   }
 
@@ -1156,7 +1139,7 @@ module.exports = class DNSMASQ {
       await execAsync(cmd);
       log.info("Dnsmasq restart successful");
     } catch (err) {
-      log.error("DNSMASQ:START:Error", "Failed to restart dnsmasq:", err, {});
+      log.error("DNSMASQ:START:Error", "Failed to restart dnsmasq:", err);
     }
   }
 
@@ -1165,12 +1148,13 @@ module.exports = class DNSMASQ {
     // 1. update filter (by default only update filter once per configured interval, unless force is true)
     // 2. start dnsmasq service
     // 3. update iptables rule
-    log.info("Starting DNSMASQ...", {});
+    log.info("Starting DNSMASQ...");
 
     this.shouldStart = false
 
     await this.updateResolvConf();
-    await this.rawStop();
+    // no need to stop dnsmasq, this.rawStart() will restart dnsmasq. Otherwise, there is a cooldown before restart, causing dns outage during that cool down window.
+    // await this.rawStop(); 
     try {
       await this.rawStart();
     } catch (err) {
@@ -1203,7 +1187,7 @@ module.exports = class DNSMASQ {
     // optional to remove filter file
     this.shouldStart = false;
 
-    log.info("Stopping DNSMASQ:", {});
+    log.info("Stopping DNSMASQ:");
     await this._remove_all_iptables_rules();
     await this.rawStop();
   }
@@ -1216,30 +1200,23 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async enableDHCP() {
-    this.dhcpMode = true;
+  async applyMode(mode) {
+    if (this.mode === mode) {
+      log.info("Mode is not changed: " + mode);
+      return;
+    }
+    log.info(`Mode is changed from ${this.mode} to ${mode}`);
+    this.mode = mode;
     try {
-      log.info("Enabling DHCP mode");
-      await this.start(true); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
-      log.info("DHCP mode is enabled");
+      await this.start(true); // restart firemasq service, no need to update iptables
     } catch (err) {
-      log.error("Failed to restart dnsmasq when enabling DHCP: " + err);
+      log.error("Failed to restart dnsmasq while enabling " + mode, err);
     }
   }
 
-  async disableDHCP() {
-    this.dhcpMode = false;
-    try {
-      log.info("Disabling DHCP mode");
-      await (this.start(true)); // mode change will only rewrite the firemasq service unit file and restart firemasq, no need to update iptables
-      log.info("DHCP mode is disabled");
-    } catch (err) {
-      log.error("Failed to restart dnsmasq when disabling DHCP: " + err);
-    }
-  }
-
-  setDhcpMode(isEnabled) {
-    this.dhcpMode = isEnabled;
+  // set mode but not apply it, this is invoked before dnsmasq is started
+  async setMode(mode) {
+    this.mode = mode;
   }
 
   async verifyDNSConnectivity() {
@@ -1249,19 +1226,20 @@ module.exports = class DNSMASQ {
       log.debug(`Verifying DNS connectivity via ${domain}...`)
 
       try {
-        let {stdout, stderr} = await execAsync(cmd);
-        if (stdout === "") {
-          log.error(`Got empty dns result when verifying dns connectivity to ${domain}:`, {})
-        } else if (stderr !== "") {
-          log.error(`Got error output when verifying dns connectivity to ${domain}:`, cmd, result.stderr, {})
+        let { stdout, stderr } = await execAsync(cmd);
+        if (stderr !== "" || stdout === "") {
+          let error = new Error(`Error verifying dns connectivity to ${domain}`);
+          Object.assign(error, { stdout, stderr });
+          throw error;
         } else {
           log.debug("DNS connectivity looks good")
           return true
         }
       } catch (err) {
-        log.error(`Got error when verifying dns connectivity to ${domain}:`, err.stdout, {})
+        log.error(`Got error when verifying dns connectivity to ${domain}:`, err.stdout, err.stderr);
       }
     }
+
     log.error("DNS connectivity check fails to resolve all domains.");
     return false;
   }
@@ -1277,31 +1255,30 @@ module.exports = class DNSMASQ {
       this.failCount = 0 // reset
       return;
     }
-    
-    this.failCount ++
+
+    this.failCount++
     log.warn(`DNS status check has failed ${this.failCount} times`);
 
     if (this.failCount > 8) {
-      if(!f.isProductionOrBeta()) {
+      if (!f.isProductionOrBeta()) {
         pclient.publishAsync("DNS:DOWN", this.failCount);
       }
-      if (this.dhcpMode) {
+      if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
         // dnsmasq is needed for dhcp service, still need to erase dns related rules in iptables
         log.warn("Dnsmasq keeps running under DHCP mode, remove all dns related rules from iptables...");
         await this._remove_all_iptables_rules();
       } else {
         await this.stop(); // make sure iptables rules are also stopped..
       }
-      bone.log("error", {
-        version: sysManager.version(),
+      bone.logAsync("error", {
         type: 'DNSMASQ CRASH',
         msg: `dnsmasq failed to restart after ${this.failCount} retries`,
-      }, null);
+      });
     } else {
       try {
-        let {stdout, stderr} = await execAsync("ps aux | grep dns[m]asq");
+        let { stdout, stderr } = await execAsync("ps aux | grep dns[m]asq");
         log.info("dnsmasq running status: \n", stdout, stderr)
-      } catch(e) {
+      } catch (e) {
         log.error("Failed to query process list of dnsmasq", e)
       }
 
@@ -1309,8 +1286,30 @@ module.exports = class DNSMASQ {
       try {
         await this.rawRestart();
       } catch (err) {
-        log.error("Failed to restart dnsmasq:", err, {})
+        log.error("Failed to restart dnsmasq:", err);
       }
+    }
+  }
+
+  async cleanUpLeftoverConfig() {
+    try {
+      const userConfigFolder = f.getUserConfigFolder(),
+        dnsConfigFolder = `${userConfigFolder}/dns`,
+        devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
+      const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
+      const cleanupPromises = configFolders.map(configFolder => {
+        (async () => {
+          const files = await fs.readdirAsync(configFolder)
+          files.map(filename => {
+            if (filename.indexOf('safeSearch') > -1) {
+              fs.unlinkAsync(`${configFolder}/${filename}`)
+            }
+          });
+        })()
+      })
+      await Promise.all(cleanupPromises)
+    } catch (err) {
+      log.info("clean up leftover config", err)
     }
   }
 };

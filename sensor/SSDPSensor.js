@@ -18,9 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const SSDPClient = require('node-ssdp').Client
@@ -52,7 +49,7 @@ class SSDPSensor extends Sensor {
           return;
         }
       } catch(e) {
-        log.error("Invalid SSDP location", headers, statusCode, rinfo);
+        log.error("Invalid SSDP location", headers, statusCode, rinfo, e);
         return;
       }
 
@@ -78,7 +75,7 @@ class SSDPSensor extends Sensor {
       
       if(err) {
         // not found, ignore this host
-        log.error("Not able to found mac address for host:", ip, mac);
+        log.error("Not able to found mac address for host:", ip, mac, err);
         return;
       }
 
@@ -96,7 +93,7 @@ class SSDPSensor extends Sensor {
       
       sem.emitEvent({
         type: "DeviceUpdate",
-        message: "Found a device via ssdp",
+        message: `Found a device via ssdp ${ip} ${mac}`,
         host: host
       })
       

@@ -28,10 +28,8 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const fs = require('fs');
+
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -53,6 +51,7 @@ const firewalla = require("./Firewalla.js");
 
 const ModeManager = require('./ModeManager.js')
 const mode = require('./Mode.js')
+const WifiInterface = require('./WifiInterface.js');
 
 // api/main/monitor all depends on sysManager configuration
 const SysManager = require('./SysManager.js');
@@ -72,10 +71,9 @@ if(!bone.isAppConnected()) {
 }
 
 resetModeInInitStage()
+run0()
 
-run0();
-
-function run0() {  
+function run0() {
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
@@ -108,50 +106,55 @@ process.on('uncaughtException',(err)=>{
   if (err && err.message && err.message.includes("Redis connection")) {
     return;
   }
-  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.exception',msg:err.message,stack:err.stack},null);
+  bone.logAsync("error", {
+    type: 'FIREWALLA.MAIN.exception',
+    msg: err.message,
+    stack: err.stack,
+    err: JSON.stringify(err)
+  });
   setTimeout(()=>{
     try {
       cp.execSync("touch /home/pi/.firewalla/managed_reboot")
     } catch(e) {
     }
     process.exit(1);
-  },1000*5);
+  }, 1000*5);
 });
 
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.warn('###### Unhandled Rejection',msg,reason.stack,{});
-  bone.log("error",{version:config.version,type:'FIREWALLA.MAIN.unhandledRejection',msg:msg,stack:reason.stack},null);
+  log.warn('###### Unhandled Rejection',msg,reason.stack);
+  bone.logAsync("error", {
+    type: 'FIREWALLA.MAIN.unhandledRejection',
+    msg: msg,
+    stack: reason.stack,
+    err: JSON.stringify(reason)
+  });
 });
 
-let hl = null;
-let sl = null;
-
-function resetModeInInitStage() {
+async function resetModeInInitStage() {
   // this needs to be execute early!!
-  return async(() => {
-    let bootingComplete = await (firewalla.isBootingComplete())
-    let firstBindDone = await (firewalla.isFirstBindDone())
-    
-    // always reset to none mode if
-    //        bootingComplete flag is off
-    //    AND
-    //        firstBinding is complete (old version doesn't have this flag )
-    // this is to ensure a safe launch
-    // in case something wrong with the spoof, firemain will not
-    // start spoofing again when restarting
+  let bootingComplete = await firewalla.isBootingComplete()
+  let firstBindDone = await firewalla.isFirstBindDone()
 
-    if(!bootingComplete && firstBindDone) {
-      await (mode.noneModeOn())
-    }
-  })()  
+  // always reset to none mode if
+  //        bootingComplete flag is off
+  //    AND
+  //        firstBinding is complete (old version doesn't have this flag )
+  // this is to ensure a safe launch
+  // in case something wrong with the spoof, firemain will not
+  // start spoofing again when restarting
+
+  if(!bootingComplete && firstBindDone) {
+    await mode.noneModeOn()
+  }
 }
 
 function enableFireBlue() {
   // start firemain process only in v2 mode
   cp.exec("sudo systemctl restart firehttpd", (err, stdout, stderr) => {
     if(err) {
-        log.error("Failed to start firehttpd:", err, {})
+        log.error("Failed to start firehttpd:", err);
     }
   })
 }
@@ -160,12 +163,12 @@ function disableFireBlue() {
   // stop firehttpd in v1
   cp.exec("sudo systemctl stop firehttpd", (err, stdout, stderr) => {
     if(err) {
-        log.error("Failed to stop firehttpd:", err, {})
+        log.error("Failed to stop firehttpd:", err);
     }
   })
 }
 
-function run() {
+async function run() {
 
   // periodically update cpu usage, so that latest info can be pulled at any time
   const si = require('../extension/sysinfo/SysInfo.js');
@@ -173,12 +176,12 @@ function run() {
 
   const firewallaConfig = require('../net2/config.js').getConfig();
   sysManager.setConfig(firewallaConfig) // update sys config when start
-  
-  hl = require('../hook/HookLoader.js');
+
+  const hl = require('../hook/HookLoader.js');
   hl.initHooks();
   hl.run();
 
-  sl = require('../sensor/SensorLoader.js');
+  const sl = require('../sensor/SensorLoader.js');
   sl.initSensors();
   sl.run();
 
@@ -190,9 +193,6 @@ function run() {
 
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", config, "info");
-
-  let SSH = require('../extension/ssh/ssh.js');
-  let ssh = new SSH('debug');
 
   // make sure there is at least one usable ethernet
   d.discoverInterfaces(function(err, list) {
@@ -225,126 +225,54 @@ function run() {
   var hostManager= new HostManager("cli",'server','debug');
   var os = require('os');
 
-  async(() => {
-    // always create the secondary interface
-    await (ModeManager.enableSecondaryInterface())
-    d.discoverInterfaces((err, list) => {
-      if(!err && list && list.length >= 2) {
-        sysManager.update(null) // if new interface is found, update sysManager
-        const pclient = require('../util/redis_manager.js').getPublishClient()
-        pclient.publishAsync("System:IPChange", "");
-        // recreate port direct after secondary interface is created
-        // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
-      }
-    })
-  })()
+  // always create the secondary interface
+  await ModeManager.enableSecondaryInterface()
+  d.discoverInterfaces((err, list) => {
+    if(!err && list && list.length >= 2) {
+      sysManager.update(null) // if new interface is found, update sysManager
+      pclient.publishAsync("System:IPChange", "");
+      // recreate port direct after secondary interface is created
+      // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
+    }
+  })
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
-
-  if (process.env.FWPRODUCTION) {
-    /*
-      ssh.resetRandomPassword((err,password) => {
-      if(err) {
-      log.error("Failed to reset ssh password");
-      } else {
-      log.info("A new random SSH password is used!");
-      sysManager.sshPassword = password;
-      }
-      })
-    */
-  }
+  dnsmasq.cleanUpLeftoverConfig()
 
   // Launch PortManager
 
   let PortForward = require("../extension/portforward/portforward.js");
   let portforward = new PortForward();
 
-  setTimeout(()=> {
+  setTimeout(async ()=> {
     var PolicyManager = require('./PolicyManager.js');
     var policyManager = new PolicyManager();
 
-    policyManager.flush(config, (err) => {
-      if(err) {
-        log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
-        return;
-      }
-
-      sem.emitEvent({
-        type: 'IPTABLES_READY'
-      });
-
-      async(() => {
-        await (mode.reloadSetupMode()) // make sure get latest mode from redis
-        await (ModeManager.apply())
-        
-        // when mode is changed by anyone else, reapply automatically
-        ModeManager.listenOnChange();        
-        await (portforward.start());
-      })()
-
-      let PolicyManager2 = require('../alarm/PolicyManager2.js');
-      let pm2 = new PolicyManager2();
-      pm2.setupPolicyQueue()
-      pm2.registerPolicyEnforcementListener()
-
-      setTimeout(() => {
-        async(() => {
-          await (pm2.cleanupPolicyData())
-          await (pm2.enforceAllPolicies())
-          log.info("========= All existing policy rules are applied =========");
-        })().catch((err) => {
-          log.error("Failed to apply some policy rules: ", err, {});
-        });          
-      }, 1000 * 10); // delay for 10 seconds
-      require('./UpgradeManager').finishUpgrade();
-    });
-
-  },1000*2);
-
-  updateTouchFile();
-  
-  setInterval(()=>{
-    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
     try {
-      if (global.gc) {
-        global.gc();
-        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
-      }
-    } catch(e) {
+      await policyManager.flush(config)
+    } catch(err) {
+      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
+      return;
     }
-    
-    updateTouchFile();
 
-  },1000*60*5);
+    await mode.reloadSetupMode() // make sure get latest mode from redis
+    await ModeManager.apply()
 
-  setInterval(()=>{
-    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
-    if (memoryUsage>= platform.getGCMemoryForMain()) {
-        try {
-          if (global.gc) {
-            global.gc();
-            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB", {});
-          }
-        } catch(e) {
-        }
-    }
-  },1000*60);
+    WifiInterface.listenOnChange();
 
-/*
-  Bug: when two firewalla's are on the same network, this will change the upnp
-  setting.  Need to fix this later.
+    // when mode is changed by anyone else, reapply automatically
+    ModeManager.listenOnChange();
+    await portforward.start();
 
-  this will kick off vpnManager, and later policy manager should stop the VpnManager if needed
-*/
-  setTimeout(()=>{
-    var vpnManager = new VpnManager();
+    // initialize VPN after Iptables is flushed
+    const vpnManager = new VpnManager();
     hostManager.loadPolicy((err, data) => {
       if (err != null) {
         log.error("Failed to load system policy for VPN", err);
       } else {
-        var vpnConfig = {};
+        var vpnConfig = {state: false}; // default value
         if(data && data["vpn"]) {
           vpnConfig = JSON.parse(data["vpn"]);
         }
@@ -353,22 +281,25 @@ function run() {
             log.info("Unable to install vpn server instance: server", err);
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
-            vpnManager.configure(vpnConfig, true, (err) => {
-              if (err != null) {
-                log.error("Failed to configure VPN manager", err);
+            (async () => {
+              const conf = await vpnManager.configure(vpnConfig, true);
+              if (conf == null) {
+                log.error("Failed to configure VPN manager");
                 vpnConfig.state = false;
                 hostManager.setPolicy("vpn", vpnConfig);
               } else {
-                hostManager.setPolicy("vpnAvaliable", true);
+                hostManager.setPolicy("vpnAvaliable", true, (err) => { // old typo, DO NOT fix it for backward compatibility.
+                  vpnConfig = Object.assign({}, vpnConfig, conf);
+                  hostManager.setPolicy("vpn", vpnConfig);
+                });
               }
-            });
+            })();
           }
         });
       }
     });
-  },10000);
 
-  setTimeout(()=>{
+    // ensure getHosts is called after Iptables is flushed
     hostManager.getHosts((err,result)=>{
       let listip = [];
       for (let i in result) {
@@ -387,7 +318,50 @@ function run() {
       }
     });
 
-  },20 * 1000);
+    let PolicyManager2 = require('../alarm/PolicyManager2.js');
+    let pm2 = new PolicyManager2();
+    await pm2.setupPolicyQueue()
+    pm2.registerPolicyEnforcementListener()
+
+    try {
+      await pm2.cleanupPolicyData()
+      await pm2.enforceAllPolicies()
+      log.info("========= All existing policy rules are applied =========");
+    } catch (err) {
+      log.error("Failed to apply some policy rules: ", err);
+    };
+    require('./UpgradeManager').finishUpgrade();
+
+  },1000*2);
+
+  updateTouchFile();
+
+  setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
+    try {
+      if (global.gc) {
+        global.gc();
+        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB");
+      }
+    } catch(e) {
+    }
+
+    updateTouchFile();
+
+  },1000*60*5);
+
+  setInterval(()=>{
+    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
+    if (memoryUsage>= platform.getGCMemoryForMain()) {
+        try {
+          if (global.gc) {
+            global.gc();
+            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB");
+          }
+        } catch(e) {
+        }
+    }
+  },1000*60);
 
 
   // finally need to check if firehttpd should be started

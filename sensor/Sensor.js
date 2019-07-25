@@ -16,8 +16,6 @@
 
 let log = require('../net2/logger.js')(__filename);
 
-const Promise = require('bluebird')
-
 let FWEvent = class {
   constructor(eid, type) {
     this.eid = eid;
@@ -32,6 +30,7 @@ let Sensor = class {
   // so this.config won't be available in the constructor
   constructor() {
     this.config = {};
+    this.delay = require('../util/util.js').delay;
   }
 
   getName() {
@@ -59,11 +58,6 @@ let Sensor = class {
 
   }
   
-  delay(t) {
-    return new Promise(function(resolve) {
-      setTimeout(resolve, t)
-    });
-  }
 }
 
 module.exports = {

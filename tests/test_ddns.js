@@ -22,9 +22,6 @@ let assert = chai.assert;
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
@@ -45,15 +42,15 @@ describe('DDNS', function () {
   this.timeout(10000);
 
   beforeEach((done) => {
-    async(() => {
-      await (rclient.delAsync("sys:network:info"));
-      await (bootstrap.bootstrap());
+    (async() =>{
+      await rclient.delAsync("sys:network:info");
+      await bootstrap.bootstrap();
       done();
     })();
   });
 
   it('should get DDNS correctly', (done) => {
-    await (boneSensor.checkIn());
+    await boneSensor.checkIn();
     let matchResult = sysManager.ddns.match(/.d.firewalla.com/);
     expect(matchResult.constructor.name).to.equal('Array');
     done();
