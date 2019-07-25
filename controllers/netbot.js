@@ -71,6 +71,7 @@ const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const unlinkAsync = util.promisify(fs.unlink);
 const existsAsync = util.promisify(fs.exists);
+const accessAsync = util.promisify(fs.access);
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -3012,20 +3013,24 @@ class netBot extends ControllerBot {
                   this.simpleTxData(msg, {}, {code: 400, msg: "OpenVPN client " + profileId + " is still running"}, callback);
                 } else {
                   const profilePath = ovpnClient.getProfilePath();
-                  if (fs.existsSync(profilePath)) {
+                  await accessAsync(profilePath, fs.constants.F_OK).then(async () => {
                     await unlinkAsync(profilePath);
                     const passwordPath = ovpnClient.getPasswordPath();
-                    if (fs.existsSync(passwordPath)) {
-                      await unlinkAsync(passwordPath);
-                    }
+                    await accessAsync(passwordPath, fs.constants.F_OK).then(() => {
+                      return unlinkAsync(passwordPath);
+                    }).catch(() => {});
                     const userPassPath = ovpnClient.getUserPassPath();
-                    if (fs.existsSync(userPassPath)) {
-                      await unlinkAsync(userPassPath);
-                    }
+                    await accessAsync(userPassPath, fs.constants.F_OK).then(() => {
+                      return unlinkAsync(userPassPath);
+                    }).catch(() => {});
+                    const settingsPath = ovpnClient.getSettingsPath();
+                    await accessAsync(settingsPath, fs.constants.F_OK).then(() => {
+                      return unlinkAsync(settingsPath);
+                    }).catch(() => {});
                     this.simpleTxData(msg, {}, null, callback);
-                  } else {
+                  }).catch((err) => {
                     this.simpleTxData(msg, {}, {code: 404, msg: "'profileId' '" + profileId + "' does not exist"}, callback);
-                  }
+                  })
                 }
               }
             })().catch((err) => {
