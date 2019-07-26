@@ -282,7 +282,7 @@ async function run() {
             hostManager.setPolicy("vpnAvaliable",false);
           } else {
             (async () => {
-              const conf = await vpnManager.configure(vpnConfig, true);
+              const conf = await vpnManager.configure(vpnConfig);
               if (conf == null) {
                 log.error("Failed to configure VPN manager");
                 vpnConfig.state = false;

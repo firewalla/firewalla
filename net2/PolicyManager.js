@@ -164,7 +164,7 @@ module.exports = class {
     }
 
     let vpnManager = new VpnManager();
-    let conf = await vpnManager.configure(config, false);
+    let conf = await vpnManager.configure(config);
     if (conf == null) {
       log.error("PolicyManager:VPN", "Failed to configure vpn");
       return;

@@ -47,7 +47,7 @@ class NetworkTool {
   }
 
   // returns CIDR or null
-  _getSubnet(interfaceName, family) {
+  _getSubnet(interfaceName, ipAddress, family) {
     let interfaceData = os.networkInterfaces()[interfaceName];
     if (interfaceData == null) {
       return null
@@ -56,7 +56,7 @@ class NetworkTool {
     var ipSubnets = [];
 
     interfaceData.forEach(osIf => {
-      if (osIf.family == family && !osIf.internal && osIf.cidr != null) {
+      if (osIf.family == family && osIf.address == ipAddress && !osIf.internal && osIf.cidr != null) {
         ipSubnets.push(osIf.cidr);
       }
     });
@@ -106,7 +106,7 @@ class NetworkTool {
       log.info('Found interface', i.name, i.ip_address);
 
       i.gateway = require('netroute').getGateway(i.name);
-      i.subnet = this._getSubnet(i.name, 'IPv4');
+      i.subnet = this._getSubnet(i.name, i.ip_address, 'IPv4');
       i.gateway6 = linux.gateway_ip6_sync();
       i.dns = dns.getServers();
     });
