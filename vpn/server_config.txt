@@ -7,7 +7,7 @@ cert /etc/openvpn/easy-rsa/keys/SERVER_INSTANCE.crt
 key /etc/openvpn/easy-rsa/keys/SERVER_INSTANCE.key
 dh /etc/openvpn/easy-rsa/keys/dh1024.pem
 client-to-client
-server SERVER_NETWORK 255.255.255.0
+server SERVER_NETWORK NETMASK
 # server and remote endpoints
 #ifconfig 10.8.0.1 10.8.0.2
 # Add route to Client routing table for the OpenVPN Server
