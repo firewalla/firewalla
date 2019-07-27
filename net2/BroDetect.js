@@ -1135,7 +1135,7 @@ module.exports = class {
           }
           spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
-          let key = "flow:conn:" + spec.fd + ":" + localMac;
+          let key = "flow:conn:" + spec.fd + ":" + spec.mac;
           let strdata = JSON.stringify(spec);
           let ts = spec._ts; // this is the last time when this flowspec is updated
           if (spec.ts > this.flowstashExpires - FLOWSTASH_EXPIRES) {
