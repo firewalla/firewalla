@@ -55,8 +55,10 @@ function getSubnets(networkInterface, family) {
 
   return ipSubnets;
 }
+
 function generateRandomIpSubnet(ipSubnet) {
-  const seg = Math.floor(Math.random() * 254 + 2);
+  const max = 250, min = 11;
+  const seg = Math.floor(Math.random() * (max - min + 1)) + min;//[11~250]
   const randomIpSubnet = "192.168." + seg + ".1/24";
   if (randomIpSubnet == ipSubnet) {
     return generateRandomIpSubnet(randomIpSubnet)
@@ -65,7 +67,8 @@ function generateRandomIpSubnet(ipSubnet) {
   }
 }
 
-async function _create(config) {
+
+exports.create = async function (config) {
   /*
   "secondaryInterface": {
      "intf":"eth0:0",
@@ -99,6 +102,7 @@ async function _create(config) {
   list = (list || []).filter(function (x) {
     return is_interface_valid(x);
   });
+
   const sameNameIntf = list.find(intf => intf.name == conf.intf)
   if (sameNameIntf) {
     if (
@@ -130,26 +134,20 @@ async function _create(config) {
     // one intf may have multiple ip addresses assigned
     if (overlapped) {
       // other intf already occupies ip1, use alternative ip
-      secondaryIpSubnet = this.generateRandomIpSubnet(secondaryIpSubnet);
-      let flippedConfig = {
-        secondaryInterface: {
-          intf: conf.intf,
-          ip: secondaryIpSubnet
-        }
-      }
-      fc.updateUserConfig(flippedConfig);
+      secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
       break;
     }
   }
-  return { secondaryIpSubnet, legacyIpSubnet }
-}
 
-exports.create = async function (config) {
-  const conf = config.secondaryInterface;
-  const { secondaryIpSubnet, legacyIpSubnet } = await _create(config);
-  log.info("secondaryIpSubnet", secondaryIpSubnet)
-  log.info("legacyIpSubnet", legacyIpSubnet)
-  // // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
+  let flippedConfig = {
+    secondaryInterface: {
+      intf: conf.intf,
+      ip: secondaryIpSubnet
+    }
+  }
+  fc.updateUserConfig(flippedConfig);
+
+  // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
   await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)
   await exec(`sudo ${f.getFirewallaHome()}/scripts/config_secondary_interface.sh ${secondaryIpSubnet}`);
 
