@@ -1299,16 +1299,23 @@ module.exports = class DNSMASQ {
       });
       const dirs = [FILTER_DIR, LEGACY_FILTER_DIR];
       for (let dir of dirs) {
-        const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch((err) => false);
+        const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch(() => false);
         if (!dirExists)
           continue;
+        
         const files = await fs.readdirAsync(dir);
         await Promise.all(files.map(async (filename) => {
-          const fileStat = await fs.statAsync(`${dir}/${filename}`);
-          if (fileStat.isFile()) {
-            await fs.unlinkAsync(`${dir}/${filename}`).catch((err) => {
-              log.error(`Failed to remove ${dir}/${filename}`, err);
-            });
+          const filePath = `${dir}/${filename}`;
+          
+          try {
+            const fileStat = await fs.statAsync(filePath);
+            if (fileStat.isFile()) {
+              await fs.unlinkAsync(filePath).catch((err) => {
+                log.error(`Failed to remove ${filePath}, err:`, err);
+              });
+            }
+          } catch(err) {
+            log.info(`File ${filePath} not exist`);
           }
         }));
       }
