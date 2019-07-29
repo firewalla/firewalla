@@ -23,7 +23,7 @@ const extensionManager = require('./ExtensionManager.js')
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 
 const FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
 const fs = require('fs');
