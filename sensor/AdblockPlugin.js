@@ -23,7 +23,7 @@ const extensionManager = require('./ExtensionManager.js')
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 const deviceConfigFile = `${dnsmasqConfigFolder}/adblock_mac_set.conf`;
 const systemConfigFile = `${dnsmasqConfigFolder}/adblock_system.conf`;
 const dnsTag = "$ad_block";
