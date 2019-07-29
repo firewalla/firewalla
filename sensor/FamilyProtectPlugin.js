@@ -98,7 +98,6 @@ class FamilyProtectPlugin extends Sensor {
                     this.systemSwitch = true;
                     if (fc.isFeatureOn("family_protect", true)) {//compatibility: new firewlla, old app
                         await fc.enableDynamicFeature("family_protect");
-                        return;
                     }
                 } else {
                     this.systemSwitch = false;
