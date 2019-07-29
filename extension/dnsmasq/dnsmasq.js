@@ -22,6 +22,7 @@ const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
+const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -1296,13 +1297,21 @@ module.exports = class DNSMASQ {
         if (err.code !== "EEXIST")
           log.error(`Failed to create ${FILTER_DIR}`, err);
       });
-      const files = await fs.readdirAsync(FILTER_DIR);
-      await Promise.all(files.map(async (filename) => {
-        const fileStat = await fs.statAsync(`${FILTER_DIR}/${filename}`);
-        if (fileStat.isFile()) {
-          await fs.unlinkAsync(`${FILTER_DIR}/${filename}`);
-        }
-      }));
+      const dirs = [FILTER_DIR, LEGACY_FILTER_DIR];
+      for (let dir of dirs) {
+        const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch((err) => false);
+        if (!dirExists)
+          continue;
+        const files = await fs.readdirAsync(dir);
+        await Promise.all(files.map(async (filename) => {
+          const fileStat = await fs.statAsync(`${dir}/${filename}`);
+          if (fileStat.isFile()) {
+            await fs.unlinkAsync(`${dir}/${filename}`).catch((err) => {
+              log.error(`Failed to remove ${dir}/${filename}`, err);
+            });
+          }
+        }));
+      }
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
     }
