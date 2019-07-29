@@ -55,8 +55,17 @@ function getSubnets(networkInterface, family) {
 
   return ipSubnets;
 }
+function generateRandomIpSubnet(ipSubnet) {
+  const seg = Math.floor(Math.random() * 254 + 2);
+  const randomIpSubnet = "192.168." + seg + ".1/24";
+  if (randomIpSubnet == ipSubnet) {
+    return generateRandomIpSubnet(randomIpSubnet)
+  } else {
+    return randomIpSubnet;
+  }
+}
 
-exports.create = async function(config) {
+async function _create(config) {
   /*
   "secondaryInterface": {
      "intf":"eth0:0",
@@ -74,17 +83,29 @@ exports.create = async function(config) {
   if (!conf || !conf.intf) throw new Error("Invalid config");
 
   // ip can sufficiently identify a network configuration, all other configurations are redundant
-  let secondaryIpSubnet = conf.ip;
+  let secondaryIpSubnet;
+  const bootingComplete = await f.isBootingComplete();
+  log.info("zhijietest bootingComplete", bootingComplete)
+  if (!bootingComplete) {
+    //randomize overlay subnet when initial setup
+    secondaryIpSubnet = generateRandomIpSubnet();
+  } else {
+    secondaryIpSubnet = conf.ip;
+  }
+
   let secondarySubnet = ip.cidrSubnet(secondaryIpSubnet);
   let legacyIpSubnet = null;
 
   let list = await linux.get_network_interfaces_list()
 
-  list = (list || []).filter(function(x) {
+  list = (list || []).filter(function (x) {
     return is_interface_valid(x);
   });
-
+  log.info("zhijietest conf", conf)
+  log.info("zhijietest secondarySubnet", secondarySubnet)
+  log.info("zhijietest list", list)
   const sameNameIntf = list.find(intf => intf.name == conf.intf)
+  log.info("zhijietest sameNameIntf", sameNameIntf)
   if (sameNameIntf) {
     if (
       sameNameIntf.netmask === 'Mask:' + secondarySubnet.subnetMask &&
@@ -115,20 +136,22 @@ exports.create = async function(config) {
     // one intf may have multiple ip addresses assigned
     if (overlapped) {
       // other intf already occupies ip1, use alternative ip
-      secondaryIpSubnet = conf.ip2;
+      secondaryIpSubnet = this.generateRandomIpSubnet(secondaryIpSubnet);
       let flippedConfig = {
         secondaryInterface: {
           intf: conf.intf,
-          ip: conf.ip2,
-          ip2: conf.ip
+          ip: conf.secondaryIpSubnet
         }
       }
       fc.updateUserConfig(flippedConfig);
-
       break;
     }
   }
+}
 
+exports.create = async function (config) {
+  const conf = config.secondaryInterface;
+  const { secondaryIpSubnet, legacyIpSubnet } = _create(config)
   // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
   await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)
   await exec(`sudo ${f.getFirewallaHome()}/scripts/config_secondary_interface.sh ${secondaryIpSubnet}`);
