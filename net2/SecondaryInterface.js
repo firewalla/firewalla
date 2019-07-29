@@ -85,14 +85,12 @@ async function _create(config) {
   // ip can sufficiently identify a network configuration, all other configurations are redundant
   let secondaryIpSubnet;
   const bootingComplete = await f.isBootingComplete();
-  log.info("zhijietest bootingComplete", bootingComplete)
   if (!bootingComplete) {
     //randomize overlay subnet when initial setup
     secondaryIpSubnet = generateRandomIpSubnet();
   } else {
     secondaryIpSubnet = conf.ip;
   }
-
   let secondarySubnet = ip.cidrSubnet(secondaryIpSubnet);
   let legacyIpSubnet = null;
 
@@ -101,11 +99,7 @@ async function _create(config) {
   list = (list || []).filter(function (x) {
     return is_interface_valid(x);
   });
-  log.info("zhijietest conf", conf)
-  log.info("zhijietest secondarySubnet", secondarySubnet)
-  log.info("zhijietest list", list)
   const sameNameIntf = list.find(intf => intf.name == conf.intf)
-  log.info("zhijietest sameNameIntf", sameNameIntf)
   if (sameNameIntf) {
     if (
       sameNameIntf.netmask === 'Mask:' + secondarySubnet.subnetMask &&
@@ -140,19 +134,22 @@ async function _create(config) {
       let flippedConfig = {
         secondaryInterface: {
           intf: conf.intf,
-          ip: conf.secondaryIpSubnet
+          ip: secondaryIpSubnet
         }
       }
       fc.updateUserConfig(flippedConfig);
       break;
     }
   }
+  return { secondaryIpSubnet, legacyIpSubnet }
 }
 
 exports.create = async function (config) {
   const conf = config.secondaryInterface;
-  const { secondaryIpSubnet, legacyIpSubnet } = _create(config)
-  // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
+  const { secondaryIpSubnet, legacyIpSubnet } = await _create(config);
+  log.info("secondaryIpSubnet", secondaryIpSubnet)
+  log.info("legacyIpSubnet", legacyIpSubnet)
+  // // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
   await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)
   await exec(`sudo ${f.getFirewallaHome()}/scripts/config_secondary_interface.sh ${secondaryIpSubnet}`);
 
