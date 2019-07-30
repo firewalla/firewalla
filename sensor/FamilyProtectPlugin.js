@@ -23,7 +23,7 @@ const extensionManager = require('./ExtensionManager.js')
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 
 const FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
 const fs = require('fs');
@@ -98,7 +98,6 @@ class FamilyProtectPlugin extends Sensor {
                     this.systemSwitch = true;
                     if (fc.isFeatureOn("family_protect", true)) {//compatibility: new firewlla, old app
                         await fc.enableDynamicFeature("family_protect");
-                        return;
                     }
                 } else {
                     this.systemSwitch = false;
