@@ -19,6 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
 
@@ -64,26 +65,28 @@ class AdblockPlugin extends Sensor {
         }
 
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        if (fc.isFeatureOn("adblock")) {
-            this.globalOn();
-        } else {
-            this.globalOff();
-        }
-        fc.onFeature("adblock", async (feature, status) => {
-            if (feature !== "adblock") {
-                return;
-            }
-            if (status) {
+        sem.once('IPTABLES_READY', async () => {
+            if (fc.isFeatureOn("adblock")) {
                 this.globalOn();
             } else {
                 this.globalOff();
             }
-        })
+            fc.onFeature("adblock", async (feature, status) => {
+                if (feature !== "adblock") {
+                    return;
+                }
+                if (status) {
+                    this.globalOn();
+                } else {
+                    this.globalOff();
+                }
+            })
 
-        this.job();
-        this.timer = setInterval(async () => {
-            return this.job();
-        }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+            this.job();
+            this.timer = setInterval(async () => {
+                return this.job();
+            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+        });
     }
 
     job() {

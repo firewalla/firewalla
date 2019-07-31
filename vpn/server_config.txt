@@ -1,5 +1,5 @@
 #local LOCAL_IP
-dev tun
+dev tun_fwvpn
 proto udp
 port LOCAL_PORT
 ca /etc/openvpn/easy-rsa/keys/ca.crt
@@ -7,7 +7,7 @@ cert /etc/openvpn/easy-rsa/keys/SERVER_INSTANCE.crt
 key /etc/openvpn/easy-rsa/keys/SERVER_INSTANCE.key
 dh /etc/openvpn/easy-rsa/keys/dh1024.pem
 client-to-client
-server SERVER_NETWORK NETMASK
+server  SERVER_NETWORK NETMASK
 # server and remote endpoints
 #ifconfig 10.8.0.1 10.8.0.2
 # Add route to Client routing table for the OpenVPN Server
@@ -38,3 +38,5 @@ verb 1
 # The following two lines added to disable logs
 #log /dev/null
 #status /dev/null
+client-connect /home/pi/firewalla/vpn/client_connected.sh
+client-disconnect /home/pi/firewalla/vpn/client_disconnected.sh
