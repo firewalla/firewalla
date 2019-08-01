@@ -35,9 +35,6 @@ let Promise = require('bluebird');
 
 let Bootstrap = require('../net2/Bootstrap');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
@@ -51,16 +48,16 @@ describe('Test mode feature', function() {
   this.timeout(10000);
 
   beforeEach((done) => {
-    async(() => {
-      await (Bootstrap.bootstrap());
+    (async() =>{
+      await Bootstrap.bootstrap();
       sem.clearAllSubscriptions();
       s.registered = false;
       s.run()
       sem.emitEvent({
         type: 'IPTABLES_READY'
       })
-      await (delay(2000))
-      await (ModeManager.enableSecondaryInterface())
+      await delay(2000)
+      await ModeManager.enableSecondaryInterface()
       done();
     })();
   });
@@ -79,7 +76,7 @@ describe('Test mode feature', function() {
 
     delay(0)
       .then(() => {
-        ModeManager.switchToDHCP()
+        ModeManager.setDHCPAndPublish()
           .then(() => {
             delay(2000)
               .then(() => {
@@ -94,7 +91,7 @@ describe('Test mode feature', function() {
                 })
               })
           }).catch((err) => {
-          log.error("Failed to switch to DHCP:", err, {});
+          log.error("Failed to switch to DHCP:", err);
           assert.fail();
         })
       })
@@ -103,7 +100,7 @@ describe('Test mode feature', function() {
   it('should enable spoofing and disable dhcp when mode is switched to spoofing', (done) => {
     setTimeout(done, 10000);
 
-    ModeManager.switchToSpoof()
+    ModeManager.setSpoofAndPublish()
       .then(() => {
         cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
           expect(err).to.not.null;

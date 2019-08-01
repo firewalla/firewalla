@@ -133,7 +133,7 @@ describe('FlowControl reload function', function() {
 
     flowControl.reload(job1)
       .catch((err) => {
-        log.error("", err, err.stack, {});
+        log.error("", err, err.stack);
         assert.fail()
       })
       .then(() => {

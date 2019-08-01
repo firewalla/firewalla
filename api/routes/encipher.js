@@ -15,22 +15,13 @@
 'use strict';
 var express = require('express');
 var router = express.Router();
-const passport = require('passport')
-
-var Encryption = require('../lib/Encryption'); // encryption middleware
-var encryption = new Encryption();
 
 var CloudWrapper = require('../lib/CloudWrapper');
 var cloudWrapper = new CloudWrapper();
 
-let f = require('../../net2/Firewalla.js');
-
 let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
 
 const jsonfile = require('jsonfile')
 
@@ -49,15 +40,15 @@ router.post('/message/:gid',
 
     let gid = req.params.gid;
 
-    async(() => {
-      let controller = await(cloudWrapper.getNetBotController(gid));
-      let response = await(controller.msgHandlerAsync(gid, req.body));
+    (async() =>{
+      let controller = await cloudWrapper.getNetBotController(gid)
+      let response = await controller.msgHandlerAsync(gid, req.body)
       res.body = JSON.stringify(response);
       next();
     })()
       .catch((err) => {
         // netbot controller is not ready yet, waiting for init complete
-        log.error(err, {})
+        log.error(err);
         res.status(503);
         res.json({error: 'Initializing Firewalla Device, please try later'});
       });
@@ -144,30 +135,33 @@ router.post('/simple', (req, res, next) => {
   body.message.obj.data.alarmduration= req.query.alarmduration
   body.message.obj.data.direction = req.query.direction
 
-  
+
   try {
     const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
 
 //    const c = JSON.parse(content)
-    body.message.obj.data.value = content
+    body.message.obj.data.value = content;
 
-    async(() => {
-      let controller = await(cloudWrapper.getNetBotController(gid));
-      let response = await(controller.msgHandlerAsync(gid, body));
+    (async() =>{
+      let controller = await cloudWrapper.getNetBotController(gid)
+      let response = await controller.msgHandlerAsync(gid, body)
       res.body = JSON.stringify(response);
       res.type('json');
       res.send(res.body);
     })()
       .catch((err) => {
         // netbot controller is not ready yet, waiting for init complete
-        log.error(err, {})
+        log.error(err);
         res.status(503);
         res.json({error: 'Initializing Firewalla Device, please try later'});
       });
 
   } catch(err) {
-    res.status(400).send({error: err})
-  }  
+    res.status(400).send({
+      error: err.message,
+      stack: err.stack
+    })
+  }
 })
 
 module.exports = router;

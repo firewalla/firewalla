@@ -46,7 +46,7 @@ class BoneSensor extends Sensor {
       this.checkIn()
         .then(() => {})
         .catch((err) => {
-          log.error("Failed to check in", err, {});
+          log.error("Failed to check in", err);
         })
 
     })
@@ -83,7 +83,7 @@ class BoneSensor extends Sensor {
           type: 'CloudReCheckin',
           message: "",
         });
-      });      
+      });
     });
   }
 
@@ -99,7 +99,7 @@ class BoneSensor extends Sensor {
     const curUrl = await this.getCloudInstanceURL();
     if(curUrl === url) {
       return;
-    }    
+    }
 
     log.info(`Applying new cloud url: ${url}`);
 
@@ -149,9 +149,9 @@ class BoneSensor extends Sensor {
 
     let sysInfo = await sysManager.getSysInfoAsync();
 
-    log.debug("Checking in Cloud...", sysInfo, {});
+    log.debug("Checking in Cloud...", sysInfo);
 
-    // First checkin usually have no meaningful data ... 
+    // First checkin usually have no meaningful data ...
     //
     try {
       if (this.lastCheckedIn) {
@@ -160,7 +160,7 @@ class BoneSensor extends Sensor {
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
       }
     } catch (e) {
-      log.error("BoneCheckIn Error fetching hostInfo",e,{});
+      log.error("BoneCheckIn Error fetching hostInfo",e);
     }
 
     const data = await Bone.checkinAsync(fConfig, license, sysInfo);
@@ -220,10 +220,6 @@ class BoneSensor extends Sensor {
   }
 
   run() {
-    // setTimeout(() => {
-    //   this.scheduledJob();
-    // }, 5 * 1000); // in 5 seconds
-
     setInterval(() => {
       this.scheduledJob();
     }, syncInterval);
@@ -231,6 +227,10 @@ class BoneSensor extends Sensor {
     sem.on("CloudURLUpdate", async (event) => {
       return this.applyNewCloudInstanceURL()
     })
+
+    sem.on("PublicIP:Updated", (event) => {
+      this.checkIn();
+    });
 
     sem.on("CloudReCheckin", async (event) => {
       await this.checkIn();
@@ -269,7 +269,7 @@ class BoneSensor extends Sensor {
           .then(() => {
             log.info("Service config is updated");
           }).catch((err) => {
-          log.error("Failed to store service config in redis:", err, {});
+          log.error("Failed to store service config in redis:", err);
         })
       }
     })

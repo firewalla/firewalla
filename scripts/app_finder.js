@@ -18,16 +18,9 @@ const log = require('../net2/logger.js')(__filename)
 
 const program = require('commander');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const util = require('util')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
-const Promise = require('bluebird')
-
-const flowTool = require('../net2/FlowTool.js')()
 
 const IntelTool = require('../net2/IntelTool.js')
 const intelTool = new IntelTool()
@@ -44,17 +37,17 @@ function print(flow, app, category) {
   let d = new Date(0)
   d.setUTCSeconds(flow.ts)
  
-  log.info(d, app, category, flow.sh, flow.dh, flow.ob, flow.rb, {})
+  log.info(d, app, category, flow.sh, flow.dh, flow.ob, flow.rb);
 }
 
 if(program.ip) {
-  let ip = program.ip
+  let ip = program.ip;
 
-  async(() => {
+  (async() =>{
 
     let key = util.format("flow:conn:%s:%s", 'in', ip);
 
-    let flows = await (rclient.zrangebyscoreAsync(key, 0, -1))
+    let flows = await rclient.zrangebyscoreAsync(key, 0, -1)
 
     for(let i in flows) {
       let flowJSON = flows[i]
@@ -63,7 +56,7 @@ if(program.ip) {
       let srcIP = flow.sh
       let destIP = flow.dh
 
-      let intel = await (intelTool.getIntel(ip))
+      let intel = await intelTool.getIntel(ip)
 
       if(program.app && intel.app === program.app) {
         print(flow, program.app, null)

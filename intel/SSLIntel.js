@@ -26,7 +26,7 @@ class SSLIntel extends Intel {
     let ip = alarm["p.dest.ip"];
     if (ip) {
       try {
-        let sslInfo = await (intelTool.getSSLCertificate(ip));
+        let sslInfo = await intelTool.getSSLCertificate(ip);
         log.info("Get ssl info of " + ip + ": " + sslInfo);
         if (sslInfo) {
           for (var key in sslInfo) {

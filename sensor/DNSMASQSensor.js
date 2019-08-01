@@ -29,7 +29,6 @@ class DNSMASQSensor extends Sensor {
   constructor() {
     super();
 
-    this.dhcpMode = false;
     this.registered = false;
     this.started = false;
     this.eventBuffer = [];
@@ -41,7 +40,7 @@ class DNSMASQSensor extends Sensor {
         log.error("Fail to install dnsmasq: " + err);
         throw err;
       })
-      .then(() => dnsmasq.start(false) /*no force update*/ )
+      .then(() => dnsmasq.start(false))
       .catch(err => log.error("Failed to start dnsmasq: " + err))
       .then(() => log.info("dnsmasq service is started successfully"));
   }
@@ -53,7 +52,7 @@ class DNSMASQSensor extends Sensor {
         throw err;
       })
       .then(() => log.info("dnsmasq service is stopped successfully"))
-      .then(() => require('../util/delay.js').delay(1000));
+      .then(() => require('../util/util.js').delay(1000));
   }
 
   reload() {
@@ -83,10 +82,7 @@ class DNSMASQSensor extends Sensor {
     // always start dnsmasq
     return Mode.getSetupMode()
       .then((mode) => {
-        if(mode === "dhcp") {
-          dnsmasq.setDhcpMode(true);
-        }
-
+        dnsmasq.setMode(mode);
         if(!this.registered) {
           log.info("Registering dnsmasq events listeners");
 
@@ -103,20 +99,12 @@ class DNSMASQSensor extends Sensor {
             // ignore StopDNS, as now it will always start as daemon process
           });
 
-          sem.on("StartDHCP", (event) => {
+          sem.on("Mode:Applied", (event) => {
             if (!this.started) {
               this._bufferEvent(event);
             } else {
-              log.info("Starting DHCP")
-              dnsmasq.enableDHCP();
-            }
-          });
-
-          sem.on("StopDHCP", (event) => {
-            if (!this.started) {
-              this._bufferEvent(event);
-            } else {
-              dnsmasq.disableDHCP();
+              log.info("Mode applied: " + event.mode);
+              dnsmasq.applyMode(event.mode);
             }
           });
 
@@ -128,24 +116,12 @@ class DNSMASQSensor extends Sensor {
             }
           });
 
-          /*
-          sem.on("VPNSubnetChanged", (event) => {
-            if (!this.started) {
-              this._bufferEvent(event);
-            } else {
-              const subnet = event.vpnSubnet;
-              if (subnet) {
-                dnsmasq.updateVpnIptablesRules(subnet);
-              }
-            }
-          });
-          */
-
           this.registered = true;
         }
 
         return this._start()
           .then(() => {
+            dnsmasq.applyMode(mode);
             this.started = true;
             this._emitBufferedEvent();
           })

@@ -81,7 +81,7 @@ class Whois {
     }
 
     if (!_isValid(target)) {
-      log.warn("invalid target:", target, {});
+      log.warn("invalid target:", target);
       return;
     }
 

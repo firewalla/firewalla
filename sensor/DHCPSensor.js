@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,7 +27,7 @@ class DHCPSensor extends Sensor {
     super();
     this.cache = {};
   }
-  
+
   run() {
     let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
     this.dhcpDump = new DhcpDump();
@@ -37,13 +37,13 @@ class DHCPSensor extends Sensor {
         if (obj && obj.mac) {
           // dedup
           if(this.cache[obj.mac])
-            return;          
+            return;
 
           this.cache[obj.mac] = 1;
           setTimeout(() => {
             delete this.cache[obj.mac];
           }, 60 * 1000); // cache for one minute
-          
+
           log.info(util.format("New Device Found: %s (%s)", obj.name, obj.mac));
           sem.emitEvent({
             type: "NewDeviceWithMacOnly",

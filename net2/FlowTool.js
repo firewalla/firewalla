@@ -14,36 +14,25 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-let Promise = require('bluebird');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
+const util = require('util');
 
-let DNSManager = require('./DNSManager.js');
-let dnsManager = new DNSManager('info');
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 
-let async2 = require('async');
+const DestIPFoundHook = require('../hook/DestIPFoundHook');
+const destIPFoundHook = new DestIPFoundHook();
 
-let util = require('util');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
-let IntelTool = require('../net2/IntelTool');
-let intelTool = new IntelTool();
-
-let DestIPFoundHook = require('../hook/DestIPFoundHook');
-let destIPFoundHook = new DestIPFoundHook();
-
-let HostTool = require('../net2/HostTool.js');
-let hostTool = new HostTool();
-
-let country = require('../extension/country/country.js');
+const country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
-const QUERY_MAX_FLOW = 10000;
-const MAX_RECENT_FLOW = 150;
-const MAX_CONCURRENT_ACTIVITY = 10;
+const MAX_RECENT_FLOW = 100;
 
 const _ = require('lodash');
 
@@ -74,7 +63,12 @@ class FlowTool {
 
 //    if("f" in flow)
 //      delete flow.f;
-
+    if("uids_array" in flow) {
+      flow.uids = flow.uids_array.filter((v, i) => {
+        return flow.uids_array.indexOf(v) === i;
+      });
+      delete flow.uids_array;
+    }
   }
 
   _mergeFlow(targetFlow, flow) {
@@ -114,14 +108,6 @@ class FlowTool {
       key = flow.sh + ":" + flow.fd;
     }
     return key;
-  }
-
-  _getRemoteIP(flow) {
-    if (flow.sh === flow.lh) {
-      return flow.dh;
-    } else {
-      return flow.sh;
-    }
   }
 
   // append to existing flow or create new
@@ -181,59 +167,31 @@ class FlowTool {
     }
   }
 
-  prepareRecentFlows(json, options) {
+  async prepareRecentFlows(json, options) {
     options = options || {}
+    if (!options.count || options.count > MAX_RECENT_FLOW) options.count = MAX_RECENT_FLOW
+    if (!options.asc) options.asc = false;
 
     if (!("flows" in json)) {
       json.flows = {};
     }
 
-    json.flows.recent = [];
-
-    return async(() => {
-
-      let flows = await(this.getAllRecentOutgoingConnections(options))
-      flows = flows.slice(0, MAX_RECENT_FLOW);
-
-      let flows2 = await(this.getAllRecentIncomingConnections(options))
-      flows2 = flows2.slice(0, MAX_RECENT_FLOW);
-
-      Array.prototype.push.apply(json.flows.recent, flows);
-      Array.prototype.push.apply(json.flows.recent, flows2);
-
-      json.flows.recent.sort((a, b) => {
-        return b.ts - a.ts;
-      })
-    })();
-  }
-
-  prepareRecentFlowsForHost(json, mac, options) {
-    if (!("flows" in json)) {
-      json.flows = {};
+    let outgoing, incoming;
+    if (options.mac) {
+      outgoing = await this.getRecentOutgoingConnections(options.mac, options);
+      incoming = await this.getRecentIncomingConnections(options.mac, options);
+    }
+    else {
+      outgoing = await this.getAllRecentOutgoingConnections(options)
+      incoming = await this.getAllRecentIncomingConnections(options)
     }
 
-    json.flows.recent = [];
+    let recentFlows = _.orderBy(outgoing.concat(incoming), 'ts', options.asc ? 'asc' : 'desc')
+      .slice(0, options.count);
 
-    return async(() => {
-      let allFlows = [];
-      let flows = await(this.getRecentOutgoingConnections(mac, options));
-      flows.forEach((f) => {
-        f.device = mac;
-      });
-      allFlows.push.apply(allFlows, flows);
+    json.flows.recent = recentFlows;
 
-      let flows2 = await(this.getRecentIncomingConnections(mac, options));
-      flows2.forEach((f) => {
-        f.device = mac;
-      });
-      allFlows.push.apply(allFlows, flows2);
-
-      allFlows.sort((a, b) => {
-        return b.ts - a.ts;
-      })
-
-      Array.prototype.push.apply(json.flows.recent, allFlows);
-    })();
+    return recentFlows
   }
 
   // merge adjacent flows with same key via this._getKey()
@@ -316,8 +274,7 @@ class FlowTool {
     return this.getAllRecentConnections("out", options);
   }
 
-  getAllRecentOutgoingConnectionsMixed(options) {
-    return async(() => {
+  async getAllRecentOutgoingConnectionsMixed(options) {
 
     //   {
     //     country = US;
@@ -331,36 +288,35 @@ class FlowTool {
     //     upload = 1392;
     // }
 
-      const outgoing = await (this.getAllRecentOutgoingConnections(options))
-      const incoming = await (this.getAllRecentIncomingConnections(options))
+    const outgoing = await this.getAllRecentOutgoingConnections(options)
+    const incoming = await this.getAllRecentIncomingConnections(options)
 
-      const all = outgoing.concat(incoming)
+    const all = outgoing.concat(incoming)
 
-      all.sort((a, b) => a.ip < b.ip)      
-      
-      let merged = []
-      let last_entry = null
+    all.sort((a, b) => a.ip < b.ip)
 
-      for (let i = 0; i < all.length; i++) {
-        const entry = all[i];
-        if(last_entry === null) {
-          last_entry = entry
+    let merged = []
+    let last_entry = null
+
+    for (let i = 0; i < all.length; i++) {
+      const entry = all[i];
+      if (last_entry === null) {
+        last_entry = entry
+      } else {
+        if (last_entry.ip === entry.ip) {
+          last_entry.upload += entry.upload
+          last_entry.download += entry.download
+          last_entry.duration = parseFloat(last_entry.duration) + parseFloat(entry.duration)
         } else {
-          if(last_entry.ip === entry.ip) {
-            last_entry.upload += entry.upload
-            last_entry.download += entry.download
-            last_entry.duration = parseFloat(last_entry.duration) + parseFloat(entry.duration)
-          } else {
-            merged.push(last_entry)
-            last_entry = entry
-          }
+          merged.push(last_entry)
+          last_entry = entry
         }
       }
+    }
 
-      merged.push(last_entry)      
+    merged.push(last_entry)
 
-      return merged
-    })()
+    return merged
   }
 
   // this is to get all recent connections in the network
@@ -482,8 +438,8 @@ class FlowTool {
 
   async saveGlobalRecentConns(flow) {
     const key = "flow:global:recent";
-    const now = Math.ceil(new Date() / 1000);
-    const limit = -51; // only keep the latest 50 entries
+    const now = new Date() / 1000;
+    const limit = -1001; // only keep the latest 1000 entries
     let flowCopy = JSON.parse(JSON.stringify(flow));
 
     if(!this._isFlowValid(flowCopy)) {
@@ -492,6 +448,7 @@ class FlowTool {
 
     // TODO: might need to cut small traffics
     flowCopy = this.toSimpleFlow(flowCopy);
+    flowCopy.now = now;
 
     // if(flowCopy.deviceIP && !flowCopy.device) {
     //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
@@ -529,11 +486,18 @@ class FlowTool {
     }));
   }
 
-  async getGlobalRecentConns() {
-    const key = "flow:global:recent";
-    const limit = 50;
+  async getGlobalRecentConns(options) {
+    options = options || {};
 
-    const results = await rclient.zrevrangebyscoreAsync([key, "+inf", "-inf", "LIMIT", 0 , limit]);
+    const key = "flow:global:recent";
+    const limit = options.limit || 50;
+    let offset = options.offset || "-inf";
+
+    if(offset !== '-inf') {
+      offset = `(${offset}`;
+    }
+
+    const results = await rclient.zrangebyscoreAsync([key, offset, "+inf", "LIMIT", 0 , limit]);
 
     if(_.isEmpty(results)) {
       return [];
@@ -553,14 +517,21 @@ class FlowTool {
 
   async getRecentConnections(target, direction, options) {
     options = options || {};
+    if (!options.count || options.count > MAX_RECENT_FLOW) options.count = MAX_RECENT_FLOW
 
-    let max_recent_flow = options.maxRecentFlow || MAX_RECENT_FLOW;
+    const key = util.format("flow:conn:%s:%s", direction, target);
+    let ts, ets;
 
-    let key = util.format("flow:conn:%s:%s", direction, target);
-    let to = options.end || new Date() / 1000;
-    let from = options.begin || (to - MAX_RECENT_INTERVAL);
+    if (!options.ts) {
+      ts = (options.asc ? options.begin : options.end) || new Date() / 1000;
+      ets = options.asc ? (options.end || ts + MAX_RECENT_INTERVAL) : (options.begin || ts - MAX_RECENT_INTERVAL)
+    } else {
+      ts = options.ts
+      ets = options.asc ? ts + MAX_RECENT_INTERVAL : ts - MAX_RECENT_INTERVAL
+    }
 
-    let results = await (rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , max_recent_flow]));
+    const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
+    let results = await zrange(key, '(' + ts, ets, "LIMIT", 0 , options.count);
 
     if(results === null || results.length === 0)
       return [];
@@ -569,19 +540,17 @@ class FlowTool {
       .map((x) => this._flowStringToJSON(x))
       .filter((x) => this._isFlowValid(x));
 
-    flowObjects.forEach((x) => this.trimFlow(x));
+    flowObjects.forEach((x) => {
+      this.trimFlow(x)
+      if (x.ets) x.ts = x.ets
+    });
 
     let mergedFlow = null
 
     if(!options.no_merge) {
-      mergedFlow = this._mergeFlows(flowObjects.sort((a, b) =>  {
-        if (a.ets && b.ets) {
-          // sort by end timestamp if present
-          a.ts = a.ets;
-          b.ts = b.ets;
-        }
-        return b.ts - a.ts;
-      })); 
+      mergedFlow = this._mergeFlows(
+        _.orderBy(flowObjects, 'ts', options.asc ? 'asc' : 'desc')
+      ); 
     } else {
       mergedFlow = flowObjects
     }
@@ -589,19 +558,13 @@ class FlowTool {
     let simpleFlows = mergedFlow
       .map((f) => {
         let s = this.toSimpleFlow(f)
-        if(options.mac) {
-          s.device = options.mac; // record the mac address here
-        }
+        s.device = target; // record the mac address here
         return s;
       });
 
     let enrichedFlows = await this.enrichWithIntel(simpleFlows);
 
-    enrichedFlows.sort((a, b) => {
-      return b.ts - a.ts;
-    });
-
-    return enrichedFlows;
+    return _.orderBy(enrichedFlows, 'ts', options.asc ? 'asc' : 'desc')
   }
 
   getFlowKey(mac, type) {
@@ -628,22 +591,20 @@ class FlowTool {
     return rclient.zremAsync(key, JSON.stringify(flow))
   }
 
-  flowExists(mac, type, flow) {
+  async flowExists(mac, type, flow) {
     let key = this.getFlowKey(mac, type);
 
-    if(typeof flow !== 'object') {
-      return Promise.reject("Invalid flow type: " + typeof flow);
+    if (typeof flow !== 'object') {
+      throw new Error("Invalid flow type: " + typeof flow);
     }
 
-    return async(() => {
-      let result = await(rclient.zscoreAsync(key, JSON.stringify(flow)));
+    let result = await rclient.zscoreAsync(key, JSON.stringify(flow));
 
-      if(result == null) {
-        return false;
-      } else {
-        return true;
-      }
-    })();
+    if (result == null) {
+      return false;
+    } else {
+      return true;
+    }
   }
 
   queryFlows(mac, type, begin, end) {

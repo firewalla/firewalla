@@ -16,6 +16,10 @@
 
 const log = require('../net2/logger.js')(__filename);
 
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
+const fc = require('../net2/config.js')
+
 const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -25,11 +29,16 @@ const bone = require('../lib/Bone.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 
+const CountryUpdater = require('../control/CountryUpdater.js');
+const countryUpdater = new CountryUpdater();
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
   "av": "app.video",
-  "porn": "app.porn"  // dnsmasq redirect to blue hole if porn
+  "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
+  "gamble": "app.gamble",
+  "p2p": "app.p2p"
 }
 
 const securityHashMapping = {
@@ -37,88 +46,130 @@ const securityHashMapping = {
 }
 
 class CategoryUpdateSensor extends Sensor {
-  constructor() {
-    super();
-    this.config.refreshInterval = 8 * 3600 * 1000; // refresh every 8 hours
-  }
 
-  async job() {
+  async regularJob() {
     const categories = Object.keys(categoryHashsetMapping)
-    for (let i = 0; i < categories.length; i++) {
-      const category = categories[i];
+    for (const category of categories) {
       await this.updateCategory(category);
     }
+  }
 
+  async securityJob() {
     const securityCategories = Object.keys(securityHashMapping)
-    for (let i = 0; i < securityCategories.length; i++) {
-      const category = securityCategories[i]
+    for (const category of securityCategories) {
       await this.updateSecurityCategory(category)
     }
   }
 
+  async countryJob() {
+    await this.renewCountryList();
+    const activeCountries = countryUpdater.getActiveCountries();
+    log.info('Active countries', activeCountries);
+    for (const country of activeCountries) {
+      await this.updateCountryAllocation(country)
+      const category = countryUpdater.getCategory(country)
+      await countryUpdater.refreshCategoryRecord(category)
+      await countryUpdater.recycleIPSet(category)
+    }
+  }
+
   async updateCategory(category) {
-    const domains = await this.loadCategoryFromBone(category);
+    log.info(`Loading domains for ${category} from cloud`);
+
+    const hashset = this.getCategoryHashset(category)
+    const domains = await this.loadCategoryFromBone(hashset);
+    log.info(`category ${category} has ${domains.length} domains`)
+
     await categoryUpdater.flushDefaultDomains(category);
     return categoryUpdater.addDefaultDomains(category,domains);
   }
 
   async updateSecurityCategory(category) {
-    const info = await this.loadSecurityInfoFromBone(category);
+    log.info(`Loading security info for ${category} from cloud`);
+
+    const hashset = securityHashMapping[category]
+    const info = await this.loadCategoryFromBone(hashset);
 
     const domains = info.domain
-    const ipv4Addresses = info["ip4"]
-    const ipv6Addresses = info["ip6"]
-    
-    // if(domains) {
+    const ip4List = info["ip4"]
+    const ip6List = info["ip6"]
+
+    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
+      + ` ${(ip6List || []).length} ipv6, ${(domains || []).length} domains`)
+
+    // if (domains) {
     //   await categoryUpdater.flushDefaultDomains(category);
     //   await categoryUpdater.addDefaultDomains(category,domains);
     // }
-    
-    if(ipv4Addresses) {
+
+    if (ip4List) {
       await categoryUpdater.flushIPv4Addresses(category)
-      await categoryUpdater.addIPv4Addresses(category, ipv4Addresses)
+      await categoryUpdater.addIPv4Addresses(category, ip4List)
     }
-    
-    if(ipv6Addresses) {
+
+    if (ip6List) {
       await categoryUpdater.flushIPv6Addresses(category)
-      await categoryUpdater.addIPv6Addresses(category, ipv6Addresses)
+      await categoryUpdater.addIPv6Addresses(category, ip6List)
+    }
+  }
+
+  async updateCountryAllocation(country) {
+    const category = countryUpdater.getCategory(country);
+    log.info(`Loading country ip allocation list for ${country} from cloud`);
+
+    const ip4List = await this.loadCategoryFromBone(category + ':ip4');
+
+    if (ip4List) {
+      await countryUpdater.addAddresses(country, false, ip4List)
+    }
+
+    log.info(`Country ${country} has ${(ip4List || []).length} ipv4 entries`);
+
+    if (fc.isFeatureOn('ipv6')) {
+      const ip6List = await this.loadCategoryFromBone(category + ':ip6');
+
+      if (ip6List) {
+        await countryUpdater.addAddresses(country, true, ip6List)
+      }
+
+      log.info(`Country ${country} has ${(ip6List || []).length} ipv6 entries`)
     }
   }
 
   run() {
-    this.job()
+    sem.once('IPTABLES_READY', async() => {
+      // initial round of country list update is triggered by this event
+      // also triggers dynamic list and ipset update here
+      // to make sure blocking takes effect immediately
+      sem.on('Policy:CountryActivated', async (event) => {
+        await this.updateCountryAllocation(event.country)
+        const category = countryUpdater.getCategory(event.country)
+        await countryUpdater.refreshCategoryRecord(category)
+        await countryUpdater.recycleIPSet(category, false)
+      })
 
-    setInterval(() => {
-      this.job()
-    }, this.config.refreshInterval)
+      await this.regularJob()
+      await this.securityJob()
+      await this.renewCountryList()
+
+      setInterval(this.regularJob.bind(this), this.config.regularInterval * 1000)
+
+      setInterval(this.securityJob.bind(this), this.config.securityInterval * 1000)
+
+      setInterval(this.countryJob.bind(this), this.config.countryInterval * 1000)
+    })
   }
 
-  async loadCategoryFromBone(category) {
-    const hashset = this.getCategoryHashset(category)
-
-    if(hashset) {
-      log.info(`Loading domains for ${category} from cloud`);
-      const data = await bone.hashsetAsync(hashset)
-      const list = JSON.parse(data)
-      log.info(`category ${category} has ${list.length} domains`)
-      return list
-    } else {
-      return []
-    }
-  }
-
-  async loadSecurityInfoFromBone(category) {
-    const hashset = securityHashMapping[category]
-
-    if(hashset) {
-      log.info(`Loading domains for ${category} from cloud`);
-      const data = await bone.hashsetAsync(hashset)
-      const list = JSON.parse(data)
-      const ip4List = list["ip4"] || [];
-      const ip6List = list["ip6"] || [];
-      const domain = list.domain || [];
-      log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${domain.length} domains`)
-      return list
+  async loadCategoryFromBone(hashset) {
+    if (hashset) {
+      try {
+        const data = await bone.hashsetAsync(hashset)
+        const list = JSON.parse(data)
+        return list
+      } catch(err) {
+        log.error("Failed to get hashset", hashset, err);
+        return []
+      }
     } else {
       return []
     }
@@ -126,6 +177,12 @@ class CategoryUpdateSensor extends Sensor {
 
   getCategoryHashset(category) {
     return categoryHashsetMapping[category]
+  }
+
+  async renewCountryList() {
+    const countryList = await this.loadCategoryFromBone('country:list');
+    await rclient.delAsync('country:list');
+    await rclient.saddAsync('country:list', countryList);
   }
 }
 

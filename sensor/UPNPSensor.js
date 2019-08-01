@@ -73,7 +73,7 @@ class UPNPSensor extends Sensor {
   }
 
   mergeResults(curMappings, preMappings) {
-    
+
     curMappings.forEach((mapping) => {
       mapping.expire = Math.floor(new Date() / 1000);
     });
@@ -82,25 +82,32 @@ class UPNPSensor extends Sensor {
 
     const uniqMappings = _.uniqWith(fullMappings, compareUpnp);
 
-    return uniqMappings          
+    return uniqMappings
       .filter((mapping) => !this.isExpired(mapping));
   }
 
   run() {
     setInterval(() => {
       upnp.getPortMappingsUPNP(async (err, results) => {
-        if (results && results.length >= 0) {
-          const key = "sys:scan:nat";
+        if (err) {
+          log.error("Error getting mappings", err);
+        }
 
-          let preMappings = await (rclient.hgetAsync(key, 'upnp')
-            .then(entries => { return JSON.parse(entries) })
-            .catch(err => log.error("Failed to read upnp mapping in database: " + err))
-          ) || [];
+        if (!results) {
+          results = []
+          log.info("No upnp mapping found in network");
+        }
+
+        const key = "sys:scan:nat";
+
+        try {
+          let entries = await rclient.hgetAsync(key, 'upnp');
+          let preMappings = JSON.parse(entries) || [];
 
           const mergedResults = this.mergeResults(results, preMappings);
 
           if (cfg.isFeatureOn(ALARM_UPNP)) {
-            mergedResults.forEach(current => {
+            for (let current of mergedResults) {
               let firewallaRegistered =
                 current.private.host == sysManager.myIp() &&
                 upnp.getRegisteredUpnpMappings().some( m => upnp.mappingCompare(current, m) );
@@ -128,24 +135,17 @@ class UPNPSensor extends Sensor {
                     'p.protocol': current.protocol
                   }
                 );
-                am2.enrichDeviceInfo(alarm)
-                  .catch(e => {
-                    log.error('Failed to enrich device info for Alarm:', alarm.aid)
-                    return alarm;
-                  })
-                  .then(enriched => {
-                    am2.enqueueAlarm(enriched)
-                  })
+
+                await am2.enqueueAlarm(alarm);
               }
-            })
+            }
           }
 
-          rclient.hmsetAsync(key, {upnp: JSON.stringify(mergedResults)} )
-            .catch(err => log.error("Failed to update upnp mapping in database: " + err))
-            .then(writes => writes && log.info("UPNP mapping is updated,", mergedResults.length, "entries"));
+          if (await rclient.hmsetAsync(key, {upnp: JSON.stringify(mergedResults)} ))
+            log.info("UPNP mapping is updated,", mergedResults.length, "entries");
 
-        } else {
-          log.info("No upnp mapping found in network");
+        } catch(err) {
+          log.error("Failed to scan upnp mapping: " + err);
         }
       });
     }, this.config.interval * 1000 || 60 * 10 * 1000); // default to 10 minutes

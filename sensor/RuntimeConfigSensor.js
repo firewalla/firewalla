@@ -32,7 +32,7 @@ class RuntimeConfigSensor extends Sensor {
       await this.updateRedisConfig();
       await this.schedule();
     } catch(err) {
-      log.error("Failed to update redis config:", err, {})
+      log.error("Failed to update redis config:", err);
     }
 
     setInterval(() => {
@@ -52,7 +52,7 @@ class RuntimeConfigSensor extends Sensor {
     try {
       await this.updateFakeClock();
     } catch(err) {
-      log.error("Failed to record latest time to fake-hwlock:", err, {})
+      log.error("Failed to record latest time to fake-hwlock:", err);
     }
   }
 

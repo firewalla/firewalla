@@ -30,7 +30,10 @@ class BroNotice {
       instance = this;
     }
   }
-
+  
+  //  src: guesser
+  //  sub: target
+  //  dst: no presence
   async processSSHScan(alarm, broObj) {
     const subMessage = broObj.sub
     // sub message:
@@ -41,57 +44,49 @@ class BroNotice {
       return array.indexOf(v) === i
     })
 
-    if(addresses.length == 0) {
+    if (addresses.length == 0) {
       alarm["p.local.decision"] == "ignore";
       return;
     }
 
-    const scanSrc = broObj.src;
-    const scanTarget = addresses[0];
+    let target = addresses[0];
 
-    let deviceIP = null;
-    let destIP = null;
-
-    if(sysManager.isLocalIP(scanTarget)) {
-      deviceIP = scanTarget;
-      destIP = scanSrc;
-      alarm["p.local_is_client"] = "0";
-    } else {
-      deviceIP = scanSrc;
-      destIP = scanTarget;
+    if (alarm["p.device.ip"] == broObj.src) {
+      // attacker is internal device
       alarm["p.local_is_client"] = "1";
+      alarm["p.dest.ip"] = target;
+    } else {
+      // attacker is external device
+      alarm["p.local_is_client"] = "0";
+      alarm["p.device.ip"] = target;
+      alarm["device"] = target;
     }
-
-    alarm["p.device.ip"] = deviceIP;
-    alarm["p.device.name"] = deviceIP;
-
-    const mac = await hostTool.getMacByIP(deviceIP);
-    if(mac) {
-      alarm["p.device.mac"] = mac;
-    }
-
-    alarm["p.dest.ip"] = destIP;
 
     alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
   }
 
+  //  src: scanner
+  //  dst: target
+  //  sub: "local" || "remote"
   async processPortScan(alarm, broObj) {
-
+    if (alarm["p.device.ip"] == broObj.src) {
+      alarm["p.local_is_client"] = "1";
+    } else {
+      alarm["p.local_is_client"] = "0";
+    }
   }
 
   async processHeartbleed(alarm, broObj) {
-    const from = broObj["src"];
-    const to = broObj["dst"];
-
-    let localIP = null;
-    // initiated from myself
-    if(sysManager.isLocalIP(from)) {
+    if(sysManager.isLocalIP(broObj["src"])) {
       alarm["p.local_is_client"] = "1";
     } else {
       // initiated from outside
       alarm["p.local_is_client"] = "0";
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
     }
+
+    if (alarm['p.noticeType'] == 'Heartbleed::SSL_Heartbeat_Attack_Success')
+      alarm['p.action.block'] = true; // block automatically if attack succeed
   }
 
   async processSSHInterestingLogin(alarm, broObj) {
@@ -100,10 +95,19 @@ class BroNotice {
     if(sub) {
       alarm["p.dest.name"] = sub;
     }
-
   }
 
-  async processMalwareHash(alarm, broObj) {
+  // on HTTP src/dst compiles with HTTP connection
+  // sub: match description link
+  async processTeamCymru(alarm, broObj) {
+    if (sysManager.isLocalIP(broObj.src)) {
+      alarm["p.local_is_client"] = "1";
+    } else {
+      // initiated from outside
+      alarm["p.local_is_client"] = "0";
+      alarm["p.action.block"] = true; // block automatically if initiated from outside in
+    }
+
     if(broObj["file_mime_type"]) {
       alarm["p.file.type"] = broObj["file_mime_type"];
     }
@@ -114,6 +118,17 @@ class BroNotice {
 
     if(broObj.sub) {
       alarm["p.malware.reference"] = broObj.sub;
+    }
+  }
+
+  //  src: victim
+  //  dst: no presence
+  async processSQLInjection(alarm, broObj) {
+    if (alarm["p.device.ip"] == broObj.src) {
+      alarm["p.local_is_client"] = "0";
+      alarm["p.action.block"] = true;
+    } else {
+      alarm["p.local_is_client"] = "1";
     }
   }
 
@@ -128,28 +143,33 @@ class BroNotice {
 
     switch(noticeType) {
       case "SSH::Password_Guessing":
-      await this.processSSHScan(alarm, broObj);
-      break;
+        await this.processSSHScan(alarm, broObj);
+        break;
 
-      case "Heartbleed::SSL_Heartbeat_Attack":
-      await this.processHeartbleed(alarm, broObj);
-      break;
+      case "Heartbleed::SSL_Heartbeat_Attack":  
+      case "Heartbleed::SSL_Heartbeat_Attack_Success":
+        await this.processHeartbleed(alarm, broObj);
+        break;
 
       case "Scan::Port_Scan":
-      await this.processPortScan(alarm, broObj);
-      break;
+        await this.processPortScan(alarm, broObj);
+        break;
 
       case "SSH::Interesting_Hostname_Login":
-      await this.processSSHInterestingLogin(alarm, broObj);
-      break;
+        await this.processSSHInterestingLogin(alarm, broObj);
+        break;
 
       case "TeamCymruMalwareHashRegistry::Match":
-      await this.processMalwareHash(alarm, broObj);
-      break;
+        await this.processTeamCymru(alarm, broObj);
+        break;
+
+      case 'HTTP::SQL_Injection_Victim':
+        await this.processSQLInjection(alarm, broObj);
+        break
 
       default:
-      // do nothing
-      break;
+        // do nothing
+        break;
     }
 
   }

@@ -17,363 +17,524 @@
 var instance = null;
 const log = require("../net2/logger.js")(__filename)
 const iptable = require("../net2/Iptables");
-var SysManager = require('../net2/SysManager.js');
-var sysManager = new SysManager('info');
-var firewalla = require('../net2/Firewalla.js');
-var fHome = firewalla.getFirewallaHome();
+const wrapIptables = iptable.wrapIptables;
+const cp = require('child_process');
+const exec = require('child_process').exec
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager('info');
+const firewalla = require('../net2/Firewalla.js');
+const fHome = firewalla.getFirewallaHome();
+const ip = require('ip');
 
-var later = require('later');
-var publicIp = require('public-ip');
-
-var fs = require('fs');
+const fs = require('fs');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-var util = require('util');
+const util = require('util');
+const Promise = require('bluebird');
+const execAsync = util.promisify(cp.exec);
+const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+const readdirAsync = util.promisify(fs.readdir);
+const statAsync = util.promisify(fs.stat);
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
-var linux = require('../util/linux');
-var UPNP = require('../extension/upnp/upnp.js');
+const UPNP = require('../extension/upnp/upnp.js');
 
-var ttlExpire = 12 * 60 * 60;
+class VpnManager {
+  constructor() {
+    if (instance == null) {
+      this.upnp = new UPNP(sysManager.myGateway());
+      if (firewalla.isMain()) {
+        sclient.on("message", async (channel, message) => {
+          switch (channel) {
+            case "System:IPChange":
+              // update SNAT rule in iptables
+              try {
+                // sysManager.myIp() only returns latest IP of Firewalla. Should unset old rule with legacy IP before add new rule
+                await this.unsetIptables();
+                await this.setIptables()
+              } catch(err) {
+                log.error("Failed to set iptables", err);
+              }
+            default:
+          }
+        });
 
-module.exports = class {
-    constructor() {
-        if (instance == null) {
-            this.upnp = new UPNP("info", sysManager.myGateway());
-            if (firewalla.isMain()) {
-              sclient.on("message", (channel, message) => {
-                switch (channel) {
-                  case "System:IPChange":
-                    // update SNAT rule in iptables
-                    this.unsetIptables((err, result) => {
-                      if (err) {
-                        log.error("Failed to unset iptables", err);
-                      }
-                      this.setIptables((err, result) => {
-                        if (err) {
-                          log.error("Failed to set iptables", err);
-                        }
-                      })
-                    })
-                  default:
-                }
-              });
-
-              sclient.subscribe("System:IPChange");
-            }
-            instance = this;
-        }
-        return instance;
+        sclient.subscribe("System:IPChange");
+      }
+      instance = this;
     }
+    return instance;
+  }
 
-    setIptables(callback) {
-        const serverNetwork = this.serverNetwork;
-        const localIp = sysManager.myIp();
-        this._currentLocalIp = localIp;
-        if (!serverNetwork) {
+  install(instance, callback) {
+    let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh %s', fHome, instance);
+    exec(install1_cmd, (err, out, code) => {
+      if (err) {
+        log.error("VPNManager:INSTALL:Error", "Unable to install1.sh for " + instance, err);
+      }
+      if (err == null) {
+        // !! Pay attention to the parameter "-E" which is used to preserve the
+        // enviornment variables when running sudo commands
+        const installLockFile = "/dev/shm/vpn_install2_lock_file";
+        let install2_cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./install2.sh %s'; sync", fHome, installLockFile, instance);
+        log.info("VPNManager:INSTALL:cmd", install2_cmd);
+        exec(install2_cmd, (err, out, code) => {
+          if (err) {
+            log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
+            if (callback) {
+              callback(err, null);
+            }
+            return;
+          }
+          log.info("VPNManager:INSTALL:Done");
+          this.instanceName = instance;
           if (callback)
             callback(null, null);
-          return;
-        }
-        log.info("VpnManager:SetIptables", serverNetwork, localIp);
-      
-        const commands =[
-            // delete this rule if it exists, logical opertion ensures correct execution
-            `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
-            // insert back as top rule in table
-            `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`
-        ];
-        iptable.run(commands, null, callback);
-    }
-
-    unsetIptables(callback) {
-        const serverNetwork = this.serverNetwork;
-        let localIp = sysManager.myIp();
-        if (this._currentLocalIp)
-          localIp = this._currentLocalIp;
-        if (!serverNetwork) {
-          if (callback)
-            callback(null, null);
-          return;
-        }
-        log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
-        const commands = [
-            `sudo iptables -w -t nat -C POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} &>/dev/null && (sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp} || false)|| true`,
-        ];
-        iptable.run(commands, null, callback);
-        this._currentLocalIp = null;
-    }
-
-    removeUpnpPortMapping(opts, callback) {
-        log.info("VpnManager:RemoveUpnpPortMapping", opts);
-        let timeoutExecuted = false;
-        const timeout = setTimeout(() => {
-            timeoutExecuted = true;
-            log.error("Failed to remove upnp port mapping due to timeout");
-            if (callback) {
-                callback(new Error("Timeout"));
-            }
-        }, 10000);
-        this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
-            clearTimeout(timeout);
-            if (callback && !timeoutExecuted) {
-                callback(err);
-            }
         });
+      } else {
+        if (callback)
+          callback(err, null);
+      }
+    });
+  }
+
+  async setIptables() {
+    const serverNetwork = this.serverNetwork;
+    const localIp = sysManager.myIp();
+    this._currentLocalIp = localIp;
+    if (!serverNetwork) {
+      return;
+    }
+    log.info("VpnManager:SetIptables", serverNetwork, localIp);
+
+    const commands =[
+      // delete this rule if it exists, logical opertion ensures correct execution
+      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`),
+      // insert back as top rule in table
+      `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`
+    ];
+    await iptable.run(commands);
+  }
+
+  async unsetIptables() {
+    const serverNetwork = this.serverNetwork;
+    let localIp = sysManager.myIp();
+    if (this._currentLocalIp)
+      localIp = this._currentLocalIp;
+    if (!serverNetwork) {
+      return;
+    }
+    log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
+    const commands = [
+      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`),
+    ];
+    this._currentLocalIp = null;
+    await iptable.run(commands);
+  }
+
+  async removeUpnpPortMapping(opts) {
+    log.info("VpnManager:RemoveUpnpPortMapping", opts);
+    let timeoutExecuted = false;
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        timeoutExecuted = true;
+        log.error("Failed to remove upnp port mapping due to timeout");
+        resolve(false);
+      }, 10000);
+      this.upnp.removePortMapping(opts.protocol, opts.private, opts.public, (err) => {
+        clearTimeout(timeout);
+          if (!timeoutExecuted) {
+            if (err)
+              resolve(false);
+            else
+              resolve(true);
+          }
+      });
+    });
+  }
+
+  async addUpnpPortMapping(protocol, localPort, externalPort, description) {
+    log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
+    let timeoutExecuted = false;
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        timeoutExecuted = true;
+        log.error("Failed to add upnp port mapping due to timeout");
+        resolve(false);
+      }, 10000);
+      this.upnp.addPortMapping(protocol, localPort, externalPort, description, (err) => {
+        clearTimeout(timeout);
+        if (!timeoutExecuted) {
+          if (err)
+            resolve(false);
+          else
+            resolve(true);
+        }
+      });
+    });
+  }
+
+  async configure(config) {
+    if (config) {
+      if (config.serverNetwork) {
+        if (this.serverNetwork && this.serverNetwork !== config.serverNetwork)
+          this.needRestart = true;
+        this.serverNetwork = config.serverNetwork;
+      }
+      if (config.netmask) {
+        if (this.netmask && this.netmask !== config.netmask)
+          this.needRestart = true;
+        this.netmask = config.netmask;
+      }
+      if (config.localPort) {
+        if (this.localPort && this.localPort !== config.localPort)
+          this.needRestart = true;
+        this.localPort = config.localPort;
+      }
+      if (config.externalPort) {
+        if (this.externalPort && this.externalPort !== config.externalPort)
+          this.needRestart = true;
+        this.externalPort = config.externalPort;
+      }
+    }
+    if (this.serverNetwork == null) {
+      this.serverNetwork = this.generateNetwork();
+      this.needRestart = true;
+    }
+    if (this.netmask == null) {
+      this.netmask = "255.255.255.0";
+      this.needRestart = true;
+    }
+    if (this.localPort == null) {
+      this.localPort = "1194";
+      this.needRestart = true;
+    }
+    if (this.externalPort == null) {
+      this.externalPort = this.localPort;
+      this.needRestart = true;
+    }
+    if (this.instanceName == null) {
+      this.instanceName = "server";
+      this.needRestart = true;
+    }
+    var mydns = sysManager.myDNS()[0];
+    if (mydns == null) {
+      mydns = "8.8.8.8"; // use google DNS as default
+    }
+    const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./confgen.sh %s %s %s %s %s %s'; sync",
+      fHome, confGenLockFile, this.instanceName, sysManager.myIp(), mydns, this.serverNetwork, this.netmask, this.localPort);
+    log.info("VPNManager:CONFIGURE:cmd", cmd);
+    await execAsync(cmd).catch((err) => {
+      log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);
+      return null;
+    });
+      log.info("VPNManager:CONFIGURE:Done");
+    return {
+      serverNetwork: this.serverNetwork,
+      netmask: this.netmask,
+      localPort: this.localPort,
+      externalPort: this.externalPort
+    };
+  }
+
+  async stop() {
+    try {
+      if (this.refreshTask)
+        clearInterval(this.refreshTask);
+      await this.removeUpnpPortMapping({
+        protocol: 'udp',
+        private: this.localPort,
+        public: this.externalPort
+      });
+      this.portmapped = false;
+      log.info("Stopping OpenVPN ...");
+      await execAsync("sudo systemctl stop openvpn@" + this.instanceName);
+      this.started = false;
+      await this.unsetIptables();
+    } catch (err) {
+      log.error("Failed to stop OpenVPN", err);
+    }
+    return {
+      state: false,
+      serverNetwork: this.serverNetwork,
+      netmask: this.netmask,
+      localPort: this.localPort,
+      externalPort: this.externalPort,
+      portmapped: this.portmapped
+    };
+  }
+
+  async start() {
+    sem.sendEventToFireMain({
+      type: "PublicIP:Check",
+      message: "VPN server starting, check public IP"
+    })
+
+    // check whatever VPN server is running or not
+    if (this.started && !this.needRestart) {
+      log.info("VpnManager::StartedAlready");
+
+      return {
+        state: true,
+        serverNetwork: this.serverNetwork,
+        netmask: this.netmask,
+        localPort: this.localPort,
+        externalPort: this.externalPort,
+        portmapped: this.portmapped
+      };
+      // callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);
     }
 
-    addUpnpPortMapping(protocol, localPort, externalPort, description, callback) {
-        log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
-        let timeoutExecuted = false;
-        const timeout = setTimeout(() => {
-            timeoutExecuted = true;
-            log.error("Failed to add upnp port mapping due to timeout");
-            if (callback) {
-                callback(new Error("Timeout"));
-            }
-        }, 10000);
-        this.upnp.addPortMapping(protocol, localPort, externalPort, description, (err) => {
-            clearTimeout(timeout);
-            if (callback && !timeoutExecuted) {
-                callback(err);
-            }
+    if (this.instanceName == null) {
+      log.error("Server instance is not installed yet.");
+      return {
+        state: false
+      };
+    }
+
+    this.upnp.gw = sysManager.myGateway();
+
+    if (!this.refreshTask) {
+      this.refreshTask = setInterval(async () => {
+        // extend upnp lease once every 10 minutes in case router flushes it unexpectedly
+        await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
+          log.error("Failed to set Upnp port mapping", err);
         });
+      }, 600000);
     }
 
-    install(instance, callback) {
-        let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh %s', fHome, instance);
-        this.install1 = require('child_process').exec(install1_cmd, (err, out, code) => {
-            if (err) {
-                log.error("VPNManager:INSTALL:Error", "Unable to install1.sh for " + instance, err);
-            }
-            if (err == null) {
-                // !! Pay attention to the parameter "-E" which is used to preserve the
-                // enviornment variables when running sudo commands
-                const installLockFile = "/dev/shm/vpn_install2_lock_file";
-                let install2_cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./install2.sh %s'; sync", fHome, installLockFile, instance);
-                log.info("VPNManager:INSTALL:cmd", install2_cmd);
-                this.install2 = require('child_process').exec(install2_cmd, (err, out, code) => {
-                    if (err) {
-                        log.error("VPNManager:INSTALL:Error", "Unable to install2.sh", err);
-                        if (callback) {
-                            callback(err, null);
-                        }
-                        return;
-                    }
-                    log.info("VPNManager:INSTALL:Done");
-                    this.instanceName = instance;
-                    if (callback)
-                        callback(null, null);
-                });
-            } else {
-                if (callback)
-                    callback(err, null);
-            }
-        });
+    await this.removeUpnpPortMapping({
+      protocol: 'udp',
+      private: this.localPort,
+      public: this.externalPort
+    }).catch((err)=> {
+      log.error("Failed to remove Upnp port mapping", err);
+    });
+    this.portmapped = false;
+    let op = "start";
+    if (!this.started || this.needRestart) {
+      op = "restart";
+      this.needRestart = false;
     }
-
-    configure(config, needRestart, callback) {
-        if (config) {
-            if (config.serverNetwork) {
-                this.serverNetwork = config.serverNetwork;
-            }
-            if (config.localPort) {
-                this.localPort = config.localPort;
-            }
-        }
-        if (this.serverNetwork == null) {
-            this.serverNetwork = this.generateNetwork();
-        }
-        if (this.localPort == null) {
-            this.localPort = "1194";
-        }
-        if (this.instanceName == null) {
-            this.instanceName = "server";
-        }
-        if (needRestart === true) {
-            this.needRestart = true;
-        }
-        var mydns = sysManager.myDNS()[0];
-        if (mydns == null) {
-            mydns = "8.8.8.8"; // use google DNS as default
-        }
-        const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
-        const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./confgen.sh %s %s %s %s %s'; sync",
-            fHome, confGenLockFile, this.instanceName, sysManager.myIp(), mydns, this.serverNetwork, this.localPort);
-        log.info("VPNManager:CONFIGURE:cmd", cmd);
-        require('child_process').exec(cmd, (err, out, code) => {
-            if (err) {
-                log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);
-                if (callback)
-                    callback(err);
-                return;
-            }
-            log.info("VPNManager:CONFIGURE:Done");
-            if (callback)
-                callback(null);
-        });
+    log.info("VpnManager:Start:" + this.instanceName);
+    try {
+      await execAsync(util.format("sudo systemctl %s openvpn@%s", op, this.instanceName));
+      this.started = true;
+      await this.setIptables();
+      this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
+        log.error("Failed to set Upnp port mapping", err);
+        return false;
+      });
+      log.info("VpnManager:UPNP:SetDone", this.portmapped);
+      const vpnSubnet = ip.subnet(this.serverNetwork, this.netmask);
+      pclient.publishAsync("System:VPNSubnetChanged", this.serverNetwork + "/" + vpnSubnet.subnetMaskLength);
+      return {
+        state: true,
+        serverNetwork: this.serverNetwork,
+        netmask: this.netmask,
+        localPort: this.localPort,
+        externalPort: this.externalPort,
+        portmapped: this.portmapped
+      };
+    } catch (err) {
+      log.info("Failed to start VPN", err);
+      await this.stop();
+      return {
+        state: false,
+        serverNetwork: this.serverNetwork,
+        netmask: this.netmask,
+        localPort: this.localPort,
+        externalPort: this.externalPort,
+        portmapped: this.portmapped
+      };
     }
+  }
 
-    stop(callback) {
-        this.started = false;
-        this.removeUpnpPortMapping({
-            protocol: 'udp',
-            private: this.localPort,
-            public: this.localPort
-        });
-        require('child_process').exec("sudo systemctl stop openvpn@" + this.instanceName, (err, out, code) => {
-            log.info("Stopping OpenVpn", err);
-            if (err) {
-                if (callback)
-                    callback(err);
-            } else {
-                this.unsetIptables((err, result) => {
-                    if (callback)
-                        callback(err);
-                });
-            }
-        });
+  static generatePassword(len) {
+    var length = len,
+      charset = "0123456789",
+      retVal = "";
+    for (var i = 0, n = charset.length; i < length; ++i) {
+      retVal += charset.charAt(Math.floor(Math.random() * n));
     }
+    return retVal;
+  }
 
-    start(callback) {
-        if (this.started && !this.needRestart) {
-            log.info("VpnManager::StartedAlready");
-            if (callback)
-                callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);
-            return;
+  generateNetwork() {
+    // random segment from 20 to 199
+    const seg1 = Math.floor(Math.random() * 180 + 20);
+    const seg2 = Math.floor(Math.random() * 180 + 20);
+    return "10." + seg1 + "." + seg2 + ".0";
+  }
+
+  static getSettingsDirectoryPath(commonName) {
+    return `${process.env.HOME}/ovpns/${commonName}`;
+  }
+
+  static async configureClient(commonName, settings) {
+    settings = settings || {};
+    const configRC = [];
+    const configCCD = [];
+    configCCD.push("comp-lzo no"); // disable compression in client-config-dir
+    configCCD.push("push \"comp-lzo no\"");
+    const clientSubnets = [];
+    for (let key in settings) {
+      const value = settings[key];
+      switch (key) {
+        case "clientSubnets":
+          // value is array of cidr subnets
+          for (let cidr of value) {
+            // add iroute to client config file
+            const subnet = ip.cidrSubnet(cidr);
+            configCCD.push(`iroute ${subnet.networkAddress} ${subnet.subnetMask}`);
+            clientSubnets.push(`${subnet.networkAddress}/${subnet.subnetMaskLength}`);
+          }
+          configRC.push(`CLIENT_SUBNETS="${clientSubnets.join(',')}"`);
+          break;
+        default:
+      }
+    }
+    // check if there is conflict between client subnets and Firewalla's subnets
+    const mySubnet = sysManager.mySubnet();
+    const mySubnet2 = sysManager.mySubnet2();
+    for (let clientSubnet of clientSubnets) {
+      const ipSubnets = clientSubnet.split('/');
+      if (ipSubnets.length != 2)
+        throw `${clientSubnet} is not a valid CIDR subnet`;
+      const ipAddr = ipSubnets[0];
+      const maskLength = ipSubnets[1];
+      if (!ip.isV4Format(ipAddr))
+        throw `${clientSubnet} is not a valid CIDR subnet`;
+      if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
+        throw `${clientSubnet} is not a valid CIDR subnet`;
+      const clientSubnetCidr = ip.cidrSubnet(clientSubnet);
+      if (mySubnet) {
+        const mySubnetCidr = ip.cidrSubnet(mySubnet);
+        if (mySubnetCidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnetCidr.firstAddress))
+          throw `${clientSubnet} conflicts with Firewalla's primary subnet`;
+      }
+      if (mySubnet2) {
+        const mySubnet2Cidr = ip.cidrSubnet(mySubnet2);
+        if (mySubnet2Cidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnet2Cidr.firstAddress))
+          throw `${clientSubnet} conflicts with Firewalla's secondary subnet`;
+      }
+    }
+    // save settings to files
+    await execAsync(`mkdir -p ${VpnManager.getSettingsDirectoryPath(commonName)}`);
+    const configRCFile = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.rc`;
+    const configJSONFile = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.json`;
+    const configCCDFileTmp = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.ccd`;
+    const configCCDFile = `/etc/openvpn/client_conf/${commonName}`;
+    await writeFileAsync(configRCFile, configRC.join('\n'), 'utf8');
+    await writeFileAsync(configJSONFile, JSON.stringify(settings), 'utf8');
+    await writeFileAsync(configCCDFileTmp, configCCD.join('\n'), 'utf8');
+    await execAsync(`sudo cp ${configCCDFileTmp} ${configCCDFile}`);
+    const cmd = `sudo chmod 644 /etc/openvpn/client_conf/${commonName}`;
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to change permisson: ${cmd}`, err);
+    });
+  }
+
+  static async getSettings(commonName) {
+    const configJSONFile = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.json`;
+    if (fs.existsSync(configJSONFile)) {
+      const config = await readFileAsync(configJSONFile, 'utf8').then((str) => {
+        return JSON.parse(str);
+      }).catch((err) => {
+        log.error("Failed to read settings from " + configJSONFile, err);
+        return {};
+      })
+      return config;
+    } else {
+      return null;
+    }
+  }
+
+  static async getAllSettings() {
+    const settingsDirectory = `${process.env.HOME}/ovpns`;
+    await execAsync(`mkdir -p ${settingsDirectory}`);
+    const allSettings = {};
+    const filenames = await readdirAsync(settingsDirectory, 'utf8');
+    for (let filename of filenames) {
+      const fileEntry = await statAsync(`${settingsDirectory}/${filename}`);
+      if (fileEntry.isDirectory()) {
+        // directory contains .json and .rc file
+        const settingsFilePath = `${VpnManager.getSettingsDirectoryPath(filename)}/${filename}.json`;
+        if (fs.existsSync(settingsFilePath)) {
+          const settings = await readFileAsync(settingsFilePath, 'utf8').then((content) => {
+            return JSON.parse(content)
+          }).catch((err) => {
+            log.error("Failed to read settings from " + settingsFilePath, err);
+            return null;
+          });
+          if (settings)
+            allSettings[filename] = settings;
         }
+      }
+    }
+    return allSettings;
+  }
 
-        if (this.instanceName == null) {
-            callback("Server instance is not installed yet.");
-            return;
+  static async revokeOvpnFile(commonName) {
+    if (!commonName || commonName.trim().length == 0)
+      return;
+    const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s; sync'", fHome, vpnLockFile, commonName);
+    log.info("VPNManager:Revoke", cmd);
+    await execAsync(cmd).catch((err) => {
+      log.error("Failed to revoke VPN profile " + commonName, err);
+    });
+  }
+
+  static getOvpnFile(commonName, password, regenerate, externalPort, callback) {
+    let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
+    let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
+
+    log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
+
+    fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
+      if (ovpn != null && regenerate == false) {
+        let password = fs.readFileSync(ovpn_password, 'utf8').trim();
+        log.info("VPNManager:Found older ovpn file: " + ovpn_file);
+        callback(null, ovpn, password);
+        return;
+      }
+
+      if (password == null) {
+        password = VpnManager.generatePassword(5);
+      }
+
+      let ip = sysManager.myDDNS();
+      if (ip == null) {
+        ip = sysManager.publicIp;
+      }
+
+      var mydns = sysManager.myDNS()[0];
+      if (mydns == null) {
+        mydns = "8.8.8.8"; // use google DNS as default
+      }
+
+      const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
+
+      let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s'; sync",
+        fHome, vpnLockFile, commonName, password, ip, externalPort);
+      log.info("VPNManager:GEN", cmd);
+      exec(cmd, (err, stdout, stderr) => {
+        if (err) {
+          log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
         }
-
-        this.upnp.gw = sysManager.myGateway();
-
-        this.removeUpnpPortMapping({
-            protocol: 'udp',
-            private: this.localPort,
-            public: this.localPort
-        }, (err) => {
-            let op = "start";
-            if (this.needRestart) {
-                op = "restart";
-                this.needRestart = false;
-            }
-            require('child_process').exec(util.format("sudo systemctl %s openvpn@%s", op, this.instanceName), (err, out, stderr) => {
-                log.info("VpnManager:Start:" + this.instanceName, err);
-                if (err && this.started == false) {
-                    if (callback) {
-                        callback(err);
-                    }
-                    return;
-                }
-                this.started = true;
-                this.setIptables((err, result) => {
-                    if (err) {
-                        log.error("VpnManager:Start:Error", "Failed to set iptables", err);
-                        this.stop();
-                        if (callback) {
-                            callback(err);
-                        }
-                    } else {
-                        this.addUpnpPortMapping("udp", this.localPort, this.localPort, "Firewalla OpenVPN", (err) => { // public port and private port is equivalent by default
-                            log.info("VpnManager:UPNP:SetDone", err);
-                            pclient.publishAsync("System:VPNSubnetChanged", this.serverNetwork + "/24");
-                            /*
-                            sem.emitEvent({
-                                type: "VPNSubnetChanged",
-                                message: "VPN subnet is updated",
-                                vpnSubnet: this.serverNetwork + "/24",
-                                toProcess: "FireMain"
-                            });
-                            */
-                            if (err) {
-                                if (callback) {
-                                    callback(null, null, null, this.serverNetwork, this.localPort);
-                                }
-                            } else {
-                                this.portmapped = true;
-                                if (callback) {
-                                    callback(null, "success", this.localPort, this.serverNetwork, this.localPort);
-                                }
-                            }
-                        });
-                    }
-                });
-            });
-        });
-    }
-
-    generatePassword(len) {
-        var length = len,
-            charset = "0123456789",
-            retVal = "";
-        for (var i = 0, n = charset.length; i < length; ++i) {
-            retVal += charset.charAt(Math.floor(Math.random() * n));
-        }
-        return retVal;
-    }
-
-    generateNetwork() {
-        // random segment from 20 to 199
-        const seg1 = Math.floor(Math.random() * 180 + 20);
-        const seg2 = Math.floor(Math.random() * 180 + 20);
-        return "10." + seg1 + "." + seg2 + ".0";
-    }
-
-    getOvpnFile(clientname, password, regenerate, compressAlg, callback) {
-        let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, clientname);
-        let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, clientname);
-        if (compressAlg == null)
-            compressAlg = "";
-
-        log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
-
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
-            if (ovpn != null && regenerate == false) {
-                let password = fs.readFileSync(ovpn_password, 'utf8');
-                log.info("VPNManager:Found older ovpn file: " + ovpn_file);
-                callback(null, ovpn, password);
-                return;
-            }
-
-            let originalName = clientname;
-            // Original name remains unchanged even if client name is trailed by random numbers.
-            // So that client ovpn file name will remain unchanged while its content has been updated.
-                clientname = clientname + this.generatePassword(10);
-
-            if (password == null) {
-                password = this.generatePassword(5);
-            }
-
-            let ip = sysManager.myDDNS();
-            if (ip == null) {
-                ip = sysManager.publicIp;
-            }
-
-            var mydns = sysManager.myDNS()[0];
-            if (mydns == null) {
-                mydns = "8.8.8.8"; // use google DNS as default
-            }
-
-            const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
-
-            let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s %s'; sync",
-                fHome, vpnLockFile, clientname, password, ip, this.localPort, originalName, compressAlg);
-            log.info("VPNManager:GEN", cmd);
-            this.getovpn = require('child_process').exec(cmd, (err, out, code) => {
-                if (err) {
-                    log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
-                }
-                fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
-                    if (callback) {
-                        callback(err, ovpn, password);
-                    }
-                });
-            });
+          if (callback) {
+            callback(err, ovpn, password);
+          }
         });
-    }
+      });
+    });
+  }
 }
+
+module.exports = VpnManager;

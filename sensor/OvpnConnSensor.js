@@ -68,39 +68,43 @@ class OvpnConnSensor extends Sensor {
 
   processOvpnLog(data) {
     if (data.includes(": pool returned")) {
-      // vpn client connection accepted
-      const words = data.split(/\s+/, 6);
-      const remote = words[5];
-      const peers = data.substr(data.indexOf('pool returned') + 14);
-      // remote should be <name>/<ip>:<port>
-      const profile = remote.split('/')[0];
-      const client = remote.split('/')[1];
-      const clientIP = client.split(':')[0];
-      const clientPort = client.split(':')[1];
-      // peerIP4 should be IPv4=<ip>,
-      const peerIP4 = peers.split(', ')[0];
-      let peerIPv4Address = peerIP4.split('=')[1];
-      if (peerIPv4Address === "(Not enabled)") {
-        peerIPv4Address = null;
-      }
-      // peerIP6 should be IPv6=<ip>
-      const peerIP6 = peers.split(', ')[1];
-      let peerIPv6Address = peerIP6.split('=')[1];
-      if (peerIPv6Address === "(Not enabled)") {
-        peerIPv6Address = null;
-      }
-      log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
-      sem.emitEvent({
-        type: "VPNConnectionAccepted",
-        message: "A new VPN connection was accepted",
-        client: {
-          remoteIP: clientIP,
-          remotePort: clientPort,
-          peerIP4: peerIPv4Address,
-          peerIP6: peerIPv6Address,
-          profile: profile
+      try {
+        // vpn client connection accepted
+        const words = data.split(/\s+/, 6);
+        const remote = words[5];
+        const peers = data.substr(data.indexOf('pool returned') + 14);
+        // remote should be <name>/<ip>:<port>
+        const profile = remote.split('/')[0];
+        const client = remote.split('/')[1];
+        const clientIP = client.split(':')[0];
+        const clientPort = client.split(':')[1];
+        // peerIP4 should be IPv4=<ip>,
+        const peerIP4 = peers.split(', ')[0];
+        let peerIPv4Address = peerIP4.split('=')[1];
+        if (peerIPv4Address === "(Not enabled)") {
+          peerIPv4Address = null;
         }
-      });
+        // peerIP6 should be IPv6=<ip>
+        const peerIP6 = peers.split(', ')[1];
+        let peerIPv6Address = peerIP6.split('=')[1];
+        if (peerIPv6Address === "(Not enabled)") {
+          peerIPv6Address = null;
+        }
+        log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
+        sem.emitEvent({
+          type: "VPNConnectionAccepted",
+          message: "A new VPN connection was accepted",
+          client: {
+            remoteIP: clientIP,
+            remotePort: clientPort,
+            peerIP4: peerIPv4Address,
+            peerIP6: peerIPv6Address,
+            profile: profile
+          }
+        });
+      } catch(err) {
+        log.error("Error processing VPN log", err)
+      }
     }
   }
 }

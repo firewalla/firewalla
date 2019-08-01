@@ -59,7 +59,7 @@ bonjour.publish({
   type: 'http',
   port: 18833,
   txt: txt
-})
+}).on('error', (err) => log.error("Error publish booting bonjour", err));
 
 
 /*

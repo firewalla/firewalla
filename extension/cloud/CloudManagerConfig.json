@@ -1,0 +1,26 @@
+{
+    "ping": {
+        "name": "PingAction"
+    },
+    "moff": {
+        "name": "MonitoringOffAction"
+    },
+    "mon": {
+        "name": "MonitoringOnAction"
+    },
+    "rename": {
+        "name": "RenameDeviceAction"
+    },
+    "gmoff": {
+        "name": "GlobalMonitoringOffAction"
+    },
+    "gmon": {
+        "name": "GlobalMonitoringOnAction"
+    },
+    "switchMode": {
+        "name": "SwitchToModeAction"
+    },
+    "forceCheckIn": {
+        "name": "ForceCheckInAction"
+    }
+}

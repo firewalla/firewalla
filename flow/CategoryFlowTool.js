@@ -18,13 +18,6 @@ const log = require("../net2/logger.js")(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const Promise = require('bluebird')
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
-const util = require('util');
-
 let instance = null
 
 class CategoryFlowTool {
@@ -44,7 +37,7 @@ class CategoryFlowTool {
     return this.addCategoryFlow(mac, category, object.ts, object.duration, object.download, object.upload)
   }
 
-  addCategoryFlow(mac, category, timestamp, duration, downloadBytes, uploadBytes) {
+  async addCategoryFlow(mac, category, timestamp, duration, downloadBytes, uploadBytes) {
     let json = {
       ts: timestamp,
       duration: duration,
@@ -54,10 +47,8 @@ class CategoryFlowTool {
 
     let key = this.getCategoryFlowKey(mac, category)
 
-    return async(() => {
-      await (rclient.zaddAsync(key, timestamp, JSON.stringify(json)))
-      await (rclient.expireAsync(key, this.categoryExpireTime)) // whenever there is a new update, reset the expire time
-    })()
+    await rclient.zaddAsync(key, timestamp, JSON.stringify(json))
+    await rclient.expireAsync(key, this.categoryExpireTime) // whenever there is a new update, reset the expire time
   }
 
   delCategoryFlow(mac, category) {
@@ -66,7 +57,7 @@ class CategoryFlowTool {
     return rclient.delAsync(key)
   }
 
-  getCategoryFlow(mac, category, options) {
+  async getCategoryFlow(mac, category, options) {
     let key = this.getCategoryFlowKey(mac, category)
 
     options = options || {}
@@ -74,64 +65,55 @@ class CategoryFlowTool {
     let end = options.end || new Date() / 1000;
     let begin = options.begin || (end - 3600 * 24)
 
-    return async(() => {
-      let results = await (rclient.zrevrangebyscoreAsync(key, end, begin))
-      return results.map((jsonString) => {
-        try {
-          return JSON.parse(jsonString)
-        } catch(err) {
-          log.error("Failed to parse JSON String:", jsonString, {})
-          return null;
-        }
-      }).filter(x => x != null)
-    })()
+    let results = await rclient.zrevrangebyscoreAsync(key, end, begin)
+    return results.map((jsonString) => {
+      try {
+        return JSON.parse(jsonString)
+      } catch (err) {
+        log.error("Failed to parse JSON String:", jsonString);
+        return null;
+      }
+    }).filter(x => x != null)
   }
 
-  delAllCategories(mac) {
-    return async(() => {
-      let categories = await (this.getCategories(mac))
-      categories.forEach((category) => {
-        await (this.delCategoryFlow(mac, category))
-      })
-    })()
+  async delAllCategories(mac) {
+    let categories = await this.getCategories(mac)
+    for (const category of categories) {
+      await this.delCategoryFlow(mac, category)
+    }
   }
 
-  getCategories(mac) {
+  async getCategories(mac) {
     mac = mac || '*' // match all mac addresses if mac is not defined
     let keyPattern = this.getCategoryFlowKey(mac, '*')
-    return async(() => {
-      let keys = await (rclient.keysAsync(keyPattern))
-      let categories = keys.map((key) => {
-        let result = key.match(/[^:]*$/)
-        if(result && result !== 'intel') {
-          return result[0]
-        } else {
-          return null
-        }
-      }).filter((x) => x != null)
+    let keys = await rclient.keysAsync(keyPattern)
+    let categories = keys.map((key) => {
+      let result = key.match(/[^:]*$/)
+      if (result && result !== 'intel') {
+        return result[0]
+      } else {
+        return null
+      }
+    }).filter((x) => x != null)
 
-      // removes duplicate
-      return categories.filter((elem, pos) => {
-        return categories.indexOf(elem) == pos;
-      })
-      
-    })()
+    // removes duplicate
+    return categories.filter((elem, pos) => {
+      return categories.indexOf(elem) == pos;
+    })
   }
 
-  getCategoryMacAddresses(category) {
+  async getCategoryMacAddresses(category) {
     let keyPattern = this.getCategoryFlowKey('*', category)
 
-    return async(() => {
-      let keys = await (rclient.keysAsync(keyPattern))
-      return keys.map((key) => {
-        let result = key.match(/categoryflow:(.*):[^:]*/) // locate mac address
-        if(result) {
-          return result[1]
-        } else {
-          return null
-        }
-      }).filter((x) => x != null)
-    })()
+    let keys = await rclient.keysAsync(keyPattern)
+    return keys.map((key) => {
+      let result = key.match(/categoryflow:(.*):[^:]*/) // locate mac address
+      if (result) {
+        return result[1]
+      } else {
+        return null
+      }
+    }).filter((x) => x != null)
   }
 
   cleanupCategoryFlow(mac, category) {
