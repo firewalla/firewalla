@@ -14,16 +14,18 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
+const HostManager = require('../net2/HostManager.js');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
-let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-let dnsmasq = new DNSMASQ();
-
-let Mode = require('../net2/Mode.js');
+const Mode = require('../net2/Mode.js');
 
 class DNSMASQSensor extends Sensor {
   constructor() {
@@ -40,8 +42,16 @@ class DNSMASQSensor extends Sensor {
         log.error("Fail to install dnsmasq: " + err);
         throw err;
       })
-      .then(() => {
-        await dnsmasq.setupLocalDeviceDomain(false)
+      .then(async () => {
+        const hostManager = new HostManager("cli", 'server', 'info');
+        const hosts = await hostManager.getHostsAsync();
+        let pureHosts = [];
+        for (const host of hosts) {
+          if (host && host.o) {
+            pureHosts.push(host.o)
+          }
+        }
+        await dnsmasq.setupLocalDeviceDomain(false, pureHosts, true);
         dnsmasq.start(false)
       })
       .catch(err => log.error("Failed to start dnsmasq: " + err))
@@ -86,7 +96,7 @@ class DNSMASQSensor extends Sensor {
     return Mode.getSetupMode()
       .then((mode) => {
         dnsmasq.setMode(mode);
-        if(!this.registered) {
+        if (!this.registered) {
           log.info("Registering dnsmasq events listeners");
 
           sem.on("StartDNS", (event) => {

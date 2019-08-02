@@ -20,6 +20,8 @@ const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
+const HostTool = require('../../net2/HostTool.js');
+const hostTool = new HostTool();
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
@@ -1330,36 +1332,39 @@ module.exports = class DNSMASQ {
   //save data in redis
   //{mac:{ipv4Addr:ipv4Addr,name:name}}
   //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
-  async setupLocalDeviceDomain(restart, hosts) {
+  async setupLocalDeviceDomain(restart, hosts, isInit) {
+    log.info("setup local device domain", hosts)
     const json = await rclient.getAsync(LOCAL_DEVICE_DOMAIN_KEY);
     try {
       let needUpdate = false;
       const deviceDomainMap = JSON.parse(json) || {};
       for (const host of hosts) {
+        const hostName = hostTool.getHostname(host)
         if (!deviceDomainMap[host.mac]) {
           deviceDomainMap[host.mac] = {
             ipv4Addr: host.ipv4Addr,
-            name: host.name
+            name: hostName
           }
           needUpdate = true;
         } else {
           const deviceDomain = deviceDomainMap[host.mac];
-          if ((deviceDomain.name != host.name || deviceDomain.ipv4Addr != host.ipv4Addr)) {
+          if ((deviceDomain.name != hostName || deviceDomain.ipv4Addr != host.ipv4Addr)) {
             // need update
             needUpdate = true;
             deviceDomain.ipv4Addr = host.ipv4Addr;
-            deviceDomain.name = host.name;
+            deviceDomain.name = hostName;
           }
         }
       }
-      if (needUpdate) {
+      log.info("need update or not?", needUpdate)
+      if (needUpdate || isInit) {
         log.info("need update")
         await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
         let localDeviceDomain = "";
         for (const key in deviceDomainMap) {
           const deviceDomain = deviceDomainMap[key]
           //replace space to dot
-          localDeviceDomain += `address=/${deviceDomain.name.replace(/\s+/g, ".")}.local/${deviceDomain.ipv4Addr}`
+          localDeviceDomain += `address=/${deviceDomain.name.replace(/\s+/g, ".").toLowerCase()}.local/${deviceDomain.ipv4Addr}\n`
         }
         await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
       }

@@ -959,8 +959,8 @@ class netBot extends ControllerBot {
         }
 
         (async() => {
-          let ip = null
-
+          let ip = null;
+          const dnsmasq = new Dnsmasq();
           if(hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
             log.info("set host name alias by mac address", macAddress);
@@ -970,8 +970,9 @@ class netBot extends ControllerBot {
               mac: macAddress
             }
 
-            await hostTool.updateMACKey(macObject, true)
-
+            await hostTool.updateMACKey(macObject, true);
+            const host = await this.hostManager.getHostAsync(macAddress);
+            dnsmasq.setupLocalDeviceDomain(true, [host.o]);
             this.simpleTxData(msg, {}, null, callback)
 
             return
@@ -998,6 +999,7 @@ class netBot extends ControllerBot {
             if (err) {
               this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
             } else {
+              dnsmasq.setupLocalDeviceDomain(true, [host.o]);
               this.simpleTxData(msg, {}, null, callback)
             }
           });
