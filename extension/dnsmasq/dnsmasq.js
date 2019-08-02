@@ -20,9 +20,12 @@ const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
+const LOCAL_DEVICE_DOMAIN = FILTER_DIR + "/local_device_domain.conf";
+const LOCAL_DEVICE_DOMAIN_KEY = "local:device:domain"
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -1293,7 +1296,7 @@ module.exports = class DNSMASQ {
 
   async cleanUpLeftoverConfig() {
     try {
-      await fs.mkdirAsync(FILTER_DIR, {recursive: true, mode: 0o755}).catch((err) => {
+      await fs.mkdirAsync(FILTER_DIR, { recursive: true, mode: 0o755 }).catch((err) => {
         if (err.code !== "EEXIST")
           log.error(`Failed to create ${FILTER_DIR}`, err);
       });
@@ -1302,11 +1305,11 @@ module.exports = class DNSMASQ {
         const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch(() => false);
         if (!dirExists)
           continue;
-        
+
         const files = await fs.readdirAsync(dir);
         await Promise.all(files.map(async (filename) => {
           const filePath = `${dir}/${filename}`;
-          
+
           try {
             const fileStat = await fs.statAsync(filePath);
             if (fileStat.isFile()) {
@@ -1314,7 +1317,7 @@ module.exports = class DNSMASQ {
                 log.error(`Failed to remove ${filePath}, err:`, err);
               });
             }
-          } catch(err) {
+          } catch (err) {
             log.info(`File ${filePath} not exist`);
           }
         }));
@@ -1322,5 +1325,47 @@ module.exports = class DNSMASQ {
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
     }
+  }
+
+  //save data in redis
+  //{mac:{ipv4Addr:ipv4Addr,name:name}}
+  //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
+  async setupLocalDeviceDomain(restart, hosts) {
+    const json = await rclient.getAsync(LOCAL_DEVICE_DOMAIN_KEY);
+    try {
+      let needUpdate = false;
+      const deviceDomainMap = JSON.parse(json) || {};
+      for (const host of hosts) {
+        if (!deviceDomainMap[host.mac]) {
+          deviceDomainMap[host.mac] = {
+            ipv4Addr: host.ipv4Addr,
+            name: host.name
+          }
+          needUpdate = true;
+        } else {
+          const deviceDomain = deviceDomainMap[host.mac];
+          if ((deviceDomain.name != host.name || deviceDomain.ipv4Addr != host.ipv4Addr)) {
+            // need update
+            needUpdate = true;
+            deviceDomain.ipv4Addr = host.ipv4Addr;
+            deviceDomain.name = host.name;
+          }
+        }
+      }
+      if (needUpdate) {
+        log.info("need update")
+        await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
+        let localDeviceDomain = "";
+        for (const key in deviceDomainMap) {
+          const deviceDomain = deviceDomainMap[key]
+          //replace space to dot
+          localDeviceDomain += `address=/${deviceDomain.name.replace(/\s+/g, ".")}.local/${deviceDomain.ipv4Addr}`
+        }
+        await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
+      }
+      if (needUpdate && restart) {
+        this.restartDnsmasq()
+      }
+    } catch (e) { }
   }
 };
