@@ -299,7 +299,10 @@ module.exports = class DNSMASQ {
       this.nextReloadFilter[type].push(setTimeout(this._reloadFilter.bind(this), RELOAD_INTERVAL, type));
     } else {
       log.warn(`${type}'s next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
-      setImmediate(this._reloadFilter.bind(this), type);
+      if (this.reloadFilterImmediate) {
+        clearImmediate(this.reloadFilterImmediate)
+      }
+      this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this), type);
     }
   }
 
@@ -340,7 +343,10 @@ module.exports = class DNSMASQ {
       this.nextReloadFilter[type].forEach(t => clearTimeout(t));
       this.nextReloadFilter[type].length = 0;
     }
-    setImmediate(this._reloadFilter.bind(this), type);
+    if (this.reloadFilterImmediate) {
+      clearImmediate(this.reloadFilterImmediate)
+    }
+    this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this), type);
   }
 
   async cleanUpFilter(type) {
