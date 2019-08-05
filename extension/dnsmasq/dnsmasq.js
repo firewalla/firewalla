@@ -1333,44 +1333,48 @@ module.exports = class DNSMASQ {
   //{mac:{ipv4Addr:ipv4Addr,name:name}}
   //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
   async setupLocalDeviceDomain(restart, hosts, isInit) {
-    log.info("setup local device domain", hosts)
     const json = await rclient.getAsync(LOCAL_DEVICE_DOMAIN_KEY);
     try {
       let needUpdate = false;
       const deviceDomainMap = JSON.parse(json) || {};
       for (const host of hosts) {
-        const hostName = hostTool.getHostname(host)
+        //if user update device name and ip, should get them from redis not host
+        let hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "name");
+        let ipv4Addr = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "ipv4Addr");
+        hostName = hostName ? hostName : hostTool.getHostname(host);
+        ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
         if (!deviceDomainMap[host.mac]) {
           deviceDomainMap[host.mac] = {
-            ipv4Addr: host.ipv4Addr,
+            ipv4Addr: ipv4Addr,
             name: hostName
           }
           needUpdate = true;
         } else {
           const deviceDomain = deviceDomainMap[host.mac];
-          if ((deviceDomain.name != hostName || deviceDomain.ipv4Addr != host.ipv4Addr)) {
+          if ((deviceDomain.name != hostName || deviceDomain.ipv4Addr != ipv4Addr)) {
             // need update
             needUpdate = true;
-            deviceDomain.ipv4Addr = host.ipv4Addr;
+            deviceDomain.ipv4Addr = ipv4Addr;
             deviceDomain.name = hostName;
           }
         }
       }
-      log.info("need update or not?", needUpdate)
       if (needUpdate || isInit) {
-        log.info("need update")
         await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
         let localDeviceDomain = "";
         for (const key in deviceDomainMap) {
           const deviceDomain = deviceDomainMap[key]
           //replace space to dot
-          localDeviceDomain += `address=/${deviceDomain.name.replace(/\s+/g, ".").toLowerCase()}.local/${deviceDomain.ipv4Addr}\n`
+          const domain = deviceDomain.name.replace(/\s+/g, ".").toLowerCase();
+          localDeviceDomain += `address=/${domain}.lan/${deviceDomain.ipv4Addr}\n`
         }
         await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
       }
       if (needUpdate && restart) {
-        this.restartDnsmasq()
+        this.restart()
       }
-    } catch (e) { }
+    } catch (e) {
+      log.error("Failed to setup local device domain", e);
+    }
   }
 };
