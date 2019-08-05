@@ -22,8 +22,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const audit = require('../util/audit.js');
 const Bone = require('../lib/Bone.js');
 
-const Promise = require('bluebird');
-
 const minimatch = require('minimatch')
 
 const SysManager = require('../net2/SysManager.js')
@@ -69,6 +67,21 @@ const accounting = new Accounting();
 const _ = require('lodash')
 
 const delay = require('../util/util.js').delay
+
+const ruleSetTypeMap = {
+  'ip': 'hash:ip',
+  'net': 'hash:net',
+  'remotePort': 'bitmap:port',
+  'remoteIpPort': 'hash:ip,port',
+  'remoteNetPort': 'hash:net,port'
+}
+const simpleRuleSetMap = {
+  'ip': 'ip_set',
+  'net': 'net_set',
+  'remotePort': 'remote_port_set',
+  'remoteIpPort': 'remote_ip_port_set',
+  'remoteNetPort': 'remote_net_port_set'
+}
 
 class PolicyManager2 {
   constructor() {
@@ -957,26 +970,11 @@ class PolicyManager2 {
       case "remoteIpPort":
       case "remoteNetPort":
         if (scope) {
-          const setType = {
-            'ip': 'hash:ip',
-            'net': 'hash:net',
-            'remotePort': 'bitmap:port',
-            'remoteIpPort': 'hash:ip,port',
-            'remoteNetPort': 'hash:net,port'
-          }
-
-          await Block.setupRules(pid, pid, setType[type], whitelist);
+          await Block.setupRules(pid, pid, ruleSetTypeMap[type], whitelist);
           await Block.addMacToSet(scope, Block.getMacSet(pid));
           await Block.block(target, Block.getDstSet(pid), whitelist)
         } else {
-          const setMap = {
-            'ip': 'ip_set',
-            'net': 'net_set',
-            'remotePort': 'remote_port_set',
-            'remoteIpPort': 'remote_ip_port_set',
-            'remoteNetPort': 'remote_net_port_set'
-          }
-          const set = (whitelist ? 'whitelist_' : 'blocked_') + setMap[type]
+          const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type]
 
           await Block.block(target, set, whitelist)
         }
@@ -1078,16 +1076,9 @@ class PolicyManager2 {
       case "remoteIpPort":
       case "remoteNetPort":
         if (scope) {
-          await Block.destroyRules(pid, pid, whitelist);
+          await Block.setupRules(pid, pid, ruleSetTypeMap[type], whitelist, true);
         } else {
-          const setMap = {
-            'ip': 'ip_set',
-            'net': 'net_set',
-            'remotePort': 'remote_port_set',
-            'remoteIpPort': 'remote_ip_port_set',
-            'remoteNetPort': 'remote_net_port_set'
-          }
-          const set = (whitelist ? 'whitelist_' : 'blocked_') + setMap[type]
+          const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type]
 
           await Block.unblock(target, set, whitelist)
         }
@@ -1108,7 +1099,7 @@ class PolicyManager2 {
             no_dnsmasq_reload: true
           })
           // destroy domain dst cache, since there may be various domain dst cache in different policies
-          await Block.destroyRules(pid, pid, whitelist);
+          await Block.setupRules(pid, pid, 'hash:ip', whitelist, true);
         } else {
           let options = {exactMatch: policy.domainExactMatch};
           if (whitelist) {
@@ -1132,7 +1123,7 @@ class PolicyManager2 {
         break;
 
       case "category":
-        await Block.destroyRules(scope && pid, target, whitelist, false);
+        await Block.setupRules(scope && pid, target, 'hash:ip', whitelist, true, false);
 
         if (!scope && !whitelist && target === 'default_c') try {
           await categoryUpdater.iptablesUnredirectCategory(target)
@@ -1142,7 +1133,7 @@ class PolicyManager2 {
         break;
 
       case "country":
-        await Block.destroyRules(scope && pid, countryUpdater.getCategory(target), whitelist, false);
+        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), 'hash:net', whitelist, true, false);
         break;
 
       default:
