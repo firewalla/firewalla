@@ -1,7 +1,5 @@
 #!/bin/bash
 
-RESOLVCONF_PATH=/run/resolvconf/resolv.conf
-
 if [[ -s /etc/resolv.conf && ! -L /etc/resolv.conf ]]; then
   sudo cp -f /etc/resolv.conf /run/resolvconf/resolv.conf
   sudo rm /etc/resolv.conf
