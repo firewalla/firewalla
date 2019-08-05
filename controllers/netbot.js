@@ -972,6 +972,7 @@ class netBot extends ControllerBot {
 
             await hostTool.updateMACKey(macObject, true);
             const host = await this.hostManager.getHostAsync(macAddress);
+            host.o.name = data.value.name;
             dnsmasq.setupLocalDeviceDomain(true, [host.o]);
             this.simpleTxData(msg, {}, null, callback)
 
