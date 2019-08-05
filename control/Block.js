@@ -29,7 +29,6 @@ const exec = require('child-process-promise').exec
 
 const f = require('../net2/Firewalla.js')
 
-const _wrapIptables = require('../net2/Iptables.js').wrapIptables;
 const Ipset = require('../net2/Ipset.js');
 
 const { Rule } = require('../net2/Iptables.js');
@@ -227,10 +226,6 @@ async function setupRules(macTag, dstTag, dstType, allow = false, destroy = fals
   }
 }
 
-function destroyRules(macTag, dstTag, whitelist, destroyDstCache = true) {
-  return setupRules(macTag, dstTag, null, whitelist, true, destroyDstCache)
-}
-
 async function addMacToSet(macAddresses, ipset = null, whitelist = false) {
   ipset = ipset || (whitelist ? 'whitelist_mac_set' : 'blocked_mac_set');
 
@@ -308,7 +303,6 @@ module.exports = {
   unblock: unblock,
   setupCategoryEnv: setupCategoryEnv,
   setupRules: setupRules,
-  destroyRules: destroyRules,
   addMacToSet: addMacToSet,
   delMacFromSet: delMacFromSet,
   blockPublicPort:blockPublicPort,
