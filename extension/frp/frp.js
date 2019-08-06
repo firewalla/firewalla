@@ -26,6 +26,7 @@ const serviceTemplateFile = `${frpDirectory}/frpc.service.template`;
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient()
+const sem = require('../../sensor/SensorEventManager.js').getInstance()
 
 const bone = require("../../lib/Bone.js");
 
@@ -101,6 +102,9 @@ module.exports = class {
         try {
           message = JSON.parse(message) || {}
           this.startCode = message.code
+          sem.emitEvent({
+            type: "RemoteSupport"
+          })
         } catch (err) {
           log.warn("System:RemoteSupport error:", err)
         }
@@ -332,19 +336,12 @@ module.exports = class {
           hasTimeout = false;
           this._startHealthChecker();
           if (this.name == "support") {
-            // waiting for service to confirm the port being used or not
-            // if the port already being used, will publish message to channel "System:RemoteSupport"
-            const start = new Date() / 1000;
-            const CHECKTIMEOUT = 30;
-            const timerId = setInterval(() => {
-              if (this.startCode != FRPINITCODE) {
-                clearInterval(timerId);
-                resolve();
-              } else if ((new Date() / 1000) - start > CHECKTIMEOUT) {
-                clearInterval(timerId)
-                resolve();
-              }
-            }, 1 * 1000)//every one second check the message from service
+            sem.once("RemoteSupport", () => {
+              resolve();
+            })
+            setTimeout(() => {
+              resolve();
+            }, 10 * 1000)
           } else {
             resolve();
           }
