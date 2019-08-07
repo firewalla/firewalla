@@ -58,49 +58,6 @@ chmod 755 -R /etc/openvpn
 chmod 644 /etc/openvpn/crl.pem
 chmod 644 /etc/openvpn/client_conf/*
 
-if [ -f /etc/openvpn/$INSTANCE_NAME.conf ]; then
-  # make sure that server config with same instance name, server network , netmask and local port
-  # will not be regenerated
-  grep -q "server $SERVER_NETWORK $NETMASK" /etc/openvpn/$INSTANCE_NAME.conf
-  same_network=$?
-  grep -q "port $LOCAL_PORT" /etc/openvpn/$INSTANCE_NAME.conf
-  same_port=$?
-  grep -q -w "crl-verify" /etc/openvpn/$INSTANCE_NAME.conf
-  crl_enabled=$?
-  if [[ $crl_enabled -ne 0 ]]; then
-    # ensure crl-verify is enabled in server config
-    echo -e "\ncrl-verify /etc/openvpn/crl.pem" >> /etc/openvpn/$INSTANCE_NAME.conf
-  fi
-  grep -q -w "client-config-dir" /etc/openvpn/$INSTANCE_NAME.conf
-  ccd_enabled=$?
-  if [[ $ccd_enabled -ne 0 ]]; then
-    # ensure client-config-dir is enabled in server config
-    echo -e "\nclient-config-dir /etc/openvpn/client_conf" >> /etc/openvpn/$INSTANCE_NAME.conf
-  fi
-  grep -q -w "client-connect" /etc/openvpn/$INSTANCE_NAME.conf
-  ccs_enabled=$?
-  if [[ $ccs_enabled -ne 0 ]]; then
-    # ensure client-connect is enabled in server config
-    echo -e "\nclient-connect /home/pi/firewalla/vpn/client_connected.sh" >> /etc/openvpn/$INSTANCE_NAME.conf
-  fi
-  grep -q -w "client-disconnect" /etc/openvpn/$INSTANCE_NAME.conf
-  cds_enabled=$?
-  if [[ $cds_enabled -ne 0 ]]; then
-    # ensure client-disconnect is enabled in server config
-    echo -e "\nclient-disconnect /home/pi/firewalla/vpn/client_disconnected.sh" >> /etc/openvpn/$INSTANCE_NAME.conf
-  fi
-  sudo sed -i 's/^user .*//' /etc/openvpn/$INSTANCE_NAME.conf # remove user constraints
-  sudo sed -i 's/^group .*//' /etc/openvpn/$INSTANCE_NAME.conf # remove group constraints
-  sudo sed -i 's/^dev tun.*/dev tun_fwvpn/' /etc/openvpn/$INSTANCE_NAME.conf # explicitly specify tun interface name
-  minimumsize=100
-  actualsize=$(wc -c <"/etc/openvpn/$INSTANCE_NAME.conf")
-  if [[ $same_network -eq 0 && $same_port -eq 0 && $actualsize -ge $minimumsize ]]; then
-    logger "FIREWALLA: OpenVPN Config Already Done for $INSTANCE_NAME"
-    sync
-    exit 0
-  fi
-fi
-
 # Ask user for desired level of encryption
 ENCRYPT="1024"
 
@@ -121,4 +78,5 @@ sed -i "s/SERVER_INSTANCE/$INSTANCE_NAME/" /etc/openvpn/$INSTANCE_NAME.conf
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/$INSTANCE_NAME.conf
 fi
+logger "FIREWALLA: OpenVPN config complete @ $INSTANCE_NAME"
 sync

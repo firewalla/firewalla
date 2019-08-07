@@ -19,11 +19,12 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 const deviceConfigFile = `${dnsmasqConfigFolder}/adblock_mac_set.conf`;
 const systemConfigFile = `${dnsmasqConfigFolder}/adblock_system.conf`;
 const dnsTag = "$ad_block";
@@ -64,26 +65,28 @@ class AdblockPlugin extends Sensor {
         }
 
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        if (fc.isFeatureOn("adblock")) {
-            this.globalOn();
-        } else {
-            this.globalOff();
-        }
-        fc.onFeature("adblock", async (feature, status) => {
-            if (feature !== "adblock") {
-                return;
-            }
-            if (status) {
+        sem.once('IPTABLES_READY', async () => {
+            if (fc.isFeatureOn("adblock")) {
                 this.globalOn();
             } else {
                 this.globalOff();
             }
-        })
+            fc.onFeature("adblock", async (feature, status) => {
+                if (feature !== "adblock") {
+                    return;
+                }
+                if (status) {
+                    this.globalOn();
+                } else {
+                    this.globalOff();
+                }
+            })
 
-        this.job();
-        this.timer = setInterval(async () => {
-            return this.job();
-        }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+            this.job();
+            this.timer = setInterval(async () => {
+                return this.job();
+            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+        });
     }
 
     job() {
@@ -99,6 +102,10 @@ class AdblockPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
+                    if (fc.isFeatureOn("adblock", true)) {//compatibility: new firewlla, old app
+                        await fc.enableDynamicFeature("adblock");
+                        return;
+                    }
                 } else {
                     this.systemSwitch = false;
                 }
@@ -130,17 +137,17 @@ class AdblockPlugin extends Sensor {
     async applySystemAdblock() {
         if (this.systemSwitch && this.adminSystemSwitch) {
             const adblocktagset = `mac-address-tag=%${systemLevelMac}${dnsTag}\n`;
-            await fs.writeFile(systemConfigFile, adblocktagset);
+            await fs.writeFileAsync(systemConfigFile, adblocktagset);
         } else {
-            await fs.unlink(systemConfigFile, err => {
-                if (err) {
-                    if (err.code === 'ENOENT') {
-                        log.info(`Dnsmasq: No ${systemConfigFile}, skip remove`);
-                    } else {
-                        log.warn(`Dnsmasq: Error when remove ${systemConfigFile}`, err);
-                    }
+            try {
+                await fs.unlinkAsync(systemConfigFile);
+            } catch (err) {
+                if (err.code === 'ENOENT') {
+                    log.info(`Dnsmasq: No ${systemConfigFile}, skip remove`);
+                } else {
+                    log.warn(`Dnsmasq: Error when remove ${systemConfigFile}`, err);
                 }
-            });
+            }
         }
         dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
     }
@@ -148,20 +155,23 @@ class AdblockPlugin extends Sensor {
     async applyDeviceAdblock() {
         const macAddressArr = this.enabledMacAddresses;
         if (macAddressArr.length > 0 && this.adminSystemSwitch) {
-            const adblocktagset = `mac-address-tag=%${macAddressArr.join("%")}${dnsTag}\n`;
-            await fs.writeFile(deviceConfigFile, adblocktagset);
+            let adblocktagset = "";
+            macAddressArr.forEach((macAddress) => {
+                adblocktagset += `mac-address-tag=%${macAddress}${dnsTag}\n`
+            })
+            await fs.writeFileAsync(deviceConfigFile, adblocktagset);
         } else {
-            await fs.unlink(deviceConfigFile, err => {
-                if (err) {
-                    if (err.code === 'ENOENT') {
-                        log.info(`Dnsmasq: No ${deviceConfigFile}, skip remove`);
-                    } else {
-                        log.warn(`Dnsmasq: Error when remove ${deviceConfigFile}`, err);
-                    }
+            try {
+                await fs.unlinkAsync(deviceConfigFile);
+            } catch (err) {
+                if (err.code === 'ENOENT') {
+                    log.info(`Dnsmasq: No ${deviceConfigFile}, skip remove`);
+                } else {
+                    log.warn(`Dnsmasq: Error when remove ${deviceConfigFile}`, err);
                 }
-            });
+            }
         }
-        dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
+        dnsmasq.restartDnsmasq();
     }
     // global on/off
     globalOn() {

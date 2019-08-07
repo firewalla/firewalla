@@ -177,37 +177,47 @@ class VpnManager {
     });
   }
 
-  async configure(config, needRestart) {
+  async configure(config) {
     if (config) {
       if (config.serverNetwork) {
+        if (this.serverNetwork && this.serverNetwork !== config.serverNetwork)
+          this.needRestart = true;
         this.serverNetwork = config.serverNetwork;
       }
       if (config.netmask) {
+        if (this.netmask && this.netmask !== config.netmask)
+          this.needRestart = true;
         this.netmask = config.netmask;
       }
       if (config.localPort) {
+        if (this.localPort && this.localPort !== config.localPort)
+          this.needRestart = true;
         this.localPort = config.localPort;
       }
       if (config.externalPort) {
+        if (this.externalPort && this.externalPort !== config.externalPort)
+          this.needRestart = true;
         this.externalPort = config.externalPort;
       }
     }
     if (this.serverNetwork == null) {
       this.serverNetwork = this.generateNetwork();
+      this.needRestart = true;
     }
     if (this.netmask == null) {
       this.netmask = "255.255.255.0";
+      this.needRestart = true;
     }
     if (this.localPort == null) {
       this.localPort = "1194";
+      this.needRestart = true;
     }
     if (this.externalPort == null) {
       this.externalPort = this.localPort;
+      this.needRestart = true;
     }
     if (this.instanceName == null) {
       this.instanceName = "server";
-    }
-    if (needRestart === true) {
       this.needRestart = true;
     }
     var mydns = sysManager.myDNS()[0];
@@ -273,7 +283,7 @@ class VpnManager {
         serverNetwork: this.serverNetwork,
         netmask: this.netmask,
         localPort: this.localPort,
-        externalPort: this.localPort,
+        externalPort: this.externalPort,
         portmapped: this.portmapped
       };
       // callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);

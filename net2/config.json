@@ -590,8 +590,7 @@
     "insane_mode": false,
     "cpu_monitor": true,
     "speed_test": false,
-    "safe_search": false,
-    "family_protect": false
+    "safe_search": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
