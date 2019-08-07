@@ -455,7 +455,6 @@ exports.Rule = class Rule {
             cmd.push('src,dst')
           else
             cmd.push(match.spec)
-          break;
 
         default:
       }
