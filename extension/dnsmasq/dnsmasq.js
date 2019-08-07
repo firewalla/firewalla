@@ -1379,7 +1379,7 @@ module.exports = class DNSMASQ {
         await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
       }
       if (needUpdate && restart) {
-        this.restart()
+        this.restartDnsmasq()
       }
     } catch (e) {
       log.error("Failed to setup local device domain", e);
