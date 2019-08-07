@@ -45,6 +45,10 @@ function getPreferredBName(hostObject) {
     return null;
   }
 
+  if (hostObject.name) {
+    return hostObject.name;
+  }
+
   if(hostObject.cloudName) {
     return hostObject.cloudName
   }
