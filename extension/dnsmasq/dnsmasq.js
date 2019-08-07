@@ -17,6 +17,7 @@ const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
+const getCanonicalizedHostname = require('../../util/getCanonicalizedURL').getCanonicalizedHostname;
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
@@ -463,7 +464,7 @@ module.exports = class DNSMASQ {
     let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
     log.info("Command to get current name server: ", cmd);
 
-    let { stdout, stderr } = await execAsync(cmd);
+    let { stdout } = await execAsync(cmd);
 
     if (!stdout || stdout === '') {
       return [];
@@ -1346,27 +1347,34 @@ module.exports = class DNSMASQ {
         if (!deviceDomainMap[host.mac]) {
           deviceDomainMap[host.mac] = {
             ipv4Addr: ipv4Addr,
-            name: hostName
+            name: hostName,
+            ts: new Date() / 1000
           }
           needUpdate = true;
         } else {
           const deviceDomain = deviceDomainMap[host.mac];
           if ((deviceDomain.name != hostName || deviceDomain.ipv4Addr != ipv4Addr)) {
-            // need update
             needUpdate = true;
             deviceDomain.ipv4Addr = ipv4Addr;
             deviceDomain.name = hostName;
+            deviceDomain.ts = new Date() / 1000
           }
         }
       }
       if (needUpdate || isInit) {
         await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
-        let localDeviceDomain = "";
+        let localDeviceDomain = "", domainMap = {};
         for (const key in deviceDomainMap) {
           const deviceDomain = deviceDomainMap[key]
-          //replace space to dot
-          const domain = deviceDomain.name.replace(/\s+/g, ".").toLowerCase();
-          localDeviceDomain += `address=/${domain}.lan/${deviceDomain.ipv4Addr}\n`
+          if (!domainMap[deviceDomain.name]) {
+            domainMap[deviceDomain.name] = deviceDomain
+          } else if (domainMap[deviceDomain.name] && domainMap[deviceDomain.name].ts < deviceDomain.ts) {
+            domainMap[deviceDomain.name] = deviceDomain
+          }
+        }
+        for (const key in domainMap) {
+          const domain = getCanonicalizedHostname(key.replace(/\s+/g, ".")) + '.lan';
+          localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`
         }
         await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
       }
