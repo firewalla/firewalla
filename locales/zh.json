@@ -46,7 +46,7 @@
   "NOTIF_ALARM_LARGE_UPLOAD_TRIGGERED_FROM_OUTSIDE_COUNTRY": "{{{p.device.name}}}上传了{{{p.transfer.outbound.humansize}}}数据到{{{p.dest.name}}} (IP来自{{{p.dest.countryLocalized}}})",
   "NOTIF_ALARM_NEW_DEVICE": "{{{p.device.name}}} ({{{p.device.ip}}})",
   "NOTIF_ALARM_DEVICE_BACK_ONLINE": "{{{p.device.name}}}({{{p.device.ip}}})已经回到您的网络",
-  "NOTIF_ALARM_DEVICE_OFFLINE": "{{{p.device.name}}}在{{{p.device.lastSeen}}}已经离开您的网络",
+  "NOTIF_ALARM_DEVICE_OFFLINE": "{{{p.device.name}}}在{{{p.device.lastSeenTimezone}}}已经离开您的网络",
   "NOTIF_ALARM_SPOOFING_DEVICE": "设备疑似进行ARP欺骗：\"{{{p.device.name}}}\"({{{p.device.ip}}})",
   "NOTIF_ALARM_VPN_CLIENT_CONNECTION": "VPN客户端接入: {{{p.dest.ip}}}:{{{p.dest.port}}}",
   "NOTIF_ALARM_BRO_NOTICE": "{{{p.message}}}",

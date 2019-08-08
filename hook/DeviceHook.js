@@ -625,7 +625,8 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.device.lastSeen": moment(host.lastActiveTimestamp*1000).format('LT')
+            "p.device.lastSeen": host.lastActiveTimestamp,
+            "p.device.lastSeenTimezone": moment(host.lastActiveTimestamp*1000).format('LT')
           });
         am2.enqueueAlarm(alarm);
         break;
