@@ -779,17 +779,13 @@ module.exports = class {
   async listExtendedAlarms() {
     const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
 
-    return list.map((l) => {
-      return l.replace(`${alarmDetailPrefix}:`, "");
-    })
+    return list.map(l => l.substring(alarmDetailPrefix.length + 1))
   }
 
   async listBasicAlarms() {
     const list = await rclient.keysAsync(`_alarm:*`);
 
-    return list.map((l) => {
-      return l.replace("_alarm:", "");
-    })
+    return list.map(l => l.substring(7))
   }
 
   async deleteExtendedAlarm(alarmID) {
