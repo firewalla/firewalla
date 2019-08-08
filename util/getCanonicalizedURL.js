@@ -11,7 +11,7 @@ function hasPercentEscape(url) {
 }
 
 function getDecodedURI(uri) {
-  return uri.replace(PERCENT_ESCAPE, function(match, p1) {
+  return uri.replace(PERCENT_ESCAPE, function (match, p1) {
     return String.fromCharCode(parseInt(p1, 16));
   });
 }
@@ -35,7 +35,7 @@ function getEncodedURI(uri) {
 }
 
 function getEntirelyDecodedURI(uri) {
-  while(hasPercentEscape(uri)) {
+  while (hasPercentEscape(uri)) {
     uri = getDecodedURI(uri);
   }
   return uri;
@@ -62,7 +62,7 @@ function getCanonicalizedPathname(pathname) {
 function getCanonicalizedURL(url) {
   url = url.trim();
   url = url.replace(/[\t\r\n]/g, '');
-  
+
   var cursor = new StringCursor(url);
   var protocol = cursor.chompUntilIfExists(':') || 'http';
   cursor.chompWhile('/');
@@ -84,9 +84,12 @@ function getCanonicalizedURL(url) {
   };
 
   return (
-    `${f.protocol}://${f.hostname}${f.port ? ':'+f.port:''}`+
-    `${f.pathname}${search ? '?'+search:''}`
+    `${f.protocol}://${f.hostname}${f.port ? ':' + f.port : ''}` +
+    `${f.pathname}${search ? '?' + search : ''}`
   );
 }
 
-module.exports = getCanonicalizedURL;
+module.exports = { 
+  getCanonicalizedURL: getCanonicalizedURL, 
+  getCanonicalizedHostname: getCanonicalizedHostname 
+};

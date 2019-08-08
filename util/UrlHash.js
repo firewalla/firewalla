@@ -1,5 +1,5 @@
 'use strict'
-var getCanonicalizedURI = require('./getCanonicalizedURL');
+var getCanonicalizedURI = require('./getCanonicalizedURL').getCanonicalizedURL;
 var getLookupExpressions = require('./getLookupExpressions');
 var Hashes = require('./Hashes.js');
 
