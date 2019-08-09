@@ -2861,11 +2861,36 @@ class netBot extends ControllerBot {
       case "vpnProfile:list": {
         (async () => {
           const allSettings = await VpnManager.getAllSettings();
+          const statistics = await new VpnManager().getStatistics();
           const vpnProfiles = [];
           for (let cn in allSettings) {
-            vpnProfiles.push({cn: cn, settings: allSettings[cn]});
+            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => c.cn === cn) || []});
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnConnection:kill": {
+        if (!value.addr) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'addr' is not specified."}, callback);
+          return;
+        }
+        const addrPort = value.addr.split(":");
+        if (addrPort.length != 2) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'addr' should consist of '<ip address>:<port>"}, callback);
+          return;
+        }
+        const addr = addrPort[0];
+        const port = addrPort[1];
+        if (!iptool.isV4Format(addr) || Number.isNaN(port) || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 65535) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "IP address should be IPv4 format and port should be in [0, 65535]"}, callback);
+          return;
+        }
+        (async () => {
+          await new VpnManager().killClient(value.addr);
+          this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
