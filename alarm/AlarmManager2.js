@@ -41,7 +41,7 @@ const intelManager = new IntelManager('info');
 const DNSManager = require('../net2/DNSManager.js');
 const dnsManager = new DNSManager('info');
 
-const getPreferredBName = require('../util/util.js').getPreferredBName
+const getPreferredName = require('../util/util.js').getPreferredName
 
 const delay = require('../util/util.js').delay;
 
@@ -1524,7 +1524,7 @@ module.exports = class {
           return;
         }
 
-        let deviceName = getPreferredBName(result);
+        let deviceName = getPreferredName(result);
         let deviceID = result.mac;
 
         Object.assign(alarm, {
