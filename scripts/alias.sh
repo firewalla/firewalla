@@ -1,5 +1,6 @@
 #!/bin/bash
 
+alias sudo='sudo '
 alias apt='/home/pi/firewalla/scripts/apt.sh'
 alias apt-get='/home/pi/firewalla/scripts/apt.sh'
 alias t0='tail -F ~/.forever/main.log'

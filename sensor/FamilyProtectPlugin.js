@@ -19,6 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
 
@@ -60,26 +61,28 @@ class FamilyProtectPlugin extends Sensor {
             await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
         }
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        if (fc.isFeatureOn("family_protect")) {
-            await this.globalOn();
-        } else {
-            await this.globalOff();
-        }
-        fc.onFeature("family_protect", async (feature, status) => {
-            if (feature !== "family_protect") {
-                return;
-            }
-            if (status) {
+        sem.once('IPTABLES_READY', async () => {
+            if (fc.isFeatureOn("family_protect")) {
                 await this.globalOn();
             } else {
                 await this.globalOff();
             }
-        })
+            fc.onFeature("family_protect", async (feature, status) => {
+                if (feature !== "family_protect") {
+                    return;
+                }
+                if (status) {
+                    await this.globalOn();
+                } else {
+                    await this.globalOff();
+                }
+            })
 
-        await this.job();
-        this.timer = setInterval(async () => {
-            return this.job();
-        }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+            await this.job();
+            this.timer = setInterval(async () => {
+                return this.job();
+            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+        })
     }
 
     async job() {

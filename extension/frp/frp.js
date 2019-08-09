@@ -1,4 +1,3 @@
-
 /*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
@@ -26,6 +25,8 @@ const configTemplateFile = `${frpDirectory}/frpc.ini.template`  // default templ
 const serviceTemplateFile = `${frpDirectory}/frpc.service.template`;
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient()
+const sem = require('../../sensor/SensorEventManager.js').getInstance()
 
 const bone = require("../../lib/Bone.js");
 
@@ -44,8 +45,13 @@ const readFile = util.promisify(fs.readFile)
 const writeFile = util.promisify(fs.writeFile)
 const unlink = util.promisify(fs.unlink)
 
+const FRPERRORCODE = 1
+const FRPSUCCESSCODE = 0
+const FRPINITCODE = -1
+const FRPTRYCOUNT = 3
+
 function delay(t) {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     setTimeout(resolve, t)
   });
 }
@@ -57,7 +63,7 @@ function getLastServiceLogTime(serviceName) {
 
   try {
     return new Date(str)
-  } catch(err) {
+  } catch (err) {
     return null
   }
 }
@@ -69,7 +75,7 @@ function getLastSystemLogTime(serviceName) {
 
   try {
     return new Date(str)
-  } catch(err) {
+  } catch (err) {
     return null
   }
 }
@@ -80,6 +86,7 @@ module.exports = class {
     this.started = false
     this.serviceTag = "SSH"
     this.configComplete = false;
+    this.startCode = FRPINITCODE;
 
     // if frp service is started during execution of async block, inconsistency may occur?
     (async () => {
@@ -90,6 +97,20 @@ module.exports = class {
         this.configComplete = true;
       }
     })();
+    sclient.on("message", (channel, message) => {
+      if (channel === "System:RemoteSupport") {
+        try {
+          message = JSON.parse(message) || {}
+          this.startCode = message.code
+          sem.emitEvent({
+            type: "RemoteSupport"
+          })
+        } catch (err) {
+          log.warn("System:RemoteSupport error:", err)
+        }
+      }
+    })
+    sclient.subscribe("System:RemoteSupport");
     return this
   }
 
@@ -107,7 +128,7 @@ module.exports = class {
       return this._prepareConfiguration(config);
     }
 
-    if(!config) {
+    if (!config) {
       log.warn(`Missing config information for frp ${this.name}`);
       return;
     }
@@ -118,31 +139,31 @@ module.exports = class {
 
     let templateData = await readFile(genericTemplate, 'utf8');
 
-    if(config.name) {
+    if (config.name) {
       templateData = templateData.replace(/FRP_SERVICE_NAME/g, config.name)
     }
 
-    if(port) {
+    if (port) {
       templateData = templateData.replace(/FRP_SERVICE_PORT/g, port)
     }
 
-    if(config.token) {
+    if (config.token) {
       templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, config.token)
     }
 
-    if(config.server) {
+    if (config.server) {
       templateData = templateData.replace(/FRP_SERVER_ADDR/g, config.server)
     }
 
-    if(config.serverPort) {
+    if (config.serverPort) {
       templateData = templateData.replace(/FRP_SERVER_PORT/g, config.serverPort)
     }
 
-    if(config.internalPort) {
+    if (config.internalPort) {
       templateData = templateData.replace(/FRP_SERVICE_INTERNAL_PORT/g, config.internalPort)
     }
 
-    if(config.protocol) {
+    if (config.protocol) {
       templateData = templateData.replace(/FRP_SERVICE_PROTOCOL/g, config.protocol)
     }
 
@@ -197,7 +218,7 @@ module.exports = class {
       userToken = config.userToken;
     }
 
-    if(this.templateFilename) {
+    if (this.templateFilename) {
       templateFile = `${frpDirectory}/${this.templateFilename}`
     }
 
@@ -208,17 +229,17 @@ module.exports = class {
     templateData = templateData.replace(/FRP_SERVICE_PORT/g, this.port)
 
     let token = await rclient.hgetAsync("sys:config", "frpToken")
-    if(userToken) {
+    if (userToken) {
       token = userToken
     }
-    if(this.token) {
+    if (this.token) {
       token = this.token
     }
-    if(token) {
+    if (token) {
       templateData = templateData.replace(/FRP_SERVICE_TOKEN/g, token)
     }
 
-    if(this.server) {
+    if (this.server) {
       templateData = templateData.replace(/FRP_SERVER/g, this.server)
     }
 
@@ -249,14 +270,15 @@ module.exports = class {
       started: this.started,
       port: this.port,
       server: this.server(),
-      user: this.user()
+      user: this.user(),
+      startCode: this.startCode
     }
   }
 
   _getRandomPort(base, length) {
     base = base || 9000
-    length = length || 1000
-    return  Math.floor(Math.random() * length) + base
+    length = length || 3000
+    return Math.floor(Math.random() * length) + base
   }
 
   async start() {
@@ -313,7 +335,16 @@ module.exports = class {
           this.started = true;
           hasTimeout = false;
           this._startHealthChecker();
-          resolve();
+          if (this.name == "support") {
+            sem.once("RemoteSupport", () => {
+              resolve();
+            })
+            setTimeout(() => {
+              resolve();
+            }, 10 * 1000)
+          } else {
+            resolve();
+          }
         } else {
           log.error("Failed to start " + serviceName, code, signal);
         }
@@ -327,7 +358,7 @@ module.exports = class {
 
       // wait for 15 seconds
       delay(15000).then(() => {
-        if(hasTimeout) {
+        if (hasTimeout) {
           log.error("Timeout, failed to start frp");
           this._boneLog("Timeout, failed to start service.");
           reject(new Error("Failed to start frp"));
@@ -362,38 +393,59 @@ module.exports = class {
     const CHECK_INTERVAL = 5 * 60 * 1000; // Don't set this too small
     const REPORT_THRESHOLD = 3;
     this.logRefreshCount = 0;
-        if (!this.lastLogTime)
+    if (!this.lastLogTime)
 
-    this.healthChecker = setInterval(() => {
-      try {
-        // systemctl/journalctl won't be able to pick up the service restart log
-        let serviceLogTime = getLastServiceLogTime(this._getServiceName());
-        let systemLogTime = getLastSystemLogTime(this._getServiceName());
+      this.healthChecker = setInterval(() => {
+        try {
+          // systemctl/journalctl won't be able to pick up the service restart log
+          let serviceLogTime = getLastServiceLogTime(this._getServiceName());
+          let systemLogTime = getLastSystemLogTime(this._getServiceName());
 
-        let logTime = serviceLogTime > systemLogTime ? serviceLogTime : systemLogTime; // could be null
-        log.info("logTime", logTime);
+          let logTime = serviceLogTime > systemLogTime ? serviceLogTime : systemLogTime; // could be null
+          log.info("logTime", logTime);
 
-        if (!this.lastLogTime) this.lastLogTime = logTime;
+          if (!this.lastLogTime) this.lastLogTime = logTime;
 
-        if (logTime && +logTime != +this.lastLogTime) {
-          log.info(this._getServiceName(),
-            'logRefreshCount:', this.logRefreshCount, 'lastLogTime:', logTime);
-          this.lastLogTime = logTime;
-          if (++ this.logRefreshCount > REPORT_THRESHOLD) {
-            throw new Error("Something is wrong!");
+          if (logTime && +logTime != +this.lastLogTime) {
+            log.info(this._getServiceName(),
+              'logRefreshCount:', this.logRefreshCount, 'lastLogTime:', logTime);
+            this.lastLogTime = logTime;
+            if (++this.logRefreshCount > REPORT_THRESHOLD) {
+              throw new Error("Something is wrong!");
+            }
+          } else {
+            this.logRefreshCount = 0;
           }
-        } else {
-          this.logRefreshCount = 0;
+        } catch (err) {
+          log.error(err);
+          this._boneLog(err);
+          clearInterval(this.healthChecker); // report once
         }
-      } catch(err) {
-        log.error(err);
-        this._boneLog(err);
-        clearInterval(this.healthChecker); // report once
-      }
 
-    }, CHECK_INTERVAL);
+      }, CHECK_INTERVAL);
 
     log.info(this._getServiceName(), "health checker started");
+  }
+
+  async remoteSupportStart() {
+    let tryStartFrpCount = FRPTRYCOUNT,
+      errMsg = [], config;
+    do {
+      tryStartFrpCount--;
+      await this.start();
+      config = this.getConfig();
+      if (config.startCode == FRPSUCCESSCODE) {
+        tryStartFrpCount = 0;
+      } else {
+        await this.stop();
+        if (config.startCode == FRPINITCODE) {
+          errMsg.push("Time out.");
+        } else if (config.startCode == FRPERRORCODE) {
+          errMsg.push(`Port: ${config.port} is already beging used.`);
+        }
+      }
+    } while (tryStartFrpCount > 0)
+    return { config: config, errMsg: errMsg }
   }
 }
 

@@ -137,7 +137,7 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const conncheck = require('../diagnostic/conncheck.js');
 
 const { delay } = require('../util/util.js')
-
+const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback) {
@@ -618,6 +618,7 @@ class netBot extends ControllerBot {
 
       let branchChanged = await sysManager.isBranchJustChanged();
       let upgradeInfo = await upgradeManager.getUpgradeInfo();
+      log.debug('isBranchJustChanged:', branchChanged, ', upgradeInfo:', upgradeInfo);
       if(branchChanged) {
         let branch = null
 
@@ -634,7 +635,7 @@ class netBot extends ControllerBot {
       }
       else if (upgradeInfo.upgraded) {
         let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
-          version: f.isProductionOrBeta() ? fc.getSimpleVersion() : upgradeInfo.to
+          version: fc.getSimpleVersion()
         });
         this.tx(this.primarygid, "200", msg);
         upgradeManager.updateVersionTag();
@@ -959,8 +960,7 @@ class netBot extends ControllerBot {
         }
 
         (async() => {
-          let ip = null
-
+          let ip = null;
           if(hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
             log.info("set host name alias by mac address", macAddress);
@@ -970,10 +970,20 @@ class netBot extends ControllerBot {
               mac: macAddress
             }
 
-            await hostTool.updateMACKey(macObject, true)
-
+            await hostTool.updateMACKey(macObject, true);
+            const host = await this.hostManager.getHostAsync(macAddress);
+            const pureHost = host.o || {};
+            sem.emitEvent({
+              type: "DeviceUpdate",
+              message: "Update device name",
+              host: {
+                ipv4Addr: pureHost.ipv4Addr,
+                mac: macAddress,
+                name: data.value.name
+              },
+              toProcess: 'FireMain'
+            })
             this.simpleTxData(msg, {}, null, callback)
-
             return
 
           } else {
@@ -2414,12 +2424,15 @@ class netBot extends ControllerBot {
         break;
       case "startSupport":
         (async() => {
-          await frp.start()
-          let config = frp.getConfig();
-          let newPassword = await ssh.resetRandomPasswordAsync()
-          sysManager.setSSHPassword(newPassword); // in-memory update
-          config.password = newPassword
-          this.simpleTxData(msg, config, null, callback)
+          let {config,errMsg} = await frp.remoteSupportStart();
+          if(config.startCode == FRPSUCCESSCODE){
+            let newPassword = await ssh.resetRandomPasswordAsync();
+            sysManager.setSSHPassword(newPassword); // in-memory update
+            config.password = newPassword;
+            this.simpleTxData(msg, config, null, callback);
+          }else{
+            this.simpleTxData(msg, config, errMsg.join(";"), callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
@@ -2855,11 +2868,36 @@ class netBot extends ControllerBot {
       case "vpnProfile:list": {
         (async () => {
           const allSettings = await VpnManager.getAllSettings();
+          const statistics = await new VpnManager().getStatistics();
           const vpnProfiles = [];
           for (let cn in allSettings) {
-            vpnProfiles.push({cn: cn, settings: allSettings[cn]});
+            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => c.cn === cn) || []});
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnConnection:kill": {
+        if (!value.addr) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'addr' is not specified."}, callback);
+          return;
+        }
+        const addrPort = value.addr.split(":");
+        if (addrPort.length != 2) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'addr' should consist of '<ip address>:<port>"}, callback);
+          return;
+        }
+        const addr = addrPort[0];
+        const port = addrPort[1];
+        if (!iptool.isV4Format(addr) || Number.isNaN(port) || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 65535) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "IP address should be IPv4 format and port should be in [0, 65535]"}, callback);
+          return;
+        }
+        (async () => {
+          await new VpnManager().killClient(value.addr);
+          this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
@@ -2970,7 +3008,7 @@ class netBot extends ControllerBot {
                 const cmd = "mkdir -p " + dirPath;
                 await exec(cmd);
                 const files = await readdirAsync(dirPath);
-                const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+                const ovpns = files.filter(filename => filename !== `${profileId}.ovpn` && filename.endsWith('.ovpn'));
                 if (ovpns && ovpns.length >= 10) {
                   this.simpleTxData(msg, {}, {code: 429, msg: "At most 10 profiles can be saved on Firewalla"}, callback);
                 } else {
@@ -3047,6 +3085,15 @@ class netBot extends ControllerBot {
           default:
             this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
         }
+        break;
+      }
+      case "dismissVersionUpdate": {
+        (async () => {
+          await sysManager.clearVersionUpdate();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       case "saveRSAPublicKey": {
