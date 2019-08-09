@@ -137,7 +137,7 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const conncheck = require('../diagnostic/conncheck.js');
 
 const { delay } = require('../util/util.js')
-
+const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback) {
@@ -2424,12 +2424,15 @@ class netBot extends ControllerBot {
         break;
       case "startSupport":
         (async() => {
-          await frp.start()
-          let config = frp.getConfig();
-          let newPassword = await ssh.resetRandomPasswordAsync()
-          sysManager.setSSHPassword(newPassword); // in-memory update
-          config.password = newPassword
-          this.simpleTxData(msg, config, null, callback)
+          let {config,errMsg} = await frp.remoteSupportStart();
+          if(config.startCode == FRPSUCCESSCODE){
+            let newPassword = await ssh.resetRandomPasswordAsync();
+            sysManager.setSSHPassword(newPassword); // in-memory update
+            config.password = newPassword;
+            this.simpleTxData(msg, config, null, callback);
+          }else{
+            this.simpleTxData(msg, config, errMsg.join(";"), callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
