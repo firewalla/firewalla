@@ -618,6 +618,7 @@ class netBot extends ControllerBot {
 
       let branchChanged = await sysManager.isBranchJustChanged();
       let upgradeInfo = await upgradeManager.getUpgradeInfo();
+      log.debug('isBranchJustChanged:', branchChanged, ', upgradeInfo:', upgradeInfo);
       if(branchChanged) {
         let branch = null
 
@@ -634,7 +635,7 @@ class netBot extends ControllerBot {
       }
       else if (upgradeInfo.upgraded) {
         let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
-          version: f.isProductionOrBeta() ? fc.getSimpleVersion() : upgradeInfo.to
+          version: fc.getSimpleVersion()
         });
         this.tx(this.primarygid, "200", msg);
         upgradeManager.updateVersionTag();
@@ -959,8 +960,7 @@ class netBot extends ControllerBot {
         }
 
         (async() => {
-          let ip = null
-
+          let ip = null;
           if(hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
             log.info("set host name alias by mac address", macAddress);
@@ -970,10 +970,20 @@ class netBot extends ControllerBot {
               mac: macAddress
             }
 
-            await hostTool.updateMACKey(macObject, true)
-
+            await hostTool.updateMACKey(macObject, true);
+            const host = await this.hostManager.getHostAsync(macAddress);
+            const pureHost = host.o || {};
+            sem.emitEvent({
+              type: "DeviceUpdate",
+              message: "Update device name",
+              host: {
+                ipv4Addr: pureHost.ipv4Addr,
+                mac: macAddress,
+                name: data.value.name
+              },
+              toProcess: 'FireMain'
+            })
             this.simpleTxData(msg, {}, null, callback)
-
             return
 
           } else {

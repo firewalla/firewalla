@@ -17,12 +17,20 @@ const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
+const getCanonicalizedHostname = require('../../util/getCanonicalizedURL').getCanonicalizedHostname;
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
+const HostTool = require('../../net2/HostTool.js');
+const hostTool = new HostTool();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
+
+const { delay } = require('../../util/util.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
+const LOCAL_DEVICE_DOMAIN = FILTER_DIR + "/local_device_domain.conf";
+const LOCAL_DEVICE_DOMAIN_KEY = "local:device:domain"
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -369,7 +377,7 @@ module.exports = class DNSMASQ {
 
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
-      await this.delay(1000);  // try again later
+      await delay(1000);  // try again later
     }
     this.workingInProgress = true;
 
@@ -393,7 +401,7 @@ module.exports = class DNSMASQ {
   async removePolicyFilterEntry(domain) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress");
-      await this.delay(1000);  // try again later
+      await delay(1000);  // try again later
     }
     this.workingInProgress = true;
 
@@ -464,7 +472,7 @@ module.exports = class DNSMASQ {
     let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
     log.info("Command to get current name server: ", cmd);
 
-    let { stdout, stderr } = await execAsync(cmd);
+    let { stdout } = await execAsync(cmd);
 
     if (!stdout || stdout === '') {
       return [];
@@ -472,10 +480,6 @@ module.exports = class DNSMASQ {
 
     let list = stdout.split('\n');
     return list.filter((x, i) => list.indexOf(x) === i);
-  }
-
-  async delay(t) {
-    return new Promise(resolve => setTimeout(resolve, t));
   }
 
   async reload() {
@@ -902,7 +906,7 @@ module.exports = class DNSMASQ {
       // do nothing
     }
 
-    const p = spawn('/bin/bash', ['-c', cmd])
+    const p = spawn('/bin/bash', ['-c', 'sudo service dnsmasq restart'])
 
     p.stdout.on('data', (data) => {
       log.info("DNSMASQ STDOUT:", data.toString());
@@ -912,12 +916,11 @@ module.exports = class DNSMASQ {
       log.info("DNSMASQ STDERR:", data.toString());
     })
 
-    await this.delay(1000);
+    await delay(1000);
   }
 
   async restartDnsmasq() {
     try {
-      //await execAsync("sudo systemctl restart firemasq");
       if (!this.needRestart)
         this.needRestart = new Date() / 1000;
       if (!statusCheckTimer) {
@@ -1299,7 +1302,7 @@ module.exports = class DNSMASQ {
 
   async cleanUpLeftoverConfig() {
     try {
-      await fs.mkdirAsync(FILTER_DIR, {recursive: true, mode: 0o755}).catch((err) => {
+      await fs.mkdirAsync(FILTER_DIR, { recursive: true, mode: 0o755 }).catch((err) => {
         if (err.code !== "EEXIST")
           log.error(`Failed to create ${FILTER_DIR}`, err);
       });
@@ -1308,11 +1311,11 @@ module.exports = class DNSMASQ {
         const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch(() => false);
         if (!dirExists)
           continue;
-        
+
         const files = await fs.readdirAsync(dir);
         await Promise.all(files.map(async (filename) => {
           const filePath = `${dir}/${filename}`;
-          
+
           try {
             const fileStat = await fs.statAsync(filePath);
             if (fileStat.isFile()) {
@@ -1320,13 +1323,69 @@ module.exports = class DNSMASQ {
                 log.error(`Failed to remove ${filePath}, err:`, err);
               });
             }
-          } catch(err) {
+          } catch (err) {
             log.info(`File ${filePath} not exist`);
           }
         }));
       }
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
+    }
+  }
+
+  //save data in redis
+  //{mac:{ipv4Addr:ipv4Addr,name:name}}
+  //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
+  async setupLocalDeviceDomain(restart, hosts, isInit) {
+    const json = await rclient.getAsync(LOCAL_DEVICE_DOMAIN_KEY);
+    try {
+      let needUpdate = false;
+      const deviceDomainMap = JSON.parse(json) || {};
+      for (const host of hosts) {
+        //if user update device name and ip, should get them from redis not host
+        let hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "name");
+        let ipv4Addr = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "ipv4Addr");
+        hostName = hostName ? hostName : hostTool.getHostname(host);
+        ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
+        if (!deviceDomainMap[host.mac]) {
+          deviceDomainMap[host.mac] = {
+            ipv4Addr: ipv4Addr,
+            name: hostName,
+            ts: new Date() / 1000
+          }
+          needUpdate = true;
+        } else {
+          const deviceDomain = deviceDomainMap[host.mac];
+          if ((deviceDomain.name != hostName || deviceDomain.ipv4Addr != ipv4Addr)) {
+            needUpdate = true;
+            deviceDomain.ipv4Addr = ipv4Addr;
+            deviceDomain.name = hostName;
+            deviceDomain.ts = new Date() / 1000
+          }
+        }
+      }
+      if (needUpdate || isInit) {
+        await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
+        let localDeviceDomain = "", domainMap = {};
+        for (const key in deviceDomainMap) {
+          const deviceDomain = deviceDomainMap[key]
+          if (!domainMap[deviceDomain.name]) {
+            domainMap[deviceDomain.name] = deviceDomain
+          } else if (domainMap[deviceDomain.name] && domainMap[deviceDomain.name].ts < deviceDomain.ts) {
+            domainMap[deviceDomain.name] = deviceDomain
+          }
+        }
+        for (const key in domainMap) {
+          const domain = getCanonicalizedHostname(key.replace(/\s+/g, ".")) + '.lan';
+          localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`
+        }
+        await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
+      }
+      if (needUpdate && restart) {
+        this.restartDnsmasq()
+      }
+    } catch (e) {
+      log.error("Failed to setup local device domain", e);
     }
   }
 };
