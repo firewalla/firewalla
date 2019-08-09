@@ -254,8 +254,19 @@ class VpnManager {
     // statistics include client lists and rx/tx bytes
     let cmd = `systemctl is-active openvpn@${this.instanceName}`;
     return await execAsync(cmd).then(async () => {
-      const statusLogPath = this._getStatusLogPath();
       cmd = `echo "status" | nc localhost 5194 | tail -n +2`;
+      /*
+      OpenVPN CLIENT LIST
+      Updated,Fri Aug  9 12:08:18 2019
+      Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since
+      fishboneVPN1,192.168.7.92:57235,271133,174599,Fri Aug  9 12:06:03 2019
+      ROUTING TABLE
+      Virtual Address,Common Name,Real Address,Last Ref
+      10.115.61.6,fishboneVPN1,192.168.7.92:57235,Fri Aug  9 12:08:17 2019
+      GLOBAL STATS
+      Max bcast/mcast queue length,1
+      END
+      */
       const result = await execAsync(cmd).catch((err) => null);
       if (result && result.stdout) {
         const lines = result.stdout.split("\n").map(line => line.trim());
@@ -349,10 +360,6 @@ class VpnManager {
     }).catch(() => {
       return {clients: []};
     })
-  }
-
-  _getStatusLogPath() {
-    return `/var/log/openvpn-status-${this.instanceName}.log`;
   }
 
   async stop() {
