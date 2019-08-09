@@ -3067,6 +3067,15 @@ class netBot extends ControllerBot {
         }
         break;
       }
+      case "dismissVersionUpdate": {
+        (async () => {
+          await sysManager.clearVersionUpdate();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "saveRSAPublicKey": {
         const content = value.pubKey;
         const identity = value.identity;

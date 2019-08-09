@@ -175,7 +175,9 @@ async function run() {
   si.startUpdating();
 
   const firewallaConfig = require('../net2/config.js').getConfig();
-  sysManager.setConfig(firewallaConfig) // update sys config when start
+  sysManager.setConfig(firewallaConfig).then(() => {
+    sysManager.syncVersionUpdate();
+  }) // update sys config when start
 
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();
