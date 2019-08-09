@@ -731,6 +731,9 @@ module.exports = class HostManager {
   async asyncBasicDataForInit(json) {
     const speed = await platform.getNetworkSpeed();
     json.nicSpeed = speed;
+    const versionUpdate = await sysManager.getVersionUpdate();
+    if (versionUpdate)
+      json.versionUpdate = versionUpdate;
   }
 
   async getRecentFlows(json) {
