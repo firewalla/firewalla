@@ -1738,7 +1738,8 @@ class netBot extends ControllerBot {
                   const settings = await ovpnClient.loadSettings();
                   const status = await ovpnClient.status();
                   const stats = await ovpnClient.getStatistics();
-                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, user: user, pass: pass, settings: settings, status: status, stats: stats}, null, callback);
+                  const publicIP = await ovpnClient.getPublicIP();
+                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, user: user, pass: pass, settings: settings, status: status, stats: stats, publicIP: publicIP}, null, callback);
                 }
               }
             })().catch((err) => {
@@ -1797,6 +1798,8 @@ class netBot extends ControllerBot {
                   profile.status = status;
                   const stats = await ovpnClient.getStatistics();
                   profile.stats = stats;
+                  const publicIP = await ovpnClient.getPublicIP();
+                  profile.publicIP = publicIP;
                   return profile;
                 })));
                 break;
@@ -2917,7 +2920,8 @@ class netBot extends ControllerBot {
                     // HTTP 408 stands for request timeout
                     this.simpleTxData(msg, {}, {code: 408, msg: "Failed to start vpn client within 30 seconds."}, callback);
                   } else {
-                    this.simpleTxData(msg, {}, null, callback);
+                    const publicIP = await ovpnClient.getPublicIP();
+                    this.simpleTxData(msg, {publicIP: publicIP}, null, callback);
                   }  
                 }).catch((err) => {
                   log.error(`Failed to start openvpn client for ${profileId}`, err);

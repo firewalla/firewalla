@@ -24,6 +24,7 @@ const f = require('../../net2/Firewalla.js');
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
 const ipTool = require('ip');
+const countryTool = require('../country/country.js');
 
 const instances = {};
 
@@ -35,6 +36,7 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 const readFileAsync = util.promisify(fs.readFile);
 const writeFileAsync = util.promisify(fs.writeFile);
 const accessAsync = util.promisify(fs.access);
+const unlinkAsync = util.promisify(fs.unlink);
 const execAsync = util.promisify(cp.exec);
 
 const SERVICE_NAME = "openvpn_client";
@@ -154,6 +156,10 @@ class OpenVPNClient extends VPNClient {
 
   _getStatusLogPath() {
     return `/var/log/openvpn_client-status-${this.profileId}.log`;
+  }
+
+  _getPublicIPPath() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.public_ip`;
   }
 
   async _parseProfile(ovpnPath) {
@@ -284,24 +290,40 @@ class OpenVPNClient extends VPNClient {
         (async () => {
           const remoteIP = await this.getRemoteIP();
           if (remoteIP !== null && remoteIP !== "") {
-            this._remoteIP = remoteIP;
-            try {
-              // remove two routes from main table which is inserted by OpenVPN client automatically,
-              // otherwise tunnel will be enabled globally
-              const intf = this.getInterfaceName();
-              await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main");
-              await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main");
-            } catch (err) {
-              // these routes may not exist depending on server config
-              log.warn("Failed to remove default vpn client route", err);
-            }
             clearInterval(establishmentTask);
+            this._remoteIP = remoteIP;
+            // remove two routes from main table which is inserted by OpenVPN client automatically,
+            // otherwise tunnel will be enabled globally
+            cmd = `curl -m5 'https://api.ipify.org'`;
+            const publicIP = await execAsync(cmd).then((result) => {
+              return result.stdout;
+            }).catch((err) => {
+              log.error(`Failed to get public IP of ${this.profileId}`, err);
+              return null;
+            });
             const intf = this.getInterfaceName();
+            await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch(() => { log.info("No need to remove route for 0.0.0.0/1") });
+            await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch(() => { log.info("No need to remove route for 128.0.0.0/1") });
+            await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch(() => { log.info("No need to remove default route") });
             // add vpn client specific routes
             const settings = await this.loadSettings();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
             await this._processPushOptions("start");
             this._started = true;
+            await accessAsync(this._getPublicIPPath(), fs.constants.F_OK).then(() => {
+              return unlinkAsync(this._getPublicIPPath());
+            }).catch(() => {});
+            if (publicIP) {
+              const publicIPCountry = {publicIP: publicIP};
+              try {
+                const country = countryTool.getCountry(publicIP);
+                if (country)
+                  publicIPCountry.country = country;
+              } catch (err) {
+                log.warn("Failed to get country of " + publicIP, err);
+              }
+              await writeFileAsync(this._getPublicIPPath(), JSON.stringify(publicIPCountry));
+            }
             resolve(true);
           } else {
             const now = Date.now();
@@ -350,6 +372,15 @@ class OpenVPNClient extends VPNClient {
     } catch (err) {
       return false;
     }
+  }
+
+  async getPublicIP() {
+    const obj = await readFileAsync(this._getPublicIPPath(), 'utf8').then((content) => {
+      return JSON.parse(content);
+    }).catch((err) => {
+      return {};
+    });
+    return obj;
   }
 
   async getStatistics() {
