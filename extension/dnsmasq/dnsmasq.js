@@ -1363,6 +1363,7 @@ module.exports = class DNSMASQ {
           const deviceDomain = deviceDomainMap[host.mac];
           if ((deviceDomain.name != hostName || deviceDomain.ipv4Addr != ipv4Addr)) {
             needUpdate = true;
+            deviceDomain.mac = host.mac;
             deviceDomain.ipv4Addr = ipv4Addr;
             deviceDomain.name = hostName;
             deviceDomain.ts = new Date() / 1000
