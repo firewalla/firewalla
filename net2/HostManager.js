@@ -1345,7 +1345,7 @@ module.exports = class HostManager {
                 titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
                 bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
                 payload: {
-                  profileId: profileId
+                  profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
                 }
               });
               const updatedPolicy = JSON.parse(JSON.stringify(policy));
