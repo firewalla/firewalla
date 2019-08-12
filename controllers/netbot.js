@@ -966,8 +966,12 @@ class netBot extends ControllerBot {
             log.info("set host name alias by mac address", macAddress);
 
             let macObject = {
-              name: data.value.name,
               mac: macAddress
+            }
+            if(data.value.name) {
+              macObject.name = data.value.name
+            } else if(data.value.customizeDomainName) {
+              macObject.customizeDomainName = data.value.customizeDomainName
             }
 
             await hostTool.updateMACKey(macObject, true);

@@ -1342,13 +1342,18 @@ module.exports = class DNSMASQ {
       let needUpdate = false;
       const deviceDomainMap = JSON.parse(json) || {};
       for (const host of hosts) {
-        //if user update device name and ip, should get them from redis not host
-        let hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "name");
+        // customize domain name highest priority
+        let hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "customizeDomainName");
         let ipv4Addr = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "ipv4Addr");
-        hostName = hostName ? hostName : hostTool.getHostname(host);
+        if (!hostName) {
+          //if user update device name and ip, should get them from redis not host
+          hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "name");
+          hostName = hostName ? hostName : hostTool.getHostname(host);
+        }
         ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
         if (!deviceDomainMap[host.mac]) {
           deviceDomainMap[host.mac] = {
+            mac: host.mac,
             ipv4Addr: ipv4Addr,
             name: hostName,
             ts: new Date() / 1000
@@ -1367,17 +1372,28 @@ module.exports = class DNSMASQ {
       if (needUpdate || isInit) {
         await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
         let localDeviceDomain = "", domainMap = {};
+        // domainMap: domain name as key
+        // override duplicated
         for (const key in deviceDomainMap) {
           const deviceDomain = deviceDomainMap[key]
           if (!domainMap[deviceDomain.name]) {
             domainMap[deviceDomain.name] = deviceDomain
           } else if (domainMap[deviceDomain.name] && domainMap[deviceDomain.name].ts < deviceDomain.ts) {
+            const overrideDevice = domainMap[deviceDomain.name]
             domainMap[deviceDomain.name] = deviceDomain
+            await hostTool.updateMACKey({
+              domain: '',
+              mac: overrideDevice.mac
+            }, true);
           }
         }
         for (const key in domainMap) {
           const domain = getCanonicalizedHostname(key.replace(/\s+/g, ".")) + '.lan';
-          localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`
+          localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`;
+          await hostTool.updateMACKey({
+            domain: domain,
+            mac: domainMap[key].mac
+          }, true);
         }
         await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
       }
