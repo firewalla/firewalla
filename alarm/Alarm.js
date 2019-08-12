@@ -376,6 +376,9 @@ class OutboundAlarm extends Alarm {
   constructor(type, timestamp, device, destinationID, info) {
     super(type, timestamp ,device, info);
     this["p.dest.id"] = destinationID;
+    if (this.timestamp) {
+      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+    }
   }
 
   requiredKeys() {
