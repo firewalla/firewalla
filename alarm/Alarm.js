@@ -456,9 +456,6 @@ class OutboundAlarm extends Alarm {
 class LargeTransferAlarm extends OutboundAlarm {
   constructor(timestamp, device, destID, info) {
     super("ALARM_LARGE_UPLOAD", timestamp, device, destID, info);
-    if (info && info["timestamp"]) {
-      this["p.timestampTimezone"] = moment(info["timestamp"]*1000).format('LT')
-    }
   }
 
   getI18NCategory() {

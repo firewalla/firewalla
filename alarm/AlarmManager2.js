@@ -610,9 +610,11 @@ module.exports = class {
 
     let proto = Alarm.mapping[json.type];
     if(proto) {
+      if (json && json.timestamp) {
+        json["p.timestampTimezone"] = moment(json.timestamp*1000).format('LT')
+      }
       let obj = Object.assign(Object.create(proto), json);
       obj.message = obj.localizedMessage(); // append locaized message info
-
       if(obj["p.flow"]) {
         delete obj["p.flow"];
       }
