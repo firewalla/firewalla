@@ -285,18 +285,13 @@ class OpenVPNClient extends VPNClient {
           const remoteIP = await this.getRemoteIP();
           if (remoteIP !== null && remoteIP !== "") {
             this._remoteIP = remoteIP;
-            try {
-              // remove two routes from main table which is inserted by OpenVPN client automatically,
-              // otherwise tunnel will be enabled globally
-              const intf = this.getInterfaceName();
-              await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main");
-              await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main");
-            } catch (err) {
-              // these routes may not exist depending on server config
-              log.warn("Failed to remove default vpn client route", err);
-            }
             clearInterval(establishmentTask);
+            // remove routes from main table which is inserted by OpenVPN client automatically,
+            // otherwise tunnel will be enabled globally
             const intf = this.getInterfaceName();
+            await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => {log.info("No need to remove 0.0.0.0/1 for " + this.profileId)});
+            await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => {log.info("No need to remove 128.0.0.0/1 for " + this.profileId)});
+            await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => {log.info("No need to remove default route for " + this.profileId)});
             // add vpn client specific routes
             const settings = await this.loadSettings();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
