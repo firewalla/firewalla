@@ -2742,6 +2742,13 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      
+    case "boneMessage": {
+      this.boneMsgHandler(value);
+      this.simpleTxData(msg, {}, null, callback);
+      break;
+    }
+      
       case "startProServer": {
         proServer.startProServer();
         break;
