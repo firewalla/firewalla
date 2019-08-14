@@ -421,6 +421,29 @@ module.exports = class {
       });
   }
 
+  async syncVersionUpdate() {
+    const version = this.version();
+    if (!version || version === "unknown") return;
+    const isKnownVersion = await rclient.sismemberAsync("sys:versionHistory", version);
+    if (!isKnownVersion) {
+      const versionDesc = {version: version, time: Math.floor(Date.now() / 1000)};
+      await rclient.setAsync("sys:versionUpdate", JSON.stringify(versionDesc));
+      await rclient.saddAsync("sys:versionHistory", version);
+    }
+  }
+
+  async getVersionUpdate() {
+    return rclient.getAsync("sys:versionUpdate").then((versionDesc) => {
+      return JSON.parse(versionDesc)
+    }).catch((err) => {
+      return null;
+    });
+  }
+
+  async clearVersionUpdate() {
+    return rclient.delAsync("sys:versionUpdate");
+  }
+
   setOperationalState(state, value) {
     this.update((err) => {
       this.sysinfo['oper'][state] = value;

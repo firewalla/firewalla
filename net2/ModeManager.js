@@ -172,7 +172,7 @@ async function _changeToAlternativeIpSubnet() {
     cmd = util.format("sudo bash -c 'echo %s > %s'", altGateway, savedGwFile);
     await execAsync(cmd);
 
-    cmd = util.format("sudo sed -i s/%s/%s/g /etc/resolv.conf", oldGateway, altGateway);
+    cmd = util.format("sudo sed -i --follow-symlinks s/%s/%s/g /etc/resolv.conf", oldGateway, altGateway);
     log.info("Command to update resolv.conf: " + cmd);
     await execAsync(cmd);
     const savedResolvFile = firewalla.getHiddenFolder() + "/run/saved_resolv.conf";
