@@ -988,21 +988,24 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if(scope) {
-          await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
-          await Block.addMacToSet(scope, Block.getMacSet(pid));
+          if(!policy.dnsmasq_entry){
+            await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
+            await Block.addMacToSet(scope, Block.getMacSet(pid));
+          }
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
-            no_dnsmasq_entry: true,
-            no_dnsmasq_reload: true
+            dnsmasq_entry: policy.dnsmasq_entry,
+            scope: scope
           })
         } else {
-          let options = {exactMatch: policy.domainExactMatch};
+          let options = {
+            exactMatch: policy.domainExactMatch,
+            dnsmasq_entry: policy.dnsmasq_entry
+          };
           if (whitelist) {
             options.blockSet = "whitelist_domain_set";
             // whitelist rule should not add dnsmasq filter rule
-            options.no_dnsmasq_entry = true;
-            options.no_dnsmasq_reload = true;
           }
           await domainBlock.blockDomain(target, options);
         }
@@ -1095,17 +1098,20 @@ class PolicyManager2 {
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
-            no_dnsmasq_entry: true,
-            no_dnsmasq_reload: true
+            dnsmasq_entry: policy.dnsmasq_entry,
+            scope: scope
           })
           // destroy domain dst cache, since there may be various domain dst cache in different policies
-          await Block.setupRules(pid, pid, 'hash:ip', whitelist, true);
+          if(!policy.dnsmasq_entry){
+            await Block.setupRules(pid, pid, 'hash:ip', whitelist, true);
+          }
         } else {
-          let options = {exactMatch: policy.domainExactMatch};
+          let options = {
+            exactMatch: policy.domainExactMatch,
+            dnsmasq_entry: policy.dnsmasq_entry
+          };
           if (whitelist) {
             options.blockSet = "whitelist_domain_set";
-            options.no_dnsmasq_entry = true;
-            options.no_dnsmasq_reload = true;
           }
           await domainBlock.unblockDomain(target, options);
         }

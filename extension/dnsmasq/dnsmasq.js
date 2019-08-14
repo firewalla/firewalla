@@ -374,19 +374,20 @@ module.exports = class DNSMASQ {
 
   async addPolicyFilterEntry(domain, options) {
     options = options || {}
-
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
 
-    let entry = null;
-
-    if (options.use_blue_hole) {
-      entry = util.format("address=/%s/%s\n", domain, BLUE_HOLE_IP)
+    let entry = "";
+    const HOLE_IP = options.use_blue_hole ? BLUE_HOLE_IP : BLACK_HOLE_IP;
+    if (options.scope && options.scope.length > 0) {
+      for (const mac of options.scope) {
+        entry += `address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}\n`
+      }
     } else {
-      entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+      entry = `address=/${domain}/${HOLE_IP}\n`
     }
 
     try {
@@ -398,21 +399,27 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async removePolicyFilterEntry(domain) {
+  async removePolicyFilterEntry(domain, options) {
+    options = options || {}
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress");
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-
-    let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
+    let entry = [];
+    const HOLE_IP = options.use_blue_hole ? BLUE_HOLE_IP : BLACK_HOLE_IP;
+    if (options.scope && options.scope.length > 0) {
+      for (const mac of options.scope) {
+        entry.push(`address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}`)
+      }
+    } else {
+      entry.push(`address=/${domain}/${HOLE_IP}`);
+    }
     try {
       let data = await fs.readFileAsync(policyFilterFile, 'utf8');
-
-      let newData = data.split("\n")
-        .filter(line => line !== entry)
-        .join("\n");
-
+      let newData = data.split("\n").filter((line) => {
+        entry.indexOf(line) == -1
+      }).join("\n");
       await fs.writeFileAsync(policyFilterFile, newData);
     } catch (err) {
       log.error("Failed to write policy data file:", err);
