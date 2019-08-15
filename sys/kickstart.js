@@ -150,16 +150,10 @@ diag.start()
 diag.iptablesRedirection()
 
 let eptcloud = new cloud(eptname, null);
-eptcloud.debug(false);
-let service = null;
 
 storage.initSync({
   'dir': dbPath
 });
-
-function pad(value, length) {
-  return (value.toString().length < length) ? pad("0" + value, length) : value;
-}
 
 function generateEncryptionKey(license) {
   // when there is no local license file, use default one

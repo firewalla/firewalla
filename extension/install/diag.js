@@ -31,6 +31,10 @@ class FWDiag {
     return instance;
   }
 
+  getEndpoint() {
+    return fConfig.firewallaDiagServerURL || `https://api.firewalla.com/diag/api/v1/device/`
+  }
+
   async getNetworkInfo() {
     const list = await get_interfaces_list_async();
     for(const inter of list || []) {
@@ -57,7 +61,7 @@ class FWDiag {
   }
 
   async getGatewayName(gatewayIP) {
-    const cmd = `arp ${gatewayIP} | tail -n 1 | awk '{print $1}'`; 
+    const cmd = `arp ${gatewayIP} | tail -n 1 | awk '{print $1}'`;
     // return empty if command execute failed
     const result = await exec(cmd).catch(() => "");
     const name = result.stdout;
@@ -100,7 +104,7 @@ class FWDiag {
 
   async prepareData(payload) {
     const inter = await this.getNetworkInfo();
-    
+
     const ip = inter.ip_address;
     const gateway = inter.gateway_ip;
     const mac = inter.mac_address;
@@ -127,7 +131,7 @@ class FWDiag {
       const rclient = require('../../util/redis_manager.js').getRedisClient();
 
       const options = {
-        uri: `${fConfig.firewallaDiagServerURL}/${data.gw}` || `https://api.firewalla.com/diag/api/v1/device/${data.gw}`,
+        uri:  this.getEndpoint() + data.gw,
         method: 'POST',
         json: data
       }
@@ -154,7 +158,7 @@ class FWDiag {
 
   async prepareHelloData() {
     const inter = await this.getNetworkInfo();
-    
+
     const firewallaIP = inter.ip_address;
     const mac = inter.mac_address;
     const gateway = inter.gateway_ip;
@@ -193,12 +197,23 @@ class FWDiag {
   async sayHello() {
     const data = await this.prepareHelloData();
     const options = {
-      uri: `${fConfig.firewallaDiagServerURL}/hello` || `https://api.firewalla.com/diag/api/v1/device/hello`,
+      uri: this.getEndpoint() + 'hello',
       method: 'POST',
       json: data
     }
     await rp(options);
     log.info("said hello to Firewalla Cloud");
+  }
+
+  async log(level, data) {
+    const sysData = await this.prepareHelloData();
+    const options = {
+      uri: this.getEndpoint() + 'log/' + level,
+      method: 'POST',
+      json: Object.assign({}, data, sysData)
+    }
+    log.info(`Sending diag log, [${level}] ${JSON.stringify(data)}`);
+    await rp(options);
   }
 }
 

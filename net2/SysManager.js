@@ -426,13 +426,18 @@ module.exports = class {
     if (!version || version === "unknown") return;
     const isKnownVersion = await rclient.sismemberAsync("sys:versionHistory", version);
     if (!isKnownVersion) {
-      await rclient.setAsync("sys:versionUpdate", version);
+      const versionDesc = {version: version, time: Math.floor(Date.now() / 1000)};
+      await rclient.setAsync("sys:versionUpdate", JSON.stringify(versionDesc));
       await rclient.saddAsync("sys:versionHistory", version);
     }
   }
 
   async getVersionUpdate() {
-    return rclient.getAsync("sys:versionUpdate");
+    return rclient.getAsync("sys:versionUpdate").then((versionDesc) => {
+      return JSON.parse(versionDesc)
+    }).catch((err) => {
+      return null;
+    });
   }
 
   async clearVersionUpdate() {

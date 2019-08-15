@@ -612,7 +612,6 @@ module.exports = class {
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
       obj.message = obj.localizedMessage(); // append locaized message info
-
       if(obj["p.flow"]) {
         delete obj["p.flow"];
       }
