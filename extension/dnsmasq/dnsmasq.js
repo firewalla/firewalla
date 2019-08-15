@@ -43,6 +43,7 @@ const FILTER_FILE = {
 }
 
 const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
+const policyCategoryFilterFile = FILTER_DIR + "/policy_category_filter.conf";
 
 const pclient = require('../../util/redis_manager.js').getPublishClient();
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
@@ -372,7 +373,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async addPolicyFilterEntry(domain, options) {
+  async addPolicyFilterEntry(domains, options) {
     options = options || {}
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
@@ -382,16 +383,18 @@ module.exports = class DNSMASQ {
 
     let entry = "";
     const HOLE_IP = options.use_blue_hole ? BLUE_HOLE_IP : BLACK_HOLE_IP;
-    if (options.scope && options.scope.length > 0) {
-      for (const mac of options.scope) {
-        entry += `address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}\n`
+    for (const domain of domains) {
+      if (options.scope && options.scope.length > 0) {
+        for (const mac of options.scope) {
+          entry += `address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}\n`
+        }
+      } else {
+        entry = `address=/${domain}/${HOLE_IP}\n`
       }
-    } else {
-      entry = `address=/${domain}/${HOLE_IP}\n`
     }
-
+    const file = options.isCategory ? policyCategoryFilterFile : policyFilterFile;
     try {
-      await fs.appendFileAsync(policyFilterFile, entry);
+      await fs.appendFileAsync(file, entry);
     } catch (err) {
       log.error("Failed to add policy filter entry into file:", err);
     } finally {
@@ -399,7 +402,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async removePolicyFilterEntry(domain, options) {
+  async removePolicyFilterEntry(domains, options) {
     options = options || {}
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress");
@@ -408,19 +411,22 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     let entry = [];
     const HOLE_IP = options.use_blue_hole ? BLUE_HOLE_IP : BLACK_HOLE_IP;
-    if (options.scope && options.scope.length > 0) {
-      for (const mac of options.scope) {
-        entry.push(`address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}`)
+    for (const domain of domains) {
+      if (options.scope && options.scope.length > 0) {
+        for (const mac of options.scope) {
+          entry.push(`address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}`)
+        }
+      } else {
+        entry.push(`address=/${domain}/${HOLE_IP}`);
       }
-    } else {
-      entry.push(`address=/${domain}/${HOLE_IP}`);
     }
+    const file = options.isCategory ? policyCategoryFilterFile : policyFilterFile;
     try {
-      let data = await fs.readFileAsync(policyFilterFile, 'utf8');
+      let data = await fs.readFileAsync(file, 'utf8');
       let newData = data.split("\n").filter((line) => {
         entry.indexOf(line) == -1
       }).join("\n");
-      await fs.writeFileAsync(policyFilterFile, newData);
+      await fs.writeFileAsync(file, newData);
     } catch (err) {
       log.error("Failed to write policy data file:", err);
     } finally {

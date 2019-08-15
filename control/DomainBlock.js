@@ -37,7 +37,6 @@ const sysManager = new SysManager()
 const sem = require('../sensor/SensorEventManager.js').getInstance()
 const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
-
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 
@@ -52,7 +51,7 @@ class DomainBlock {
     log.info(`Implementing Block on ${domain}`);
 
     if (options.dnsmasq_entry) {
-      await dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined);
+      await dnsmasq.addPolicyFilterEntry([domain], options).catch((err) => undefined);
       sem.emitEvent({
         type: 'ReloadDNSRule',
         message: 'DNSMASQ filter rule is updated',
@@ -75,7 +74,7 @@ class DomainBlock {
 
   async unblockDomain(domain, options) {
     if (options.dnsmasq_entry) {
-      await dnsmasq.removePolicyFilterEntry(domain, options).catch((err) => undefined);
+      await dnsmasq.removePolicyFilterEntry([domain], options).catch((err) => undefined);
       sem.emitEvent({
         type: 'ReloadDNSRule',
         message: 'DNSMASQ filter rule is updated',
@@ -253,6 +252,57 @@ class DomainBlock {
         await Block.block(addr, blockSet).catch((err) => undefined);
       }
     }
+  }
+  async blockCategory(category, options) {
+    log.info(`Implementing Block on ${category}`);
+    const domains = await this.getCategoryDomains(category);
+    log.info("getCategoryDomains", category, domains, options)
+    await dnsmasq.addPolicyFilterEntry(domains, options).catch((err) => undefined);
+    sem.emitEvent({
+      type: 'ReloadDNSRule',
+      message: 'DNSMASQ filter rule is updated',
+      toProcess: 'FireMain',
+      suppressEventLogging: true
+    })
+  }
+
+  async unblockCategory(category, options) {
+    const domains = await this.getCategoryDomains(category);
+    log.info("unblockCategory", category, domains, options)
+    await dnsmasq.removePolicyFilterEntry(domains, options).catch((err) => undefined);
+    sem.emitEvent({
+      type: 'ReloadDNSRule',
+      message: 'DNSMASQ filter rule is updated',
+      toProcess: 'FireMain',
+      suppressEventLogging: true,
+    })
+  }
+  async getCategoryDomains(category) {
+    const CategoryUpdater = require('./CategoryUpdater.js');
+    const categoryUpdater = new CategoryUpdater();
+    const domains = await categoryUpdater.getDomainsWithExpireTime(category);
+    const excludedDomains = await categoryUpdater.getExcludedDomains(category);
+    const defaultDomains = await categoryUpdater.getDefaultDomains(category);
+    const includedDomains = await categoryUpdater.getIncludedDomains(category);
+    const finalDomains = domains.filter((de) => {
+      return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
+    }).map((de) => { return de.domain }).concat(defaultDomains, includedDomains)
+
+    function dedupAndPattern(arr) {
+      const pattern = arr.filter((domain) => {
+        return domain.startsWith("*.")
+      }).map((domain) => domain.substring(2))
+      return Array.from(new Set(arr.filter((domain) => {
+        if (!domain.startsWith("*.") && pattern.includes(domain)) {
+          return false;
+        } else if (domain.startsWith("*.")) {
+          return false;
+        } else {
+          return true;
+        }
+      }).concat(pattern)))
+    }
+    return dedupAndPattern(finalDomains)
   }
 }
 

@@ -1023,13 +1023,19 @@ class PolicyManager2 {
         break;
 
       case "category":
-        await Block.setupRules(scope && pid, target, "hash:ip", whitelist);
-        await Block.addMacToSet(scope, Block.getMacSet(pid));
-
-        if (!scope && !whitelist && target === 'default_c') try {
-          await categoryUpdater.iptablesRedirectCategory(target)
-        } catch(err) {
-          log.error("Failed to redirect default_c traffic", err)
+        if(policy.dnsmasq_entry){
+          await domainBlock.blockCategory(target,{
+            scope: scope,
+            isCategory: true
+          });
+        } else {
+          await Block.setupRules(scope && pid, target, "hash:ip", whitelist);
+          await Block.addMacToSet(scope, Block.getMacSet(pid));
+          if (!scope && !whitelist && target === 'default_c') try {
+            await categoryUpdater.iptablesRedirectCategory(target)
+          } catch(err) {
+            log.error("Failed to redirect default_c traffic", err)
+          }
         }
         break;
 
@@ -1129,15 +1135,20 @@ class PolicyManager2 {
         break;
 
       case "category":
-        await Block.setupRules(scope && pid, target, 'hash:ip', whitelist, true, false);
-
-        if (!scope && !whitelist && target === 'default_c') try {
-          await categoryUpdater.iptablesUnredirectCategory(target)
-        } catch(err) {
-          log.error("Failed to redirect default_c traffic", err)
+        if(policy.dnsmasq_entry){
+          await domainBlock.unblockCategory(target,{
+            scope: scope,
+            isCategory: true
+          });
+        }else{
+          await Block.setupRules(scope && pid, target, 'hash:ip', whitelist, true, false);
+          if (!scope && !whitelist && target === 'default_c') try {
+            await categoryUpdater.iptablesUnredirectCategory(target)
+          } catch(err) {
+            log.error("Failed to redirect default_c traffic", err)
+          }
+          break;
         }
-        break;
-
       case "country":
         await Block.setupRules(scope && pid, countryUpdater.getCategory(target), 'hash:net', whitelist, true, false);
         break;
