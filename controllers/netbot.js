@@ -2742,6 +2742,13 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      
+    case "boneMessage": {
+      this.boneMsgHandler(value);
+      this.simpleTxData(msg, {}, null, callback);
+      break;
+    }
+      
       case "startProServer": {
         proServer.startProServer();
         break;
@@ -2848,11 +2855,36 @@ class netBot extends ControllerBot {
       case "vpnProfile:list": {
         (async () => {
           const allSettings = await VpnManager.getAllSettings();
+          const statistics = await new VpnManager().getStatistics();
           const vpnProfiles = [];
           for (let cn in allSettings) {
-            vpnProfiles.push({cn: cn, settings: allSettings[cn]});
+            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => c.cn === cn) || []});
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnConnection:kill": {
+        if (!value.addr) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'addr' is not specified."}, callback);
+          return;
+        }
+        const addrPort = value.addr.split(":");
+        if (addrPort.length != 2) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'addr' should consist of '<ip address>:<port>"}, callback);
+          return;
+        }
+        const addr = addrPort[0];
+        const port = addrPort[1];
+        if (!iptool.isV4Format(addr) || Number.isNaN(port) || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 65535) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "IP address should be IPv4 format and port should be in [0, 65535]"}, callback);
+          return;
+        }
+        (async () => {
+          await new VpnManager().killClient(value.addr);
+          this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
@@ -2963,7 +2995,7 @@ class netBot extends ControllerBot {
                 const cmd = "mkdir -p " + dirPath;
                 await exec(cmd);
                 const files = await readdirAsync(dirPath);
-                const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+                const ovpns = files.filter(filename => filename !== `${profileId}.ovpn` && filename.endsWith('.ovpn'));
                 if (ovpns && ovpns.length >= 10) {
                   this.simpleTxData(msg, {}, {code: 429, msg: "At most 10 profiles can be saved on Firewalla"}, callback);
                 } else {
@@ -3040,6 +3072,15 @@ class netBot extends ControllerBot {
           default:
             this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
         }
+        break;
+      }
+      case "dismissVersionUpdate": {
+        (async () => {
+          await sysManager.clearVersionUpdate();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       case "saveRSAPublicKey": {
