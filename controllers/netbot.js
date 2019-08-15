@@ -2864,7 +2864,8 @@ class netBot extends ControllerBot {
           const statistics = await new VpnManager().getStatistics();
           const vpnProfiles = [];
           for (let cn in allSettings) {
-            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => c.cn === cn) || []});
+            // special handling for common name starting with fishboneVPN1
+            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || []});
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
         })().catch((err) => {
