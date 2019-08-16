@@ -565,7 +565,7 @@ class netBot extends ControllerBot {
 
       if (alarm.aid) {
         data.aid = alarm.aid;
-        data.alarmID = alarm.alarmID;
+        data.alarmID = alarm.aid;
       }
 
       if (alarm.result_method === "auto" && alarm.result === "block") {
