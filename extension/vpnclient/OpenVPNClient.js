@@ -24,6 +24,7 @@ const f = require('../../net2/Firewalla.js');
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
 const ipTool = require('ip');
+const iptables = require('../../net2/Iptables.js');
 
 const instances = {};
 
@@ -295,6 +296,12 @@ class OpenVPNClient extends VPNClient {
             // add vpn client specific routes
             const settings = await this.loadSettings();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
+            const vpnSubnet = await this.getVPNSubnet();
+            if (vpnSubnet && vpnSubnet.length != 0) {
+              await iptables.dhcpSubnetChangeAsync(vpnSubnet, true).catch((err) => {
+                log.error("Failed to add SNAT rule for " + vpnSubnet, err);
+              });
+            }
             await this._processPushOptions("start");
             this._started = true;
             resolve(true);
@@ -329,6 +336,10 @@ class OpenVPNClient extends VPNClient {
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
     this._started = false;
+    const vpnSubnet = await this.getVPNSubnet();
+    if (vpnSubnet && vpnSubnet.length != 0) {
+      await iptables.dhcpSubnetChangeAsync(vpnSubnet, false).catch((err) => {});
+    }
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await this._processPushOptions("stop");
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
@@ -393,6 +404,18 @@ class OpenVPNClient extends VPNClient {
       log.error("Failed to parse OpenVPN client status file for " + this.profileId, err);
       return {};
     }
+  }
+
+  async getVPNSubnet() {
+    // extract vpn subnet from 
+    // 10.162.35.0/24 via 10.162.35.21 dev vpn_ff1a_9BE25
+    const cmd = util.format(`ip r | grep -v default | grep ${this.getInterfaceName()} | grep via | awk '{print $1}'`);
+    return execAsync(cmd).then((result) => {
+      return result.stdout.trim();
+    }).catch((err) => {
+      log.error("Failed to get vpn subnet for " + this.profileId, err);
+      return null;
+    });
   }
 
   async getRemoteIP() {
