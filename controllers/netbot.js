@@ -2942,14 +2942,13 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup().then(async () => {
-                  const stats = await ovpnClient.getStatistics();
-                  await ovpnClient.stop();
-                  this.simpleTxData(msg, {stats: stats}, null, callback);
-                }).catch((err) => {
-                  log.error(`Failed to stop openvpn client for ${profileId}`, err);
-                  this.simpleTxData(msg, {}, {code: 400, msg: err}, callback);
+                // error in setup should not interrupt stop vpn client
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
                 });
+                const stats = await ovpnClient.getStatistics();
+                await ovpnClient.stop();
+                this.simpleTxData(msg, {stats: stats}, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
               })
