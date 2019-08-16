@@ -39,10 +39,23 @@ const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
-
 class DomainBlock {
 
   constructor() {
+    sem.once('IPTABLES_READY', async () => {
+      sem.on('UPDATE_CATEGORY_DEFAULT_DOMAIN', async (event) => {
+        if (event.category) {
+          const PM2 = require('../alarm/PolicyManager2.js');
+          const pm2 = new PM2();
+          const policies = await pm2.loadActivePoliciesAsync();
+          for (const policy of policies) {
+            if (policy.type == "category" && policy.target == event.category && policy.dnsmasq_entry) {
+              await pm2.tryPolicyEnforcement(policy, 'reenforce', policy)
+            }
+          }
+        }
+      })
+    })
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
@@ -254,9 +267,7 @@ class DomainBlock {
     }
   }
   async blockCategory(category, options) {
-    log.info(`Implementing Block on ${category}`);
     const domains = await this.getCategoryDomains(category);
-    log.info("getCategoryDomains", category, domains, options)
     await dnsmasq.addPolicyFilterEntry(domains, options).catch((err) => undefined);
     sem.emitEvent({
       type: 'ReloadDNSRule',
@@ -264,11 +275,32 @@ class DomainBlock {
       toProcess: 'FireMain',
       suppressEventLogging: true
     })
+    sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', async (event) => {
+      let domain;
+      switch (event.action) {
+        case "addIncludeDomain":
+        case "removeExcludeDomain":
+          domain = this.patternDomain(event.domain);
+          this.blockDomain(domain, options);
+          break;
+        case "removeIncludeDomain":
+        case "addExcludeDomain":
+          //there are two rules added by user in same category: *.a.com and a.com
+          //if user only remove rule: *.a.com
+          //a.com should be blocked
+          const finalDomains = await this.getCategoryDomains(event.category);
+          domain = this.patternDomain(event.domain);
+          if (finalDomains.indexOf(domain) == -1) {
+            this.unblockDomain(domain, options)
+          }
+          break;
+        default: ;
+      }
+    });
   }
 
   async unblockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
-    log.info("unblockCategory", category, domains, options)
     await dnsmasq.removePolicyFilterEntry(domains, options).catch((err) => undefined);
     sem.emitEvent({
       type: 'ReloadDNSRule',
@@ -303,6 +335,13 @@ class DomainBlock {
       }).concat(pattern)))
     }
     return dedupAndPattern(finalDomains)
+  }
+  patternDomain(domain) {
+    domain = domain || "";
+    if (domain.startsWith("*.")) {
+      domain = domain.substring(2);
+    }
+    return domain;
   }
 }
 

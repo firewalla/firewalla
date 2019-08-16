@@ -43,7 +43,6 @@ const FILTER_FILE = {
 }
 
 const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
-const policyCategoryFilterFile = FILTER_DIR + "/policy_category_filter.conf";
 
 const pclient = require('../../util/redis_manager.js').getPublishClient();
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
@@ -374,6 +373,7 @@ module.exports = class DNSMASQ {
   }
 
   async addPolicyFilterEntry(domains, options) {
+    log.info("addPolicyFilterEntry", domains, options)
     options = options || {}
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
@@ -389,10 +389,10 @@ module.exports = class DNSMASQ {
           entry += `address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}\n`
         }
       } else {
-        entry = `address=/${domain}/${HOLE_IP}\n`
+        entry += `address=/${domain}/${HOLE_IP}\n`
       }
     }
-    const file = options.isCategory ? policyCategoryFilterFile : policyFilterFile;
+    const file = options.isCategory ? `${FILTER_DIR}/policy_${options.category}_filter.conf` : policyFilterFile;
     try {
       await fs.appendFileAsync(file, entry);
     } catch (err) {
@@ -403,6 +403,7 @@ module.exports = class DNSMASQ {
   }
 
   async removePolicyFilterEntry(domains, options) {
+    log.info("removePolicyFilterEntry", domains, options)
     options = options || {}
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress");
@@ -420,11 +421,11 @@ module.exports = class DNSMASQ {
         entry.push(`address=/${domain}/${HOLE_IP}`);
       }
     }
-    const file = options.isCategory ? policyCategoryFilterFile : policyFilterFile;
+    const file = options.isCategory ? `${FILTER_DIR}/policy_${options.category}_filter.conf` : policyFilterFile;
     try {
       let data = await fs.readFileAsync(file, 'utf8');
       let newData = data.split("\n").filter((line) => {
-        entry.indexOf(line) == -1
+        return entry.indexOf(line) == -1
       }).join("\n");
       await fs.writeFileAsync(file, newData);
     } catch (err) {

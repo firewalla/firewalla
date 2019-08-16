@@ -1026,7 +1026,9 @@ class PolicyManager2 {
         if(policy.dnsmasq_entry){
           await domainBlock.blockCategory(target,{
             scope: scope,
-            isCategory: true
+            isCategory: true,
+            dnsmasq_entry: policy.dnsmasq_entry,
+            category: target
           });
         } else {
           await Block.setupRules(scope && pid, target, "hash:ip", whitelist);
@@ -1138,7 +1140,9 @@ class PolicyManager2 {
         if(policy.dnsmasq_entry){
           await domainBlock.unblockCategory(target,{
             scope: scope,
-            isCategory: true
+            isCategory: true,
+            dnsmasq_entry: policy.dnsmasq_entry,
+            category: target
           });
         }else{
           await Block.setupRules(scope && pid, target, 'hash:ip', whitelist, true, false);
