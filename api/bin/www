@@ -114,7 +114,7 @@ function runLocalAPI() {
    * Listen on provided port, on all network interfaces.
    */
 
-  if(f.isProductionOrBeta()) {
+  if(f.isProductionOrBetaOrAlpha()) {
     serverForLocalAPI.listen(portForLocalAPI, 'localhost')
   } else {
     serverForLocalAPI.listen(portForLocalAPI)
