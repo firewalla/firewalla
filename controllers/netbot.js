@@ -634,7 +634,7 @@ class netBot extends ControllerBot {
       }
       else if (upgradeInfo.upgraded) {
         let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
-          version: f.isProductionOrBeta() ? fc.getSimpleVersion() : upgradeInfo.to
+          version: fc.getSimpleVersion()
         });
         this.tx(this.primarygid, "200", msg);
         upgradeManager.updateVersionTag();
