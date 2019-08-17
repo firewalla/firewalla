@@ -143,6 +143,11 @@ function isProductionOrBeta() {
   return isProduction() || isBeta()
 }
 
+function isProductionOrBetaOrAlpha() {
+  return isProduction() || isBeta() || isAlpha()
+}
+
+
 function getReleaseType() {
   if(isProduction()) {
     return "prod"
@@ -344,6 +349,7 @@ module.exports = {
   isAlpha: isAlpha,
   isDevelopmentVersion:isDevelopmentVersion,
   isProductionOrBeta:isProductionOrBeta,
+  isProductionOrBetaOrAlpha:isProductionOrBetaOrAlpha,
 
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType,

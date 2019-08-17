@@ -565,7 +565,7 @@ class netBot extends ControllerBot {
 
       if (alarm.aid) {
         data.aid = alarm.aid;
-        data.alarmID = alarm.alarmID;
+        data.alarmID = alarm.aid;
       }
 
       if (alarm.result_method === "auto" && alarm.result === "block") {
@@ -634,7 +634,7 @@ class netBot extends ControllerBot {
       }
       else if (upgradeInfo.upgraded) {
         let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
-          version: f.isProductionOrBeta() ? fc.getSimpleVersion() : upgradeInfo.to
+          version: fc.getSimpleVersion()
         });
         this.tx(this.primarygid, "200", msg);
         upgradeManager.updateVersionTag();
@@ -2858,7 +2858,8 @@ class netBot extends ControllerBot {
           const statistics = await new VpnManager().getStatistics();
           const vpnProfiles = [];
           for (let cn in allSettings) {
-            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => c.cn === cn) || []});
+            // special handling for common name starting with fishboneVPN1
+            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || []});
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
         })().catch((err) => {
@@ -2941,14 +2942,13 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup().then(async () => {
-                  const stats = await ovpnClient.getStatistics();
-                  await ovpnClient.stop();
-                  this.simpleTxData(msg, {stats: stats}, null, callback);
-                }).catch((err) => {
-                  log.error(`Failed to stop openvpn client for ${profileId}`, err);
-                  this.simpleTxData(msg, {}, {code: 400, msg: err}, callback);
+                // error in setup should not interrupt stop vpn client
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
                 });
+                const stats = await ovpnClient.getStatistics();
+                await ovpnClient.stop();
+                this.simpleTxData(msg, {stats: stats}, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
               })
