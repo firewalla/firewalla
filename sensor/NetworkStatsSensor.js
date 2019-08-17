@@ -73,7 +73,7 @@ class NetworkStatsSensor extends Sensor {
       rclient.zadd(redisKey, Math.floor(new Date() / 1000), data.time);
     });
     this.pings[type].on('fail', () => {
-      rclient.zadd(redisKey, Math.floor(new Date() / 1000), 0);
+      rclient.zadd(redisKey, Math.floor(new Date() / 1000), -1); // -1 as unreachable
     });
   }
   
@@ -84,7 +84,7 @@ class NetworkStatsSensor extends Sensor {
   testDNSServerPing() {
     const dnses = sysManager.myDNS();
     if(!_.isEmpty(dnses)) {
-      this.testPingPerf("dns", dnses[0]);
+      this.testPingPerf("dns", dnses[0], "perf:ping:dns");
     }
   }
 
