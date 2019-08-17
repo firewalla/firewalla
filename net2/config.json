@@ -374,6 +374,7 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "NetworkStatsSensor": {},
     "ICMP6Sensor": {},
     "CPUSensor": {
       "interval": 60,
