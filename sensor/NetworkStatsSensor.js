@@ -36,30 +36,65 @@ const fc = require('../net2/config.js');
 
 const featureName = "network_stats";
 
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
 const Ping = require('../extension/ping/Ping.js');
-Ping.configure();
 
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager();
 
+const _ = require('lodash');
+
 class NetworkStatsSensor extends Sensor {
   async run() {
+    if(this.config.pingConfig) {
+      Ping.configure(this.config.pingConfig);
+    } else {
+      Ping.configure();
+    }
+    this.pings = {};
+    
     this.testGateway();
+    this.testDNSServerPing();
   }
 
   async apiRun() {
 
   }
 
-  async testGateway() {
-    const ping = new Ping(sysManager.myGateway());
-    ping.on('ping', (data) => {
-      log.info('Ping %s: time: %d ms', data.host, data.time);
+  testPingPerf(type, target, redisKey) {
+    if(this.pings[type]) {
+      this.pings[type].stop();
+      delete this.pings[type];
+    }
+
+    this.pings[type] = new Ping(sysManager.myGateway());
+    this.pings[type].on('ping', (data) => {
+      rclient.zadd(redisKey, Math.floor(new Date() / 1000), data.time);
     });
-    ping.on('fail', (data) => {
-      log.info('fail', data);
+    this.pings[type].on('fail', () => {
+      rclient.zadd(redisKey, Math.floor(new Date() / 1000), 0);
     });
-  } 
+  }
+  
+  testGateway() {
+    this.testPingPerf("gateway", sysManager.myGateway(), "perf:ping:gateway");
+  }
+
+  testDNSServerPing() {
+    const dnses = sysManager.myDNS();
+    if(!_.isEmpty(dnses)) {
+      this.testPingPerf("dns", dnses[0]);
+    }
+  }
+
+  testDNSServerDNS() {
+    
+  }
+
+  testFirewallaPing() {
+    
+  }
 }
 
 module.exports = NetworkStatsSensor;

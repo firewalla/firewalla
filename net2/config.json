@@ -374,7 +374,12 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
-    "NetworkStatsSensor": {},
+    "NetworkStatsSensor": {
+      "internetTestUrls": {
+        "google": "http://google.com",
+        "github": "http://github.com"
+      }
+    },
     "ICMP6Sensor": {},
     "CPUSensor": {
       "interval": 60,
@@ -463,6 +468,10 @@
       "safe_urls": {
         "expires": 604800,
         "count": 1000
+      },
+      "perf": {
+        "expires": 86400,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
