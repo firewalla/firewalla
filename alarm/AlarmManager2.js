@@ -248,20 +248,24 @@ module.exports = class {
     });
   }
 
-  async ignoreAlarm(alarmID, isBatch) {
+  async ignoreAlarm(alarmID, info) {
     log.info("Going to ignore alarm " + alarmID);
-
+    const userFeedback = info.info;
+    const matchAll = info.matchAll;
     const alarm = await this.getAlarm(alarmID)
     if (!alarm) {
       throw new Error(`Invalid alarm id: ${alarmID}`)
     }
-    if (isBatch && _.isString(alarm["p.device.mac"])) {
-      const relatedAlarmIds = await this.loadRelatedAlarms(alarm);
+    if (matchAll) {
+      const relatedAlarmIds = await this.loadRelatedAlarms(alarm, userFeedback);
+      return
       for (const aid of relatedAlarmIds) {
         await this.archiveAlarm(aid)
       }
+      return relatedAlarmIds
     } else {
       await this.archiveAlarm(alarm.aid)
+      return [alarm.aid]
     }
   }
 
@@ -1230,9 +1234,6 @@ module.exports = class {
 
     let userFeedback = info.info;
 
-    let i_target = null;
-    let i_type = null;
-
     this.getAlarm(alarmID)
       .then((alarm) => {
 
@@ -1244,160 +1245,7 @@ module.exports = class {
           return;
         }
 
-        //IGNORE
-        switch (alarm.type) {
-          case "ALARM_NEW_DEVICE":
-            i_type = "mac"; // place holder, not going to be matched by any alarm/policy
-            i_target = alarm["p.device.mac"];
-            break;
-
-          case "ALARM_UPNP":
-            i_type = "devicePort";
-
-            if (userFeedback) {
-              switch (userFeedback.type) {
-                case "deviceAllPorts":
-                  i_type = "deviceAllPorts";
-                  break;
-                case "deviceAppPort":
-                  i_type = "deviceAppPort";
-                  break;
-                default:
-                  // do nothing
-                  break;
-              }
-            }
-
-            // policy should be created with mac
-            if (alarm["p.device.mac"]) {
-              i_target = util.format("%s:%s:%s",
-                alarm["p.device.mac"],
-                alarm["p.upnp.private.port"],
-                alarm["p.upnp.protocol"]
-              )
-            } else {
-              let targetIp = alarm["p.device.ip"];
-              dnsManager.resolveLocalHost(targetIp, (err, result) => {
-                if (err || result == null) {
-                  log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
-                  callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
-                  return;
-                }
-
-                i_target = util.format("%s:%s:%s",
-                  result.mac,
-                  alarm["p.upnp.private.port"],
-                  alarm["p.upnp.protocol"]
-                )
-              })
-            }
-            break;
-
-          default:
-
-            if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
-              i_type = "ip";
-              i_target = alarm["p.dest.ip"];
-            } else {
-              i_type = "dns";
-              i_target = alarm["p.dest.name"];
-            }
-
-            if (userFeedback) {
-              switch (userFeedback.type) {
-                case "domain":
-                case "dns":
-                  i_type = "dns"
-                  i_target = userFeedback.target
-                  break
-                case "ip":
-                  i_type = "ip"
-                  i_target = userFeedback.target
-                  break
-                case "category":
-                  i_type = "category";
-                  i_target = userFeedback.target;
-                  break;
-                case "country":
-                  i_type = "country";
-                  i_target = userFeedback.target;
-                  break;
-                default:
-                  break
-              }
-            }
-            break;
-        }
-
-        if (!i_type || !i_target) {
-          callback(new Error("Unsupported Action!"));
-          return;
-        }
-
-        // TODO: may need to define exception at more fine grain level
-        let e = new Exception({
-          type: alarm.type,
-          alarm_type: alarm.type,
-          reason: alarm.type,
-          aid: alarmID,
-          "if.type": i_type,
-          "if.target": i_target,
-          category: (userFeedback && userFeedback.category) || ""
-        });
-
-        switch (i_type) {
-          case "mac":
-            e["p.device.mac"] = alarm["p.device.mac"];
-            e["target_name"] = alarm["p.device.name"];
-            e["target_ip"] = alarm["p.device.ip"];
-            break;
-          case "ip":
-            e["p.dest.ip"] = alarm["p.dest.ip"];
-            e["target_name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
-            e["target_ip"] = alarm["p.dest.ip"];
-            break;
-          case "domain":
-          case "dns":
-            e["p.dest.name"] = `*.${i_target}` // add *. prefix to domain for dns matching
-            e["target_name"] = `*.${i_target}`
-            e["target_ip"] = alarm["p.dest.ip"];
-            break;
-          case "category":
-            e["p.dest.category"] = i_target;
-            e["target_name"] = i_target;
-            e["target_ip"] = alarm["p.dest.ip"];
-            break;
-          case "country":
-            e["p.dest.country"] = i_target;
-            e["target_name"] = i_target;
-            e["target_ip"] = alarm["p.dest.ip"];
-            break;
-          case "devicePort":
-            e["p.device.mac"] = alarm["p.device.mac"];
-            if (alarm.type === 'ALARM_UPNP') {
-              e["p.upnp.private.port"] = alarm["p.upnp.private.port"];
-              e["p.upnp.protocol"] = alarm["p.upnp.protocol"];
-            }
-            break
-          case "deviceAllPorts":
-            e["p.device.mac"] = alarm["p.device.mac"];
-            break;
-          case "deviceAppPort":
-            e["p.device.mac"] = alarm["p.device.mac"];
-            if (alarm.type === 'ALARM_UPNP') {
-              e["p.upnp.description"] = alarm["p.upnp.description"];
-            }
-            break;
-          default:
-            // not supported
-            break;
-        }
-
-        if (userFeedback && userFeedback.device) {
-          e["p.device.mac"] = userFeedback.device; // limit exception to a single device
-        }
-
-        log.info("Exception object:", e);
+        const e = this.createException(alarm, userFeedback, callback);
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
@@ -1613,14 +1461,166 @@ module.exports = class {
     return alarm;
   }
 
-  async loadRelatedAlarms(originAlarm) {
-    let alarms = await this.loadRecentAlarmsAsync("-inf");
-    let related = alarms
-      .filter(alarm => _.isString(alarm['p.device.mac']) &&
-        alarm['p.device.mac'].toUpperCase() === originAlarm['p.device.mac'].toUpperCase() &&
-        alarm['type'] === originAlarm['type']
-      )
-      .map(alarm => alarm.aid);
+  async loadRelatedAlarms(alarm, userFeedback) {
+    const alarms = await this.loadRecentAlarmsAsync("-inf");
+    const e = this.createException(alarm, userFeedback);
+    if (!e) new Error("Unsupported Action!");
+    const related = alarms
+      .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
+  }
+  createException(alarm, userFeedback, callback) {
+    let i_target = null;
+    let i_type = null;
+    //IGNORE
+    switch (alarm.type) {
+      case "ALARM_NEW_DEVICE":
+      case "ALARM_DEVICE_OFFLINE":
+      case "ALARM_DEVICE_BACK_ONLINE":
+        i_type = "mac"; // place holder, not going to be matched by any alarm/policy
+        i_target = alarm["p.device.mac"];
+        break;
+      case "ALARM_UPNP":
+        i_type = "devicePort";
+        if (userFeedback) {
+          switch (userFeedback.type) {
+            case "deviceAllPorts":
+              i_type = "deviceAllPorts";
+              break;
+            case "deviceAppPort":
+              i_type = "deviceAppPort";
+              break;
+            default:
+              // do nothing
+              break;
+          }
+        }
+        // policy should be created with mac
+        if (alarm["p.device.mac"]) {
+          i_target = util.format("%s:%s:%s",
+            alarm["p.device.mac"],
+            alarm["p.upnp.private.port"],
+            alarm["p.upnp.protocol"]
+          )
+        } else {
+          let targetIp = alarm["p.device.ip"];
+          dnsManager.resolveLocalHost(targetIp, (err, result) => {
+            if (err || result == null) {
+              log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
+              callback && callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
+              return;
+            }
+            i_target = util.format("%s:%s:%s",
+              result.mac,
+              alarm["p.upnp.private.port"],
+              alarm["p.upnp.protocol"]
+            )
+          })
+        }
+        break;
+      default:
+        if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
+          i_type = "ip";
+          i_target = alarm["p.dest.ip"];
+        } else {
+          i_type = "dns";
+          i_target = alarm["p.dest.name"];
+        }
+        if (userFeedback) {
+          switch (userFeedback.type) {
+            case "domain":
+            case "dns":
+              i_type = "dns"
+              i_target = userFeedback.target
+              break
+            case "ip":
+              i_type = "ip"
+              i_target = userFeedback.target
+              break
+            case "category":
+              i_type = "category";
+              i_target = userFeedback.target;
+              break;
+            case "country":
+              i_type = "country";
+              i_target = userFeedback.target;
+              break;
+            default:
+              break
+          }
+        }
+        break;
+    }
+    if (userFeedback && userFeedback.archiveAlarmByType) {
+      //if user archive all ALARM_DEVICE_OFFLINE
+      //only match alarm type, ignore p.device.mac,p.dest.ip, etc
+      i_type = alarm.type;
+    }
+    if (!i_type || !i_target) {
+      callback && callback(new Error("Unsupported Action!"));
+      return;
+    }
+    // TODO: may need to define exception at more fine grain level
+    let e = new Exception({
+      type: alarm.type,
+      alarm_type: alarm.type,
+      reason: alarm.type,
+      aid: alarm.aid,
+      "if.type": i_type,
+      "if.target": i_target,
+      category: (userFeedback && userFeedback.category) || ""
+    });
+    switch (i_type) {
+      case "mac":
+        e["p.device.mac"] = alarm["p.device.mac"];
+        e["target_name"] = alarm["p.device.name"];
+        e["target_ip"] = alarm["p.device.ip"];
+        break;
+      case "ip":
+        e["p.dest.ip"] = alarm["p.dest.ip"];
+        e["target_name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
+        e["target_ip"] = alarm["p.dest.ip"];
+        break;
+      case "domain":
+      case "dns":
+        e["p.dest.name"] = `*.${i_target}` // add *. prefix to domain for dns matching
+        e["target_name"] = `*.${i_target}`
+        e["target_ip"] = alarm["p.dest.ip"];
+        break;
+      case "category":
+        e["p.dest.category"] = i_target;
+        e["target_name"] = i_target;
+        e["target_ip"] = alarm["p.dest.ip"];
+        break;
+      case "country":
+        e["p.dest.country"] = i_target;
+        e["target_name"] = i_target;
+        e["target_ip"] = alarm["p.dest.ip"];
+        break;
+      case "devicePort":
+        e["p.device.mac"] = alarm["p.device.mac"];
+        if (alarm.type === 'ALARM_UPNP') {
+          e["p.upnp.private.port"] = alarm["p.upnp.private.port"];
+          e["p.upnp.protocol"] = alarm["p.upnp.protocol"];
+        }
+        break
+      case "deviceAllPorts":
+        e["p.device.mac"] = alarm["p.device.mac"];
+        break;
+      case "deviceAppPort":
+        e["p.device.mac"] = alarm["p.device.mac"];
+        if (alarm.type === 'ALARM_UPNP') {
+          e["p.upnp.description"] = alarm["p.upnp.description"];
+        }
+        break;
+      default:
+        // not supported
+        break;
+    }
+    if (userFeedback && userFeedback.device && !userFeedback.archiveAlarmByType) {
+      e["p.device.mac"] = userFeedback.device; // limit exception to a single device
+    }
+    log.info("Exception object:", e);
+    return e;
   }
 }

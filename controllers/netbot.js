@@ -2257,8 +2257,8 @@ class netBot extends ControllerBot {
 
       case "alarm:ignore":
         (async() => {
-          await am2.ignoreAlarm(value.alarmID, value.isBatch)
-          this.simpleTxData(msg, {}, null, callback)
+          const ignoreIds = await am2.ignoreAlarm(value.alarmID, value || {})
+          this.simpleTxData(msg, {ignoreIds:ignoreIds}, null, callback)
         })().catch((err) => {
           log.error("Failed to ignore alarm:", err)
           this.simpleTxData(msg, {}, err, callback)
