@@ -258,7 +258,6 @@ module.exports = class {
     }
     if (matchAll) {
       const relatedAlarmIds = await this.loadRelatedAlarms(alarm, userFeedback);
-      return
       for (const aid of relatedAlarmIds) {
         await this.archiveAlarm(aid)
       }
