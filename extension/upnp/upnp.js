@@ -20,7 +20,7 @@
  * WARNING:
  *   UPNP operations must be isolated to be one process.  NATPMP requires
  *   openning a port, which may cause trouble if two processes are doing
- *   the same 
+ *   the same
  */
 
 'use strict';
@@ -35,8 +35,6 @@ const sysManager = new SysManager();
 
 const _ = require('lodash');
 
-const f = require('../../net2/Firewalla.js');
-
 const natpmp = require('./nat-pmp');
 const natupnp = require('./nat-upnp');
 
@@ -44,7 +42,6 @@ const upnpClient = natupnp.createClient();
 //upnpClient.timeout = 10000; // set timeout to 10 seconds to avoid timeout too often
 const natpmpTimeout = 86400;  // 1 day = 24 * 60 * 60 seconds
 
-let upnpIntervalHandler = null;
 let upnpMappings = [];
 const upnpCheckInterval = 15 * 60 * 1000 // 15 mins
 
@@ -63,7 +60,7 @@ module.exports = class {
       // periodical checks whether all upnp mappings registered are alive
       // if not, adds back
       if (process.title === "FireMain") {
-        upnpIntervalHandler = setInterval(
+        this.upnpIntervalHandler = setInterval(
           () => {
             log.info("UPnP periodical check starts")
             if (upnpMappings.isEmpty) {
@@ -112,22 +109,25 @@ module.exports = class {
     }
   }
 
-  /* return if NATPMP or UPNP 
-   *  
+  /* return if NATPMP or UPNP
+   *
    */
   getCapability(callback) {
     callback = callback || function() { };
     try {
       upnpClient.externalIp((err, ip) => {
         if (err != null || ip == null) {
+          log.info('UPnP test failed')
           this.upnpEnabled = false;
           if (this.natpmpClient()) {
 
             this.natpmpClient().externalIp((err, info) => {
               if (err == null && info != null) {
                 this.natpmpIP = info.ip.join('.');
+                log.info('NAT-PMP test passed')
                 this.natpmpEnabled = true;
               } else {
+                log.info('NAT-PMP test failed')
                 this.natpmpEnabled = false;
               }
               callback(null, this.upnpEnabled, this.natpmpEnabled);
@@ -136,6 +136,7 @@ module.exports = class {
         } else {
           this.upnpIP = ip;
           this.upnpEnabled = true;
+          log.info('UPnP test passed')
           callback(null, this.upnpEnabled, this.natpmpEnabled);
         }
       });
@@ -181,7 +182,7 @@ module.exports = class {
         callback(err);
         return;
       }
-      log.info(util.format("Port mapping [%s, %s, %s] is added successfully.", 
+      log.info(util.format("Port mapping [%s, %s, %s] is added successfully.",
         protocol, localPort, externalPort));
 
       let mappingObj = { protocol, localPort, externalPort, description };

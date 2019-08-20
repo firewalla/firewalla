@@ -489,7 +489,7 @@ module.exports = class {
   isIPv6GloballyConnected() {
     let ipv6Addrs = this.myIp6();
     if (ipv6Addrs && ipv6Addrs.length>0) {
-      for (ip6 in ipv6Addrs) {
+      for (const ip6 in ipv6Addrs) {
         if (!ip6.startsWith("fe80")) {
           return true;
         }
