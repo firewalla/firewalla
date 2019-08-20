@@ -203,9 +203,9 @@ class App {
       return null;
     }
   }
-  
+
   routes() {
-    this.router = express.Router();    
+    this.router = express.Router();
 
     this.app.use('/' + VIEW_PATH, this.router);
     this.app.use('/' + STATIC_PATH, express.static(path.join(__dirname, STATIC_PATH)));
@@ -241,12 +241,12 @@ class App {
         res.json(this.broadcastInfo);
       } else {
         res.status(501).send('');
-      }      
+      }
     });
 
     this.app.use('*', (req, res) => {
       log.info("Got a request in *")
-    
+
       return (async() =>{
         const time = this.getSystemTime()
         const ip = await this.getPrimaryIP()
@@ -259,7 +259,7 @@ class App {
         const systemServices = await this.getSystemServices()
         const expireDate = this.expireDate;
         const qrImagePath = await this.getQRImage()
-        
+
         let success = true
         let values = {
           now: new Date() / 1000
@@ -311,7 +311,7 @@ class App {
         values.success = success
 
         res.render('welcome', values)
-        
+
       })().catch((err) => {
         log.error("Failed to process request", err);
         res.status(500).send({})
@@ -328,7 +328,8 @@ class App {
     for (const ip of ips) {
       if (!ip) continue;
 
-      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports 8835`);
+      log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${port} on ${ip}`);
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
       await exec(cmd);
     }
   }
