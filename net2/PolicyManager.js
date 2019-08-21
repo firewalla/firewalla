@@ -143,7 +143,7 @@ module.exports = class {
 
   async ipAllocation(host, policy) {
     if (host.constructor.name !== 'Host') {
-      log.error("ipAllocation only supports per device policy", host);
+      log.error("ipAllocation only supports per device policy", host.o.mac);
       return;
     }
     await host.ipAllocation(policy);
