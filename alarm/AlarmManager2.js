@@ -250,14 +250,14 @@ module.exports = class {
 
   async ignoreAlarm(alarmID, info) {
     log.info("Going to ignore alarm " + alarmID);
-    const userFeedback = info.info;
+    const userInput = info.info;
     const matchAll = info.matchAll;
     const alarm = await this.getAlarm(alarmID)
     if (!alarm) {
       throw new Error(`Invalid alarm id: ${alarmID}`)
     }
     if (matchAll) {
-      const relatedAlarmIds = await this.loadRelatedAlarms(alarm, userFeedback);
+      const relatedAlarmIds = await this.loadRelatedAlarms(alarm, userInput);
       for (const aid of relatedAlarmIds) {
         await this.archiveAlarm(aid)
       }
@@ -1231,7 +1231,7 @@ module.exports = class {
     log.info("Going to allow alarm " + alarmID);
     log.info("info: ", info);
 
-    let userFeedback = info.info;
+    let userInput = info.info;
 
     this.getAlarm(alarmID)
       .then((alarm) => {
@@ -1244,7 +1244,7 @@ module.exports = class {
           return;
         }
 
-        const e = this.createException(alarm, userFeedback);
+        const e = this.createException(alarm, userInput);
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
@@ -1460,15 +1460,15 @@ module.exports = class {
     return alarm;
   }
 
-  async loadRelatedAlarms(alarm, userFeedback) {
+  async loadRelatedAlarms(alarm, userInput) {
     const alarms = await this.loadRecentAlarmsAsync("-inf");
-    const e = this.createException(alarm, userFeedback);
+    const e = this.createException(alarm, userInput);
     if (!e)  throw new Error("Unsupported Action!");
     const related = alarms
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
   }
-  createException(alarm, userFeedback) {
+  createException(alarm, userInput) {
     let i_target = null;
     let i_type = null;
     //IGNORE
@@ -1481,8 +1481,8 @@ module.exports = class {
         break;
       case "ALARM_UPNP":
         i_type = "devicePort";
-        if (userFeedback) {
-          switch (userFeedback.type) {
+        if (userInput) {
+          switch (userInput.type) {
             case "deviceAllPorts":
               i_type = "deviceAllPorts";
               break;
@@ -1507,7 +1507,6 @@ module.exports = class {
             if (err || result == null) {
               log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
               throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
-              return;
             }
             i_target = util.format("%s:%s:%s",
               result.mac,
@@ -1525,24 +1524,24 @@ module.exports = class {
           i_type = "dns";
           i_target = alarm["p.dest.name"];
         }
-        if (userFeedback) {
-          switch (userFeedback.type) {
+        if (userInput) {
+          switch (userInput.type) {
             case "domain":
             case "dns":
               i_type = "dns"
-              i_target = userFeedback.target
+              i_target = userInput.target
               break
             case "ip":
               i_type = "ip"
-              i_target = userFeedback.target
+              i_target = userInput.target
               break
             case "category":
               i_type = "category";
-              i_target = userFeedback.target;
+              i_target = userInput.target;
               break;
             case "country":
               i_type = "country";
-              i_target = userFeedback.target;
+              i_target = userInput.target;
               break;
             default:
               break
@@ -1550,14 +1549,13 @@ module.exports = class {
         }
         break;
     }
-    if (userFeedback && userFeedback.archiveAlarmByType) {
+    if (userInput && userInput.archiveAlarmByType) {
       //if user archive all ALARM_DEVICE_OFFLINE
       //only match alarm type, ignore p.device.mac,p.dest.ip, etc
       i_type = alarm.type;
     }
     if (!i_type || !i_target) {
       throw new Error("Unsupported Action!")
-      return;
     }
     // TODO: may need to define exception at more fine grain level
     let e = new Exception({
@@ -1567,7 +1565,7 @@ module.exports = class {
       aid: alarm.aid,
       "if.type": i_type,
       "if.target": i_target,
-      category: (userFeedback && userFeedback.category) || ""
+      category: (userInput && userInput.category) || ""
     });
     switch (i_type) {
       case "mac":
@@ -1616,8 +1614,8 @@ module.exports = class {
         // not supported
         break;
     }
-    if (userFeedback && userFeedback.device && !userFeedback.archiveAlarmByType) {
-      e["p.device.mac"] = userFeedback.device; // limit exception to a single device
+    if (userInput && userInput.device && !userInput.archiveAlarmByType) {
+      e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
     log.info("Exception object:", e);
     return e;
