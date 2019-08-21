@@ -1244,7 +1244,7 @@ module.exports = class {
           return;
         }
 
-        const e = this.createException(alarm, userFeedback, callback);
+        const e = this.createException(alarm, userFeedback);
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
@@ -1463,12 +1463,12 @@ module.exports = class {
   async loadRelatedAlarms(alarm, userFeedback) {
     const alarms = await this.loadRecentAlarmsAsync("-inf");
     const e = this.createException(alarm, userFeedback);
-    if (!e) new Error("Unsupported Action!");
+    if (!e)  throw new Error("Unsupported Action!");
     const related = alarms
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
   }
-  createException(alarm, userFeedback, callback) {
+  createException(alarm, userFeedback) {
     let i_target = null;
     let i_type = null;
     //IGNORE
@@ -1506,7 +1506,7 @@ module.exports = class {
           dnsManager.resolveLocalHost(targetIp, (err, result) => {
             if (err || result == null) {
               log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
-              callback && callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
+              throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
               return;
             }
             i_target = util.format("%s:%s:%s",
@@ -1556,7 +1556,7 @@ module.exports = class {
       i_type = alarm.type;
     }
     if (!i_type || !i_target) {
-      callback && callback(new Error("Unsupported Action!"));
+      throw new Error("Unsupported Action!")
       return;
     }
     // TODO: may need to define exception at more fine grain level
