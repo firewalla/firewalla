@@ -1,0 +1,23 @@
+{
+  "command": "ping",
+  "args": ["-n", "-O", "-i", "10"],
+  "events": {
+    "ping": {
+      "regexp": {
+        "string": "^([0-9]+) bytes from ([0-9\\.]+): icmp_seq=([0-9]+) ttl=([0-9]+) time=([0-9.]+) ms",
+        "bytes": 1,
+        "host": 2,
+        "icmp_seq": 3,
+        "ttl": 4,
+        "time": 5
+      }
+    },
+    "unreachable": {
+      "emits": ["fail"],
+      "regexp": {
+        "string": "^no answer yet for icmp_seq=([0-9]+)",
+        "icmp_seq": 1
+      }
+    }
+  }
+}
