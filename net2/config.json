@@ -600,7 +600,8 @@
     "insane_mode": false,
     "cpu_monitor": true,
     "speed_test": false,
-    "safe_search": false
+    "safe_search": false,
+    "network_stats": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
