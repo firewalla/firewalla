@@ -65,7 +65,7 @@ for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset destroy -! $set
 done
 
-# This is to remove all vpn client ip sets  
+# This is to remove all vpn client ip sets
 for set in `sudo ipset list -name | egrep "^vpn_client_"`; do
   sudo ipset destroy -! $set
 done
@@ -337,7 +337,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP
   sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP
   sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP
-  
+
   # forward to fw_block
   sudo ip6tables -w -C FORWARD -j FW_BLOCK &>/dev/null ||   sudo ip6tables -w -A FORWARD -j FW_BLOCK
 
@@ -496,8 +496,3 @@ fi
 # redirect blue hole ip 80/443 port to localhost
 sudo iptables -t nat -A PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
 sudo iptables -t nat -A PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
-
-# redirect 80 to 8835 for diag interface
-for eth_ip in `ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/`; do
-  sudo iptables -t nat -C PREROUTING -p tcp --destination ${eth_ip} --destination-port 80 -j REDIRECT --to-ports 8835 || sudo iptables -t nat -A PREROUTING -p tcp --destination ${eth_ip} --destination-port 80 -j REDIRECT --to-ports 8835
-done
