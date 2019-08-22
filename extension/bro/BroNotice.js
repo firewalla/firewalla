@@ -48,6 +48,10 @@ class BroNotice {
       alarm["p.local.decision"] == "ignore";
       return;
     }
+    let deivcesName = [];
+    addresses.map(async(address) => {
+      deivcesName.push(await hostTool.getName(address));
+    })
 
     let target = addresses[0];
 
@@ -62,7 +66,7 @@ class BroNotice {
       alarm["device"] = target;
     }
 
-    alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
+    alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${deivcesName.join(",")}`
   }
 
   //  src: scanner
