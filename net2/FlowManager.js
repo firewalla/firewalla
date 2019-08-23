@@ -461,61 +461,6 @@ module.exports = class FlowManager {
       });
   }
 
-  getStats(target,type,from,to,callback) {
-    let outdb = {};
-    let indb = {};
-    let inbytes = 0;
-    let outbytes = 0;
-    let lotsofkeys = 24*30*6;  //half months ... of data
-    log.debug("Getting stats:",type,target,from,to);
-
-    let multi = rclient.multi();
-
-    let len = iplist.length;
-
-    let inkey = "stats:"+type+":in:"+target;
-    let outkey = "stats:"+type+":out:"+target;
-
-    multi.zscan(inkey, 0, 'count', lotsofkeys);
-    multi.zscan(outkey, 0, 'count', lotsofkeys);
-
-    multi.exec((err, results) => {
-
-      if(err) {
-        log.error("Failed to get stats from db: " + err);
-        callback(err);
-        return;
-      }
-
-      for(var i = 0; i < results.length; i++) {
-        if(i%2 === 0) {
-          inbytes += this.parseGetStatsResult(results[i], indb, from);
-        } else {
-          outbytes += this.parseGetStatsResult(results[i], outdb, to);
-        }
-      }
-
-      let tsnow = Math.ceil(Date.now()/1000);
-      tsnow = tsnow-tsnow%3600;
-      let flowdata = {tophour:tsnow, from:from, to:to,type:type, flowinbytes:[], flowoutbytes:[],inbytes:inbytes,outbytes:outbytes};
-
-      let keys = Object.keys(outdb); // or loop over the object to get the array
-      keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-      for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
-        let key = keys[i];
-        flowdata.flowoutbytes.push({size:outdb[key],ts:keys[i]});
-      }
-      keys = Object.keys(indb); // or loop over the object to get the array
-      keys.sort().reverse(); // maybe use custom sort, to change direction use .reverse()
-      for (let i=0; i<keys.length; i++) { // now lets iterate in sort order
-        let key = keys[i];
-        flowdata.flowinbytes.push({size:indb[key],ts:keys[i]});
-      }
-      //log.info("FLOW DATA IS: ",flowdata,outdb,indb);
-      callback(err, flowdata);
-    });
-  }
-
   //
   // {
   //    mostflow: { flow:, std:}
