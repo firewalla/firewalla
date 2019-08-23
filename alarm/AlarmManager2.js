@@ -1550,7 +1550,8 @@ module.exports = class {
         break;
     }
     if (userInput && userInput.archiveAlarmByType) {
-      //if user archive all ALARM_DEVICE_OFFLINE
+      //user can archive all alarms for a specific type
+      //eg: archive all ALARM_DEVICE_OFFLINE alarms
       //only match alarm type, ignore p.device.mac,p.dest.ip, etc
       i_type = alarm.type;
     }
