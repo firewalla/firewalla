@@ -135,7 +135,6 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 
 const conncheck = require('../diagnostic/conncheck.js');
-
 const { delay } = require('../util/util.js')
 const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
@@ -1815,7 +1814,14 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break;
-
+      case "publicIp":
+        (async() =>{ 
+          const publicIp = await rclient.hgetAsync('sys:network:info','publicIp')
+          this.simpleTxData(msg, {publicIp:publicIp}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
