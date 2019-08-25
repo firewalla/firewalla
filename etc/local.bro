@@ -93,7 +93,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load policy/protocols/ssl/heartbleed
 
 # enable link-layer address information to connection logs
-#@load policy/protocols/conn/mac-logging
+@load policy/protocols/conn/mac-logging
 
 redef SSL::disable_analyzer_after_detection = F;
 redef Communication::listen_interface = 127.0.0.1;
