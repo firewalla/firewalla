@@ -16,6 +16,8 @@
 const log = require('../net2/logger.js')(__filename);
 
 async function eachLimit(list, limit, producer) {
+  if (!list) return;
+
   let rest = list.slice(limit);
   await Promise.all(list.slice(0, limit).map(async item => {
     await producer(item);

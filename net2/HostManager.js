@@ -1031,7 +1031,7 @@ module.exports = class HostManager {
       multiarray.push(['hgetall', keys[i]]);
     }
     let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
-    const replies = rclient.multi(multiarray).execAsync();
+    const replies = await rclient.multi(multiarray).execAsync();
     await asyncNative.eachLimit(replies, 2, async (o) => {
       if (!o) {
         // defensive programming
