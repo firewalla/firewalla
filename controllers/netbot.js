@@ -71,6 +71,7 @@ const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const unlinkAsync = util.promisify(fs.unlink);
 const existsAsync = util.promisify(fs.exists);
+const accessAsync = util.promisify(fs.access);
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -87,11 +88,6 @@ const ssh = new SSH('info');
 
 const builder = require('botbuilder');
 const uuid = require('uuid');
-
-const async2 = require('async');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 const NM = require('../ui/NotifyManager.js');
 const nm = new NM();
@@ -140,279 +136,9 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 
 const conncheck = require('../diagnostic/conncheck.js');
 
-const _ = require('lodash')
-
 const { delay } = require('../util/util.js')
-
+const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
-
-  _block2(ip, dst, cron, timezone, duration, callback) {
-    let value = {
-      id: "0",
-      cron: cron,
-      dst: dst,
-      timezone: timezone,
-      duration: duration
-    }
-    this._block(ip, 'block', value, callback);
-  }
-
-  _devicePresence(ip, value, callback) {
-    log.info("_devicePresence", ip, value);
-    if (ip === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy('devicePresence', value, (err, data) => {
-          if (err == null) {
-            if (callback != null) {
-              callback(null, "Success");
-            }
-          } else {
-            if (callback != null) {
-              callback(err, "Unable to change presence config to ip " + ip);
-            }
-          }
-        });
-      })
-    } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy('devicePresence', value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success:" + ip);
-                } else {
-                  if (callback != null)
-                    callback(err, "Unable to change presence config to ip " + ip)
-
-                }
-              });
-            } else {
-              if (callback != null)
-                callback("error", "Unable to change presence config to ip " + ip);
-            }
-          });
-        } else {
-          if (callback != null)
-            callback("error", "Host not found");
-        }
-      });
-    }
-  }
-
-  _deviceOffline(ip, value, callback) {
-    log.info("_deviceOffline", ip, value);
-    if (ip === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy('deviceOffline', value, (err, data) => {
-          if (err == null) {
-            if (callback != null) {
-              callback(null, "Success");
-            }
-          } else {
-            if (callback != null) {
-              callback(err, "Unable to change device offline config to ip " + ip);
-            }
-          }
-        });
-      })
-    } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy('deviceOffline', value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success:" + ip);
-                } else {
-                  if (callback != null)
-                    callback(err, "Unable to change device offline config to ip " + ip)
-
-                }
-              });
-            } else {
-              if (callback != null)
-                callback("error", "Unable to change device offline config to ip " + ip);
-            }
-          });
-        } else {
-          if (callback != null)
-            callback("error", "Host not found");
-        }
-      });
-    }
-  }
-
-  _block(ip, blocktype, value, callback) {
-    log.info("_block", ip, blocktype, value);
-    if (ip === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy(blocktype, value, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-              callback(err, "Unable to block ip " + ip);
-          }
-        });
-      });
-    } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy(blocktype, value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success:" + ip);
-                } else {
-                  if (callback != null)
-                    callback(err, "Unable to block ip " + ip)
-
-                }
-              });
-            } else {
-              if (callback != null)
-                callback("error", "Unable to block ip " + ip);
-            }
-          });
-        } else {
-          if (callback != null)
-            callback("error", "Host not found");
-        }
-      });
-    }
-  }
-
-  _family(ip, value, callback) {
-    if (ip === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy("family", value, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-              callback(err, "Unable to block ip " + ip);
-          }
-        });
-      });
-    } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy("family", value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success:" + ip);
-                } else {
-                  if (callback != null)
-                    callback(err, "Unable to block ip " + ip);
-                }
-              });
-            } else {
-              if (callback != null)
-                callback("error", "Unable to block ip " + ip);
-            }
-          });
-        } else {
-          if (callback != null)
-            callback("error", "host not found");
-        }
-      });
-    }
-  }
-
-  _adblock(ip, value, callback) {
-    if (ip === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy("adblock", value, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-              callback(err, "Unable to block ip " + ip);
-          }
-        });
-      });
-    } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy("adblock", value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success:" + ip);
-                } else {
-                  if (callback != null)
-                    callback(err, "Unable to block ip " + ip);
-                }
-              });
-            } else {
-              if (callback != null)
-                callback("error", "Unable to block ip " + ip);
-            }
-          });
-        } else {
-          if (callback != null)
-            callback("error", "host not found");
-        }
-      });
-    }
-  }
-
-  _vpnClient(ip, value, callback) {
-    if (ip === "0.0.0.0") {
-      // start VPN client globally
-      this.hostManager.loadPolicy((err, data) => {
-        if (err == null) {
-          this.hostManager.setPolicy("vpnClient", value, (err, data) => {
-            if (err == null) {
-              if (callback != null)
-                callback(null, "Success");
-            } else {
-              if (callback != null)
-                callback(err, "Unable to start vpn client");
-            }
-          });
-        } else {
-          if (callback != null)
-            callback(err, "Unable to start vpn client");
-        }
-      });
-    } else {
-      // enable VPN client access on specific host
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy("vpnClient", value, (err, data) => {
-                if (err == null) {
-                  if (callback != null) 
-                    callback(null, "Success: " + ip);
-                } else {
-                  if (callback != null)
-                  callback(err, "Unable to enable vpn client access on " + ip);
-                }
-              });
-            } else {
-              if (callback != null)
-                callback("error", "Unable to enable vpn client access on " + ip);
-            }
-          });
-        } else {
-          if (callback != null)
-            callback("error", "host not found: " + ip);
-        }
-      });
-    }
-  }
 
   _vpn(ip, value, callback) {
     if(ip !== "0.0.0.0") {
@@ -483,49 +209,6 @@ class netBot extends ControllerBot {
       }
     })
   }
-
-  _shield(ip, value, callback) {
-    if (ip === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
-        this.hostManager.setPolicy("shield", value, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-            callback(err, "Unable to apply config on shield: " + value);
-          }
-        })
-      })
-    } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy("shield", value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success");
-                } else {
-                  if (callback != null)
-                  callback(err, "Unable to apply config on shield: " + value);
-                }
-              })
-            } else {
-              log.error("Failed to load policy of " + ip, err);
-              if (callback != null)
-                callback(err, "Failed to load policy");
-            }
-          })
-        } else {
-          if (callback != null)
-            callback("error", "host not found: " + ip);
-        }
-      })
-    }
-    
-  }
-
 
   _shadowsocks(ip, value, callback) {
     if(ip !== "0.0.0.0") {
@@ -713,7 +396,7 @@ class netBot extends ControllerBot {
     this.eptcloud.getStorage(this.primarygid,18000000,0,(e,url)=>{
       log.info("sendLog: Storage ", filename, password,url);
       if (url == null || url.url == null) {
-        this.simpleTxData(msg,{},"Unable to get storage",callback);   
+        this.simpleTxData(msg,{},"Unable to get storage",callback);
       } else {
         const path = URL.parse(url.url).pathname;
         const homePath = f.getFirewallaHome();
@@ -725,19 +408,12 @@ class netBot extends ControllerBot {
           } else {
           }
         });
-        const getDevices = `${homePath}/scripts/sanity_check.sh -f`;
-        exec(getDevices)
-          .then(res => {
-            this.simpleTxData(msg, {password: password, filename: path, content: res.stdout}, null, callback);
-          })
-          .catch(err => {
-            this.simpleTxData(msg, null, err, callback)
-          })
+        this.simpleTxData(msg, {password: password, filename: path}, null, callback);
       }
     });
   }
-  
-  _portforward(msg, callback) {
+
+  _portforward(target, msg, callback) {
     log.info("_portforward", msg);
     let c = require('../net2/MessageBus.js');
     this.channel = new c('debug');
@@ -803,7 +479,7 @@ class netBot extends ControllerBot {
 
     this.hostManager = new HostManager("cli", 'client', 'debug');
     this.hostManager.loadPolicy((err, data) => {});  //load policy
- 
+
     // no subscription for api mode
     if (apiMode) {
       log.info("Skipping event subscription during API mode.");
@@ -836,75 +512,76 @@ class netBot extends ControllerBot {
     });
 
     sem.on('Alarm:NewAlarm', async (event) => {
-      let alarm;
+      let alarm, notifMsg;
       try {
         alarm = await am2.getAlarm(event.alarmID)
+        notifMsg = alarm.localizedNotification();
       }
       catch(err) {
-        log.error("Failed to fetch alarm", event)
+        log.error("Failed to fetch alarm", event, err)
+        return
       }
 
-      let notifMsg = alarm.localizedNotification();
-      if (notifMsg) {
-        log.info("Sending notification: " + JSON.stringify(alarm));
-        if (this.hostManager.policy && this.hostManager.policy["notify"]) {
-          if (this.hostManager.policy['notify']['state'] == false) {
-            log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", alarm);
+      if (!notifMsg) return;
+
+      log.info("Sending notification: " + JSON.stringify(alarm));
+      if (this.hostManager.policy && this.hostManager.policy["notify"]) {
+        if (this.hostManager.policy['notify']['state'] == false) {
+          log.info("ALARM_NOTIFY_GLOBALL_BLOCKED", alarm);
+          return;
+        }
+        if (alarm.type) {
+          let alarmType = alarm.type;
+          if (alarmType === "ALARM_LARGE_UPLOAD") {
+            alarmType = "ALARM_BEHAVIOR";
+          }
+          if (this.hostManager.policy["notify"][alarmType] === false ||
+            this.hostManager.policy["notify"][alarmType] === 0
+          ) {
+            log.info("ALARM_NOTIFY_BLOCKED", alarm);
             return;
           }
-          if (alarm.type) {
-            let alarmType = alarm.type;
-            if (alarmType === "ALARM_LARGE_UPLOAD") {
-              alarmType = "ALARM_BEHAVIOR";
-            }
-            if (this.hostManager.policy["notify"][alarmType] === false ||
-              this.hostManager.policy["notify"][alarmType] === 0
-            ) {
-              log.info("ALARM_NOTIFY_BLOCKED", alarm);
-              return;
-            }
-          }
         }
-
-        log.info("ALARM_NOTIFY_PASSED");
-
-        notifMsg = {
-          title: i18n.__(alarm.getNotifType()),
-          body: notifMsg
-        }
-
-        let data = {
-          gid: this.primarygid,
-          notifType: "ALARM"
-        };
-
-        if (alarm.aid) {
-          data.aid = alarm.aid;
-          data.alarmID = alarm.alarmID;
-        }
-
-        if (alarm.result_method === "auto" && alarm.result === "block") {
-          data.category = "com.firewalla.category.autoblockalarm";
-        } else {
-          if (alarm.getManagementType() === "") {
-            // default category
-            data.category = "com.firewalla.category.alarm";
-          } else {
-            data.category = "com.firewalla.category.alarm." + alarm.getManagementType();
-          }
-        }
-
-        // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
-        if (alarm["p.monkey"] && alarm["p.monkey"] == 1) {
-          notifMsg.title = `[Monkey] ${notifMsg.title}`;
-        }
-
-        const pa = alarm.cloudAction();
-        if(pa && f.isDevelopmentVersion()) {
-          notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
-        }
-        this.tx2(this.primarygid, "test", notifMsg, data);
       }
+
+      log.info("ALARM_NOTIFY_PASSED");
+
+      notifMsg = {
+        title: i18n.__(alarm.getNotifType()),
+        body: notifMsg
+      }
+
+      let data = {
+        gid: this.primarygid,
+        notifType: "ALARM"
+      };
+
+      if (alarm.aid) {
+        data.aid = alarm.aid;
+        data.alarmID = alarm.aid;
+      }
+
+      if (alarm.result_method === "auto" && alarm.result === "block") {
+        data.category = "com.firewalla.category.autoblockalarm";
+      } else {
+        if (alarm.getManagementType() === "") {
+          // default category
+          data.category = "com.firewalla.category.alarm";
+        } else {
+          data.category = "com.firewalla.category.alarm." + alarm.getManagementType();
+        }
+      }
+
+      // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
+      if (alarm["p.monkey"] && alarm["p.monkey"] == 1) {
+        notifMsg.title = `[Monkey] ${notifMsg.title}`;
+      }
+
+      const pa = alarm.cloudAction();
+      if(pa && f.isDevelopmentVersion()) {
+        notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
+      }
+      this.tx2(this.primarygid, "test", notifMsg, data);
 
     });
 
@@ -934,6 +611,7 @@ class netBot extends ControllerBot {
 
       let branchChanged = await sysManager.isBranchJustChanged();
       let upgradeInfo = await upgradeManager.getUpgradeInfo();
+      log.debug('isBranchJustChanged:', branchChanged, ', upgradeInfo:', upgradeInfo);
       if(branchChanged) {
         let branch = null
 
@@ -950,7 +628,7 @@ class netBot extends ControllerBot {
       }
       else if (upgradeInfo.upgraded) {
         let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
-          version: f.isProductionOrBeta() ? fc.getSimpleVersion() : upgradeInfo.to
+          version: fc.getSimpleVersion()
         });
         this.tx(this.primarygid, "200", msg);
         upgradeManager.updateVersionTag();
@@ -966,7 +644,7 @@ class netBot extends ControllerBot {
           }
         }
       }
-        
+
       this.setupDialog();
     }, 20 * 1000);
 
@@ -990,7 +668,7 @@ class netBot extends ControllerBot {
                 let notifyMsg = {
                    title: "Upgrade Needed",
                    body: "Firewalla new version "+msg+" is avaliable, please open firewalla app then tap on settings->upgrade.",
-                   } 
+                   }
                 let data = {
                    gid: this.primarygid,
                 };
@@ -1016,7 +694,7 @@ class netBot extends ControllerBot {
                json = JSON.parse(msg)
                const oldServer = json.oldServer
                const newServer = json.newServer
-               
+
                if(oldServer && newServer && oldServer !== newServer) {
                  let notifyMsg = {
                    title: "Shadowsocks Failover",
@@ -1027,7 +705,7 @@ class netBot extends ControllerBot {
                  };
                  this.tx2(this.primarygid, "", notifyMsg, data)
                }
-               
+
              } catch(err) {
                log.error("Failed to parse SS:FAILOVER payload:", err)
              }
@@ -1076,8 +754,8 @@ class netBot extends ControllerBot {
             }
           } catch(err) {
             log.error("Failed to parse app notify message:", msg, err);
-          }       
-          break;   
+          }
+          break;
        }
     });
     sclient.subscribe("System:Upgrade:Hard");
@@ -1088,12 +766,12 @@ class netBot extends ControllerBot {
   }
 
   boneMsgHandler(msg) {
-      log.info("Bone Message",JSON.stringify(msg));
+      log.debug("Bone Message",JSON.stringify(msg));
       if (msg.type == "MSG" && msg.title) {
           let notifyMsg = {
              title: msg.title,
-             body: msg.body 
-          } 
+             body: msg.body
+          }
           let data = {
              gid: this.primarygid,
              data: msg.data
@@ -1116,16 +794,16 @@ class netBot extends ControllerBot {
               log.error("FIREWALLA CLOUD PING ");
           } else if (msg.control && msg.control === "v6on") {
               require('child_process').exec('sync & touch /home/pi/.firewalla/config/enablev6', (err, out, code) => {
-              });                     
+              });
           } else if (msg.control && msg.control === "v6off") {
               require('child_process').exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
-              });                     
+              });
           } else if (msg.control && msg.control === "script") {
               require('child_process').exec('sync & /home/pi/firewalla/scripts/'+msg.command, (err, out, code) => {
-              });                     
+              });
           } else if (msg.control && msg.control === "raw") {
               log.error("FIREWALLA CLOUD RAW ");
-              // RAW commands will never / ever be ran on production 
+              // RAW commands will never / ever be ran on production
               if (sysManager.isSystemDebugOn() || !f.isProduction()) {
                   if (msg.command) {
                       log.error("FIREWALLA CLOUD RAW EXEC",msg.command);
@@ -1135,11 +813,14 @@ class netBot extends ControllerBot {
               }
           } else if (msg.control === 'cloud') {
             log.error("Firewalla Cloud");
-            if(msg.command) {
-              const cloudManager = require('../extension/cloud/CloudManager.js');
-              cloudManager.run(msg.command, msg.info).catch((err) => {
-                log.error("Got error when handling cloud action, err:", err);
-              });
+            // cloud commands will never / ever be ran on production 
+            if (sysManager.isSystemDebugOn() || !f.isProduction()) {
+              if (msg.command) {
+                const cloudManager = require('../extension/cloud/CloudManager.js');
+                cloudManager.run(msg.command, msg.info).catch((err) => {
+                  log.error("Got error when handling cloud action, err:", err);
+                });
+              }
             }
           }
       }
@@ -1147,7 +828,6 @@ class netBot extends ControllerBot {
 
   scanStart(callback) {
     this.hostManager.getHosts((err, result) => {
-      let listip = [];
       this.hosts = result;
       for (let i in result) {
 //        log.info(result[i].toShortString());
@@ -1185,10 +865,9 @@ class netBot extends ControllerBot {
 
     // invalidate cache
     this.invalidateCache();
-
     if(extMgr.hasSet(msg.data.item)) {
-      async(() => {
-        const result = await (extMgr.set(msg.data.item, msg, msg.data.value))
+      (async () => {
+        const result = await extMgr.set(msg.data.item, msg, msg.data.value)
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -1197,171 +876,63 @@ class netBot extends ControllerBot {
     }
 
     let value = msg.data.value;
-
     switch (msg.data.item) {
       case "policy":
-        async2.eachLimit(Object.keys(value), 1, async2.ensureAsync((o, cb) => {
-          switch (o) {
-            case "monitor":
-              this._block(msg.target, "monitor", value.monitor, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "devicePresence":
-              this._devicePresence(msg.target, value.devicePresence, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "deviceOffline":
-              this._deviceOffline(msg.target, value.deviceOffline, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "blockin":
-              this._block(msg.target, "blockin", value.blockin, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "acl":
-              this._block(msg.target, "acl", value.acl, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "ipAllocation":
-              this._ipAllocation(msg.target, value.ipAllocation, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "family":
-              this._family(msg.target, value.family, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "adblock":
-              this._adblock(msg.target, value.adblock, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "vpnClient":
-              this._vpnClient(msg.target, value.vpnClient, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "vpn":
-              this._vpn(msg.target, value.vpn, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "shadowsocks":
-              this._shadowsocks(msg.target, value.shadowsocks, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "scisurf":
-              this._scisurf(msg.target, value.scisurf, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "enhancedSpoof":
-              this._enhancedSpoof(msg.target, value.enhancedSpoof, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "vulScan":
-              this._vulScan(msg.target, value.vulScan, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "dnsmasq":
-              this._dnsmasq(msg.target, value.dnsmasq, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "externalAccess":
-              this._externalAccess(msg.target, value.externalAccess, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "ssh":
-              this._ssh(msg.target, value.ssh, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "notify":
-              this._notify(msg.target, value.notify, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "portforward":
-              this._portforward(value.portforward, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "upstreamDns":
-              this._setUpstreamDns(msg.target, value.upstreamDns, (err, obj) => {
-                cb(err);
-              });
-              break;
-            case "shield":
-              this._shield(msg.target, msg.data.value.shield, (err, obj) => {
-                cb(err);
-              });
-              break;
-          default:
-            let target = msg.target
-            let policyData = value[o]
-
-            if (target === "0.0.0.0") {
-              this.hostManager.loadPolicy((err, data) => {
-                if(err) {
-                  cb(err);
-                  return;
-                }
-
-                this.hostManager.setPolicy(o, policyData,(err, data) => {
-                  cb(err);
-                });
-              });
+        (async() => {
+          // further policy enforcer should be implemented in Host.js or PolicyManager.js
+          let processorMap = {
+            "ipAllocation": this._ipAllocation,
+            "vpn": this._vpn,
+            "shadowsocks": this._shadowsocks,
+            "scisurf": this._scisurf,
+            "enhancedSpoof": this._enhancedSpoof,
+            "vulScan": this._vulScan,
+            "dnsmasq": this._dnsmasq,
+            "externalAccess": this._externalAccess,
+            "ssh": this._ssh,
+            "notify": this._notify,
+            "portforward": this._portforward,
+            "upstreamDns": this._upstreamDns,
+          }
+          for (const o of Object.keys(value)) {
+            if (processorMap[o]) {
+              await util.promisify(processorMap[o]).bind(this)(msg.target, value[o])
             } else {
-              this.hostManager.getHost(target, (err, host) => {
-                if(err) {
-                  cb(err);
-                  return;
+
+              let target = msg.target
+              let policyData = value[o]
+
+              log.info(o, target, policyData)
+
+              if (target === "0.0.0.0") {
+                await this.hostManager.loadPolicyAsync()
+                await this.hostManager.setPolicyAsync(o, policyData);
+              } else {
+                let host = await this.hostManager.getHostAsync(target)
+                if (host) {
+                  await host.loadPolicyAsync()
+                  await host.setPolicyAsync(o, policyData)
+                } else {
+                  throw new Error('Invalid host')
                 }
-
-                host.loadPolicy((err, data) => {
-                  if(err) {
-                    cb(err);
-                    return;
-                  }
-
-                  host.setPolicy(o, policyData, (err, data) => {
-                    cb(err);
-                  });
-                });
-              });
+              }
             }
-
-            break;
           }
-        }), (err) => {
-          if (err) {
-            this.simpleTxData(msg, {}, err, callback);
-          } else {
-            let reply = {
-              type: 'jsonmsg',
-              mtype: 'policy',
-              id: uuid.v4(),
-              expires: Math.floor(Date.now() / 1000) + 60 * 5,
-              replyid: msg.id,
-            };
-            reply.code = 200;
-            reply.data = value;
-            log.info("Repling ", reply.code, reply.data);
-            this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-          }
-        });
-        break;
+          let reply = {
+            type: 'jsonmsg',
+            mtype: 'policy',
+            id: uuid.v4(),
+            expires: Math.floor(Date.now() / 1000) + 60 * 5,
+            replyid: msg.id,
+          };
+          reply.code = 200;
+          reply.data = value;
+          log.info("Repling ", reply.code, reply.data);
+          this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+        })().catch(err =>
+          this.simpleTxData(msg, {}, err, callback)
+        )
+        break
       case "host":
         //data.item = "host" test
         //data.value = "{ name: " "}"
@@ -1381,29 +952,42 @@ class netBot extends ControllerBot {
           return
         }
 
-        async(() => {
-          let ip = null
-
+        (async() => {
+          let ip = null;
           if(hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
             log.info("set host name alias by mac address", macAddress);
 
             let macObject = {
-              name: data.value.name,
               mac: macAddress
             }
+            if(data.value.name) {
+              macObject.name = data.value.name
+            } else if(data.value.customizeDomainName) {
+              macObject.customizeDomainName = data.value.customizeDomainName
+            }
 
-            await (hostTool.updateMACKey(macObject, true))
-
+            await hostTool.updateMACKey(macObject, true);
+            const host = await this.hostManager.getHostAsync(macAddress);
+            const pureHost = host.o || {};
+            sem.emitEvent({
+              type: "DeviceUpdate",
+              message: "Update device name",
+              host: {
+                ipv4Addr: pureHost.ipv4Addr,
+                mac: macAddress,
+                name: data.value.name
+              },
+              toProcess: 'FireMain'
+            })
             this.simpleTxData(msg, {}, null, callback)
-            
             return
 
           } else {
             ip = msg.target
           }
 
-          let host = await (this.hostManager.getHostAsync(ip))
+          let host = await this.hostManager.getHostAsync(ip)
 
           if(!host) {
             this.simpleTxData(msg, {}, new Error("invalid host"), callback)
@@ -1428,7 +1012,7 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
-        
+
         break;
       case "intel":
         // intel actions
@@ -1449,7 +1033,7 @@ class netBot extends ControllerBot {
         break;
       case "scisurfconfig":
         let v = value;
-        
+
         if (v.from && v.from === "firewalla") {
           const ssClient = require('../extension/ss_client/ss_client.js');
           mssc.saveConfig(v)
@@ -1488,8 +1072,8 @@ class netBot extends ControllerBot {
         flag = "1"
       }
 
-      async(() => {
-        await (rclient.hsetAsync("sys:config", "includeNameInNotification", flag))
+      (async() => {
+        await rclient.hsetAsync("sys:config", "includeNameInNotification", flag)
         this.simpleTxData(msg, {}, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback)
@@ -1499,16 +1083,16 @@ class netBot extends ControllerBot {
     case "mode":
       let v4 = value;
       let err = null;
-      
+
       if (v4.mode) {
-        async(() => {
+        (async() => {
           let mode = require('../net2/Mode.js')
-          let curMode = await (mode.getSetupMode())        
+          let curMode = await mode.getSetupMode()
           if(v4.mode === curMode) {
             this.simpleTxData(msg, {}, err, callback);
             return
           }
-          
+
           let modeManager = require('../net2/ModeManager.js');
           switch (v4.mode) {
           case "spoof":
@@ -1533,7 +1117,7 @@ class netBot extends ControllerBot {
             break;
           }
 
-          // force sysManager.update after set mode, this is to prevent device assigned in 218.* 
+          // force sysManager.update after set mode, this is to prevent device assigned in 218.*
           // can't be discovered by fireapi if sysManager.update is not called (Thanks to Annie)
           sysManager.update((err, data) => {
           });
@@ -1554,7 +1138,7 @@ class netBot extends ControllerBot {
       });
       break;
     default:
-        this.simpleTxData(msg, null, new Error("Unsupported action"), callback);
+        this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
     }
   }
@@ -1576,23 +1160,21 @@ class netBot extends ControllerBot {
   }
 
 
-  processAppInfo(appInfo) {
-    return async(() => {
+  async processAppInfo(appInfo) {
       if(appInfo.language) {
         if(sysManager.language !== appInfo.language) {
-          await (sysManager.setLanguageAsync(appInfo.language))
+          await sysManager.setLanguageAsync(appInfo.language)
         }
       }
 
       if(appInfo.deviceName && appInfo.eid) {
         const keyName = "sys:ept:memberNames"
-        await (rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName))
+        await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
 
         const keyName2 = "sys:ept:member:lastvisit"
-        await (rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000)))
+        await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000))
       }
 
-    })()
   }
 
   getHandler(gid, msg, appInfo, callback) {
@@ -1611,8 +1193,8 @@ class netBot extends ControllerBot {
     // target = ip address
     // data.item = [app, alarms, host]
     if(extMgr.hasGet(msg.data.item)) {
-      async(() => {
-        const result = await (extMgr.get(msg.data.item, msg, msg.data.value))
+      (async() => {
+        const result = await extMgr.get(msg.data.item, msg, msg.data.value)
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         this.simpleTxData(msg, null, err, callback)
@@ -1675,10 +1257,6 @@ class netBot extends ControllerBot {
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
-        let compAlg = "";
-        if (value) {
-          compAlg = compAlg || value.compress;
-        }
         this.hostManager.loadPolicy((err, data) => {
           let datamodel = {
             type: 'jsonmsg',
@@ -1696,26 +1274,30 @@ class netBot extends ControllerBot {
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
-            VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, compAlg, externalPort, (err, ovpnfile, password) => {
-              if (err == null) {
-                datamodel.code = 200;
-                datamodel.data = {
-                  ovpnfile: ovpnfile,
-                  password: password,
-                  portmapped: JSON.parse(data['vpnPortmapped'] || "false")
-                };
-
-                (async () => {
-                  const doublenat = await rclient.getAsync("ext.doublenat");
-                  if (doublenat !== null) {
-                    datamodel.data.doublenat = doublenat;
-                  }
+            VpnManager.configureClient("fishboneVPN1", null).then(() => {
+              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, (err, ovpnfile, password) => {
+                if (err == null) {
+                  datamodel.code = 200;
+                  datamodel.data = {
+                    ovpnfile: ovpnfile,
+                    password: password,
+                    portmapped: JSON.parse(data['vpnPortmapped'] || "false")
+                  };
+                  (async () => {
+                    const doublenat = await rclient.getAsync("ext.doublenat");
+                    if (doublenat !== null) {
+                      datamodel.data.doublenat = doublenat;
+                    }
+                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                  })();
+                } else {
                   this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-                })();
-              } else {
-                this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
-              }
-            });
+                }
+              });
+            }).catch((err) => {
+              log.error("Failed to get ovpn profile", err);
+              this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+            })
           }
         });
         break;
@@ -1803,9 +1385,8 @@ class netBot extends ControllerBot {
         });
         break;
       case "scisurfconfig":
-        const mgr = require('../extension/ss_client/ss_client_manager.js');
-
         (async () => {
+          const mgr = require('../extension/ss_client/ss_client_manager.js');
           const client = mgr.getSSClient();
           const result = client.getConfig();
           this.simpleTxData(msg, result || {}, null, callback);
@@ -1835,14 +1416,13 @@ class netBot extends ControllerBot {
         });
         break;
       case "alarm":
-        let alarmID = value.alarmID;
-        am2.getAlarm(alarmID)
+        am2.getAlarm(value.alarmID)
           .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
           .catch((err) => this.simpleTxData(msg, null, err, callback));
         break;
       case "alarmDetail": {
-        const alarmID = value.alarmID;
         (async () => {
+          const alarmID = value.alarmID;
           if(alarmID) {
             const basic = await am2.getAlarm(alarmID);
             const detail = (await am2.getAlarmDetail(alarmID)) || {};
@@ -1880,7 +1460,7 @@ class netBot extends ControllerBot {
         (async () => {
           if(destIP && deviceMac) {
             const transfers = await flowTool.getTransferTrend(deviceMac, destIP);
-            this.simpleTxData(msg, transfers, null, callback); 
+            this.simpleTxData(msg, transfers, null, callback);
           } else {
             this.simpleTxData(msg, {}, new Error("Missing device MAC or destination IP"), callback);
           }
@@ -1889,15 +1469,15 @@ class netBot extends ControllerBot {
         })
         break;
       }
-      case "archivedAlarms":
-        const offset = value && value.offset
-        const limit = value && value.limit
+      case "archivedAlarms": {
+        const offset = value && value.offset;
+        const limit = value && value.limit;
 
-        async(() => {
-          const archivedAlarms = await(am2.loadArchivedAlarms({
+        (async() => {
+          const archivedAlarms = await am2.loadArchivedAlarms({
             offset: offset,
             limit: limit
-          }))
+          })
           this.simpleTxData(msg,
             {
               alarms: archivedAlarms,
@@ -1908,6 +1488,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+      }
       case "exceptions":
         em.loadExceptions((err, exceptions) => {
           this.simpleTxData(msg, {exceptions: exceptions, count: exceptions.length}, err, callback);
@@ -2041,7 +1622,7 @@ class netBot extends ControllerBot {
       case "includedDomains":
         (async () => {
           const category = value.category
-          const domains = await (categoryUpdater.getIncludedDomains(category))
+          const domains = await categoryUpdater.getIncludedDomains(category)
           this.simpleTxData(msg, {domains: domains}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -2050,7 +1631,7 @@ class netBot extends ControllerBot {
       case "excludedDomains":
         (async () => {
           const category = value.category
-          const domains = await (categoryUpdater.getExcludedDomains(category))
+          const domains = await categoryUpdater.getExcludedDomains(category)
           this.simpleTxData(msg, {domains: domains}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -2093,7 +1674,7 @@ class netBot extends ControllerBot {
                 this.simpleTxData(msg, {}, err, callback);
                 return;
               }
-      
+
               for(let i = 0; i < list.length; i ++) {
                 if(list[i] && alarms[i]) {
                   list[i].alarmMessage = alarms[i].localizedInfo();
@@ -2126,7 +1707,7 @@ class netBot extends ControllerBot {
               if (!profileId) {
                 this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' should be specified."}, callback);
               } else {
-                const ovpnClient = new OpenVPNClient({profileId: profileId});                
+                const ovpnClient = new OpenVPNClient({profileId: profileId});
                 const filePath = ovpnClient.getProfilePath();
                 const fileExists = await existsAsync(filePath);
                 if (!fileExists) {
@@ -2151,10 +1732,10 @@ class netBot extends ControllerBot {
                       pass = lines[1];
                     }
                   }
-                  
+                  const settings = await ovpnClient.loadSettings();
                   const status = await ovpnClient.status();
                   const stats = await ovpnClient.getStatistics();
-                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, user: user, pass: pass, status: status, stats: stats}, null, callback);
+                  this.simpleTxData(msg, {profileId: profileId, content: profileContent, password: password, user: user, pass: pass, settings: settings, status: status, stats: stats}, null, callback);
                 }
               }
             })().catch((err) => {
@@ -2205,8 +1786,10 @@ class netBot extends ControllerBot {
                       pass = lines[1];
                     }
                   }
+                  const settings = await ovpnClient.loadSettings();
                   profile.user = user;
                   profile.pass = pass;
+                  profile.settings = settings;
                   const status = await ovpnClient.status();
                   profile.status = status;
                   const stats = await ovpnClient.getStatistics();
@@ -2226,20 +1809,20 @@ class netBot extends ControllerBot {
         break;
       }
       case "country:supported":
-        rc.smembersAsync('country:list').then(list => {
+        rclient.smembersAsync('country:list').then(list => {
           this.simpleTxData(msg, {supported: list}, null, callback);
         }).catch(err => {
           this.simpleTxData(msg, {}, err, callback);
         })
-        
+        break;
+
     default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
   }
 
-  validateFlowAppIntel(json) {
-    return async(() => {
-      // await (bone.flowgraphAsync(...))
+  async validateFlowAppIntel(json) {
+      // await bone.flowgraphAsync(...)
       let flows = json.flows
 
       let hashCache = {}
@@ -2251,21 +1834,19 @@ class netBot extends ControllerBot {
 
         let data;
         try {
-          data = await(bone.flowgraphAsync('summarizeApp', appFlows))
+          data = await bone.flowgraphAsync('summarizeApp', appFlows)
         } catch (err) {
           log.error("Error when summarizing flowgraph for app", err);
         }
-        
+
         if (data) {
           flows.appDetails = flowUtil.unhashIntelFlows(data, hashCache)
         }
       }
-    })()
   }
 
-  validateFlowCategoryIntel(json) {
-    return async(() => {
-      // await (bone.flowgraphAsync(...))
+  async validateFlowCategoryIntel(json) {
+      // await bone.flowgraphAsync(...)
       let flows = json.flows
 
       let hashCache = {}
@@ -2274,22 +1855,21 @@ class netBot extends ControllerBot {
 
       if(Object.keys(categoryFlows).length > 0) {
         flowUtil.hashIntelFlows(categoryFlows, hashCache)
-        
+
         let data;
         try {
-          data = await(bone.flowgraphAsync('summarizeActivity', categoryFlows))
+          data = await bone.flowgraphAsync('summarizeActivity', categoryFlows)
         } catch (err) {
           log.error("Error when summarizing flowgraph for activity", err);
         }
-        
+
         if (data) {
           flows.categoryDetails = flowUtil.unhashIntelFlows(data, hashCache)
         }
       }
-    })()
   }
 
-  
+
   async systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
 
@@ -2330,7 +1910,7 @@ class netBot extends ControllerBot {
 
     return jsonobj;
   }
-  
+
   async deviceHandler(msg, target) { // WARNING: target could be ip address or mac address
     log.info("Getting info on device", target);
 
@@ -2488,10 +2068,9 @@ class netBot extends ControllerBot {
     }
 
     let value = msg.data.value;
-
     switch (msg.data.item) {
       case "upgrade":
-        async(() => {
+        (async() =>{
           sysTool.upgradeToLatest()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2499,7 +2078,7 @@ class netBot extends ControllerBot {
         })
         break
       case "shutdown":
-        async(() => {
+        (async() =>{
           sysTool.shutdownServices()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2507,7 +2086,7 @@ class netBot extends ControllerBot {
         })
         break
       case "reboot":
-        async(() => {
+        (async() =>{
           sysTool.rebootServices()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2515,7 +2094,7 @@ class netBot extends ControllerBot {
         })
         break
       case "resetpolicy":
-        async(() => {
+        (async() =>{
           sysTool.resetPolicy()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2582,19 +2161,20 @@ class netBot extends ControllerBot {
         break;
 
       case "resetSciSurfConfig":
-        const mgr = require('../extension/ss_client/ss_client_manager.js');
         (async () => {
+          const mgr = require('../extension/ss_client/ss_client_manager.js');
           try {
             const client = mgr.getSSClient();
             client.resetConfig();
             // await mssc.stop();
-            // await mssc.clearConfig();  
-          } finally {
-            this.simpleTxData(msg, null, err, callback);  
+            // await mssc.clearConfig();
+            this.simpleTxData(msg, null, null, callback);
+          } catch(err) {
+            this.simpleTxData(msg, null, err, callback);
           }
         })();
         break;
-      case "ping":
+      case "ping": {
         let uptime = process.uptime();
         let now = new Date();
 
@@ -2612,6 +2192,7 @@ class netBot extends ControllerBot {
         };
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
+      }
       case "alarm:block":
         am2.blockFromAlarm(value.alarmID, value, (err, policy, otherBlockedAlarms, alreadyExists) => {
           if(value && value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
@@ -2665,10 +2246,11 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback);
           });
         });
+        break;
 
       case "alarm:ignore":
-        async(() => {
-          await (am2.ignoreAlarm(value.alarmID))
+        (async() => {
+          await am2.ignoreAlarm(value.alarmID)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to ignore alarm:", err)
@@ -2677,8 +2259,8 @@ class netBot extends ControllerBot {
         break
 
       case "alarm:report":
-        async(() => {
-          await (am2.reportBug(value.alarmID, value.feedback))
+        (async() => {
+          await am2.reportBug(value.alarmID, value.feedback)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to report bug on alarm:", err)
@@ -2723,41 +2305,41 @@ class netBot extends ControllerBot {
         break;
 
       case "policy:update":
-        async(() => {
+        (async() => {
           const policy = value
 
           const pid = policy.pid
-          const oldPolicy = await (pm2.getPolicy(pid))
-          await (pm2.updatePolicyAsync(policy))
-          const newPolicy = await (pm2.getPolicy(pid))
-          await (pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy))
+          const oldPolicy = await pm2.getPolicy(pid)
+          await pm2.updatePolicyAsync(policy)
+          const newPolicy = await pm2.getPolicy(pid)
+          await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
           this.simpleTxData(msg, newPolicy, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })
 
-        break;    
+        break;
       case "policy:delete":
-        async(() => {
-          let policy = await (pm2.getPolicy(value.policyID))
+        (async() => {
+          let policy = await pm2.getPolicy(value.policyID)
           if(policy) {
-            await (pm2.disableAndDeletePolicy(value.policyID))
+            await pm2.disableAndDeletePolicy(value.policyID)
             policy.deleted = true // policy is marked ask deleted
-            this.simpleTxData(msg, policy, null, callback);          
+            this.simpleTxData(msg, policy, null, callback);
           } else {
             this.simpleTxData(msg, null, new Error("invalid policy"), callback);
           }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
-        })                 
+        })
         break;
       case "policy:enable":
-        async(() => {
+        (async() => {
           const policyID = value.policyID
           if(policyID) {
-            let policy = await (pm2.getPolicy(value.policyID))
+            let policy = await pm2.getPolicy(value.policyID)
             if(policy) {
-              await (pm2.enablePolicy(policy))
+              await pm2.enablePolicy(policy)
               this.simpleTxData(msg, policy, null, callback);
             } else {
               this.simpleTxData(msg, null, new Error("invalid policy"), callback);
@@ -2770,12 +2352,12 @@ class netBot extends ControllerBot {
         })
         break;
       case "policy:disable":
-        async(() => {
+        (async() => {
           const policyID = value.policyID
           if(policyID) {
-            let policy = await (pm2.getPolicy(value.policyID))
+            let policy = await pm2.getPolicy(value.policyID)
             if(policy) {
-              await (pm2.disablePolicy(policy))
+              await pm2.disablePolicy(policy)
               this.simpleTxData(msg, policy, null, callback);
             } else {
               this.simpleTxData(msg, null, new Error("invalid policy"), callback);
@@ -2838,21 +2420,24 @@ class netBot extends ControllerBot {
       case "reset":
         break;
       case "startSupport":
-        async(() => {
-          await (frp.start())
-          let config = frp.getConfig();
-          let newPassword = await(ssh.resetRandomPasswordAsync())
-          sysManager.setSSHPassword(newPassword); // in-memory update
-          config.password = newPassword
-          this.simpleTxData(msg, config, null, callback)
+        (async() => {
+          let {config,errMsg} = await frp.remoteSupportStart();
+          if(config.startCode == FRPSUCCESSCODE){
+            let newPassword = await ssh.resetRandomPasswordAsync();
+            sysManager.setSSHPassword(newPassword); // in-memory update
+            config.password = newPassword;
+            this.simpleTxData(msg, config, null, callback);
+          }else{
+            this.simpleTxData(msg, config, errMsg.join(";"), callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
         break;
       case "stopSupport":
-        async(() => {
-          await (frp.stop())
-          let newPassword = await(ssh.resetRandomPasswordAsync())
+        (async() => {
+          await frp.stop()
+          let newPassword = await ssh.resetRandomPasswordAsync()
           sysManager.setSSHPassword(newPassword); // in-memory update
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -2860,7 +2445,7 @@ class netBot extends ControllerBot {
         })
         break;
       case "setManualSpoof":
-        async(() => {
+        (async() => {
           let mac = value.mac
           let manualSpoof = value.manualSpoof ? "1" : "0"
 
@@ -2869,14 +2454,14 @@ class netBot extends ControllerBot {
             return
           }
 
-          await (hostTool.updateMACKey({
+          await hostTool.updateMACKey({
             mac: mac,
             manualSpoof: manualSpoof
-          }))
+          })
 
           let mode = require('../net2/Mode.js')
           if(mode.isManualSpoofModeOn()) {
-            await (new SpooferManager().loadManualSpoof(mac))
+            await new SpooferManager().loadManualSpoof(mac)
           }
 
           this.simpleTxData(msg, {}, null, callback)
@@ -2885,16 +2470,16 @@ class netBot extends ControllerBot {
         })
         break
       case "manualSpoofUpdate":
-        async(() => {
+        (async() => {
           let modeManager = require('../net2/ModeManager.js');
-          await (modeManager.publishManualSpoofUpdate())
+          await modeManager.publishManualSpoofUpdate()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })
         break
       case "isSpoofRunning":
-        async(() => {
+        (async() => {
           let timeout = value.timeout
 
           let running = false
@@ -2905,15 +2490,15 @@ class netBot extends ControllerBot {
             while(new Date() / 1000 < begin + timeout) {
               const secondsLeft =  Math.floor((begin + timeout) - new Date() / 1000);
               log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-              running = await (new SpooferManager().isSpoofRunning())
+              running = await new SpooferManager().isSpoofRunning()
               if(running) {
                 break
               }
-              await(delay(1000))
+              await delay(1000)
             }
 
           } else {
-            running = await (new SpooferManager().isSpoofRunning())
+            running = await new SpooferManager().isSpoofRunning()
           }
 
           this.simpleTxData(msg, {running: running}, null, callback)
@@ -2922,7 +2507,7 @@ class netBot extends ControllerBot {
         })
         break
       case "spoofMe":
-        async(() => {
+        (async() => {
           let ip = value.ip
           let name = value.name
 
@@ -2941,7 +2526,7 @@ class netBot extends ControllerBot {
 
             this.simpleTxData(msg, {}, null, callback)
           } else {
-            this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)  
+            this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)
           }
 
         })().catch((err) => {
@@ -2949,12 +2534,12 @@ class netBot extends ControllerBot {
         })
         break
       case "validateSpoof": {
-        async(() => {
+        (async () => {
           let ip = value.ip
           let timeout = value.timeout || 60 // by default, wait for 60 seconds
 
           // add current ip to spoof list
-          await (new SpooferManager().directSpoof(ip))
+          await new SpooferManager().directSpoof(ip)
 
           let begin = new Date() / 1000;
 
@@ -2962,11 +2547,11 @@ class netBot extends ControllerBot {
 
           while(new Date() / 1000 < begin + timeout) {
             log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-            result = await (new SpooferManager().isSpoof(ip))
+            result = await new SpooferManager().isSpoof(ip)
             if(result) {
               break
             }
-            await(delay(1000))
+            await delay(1000)
           }
 
           this.simpleTxData(msg, {
@@ -2978,54 +2563,45 @@ class netBot extends ControllerBot {
         })
         break
       }
-      case "spoof": {
-        async(() => {
-          let ip = value.ip
-
-
-        })()
-      }
       case "bootingComplete":
-        async(() => {
-          await (f.setBootingComplete())
+        (async() => {
+          await f.setBootingComplete()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
-        })      
+        })
         break
       case "resetBootingComplete":
-        async(() => {
-          await (f.resetBootingComplete())
+        (async() => {
+          await f.resetBootingComplete()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
-        })      
+        })
         break
-
       case "joinBeta":
-        async(() => {
-          await (this.switchBranch("beta"))
+        (async() => {
+          await this.switchBranch("beta")
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
+        break;
       case "leaveBeta":
-        async(() => {
-          await (this.switchBranch("prod"))
+        (async() =>{
+          await this.switchBranch("prod")
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
+        break;
       case "switchBranch":
-        let target = value.target
-
-        async(() => {
-          await (this.switchBranch(target))
+        (async() =>{
+          await this.switchBranch(value.target)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
-
         break
       case "enableBinding":
         sysTool.restartFireKickService()
@@ -3055,26 +2631,26 @@ class netBot extends ControllerBot {
           }
         })();
         break;
-      }        
+      }
       case "enableFeature": {
-        const featureName = value.featureName
-        async(() => {
+        const featureName = value.featureName;
+        (async() =>{
           if(featureName) {
-            await (fc.enableDynamicFeature(featureName))
+            await fc.enableDynamicFeature(featureName)
           }
         })().then(() => {
           this.simpleTxData(msg, {}, null, callback)
         })
         .catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
-        })    
+        })
         break
-      }      
+      }
       case "disableFeature": {
-        const featureName = value.featureName
-        async(() => {
+        const featureName = value.featureName;
+        (async() =>{
           if(featureName) {
-            await (fc.disableDynamicFeature(featureName))
+            await fc.disableDynamicFeature(featureName)
           }
         })().then(() => {
           this.simpleTxData(msg, {}, null, callback)
@@ -3083,12 +2659,12 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
-      }      
+      }
       case "clearFeatureDynamicFlag": {
-        const featureName = value.featureName
-        async(() => {
+        const featureName = value.featureName;
+        (async() =>{
           if(featureName) {
-            await (fc.clearDynamicFeature(featureName))
+            await fc.clearDynamicFeature(featureName)
           }
         })().then(() => {
           this.simpleTxData(msg, {}, null, callback)
@@ -3099,7 +2675,7 @@ class netBot extends ControllerBot {
         break
       }
       case "releaseMonkey": {
-        async(() => {
+        (async() =>{
           sem.emitEvent({
             type: "ReleaseMonkey",
             message: "Release a monkey to test system",
@@ -3116,7 +2692,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          await (categoryUpdater.addIncludedDomain(category,domain))
+          await categoryUpdater.addIncludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
@@ -3132,7 +2708,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          await (categoryUpdater.removeIncludedDomain(category,domain))
+          await categoryUpdater.removeIncludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
@@ -3148,7 +2724,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          await (categoryUpdater.addExcludedDomain(category,domain))
+          await categoryUpdater.addExcludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
@@ -3164,7 +2740,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          await (categoryUpdater.removeExcludedDomain(category,domain))
+          await categoryUpdater.removeExcludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
@@ -3176,6 +2752,13 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      
+    case "boneMessage": {
+      this.boneMsgHandler(value);
+      this.simpleTxData(msg, {}, null, callback);
+      break;
+    }
+      
       case "startProServer": {
         proServer.startProServer();
         break;
@@ -3192,6 +2775,132 @@ class netBot extends ControllerBot {
         tokenManager.revokeToken(gid);
         break;
       }
+      case "vpnProfile:grant": {
+        const cn = value.cn;
+        const regenerate = value.regenerate || false;
+        if (!cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' is not specified."}, callback);
+          return;
+        }
+        const matches = cn.match(/^[a-zA-Z0-9]+/g);
+        if (cn.length > 32 || matches == null || matches.length != 1 || matches[0] !== cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters."}, callback);
+          return;
+        }
+        const settings = value.settings || {};
+        (async () => {
+          const allSettings = await VpnManager.getAllSettings();
+          if (Object.keys(allSettings).filter((name) => {
+            return name !== "fishboneVPN1" && name !== cn;
+          }).length >= 1) {
+            // Only one customized VPN profile is supported currently besides default VPN profile fishboneVPN1
+            this.simpleTxData(msg, {}, {code:401, msg: 'Only one customized VPN profile is supported.'}, callback);
+          } else {
+            const systemPolicy = await this.hostManager.loadPolicyAsync();
+            const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+            let externalPort = "1194";
+            if (vpnConfig && vpnConfig.externalPort)
+              externalPort = vpnConfig.externalPort;
+            await VpnManager.configureClient(cn, settings).then(() => {
+              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, (err, ovpnfile, password) => {
+                if (!err) {
+                  this.simpleTxData(msg, {ovpnfile: ovpnfile, password: password, settings: settings}, null, callback);
+                } else {
+                  this.simpleTxData(msg, null, err, callback);
+                }
+              });
+            }).catch((err) => { // usually caused by invalid configuration
+              log.error("Failed to grant vpn profile to " + cn, err);
+              this.simpleTxData(msg, null, {code: 400, msg: err}, callback);
+            });
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnProfile:delete": {
+        const cn = value.cn;
+        if (!cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' is not specified."}, callback);
+          return;
+        }
+        (async () => {
+          await VpnManager.revokeOvpnFile(cn);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnProfile:get": {
+        const cn = value.cn;
+        if (!cn) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'cn' is not specified."}, callback);
+          return;
+        }
+        (async () => {
+          const settings = await VpnManager.getSettings(cn);
+          if (!settings) {
+            this.simpleTxData(msg, {}, {code: 404, msg: `VPN profile of ${cn} does not exist.`}, callback);
+            return;
+          }
+          const systemPolicy = await this.hostManager.loadPolicyAsync();
+          const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+          let externalPort = "1194";
+          if (vpnConfig && vpnConfig.externalPort)
+            externalPort = vpnConfig.externalPort;
+          VpnManager.getOvpnFile(cn, null, false, externalPort, (err, ovpnfile, password) => {
+            if (!err) {
+              this.simpleTxData(msg, {ovpnfile: ovpnfile, password: password, settings: settings}, null, callback);
+            } else {
+              this.simpleTxData(msg, null, err, callback);
+            }
+          });
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnProfile:list": {
+        (async () => {
+          const allSettings = await VpnManager.getAllSettings();
+          const statistics = await new VpnManager().getStatistics();
+          const vpnProfiles = [];
+          for (let cn in allSettings) {
+            // special handling for common name starting with fishboneVPN1
+            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || []});
+          }
+          this.simpleTxData(msg, vpnProfiles, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "vpnConnection:kill": {
+        if (!value.addr) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'addr' is not specified."}, callback);
+          return;
+        }
+        const addrPort = value.addr.split(":");
+        if (addrPort.length != 2) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'addr' should consist of '<ip address>:<port>"}, callback);
+          return;
+        }
+        const addr = addrPort[0];
+        const port = addrPort[1];
+        if (!iptool.isV4Format(addr) || Number.isNaN(port) || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 65535) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "IP address should be IPv4 format and port should be in [0, 65535]"}, callback);
+          return;
+        }
+        (async () => {
+          await new VpnManager().killClient(value.addr);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
       case "startVpnClient": {
         const type = value.type;
         if (!type) {
@@ -3206,20 +2915,19 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup().catch((err) => {
-                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                await ovpnClient.setup().then(async () => {
+                  const result = await ovpnClient.start();
+                  if (!result) {
+                    await ovpnClient.stop();
+                    // HTTP 408 stands for request timeout
+                    this.simpleTxData(msg, {}, {code: 408, msg: "Failed to start vpn client within 30 seconds."}, callback);
+                  } else {
+                    this.simpleTxData(msg, {}, null, callback);
+                  }  
+                }).catch((err) => {
+                  log.error(`Failed to start openvpn client for ${profileId}`, err);
+                  this.simpleTxData(msg, {}, {code: 400, msg: err}, callback);
                 });
-                const result = await ovpnClient.start();
-                if (!result) {
-                  await ovpnClient.stop();
-                  // set state to false in system policy
-                  this._vpnClient("0.0.0.0", {state: false});
-                  // HTTP 408 stands for request timeout
-                  this.simpleTxData(msg, {}, {code: 408, msg: "Failed to start vpn client within 20 seconds."}, callback);
-                } else {
-                  this._vpnClient("0.0.0.0", {state: true});
-                  this.simpleTxData(msg, {}, null, callback);
-                }
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
               });
@@ -3244,12 +2952,12 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
+                // error in setup should not interrupt stop vpn client
                 await ovpnClient.setup().catch((err) => {
                   log.error(`Failed to setup openvpn client for ${profileId}`, err);
                 });
                 const stats = await ovpnClient.getStatistics();
                 await ovpnClient.stop();
-                this._vpnClient("0.0.0.0", {state: false});
                 this.simpleTxData(msg, {stats: stats}, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
@@ -3265,12 +2973,13 @@ class netBot extends ControllerBot {
       case "saveOvpnProfile": {
         let type = value.type || "openvpn";
         switch (type) {
-          case "openvpn":
+          case "openvpn": {
             const content = value.content;
             let profileId = value.profileId;
             const password = value.password;
             const user = value.user;
             const pass = value.pass;
+            const settings = value.settings;
             if (!content) {
               this.simpleTxData(msg, {}, {code: 400, msg: "'content' should be specified"}, callback);
               return;
@@ -3296,7 +3005,7 @@ class netBot extends ControllerBot {
                 const cmd = "mkdir -p " + dirPath;
                 await exec(cmd);
                 const files = await readdirAsync(dirPath);
-                const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+                const ovpns = files.filter(filename => filename !== `${profileId}.ovpn` && filename.endsWith('.ovpn'));
                 if (ovpns && ovpns.length >= 10) {
                   this.simpleTxData(msg, {}, {code: 429, msg: "At most 10 profiles can be saved on Firewalla"}, callback);
                 } else {
@@ -3308,15 +3017,23 @@ class netBot extends ControllerBot {
                   }
                   if (user && pass) {
                     const userPassPath = ovpnClient.getUserPassPath();
-                    await writeFileAsync(userPassPath, `${user}\n${pass}`);
+                    await writeFileAsync(userPassPath, `${user}\n${pass}`, 'utf8');
                   }
-                  this.simpleTxData(msg, {}, null, callback);
+                  if (settings) {
+                    await ovpnClient.saveSettings(settings);
+                  }
+                  await ovpnClient.setup().then(() => {
+                    this.simpleTxData(msg, {}, null, callback);
+                  }).catch((err) => {
+                    this.simpleTxData(msg, {}, {code: 400, msg: err}, callback);
+                  })
                 }
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
-              }) 
+              })
             }
             break;
+          }
           default:
             this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
         }
@@ -3327,8 +3044,8 @@ class netBot extends ControllerBot {
         const type = value.type || "openvpn";
         switch (type) {
           case "openvpn":
-            const profileId = value.profileId;
             (async () => {
+              const profileId = value.profileId;
               if (!profileId || profileId === "") {
                 this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' is not specified"}, callback);
               } else {
@@ -3338,20 +3055,24 @@ class netBot extends ControllerBot {
                   this.simpleTxData(msg, {}, {code: 400, msg: "OpenVPN client " + profileId + " is still running"}, callback);
                 } else {
                   const profilePath = ovpnClient.getProfilePath();
-                  if (fs.existsSync(profilePath)) {
+                  await accessAsync(profilePath, fs.constants.F_OK).then(async () => {
                     await unlinkAsync(profilePath);
                     const passwordPath = ovpnClient.getPasswordPath();
-                    if (fs.existsSync(passwordPath)) {
-                      await unlinkAsync(passwordPath);
-                    }
+                    await accessAsync(passwordPath, fs.constants.F_OK).then(() => {
+                      return unlinkAsync(passwordPath);
+                    }).catch(() => {});
                     const userPassPath = ovpnClient.getUserPassPath();
-                    if (fs.existsSync(userPassPath)) {
-                      await unlinkAsync(userPassPath);
-                    }
+                    await accessAsync(userPassPath, fs.constants.F_OK).then(() => {
+                      return unlinkAsync(userPassPath);
+                    }).catch(() => {});
+                    const settingsPath = ovpnClient.getSettingsPath();
+                    await accessAsync(settingsPath, fs.constants.F_OK).then(() => {
+                      return unlinkAsync(settingsPath);
+                    }).catch(() => {});
                     this.simpleTxData(msg, {}, null, callback);
-                  } else {
+                  }).catch((err) => {
                     this.simpleTxData(msg, {}, {code: 404, msg: "'profileId' '" + profileId + "' does not exist"}, callback);
-                  }
+                  })
                 }
               }
             })().catch((err) => {
@@ -3361,6 +3082,15 @@ class netBot extends ControllerBot {
           default:
             this.simpleTxData(msg, {}, {code: 400, msg: "Unsupported VPN client type: " + type}, callback);
         }
+        break;
+      }
+      case "dismissVersionUpdate": {
+        (async () => {
+          await sysManager.clearVersionUpdate();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       case "saveRSAPublicKey": {
@@ -3444,7 +3174,7 @@ class netBot extends ControllerBot {
             await categoryFlowTool.delAllCategories(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);
             await flowManager.removeFlowsAll(hostMac);
-            
+
             let ips = await hostTool.getIPsByMac(hostMac);
             for (const ip of ips) {
               const latestMac = await hostTool.getMacByIP(ip);
@@ -3496,59 +3226,86 @@ class netBot extends ControllerBot {
           const intf = msg.data.value.interface;
           const dhcpRange = msg.data.value.dhcpRange;
           const dnsServers = msg.data.value.dnsServers || []; // default value is empty
-          if (!network || !intf || !intf.ipAddress || !intf.subnetMask || !dhcpRange || !dhcpRange.begin || !dhcpRange.end ) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface.ipAddress/subnetMask and dhcpRange.start/end should be specified."}, callback);
-          } else {
-            const currentConfig = fc.getConfig(true);
-            switch (network) {
-              case "secondary":
-                const currentSecondaryInterface = currentConfig.secondaryInterface;
-                const updatedConfig = {intf: "eth0:0"};
-                const ipAddress = intf.ipAddress;
-                const subnetMask = intf.subnetMask;
-                const ipSubnet = iptool.subnet(ipAddress, subnetMask);
-                updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
-                const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
-                // redundant entries for backward compatitibility
-                mergedSecondaryInterface.ipOnly = ipAddress;
-                mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
-                mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
-                mergedSecondaryInterface.ipmask = subnetMask;
-                if (mergedSecondaryInterface.ip2) {
-                  const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
-                  mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
-                  mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
-                  mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
-                  mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
-                }
-                await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
+          if (!network || !intf || !intf.ipAddress || !intf.subnetMask) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "network, interface.ipAddress/subnetMask should be specified."}, callback);
+            return;
+          }
+          if (dhcpRange && (!dhcpRange.begin || !dhcpRange.end)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "dhcpRange.start/end should be set at the same time."}, callback);
+            return;
+          }
+          const currentConfig = fc.getConfig(true);
+          switch (network) {
+            case "secondary": {
+              const currentSecondaryInterface = currentConfig.secondaryInterface;
+              const updatedConfig = {intf: "eth0:0"};
+              const ipAddress = intf.ipAddress;
+              const subnetMask = intf.subnetMask;
+              const ipSubnet = iptool.subnet(ipAddress, subnetMask);
+              updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+              const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
+              // redundant entries for backward compatitibility
+              mergedSecondaryInterface.ipOnly = ipAddress;
+              mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
+              mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
+              mergedSecondaryInterface.ipmask = subnetMask;
+              if (mergedSecondaryInterface.ip2) {
+                const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
+                mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
+                mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
+                mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
+                mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
+              }
+              await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
+              if (dhcpRange)
                 this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
-                setTimeout(() => {
-                  let modeManager = require('../net2/ModeManager.js');
-                  modeManager.publishNetworkInterfaceUpdate();
-                }, 5000); // update interface in 5 seconds.
-                this.simpleTxData(msg, {}, null, callback);
-                break;
-              case "alternative":
-                const currentAlternativeInterface = currentConfig.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
-                const updatedAltConfig = {gateway: intf.gateway};
-                const altIpAddress = intf.ipAddress;
-                const altSubnetMask = intf.subnetMask;
-                const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
-                updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
-                const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
-                await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
-                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers, alternativeDhcpRange: dhcpRange});
-                setTimeout(() => {
-                  let modeManager = require('../net2/ModeManager.js');
-                  modeManager.publishNetworkInterfaceUpdate();
-                }, 5000); // update interface in 5 seconds.
-                this.simpleTxData(msg, {}, null, callback);
-                break;
-              default:
-                log.error("Unknwon network type in networkInterface:update, " + network);
-                this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network}, callback);
+              setTimeout(() => {
+                let modeManager = require('../net2/ModeManager.js');
+                modeManager.publishNetworkInterfaceUpdate();
+              }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+              this.simpleTxData(msg, {}, null, callback);
+              break;
             }
+            case "alternative": {
+              const currentAlternativeInterface = currentConfig.alternativeInterface || {ip: sysManager.mySubnet(), gateway: sysManager.myGateway()}; // default value is current ip/subnet/gateway on eth0
+              const updatedAltConfig = {gateway: intf.gateway};
+              const altIpAddress = intf.ipAddress;
+              const altSubnetMask = intf.subnetMask;
+              const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
+              updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+              const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
+              await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
+              if (dhcpRange)
+                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers, alternativeDhcpRange: dhcpRange});
+              setTimeout(() => {
+                let modeManager = require('../net2/ModeManager.js');
+                modeManager.publishNetworkInterfaceUpdate();
+              }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+              this.simpleTxData(msg, {}, null, callback);
+              break;
+            }
+            case "wifi": {
+              const currentWifiInterface = currentConfig.wifiInterface;
+              const updatedWifiConfig = {intf: "wlan0"};
+              const wifiIpAddress = intf.ipAddress;
+              const wifiSubnetMask = intf.subnetMask;
+              const wifiIpSubnet = iptool.subnet(wifiIpAddress, wifiSubnetMask);
+              updatedWifiConfig.ip = wifiIpAddress + "/" + wifiIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+              updatedWifiConfig.mode = intf.mode || "router";
+              updatedWifiConfig.ssid = intf.ssid || "FW_AP";
+              updatedWifiConfig.password = intf.password || "firewalla";
+              updatedWifiConfig.band = intf.band || "g";
+              updatedWifiConfig.channel = intf.channel || "5";
+              const mergedWifiInterface = Object.assign({}, currentWifiInterface, updatedWifiConfig); // if ip2 is not defined, it will be inherited from previous settings
+              await fc.updateUserConfig({wifiInterface: mergedWifiInterface});
+              if (dhcpRange)
+                this._dnsmasq("0.0.0.0", {wifiDnsServers: dnsServers, wifiDhcpRange: dhcpRange});
+              this.simpleTxData(msg, {}, null, callback);
+              break;
+            }
+            default:
+              log.error("Unknown network type in networkInterface:update, " + network);
+              this.simpleTxData(msg, {}, {code: 400, msg: "Unknown network type: " + network}, callback);
           }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3580,7 +3337,7 @@ class netBot extends ControllerBot {
                       dhcpRange = dnsmasq.secondaryDhcpRange;
                     }
                   }
-                  this.simpleTxData(msg, 
+                  this.simpleTxData(msg,
                     {
                       interface: {
                         ipAddress: secondaryInterface.ip.split('/')[0],
@@ -3606,7 +3363,7 @@ class netBot extends ControllerBot {
                       dhcpRange = dnsmasq.alternativeDhcpRange;
                     }
                   }
-                  this.simpleTxData(msg, 
+                  this.simpleTxData(msg,
                     {
                       interface: {
                         ipAddress: alternativeInterface.ip.split('/')[0],
@@ -3673,17 +3430,16 @@ class netBot extends ControllerBot {
       }
       default:
         // unsupported action
-        this.simpleTxData(msg, {}, new Error("Unsupported action: " + msg.data.item), callback);
+        this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);
         break;
     }
   }
 
-  switchBranch(target) {
-    return async(() => {
-      let targetBranch = null
-      let prodBranch = await (f.getProdBranch())
-      
-      switch(target) {
+  async switchBranch(target) {
+    let targetBranch = null
+    let prodBranch = await f.getProdBranch()
+
+    switch (target) {
       case "dev":
         targetBranch = "master";
         break;
@@ -3696,13 +3452,12 @@ class netBot extends ControllerBot {
       case "prod":
         targetBranch = prodBranch
         break
-      }
+    }
 
-      log.info("Going to switch to branch", targetBranch);
+    log.info("Going to switch to branch", targetBranch);
 
-      await (exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`))
-      sysTool.upgradeToLatest()
-    })()
+    await exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
+    sysTool.upgradeToLatest()
   }
 
   simpleTxData(msg, data, err, callback) {
@@ -3833,7 +3588,7 @@ class netBot extends ControllerBot {
       } else {
         log.info("Received jsondata from app", rawmsg.message);
       }
-      
+
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
 
@@ -3859,38 +3614,39 @@ class netBot extends ControllerBot {
                 rawmsg.message.obj.data.simulator) {
                 // options.simulator = 1
               }
-
-              this.hostManager.toJson(true, options, (err, json) => {
-                let datamodel = {
-                  type: 'jsonmsg',
-                  mtype: 'init',
-                  id: uuid.v4(),
-                  expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                  replyid: msg.id,
-                }
-                if (json != null) {
-
-                  json.device = this.getDeviceName();
-                  
-                  datamodel.code = 200;
-                  datamodel.data = json;
-
-                  let end = Date.now();
-                  log.info("Took " + (end - begin) + "ms to load init data");
-
-                  this.cacheInitData(json);
-
-                } else {
-                  if (err) {
-                    log.error("got error when calling hostManager.toJson: " + err);
-                  } else {
-                    log.error("json is null when calling init")
+              sysManager.update((err) => {
+                this.hostManager.toJson(true, options, (err, json) => {
+                  let datamodel = {
+                    type: 'jsonmsg',
+                    mtype: 'init',
+                    id: uuid.v4(),
+                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                    replyid: msg.id,
                   }
-                  datamodel.code = 500;
-                }
-                log.info("Sending data", datamodel.replyid, datamodel.id);
-                this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
+                  if (json != null) {
 
+                    json.device = this.getDeviceName();
+
+                    datamodel.code = 200;
+                    datamodel.data = json;
+
+                    let end = Date.now();
+                    log.info("Took " + (end - begin) + "ms to load init data");
+
+                    this.cacheInitData(json);
+
+                  } else {
+                    if (err) {
+                      log.error("got error when calling hostManager.toJson: " + err);
+                    } else {
+                      log.error("json is null when calling init")
+                    }
+                    datamodel.code = 500;
+                  }
+                  log.info("Sending data", datamodel.replyid, datamodel.id);
+                  this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
+
+                });
               });
             } else {
 
@@ -3967,27 +3723,25 @@ class netBot extends ControllerBot {
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.error(msg,reason.stack);
-  bone.log("error",{
-    version: sysManager.version(),
+  bone.logAsync("error",{
     type:'FIREWALLA.UI.unhandledRejection',
     msg:msg,
     stack:reason.stack,
     err: JSON.stringify(reason)
-  },null);
+  });
 });
 
 process.on('uncaughtException', (err) => {
   log.info("+-+-+-", err.message, err.stack);
-  bone.log("error", {
-    version: sysManager.version(),
+  bone.logAsync("error", {
     type: 'FIREWALLA.UI.exception',
     msg: err.message,
     stack: err.stack,
     err: JSON.stringify(err)
-  }, null);
+  });
   setTimeout(() => {
     try {
-        require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")    
+        require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
     } catch(e) {
     }
     process.exit(1);

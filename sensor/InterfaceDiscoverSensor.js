@@ -18,18 +18,10 @@ let log = require('../net2/logger.js')(__filename);
 
 let Sensor = require('./Sensor.js').Sensor;
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
 
 let NetworkTool = require('../net2/NetworkTool');
 let networkTool = new NetworkTool();
-
-let Promise = require('bluebird');
 
 class InterfaceDiscoverSensor extends Sensor {
   constructor() {
@@ -45,16 +37,14 @@ class InterfaceDiscoverSensor extends Sensor {
     }, 1000 * 60 * 20); // 20 minutes.  (See if dhcp changed anything ...)
   }
 
-  checkAndRunOnce() {
-    return async(() => {
-      let list = await (networkTool.listInterfaces());
-      let redisobjs = ['sys:network:info'];
-      list.forEach((intf) => {
-        redisobjs.push(intf.name);
-        redisobjs.push(JSON.stringify(intf));
-      })
-      return rclient.hmsetAsync(redisobjs);
-    })();
+  async checkAndRunOnce() {
+    let list = await networkTool.listInterfaces();
+    let redisobjs = ['sys:network:info'];
+    list.forEach((intf) => {
+      redisobjs.push(intf.name);
+      redisobjs.push(JSON.stringify(intf));
+    })
+    return rclient.hmsetAsync(redisobjs);
   }
 
 }

@@ -16,7 +16,6 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const fConfig = require('../net2/config.js').getConfig();
 const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();

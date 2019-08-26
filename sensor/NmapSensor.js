@@ -36,8 +36,6 @@ class NmapSensor extends Sensor {
   constructor() {
     super();
 
-    this.networkInterface = networkTool.getLocalNetworkInterface();
-    // this.networkRange = this.networkInterface && this.networkInterface.subnet;
     this.enabled = true; // very basic feature, always enabled
 
     let p = require('../net2/MessageBus.js');
@@ -168,12 +166,10 @@ class NmapSensor extends Sensor {
     return host;
   }
 
-  getNetworkRanges() {
-    return networkTool.getLocalNetworkInterface()
-      .then((results) => {
-        return results &&
-          results.map((x) => networkTool.capSubnet(x.subnet))
-      });
+  async getNetworkRanges() {
+    let results = await networkTool.getLocalNetworkInterface()
+    return results &&
+      results.map((x) => networkTool.capSubnet(x.subnet))
   }
 
   run() {
@@ -188,18 +184,11 @@ class NmapSensor extends Sensor {
     }, 1000 * 60 * 5); // every 5 minutes, fast scan
   }
 
-  checkAndRunOnce(fastMode) {
-    return this.isSensorEnable()
-      .then((result) => {
-        if(result) {
-          return this.getNetworkRanges()
-            .then((range) => {
-              return this.runOnce(fastMode, range)
-            })
-        }
-      }).catch((err) => {
-      log.error("Failed to check if sensor is enabled", err);
-    })
+  async checkAndRunOnce(fastMode) {
+    if (this.isSensorEnabled()) {
+      let range = await this.getNetworkRanges()
+      return this.runOnce(fastMode, range)
+    }
   }
 
   runOnce(fastMode, networkRanges) {
@@ -259,6 +248,8 @@ class NmapSensor extends Sensor {
     if(!host.mac) {
       if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp()) {
         host.mac = sysManager.myMAC()
+      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp()) {
+        host.mac = sysManager.myWifiMAC();
       } else if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
         return // do nothing on secondary ip
       } else {
@@ -290,8 +281,8 @@ class NmapSensor extends Sensor {
     }
   }
 
-  isSensorEnable() {
-    return Promise.resolve(this.enabled);
+  isSensorEnabled() {
+    return this.enabled;
   }
 
   static scan(cmd) {

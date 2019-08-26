@@ -17,12 +17,13 @@
     "mocha": "^2.2.5"
   },
   "dependencies": {
+    "@abandonware/bluetooth-hci-socket": "^0.5.3-1",
     "always-tail": "^0.2.0",
     "async": "^2.0.0-rc.5",
-    "asyncawait": "1.0.6",
     "bee-queue": "^1.2.2",
     "bl": "1.2.0",
-    "bleno": "https://registry.npmjs.org/bleno/-/bleno-0.4.0.tgz",
+    "bleno": "^0.5.0",
+    "bluebird": "^3.5.5",
     "body-parser": "1.9.x",
     "bonjour": "^3.2.2",
     "botbuilder": "^0.6.1",
@@ -59,6 +60,7 @@
     "nat-upnp": "git+https://git@github.com/melvinto/node-nat-upnp.git",
     "netroute": "^1.0.2",
     "network": "git+https://git@github.com/melvinto/network.git",
+    "node-df": "^0.1.4",
     "node-forge": "^0.7.1",
     "node-persist": "0.0.8",
     "node-static": "^0.7.7",
@@ -73,7 +75,8 @@
     "random-seed": "0.3.0",
     "redis": "^2.6.0-2",
     "redis-timeseries": "git+https://git@github.com/melvinto/node-redis-timeseries.git",
-    "request": "^2.67.0",
+    "request": "^2.88.0",
+    "request-progress": "^3.0.0",
     "request-promise": "^4.2.2",
     "requestretry": "^2.0.2",
     "serve-favicon": "~2.3.0",
@@ -83,12 +86,14 @@
     "swagger-node-express": "~2.0",
     "underscore": "^1.8.3",
     "unix-dgram": "^0.2.3",
-    "ursa": "^0.9.1",
+    "ursa": "git+https://git@github.com/JoshKaufman/ursa.git",
     "usage": "^0.7.1",
     "useragent": "^2.1.9",
     "uuid": "^2.0.1",
     "validator": "^9.4.1",
     "vorpal": "^1.7.7",
-    "winston": "2.4.0"
+    "which-pm-runs": "^1.0.0",
+    "winston": "2.4.0",
+    "xml2js": "^0.4.19"
   }
 }

@@ -1,5 +1,6 @@
 #!/bin/bash
 
+alias sudo='sudo '
 alias apt='/home/pi/firewalla/scripts/apt.sh'
 alias apt-get='/home/pi/firewalla/scripts/apt.sh'
 alias t0='tail -F ~/.forever/main.log'
@@ -42,6 +43,7 @@ alias ll0='redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name
 alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireKick\", \"level\":\"info\"}"'
 alias ll2='redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMon\", \"level\":\"info\"}"'
 alias ll3='redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireApi\", \"level\":\"info\"}"'
+alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
 
 alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -'
 
@@ -61,3 +63,5 @@ function mycatip () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
   node /tmp/cat.js --ip "$1"
 }
+
+alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi/firewalla/scripts/main-run'

@@ -26,8 +26,6 @@ const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const exec = require('child-process-promise').exec
 
-const fc = require('../../net2/config.js')
-
 let instances = {};
 
 function delay(t) {

@@ -6,16 +6,12 @@
 
 const log = require("../../net2/logger.js")(__filename, "info");
 
-const fs = require('fs');
 const util = require('util');
 
 const f = require('../../net2/Firewalla.js');
-const fHome = f.getFirewallaHome();
 const logFolder = f.getLogFolder();
 
 const config = require("../../net2/config.js").getConfig();
-
-const userID = f.getUserID();
 
 const df = require('node-df');
 
@@ -28,8 +24,9 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
+const rateLimit = require('../../extension/ratelimit/RateLimit.js');
+
 let cpuUsage = 0;
-let memUsage = 0;
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -39,19 +36,23 @@ let peakTemp = 0;
 let conn = 0;
 let peakConn = 0;
 
+let rateLimitInfo = null;
+
 let redisMemory = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 30 * 1000; // every 30 seconds
-
-let releaseBranch = null;
+let updateInterval = 60 * 1000; // every 30 seconds
 
 let threadInfo = {};
 
 let diskInfo = null;
 
 let intelQueueSize = 0;
+
+let multiProfileSupport = false;
+
+getMultiProfileSupportFlag();
 
 async function update() {
   os.cpuUsage((v) => {
@@ -66,6 +67,8 @@ async function update() {
   await getThreadInfo();
   await getIntelQueueSize();
   await getDiskInfo();
+  await getRateLimitInfo();
+  await getMultiProfileSupportFlag();
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -96,6 +99,10 @@ async function getThreadInfo() {
   }
 }
 
+async function getRateLimitInfo() {
+  rateLimitInfo = await rateLimit.getLastTS();
+}
+
 function getDiskInfo() {
   return new Promise((resolve, reject) => {
     df((err, response) => {
@@ -114,6 +121,16 @@ function getDiskInfo() {
       resolve();
     });
   })
+}
+
+async function getMultiProfileSupportFlag() {
+  const cmd = "sudo bash -c 'test -e /etc/openvpn/easy-rsa/keys2/ta.key'"
+  try {
+    await exec(cmd);
+    multiProfileSupport = false;
+  } catch(err) {
+    multiProfileSupport = true;
+  }
 }
 
 async function getIntelQueueSize() {
@@ -231,7 +248,12 @@ function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     diskInfo: diskInfo,
-    categoryStats: getCategoryStats()
+    categoryStats: getCategoryStats(),
+    multiProfileSupport: multiProfileSupport
+  }
+
+  if(rateLimitInfo) {
+    sysinfo.rateLimitInfo = rateLimitInfo;
   }
 
   return sysinfo;

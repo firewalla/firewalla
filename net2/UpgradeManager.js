@@ -7,13 +7,13 @@ const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
 /*
- * If the system is upgrading ... 
+ * If the system is upgrading ...
  */
 function isUpgrading() {
   return fs.existsSync("/tmp/FWUPGRADING");
 }
 
-/* 
+/*
  * Mark the system finished rebooting after reboot
  */
 function finishUpgrade() {
@@ -28,7 +28,7 @@ async function getUpgradeInfo() {
   let tagBeforeUpgrade = fs.existsSync('/home/pi/.firewalla/run/upgrade-pre-tag')
     ? fs.readFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', 'utf8').trim()
     : 'UnknownVersion';
-  
+
   let result = {
     upgraded: tagBeforeUpgrade != sysInfo.repoTag,
     from:     tagBeforeUpgrade,
@@ -45,7 +45,7 @@ async function updateVersionTag() {
 
 module.exports = {
   isUpgrading:isUpgrading,
-  finishUpgrade: finishUpgrade, 
+  finishUpgrade: finishUpgrade,
   getUpgradeInfo: getUpgradeInfo,
   updateVersionTag: updateVersionTag
 };

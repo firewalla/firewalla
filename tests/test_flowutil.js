@@ -26,9 +26,6 @@ let rclient = redis.createClient();
 
 let license = require('../util/license');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');

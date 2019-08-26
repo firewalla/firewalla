@@ -25,6 +25,7 @@
   },
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
+  "monitoringWifiInterface": "wlan0",
   "newSpoof": true,
   "timing": {
     "alarm.cooldown": 900,
@@ -38,6 +39,11 @@
     "ip": "192.168.218.1/24",
     "ip2": "192.168.168.1/24"
   },
+  "wifiInterface": {
+    "intf": "wlan0",
+    "ip": "10.0.218.1/24",
+    "mode": "router"
+  },
   "vpnInterface": {
     "subnet": "10.8.0.0/24"
   },
@@ -46,7 +52,7 @@
   },
   "dns": {
     "defaultDNSServer": "8.8.8.8",
-    "fallbackDNSServers" : [
+    "fallbackDNSServers": [
       "8.8.8.8",
       "1.1.1.1"
     ],
@@ -78,7 +84,6 @@
     "DeviceInfoIntel",
     "DestInfoIntel",
     "IPLocationIntel",
-    "AlexaIntel",
     "WhoisIPIntel",
     "WhoisDomainIntel",
     "SSLIntel",
@@ -124,10 +129,9 @@
     "CategoryUpdateSensor": {
       "regularInterval": 28800,
       "securityInterval": 14400,
-      "countryInterval": 864000
+      "countryInterval": 86400
     },
-    "AutoBlocksRevalidationSensor": {
-    },
+    "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
     "SafeSearchPlugin": {
@@ -153,6 +157,7 @@
         "google": {
           "forcesafesearch.google.com": [
             "www.google.com",
+            "www.google.ac",
             "www.google.ad",
             "www.google.ae",
             "www.google.com.af",
@@ -365,8 +370,16 @@
         "duckduckgo": "on"
       }
     },
+    "FamilyProtectPlugin": {},
+    "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "NetworkStatsSensor": {
+      "internetTestUrls": {
+        "google": "http://google.com",
+        "github": "http://github.com"
+      }
+    },
     "ICMP6Sensor": {},
     "CPUSensor": {
       "interval": 60,
@@ -455,6 +468,10 @@
       "safe_urls": {
         "expires": 604800,
         "count": 1000
+      },
+      "perf": {
+        "expires": 86400,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
@@ -468,8 +485,12 @@
     "IPChangeSensor": {},
     "DnsLoopAvoidanceSensor": {},
     "DataMigrationSensor": {
-      "migrationCodeNames": ["clairvoyant", "bipartite_graph"]
-    }
+      "migrationCodeNames": [
+        "clairvoyant",
+        "bipartite_graph"
+      ]
+    },
+    "WirelessInterfaceSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -578,6 +599,7 @@
     "upstream_dns": false,
     "insane_mode": false,
     "cpu_monitor": true,
+    "speed_test": false,
     "safe_search": false
   },
   "hiddenFeatures": [

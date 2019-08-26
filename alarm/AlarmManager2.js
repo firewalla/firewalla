@@ -27,9 +27,6 @@ const flat = require('flat');
 const audit = require('../util/audit.js');
 const util = require('util');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const moment = require('moment');
 
 const fc = require('../net2/config.js')
@@ -44,7 +41,7 @@ const intelManager = new IntelManager('info');
 const DNSManager = require('../net2/DNSManager.js');
 const dnsManager = new DNSManager('info');
 
-const getPreferredBName = require('../util/util.js').getPreferredBName
+const getPreferredName = require('../util/util.js').getPreferredName
 
 const delay = require('../util/util.js').delay;
 
@@ -251,28 +248,23 @@ module.exports = class {
     });
   }
 
-  ignoreAlarm(alarmID) {
+  async ignoreAlarm(alarmID) {
     log.info("Going to ignore alarm " + alarmID);
 
-    return async(() => {
-      let alarm = await (this.getAlarm(alarmID))
-      if(!alarm) {
-        throw new Error(`Invalid alarm id: ${alarmID}`)
-        return
-      }
+    let alarm = await this.getAlarm(alarmID)
+    if (!alarm) {
+      throw new Error(`Invalid alarm id: ${alarmID}`)
+    }
 
-      // alarm.result = "ignore"
-      // await (this.updateAlarm(alarm))
-      await (this.archiveAlarm(alarm.aid))
-    })()
+    // alarm.result = "ignore"
+    // await this.updateAlarm(alarm)
+    await this.archiveAlarm(alarm.aid)
   }
 
-  reportBug(alarmID, feedback) {
+  async reportBug(alarmID, feedback) {
     log.info("Going to report feedback on alarm", alarmID, feedback);
 
-    return async(() => {
-      //      await (this.ignoreAlarm(alarmID)) // TODO: report issue to cloud
-    })()
+      //      await this.ignoreAlarm(alarmID) // TODO: report issue to cloud
   }
 
   // Emmit ALARM:CREATED event, effectively create application notifications
@@ -620,7 +612,6 @@ module.exports = class {
     if(proto) {
       let obj = Object.assign(Object.create(proto), json);
       obj.message = obj.localizedMessage(); // append locaized message info
-
       if(obj["p.flow"]) {
         delete obj["p.flow"];
       }
@@ -632,22 +623,13 @@ module.exports = class {
     }
   }
 
-  getAlarm(alarmID) {
-    return new Promise((resolve, reject) => {
-      this.idsToAlarms([alarmID], (err, results) => {
-        if(err) {
-          reject(err);
-          return;
-        }
+  async getAlarm(alarmID) {
+    const results = await this.idsToAlarmsAsync([alarmID])
+    if(results == null || results.length === 0) {
+      throw new Error("alarm not exists");
+    }
 
-        if(results == null || results.length === 0) {
-          reject(new Error("alarm not exists"));
-          return;
-        }
-
-        resolve(results[0]);
-      });
-    });
+    return results[0];
   }
 
   idsToAlarms(ids, callback) {
@@ -663,7 +645,7 @@ module.exports = class {
         callback(err);
         return;
       }
-      callback(null, results.map((r) => this.jsonToAlarm(r)));
+      callback(null, results.map((r) => this.jsonToAlarm(r)).filter(Boolean));
     });
   }
 
@@ -682,7 +664,7 @@ module.exports = class {
 
   // This function will only return when there is new alarm data or timeout
   async fetchNewAlarms(sinceTS, {timeout}) {
-    const alarms = this.loadAlarmsByTimestamp(sinceTS);
+    const alarms = await this.loadAlarmsByTimestamp(sinceTS);
     timeout = timeout || 60;
 
     if(alarms.length > 0) {
@@ -796,17 +778,13 @@ module.exports = class {
   async listExtendedAlarms() {
     const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
 
-    return list.map((l) => {
-      return l.replace(`${alarmDetailPrefix}:`, "");
-    })
+    return list.map(l => l.substring(alarmDetailPrefix.length + 1))
   }
 
   async listBasicAlarms() {
     const list = await rclient.keysAsync(`_alarm:*`);
 
-    return list.map((l) => {
-      return l.replace("_alarm:", "");
-    })
+    return list.map(l => l.substring(7))
   }
 
   async deleteExtendedAlarm(alarmID) {
@@ -1023,7 +1001,9 @@ module.exports = class {
 
         //BLOCK
         switch (alarm.type) {
-          case "ALARM_NEW_DEVICE":
+        case "ALARM_NEW_DEVICE":
+        case "ALARM_DEVICE_OFFLINE":
+        case "ALARM_DEVICE_BACK_ONLINE":
             p.type = "mac";
             p.target = alarm["p.device.mac"];
             break;
@@ -1102,6 +1082,10 @@ module.exports = class {
                   p.type = info.type;
                   p.target = info.target;
                   break;
+              case "country":
+                p.type = info.type;
+                p.target = info.target;
+                break;
                 default:
                   break
               }
@@ -1110,7 +1094,7 @@ module.exports = class {
         }
 
         if(!p.type || !p.target) {
-          callback(new Error("invalid block: type:" + p.type + ", target: " + p.target));
+          callback(new Error("Unsupported Action!"));
           return;
         }
 
@@ -1184,45 +1168,45 @@ module.exports = class {
 
         // FIXME: make it transactional
         // set alarm handle result + add policy
-        pm2.checkAndSave(p, (err, policy, alreadyExists) => {
+        pm2.checkAndSave(p, async (err, policy, alreadyExists) => {
           if(err)
             callback(err);
           else {
             alarm.result_policy = policy.pid;
             alarm.result = "block";
 
-            if(value.method === "auto") {
+            if (value.method === "auto") {
               alarm.result_method = "auto";
             }
 
-            async(() => {
-              await (this.updateAlarm(alarm))
+            try {
+              await this.updateAlarm(alarm)
 
-              if(alarm.result_method != "auto") {
+              if (alarm.result_method != "auto") {
                 // archive alarm unless it's auto block
-                await (this.archiveAlarm(alarm.aid))
+                await this.archiveAlarm(alarm.aid)
               }
 
               log.info("Trying to find if any other active alarms are covered by this new policy")
-              let alarms = await (this.findSimilarAlarmsByPolicy(p, alarm.aid))
-              if(alarms && alarms.length > 0) {
+              let alarms = await this.findSimilarAlarmsByPolicy(p, alarm.aid)
+              if (alarms && alarms.length > 0) {
                 let blockedAlarms = []
-                alarms.forEach((alarm) => {
+                for (const alarm of alarms) {
                   try {
-                    await (this.blockAlarmByPolicy(alarm, policy, info))
+                    await this.blockAlarmByPolicy(alarm, policy, info)
                     blockedAlarms.push(alarm)
-                  } catch(err) {
+                  } catch (err) {
                     log.error(`Failed to block alarm ${alarm.aid} with policy ${policy.pid}: ${err}`)
                   }
-                })
+                }
                 callback(null, policy, blockedAlarms, alreadyExists)
               } else {
                 callback(null, policy, undefined, alreadyExists)
               }
 
-            })().catch((err) => {
+            } catch (err) {
               callback(err)
-            })
+            }
           }
         });
       }).catch((err) => {
@@ -1244,14 +1228,14 @@ module.exports = class {
 
         log.info("Alarm to allow: ", alarm);
 
-        if(!alarm) {
+        if (!alarm) {
           log.error("Invalid alarm ID:", alarmID);
           callback(new Error("Invalid alarm ID: " + alarmID));
           return;
         }
 
         //IGNORE
-        switch(alarm.type) {
+        switch (alarm.type) {
           case "ALARM_NEW_DEVICE":
             i_type = "mac"; // place holder, not going to be matched by any alarm/policy
             i_target = alarm["p.device.mac"];
@@ -1260,16 +1244,16 @@ module.exports = class {
           case "ALARM_UPNP":
             i_type = "devicePort";
 
-            if(userFeedback) {
-              switch(userFeedback.type) {
+            if (userFeedback) {
+              switch (userFeedback.type) {
                 case "deviceAllPorts":
                   i_type = "deviceAllPorts";
                   break;
                 case "deviceAppPort":
-                i_type = "deviceAppPort";
+                  i_type = "deviceAppPort";
                   break;
                 default:
-                // do nothing
+                  // do nothing
                   break;
               }
             }
@@ -1284,7 +1268,7 @@ module.exports = class {
             } else {
               let targetIp = alarm["p.device.ip"];
               dnsManager.resolveLocalHost(targetIp, (err, result) => {
-                if(err || result == null) {
+                if (err || result == null) {
                   log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
                   callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
                   return;
@@ -1301,7 +1285,7 @@ module.exports = class {
 
           default:
 
-            if(alarm["p.dest.name"] ===  alarm["p.dest.ip"]) {
+            if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
               i_type = "ip";
               i_target = alarm["p.dest.ip"];
             } else {
@@ -1309,30 +1293,34 @@ module.exports = class {
               i_target = alarm["p.dest.name"];
             }
 
-            if(userFeedback) {
-              switch(userFeedback.type) {
-                case "domain":
-                case "dns":
-                  i_type = "dns"
-                  i_target = userFeedback.target
-                  break
-                case "ip":
-                  i_type = "ip"
-                  i_target = userFeedback.target
-                  break
-                case "category":
-                  i_type = "category";
-                  i_target = userFeedback.target;
-                  break;
-                default:
-                  break
+            if (userFeedback) {
+              switch (userFeedback.type) {
+              case "domain":
+              case "dns":
+                i_type = "dns"
+                i_target = userFeedback.target
+                break
+              case "ip":
+                i_type = "ip"
+                i_target = userFeedback.target
+                break
+              case "category":
+                i_type = "category";
+                i_target = userFeedback.target;
+                break;
+              case "country":
+                i_type="country";
+                i_target = userFeedback.target;
+                break;
+              default:
+                break
               }
             }
             break;
         }
 
-        if(!i_type || !i_target) {
-          callback(new Error("invalid block"));
+        if (!i_type || !i_target) {
+          callback(new Error("Unsupported Action!"));
           return;
         }
 
@@ -1347,50 +1335,55 @@ module.exports = class {
           category: (userFeedback && userFeedback.category) || ""
         });
 
-        switch(i_type) {
-        case "mac":
-          e["p.device.mac"] = alarm["p.device.mac"];
-          e["target_name"] = alarm["p.device.name"];
-          e["target_ip"] = alarm["p.device.ip"];
+        switch (i_type) {
+          case "mac":
+            e["p.device.mac"] = alarm["p.device.mac"];
+            e["target_name"] = alarm["p.device.name"];
+            e["target_ip"] = alarm["p.device.ip"];
+            break;
+          case "ip":
+            e["p.dest.ip"] = alarm["p.dest.ip"];
+            e["target_name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
+            e["target_ip"] = alarm["p.dest.ip"];
+            break;
+          case "domain":
+          case "dns":
+            e["p.dest.name"] = `*.${i_target}` // add *. prefix to domain for dns matching
+            e["target_name"] = `*.${i_target}`
+            e["target_ip"] = alarm["p.dest.ip"];
+            break;
+          case "category":
+            e["p.dest.category"] = i_target;
+            e["target_name"] = i_target;
+            e["target_ip"] = alarm["p.dest.ip"];
           break;
-        case "ip":
-          e["p.dest.ip"] = alarm["p.dest.ip"];
-          e["target_name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
-          e["target_ip"] = alarm["p.dest.ip"];
-          break;
-        case "domain":
-        case "dns":
-          e["p.dest.name"] = `*.${i_target}` // add *. prefix to domain for dns matching
-          e["target_name"] = `*.${i_target}`
-          e["target_ip"] = alarm["p.dest.ip"];
-          break;
-        case "category":
-          e["p.dest.category"] = i_target;
+        case "country":
+          e["p.dest.country"] = i_target;
           e["target_name"] = i_target;
           e["target_ip"] = alarm["p.dest.ip"];
           break;
-        case "devicePort":
-          e["p.device.mac"] = alarm["p.device.mac"];
-          if(alarm.type === 'ALARM_UPNP') {
-            e["p.upnp.private.port"] = alarm["p.upnp.private.port"];
-            e["p.upnp.protocol"] = alarm["p.upnp.protocol"];
-          }
-          break
-        case "deviceAllPorts":
-          e["p.device.mac"] = alarm["p.device.mac"];
-          break;
-        case "deviceAppPort":
-          e["p.device.mac"] = alarm["p.device.mac"];
-          if(alarm.type === 'ALARM_UPNP') {
-            e["p.upnp.description"] = alarm["p.upnp.description"];
-          }
-          break;
-        default:
-          // not supported
-          break;
+          case "devicePort":
+            e["p.device.mac"] = alarm["p.device.mac"];
+            if (alarm.type === 'ALARM_UPNP') {
+              e["p.upnp.private.port"] = alarm["p.upnp.private.port"];
+              e["p.upnp.protocol"] = alarm["p.upnp.protocol"];
+            }
+            break
+          case "deviceAllPorts":
+            e["p.device.mac"] = alarm["p.device.mac"];
+            break;
+          case "deviceAppPort":
+            e["p.device.mac"] = alarm["p.device.mac"];
+            if (alarm.type === 'ALARM_UPNP') {
+              e["p.upnp.description"] = alarm["p.upnp.description"];
+            }
+            break;
+          default:
+            // not supported
+            break;
         }
 
-        if(userFeedback && userFeedback.device) {
+        if (userFeedback && userFeedback.device) {
           e["p.device.mac"] = userFeedback.device; // limit exception to a single device
         }
 
@@ -1399,57 +1392,43 @@ module.exports = class {
         // FIXME: make it transactional
         // set alarm handle result + add policy
 
-        exceptionManager.checkAndSave(e, (err, exception, alreadyExists) => {
-          if(err) {
+        exceptionManager.checkAndSave(e, async (err, exception, alreadyExists) => {
+          if (err) {
             log.error("Failed to save exception: " + err);
             callback(err);
             return;
           }
 
-          if(alreadyExists) {
+          if (alreadyExists) {
             log.info(`exception ${e} already exists: ${exception}`)
           }
 
           alarm.result_exception = exception.eid;
           alarm.result = "allow";
 
-          this.updateAlarm(alarm)
-            .then(() => {
-              // archive alarm
-
-              this.archiveAlarm(alarm.aid)
-                .then(() => {
-
-                  async(() => {
-                    log.info("Trying to find if any other active alarms are covered by this new exception")
-                    let alarms = await (this.findSimilarAlarmsByException(exception, alarm.aid))
-                    if(alarms && alarms.length > 0) {
-                      let allowedAlarms = []
-                      alarms.forEach((alarm) => {
-                        try {
-                          await (this.allowAlarmByException(alarm, exception, info))
-                          allowedAlarms.push(alarm)
-                        } catch(err) {
-                          log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
-                        }
-                      })
-                      callback(null, exception, allowedAlarms, alreadyExists)
-                    } else {
-                      log.info("No similar alarms are found")
-                      callback(null, exception, undefined, alreadyExists)
-                    }
-                  })()
-                })
-                .catch((err) => {
-                  callback(err)
-                })
-            }).catch((err) => {
-              callback(err);
-            });
-        });
+          await this.updateAlarm(alarm)
+          await this.archiveAlarm(alarm.aid)
+          log.info("Trying to find if any other active alarms are covered by this new exception")
+          let alarms = await this.findSimilarAlarmsByException(exception, alarm.aid)
+          if (alarms && alarms.length > 0) {
+            let allowedAlarms = []
+            for (const alarm of alarms) {
+              try {
+                await this.allowAlarmByException(alarm, exception, info)
+                allowedAlarms.push(alarm)
+              } catch (err) {
+                log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
+              }
+            }
+            callback(null, exception, allowedAlarms, alreadyExists)
+          } else {
+            log.info("No similar alarms are found")
+            callback(null, exception, undefined, alreadyExists)
+          }
+        })
       }).catch((err) => {
         callback(err);
-      });
+      })
   }
 
   unblockFromAlarm(alarmID, info, callback) {
@@ -1544,7 +1523,7 @@ module.exports = class {
           return;
         }
 
-        let deviceName = getPreferredBName(result);
+        let deviceName = getPreferredName(result);
         let deviceID = result.mac;
 
         Object.assign(alarm, {

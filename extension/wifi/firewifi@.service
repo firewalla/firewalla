@@ -1,0 +1,10 @@
+[Unit]
+Description=Firewalla Wifi on interface %i
+After=network.target
+
+[Service]
+Restart=always
+ExecStart=/usr/sbin/hostapd /home/pi/firewalla/extension/wifi/%i.conf
+
+[Install]
+WantedBy=multi-user.target

@@ -17,10 +17,7 @@ const log = require('./logger.js')(__filename);
 
 const util = require('util');
 const iptool = require('ip');
-const os = require('os');
-const network = require('network');
 var instance = null;
-const fs = require('fs');
 const license = require('../util/license.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -32,14 +29,14 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const exec = require('child-process-promise').exec
 
 const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial"];
 
 const bone = require("../lib/Bone.js");
+
+const sss = require('../extension/sysinfo/SysInfo.js');
+
 var systemDebug = false;
 
 function setSystemDebug(_systemDebug) {
@@ -325,6 +322,11 @@ module.exports = class {
     })
   }
 
+  async getTimezone() {
+    const tz = await rclient.hgetAsync("sys:config", "timezone");
+    return tz;
+  }
+
   setTimezone(timezone, callback) {
     callback = callback || function() {}
 
@@ -336,15 +338,15 @@ module.exports = class {
       pclient.publish("System:TimezoneChange", timezone);
 
       // TODO: each running process may not be set to the target timezone until restart
-      async(() => {
+      (async() =>{
         try {
           let cmd = `sudo timedatectl set-timezone ${timezone}`
-          await (exec(cmd))
+          await exec(cmd)
 
           // TODO: we can improve in the future that only restart if new timezone is different from old one
           // but the impact is low since calling this settimezone function is very rare
           let cronRestartCmd = "sudo systemctl restart cron.service"
-          await (exec(cronRestartCmd))
+          await exec(cronRestartCmd)
 
           callback(null)
         } catch(err) {
@@ -419,6 +421,29 @@ module.exports = class {
       });
   }
 
+  async syncVersionUpdate() {
+    const version = this.version();
+    if (!version || version === "unknown") return;
+    const isKnownVersion = await rclient.sismemberAsync("sys:versionHistory", version);
+    if (!isKnownVersion) {
+      const versionDesc = {version: version, time: Math.floor(Date.now() / 1000)};
+      await rclient.setAsync("sys:versionUpdate", JSON.stringify(versionDesc));
+      await rclient.saddAsync("sys:versionHistory", version);
+    }
+  }
+
+  async getVersionUpdate() {
+    return rclient.getAsync("sys:versionUpdate").then((versionDesc) => {
+      return JSON.parse(versionDesc)
+    }).catch((err) => {
+      return null;
+    });
+  }
+
+  async clearVersionUpdate() {
+    return rclient.delAsync("sys:versionUpdate");
+  }
+
   setOperationalState(state, value) {
     this.update((err) => {
       this.sysinfo['oper'][state] = value;
@@ -447,6 +472,12 @@ module.exports = class {
     }
   }
 
+  monitoringWifiInterface() {
+    if (this.config) {
+      return this.sysinfo && this.sysinfo[this.config.monitoringWifiInterface];
+    }
+  }
+
   myIp() {
     if(this.monitoringInterface()) {
       return this.monitoringInterface().ip_address;
@@ -470,6 +501,14 @@ module.exports = class {
   myIp2() {
     if(this.monitoringInterface2()) {
       return this.monitoringInterface2().ip_address;
+    } else {
+      return undefined;
+    }
+  }
+
+  myWifiIp() {
+    if (this.monitoringWifiInterface()) {
+      return this.monitoringWifiInterface().ip_address;
     } else {
       return undefined;
     }
@@ -508,11 +547,31 @@ module.exports = class {
     }
   }
 
+  myWifiIpMask() {
+    if(this.monitoringWifiInterface()) {
+      let mask =  this.monitoringWifiInterface().netmask;
+      if (mask.startsWith("Mask:")) {
+        mask = mask.substr(5);
+      }
+      return mask;
+    } else {
+      return undefined;
+    }
+  }
+
   myMAC() {
     if (this.monitoringInterface() && this.monitoringInterface().mac_address) {
       return this.monitoringInterface().mac_address.toUpperCase();
     } else {
-      return null;
+      return undefined;
+    }
+  }
+
+  myWifiMAC() {
+    if (this.monitoringWifiInterface() && this.monitoringWifiInterface().mac_address) {
+      return this.monitoringWifiInterface().mac_address.toUpperCase();
+    } else {
+      return undefined;
     }
   }
 
@@ -556,6 +615,14 @@ module.exports = class {
     }
   }
 
+  myWifiSubnet() {
+    if (this.monitoringWifiInterface()) {
+      return this.monitoringWifiInterface().subnet;
+    } else {
+      return undefined;
+    }
+  }
+
   mySubnetNoSlash() {
     let subnet = this.mySubnet();
     return subnet.substring(0, subnet.indexOf('/'));
@@ -573,7 +640,8 @@ module.exports = class {
     if (!iptool.isV4Format(ip4)) return false;
     else return (
       iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
-      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4)
+      (this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) || false) ||
+      (this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) || false)
     )
   }
 
@@ -676,7 +744,8 @@ module.exports = class {
         language: this.language,
         timezone: this.timezone,
         memory: data,
-        cpuTemperature: cpuTemperature
+        cpuTemperature: cpuTemperature,
+        sss: sss.getSysInfo()
       });
     });
   }

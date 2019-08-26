@@ -17,7 +17,6 @@
 let ursa = require('ursa');
 let crypto = require('crypto');
 let fs = require('fs');
-let path = require('path');
 let request = require('requestretry');
 let uuid = require("uuid");
 let io2 = require('socket.io-client');
@@ -27,13 +26,8 @@ let log = require('../../net2/logger')(__filename);
 let Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let zlib = require('zlib');
 let License = require('../../util/license.js');
-
-let debugging = false;
 
 let fConfig = require('../../net2/config.js').getConfig();
 
@@ -83,75 +77,59 @@ let legoEptCloud = class {
             this.cryptoalgorithem = 'aes-256-cbc';
             this.name = name;
             this.errTtl = 2; // only retry x times for bad requests
-            debugging = false;
             this.notifySocket = false;
             this.notifyGids = [];
 
         }
         // NO LONGER create keypair in sync node during constructor
-
-        // if (true == this.keypair(name, pathname)) {
-        //     return instance[name];
-        // } else {
-        //     log.info("ENCIPHER.IO Failed to create keys");
-        //     instance[name] = null;
-        //     return null;
-        // }
     }
 
-    keyReady() {
+    async keyReady() {
       log.info("Checking whether key pair exists already");
 
-      return async(() => {
 
         try {
-          await(fs.accessAsync(this.getPublicKeyPath()));
-          await(fs.accessAsync(this.getPrivateKeyPath()));
+          await fs.accessAsync(this.getPublicKeyPath())
+          await fs.accessAsync(this.getPrivateKeyPath())
         } catch(err) {
           if(err) {
             return Promise.resolve(null);
           }
         }
 
-        let pubFile = await(fs.readFileAsync(this.getPublicKeyPath()));
-        let priFile = await(fs.readFileAsync(this.getPrivateKeyPath()));
+        let pubFile = await fs.readFileAsync(this.getPublicKeyPath())
+        let priFile = await fs.readFileAsync(this.getPrivateKeyPath())
         if(pubFile.length < 10 || priFile.length < 10) {
           log.error("ENCIPHER.IO Unable to read keys, keylength error", pubFile.length, priFile.length);
-          await(this.cleanupKeys());
+          await this.cleanupKeys()
           return Promise.resolve(null);
         } else {
           log.info("Key pair exists");
           return Promise.resolve({pub: pubFile, pri: priFile});
         }
 
-      })();
     }
 
-    utilKeyReady() {
-      return async(() => {
-        let result = await(this.keyReady());
-        if(!result) {
-          log.info("Checking if keys are ready...");
-          await(delay(3000)); // wait for three seconds
-          return await(this.utilKeyReady());
+    async utilKeyReady() {
+        let result = await this.keyReady()
+        if (!result) {
+            log.info("Checking if keys are ready...");
+            await delay(3000); // wait for three seconds
+            return this.utilKeyReady()
         }
         return true;
-      })();
     }
 
-    cleanupKeys() {
-      log.info("Cleaning up key pairs");
+    async cleanupKeys(pathname) {
+        log.info("Cleaning up key pairs");
 
-      this.myprivkeyfile = null;
-      this.mypubkeyfile = null;
-      this.myPublicKey = null;
-      this.myPrivateKey = null;
+        this.myprivkeyfile = null;
+        this.mypubkeyfile = null;
+        this.myPublicKey = null;
+        this.myPrivateKey = null;
 
-      return async(() => {
-        await(exec("sudo rm -f "+pathname+"/db/groupId"));
-        await(exec("sync"));
-        return Promise.resolve();
-      })();
+        await exec("sudo rm -f " + pathname + "/db/groupId")
+        await exec("sync")
     }
 
     getPrivateKeyPath() {
@@ -162,100 +140,44 @@ let legoEptCloud = class {
       return this.keyPath + this.name + ".pubkey.pem";
     }
 
-    loadKeys() {
+    async loadKeys() {
       log.info("Loading or creating keys");
-      return async(() => {
-        if(this.myPublicKey && this.myPrivateKey) {
-          return Promise.resolve();
-        }
-        if(this.myprivkeyfile && this.mypubkeyfile) {
-          this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
-          this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-          return Promise.resolve();
-        }
+      if (this.myPublicKey && this.myPrivateKey) {
+        return
+      }
+      if (this.myprivkeyfile && this.mypubkeyfile) {
+        this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
+        this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
+        return
+      }
 
-        let keys = await(this.keyReady());
-        if(keys) {
-          this.mypubkeyfile = keys.pub;
-          this.myprivkeyfile = keys.pri;
-          this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
-          this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-          return Promise.resolve();
-        } else {
-          return this.createKeyPair();
-        }
-      })();
+      let keys = await this.keyReady()
+      if (keys) {
+        this.mypubkeyfile = keys.pub;
+        this.myprivkeyfile = keys.pri;
+        this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
+        this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
+        return
+      } else {
+        return this.createKeyPair();
+      }
     }
 
-    createKeyPair() {
+    async createKeyPair() {
       let key = ursa.generatePrivateKey(2048, 65537);
       let privateKeyPem = key.toPrivatePem();
       let pubKeyPem = key.toPublicPem();
 
-      return async(() => {
 
-        await(fs.writeFileSync(this.getPrivateKeyPath(), privateKeyPem, 'ascii'));
-        await(fs.writeFileSync(this.getPublicKeyPath(), pubKeyPem, 'ascii'));
-        await(exec("sync"));
+      await fs.writeFileSync(this.getPrivateKeyPath(), privateKeyPem, 'ascii')
+      await fs.writeFileSync(this.getPublicKeyPath(), pubKeyPem, 'ascii')
+      await exec("sync")
 
-        this.myPublicKey = ursa.createPublicKey(pubKeyPem);
-        this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
-        this.mypubkeyfile = pubKeyPem;
-        this.myprivkeyfile = privateKeyPem;
-      })();
+      this.myPublicKey = ursa.createPublicKey(pubKeyPem);
+      this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
+      this.mypubkeyfile = pubKeyPem;
+      this.myprivkeyfile = privateKeyPem;
     }
-
-    debug(state) {
-        debugging = state;
-    }
-
-    keypair(name, pathname) {
-        log.info("Reading pem from ", pathname + name + ".privkey.pem");
-        if (fs.existsSync(pathname + name + ".privkey.pem") && fs.existsSync(pathname + name + ".pubkey.pem")) {
-            try {
-                this.myprivkeyfile = fs.readFileSync(pathname + name + ".privkey.pem");
-                this.mypubkeyfile = fs.readFileSync(pathname + name + ".pubkey.pem");
-                if (this.myprivkeyfile.length<10 || this.mypubkeyfile.length<10) {
-                    log.info("ENCIPHER.IO Unable to read keys, keylength error", this.myprivkeyfile.length, this.mypubkeyfile.length);
-                    this.myprivkeyfile = null;
-                    this.mypubkeyfile = null;
-                    require('child_process').execSync("sudo rm -f "+pathname+"/db/groupId");
-                    require('child_process').execSync("sync");
-                }
-            } catch (err) {
-                log.info("ENCIPHER.IO Unable to read keys");
-                return false;
-            }
-        }
-        if (this.myprivkeyfile == null || this.mypubkeyfile == null) {
-            let key = ursa.generatePrivateKey(2048, 65537);
-            let privateKeyPem = key.toPrivatePem();
-            let pubKeyPem = key.toPublicPem();
-
-            try {
-                fs.writeFileSync(path.join(pathname, name + ".privkey.pem"), privateKeyPem, 'ascii');
-                fs.writeFileSync(path.join(pathname, name + ".pubkey.pem"), pubKeyPem, 'ascii');
-                require('child_process').execSync("sync");
-            } catch (err) {
-                log.info("ENCIPHER.IO Unable to write keys");
-                return false;
-            }
-
-            this.myPublicKey = ursa.createPublicKey(pubKeyPem);
-            this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
-        } else {
-            this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
-            this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-        }
-        return true;
-    }
-
-    addPeer(publicKey, pid) {
-        if (this.publicKeyStore(pid)) {
-
-        }
-    }
-
 
     eptloginAsync(appId, appSecret, eptInfo, tag) {
       return new Promise((resolve, reject) => {

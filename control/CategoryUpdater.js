@@ -45,12 +45,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
       instance = this
 
       this.activeCategories = {
+        "default_c": 1,
         "games": 1,
         "social": 1,
         "porn": 1,
         "shopping": 1,
         "av": 1,
-        "default_c": 1,
         "p2p": 1,
         "gamble": 1
       };
@@ -364,12 +364,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
       let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
-      return (async () => {
+      try {
         await exec(cmd4);
         await exec(cmd6);
-      })().catch((err) => {
+      } catch(err) {
         log.error(`Failed to filter ipset by category ${category} domain pattern ${domain}, err: ${err}`)
-      })
+      }
     }
   }
 

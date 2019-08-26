@@ -18,9 +18,6 @@ const Promise = require('bluebird');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
 const log = require('./logger.js')(__filename)
 
 let _setupMode = null

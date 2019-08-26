@@ -18,8 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const uuid = require("uuid");
 
-const intercomm = require('../lib/intercomm.js');
-const utils = require('../lib/utils.js');
+
 const { delay } = require('../util/util.js');
 const network = require('network');
 const qrcode = require('qrcode-terminal');
@@ -37,9 +36,14 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
+const iptool = require('ip');
+
 const clientMgmt = require('../mgmt/ClientMgmt.js');
 
 const config = require('../net2/config.js').getConfig();
+
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager();
 
 const FW_SERVICE = "Firewalla";
 const FW_SERVICE_TYPE = "fb";
@@ -254,10 +258,18 @@ class FWInvitation {
       this.diag.broadcastInfo = txtfield
     }
 
-    if (intercomm.bcapable()==false) {
+    const myIp = sysManager.myIp();
+    const icOptions = {};
+    if(myIp) {
+      icOptions.interface = myIp;
+    }
+    
+    this.intercomm = require('../lib/intercomm.js')(icOptions);
+    
+    if (this.intercomm.bcapable()==false) {
       txtfield.verifymode = "qr";
     } else {
-      intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
+      this.intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
     }
 
     if(this.firstTime) {
@@ -274,16 +286,21 @@ class FWInvitation {
 
     network.get_private_ip((err, ip) => {
       txtfield.ipaddress = ip;
+      const ip2 = sysManager.myIp2();
+      const otherAddrs = [];
+      if (ip2 && iptool.isV4Format(ip2))
+        otherAddrs.push(ip2);
+      txtfield.ipaddresses = otherAddrs.join(",");
 
       log.info("TXT:", txtfield);
       const serial = platform.getBoardSerial();
-      this.service = intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
+      this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
       this.displayBonjourMessage(txtfield);
       this.storeBonjourMessage(txtfield);
     });
 
-    if (intercomm.bcapable() != false) {
-      intercomm.bpublish(gid, obj.r, config.serviceType);
+    if (this.intercomm.bcapable() != false) {
+      this.intercomm.bpublish(this.gid, obj.r, config.serviceType);
     }
 
     const cmd = "awk '{print $1}' /proc/uptime";
@@ -320,10 +337,12 @@ class FWInvitation {
   }
 
   stopBroadcast() {
-    this.service && intercomm.stop(this.service);
-    intercomm.bcapable() && intercomm.bstop();
-    intercomm.bye();
-    this.unsetBonjourMessage();
+    if(this.intercomm) {
+      this.service && this.intercomm.stop(this.service);
+      this.intercomm.bcapable() && this.intercomm.bstop();
+      this.intercomm.bye();
+      this.unsetBonjourMessage();      
+    }    
   }
 }
 

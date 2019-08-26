@@ -5,7 +5,8 @@ const jsonfile = require('jsonfile');
 const util = require('util');
 
 const i18n = require('../util/i18n.js');
-const fc = require('../net2/config.js')
+const fc = require('../net2/config.js');
+const moment = require('moment');
 
 // let moment = require('moment');
 
@@ -200,6 +201,9 @@ class DeviceBackOnlineAlarm extends Alarm {
 class DeviceOfflineAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_DEVICE_OFFLINE", timestamp, device, info);
+    if (info && info["p.device.lastSeen"]) {
+      this['p.device.lastSeenTimezone'] = moment(info["p.device.lastSeen"]*1000).format('LT')
+    }
   }
 
   getManagementType() {
@@ -372,6 +376,9 @@ class OutboundAlarm extends Alarm {
   constructor(type, timestamp, device, destinationID, info) {
     super(type, timestamp ,device, info);
     this["p.dest.id"] = destinationID;
+    if (this.timestamp) {
+      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+    }
   }
 
   requiredKeys() {

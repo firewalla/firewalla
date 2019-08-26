@@ -182,8 +182,8 @@ module.exports = class {
       this.connLog = new Tail(this.config.bro.conn.path, '\n');
       if (this.connLog != null) {
         log.debug("Initializing watchers: connInitialized", this.config.bro.conn.path);
-        this.connLog.on('line', (data) => {
-          this.processConnData(data);
+        this.connLog.on('line', async (data) => {
+          await this.processConnData(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -193,8 +193,8 @@ module.exports = class {
       this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
       if (this.connLogdev != null) {
         log.debug("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
-        this.connLogdev.on('line', (data) => {
-          this.processConnData(data);
+        this.connLogdev.on('line', async (data) => {
+          await this.processConnData(data);
         });
       } else {
         setTimeout(this.initWatchers, 5000);
@@ -258,23 +258,23 @@ module.exports = class {
   }
   
   async _activeMacHeartbeat() {
-    for (let key in this.activeMac) {
-      let ip = this.activeMac[key];
-      if (!iptool.isV4Format(ip)) {
-        // get corresponding ipv4 address
-        const macEntry = await hostTool.getMACEntry(key);
-        ip = macEntry && macEntry.ipv4Addr;
+    for (let mac in this.activeMac) {
+      let entry = this.activeMac[mac];
+      let host = {
+        mac: mac,
+        from: "macHeartbeat"
+      };
+      if (entry.ipv4Addr && iptool.isV4Format(entry.ipv4Addr)) {
+        host.ipv4 = entry.ipv4Addr;
+        host.ipv4Addr = entry.ipv4Addr;
       }
-      if (ip) {
-        const host = {
-          ipv4: ip,
-          ipv4Addr: ip,
-          mac: key,
-          from: "macHeartbeat"
-        };
+      if (entry.ipv6Addr && Array.isArray(entry.ipv6Addr) && entry.ipv6Addr.length > 0) {
+        host.ipv6Addr = entry.ipv6Addr;
+      }
+      if (host.ipv4Addr || host.ipv6Addr) {
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: `Device network activity heartbeat ${host.ip} ${host.mac}`,
+          message: `Device network activity heartbeat ${host.ipv4Addr || host.ipv6Addr} ${host.mac}`,
           host: host
         });
       }
@@ -545,70 +545,51 @@ module.exports = class {
     const myip = sysManager.myIp();
     const myip2 = sysManager.myIp2();
     const myip6 = sysManager.myIp6();
+    const myWifiIp = sysManager.myWifiIp();
 
-    if(m === 'dhcp' || m === 'dhcpSpoof') { // only for dhcp and dhcpSpoof
-      if (myip) {
-        // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
-        if (data["id.orig_h"] === myip ||
-          data["id.resp_h"] === myip) {
-          return false
-        }
+    if (myip) {
+      // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
+      if (data["id.orig_h"] === myip ||
+        data["id.resp_h"] === myip) {
+        return false
       }
+    }
 
-      if (myip2) {
-        // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
-        if (data["id.orig_h"] === myip2 ||
-          data["id.resp_h"] === myip2) {
-          return false
-        }
+    if (myip2) {
+      // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
+      if (data["id.orig_h"] === myip2 ||
+        data["id.resp_h"] === myip2) {
+        return false
       }
+    }
 
-      if (myip6 && myip6.length !== 0) {
-        if (myip6.includes(data["id.orig_h"]) ||
-          myip6.includes(data["id.resp_h"])) {
-            return false;
-          }
-      }
-
-      // ignore any devices' traffic who is set to monitoring off
-      const origIP = data["id.orig_h"]
-      const respIP = data["id.resp_h"]
-
-      if (sysManager.isLocalIP(origIP)) {
-        if (!this.isMonitoring(origIP)) {
-          return false // set it to invalid if it is not monitoring
-        }
-      }
-
-      if (sysManager.isLocalIP(respIP)) {
-        if (!this.isMonitoring(respIP)) {
-          return false // set it to invalid if it is not monitoring
-        }
-      }
-    } else if(m === 'spoof' || m === 'autoSpoof') {
-      const systemPolicy = hostManager.getPolicyFast();
-      const isEnhancedSpoof = (systemPolicy['enhancedSpoof'] == true);
-
-      // walla ip (myip) exists (very sure), connection is from/to walla itself, walla is set to monitoring off
-      if(myip && 
-        (data["id.orig_h"] === myip || data["id.resp_h"] === myip) && 
-        (!this.isMonitoring(myip) || isEnhancedSpoof)
-      ) {        
-        return false // set it to invalid if walla itself is set to "monitoring off"
-      }
-
-      if(myip2 && 
-        (data["id.orig_h"] === myip2 || data["id.resp_h"] === myip2) && 
-        (!this.isMonitoring(myip2) || isEnhancedSpoof)
-      ) {        
-        return false // set it to invalid if walla itself is set to "monitoring off"
-      }
-
-      if (myip6 && myip6.length !== 0 && 
-        (myip6.includes(data["id.orig_h"]) || myip6.includes(data["id.resp_h"])) &&
-        (!this.isMonitoring(myip) || isEnhancedSpoof) // it's okay to use my ipv4 address to determine whether walla is monitored
-      ) {
+    if (myip6 && myip6.length !== 0) {
+      if (myip6.includes(data["id.orig_h"]) ||
+        myip6.includes(data["id.resp_h"])) {
         return false;
+      }
+    }
+
+    if (myWifiIp) {
+      if (data["id.orig_h"] === myWifiIp ||
+        data["id.resp_h"] === myWifiIp) {
+        return false
+      }
+    }
+
+    // ignore any devices' traffic who is set to monitoring off
+    const origIP = data["id.orig_h"]
+    const respIP = data["id.resp_h"]
+
+    if (sysManager.isLocalIP(origIP)) {
+      if (!this.isMonitoring(origIP)) {
+        return false // set it to invalid if it is not monitoring
+      }
+    }
+
+    if (sysManager.isLocalIP(respIP)) {
+      if (!this.isMonitoring(respIP)) {
+        return false // set it to invalid if it is not monitoring
       }
     }
 
@@ -641,7 +622,7 @@ module.exports = class {
   }
 
   // Only log ipv4 packets for now
-  processConnData(data) {
+  async processConnData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -785,6 +766,9 @@ module.exports = class {
       let dst = obj["id.resp_h"];
       let flowdir = "in";
       let lhost = null;
+      let origMac = obj["orig_l2_addr"];
+      let respMac = obj["resp_l2_addr"];
+      let localMac = null;
 
       log.debug("ProcessingConection:",obj.uid,host,dst);
 
@@ -812,23 +796,54 @@ module.exports = class {
       if (iptool.isPrivate(host) == true && iptool.isPrivate(dst) == true) {
         flowdir = 'local';
         lhost = host;
+        localMac = origMac;
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
         flowdir = 'local';
         lhost = host;
+        localMac = origMac;
         //log.debug("Dropping both ip address", host,dst);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == false) {
         flowdir = "in";
         lhost = host;
+        localMac = origMac;
       } else if (sysManager.isLocalIP(host) == false && sysManager.isLocalIP(dst) == true) {
         flowdir = "out";
         lhost = dst;
+        localMac = respMac;
       } else {
         log.debug("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
         return;
       }
 
+      if (localMac && localMac.toUpperCase() === sysManager.myMAC()) {
+        // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
+        if (lhost !== sysManager.myIp() && lhost !== sysManager.myIp2() && !(sysManager.myIp6() && sysManager.myIp6().includes(lhost))) {
+          log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
+          localMac = null; // discard local mac from bro log since it is not correct
+        }
+      }
+      if (!localMac) {
+        // this can also happen on older bro which does not support mac logging
+        if (iptool.isV4Format(lhost)) {
+          localMac = await l2.getMACAsync(lhost).catch((err) => {
+            log.error("Failed to get MAC address from link layer for " + lhost);
+            return null;
+          }); // Don't worry about performance issue, this function has internal cache
+        }
+        if (!localMac) {
+          localMac = await hostTool.getMacByIPWithCache(lhost).catch((err) => {
+            log.error("Failed to get MAC address from cache for " + lhost, err);
+            return null;
+          });
+        }
+      }
+      if (!localMac || localMac.constructor.name !== "String") {
+        return;
+      }
+      localMac = localMac.toUpperCase();
+      
       // Mark all flows that are partially completed.
       // some of these flows may be valid
       //
@@ -900,6 +915,7 @@ module.exports = class {
           ct: 1, // count
           fd: flowdir, // flow direction
           lh: lhost, // this is local ip address
+          mac: localMac, // mac address of local device
           du: obj.duration,
           bl: FLOWSTASH_EXPIRES,
           pf: {}, //port flow
@@ -952,6 +968,7 @@ module.exports = class {
         ct: 1, // count
         fd: flowdir, // flow direction
         lh: lhost, // this is local ip address
+        mac: localMac, // mac address of local device
         du: obj.duration,
         bl: 0,
         pf: {},
@@ -1030,56 +1047,61 @@ module.exports = class {
 
       // Single flow is written to redis first to prevent data loss, will be removed in most cases
       if (tmpspec) {
-        hostTool.getMacByIPWithCache(tmpspec.lh).then((mac) => {
-          if (!mac) {
-            log.error("Failed to find mac address of " + tmpspec.lh + ", skip tmp flow spec: " + JSON.stringify(tmpspec));
-            return;
-          }
-          tmpspec.mac = mac;
-          this.activeMac[mac] = tmpspec.lh;
-          let key = "flow:conn:" + tmpspec.fd + ":" + mac;
-          let strdata = JSON.stringify(tmpspec);
-
-          if (tmpspec.fd == 'in') {
-            // use now instead of the start time of this flow
-            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, mac)
+        if (tmpspec.lh === tmpspec.sh) {
+          // record device as active if and only if device originates the connection
+          let macIPEntry = this.activeMac[localMac];
+          if (!macIPEntry)
+            macIPEntry = {ipv6Addr: []};
+          if (iptool.isV4Format(tmpspec.lh)) {
+            macIPEntry.ipv4Addr = tmpspec.lh;
           } else {
-            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, mac)
+            if (iptool.isV6Format(tmpspec.lh)) {
+              macIPEntry.ipv6Addr.push(tmpspec.lh);
+            }
           }
+          this.activeMac[localMac] = macIPEntry;
+        }
+        let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
+        let strdata = JSON.stringify(tmpspec);
+
+        if (tmpspec.fd == 'in') {
+          // use now instead of the start time of this flow
+          this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, localMac);
+        } else {
+          this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, localMac);
+        }
 
 
-          //let redisObj = [key, tmpspec.ts, strdata];
-          // beware that 'now' is used as score in flow:conn:* zset, since now is always monitonically increasing
-          let redisObj = [key, now, strdata];
-          log.debug("Conn:Save:Temp", redisObj);
+        //let redisObj = [key, tmpspec.ts, strdata];
+        // beware that 'now' is used as score in flow:conn:* zset, since now is always monitonically increasing
+        let redisObj = [key, now, strdata];
+        log.debug("Conn:Save:Temp", redisObj);
 
-          sem.sendEventToFireMain({
-            type: "NewGlobalFlow",
-            flow: tmpspec,
-            suppressEventLogging: true
-          });
+        sem.sendEventToFireMain({
+          type: "NewGlobalFlow",
+          flow: tmpspec,
+          suppressEventLogging: true
+        });
 
-          rclient.zadd(redisObj, (err, response) => {
-            if (err == null) {
+        rclient.zadd(redisObj, (err, response) => {
+          if (err == null) {
 
-              let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+            let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
-              setTimeout(() => {
-                sem.emitEvent({
-                  type: 'DestIPFound',
-                  ip: remoteIPAddress,
-                  fd: tmpspec.fd,
-                  ob: tmpspec.ob,
-                  rb: tmpspec.rb,
-                  suppressEventLogging: true
-                });
-              }, 1 * 1000); // make it a little slower so that dns record will be handled first
+            setTimeout(() => {
+              sem.emitEvent({
+                type: 'DestIPFound',
+                ip: remoteIPAddress,
+                fd: tmpspec.fd,
+                ob: tmpspec.ob,
+                rb: tmpspec.rb,
+                suppressEventLogging: true
+              });
+            }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
-            } else { }
-          });
-        }).catch((err) => {
-          log.error("Unable to save tmpspec: " + JSON.stringify(tmpspec), err);
-          return;
+          } else {
+            log.error("Failed to save tmpspec: ", tmpspec, err);
+          }
         });
       }
 
@@ -1113,42 +1135,34 @@ module.exports = class {
           }
           spec.uids = Object.keys(spec._afmap);
           delete spec._afmap;
-          hostTool.getMacByIPWithCache(spec.lh).then((mac) => {
-            if (!mac) {
-              log.error("Failed to find mac address of " + spec.lh + ", skip flow spec: " + JSON.stringify(spec));
-            } else {
-              this.activeMac[mac] = spec.lh;
-              let key = "flow:conn:" + spec.fd + ":" + mac;
-              let strdata = JSON.stringify(spec);
-              let ts = spec._ts; // this is the last time when this flowspec is updated
-              if (spec.ts > this.flowstashExpires - FLOWSTASH_EXPIRES) {
-                ts = spec.ts;
-              }
-              let redisObj = [key, ts, strdata];
-              if (stashed[key]) {
-                stashed[key].push(redisObj);
-              } else {
-                stashed[key] = [ redisObj ];
-              }
+          let key = "flow:conn:" + spec.fd + ":" + spec.mac;
+          let strdata = JSON.stringify(spec);
+          let ts = spec._ts; // this is the last time when this flowspec is updated
+          if (spec.ts > this.flowstashExpires - FLOWSTASH_EXPIRES) {
+            ts = spec.ts;
+          }
+          let redisObj = [key, ts, strdata];
+          if (stashed[key]) {
+            stashed[key].push(redisObj);
+          } else {
+            stashed[key] = [redisObj];
+          }
 
-              try {
-                if (spec.ob>0 && spec.rb>0 && spec.ct>1) {
-                  let hostChanged = hostsChanged[spec.lh];
-                  if (hostChanged == null) {
-                    hostsChanged[spec.lh] = Number(spec.ts);
-                  } else {
-                    if (hostChanged < spec.ts) {
-                      hostsChanged[spec.lh] = spec.ts;
-                    }
-                  }
+          try {
+            if (spec.ob > 0 && spec.rb > 0 && spec.ct > 1) {
+              let hostChanged = hostsChanged[spec.lh];
+              if (hostChanged == null) {
+                hostsChanged[spec.lh] = Number(spec.ts);
+              } else {
+                if (hostChanged < spec.ts) {
+                  hostsChanged[spec.lh] = spec.ts;
                 }
-              } catch (e) {
-                log.error("Conn:Save:Host:EXCEPTION", e);
               }
             }
-          }).catch((err) => {
-            log.error("Failed to update flow stash", err);
-          });
+          } catch (e) {
+            log.error("Conn:Save:Host:EXCEPTION", e);
+          }
+            
         }
 
         let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;

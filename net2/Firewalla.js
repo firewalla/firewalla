@@ -51,7 +51,7 @@ function getPlatform() {
 
 function getBranch() {
   if(_branch == null) {
-    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace("\n", "")
+    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace(/\n/g, "")
   }
   return _branch
 }
@@ -142,6 +142,11 @@ function isProduction() {
 function isProductionOrBeta() {
   return isProduction() || isBeta()
 }
+
+function isProductionOrBetaOrAlpha() {
+  return isProduction() || isBeta() || isAlpha()
+}
+
 
 function getReleaseType() {
   if(isProduction()) {
@@ -344,6 +349,7 @@ module.exports = {
   isAlpha: isAlpha,
   isDevelopmentVersion:isDevelopmentVersion,
   isProductionOrBeta:isProductionOrBeta,
+  isProductionOrBetaOrAlpha:isProductionOrBetaOrAlpha,
 
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType,

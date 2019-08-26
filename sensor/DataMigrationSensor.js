@@ -16,8 +16,6 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const util = require('util');
-
 const Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -32,41 +30,39 @@ class DataMigrationSensor extends Sensor {
     super();
   }
 
-  run() {
-    (async () => {
-      const previousMigrationCodeNames = await this._list_previous_migrations();
-      const migrationCodeNames = this.config.migrationCodeNames;
-      if (migrationCodeNames && migrationCodeNames.constructor.name == "Array") {
-        // no need to do migration for previously recorded codenames
-        const upgradeCodeNames = migrationCodeNames.filter((codeName) => {
-          return !previousMigrationCodeNames.includes(codeName);
-        })
-        for (let codeName of upgradeCodeNames) {
-          try {
-            log.info("Start migration: " + codeName);
-            await this._migrate(codeName);
-            await this._set_migration_done(codeName);
-            log.info("Migration complete: " + codeName);
-          } catch(err) {
-            log.error("Failed to migrate, code name: " + codeName, err);
-          }
-        }
-
-        // rollback migrations that are previously done. This usually happens after version rollback
-        const rollbackCodeNames = previousMigrationCodeNames.filter((code) => {
-          return !migrationCodeNames.includes(code);
-        });
-        for (let codeName of rollbackCodeNames) {
-          try {
-            // looks like there should be symmetric rollback() function as an equivalent of migratie()?
-            // but it is hardly useful since rollback code logic for a specific code name may also be reverted after rollback...
-            await this._unset_migration_done(codeName);
-          } catch (err) {
-            log.error("Failed to rollback, code name: " + codeName, err);
-          }
+  async run() {
+    const previousMigrationCodeNames = await this._list_previous_migrations();
+    const migrationCodeNames = this.config.migrationCodeNames;
+    if (migrationCodeNames && migrationCodeNames.constructor.name == "Array") {
+      // no need to do migration for previously recorded codenames
+      const upgradeCodeNames = migrationCodeNames.filter((codeName) => {
+        return !previousMigrationCodeNames.includes(codeName);
+      })
+      for (let codeName of upgradeCodeNames) {
+        try {
+          log.info("Start migration: " + codeName);
+          await this._migrate(codeName);
+          await this._set_migration_done(codeName);
+          log.info("Migration complete: " + codeName);
+        } catch (err) {
+          log.error("Failed to migrate, code name: " + codeName, err);
         }
       }
-    })()
+
+      // rollback migrations that are previously done. This usually happens after version rollback
+      const rollbackCodeNames = previousMigrationCodeNames.filter((code) => {
+        return !migrationCodeNames.includes(code);
+      });
+      for (let codeName of rollbackCodeNames) {
+        try {
+          // looks like there should be symmetric rollback() function as an equivalent of migratie()?
+          // but it is hardly useful since rollback code logic for a specific code name may also be reverted after rollback...
+          await this._unset_migration_done(codeName);
+        } catch (err) {
+          log.error("Failed to rollback, code name: " + codeName, err);
+        }
+      }
+    }
   }
 
   async _list_previous_migrations() {

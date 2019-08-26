@@ -73,7 +73,7 @@ class UPNPSensor extends Sensor {
   }
 
   mergeResults(curMappings, preMappings) {
-    
+
     curMappings.forEach((mapping) => {
       mapping.expire = Math.floor(new Date() / 1000);
     });
@@ -82,7 +82,7 @@ class UPNPSensor extends Sensor {
 
     const uniqMappings = _.uniqWith(fullMappings, compareUpnp);
 
-    return uniqMappings          
+    return uniqMappings
       .filter((mapping) => !this.isExpired(mapping));
   }
 
@@ -93,9 +93,9 @@ class UPNPSensor extends Sensor {
           log.error("Error getting mappings", err);
         }
 
-        if (!results || results.length == 0) {
+        if (!results) {
+          results = []
           log.info("No upnp mapping found in network");
-          return;
         }
 
         const key = "sys:scan:nat";
@@ -123,15 +123,15 @@ class UPNPSensor extends Sensor {
                     'p.source': 'UPNPSensor',
                     'p.device.ip': current.private.host,
                     'p.upnp.public.host'  : current.public.host,
-                    'p.upnp.public.port'  : current.public.port,
+                    'p.upnp.public.port'  : current.public.port.toString(),
                     'p.upnp.private.host' : current.private.host,
-                    'p.upnp.private.port' : current.private.port,
+                    'p.upnp.private.port' : current.private.port.toString(),
                     'p.upnp.protocol'     : current.protocol,
-                    'p.upnp.enabled'      : current.enabled,
+                    'p.upnp.enabled'      : current.enabled.toString(),
                     'p.upnp.description'  : current.description,
-                    'p.upnp.ttl'          : current.ttl,
-                    'p.upnp.local'        : current.local,
-                    'p.device.port': current.private.port,
+                    'p.upnp.ttl'          : current.ttl.toString(),
+                    'p.upnp.local'        : current.local.toString(),
+                    'p.device.port': current.private.port.toString(),
                     'p.protocol': current.protocol
                   }
                 );

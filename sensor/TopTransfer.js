@@ -17,13 +17,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
 
 const flowTool = require('../net2/FlowTool.js')()
 
@@ -44,41 +38,39 @@ class TopTransfer extends Sensor {
     return "last60stats"
   }
 
-  job() {
-    return async(() => {
-      const timeSlot = this.getTimeSlot()
-      const results = await (flowTool.getAllRecentOutgoingConnectionsMixed(timeSlot))
-      results.forEach((x) => {
-        delete x.device
-        delete x.fd
-        delete x.duration
-        delete x.country
-      })
-      
-      const topDownloads = JSON.parse(JSON.stringify(results))
-      topDownloads.sort((x, y) => {
-        return y.download - x.download
-      })
-      topDownloads.forEach((x) => {
-        delete x.upload
-      })
+  async job() {
+    const timeSlot = this.getTimeSlot()
+    const results = await flowTool.getAllRecentOutgoingConnectionsMixed(timeSlot)
+    results.forEach((x) => {
+      delete x.device
+      delete x.fd
+      delete x.duration
+      delete x.country
+    })
 
-      const topUploads = JSON.parse(JSON.stringify(results))
-      topUploads.sort((x, y) => {
-        return y.upload - x.upload
-      })
-      topUploads.forEach((x) => {
-        delete x.download
-      })
+    const topDownloads = JSON.parse(JSON.stringify(results))
+    topDownloads.sort((x, y) => {
+      return y.download - x.download
+    })
+    topDownloads.forEach((x) => {
+      delete x.upload
+    })
 
-      const timeKey = (timeSlot.begin / 60) % 60
-      const value = {
-        download: topDownloads[0],
-        upload: topUploads[0],
-        ts: timeSlot.begin
-      }
-      return rclient.hsetAsync(this.getKey(), timeKey, JSON.stringify(value))
-    })()
+    const topUploads = JSON.parse(JSON.stringify(results))
+    topUploads.sort((x, y) => {
+      return y.upload - x.upload
+    })
+    topUploads.forEach((x) => {
+      delete x.download
+    })
+
+    const timeKey = (timeSlot.begin / 60) % 60
+    const value = {
+      download: topDownloads[0],
+      upload: topUploads[0],
+      ts: timeSlot.begin
+    }
+    return rclient.hsetAsync(this.getKey(), timeKey, JSON.stringify(value))
   }
 
   run() {

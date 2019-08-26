@@ -14,8 +14,6 @@
  */
 'use strict';
 const log = require("../net2/logger.js")(__filename);
-const os = require('os');
-const network = require('network');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -25,8 +23,6 @@ const flowManager = new FlowManager('info');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
-
-const audit = require('../util/audit.js');
 
 const fc = require('../net2/config.js')
 
@@ -48,9 +44,6 @@ const intelManager = new IntelManager('debug');
 
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager('info');
-
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager('info');
 
 const fConfig = require('../net2/config.js').getConfig();
 
@@ -95,20 +88,8 @@ module.exports = class FlowMonitor {
       this.recordedFlows = {};
 
       instance = this;
-
-      // flowManager.last24HourDatabaseExists()
-      //   .then((result) => {
-      //     if(!result) {
-      //       // need to migrate from legacy
-      //       log.info("Migrating stats from old version to new version");
-      //       hostManager.migrateStats()
-      //         .then(() => {
-      //           log.info("Stats are migrated to new format");
-      //         });
-      //     }
-      //   });
     }
-    
+
     // largeTransferGuard stores the latest flow time for each device/dest.ip/dest.port
     // combination, aim to elimates duplicate LargeTransferAlarm
     if (!this.largeTransferGuard) this.largeTransferGuard = {};
@@ -249,19 +230,21 @@ module.exports = class FlowMonitor {
             alarmManager2.enqueueAlarm(alarm);
           }
         }
-        else if (this.isFlowIntelInClass(flow['intel'], "porn")) {
-          if ((flow.du && Number(flow.du) > 20) &&
-            (flow.rb && Number(flow.rb) > 1000000) ||
-            this.flowIntelRecordFlow(flow, 3)) {
+        else if (
+          this.isFlowIntelInClass(flow['intel'], "porn") &&
+          (
+            (flow.du && Number(flow.du) > 20) && (flow.rb && Number(flow.rb) > 1000000) ||
+            this.flowIntelRecordFlow(flow, 3)
+          )
+        ) {
 
-            // there should be a unique ID between pi and cloud on websites
+          // there should be a unique ID between pi and cloud on websites
 
-            let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-              alarmBootstrap(flow)
-            );
+          let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+            alarmBootstrap(flow)
+          );
 
-            alarmManager2.enqueueAlarm(alarm);
-          }
+          alarmManager2.enqueueAlarm(alarm);
         }
         else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
           // Intel object
@@ -273,8 +256,6 @@ module.exports = class FlowMonitor {
           if (flowUtil.checkFlag(flow, 's') && flow.fd === "out") {
             log.info("Intel:On:Partial:Flows", flow);
           } else {
-            let msg = "Intel " + flow.shname + " " + flow.dhname;
-
             let intelobj = {
               uid: uuid.v4(),
               ts: flow.ts,
@@ -349,14 +330,18 @@ module.exports = class FlowMonitor {
             this.processIntelFlow(intelobj);
           }
         }
-        else if (this.isFlowIntelInClass(flow['intel'], "games") && this.flowIntelRecordFlow(flow, 3)) {
-          if ((flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) || this.flowIntelRecordFlow(flow, 3)) {
-            let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-              alarmBootstrap(flow)
-            );
+        else if (
+          this.isFlowIntelInClass(flow['intel'], "games") &&
+          (
+            (flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) ||
+            this.flowIntelRecordFlow(flow, 3)
+          )
+        ) {
+          let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+            alarmBootstrap(flow)
+          );
 
-            alarmManager2.enqueueAlarm(alarm);
-          }
+          alarmManager2.enqueueAlarm(alarm);
         }
       }
     }
@@ -542,7 +527,8 @@ module.exports = class FlowMonitor {
   }
 
 
-  async getFlowSpecs(mac, host) {
+  async getFlowSpecs(host) {
+    const mac = host.o.mac;
     // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
@@ -573,7 +559,7 @@ module.exports = class FlowMonitor {
   // monitor:flow:ip:<>: <ts score> / { notification }
   //
 
-  saveSpecFlow(direction, ip, flow, callback) {
+  async saveSpecFlow(direction, ip, flow) {
     let key = "monitor:flow:" + direction + ":" + ip;
     let strdata = JSON.stringify(flow);
     let redisObj = [key, flow.nts, strdata];
@@ -667,7 +653,7 @@ module.exports = class FlowMonitor {
         if (!service || service === "dlp") {
           log.info("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
-          const {inSpec, outSpec} = await this.getFlowSpecs(mac, host);
+          const {inSpec, outSpec} = await this.getFlowSpecs(host);
           log.debug("monitor:flow:", host.toShortString());
           log.debug("inspec", inSpec);
           log.debug("outspec", outSpec);
@@ -1084,5 +1070,5 @@ module.exports = class FlowMonitor {
     log.info("Host:ProcessIntelFlow:Alarm", alarm);
 
     alarmManager2.enqueueAlarm(alarm)
-  };
+  }
 }

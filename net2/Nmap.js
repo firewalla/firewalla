@@ -100,7 +100,7 @@ module.exports = class {
   }
 
   scan(range /*Must be v4 CIDR*/, fast, callback) {
-    if (!ip.isV4Format(range.split('/')[0])) {
+    if (!range || !ip.isV4Format(range.split('/')[0])) {
       callback(null, [], []);
       return;
     }
@@ -137,6 +137,11 @@ module.exports = class {
 
     let obj = this.scanQ.pop();
     this.scanQueue(obj);
+  }
+
+  // ports are not returned
+  scanAsync(range, fast) {
+    return util.promisify(this.scan).bind(this)(range, fast)
   }
 
   nmapScan(cmdline, requiremac, callback) {

@@ -16,6 +16,8 @@
 
 const log = require('../net2/logger.js')(__filename);
 
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
 const fc = require('../net2/config.js')
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -60,9 +62,7 @@ class CategoryUpdateSensor extends Sensor {
   }
 
   async countryJob() {
-    const countryList = this.loadCategoryFromBone('country:list');
-    rc.saddAsync('', countryList);
-    
+    await this.renewCountryList();
     const activeCountries = countryUpdater.getActiveCountries();
     log.info('Active countries', activeCountries);
     for (const country of activeCountries) {
@@ -150,6 +150,7 @@ class CategoryUpdateSensor extends Sensor {
 
       await this.regularJob()
       await this.securityJob()
+      await this.renewCountryList()
 
       setInterval(this.regularJob.bind(this), this.config.regularInterval * 1000)
 
@@ -176,6 +177,12 @@ class CategoryUpdateSensor extends Sensor {
 
   getCategoryHashset(category) {
     return categoryHashsetMapping[category]
+  }
+
+  async renewCountryList() {
+    const countryList = await this.loadCategoryFromBone('country:list');
+    await rclient.delAsync('country:list');
+    await rclient.saddAsync('country:list', countryList);
   }
 }
 

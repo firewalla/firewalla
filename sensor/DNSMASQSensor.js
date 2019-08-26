@@ -14,22 +14,23 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
+const HostManager = require('../net2/HostManager.js');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
-let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-let dnsmasq = new DNSMASQ();
-
-let Mode = require('../net2/Mode.js');
+const Mode = require('../net2/Mode.js');
 
 class DNSMASQSensor extends Sensor {
   constructor() {
     super();
 
-    this.dhcpMode = false;
     this.registered = false;
     this.started = false;
     this.eventBuffer = [];
@@ -41,7 +42,18 @@ class DNSMASQSensor extends Sensor {
         log.error("Fail to install dnsmasq: " + err);
         throw err;
       })
-      .then(() => dnsmasq.start(false) /*no force update*/ )
+      .then(async () => {
+        const hostManager = new HostManager("cli", 'server', 'info');
+        const hosts = await hostManager.getHostsAsync();
+        let pureHosts = [];
+        for (const host of hosts) {
+          if (host && host.o) {
+            pureHosts.push(host.o)
+          }
+        }
+        await dnsmasq.setupLocalDeviceDomain(false, pureHosts, true);
+        dnsmasq.start(false)
+      })
       .catch(err => log.error("Failed to start dnsmasq: " + err))
       .then(() => log.info("dnsmasq service is started successfully"));
   }
@@ -83,16 +95,8 @@ class DNSMASQSensor extends Sensor {
     // always start dnsmasq
     return Mode.getSetupMode()
       .then((mode) => {
-        if(mode === "dhcp") {
-          dnsmasq.setDhcpMode(true);
-          dnsmasq.setDhcpSpoofMode(false); // just in case
-        }
-        if (mode === "dhcpSpoof") {
-          dnsmasq.setDhcpSpoofMode(true);
-          dnsmasq.setDhcpMode(false);
-        }
-
-        if(!this.registered) {
+        dnsmasq.setMode(mode);
+        if (!this.registered) {
           log.info("Registering dnsmasq events listeners");
 
           sem.on("StartDNS", (event) => {
@@ -108,20 +112,12 @@ class DNSMASQSensor extends Sensor {
             // ignore StopDNS, as now it will always start as daemon process
           });
 
-          sem.on("StartDHCP", (event) => {
+          sem.on("Mode:Applied", (event) => {
             if (!this.started) {
               this._bufferEvent(event);
             } else {
-              log.info("Starting DHCP")
-              dnsmasq.enableDHCP(event.mode);
-            }
-          });
-
-          sem.on("StopDHCP", (event) => {
-            if (!this.started) {
-              this._bufferEvent(event);
-            } else {
-              dnsmasq.disableDHCP(event.mode);
+              log.info("Mode applied: " + event.mode);
+              dnsmasq.applyMode(event.mode);
             }
           });
 
@@ -138,6 +134,7 @@ class DNSMASQSensor extends Sensor {
 
         return this._start()
           .then(() => {
+            dnsmasq.applyMode(mode);
             this.started = true;
             this._emitBufferedEvent();
           })
