@@ -485,7 +485,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
           category: category,
           dnsmasq_entry: true
         })
-        await pm2.tryPolicyEnforcement(policy, 'reenforce', policy)
       }
     }
   }
