@@ -377,7 +377,7 @@ function login() {
           await platform.turnOffPowerLED();
           exec("sleep 2; sudo systemctl stop firekick").catch((err) => {
             // this command will kill the program itself, catch this error silently
-          }) 
+          })
 
         } else {
           log.error("Invalid gid");
