@@ -50,6 +50,7 @@ if [ -z "$2" ]
 fi 
 sudo chmod 777 syslog*
 cp -r -f /home/pi/.forever/* .
+/home/pi/firewalla/scripts/sanity_check.sh > scc.log
 cd ..
 tar -zcvf support.tar.gz techsupport
 rm -r -f techsupport

@@ -45,12 +45,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
       instance = this
 
       this.activeCategories = {
+        "default_c": 1,
         "games": 1,
         "social": 1,
         "porn": 1,
         "shopping": 1,
         "av": 1,
-        "default_c": 1,
         "p2p": 1,
         "gamble": 1
       };

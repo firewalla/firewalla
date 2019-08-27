@@ -377,7 +377,7 @@ function login() {
           await platform.turnOffPowerLED();
           exec("sleep 2; sudo systemctl stop firekick").catch((err) => {
             // this command will kill the program itself, catch this error silently
-          }) 
+          })
 
         } else {
           log.error("Invalid gid");
@@ -414,8 +414,8 @@ async function sendTerminatedInfoToDiagServer(gid) {
 async function exitHandler(options, err) {
   if (err) log.info(err.stack);
   if (options.cleanup) {
-    await platform.turnOffPowerLED();
     await diag.iptablesRedirection(false);
+    await platform.turnOffPowerLED();
   }
   if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
   if (options.exit) {

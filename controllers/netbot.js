@@ -408,14 +408,7 @@ class netBot extends ControllerBot {
           } else {
           }
         });
-        const getDevices = `${homePath}/scripts/sanity_check.sh -f`;
-        exec(getDevices)
-          .then(res => {
-            this.simpleTxData(msg, {password: password, filename: path, content: res.stdout}, null, callback);
-          })
-          .catch(err => {
-            this.simpleTxData(msg, null, err, callback)
-          })
+        this.simpleTxData(msg, {password: password, filename: path}, null, callback);
       }
     });
   }
@@ -565,7 +558,7 @@ class netBot extends ControllerBot {
 
       if (alarm.aid) {
         data.aid = alarm.aid;
-        data.alarmID = alarm.alarmID;
+        data.alarmID = alarm.aid;
       }
 
       if (alarm.result_method === "auto" && alarm.result === "block") {
@@ -966,8 +959,12 @@ class netBot extends ControllerBot {
             log.info("set host name alias by mac address", macAddress);
 
             let macObject = {
-              name: data.value.name,
               mac: macAddress
+            }
+            if(data.value.name) {
+              macObject.name = data.value.name
+            } else if(data.value.customizeDomainName) {
+              macObject.customizeDomainName = data.value.customizeDomainName
             }
 
             await hostTool.updateMACKey(macObject, true);
@@ -2879,7 +2876,8 @@ class netBot extends ControllerBot {
           const statistics = await new VpnManager().getStatistics();
           const vpnProfiles = [];
           for (let cn in allSettings) {
-            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => c.cn === cn) || []});
+            // special handling for common name starting with fishboneVPN1
+            vpnProfiles.push({cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || []});
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
         })().catch((err) => {
@@ -2962,14 +2960,13 @@ class netBot extends ControllerBot {
             } else {
               (async () => {
                 const ovpnClient = new OpenVPNClient({profileId: profileId});
-                await ovpnClient.setup().then(async () => {
-                  const stats = await ovpnClient.getStatistics();
-                  await ovpnClient.stop();
-                  this.simpleTxData(msg, {stats: stats}, null, callback);
-                }).catch((err) => {
-                  log.error(`Failed to stop openvpn client for ${profileId}`, err);
-                  this.simpleTxData(msg, {}, {code: 400, msg: err}, callback);
+                // error in setup should not interrupt stop vpn client
+                await ovpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
                 });
+                const stats = await ovpnClient.getStatistics();
+                await ovpnClient.stop();
+                this.simpleTxData(msg, {stats: stats}, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
               })

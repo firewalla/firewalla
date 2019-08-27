@@ -205,11 +205,11 @@ class DomainBlock {
     let list = []
 
     // load other addresses from rdns, critical to apply instant blocking
-    const addresses = await dnsTool.getAddressesByDNS(domain).catch((err) => []);
+    const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
     list.push.apply(list, addresses)  // concat arrays
 
-    if (!options.exactMatch) {
-      const patternAddresses = await dnsTool.getAddressesByDNSPattern(domain).catch((err) => []);
+    if(!options.exactMatch) {
+      const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
       list.push.apply(list, patternAddresses)
     }
 
@@ -236,13 +236,13 @@ class DomainBlock {
     let set = {}
 
     // load other addresses from rdns, critical to apply instant blocking
-    const addresses = await dnsTool.getAddressesByDNS(domain).catch((err) => []);
+    const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
     addresses.forEach((addr) => {
       set[addr] = 1
     })
 
-    if (!options.exactMatch) {
-      const patternAddresses = await dnsTool.getAddressesByDNSPattern(domain).catch((err) => []);
+    if(!options.exactMatch) {
+      const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
       patternAddresses.forEach((addr) => {
         set[addr] = 1
       })

@@ -546,7 +546,7 @@ module.exports = class {
           }
 
           this.saveAlarm(alarm, (err, alarmID) => {
-          if (err) {
+            if (err) {
               callback(err);
               return;
             }

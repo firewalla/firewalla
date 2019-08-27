@@ -837,7 +837,8 @@ class Host {
       dhcpName: this.o.dhcpName,
       bonjourName: this.o.bonjourName,
       nmapName: this.o.nmapName,
-      ssdpName: this.o.ssdpName
+      ssdpName: this.o.ssdpName,
+      domain: this.o.domain
     }
 
     if (this.o.ipv4Addr == null) {

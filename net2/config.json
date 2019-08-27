@@ -157,6 +157,7 @@
         "google": {
           "forcesafesearch.google.com": [
             "www.google.com",
+            "www.google.ac",
             "www.google.ad",
             "www.google.ae",
             "www.google.com.af",
@@ -373,6 +374,12 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "NetworkStatsSensor": {
+      "internetTestUrls": {
+        "google": "http://google.com",
+        "github": "http://github.com"
+      }
+    },
     "ICMP6Sensor": {},
     "CPUSensor": {
       "interval": 60,
@@ -461,6 +468,10 @@
       "safe_urls": {
         "expires": 604800,
         "count": 1000
+      },
+      "perf": {
+        "expires": 86400,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
