@@ -233,8 +233,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
     log.debug(`Found a ${category} domain: ${d}`)
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
-    await this.updateIPSetByDomain(category, d)
+    await this.updateIPSetByDomain(category, d);
     await this.filterIPSetByDomain(category);
+    await this.updateCategoryBlcok(category, d);
   }
 
   getDomainMapping(domain) {
@@ -467,6 +468,26 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
 
     return rclient.zremrangebyscoreAsync(key, '-inf', date)
+  }
+  async updateCategoryBlcok(category, domain) {
+    domain = domain || "";
+    if (domain.startsWith("*.")) {
+      domain = domain.substring(2);
+    }
+    const PM2 = require('../alarm/PolicyManager2.js');
+    const pm2 = new PM2();
+    const policies = await pm2.loadActivePoliciesAsync();
+    for (const policy of policies) {
+      if (policy.type == "category" && policy.target == category && policy.dnsmasq_entry) {
+        domainBlock.blockDomain(domain, {
+          scope: policy.scope,
+          isCategory: true,
+          category: category,
+          dnsmasq_entry: true
+        })
+        await pm2.tryPolicyEnforcement(policy, 'reenforce', policy)
+      }
+    }
   }
 }
 
