@@ -1003,7 +1003,7 @@ module.exports = class FlowManager {
       };
 
     log.debug("flows:sorted Query dns manager");
-    await dnsManager.query(sorted, "sh", "dh")
+    await dnsManager.query(sorted, "sh", "dh", "mac")
       .catch(err => log.error("flow:conn unable to map dns", err))
     log.debug("flows:sorted Query dns manager returnes");
     const activities = await this.summarizeActivityFromConnections(sorted);
