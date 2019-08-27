@@ -119,7 +119,7 @@ class DNSTool {
 
   // doesn't have to keep it long, it's only used for instant blocking
 
-  async addReverseDns(dns, addresses, expire) {
+  async addReverseDns(domain, addresses, expire) {
     expire = expire || 24 * 3600; // one day by default
     addresses = addresses || []
 
@@ -127,10 +127,10 @@ class DNSTool {
       return firewalla.isReservedBlockingIP(addr) != true
     })
 
-    let key = this.getReverseDNSKey(dns)
+    let key = this.getReverseDNSKey(domain)
 
-    const existing = await this.reverseDNSKeyExists(dns)
-    
+    const existing = await this.reverseDNSKeyExists(domain)
+
     let updated = false
     const validAddresses = [];
 
@@ -143,7 +143,7 @@ class DNSTool {
         updated = true
       }
     }
-    await domainUpdater.updateDomainMapping(dns, validAddresses);
+    await domainUpdater.updateDomainMapping(domain, validAddresses);
     
     if(updated === false && existing === false) {
       await rclient.zaddAsync(key, new Date() / 1000, firewalla.getRedHoleIP()); // red hole is a placeholder ip for non-existing domain
@@ -152,12 +152,12 @@ class DNSTool {
     await rclient.expireAsync(key, expire)
   }
 
-  async getAddressesByDNS(dns) {
-    let key = this.getReverseDNSKey(dns)
+  async getIPsByDomain(domain) {
+    let key = this.getReverseDNSKey(domain)
     return rclient.zrangeAsync(key, "0", "-1")
   }
 
-  async getAddressesByDNSPattern(dnsPattern) {
+  async getIPsByDomainPattern(dnsPattern) {
     let pattern = `rdns:domain:*.${dnsPattern}`
     
     let keys = await rclient.keysAsync(pattern)
@@ -193,9 +193,9 @@ class DNSTool {
       let addresses = [];
       if (!isDomainPattern) {
         domains[target] = 1;
-        addresses = await this.getAddressesByDNS(target);
+        addresses = await this.getIPsByDomain(target);
       } else {
-        addresses = await this.getAddressesByDNSPattern(target);
+        addresses = await this.getIPsByDomainPattern(target);
       }
       if (addresses && Array.isArray(addresses)) {
         for (const address of addresses) {

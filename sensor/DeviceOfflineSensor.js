@@ -15,7 +15,6 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const util = require('util');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Sensor = require('./Sensor.js').Sensor;
 const HostTool = require('../net2/HostTool.js');
