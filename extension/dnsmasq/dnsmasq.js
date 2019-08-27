@@ -1391,7 +1391,9 @@ module.exports = class DNSMASQ {
         }
         for (const key in domainMap) {
           const domain = getCanonicalizedHostname(key.replace(/\s+/g, ".")) + '.lan';
-          localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`;
+          if (domainMap[key].ipv4Addr && validator.isIP(domainMap[key].ipv4Addr)) {
+            localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`;
+          }
           await hostTool.updateMACKey({
             domain: domain,
             mac: domainMap[key].mac
