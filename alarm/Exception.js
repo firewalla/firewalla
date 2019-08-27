@@ -70,7 +70,6 @@ module.exports = class {
   match(alarm) {
 
     let matched = false;
-
     // FIXME: exact match only for now, and only supports String
     for (var key in this) {
 
