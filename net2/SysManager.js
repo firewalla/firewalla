@@ -12,6 +12,7 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 'use strict';
 const log = require('./logger.js')(__filename);
 
@@ -289,10 +290,6 @@ module.exports = class {
 
   setLanguage(language, callback) {
     callback = callback || function() {}
-
-    // FIXME: disable set language feature temporarliy
-    callback(null);
-    return;
 
     this.language = language;
     const theLanguage = i18n.setLocale(this.language);
