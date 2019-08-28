@@ -18,12 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const extensionManager = require('./ExtensionManager.js')
-
-const f = require('../net2/Firewalla.js');
-
 const updateInterval = 2 * 24 * 3600 * 1000 // once per two days
 
 const hashKey = "gsb:bloomfilter:compressed";
@@ -36,8 +30,6 @@ const _ = require('lodash');
 
 const bone = require("../lib/Bone.js");
 
-const jsonfile = require('jsonfile');
-
 const zlib = require('zlib');
 
 const Promise = require('bluebird');
@@ -48,8 +40,8 @@ class IntelLocalCachePlugin extends Sensor {
 
   async loadCacheFromBone() {
     log.info(`Loading intel cache from cloud...`);
-    const data = await bone.hashsetAsync(hashKey)
     try {
+      const data = await bone.hashsetAsync(hashKey)
       const buffer = Buffer.from(data, 'base64');
       const decompressedData = await inflateAsync(buffer);
       const decompressedString = decompressedData.toString();

@@ -78,6 +78,7 @@ class CategoryUpdateSensor extends Sensor {
 
     const hashset = this.getCategoryHashset(category)
     const domains = await this.loadCategoryFromBone(hashset);
+    if (domains == null) return
     log.info(`category ${category} has ${domains.length} domains`)
 
     await categoryUpdater.flushDefaultDomains(category);
@@ -89,6 +90,7 @@ class CategoryUpdateSensor extends Sensor {
 
     const hashset = securityHashMapping[category]
     const info = await this.loadCategoryFromBone(hashset);
+    if (info == null) return
 
     const domains = info.domain
     const ip4List = info["ip4"]
@@ -162,16 +164,17 @@ class CategoryUpdateSensor extends Sensor {
 
   async loadCategoryFromBone(hashset) {
     if (hashset) {
+      let data
       try {
-        const data = await bone.hashsetAsync(hashset)
+        data = await bone.hashsetAsync(hashset)
         const list = JSON.parse(data)
         return list
       } catch(err) {
-        log.error("Failed to get hashset", hashset, err);
-        return []
+        log.error("Failed to get hashset", hashset, data, err);
+        return null
       }
     } else {
-      return []
+      return null
     }
   }
 
@@ -181,8 +184,12 @@ class CategoryUpdateSensor extends Sensor {
 
   async renewCountryList() {
     const countryList = await this.loadCategoryFromBone('country:list');
+    if (countryList == null) return
+
     await rclient.delAsync('country:list');
-    await rclient.saddAsync('country:list', countryList);
+    if (countryList.length) {
+      await rclient.saddAsync('country:list', countryList);
+    }
   }
 }
 
