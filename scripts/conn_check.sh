@@ -49,9 +49,8 @@ cat $FILES |
 jq -r "select(.proto == \"tcp\") | \"\(.[\"id.orig_h\"]) \(.[\"id.resp_h\"]) \(.conn_state) \(.local_orig) \(.local_resp)\"" |
 while read orig resp state local_orig local_resp; do
     #host=""
-    if printf '%s\n' ${EXCLUDE[@]} | grep -q -P "^$orig|$resp$"; then continue; fi
-    # if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
-    #       "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ]]; then continue; fi
+    if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
+          "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ]]; then continue; fi
     # if [[ "${orig%.*}" == "$SUBNET" || "${orig%.*}" == "$SUBNET2" ]]; then host=$orig; fi
     # if [[ "${resp%.*}" == "$SUBNET" || "${resp%.*}" == "$SUBNET2" ]]; then host=$resp; fi
     # if [[ "$host" == "" ]]; then continue; fi
@@ -84,4 +83,3 @@ for host in "${!HOST[@]}"; do
     echo ""
 done |
 sort -rn -k2
-
