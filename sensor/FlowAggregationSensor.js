@@ -169,7 +169,7 @@ class FlowAggregationSensor extends Sensor {
 
       t.upload += flowTool.getUploadTraffic(flow);
       t.download += flowTool.getDownloadTraffic(flow);
-
+      t.port = flowTool.getTrafficPort(flow);
     });
 
     return traffic;
@@ -452,7 +452,6 @@ class FlowAggregationSensor extends Sensor {
     flows.push.apply(flows, incomingFlows);
 
     let traffic = this.trafficGroupByDestIP(flows);
-
     await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
   }
