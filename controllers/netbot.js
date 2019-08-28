@@ -1211,6 +1211,7 @@ class netBot extends ControllerBot {
           log.info("Loading device info in a new way:", ip);
           this.deviceHandler(msg, ip)
           .then((json) => {
+            log.info("zhijietest",json)
             this.simpleTxData(msg, json, null, callback);
           })
           .catch((err) => {

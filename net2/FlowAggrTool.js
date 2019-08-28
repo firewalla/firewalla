@@ -146,6 +146,7 @@ class FlowAggrTool {
 
     args.push(0);
     args.push("_"); // placeholder to keep key exists
+    log.info("addFlows", args)
     await rclient.zaddAsync(args)
     await rclient.expireAsync(key, expire)
     await this.trimFlow(mac, trafficDirection, interval, ts)
@@ -307,6 +308,7 @@ class FlowAggrTool {
   async getTopSumFlowByKey(key, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     let destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
+    log.info("zhijie getTopSumFlowByKey",destAndScores)
     let results = [];
     for(let i = 0; i < destAndScores.length; i++) {
       if(i % 2 === 1) {

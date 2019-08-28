@@ -651,9 +651,9 @@ class FlowTool {
       port = flow.dp
     }
     if(Array.isArray(port)){
-      return port.join(",")
-    }else{
       return port
+    }else{
+      return [port]
     }
   }
 }

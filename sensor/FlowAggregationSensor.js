@@ -163,13 +163,19 @@ class FlowAggregationSensor extends Sensor {
       let t = traffic[destIP];
 
       if(typeof t === 'undefined') {
-        traffic[destIP] = {upload: 0, download: 0};
+        traffic[destIP] = {upload: 0, download: 0, port:[]};
         t = traffic[destIP];
       }
 
       t.upload += flowTool.getUploadTraffic(flow);
       t.download += flowTool.getDownloadTraffic(flow);
-      t.port = flowTool.getTrafficPort(flow);
+      for(let port of flowTool.getTrafficPort(flow)){
+        port = ""+port;//make sure it is string
+        if(t.port.indexOf(port)==-1){
+          t.port.push(port)
+        }
+      }
+      t.port.sort((a,b)=>{return a-b})
     });
 
     return traffic;
@@ -452,6 +458,7 @@ class FlowAggregationSensor extends Sensor {
     flows.push.apply(flows, incomingFlows);
 
     let traffic = this.trafficGroupByDestIP(flows);
+    log.info("zhijietest trafficGroupByDestIP",traffic)
     await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
   }
