@@ -458,6 +458,7 @@ class FlowAggregationSensor extends Sensor {
     flows.push.apply(flows, incomingFlows);
 
     let traffic = this.trafficGroupByDestIP(flows);
+    log.info("zhijietest macAddress",macAddress, begin, end)
     log.info("zhijietest trafficGroupByDestIP",traffic)
     await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);

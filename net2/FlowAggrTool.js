@@ -130,7 +130,7 @@ class FlowAggrTool {
 
     for(let destIP in traffics) {
       let traffic = (traffics[destIP] && traffics[destIP][trafficDirection]) || 0;
-      let port = (traffics[destIP] && traffics[destIP].port) || "";
+      let port = (traffics[destIP] && traffics[destIP].port) || [];
 
       if(traffic < MIN_AGGR_TRAFFIC) {
         continue                // skip very small traffic
