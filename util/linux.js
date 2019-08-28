@@ -1,9 +1,9 @@
 "use strict";
 
-var os    = require('os'),
-    ip    = require('ip'),
-    exec  = require('child_process').exec,
-    async = require('async');
+const log   = require("../net2/logger.js")(__filename),
+      os    = require('os'),
+      exec  = require('child_process').exec,
+      execAsync = require('child-process-promise').exec;
 
 function trim_exec(cmd, cb) {
   exec(cmd, function(err, out) {
@@ -13,6 +13,16 @@ function trim_exec(cmd, cb) {
       cb(null)
     }
   })
+}
+
+async function trim_exec_async(cmd) {
+  try {
+    let result = await execAsync(cmd)
+    return result.stdout && result.stdout.trim() || null
+  } catch(err) {
+    log.error('Executing Error', cmd, err)
+    return null
+  }
 }
 
 exports.ping6= function(ipv6addr,cb) {
@@ -50,32 +60,31 @@ exports.get_active_network_interface_name = function(cb) {
   });
 };
 
-exports.interface_type_for = function(nic_name, cb) {
-  exec('cat /proc/net/wireless | grep ' + nic_name, function(err, out, stderr) {
-    return cb(null, err ? 'Wired' : 'Wireless')
-  })
+exports.interface_type_for = async function(nic_name) {
+  try {
+    const result = await execAsync('cat /proc/net/wireless | grep ' + nic_name)
+    return 'Wireless'
+  } catch(err) {
+    return 'Wired'
+  }
 };
 
-exports.mac_address_for = function(nic_name, cb) {
+exports.mac_address_for = function(nic_name) {
   // This is a workaround for nodejs bug
   // https://github.com/libuv/libuv/commit/f1e0fc43d17d9f2d16b6c4f9da570a4f3f6063ed
   // eth0:* virtual interface should use same mac address as main interface eth0
   let n = nic_name.replace(/:.*$/, "");
   var cmd = 'cat /sys/class/net/' + n + '/address';
-  trim_exec(cmd, cb);
+  return trim_exec_async(cmd);
 };
 
-exports.gateway_ip_for = function(nic_name, cb) {
-  trim_exec("ip r | grep " + nic_name + " | grep default | cut -d ' ' -f 3 | sed -n '1p'", cb);
+exports.gateway_ip_for = function(nic_name) {
+  return trim_exec_async("ip r | grep " + nic_name + " | grep default | cut -d ' ' -f 3 | sed -n '1p'");
 };
 
-exports.gateway_ip = function(cb) {
-  exports.gateway_ip_for("eth0",cb);
-};
-
-exports.netmask_for = function(nic_name, cb) {
+exports.netmask_for = function(nic_name) {
   var cmd = "ifconfig " + nic_name + " 2> /dev/null | egrep 'netmask|Mask:' | awk '{print $4}'";
-  trim_exec(cmd, cb);
+  return trim_exec_async(cmd);
 };
 
 exports.gateway_ip6 = function(cb) {
@@ -83,8 +92,8 @@ exports.gateway_ip6 = function(cb) {
   trim_exec(cmd, cb);
 };
 
-exports.gateway_ip6_sync = function() {
-  var cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }'"
+exports.gateway_ip6_sync = function() {  
+  const cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }' | head -n 1"
   return trim_exec_sync(cmd);
 };
 
@@ -103,39 +112,14 @@ exports.gateway_ip6_sync = function() {
     netmask: 'Mask:255.255.255.0',
     type: 'Wired' } ]
 */
-exports.get_network_interfaces_list = function(cb) {
+exports.get_network_interfaces_list = async function() {
 
   var count = 0,
-      list = [],
-      nics = os.networkInterfaces();
-
-  function append_data(obj) {
-    async.parallel([
-      function(cb) {
-        exports.mac_address_for(obj.name, cb)
-      },
-      function(cb) {
-        exports.gateway_ip_for(obj.name, cb)
-      },
-      function(cb) {
-        exports.netmask_for(obj.name, cb)
-      },
-      function(cb) {
-        exports.interface_type_for(obj.name, cb)
-      }
-    ], function(err, results) {
-      if (results[0]) obj.mac_address = results[0];
-      if (results[1]) obj.gateway_ip  = results[1];
-      if (results[2]) obj.netmask     = results[2];
-      if (results[3]) obj.type        = results[3];
-
-      list.push(obj);
-      --count || cb(null, list);
-    })
-  }
+    list = [],
+    nics = os.networkInterfaces();
 
   for (var key in nics) {
-    if (key != 'lo0' && key != 'lo' && !key.match(/^tun/)) {
+    if (key != 'lo0' && key != 'lo' && !key.match(/^tun.*/) && !key.match(/^vpn_.*/)) { // filter vpn server and vpn client interfaces
 
       count++;
       var obj = { name: key };
@@ -148,7 +132,7 @@ exports.get_network_interfaces_list = function(cb) {
           if (obj.ip6_addresses) {
             obj.ip6_addresses.push(type.address);
             if (type.netmask) {
-                obj.ip6_masks.push(type.netmask);
+              obj.ip6_masks.push(type.netmask);
             }
           } else {
             obj.ip6_addresses=[type.address];
@@ -160,11 +144,20 @@ exports.get_network_interfaces_list = function(cb) {
         }
       });
 
-      append_data(obj);
+      const results = await Promise.all([
+        exports.mac_address_for(obj.name),
+        exports.gateway_ip_for(obj.name),
+        exports.netmask_for(obj.name),
+        exports.interface_type_for(obj.name)
+      ])
+      if (results[0]) obj.mac_address = results[0];
+      if (results[1]) obj.gateway_ip  = results[1];
+      if (results[2]) obj.netmask     = results[2];
+      if (results[3]) obj.type        = results[3];
+
+      list.push(obj);
     }
   }
 
-
-  if (count == 0)
-    cb(new Error('No interfaces found.'))
+  return list
 }

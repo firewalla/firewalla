@@ -20,19 +20,16 @@ const am2 = new AlarmManager2()
 
 const program = require('commander');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 program.version('0.0.2')
   .option('--alarm [alarm]', 'alarm id to resend notification');
 
 program.parse(process.argv);
 
 if(program.alarm) {
-  let alarmID = program.alarm
-  
-  async(() => {
-    await (am2.notifAlarm(alarmID))
+  let alarmID = program.alarm;
+
+  (async() =>{
+    await am2.notifAlarm(alarmID)
     process.exit(0)
   })()
 }

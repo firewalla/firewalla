@@ -164,14 +164,9 @@ module.exports = class {
       return;
     }
 
-    let [intelObj, ipinfo] = await Promise.all([this.cymon(ip), this.ipinfo(ip)]);
+    let ipinfo = await this.ipinfo(ip);
     
-    if (!intelObj || intelObj.count === 0) { // no info from cymon
-      intelObj = {};
-      intelObj = this.addFlowIntel(ip, intelObj, flowIntel);
-    } else {
-      intelObj = this.summarizeIntelObj(ip, intelObj);
-    }
+    let intelObj = this.addFlowIntel(ip, {}, flowIntel);
 
     log.debug("Ipinfo:", ipinfo)
     intelObj.lobj = ipinfo;
@@ -299,69 +294,6 @@ module.exports = class {
     return intelObj;
   }
 
-  summarizeIntelObj(ip, intelObj) {
-    const weburl = "https://cymon.io/" + ip;
-    log.info("INFO:------ Intel Information", intelObj.count);
-
-    const results = intelObj.results.filter(x => !IGNORED_TAGS.includes(x.tag));
-    intelObj.count = results.length;
-    const summary = intelObj.count + " reported this IP.\n";
-
-    let tags = {};
-    for (let r of results || []) {
-      if (r.tag) {
-        if (tags[r.tag] == null) {
-          tags[r.tag] = {
-            tag: r.tag,
-            count: 1
-          };
-        } else {
-          tags[r.tag].count += 1;
-        }
-      }
-    }
-
-    let tagArray = [], tagCount = 0, severity = 0;
-    for (let i in tags) {
-      let tag = tags[i];
-      tagArray.push(tag);
-      if (i.includes("malicious")) {
-        severity += tag.count * 3;
-      } else if (i.includes("malware")) {
-        severity += tag.count * 3;
-      } else if (i == "blacklist") {
-        severity += tag.count * 3;
-      } else {
-        severity += 1;
-      }
-      tagCount += tag.count;
-    }
-
-    tagArray.sort((a, b) => b.count - a.count);
-
-    intelObj.severityscore = severity;
-    intelObj.summary = summary;
-    intelObj.weburl = weburl;
-    intelObj.tags = tagArray;
-    intelObj.from = "cymon";
-
-    if (intelObj.tags && intelObj.tags.length > 0) {
-      const reasonize = (tag) => `${tag.tag} - ${Math.round(tag.count / tagCount * 100)}%`;
-      let reason = "Possibility: ";
-      let first = true;
-      for (let tag of intelObj.tags) {
-        if (first) {
-          reason += reasonize(tag);
-          first = false;
-        } else {
-          reason += ", " + reasonize(tag);
-        }
-      }
-      intelObj.reason = reason;
-    }
-    return intelObj;
-  }
-
   /* curl ipinfo.io/98.124.243.43/
   {
   "ip": "98.124.243.43",
@@ -405,38 +337,4 @@ module.exports = class {
 
     return ipinfo;
   }
-  
-  async cymon(ip) {
-    log.info("Looking up cymon:", ip);
-
-    let cached = await this.cacheLookup(ip, "cymon");
-
-    if (cached === "none") {
-      return null;
-    }
-
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (err) {
-        log.error("Error when parse cache:", cached, err);
-      }
-    }
-    
-    let body;
-    try {
-      body = await rp({
-        uri: "https://cymon.io/api/nexus/v1/ip/" + ip + "/events?limit=100",
-        method: 'GET',
-        family: 4,
-        json: true,
-        timeout: 10000 //ms
-      });
-    } catch (err) {
-//      log.info(`Error while requesting ${url}`, err.code, err.message, err.stack);
-    }
-    this.cacheAdd(ip, "cymon", JSON.stringify(body));
-    return body;
-  }
-  
 }

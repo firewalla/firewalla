@@ -22,9 +22,6 @@ let assert = chai.assert;
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
@@ -39,23 +36,23 @@ let hostTool = new HostTool();
 describe('Test Host Tool', () => {
 
   beforeEach((done) => {
-    async(() => {
-      await (sample.createSampleHost());
+    (async() =>{
+      await sample.createSampleHost();
       done();
     })();
   });
 
   afterEach((done) => {
-    async(() => {
-      await (sample.removeSampleHost());
+    (async() =>{
+      await sample.removeSampleHost();
       done();
     })();
   });
 
   describe('.getMacByIP', () => {
     it('should get the right mac address by ip', (done) => {
-      async(() => {
-        let macAddress = await (hostTool.getMacByIP(sample.hostIP));
+      (async() =>{
+        let macAddress = await hostTool.getMacByIP(sample.hostIP);
         expect(macAddress).to.equal(sample.hostMac)
         done();
       })();
@@ -66,9 +63,9 @@ describe('Test Host Tool', () => {
     this.timeout(10000);
 
     it('getIPsByMac should return ipv4 and ipv6 addresses', (done) => {
-      async(() => {
+      (async() =>{
         try {
-          let result = await(hostTool.getIPsByMac("F4:0F:24:00:00:01"));
+          let result = await hostTool.getIPsByMac("F4:0F:24:00:00:01");
           expect(result.length).to.equal(3);
           expect(result[0]).to.equal("172.17.0.10");
           expect(result[1]).to.equal("fe80::aa07:d334:59a3:1200");
@@ -83,8 +80,8 @@ describe('Test Host Tool', () => {
 
   describe('.getAllIPs', () => {
     it('getAllIPs should return all ip address in the network', (done) => {
-      async(() => {
-        let allIPs = await (hostTool.getAllIPs());
+      (async() =>{
+        let allIPs = await hostTool.getAllIPs();
         expect(allIPs.length).to.above(1);
         expect(allIPs.length).to.below(4);
         allIPs.forEach((ip_mac) => {

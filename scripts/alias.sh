@@ -8,6 +8,11 @@ alias t1='tail -F ~/.forever/kickui.log'
 alias t2='tail -F ~/.forever/monitor.log'
 alias t3='tail -F ~/.forever/api.log'
 alias t4='tail -F ~/.forever/blue.log'
+alias tt0='tail -F ~/logs/FireMain.log'
+alias tt00='tail -F ~/logs/Fire*.log'
+alias tt1='tail -F ~/logs/FireKick.log'
+alias tt2='tail -F ~/logs/FireMon.log'
+alias tt3='tail -F ~/logs/FireApi.log'
 alias l0='less -R ~/.forever/main.log'
 alias l1='less -R ~/.forever/kickui.log'
 alias l2='less -R ~/.forever/monitor.log'
@@ -32,11 +37,13 @@ alias node='/home/pi/firewalla/bin/node'
 alias fuc='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias srr='/home/pi/firewalla/scripts/main-run'
 alias srrr='/home/pi/firewalla/scripts/fireupgrade_check.sh'
+alias ct0='/home/pi/firewalla/scripts/estimate_compatibility.sh'
 alias rc='redis-cli'
 alias ll0='redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMain\", \"level\":\"info\"}"'
 alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireKick\", \"level\":\"info\"}"'
 alias ll2='redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMon\", \"level\":\"info\"}"'
 alias ll3='redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireApi\", \"level\":\"info\"}"'
+alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
 
 alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -'
 
@@ -56,3 +63,5 @@ function mycatip () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
   node /tmp/cat.js --ip "$1"
 }
+
+alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi/firewalla/scripts/main-run'

@@ -70,84 +70,79 @@ class AdvancedNmapSensor extends Sensor {
   }
 
   createVulnerabilityAlarm(host, script) {
-    let ip = host.ipv4Addr;
-    let vid = script.key;
-    let alarm = new Alarm.VulnerabilityAlarm(new Date() / 1000, ip, vid, {
-      'p.device.ip': ip,
-      'p.vuln.key': vid,
-      'p.vuln.title': script.title,
-      'p.vuln.state': script.state,
-      'p.vuln.discolure': script.disclosure,
-      'p.vuln.scriptID': script.id
-    });
-
-    am2
-      .enrichDeviceInfo(alarm)
-      .then(alarm => {
-        am2.enqueueAlarm(alarm);
-        log.info('Created a vulnerability alarm', alarm.aid, 'on device', ip, {});
-      })
-      .catch(err => {
-        log.error('Failed to create vulnerability alarm:', err, err.stack, {});
+    try {
+      let ip = host.ipv4Addr;
+      let vid = script.key;
+      let alarm = new Alarm.VulnerabilityAlarm(new Date() / 1000, ip, vid, {
+        'p.device.ip': ip,
+        'p.vuln.key': vid,
+        'p.vuln.title': script.title,
+        'p.vuln.state': script.state,
+        'p.vuln.discolure': script.disclosure,
+        'p.vuln.scriptID': script.id
       });
+
+      am2.enqueueAlarm(alarm);
+      log.info('Created a vulnerability alarm', alarm.aid, 'on device', ip);
+    } catch(err) {
+      log.error('Failed to create vulnerability alarm:', err, err.stack);
+    };
   }
 
   isSensorEnable() {
     return spt.isPolicyEnabled('vulScan');
   }
 
-  checkAndRunOnce() {
-    this.isSensorEnable()
-      .then(result => {
-        if (result) {
-          this.getNetworkRanges().then(() => {
-            this.runOnce();
-          });
-        }
-      })
-      .catch(err => {
-        log.error('Failed to check if sensor is enabled', err, {});
-      });
+  async checkAndRunOnce() {
+    try {
+      let result = await this.isSensorEnable()
+      if (result) {
+        await this.getNetworkRanges()
+        await this.runOnce();
+      };
+    } catch(err) {
+      log.error('Failed to run vulnerability scan', err);
+    };
   }
 
-  runOnce() {
+  async runOnce() {
     if (!scriptConfig) return;
 
     log.info('Scanning network to detect vulnerability...');
 
-    Object.keys(scriptConfig).forEach(scriptName => {
-      log.info('Running script', scriptName, {});
+    for (const scriptName of Object.keys(scriptConfig)) {
+      log.info('Running script', scriptName);
 
       let ports = scriptConfig[scriptName].ports;
-      if (ports) {
-        if (!this.networkRanges)
-          return Promise.reject(new Error('Network range is required'));
 
-        this.networkRanges.forEach(range => {
-          this._scan(range, [scriptName], ports).then(hosts => {
-            log.info('Analyzing scan result...');
+      if (!ports) continue;
 
-            // ignore any hosts
-            hosts = hosts.filter(x => x.scripts && x.scripts.length > 0);
+      if (!this.networkRanges)
+        throw new Error('Network range is required');
 
-            if (hosts.length === 0) {
-              log.info('No vulnerability is found');
-              return;
-            }
-            hosts.forEach(h => {
-              if (h.scripts) {
-                h.scripts.forEach(script => {
-                  if (script.state === 'VULNERABLE') {
-                    log.info( 'Found vulnerability', script.key, 'on host', h.ipv4Addr, {});
-                    this.createVulnerabilityAlarm(h, script);
-                  }
-                });
+      for (const range of this.networkRanges) {
+        let hosts = await this._scan(range, [scriptName], ports)
+        log.info('Analyzing scan result...');
+
+        // ignore any hosts
+        hosts = (hosts || []).filter(x => x.scripts && x.scripts.length > 0);
+
+        if (hosts.length === 0) {
+          log.info('No vulnerability is found');
+          return;
+        }
+        hosts.forEach(h => {
+          if (h.scripts) {
+            h.scripts.forEach(script => {
+              if (script.state === 'VULNERABLE') {
+                log.info( 'Found vulnerability', script.key, 'on host', h.ipv4Addr);
+                this.createVulnerabilityAlarm(h, script);
               }
             });
-          });
+          }
         });
-      }
-    });
+      };
+    };
   }
 
   _scan(range, scripts, ports) {

@@ -14,26 +14,23 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
-let Promise = require('bluebird');
 
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const Hashes = require('../util/Hashes.js');
+
 let instance = null;
 
-let maxV6Addr = 8;
+const maxV6Addr = 8;
 
-var _async = require('async');
+const asyncNative = require('../util/asyncNative.js');
 
 const iptool = require('ip');
 
@@ -43,22 +40,23 @@ class HostTool {
   constructor() {
     if(!instance) {
       instance = this;
+
+      this.ipMacMapping = {};
+      setInterval(() => {
+        this._flushIPMacMapping();
+      }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
     }
     return instance;
   }
 
-  macExists(mac) {
-    return rclient.existsAsync("host:mac:" + mac)
-      .then((result) => {
-        return result == 1
-      });
+  async macExists(mac) {
+    const result = await rclient.existsAsync("host:mac:" + mac)
+    return result == 1
   }
 
-  ipv4Exists(ip) {
-    return rclient.existsAsync("host:ip4:" + ip)
-      .then((result) => {
-        return result == 1
-      });
+  async ipv4Exists(ip) {
+    const result = await rclient.existsAsync("host:ip4:" + ip)
+    return result == 1
   }
 
   getIPv4Entry(ip) {
@@ -89,63 +87,58 @@ class HostTool {
     return hostEntry.ipv4;
   }
 
-  updateDHCPInfo(mac, type, info) {
+  async updateDHCPInfo(mac, type, info) {
     let key = "dhcp:" + mac + ":" + type;
-    return rclient.hmsetAsync(key, info)
-      .then(() => {
-        return rclient.expireAsync(key, 86400);
-      });
+    await rclient.hmsetAsync(key, info);
+    await rclient.expireAsync(key, 86400);
   }
 
   updateBackupName(mac, name) {
-    log.info("Updating backup name", name, "for mac:", mac, {});
+    log.info("Updating backup name", name, "for mac:", mac);
     let key = "host:mac:" + mac;
     return rclient.hsetAsync(key, "bname", name)
   }
 
-  updateIPv4Host(host) {
+  async updateIPv4Host(host) {
     let uid = host.uid;
     let key = this.getHostKey(uid);
 
     let hostCopy = JSON.parse(JSON.stringify(host))
-    
+
     if(hostCopy.ipv6Addr) {
       delete hostCopy.ipv6Addr
     }
 
     this.cleanupData(hostCopy);
 
-    return rclient.hmsetAsync(key, hostCopy)
-      .then(() => {
-        return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
-      });
+    await rclient.hmsetAsync(key, hostCopy)
+    await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
   }
 
-  updateMACKey(host, skipUpdatingExpireTime) {
+  async updateMACKey(host, skipUpdatingExpireTime) {
 
     let hostCopy = JSON.parse(JSON.stringify(host))
 
     if(hostCopy.mac && hostCopy.mac === "00:00:00:00:00:00") {
-      log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack, {})
+      log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack);
       //return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
       return // ignore 00:00:00:00:00:00
     }
 
     if(hostCopy.ipv6Addr && hostCopy.ipv6Addr.constructor.name === "Array") {
       hostCopy.ipv6Addr = JSON.stringify(hostCopy.ipv6Addr);
-    }    
-    
+    }
+
     this.cleanupData(hostCopy);
 
     let key = this.getMacKey(hostCopy.mac);
-    return rclient.hmsetAsync(key, hostCopy)
-      .then(() => {
-        if(skipUpdatingExpireTime) {
-          return;
-        } else {
-          return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
-        }
-      })
+    await rclient.hmsetAsync(key, hostCopy)
+
+    if(skipUpdatingExpireTime) {
+      return;
+    } else {
+      return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
+    }
   }
 
   updateKeysInMAC(mac, hash) {
@@ -171,7 +164,7 @@ class HostTool {
       return rclient.delAsync(this.getHostKey(ip));
     } else {
       return rclient.delAsync(this.getIPv6HostKey(ip));
-    }    
+    }
   }
 
   getMacKey(mac) {
@@ -199,84 +192,94 @@ class HostTool {
     return changeset;
   }
 
-  getIPsByMac(mac) {
-    return async(() => {
-      let ips = [];
-      let macObject = await(this.getMACEntry(mac));
-      if(!macObject) {
-        return ips
-      }
-      
-      if(macObject.ipv4Addr) {
-        ips.push(macObject.ipv4Addr);
-      }
+  async getIPsByMac(mac) {
+    let ips = [];
+    let macObject = await this.getMACEntry(mac);
+    if(!macObject) {
+      return ips
+    }
 
-      if(macObject.ipv6Addr) {
-        let json = macObject.ipv6Addr;
-        let ipv6s = JSON.parse(json);
-        ips.push.apply(ips, ipv6s);
-      }
+    if(macObject.ipv4Addr) {
+      ips.push(macObject.ipv4Addr);
+    }
 
-      return ips;
-    })();
+    if(macObject.ipv6Addr) {
+      let json = macObject.ipv6Addr;
+      let ipv6s = JSON.parse(json);
+      ips.push.apply(ips, ipv6s);
+    }
+
+    return ips;
   }
 
-  getMacByIP(ip) {
-    return async(() => {
-      let host = null
+  async getMacByIP(ip) {
+    let host = null
+    if (ip === sysManager.myIp() || ip === sysManager.myIp2() || (sysManager.myIp6() && sysManager.myIp6().includes(ip)))
+      // shortcut for Firewalla's self IP
+      return sysManager.myMAC();
 
-      if (iptool.isV4Format(ip)) {
-        host = await (this.getIPv4Entry(ip))
-      } else if(iptool.isV6Format(ip)) {
-        host = await (this.getIPv6Entry(ip))
+    if (iptool.isV4Format(ip)) {
+      host = await this.getIPv4Entry(ip);
+    } else if(iptool.isV6Format(ip)) {
+      host = await this.getIPv6Entry(ip);
+    } else {
+      return null
+    }
+
+    return host && host.mac;
+  }
+
+  async getMacByIPWithCache(ip) {
+    if (this.ipMacMapping[ip]) {
+      return this.ipMacMapping[ip];
+    } else {
+      const mac = await this.getMacByIP(ip);
+      if (mac) {
+        this.ipMacMapping[ip] = mac;
+        return mac;
       } else {
-        return null
+        return null;
       }
-
-      return host && host.mac
-    })();
+    }
   }
 
-  getMacEntryByIP(ip) {
-    return async(() => {
-      const mac = await (this.getMacByIP(ip))
-      return this.getMACEntry(mac)
-    })()
+  _flushIPMacMapping() {
+    this.ipMacMapping = {};
+  }
+
+  async getMacEntryByIP(ip) {
+    const mac = await this.getMacByIP(ip)
+    return this.getMACEntry(mac)
   }
 
   async getAllMACs() {
     let keys = await rclient.keysAsync("host:mac:*");
-    return keys.map((key) => key.replace("host:mac:", ""));
+    return keys.map((key) => key.replace("host:mac:", "")).filter(Boolean);
   }
 
-  getAllMACEntries() {
-    return async(() => {
-      let macKeys = await (this.getAllMACs());
-      let entries = [];
-      macKeys.forEach((mac) => {
-        let entry = await (this.getMACEntry(mac));
-        entries.push(entry);
-      })
-      return entries;
-    })();
+  async getAllMACEntries() {
+    let macKeys = await this.getAllMACs();
+    let entries = [];
+    for (const mac of macKeys) {
+      let entry = await this.getMACEntry(mac);
+      entry && entries.push(entry);
+    }
+    return entries;
   }
 
-  getAllIPs() {
+  async getAllIPs() {
     let allIPs = [];
 
-    return async(() => {
+    let macKeys = await this.getAllMACs();
 
-      let macs = await (this.getAllMACs());
+    for (const mac of macKeys) {
+      let ips = await this.getIPsByMac(mac);
+      if (ips) {
+        allIPs.push({ips: ips, mac: mac})
+      }
+    };
 
-      macs.forEach((mac) => {
-        let ips = await (this.getIPsByMac(mac));
-        if(ips) {
-          allIPs.push({ips: ips, mac: mac})
-        }
-      });
-
-      return allIPs;
-    })();
+    return allIPs;
   }
 
   updateRecentActivity(mac, activity) {
@@ -284,10 +287,10 @@ class HostTool {
       // do nothing if activity or mac is null
       return Promise.resolve()
     }
-    
+
     let key = this.getMacKey(mac)
     let string = JSON.stringify(activity)
-    
+
     return rclient.hsetAsync(key, "recentActivity", string)
   }
 
@@ -295,7 +298,7 @@ class HostTool {
     // Keep uid for now as it's used as keys in a lot of places
     // TODO: use mac as uid should be a true fix to this
 
-    let macEntry = await (this.getMACEntry(mac));
+    let macEntry = await this.getMACEntry(mac);
     if (!macEntry) {
       log.error('removeDupIPv4FromMacEntry:', mac, 'not found')
       return Promise.resolve();
@@ -315,58 +318,53 @@ class HostTool {
   getIPv6Entry(ip) {
     if(!ip)
       return Promise.reject("invalid ip addr");
-    
+
     let key = this.getIPv6HostKey(ip)
     return rclient.hgetallAsync(key);
   }
-  
+
   getIPv6HostKey(ip) {
-    let key = "host:ip6:" + ip;
-    return key
+    return "host:ip6:" + ip;
   }
 
-  ipv6Exists(ip) {
-    let key = this.getIPv6HostKey(ip)
-    return rclient.existsAsync(key)
-      .then((result) => {
-        return result == 1
-      });
+  async ipv6Exists(ip) {
+    const key = this.getIPv6HostKey(ip)
+    const result = await rclient.existsAsync(key)
+    return result == 1
   }
 
-  updateIPv6Host(host,ipv6Addr, skipTimeUpdate) {
+  async updateIPv6Host(host, ipv6Addr, skipTimeUpdate) {
     skipTimeUpdate = skipTimeUpdate || false;
-    return async(() => {
-      if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
-        ipv6Addr.forEach((addr) => {
-          let key = this.getIPv6HostKey(addr)
+    if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
+      for (const addr of ipv6Addr) {
+        let key = this.getIPv6HostKey(addr)
 
-          let existingData = await (rclient.hgetallAsync(key))
-          let data = null
-          
-          if(existingData && existingData.mac === host.mac) {
-            // just update last timestamp for existing device
-            if (!skipTimeUpdate) {
-              data = {
-                lastActiveTimestamp: Date.now() / 1000
-              }
-            }
-          } else {
+        let existingData = await rclient.hgetallAsync(key)
+        let data = null
+
+        if(existingData && existingData.mac === host.mac) {
+          // just update last timestamp for existing device
+          if (!skipTimeUpdate) {
             data = {
-              mac: host.mac
-            };
-            if (!skipTimeUpdate) {
-              data.firstFoundTimestamp = Date.now() / 1000;
-              data.lastActiveTimestamp = Date.now() / 1000;
+              lastActiveTimestamp: Date.now() / 1000
             }
           }
-
-          if (data) {
-            await (rclient.hmsetAsync(key, data))
-            await (rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4))
+        } else {
+          data = {
+            mac: host.mac
+          };
+          if (!skipTimeUpdate) {
+            data.firstFoundTimestamp = Date.now() / 1000;
+            data.lastActiveTimestamp = Date.now() / 1000;
           }
-        })
+        }
+
+        if (data) {
+          await rclient.hmsetAsync(key, data)
+          await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
+        }
       }
-    })()   
+    }
   }
 
   ////////////////// END OF IPV6 ////////////////
@@ -377,135 +375,111 @@ class HostTool {
   // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
   // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
 
-  /* 
+  /*
    * ipv6 differs from ipv4, which it will randomly generate IP addresses, and use them
-   * in very short term.  It is pretty hard to detect how long these will be used, so 
+   * in very short term.  It is pretty hard to detect how long these will be used, so
    * we just hard code max number of ipv6 address
-   * 
+   *
    * we will use 8 for now
    */
 
-  ipv6Insert(ipv6array,v6addr,unspoof,callback) {
-      let removed = ipv6array.splice(maxV6Addr,1000);
-      log.info("V6 Overflow Check: ", ipv6array, v6addr);
-      if (v6addr) {
-          let oldindex = ipv6array.indexOf(v6addr);
-          if (oldindex != -1) {
-             ipv6array.splice(oldindex,1);
-          }
-          ipv6array.unshift(v6addr);
+  async ipv6Insert(ipv6array, v6addr, unspoof) {
+    let removed = ipv6array.splice(maxV6Addr, 1000);
+    log.info("V6 Overflow Check: ", ipv6array, v6addr);
+    if (v6addr) {
+      let oldindex = ipv6array.indexOf(v6addr);
+      if (oldindex != -1) {
+        ipv6array.splice(oldindex, 1);
       }
-      log.info("V6 Overflow Check Removed: ", removed,{});
- 
-      if (unspoof && removed && removed.length>0) {
-          _async.eachLimit(removed, 10, (ip6, cb) => {
-              rclient.srem("monitored_hosts6", ip6,(err)=>{
-                  log.info("V6 Overflow Removed for real", ip6,err,{});
-                  cb();
-              });
-          }, (err) => {
-              callback(removed);
-          });
-      } else {
-          callback(null);
-      }
+      ipv6array.unshift(v6addr);
+    }
+    log.info("V6 Overflow Check Removed:", removed);
+
+    if (unspoof && removed && removed.length > 0) {
+      await asyncNative.eachLimit(removed, 10, async (ip6) => {
+        await rclient.sremAsync("monitored_hosts6", ip6)
+        log.info("V6 Overflow Removed for real", ip6);
+      })
+      return removed;
+    } else {
+      return null
+    }
   }
 
-  linkMacWithIPv6(v6addr, mac, callback) {
-    require('child_process').exec("ping6 -c 3 -I eth0 "+v6addr, (err, out, code) => {
-    });
+  async linkMacWithIPv6(v6addr, mac) {
+    await require('child-process-promise').exec("ping6 -c 3 -I eth0 " + v6addr)
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
     sysManager.setNeighbor(v6addr);
-    rclient.hgetall(v6key, (err, data) => {
-      log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, data, err);
-      if (err == null) {
-        if (data != null) {
-          data.mac = mac;
-          data.lastActiveTimestamp = Date.now() / 1000;
-        } else {
-          data = {};
-          data.mac = mac;
-          data.lastActiveTimestamp = Date.now() / 1000;
-          data.firstFoundTimestamp = data.lastActiveTimestamp;
-        }
-        rclient.hmset(v6key, data, (err, result) => {
-          log.debug("++++++ Discover:v6Neighbor:Scan:find", err, result);
-          let mackey = "host:mac:" + mac;
-          rclient.expireat(v6key, parseInt((+new Date) / 1000) + 604800); // 7 days
-          rclient.hgetall(mackey, (err, data) => {
-            log.info("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
-            if (err == null) {
-              if (data != null) {
-                let ipv6array = [];
-                if (data.ipv6Addr) {
-                  ipv6array = JSON.parse(data.ipv6Addr);
-                }
-
-                // only keep around 5 ipv6 around
-                /*
-                ipv6array = ipv6array.slice(0,8)
-                let oldindex = ipv6array.indexOf(v6addr);
-                if (oldindex != -1) {
-                  ipv6array.splice(oldindex,1);
-                }
-                ipv6array.unshift(v6addr);
-                */
-                this.ipv6Insert(ipv6array,v6addr,true,(removed)=>{
-                  data.mac = mac.toUpperCase();
-                  data.ipv6Addr = JSON.stringify(ipv6array);
-                  data.lastActiveTimestamp = Date.now() / 1000;
-                  log.info("HostTool:Writing Data:", mackey, data,{});
-                  rclient.hmset(mackey, data, (err, result) => {
-                    callback(err, null);
-                  });
-                });
-                //v6 at times will discver neighbors that not there ...
-                //so we don't update last active here
-                //data.lastActiveTimestamp = Date.now() / 1000;
-              } else {
-                data = {};
-                data.mac = mac.toUpperCase();
-                data.ipv6Addr = JSON.stringify([v6addr]);;
-                data.lastActiveTimestamp = Date.now() / 1000;
-                data.firstFoundTimestamp = data.lastActiveTimestamp;
-                log.info("HostTool:Writing Data:", mackey, data,{});
-                rclient.hmset(mackey, data, (err, result) => {
-                  callback(err, null);
-                });
-              }
-            } else {
-              log.error("Discover:v6Neighbor:Scan:Find:Error", err);
-              callback(null, null);
-            }
-          });
-
-        });
-      } else {
-        log.error("!!!!!!!!!!! Discover:v6Neighbor:Scan:Find:Error", err);
-        callback(null, null);
+    let ip6Host = await rclient.hgetallAsync(v6key)
+    log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host, err);
+    if (ip6Host != null) {
+      ip6Host.mac = mac;
+      ip6Host.lastActiveTimestamp = Date.now() / 1000;
+    } else {
+      ip6Host = {};
+      ip6Host.mac = mac;
+      ip6Host.lastActiveTimestamp = Date.now() / 1000;
+      ip6Host.firstFoundTimestamp = ip6Host.lastActiveTimestamp;
+    }
+    let result = await rclient.hmsetAsync(v6key, ip6Host)
+    log.debug("++++++ Discover:v6Neighbor:Scan:find", result);
+    let mackey = "host:mac:" + mac;
+    await rclient.expireatAsync(v6key, parseInt((+new Date) / 1000) + 604800); // 7 days
+    let macHost = await rclient.hgetallAsync(mackey)
+    log.info("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, macHost);
+    if (macHost != null) {
+      let ipv6array = [];
+      if (macHost.ipv6Addr) {
+        ipv6array = JSON.parse(macHost.ipv6Addr);
       }
-    });
+
+      // only keep around 5 ipv6 around
+      /*
+      ipv6array = ipv6array.slice(0,8)
+      let oldindex = ipv6array.indexOf(v6addr);
+      if (oldindex != -1) {
+        ipv6array.splice(oldindex,1);
+      }
+      ipv6array.unshift(v6addr);
+      */
+      await this.ipv6Insert(ipv6array, v6addr, true)
+      macHost.mac = mac.toUpperCase();
+      macHost.ipv6Addr = JSON.stringify(ipv6array);
+      macHost.lastActiveTimestamp = Date.now() / 1000;
+      log.info("HostTool:Writing macHost:", mackey, macHost);
+      await rclient.hmsetAsync(mackey, macHost)
+      //v6 at times will discver neighbors that not there ...
+      //so we don't update last active here
+      //macHost.lastActiveTimestamp = Date.now() / 1000;
+    } else {
+      macHost = {};
+      macHost.mac = mac.toUpperCase();
+      macHost.ipv6Addr = JSON.stringify([v6addr]);;
+      macHost.lastActiveTimestamp = Date.now() / 1000;
+      macHost.firstFoundTimestamp = macHost.lastActiveTimestamp;
+      log.info("HostTool:Writing macHost:", mackey, macHost);
+      await rclient.hmsetAsync(mackey, macHost)
+    }
+
   }
 
-  getIPv6AddressesByMAC(mac) {
-    return async(() => {
-      let key = this.getMacKey(mac)
-      let v6String = await (rclient.hgetAsync(key, "ipv6Addr"))
-      if(!v6String) {
-        return []
-      }
-      
-      try {
-        let v6Addrs = JSON.parse(v6String)
-        return v6Addrs
-      } catch(err) {
-        log.error(`Failed to parse v6 addrs: ${v6String}`)
-        return []
-      }
-    })()
+  async getIPv6AddressesByMAC(mac) {
+    let key = this.getMacKey(mac)
+    let v6String = await rclient.hgetAsync(key, "ipv6Addr")
+    if(!v6String) {
+      return []
+    }
+
+    try {
+      let v6Addrs = JSON.parse(v6String)
+      return v6Addrs
+    } catch(err) {
+      log.error(`Failed to parse v6 addrs: ${v6String}`)
+      return []
+    }
   }
 
   loadDevicePolicyByMAC(mac) {
@@ -518,16 +492,26 @@ class HostTool {
     return macAddressPattern.test(mac)
   }
 
-  getName(ip) {
-    return async(() => {
-      if(sysManager.isLocalIP(ip)) {
-        const macEntry = await (this.getMacEntryByIP(ip))
-        return getPreferredBName(macEntry)
-      } else {
-        const intelEntry = await (intelTool.getIntel(ip))
-        return intelEntry && intelEntry.host
+  async getName(ip) {
+    if(sysManager.isLocalIP(ip)) {
+      const macEntry = await this.getMacEntryByIP(ip)
+      return getPreferredBName(macEntry)
+    } else {
+      const intelEntry = await intelTool.getIntel(ip)
+      return intelEntry && intelEntry.host
+    }
+  }
+
+  async findMacByMacHash(hash) {
+    const allMacs = await this.getAllMACs();    
+    for(const mac of allMacs) {
+      const hashObject = Hashes.getHashObject(mac);
+      if(hashObject && hashObject.hash === hash) {
+        return mac;
       }
-    })()
+    }
+
+    return null;
   }
 
   filterOldDevices(hostList) {
@@ -549,7 +533,7 @@ class HostTool {
         if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
           activeHosts[ip] = host
         }
-      }      
+      }
     }
 
     return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)

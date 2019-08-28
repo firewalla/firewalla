@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,7 +38,7 @@ function initSensors() {
     } catch(err) {
       log.error(`Failed to load sensor: ${sensorName}: ${err}`)
     }
-  });  
+  });
 }
 
 function run() {

@@ -4,9 +4,6 @@
 : ${FIREWALLA_BIN:=$FIREWALLA_HOME/bin}
 
 BINARY=bitbridge7
-if [[ -e $FIREWALLA_BIN/$BINARY.rc ]]; then
-  source $FIREWALLA_BIN/$BINARY.rc # taking arguments from here
-fi
 
 if [[ $(uname -m) == "aarch64" ]]; then
 	ln -sfT real.aarch64 real
@@ -20,9 +17,18 @@ fi
 
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_BIN/$BINARY
 
-if [[ ! -z "$BINARY_ARGUMENTS" ]]; then
-  $FIREWALLA_BIN/$BINARY $BINARY_ARGUMENTS
-else
-  exit 1
-fi
+PIDS=""
+
+for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
+  if [[ -e $RC_FILE ]]; then
+    source $RC_FILE # taking arguments from here
+  fi
+
+  if [[ ! -z "$BINARY_ARGUMENTS" ]]; then
+    $FIREWALLA_BIN/$BINARY $BINARY_ARGUMENTS
+    PIDS="$PIDS $!"
+  fi
+done
+
+wait $PIDS
 

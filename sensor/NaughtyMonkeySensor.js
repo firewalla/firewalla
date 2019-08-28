@@ -35,6 +35,9 @@ const hostManager = new HostManager('cli', 'server');
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager('info');
 
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
+
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
@@ -80,16 +83,18 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   randomFindTarget() {
-    const list = ["204.85.191.30",
-      "46.235.227.70",
-      "193.107.85.56",
-      "5.79.68.161",
-      "204.8.156.142",
-      "37.48.120.196",
-      "37.187.7.74",
-      "162.247.72.199",
-      "81.129.164.141"
-    ]
+    const list = [
+      "185.220.101.10",
+      "142.44.154.169",
+      "89.144.12.17",
+      "141.255.162.35",
+      "163.172.214.8",
+      "91.219.236.171",
+      "176.123.8.224",
+      "185.234.217.144",
+      "185.234.217.142",
+      "185.234.217.146"
+    ];
 
     return list[Math.floor(Math.random() * list.length)]
 
@@ -100,39 +105,15 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async prepareVideoEnvironment(ip) {
-    const dnsInfo = {
-      host: "v.qq.com",
-      lastActive: "1528268891",
-      count: 44,
-      ssl: 1,
-      established: true
-    }
-
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
+    await dnsTool.addDns(ip, "v.qq.com");
   }
 
   async prepareGameEnvironment(ip) {
-    const dnsInfo = {
-      host: "battle.net",
-      lastActive: "1528268891",
-      count: 44,
-      ssl: 1,
-      established: true
-    }
-
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
+    await dnsTool.addDns(ip, "battle.net");
   }
 
   async preparePornEnvironment(ip) {
-    const dnsInfo = {
-      host: "pornhub.com",
-      lastActive: "1528268891",
-      count: 44,
-      ssl: 1,
-      established: true
-    }
-
-    await rclient.hmset(`dns:ip:${ip}`, dnsInfo);
+    await dnsTool.addDns(ip, "pornhub.com");
   }
 
   async release(event) {
@@ -382,7 +363,7 @@ class NaughtyMonkeySensor extends Sensor {
     await exec(cmd, {
       cwd: f.getFirewallaHome() + "/testLegacy/"
     }).catch((err) => {
-      log.error("Failed to release monkey", cmd, err, {})
+      log.error("Failed to release monkey", cmd, err);
     })
 
   }

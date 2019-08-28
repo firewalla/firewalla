@@ -44,8 +44,8 @@ class SubnetSensor extends Sensor {
     let detectedInterfaces = await rclient.hgetallAsync('sys:network:info');
 
     if (fConfig.discovery && fConfig.discovery.networkInterfaces) {
-      fConfig.discovery.networkInterfaces.forEach(interfaceName => {
-        if (!detectedInterfaces[interfaceName]) return;
+      for (const interfaceName of fConfig.discovery.networkInterfaces) {
+        if (!detectedInterfaces[interfaceName]) continue;
 
         let intf = JSON.parse(detectedInterfaces[interfaceName]);
         if (intf && intf.subnet) {
@@ -61,19 +61,11 @@ class SubnetSensor extends Sensor {
               }
             );
 
-            am2
-              .enrichDeviceInfo(alarm)
-              .then(enriched => {
-                am2.enqueueAlarm(enriched);
-                log.info('Created a subnet alarm', enriched.aid,
-                         'for subnet', intf.subnet);
-              })
-              .catch(err => {
-                log.error('Failed to create subnet alarm:', err, err.stack);
-              });
+            am2.enqueueAlarm(alarm);
+            log.info('Created a subnet alarm', alarm.aid, 'for subnet', intf.subnet);
           }
         }
-      });
+      };
     }
   }
 

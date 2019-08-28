@@ -26,9 +26,6 @@ let rclient = redis.createClient();
 
 let license = require('../util/license');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
@@ -45,9 +42,9 @@ describe('Bone', function () {
 
   describe('.getLicense', function() {
     before((done) => {
-      async(() => {
-        await (license.writeLicenseAsync(sample.sampleLicense));
-        await (Bootstrap.bootstrap());
+      (async() =>{
+        await license.writeLicenseAsync(sample.sampleLicense);
+        await Bootstrap.bootstrap();
         done();
       })();
     })
@@ -58,8 +55,8 @@ describe('Bone', function () {
 
       let bone = require("../lib/Bone.js");
 
-      async(() => {
-        let result = await (bone.getLicenseAsync(licenseKey, macAddress));
+      (async() =>{
+        let result = await bone.getLicenseAsync(licenseKey, macAddress);
         expect(result.DATA).to.not.equal(undefined)
         expect(result.DATA.MAC).to.equal(macAddress);
         done();
@@ -69,9 +66,9 @@ describe('Bone', function () {
 
   describe('.intel', function () {
     before((done) => {
-      async(() => {
-        await (license.writeLicenseAsync(sample.sampleLicense));
-        await (Bootstrap.bootstrap());
+      (async() =>{
+        await license.writeLicenseAsync(sample.sampleLicense);
+        await Bootstrap.bootstrap();
         done();
       })();
     })
@@ -80,8 +77,8 @@ describe('Bone', function () {
       let sampleData = {flowlist:intelSample.netflix, hashed: 1};
       let bone = require("../lib/Bone.js");
 
-      async(() => {
-        let intelResult = await (bone.intelAsync("*", "check", sampleData));
+      (async() =>{
+        let intelResult = await bone.intelAsync("*", "check", sampleData);
         let intel = intelResult[0];
         expect(intel.c).to.equal('av');
         expect(intel.apps.netflix).to.equal('100');
@@ -93,8 +90,8 @@ describe('Bone', function () {
       let sampleData = {flowlist:intelSample.pinterest, hashed: 1};
       let bone = require("../lib/Bone.js");
 
-      async(() => {
-        let intelResult = await (bone.intelAsync("*", "check", sampleData));
+      (async() =>{
+        let intelResult = await bone.intelAsync("*", "check", sampleData);
         let intel = intelResult[0];
         expect(intel.c).to.equal('social');
         expect(intel.apps.pinterest).to.equal('100');
@@ -106,8 +103,8 @@ describe('Bone', function () {
       let sampleData = {flowlist:intelSample.unknown, hashed: 1};
       let bone = require("../lib/Bone.js");
 
-      async(() => {
-        let intelResult = await (bone.intelAsync("*", "check", sampleData));
+      (async() =>{
+        let intelResult = await bone.intelAsync("*", "check", sampleData);
         console.log(intelResult);
         done();
       })();

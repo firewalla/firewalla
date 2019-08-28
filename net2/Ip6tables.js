@@ -13,15 +13,14 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var ip = require('ip');
-var cp = require('child_process');
+const ip = require('ip');
+const cp = require('child_process');
+const execAsync = require('util').promisify(cp.exec)
 
 const log = require('./logger.js')(__filename);
 
 var running = false;
 var workqueue = [];
-
-const Promise = require('bluebird')
 
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
@@ -114,6 +113,7 @@ function iptablesArgs(rule) {
   if (rule.protocol) args = args.concat(["-p", rule.protocol]);
   if (rule.src) args = args.concat(["--source", rule.src]);
   if (rule.dst) args = args.concat(["--destination", rule.dst]);
+  if (rule.extra) args = args.concat([rule.extra]);
   if (rule.sport) args = args.concat(["--sport", rule.sport]);
   if (rule.dport) args = args.concat(["--dport", rule.dport]);
   if (rule.in) args = args.concat(["-i", rule.in]);
@@ -154,25 +154,61 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
-function flush(callback) {
-  this.process = cp.exec(
+function flush() {
+  return execAsync(
     "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
-    (err, stdout, stderr) => {
+  ).catch(err => {
+    log.error("IP6TABLE:FLUSH:Unable to flush", err)
+  });
+}
+
+function _getDNSRedirectChain(type) {
+  type = type || "local";
+  let chain = "PREROUTING_DNS_DEFAULT";
+  switch (type) {
+    case "local":
+      chain = "PREROUTING_DNS_DEFAULT";
+      break;
+    case "vpn":
+      chain = "PREROUTING_DNS_VPN";
+      break;
+    case "vpnClient":
+      chain = "PREROUTING_DNS_VPN_CLIENT";
+      break;
+    default:
+      chain = "PREROUTING_DNS_DEFAULT";
+  }
+  return chain;
+}
+
+async function dnsFlushAsync(type) {
+  type = type || "local";
+  const chain = _getDNSRedirectChain(type);
+  let rule = {
+    sudo: true,
+    chain: chain,
+    action: '-F',
+    table: 'nat',
+    checkBeforeAction: false
+  };
+
+  return new Promise((resolve, reject) => {
+    newRule(rule, (err) => {
       if (err) {
-        log.error("IP6TABLE:FLUSH:Unable to flush", err, stdout);
+        log.error("Failed to apply rule: ", rule);
+        reject(err);  
+      } else {
+        resolve();
       }
-      if (callback) {
-        callback(err, null);
-      }
-    }
-  );
+    });
+  });
 }
 
 // run() is deleted as same functionality is provided in Iptables.run() 
 
-function dnsRedirectAsync(server, port) {
+function dnsRedirectAsync(server, port, type) {
   return new Promise((resolve, reject) => {
-    dnsRedirect(server, port, (err) => {
+    dnsRedirect(server, port, type, (err) => {
       if(err) {
         reject(err)
       } else {
@@ -182,13 +218,16 @@ function dnsRedirectAsync(server, port) {
   })
 }
 
-function dnsRedirect(server, port, cb) {
+function dnsRedirect(server, port, type, cb) {
+  type = type || "local";
+  const chain = _getDNSRedirectChain(type);
   let rule = {
     sudo: true,
-    chain: 'PREROUTING',
+    chain: chain,
     action: '-A',
     table: 'nat',
     protocol: 'udp',
+    extra: '-m set ! --match-set no_dns_caching_mac_set src',
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
@@ -197,7 +236,7 @@ function dnsRedirect(server, port, cb) {
 
   newRule(rule, (err) => {
     if(err) {
-      log.error("Failed to apply rule:", rule, {})
+      log.error("Failed to apply rule:", rule);
       cb(err)
     } else {
       rule.protocol = 'tcp'
@@ -206,9 +245,9 @@ function dnsRedirect(server, port, cb) {
   })
 }
 
-function dnsUnredirectAsync(server, port) {
+function dnsUnredirectAsync(server, port, type) {
   return new Promise((resolve, reject) => {
-    dnsUnredirect(server, port, (err) => {
+    dnsUnredirect(server, port, type, (err) => {
       if(err) {
         reject(err)
       } else {
@@ -218,13 +257,16 @@ function dnsUnredirectAsync(server, port) {
   })
 }
 
-function dnsUnredirect(server, port, cb) {
+function dnsUnredirect(server, port, type, cb) {
+  type = type || "local";
+  const chain = _getDNSRedirectChain(type);
   let rule = {
     sudo: true,
-    chain: 'PREROUTING',
+    chain: chain,
     action: '-D',
     table: 'nat',
     protocol: 'udp',
+    extra: '-m set ! --match-set no_dns_caching_mac_set src',
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
@@ -233,7 +275,7 @@ function dnsUnredirect(server, port, cb) {
 
   newRule(rule, (err) => {
     if(err) {
-      log.error("Failed to apply rule:", rule, {})
+      log.error("Failed to apply rule:", rule);
       cb(err)
     } else {
       rule.protocol = 'tcp'
@@ -244,4 +286,5 @@ function dnsUnredirect(server, port, cb) {
 
 exports.dnsRedirectAsync = dnsRedirectAsync
 exports.dnsUnredirectAsync = dnsUnredirectAsync
+exports.dnsFlushAsync = dnsFlushAsync
 exports.flush = flush 

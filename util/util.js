@@ -26,8 +26,7 @@ function extend(target) {
   return target;
 }
 
-function getPreferredBName(hostObject) {
-
+function getPreferredName(hostObject) {
   if (hostObject==null) {
     return null
   }
@@ -36,11 +35,28 @@ function getPreferredBName(hostObject) {
     return hostObject.name // always use user customized name first
   }
 
-  // TODO: preferred name needs to be improved in the future
+  return getPreferredBName(hostObject);
+}
+
+
+function getPreferredBName(hostObject) {
+
+  if (hostObject==null) {
+    return null;
+  }
+
+  if(hostObject.cloudName) {
+    return hostObject.cloudName
+  }
+
+  if(hostObject.spoofMeName) {
+    return hostObject.spoofMeName
+  }
+
   if(hostObject.dhcpName) {
     return hostObject.dhcpName
   }
-  
+
   if(hostObject.bonjourName) {
     return hostObject.bonjourName
   }
@@ -71,5 +87,6 @@ function delay(t) {
 module.exports = {
   extend:extend,
   getPreferredBName: getPreferredBName,
+  getPreferredName: getPreferredName,
   delay: delay
 }

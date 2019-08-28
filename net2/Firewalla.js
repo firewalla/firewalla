@@ -14,11 +14,10 @@
  */
 'use strict';
 const log = require("../net2/logger.js")(__filename)
-let config;
 
-let cp = require('child_process');
+const cp = require('child_process');
 
-let util = require('util');
+const util = require('util');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
@@ -30,11 +29,7 @@ let _branch = null
 let _lastCommitDate = null
 
 let version = null;
-
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
+let latestCommitHash = null;
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -56,7 +51,7 @@ function getPlatform() {
 
 function getBranch() {
   if(_branch == null) {
-    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace("\n", "")
+    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace(/\n/g, "")
   }
   return _branch
 }
@@ -68,15 +63,13 @@ function getLastCommitDate() {
   return _lastCommitDate
 }
 
-function getProdBranch() {
-  return async(() => {
-    let branch = await (rclient.hgetAsync("sys:config", "prod.branch"))
-    if(branch) {
-      return branch
-    } else {
-      return "release_6_0" // default
-    }
-  })()
+async function getProdBranch() {
+  let branch = await rclient.hgetAsync("sys:config", "prod.branch")
+  if(branch) {
+    return branch
+  } else {
+    return "release_6_0" // default
+  }
 }
 
 function getUserID() {
@@ -138,7 +131,7 @@ function isProduction() {
   } else {
     return false
   }
-  
+
   // if either of condition matches, this is production environment
   if (_isProduction === null) {
     _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
@@ -149,6 +142,11 @@ function isProduction() {
 function isProductionOrBeta() {
   return isProduction() || isBeta()
 }
+
+function isProductionOrBetaOrAlpha() {
+  return isProduction() || isBeta() || isAlpha()
+}
+
 
 function getReleaseType() {
   if(isProduction()) {
@@ -193,11 +191,9 @@ function isOverlayFS() {
   return _isOverlayFS;
 }
 
-function isBootingComplete() {
-  return async(() => {
-    let exists = await (rclient.existsAsync("bootingComplete"))
-    return exists == 1
-  })()
+async function isBootingComplete() {
+  let exists = await rclient.existsAsync("bootingComplete")
+  return exists == 1
 }
 
 function setBootingComplete() {
@@ -208,12 +204,11 @@ function resetBootingComplete() {
   return rclient.delAsync("bootingComplete")
 }
 
-function isFirstBindDone() {
-  return async(() => {
-    let exists = await (rclient.existsAsync("firstBinding"))
-    return exists == 1
-  })()
+async function isFirstBindDone() {
+  let exists = await rclient.existsAsync("firstBinding")
+  return exists == 1
 }
+
 function getRuntimeInfoFolder() {
   return getHiddenFolder() + "/run";
 }
@@ -260,7 +255,7 @@ function getVersion() {
       versionElements = require('child_process').execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').split("-");
     } catch (err) {
-      log.error("Failed to get git version tags", err, {});
+      log.error("Failed to get git version tags", err);
     }
 
     if(versionElements.length === 3) {
@@ -273,6 +268,21 @@ function getVersion() {
   }
 
   return version;
+}
+
+function getLatestCommitHash() {
+  if(!latestCommitHash) {
+    const cmd = "git rev-parse HEAD"
+
+    try {
+      latestCommitHash = require('child_process').execSync(cmd).toString('utf-8')
+        .replace(/\n$/, '').substring(0, 8);
+    } catch (err) {
+      log.error("Failed to get latest commit hash", err);
+    }
+  }
+
+  return latestCommitHash;
 }
 
 var __constants = {
@@ -288,7 +298,12 @@ const BLUE_HOLE_IP = "198.51.100.100";
 const RED_HOLE_IP = "198.51.100.101";
 
 function isReservedBlockingIP(ip) {
-  return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip);
+  return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip)
+    || ip.match(/^[0:]+(:ffff:(0*:)?)?(0\.0\.0\.0|[0:]+)$/i); // all zero v6 address
+}
+
+function getRedHoleIP() {
+  return RED_HOLE_IP;
 }
 
 function isMain() {
@@ -334,6 +349,7 @@ module.exports = {
   isAlpha: isAlpha,
   isDevelopmentVersion:isDevelopmentVersion,
   isProductionOrBeta:isProductionOrBeta,
+  isProductionOrBetaOrAlpha:isProductionOrBetaOrAlpha,
 
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType,
@@ -343,5 +359,9 @@ module.exports = {
   isMonitor:isMonitor,
   getLastCommitDate:getLastCommitDate,
 
-  getProcessName:getProcessName
+  getProcessName:getProcessName,
+
+  getRedHoleIP:getRedHoleIP,
+
+  getLatestCommitHash:getLatestCommitHash
 }

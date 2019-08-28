@@ -19,14 +19,7 @@ let should = chai.should;
 let expect = chai.expect;
 let assert = chai.assert;
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
 let sample = require('./sample_data');
-
-let Promise = require('bluebird');
 
 let AppTool = require('../net2/AppTool');
 let appTool = new AppTool();

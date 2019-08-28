@@ -19,9 +19,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const program = require('commander');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 program.version('0.0.2')
   .option('--srcKey [source]', 'source hash key')
   .option('--dstKey [destination]', 'destination hash key')
@@ -36,9 +33,9 @@ if(!srcKey || !destKey) {
   return
 }
 
-async(() => {
-  let data = await(rclient.hgetallAsync(srcKey))
-  await(rclient.hmset(destKey, data))
+(async() =>{
+  let data = await rclient.hgetallAsync(srcKey)
+  await rclient.hmset(destKey, data)
   process.exit(0)
 })()
 

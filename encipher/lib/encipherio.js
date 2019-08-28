@@ -27,9 +27,6 @@ let log = require('../../net2/logger')(__filename);
 let Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let zlib = require('zlib');
 let License = require('../../util/license.js');
 
@@ -99,59 +96,52 @@ let legoEptCloud = class {
         // }
     }
 
-    keyReady() {
+    async keyReady() {
       log.info("Checking whether key pair exists already");
 
-      return async(() => {
 
         try {
-          await(fs.accessAsync(this.getPublicKeyPath()));
-          await(fs.accessAsync(this.getPrivateKeyPath()));
+          await fs.accessAsync(this.getPublicKeyPath())
+          await fs.accessAsync(this.getPrivateKeyPath())
         } catch(err) {
           if(err) {
             return Promise.resolve(null);
           }
         }
 
-        let pubFile = await(fs.readFileAsync(this.getPublicKeyPath()));
-        let priFile = await(fs.readFileAsync(this.getPrivateKeyPath()));
+        let pubFile = await fs.readFileAsync(this.getPublicKeyPath())
+        let priFile = await fs.readFileAsync(this.getPrivateKeyPath())
         if(pubFile.length < 10 || priFile.length < 10) {
           log.error("ENCIPHER.IO Unable to read keys, keylength error", pubFile.length, priFile.length);
-          await(this.cleanupKeys());
+          await this.cleanupKeys()
           return Promise.resolve(null);
         } else {
           log.info("Key pair exists");
           return Promise.resolve({pub: pubFile, pri: priFile});
         }
 
-      })();
     }
 
-    utilKeyReady() {
-      return async(() => {
-        let result = await(this.keyReady());
-        if(!result) {
-          log.info("Checking if keys are ready...");
-          await(delay(3000)); // wait for three seconds
-          return await(this.utilKeyReady());
+    async utilKeyReady() {
+        let result = await this.keyReady()
+        if (!result) {
+            log.info("Checking if keys are ready...");
+            await delay(3000); // wait for three seconds
+            return this.utilKeyReady()
         }
         return true;
-      })();
     }
 
-    cleanupKeys() {
-      log.info("Cleaning up key pairs");
+    async cleanupKeys() {
+        log.info("Cleaning up key pairs");
 
-      this.myprivkeyfile = null;
-      this.mypubkeyfile = null;
-      this.myPublicKey = null;
-      this.myPrivateKey = null;
+        this.myprivkeyfile = null;
+        this.mypubkeyfile = null;
+        this.myPublicKey = null;
+        this.myPrivateKey = null;
 
-      return async(() => {
-        await(exec("sudo rm -f "+pathname+"/db/groupId"));
-        await(exec("sync"));
-        return Promise.resolve();
-      })();
+        await exec("sudo rm -f " + pathname + "/db/groupId")
+        await exec("sync")
     }
 
     getPrivateKeyPath() {
@@ -162,51 +152,47 @@ let legoEptCloud = class {
       return this.keyPath + this.name + ".pubkey.pem";
     }
 
-    loadKeys() {
+    async loadKeys() {
       log.info("Loading or creating keys");
-      return async(() => {
-        if(this.myPublicKey && this.myPrivateKey) {
-          return Promise.resolve();
-        }
-        if(this.myprivkeyfile && this.mypubkeyfile) {
-          this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
-          this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-          return Promise.resolve();
-        }
+      if (this.myPublicKey && this.myPrivateKey) {
+        return
+      }
+      if (this.myprivkeyfile && this.mypubkeyfile) {
+        this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
+        this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
+        return
+      }
 
-        let keys = await(this.keyReady());
-        if(keys) {
-          this.mypubkeyfile = keys.pub;
-          this.myprivkeyfile = keys.pri;
-          this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
-          this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-          return Promise.resolve();
-        } else {
-          return this.createKeyPair();
-        }
-      })();
+      let keys = await this.keyReady()
+      if (keys) {
+        this.mypubkeyfile = keys.pub;
+        this.myprivkeyfile = keys.pri;
+        this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
+        this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
+        return
+      } else {
+        return this.createKeyPair();
+      }
     }
 
-    createKeyPair() {
+    async createKeyPair() {
       let key = ursa.generatePrivateKey(2048, 65537);
       let privateKeyPem = key.toPrivatePem();
       let pubKeyPem = key.toPublicPem();
 
-      return async(() => {
 
-        await(fs.writeFileSync(this.getPrivateKeyPath(), privateKeyPem, 'ascii'));
-        await(fs.writeFileSync(this.getPublicKeyPath(), pubKeyPem, 'ascii'));
-        await(exec("sync"));
+      await fs.writeFileSync(this.getPrivateKeyPath(), privateKeyPem, 'ascii')
+      await fs.writeFileSync(this.getPublicKeyPath(), pubKeyPem, 'ascii')
+      await exec("sync")
 
-        this.myPublicKey = ursa.createPublicKey(pubKeyPem);
-        this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
-        this.mypubkeyfile = pubKeyPem;
-        this.myprivkeyfile = privateKeyPem;
-      })();
+      this.myPublicKey = ursa.createPublicKey(pubKeyPem);
+      this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
+      this.mypubkeyfile = pubKeyPem;
+      this.myprivkeyfile = privateKeyPem;
     }
 
     debug(state) {
-        debugging = state;
+      debugging = state;
     }
 
     keypair(name, pathname) {
@@ -837,7 +823,7 @@ let legoEptCloud = class {
     
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl, {});
+    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
     this.getKey(gid, (err, key, cacheGroup) => {
       if (err != null && key == null) {
@@ -899,7 +885,7 @@ let legoEptCloud = class {
   }
 
   sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
-    log.debug(msg, {});
+    log.debug(msg);
     let mpackage = {
       'random': this.keygen(),
       'message': msg,
@@ -919,7 +905,7 @@ let legoEptCloud = class {
       let input = new Buffer(msgstr, 'utf8');
       zlib.deflate(input, (err, output) => {
         if(err) {
-          log.error("Failed to compress payload:", err, {});
+          log.error("Failed to compress payload:", err);
           callback(err);
           return;
         }
@@ -1385,7 +1371,7 @@ let legoEptCloud = class {
                 callback(err, null);
                 return;
             }
-            log.info("found rinfo", rinfo, {});
+            log.info("found rinfo", rinfo);
             callback(null, rinfo);
         });
     }

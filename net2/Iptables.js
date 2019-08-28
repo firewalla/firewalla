@@ -14,36 +14,30 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
-var ip = require('ip');
-var spawn = require('child_process').spawn;
+const ip = require('ip');
+const cp = require('child_process');
+const spawn = cp.spawn;
+const execAsync = require('util').promisify(cp.exec)
 
-let Promise = require('bluebird');
+const util = require('util');
 
-exports.wrapIptables= function (rule) {
-  let command = " -I ";
-  let checkRule = null;
+exports.wrapIptables = function(rule) {
+  const res = rule.match(/ -[AID] /);
 
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-  }
+  if (!res) return rule;
 
-  command = " -A ";
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-  }
+  const command = res[0];
+  const checkRule = rule.replace(command, " -C ");
 
-  command = " -D ";
-  if(rule.indexOf(command) > -1) {
-    checkRule = rule.replace(command, " -C ");
-    return `bash -c '${checkRule} &>/dev/null && ${rule}'`;
-  }
+  switch (command) {
+    case " -I ":
+    case " -A ":
+      return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
 
-  if(checkRule) {
-    return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
-  } else {
-    return rule;
+    case " -D ":
+      return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
   }
 }
 
@@ -81,30 +75,19 @@ function reject(rule, callback) {
 }
 
 exports.reject = reject
-
-exports.rejectAsync = function (rule) {
-  return new Promise((resolve, r) => {
-    reject(rule, (err) => {
-      if(err) {
-        r(err);
-      } else {
-        resolve();
-      }
-    });
-  });
-}
-
+exports.rejectAsync = util.promisify(reject);
 exports.newRule = newRule;
 exports.deleteRule = deleteRule;
 exports.dnsChange = dnsChange;
-exports.dnsChangeAsync = dnsChangeAsync;
+exports.dnsChangeAsync = util.promisify(dnsChange);
+exports.dnsFlush = dnsFlush;
+exports.dnsFlushAsync = util.promisify(dnsFlush);
+exports.portForwardFlush = portForwardFlush;
+exports.portForwardFlushAsync = util.promisify(portForwardFlush);
 exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
-exports.dhcpSubnetChangeAsync = dhcpSubnetChangeAsync;
-exports.diagHttpChange = diagHttpChange;
-exports.diagHttpChangeAsync = diagHttpChangeAsync;
-
+exports.dhcpSubnetChangeAsync = util.promisify(dhcpSubnetChange);
 
 var workqueue = [];
 var running = false;
@@ -133,44 +116,6 @@ function iptables(rule, callback) {
             newRule(null, null);
         });
         return proc;
-    } else if (rule.type == "diag_http") {
-        // install/uninstall diag http redirect rule in NAT table
-        let state = rule.state;
-        let ip = rule.ip;
-        let action = "-A";
-        if (state == false || state == null) {
-            action = "-D";
-        }
-
-        let _dst = " -d " + ip;
-        let cmdline = "";
-
-        let getCommand = function(action, dst) {
-          return `sudo iptables -w -t nat ${action} PREROUTING ${dst} -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8835`;
-        };
-
-        switch (action) {
-          case "-A":
-            cmdline = `${getCommand("-C", _dst)} || ${getCommand(action, _dst)}`;
-            break;
-          case "-D":
-            cmdline = `(${getCommand("-C", _dst)} && ${getCommand(action, _dst)}); true`;
-            break;
-          default:
-            cmdline = "sudo iptables -w -t nat " + action + " PREROUTING " + _dst + " -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8835";
-            break;
-        }
-        log.debug("IPTABLE:DIAG_HTTP:Running commandline: ", cmdline);
-        require('child_process').exec(cmdline, (err, stdout, stderr) => {
-            if (err && action !== "-D") {
-                log.error("IPTABLE:DIAG_HTTP:Error unable to set", cmdline, err);
-            }
-            if (callback) {
-                callback(err, null);
-            }
-            running = false;
-            newRule(null, null);
-        });
     } else if (rule.type == "dhcp") {
         // install/uninstall dhcp MASQUERADE rule in NAT table
         let state = rule.state;
@@ -198,7 +143,7 @@ function iptables(rule, callback) {
             break;
         }
         log.debug("IPTABLE:DHCP:Running commandline: ", cmdline);
-        require('child_process').exec(cmdline, (err, stdout, stderr) => {
+        cp.exec(cmdline, (err, stdout, stderr) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:DHCP:Error unable to set", cmdline, err);
             }
@@ -212,6 +157,7 @@ function iptables(rule, callback) {
         let state = rule.state;
         let ip = rule.ip;
         let dns = rule.dns;
+        let srcType = rule.srcType || "local";
         let action = "-A";
         if (state == false || state == null) {
             action = "-D";
@@ -222,11 +168,13 @@ function iptables(rule, callback) {
             _src = "-i eth0";
         }
 
+        const chain = _getDNSRedirectChain(srcType);
+
         let cmd = "iptables";
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
-          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} ${src} --dport 53 -j DNAT --to-destination ${dns}`
+          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${dns}`
         }
 
         switch(action) {
@@ -240,12 +188,12 @@ function iptables(rule, callback) {
             cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
+            cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns;
           break;
         }
 
         log.debug("IPTABLE:DNS:Running commandline: ", cmdline);
-        require('child_process').exec(cmdline, (err, out, code) => {
+        cp.exec(cmdline, (err, stdout, stderr) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:DNS:Error unable to set", cmdline, err);
             }
@@ -255,6 +203,21 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
+    } else if (rule.type == "dns_flush") {
+      const srcType = rule.srcType || "local";
+      const chain = _getDNSRedirectChain(srcType);
+      const cmdline = `sudo iptables -w -t nat -F ${chain}`
+      log.debug("IPTABLE:DNS_FLUSH:Running commandline: ", cmdline);
+      cp.exec(cmdline, (err, stdout, stderr) => {
+        if (err) {
+          log.error("IPTABLE:DNS_FLUSH:Error", cmdline, err);
+        }
+        if (callback) {
+          callback(err, null);
+        }
+        running = false;
+        newRule(null, null);
+      })
     } else if (rule.type == "portforward") {
         let state = rule.state;
         let protocol = rule.protocol;
@@ -267,11 +230,10 @@ function iptables(rule, callback) {
             action = "-D";
         }
 
-        let cmd = "iptables";
         let cmdline = "";
 
         let getCommand = function(action, protocol, destIP, dport, toIP, toPort) {
-          return `sudo iptables -w -t nat ${action} PREROUTING -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
+          return `sudo iptables -w -t nat ${action} PREROUTING_PORT_FORWARD -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
         }
 
         switch(action) {
@@ -285,7 +247,7 @@ function iptables(rule, callback) {
         }
 
         log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
-        require('child_process').exec(cmdline, (err, out, code) => {
+        cp.exec(cmdline, (err, out, code) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:PORTFORWARD:Error unable to set", cmdline, err);
             }
@@ -295,7 +257,19 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
-
+    } else if (rule.type === "port_forward_flush") {
+      const cmdline = `sudo iptables -w -t nat -F PREROUTING_PORT_FORWARD`;
+      log.debug("IPTABLE:PORT_FORWARD_FLUSH:Running commandline: ", cmdline);
+      cp.exec(cmdline, (err, stdout, stderr) => {
+        if (err) {
+          log.error("IPTABLE:PORT_FORWARD_FLUSH:Error", cmdline, err);
+        }
+        if (callback) {
+          callback(err, null);
+        }
+        running = false;
+        newRule(null, null);
+      });
     } else {
       log.error("Invalid rule type:", rule.type);
       if (callback) {
@@ -359,35 +333,46 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
-function dnsChangeAsync(ip, dns, state, ignoreError) {
-  return new Promise((resolve, reject) => {
-    dnsChange(ip, dns, state, (err) => {
-      if(err && !ignoreError)
-        reject(err)
-      else
-        resolve();
-    })
-  });
+function _getDNSRedirectChain(type) {
+  type = type || "local";
+  let chain = "PREROUTING_DNS_DEFAULT";
+  switch (type) {
+    case "local":
+      chain = "PREROUTING_DNS_DEFAULT";
+      break;
+    case "vpn":
+      chain = "PREROUTING_DNS_VPN";
+      break;
+    case "vpnClient":
+      chain = "PREROUTING_DNS_VPN_CLIENT";
+      break;
+    default:
+      chain = "PREROUTING_DNS_DEFAULT";
+  }
+  return chain;
 }
 
-function dnsChange(ip, dns, state, callback) {
+function portForwardFlush(callback) {
+  newRule({
+    type: 'port_forward_flush',
+  }, callback);
+}
+
+function dnsFlush(srcType, callback) {
+  newRule({
+    type: 'dns_flush',
+    srcType: srcType || 'local'
+  }, callback);
+}
+
+function dnsChange(ip, dns, srcType, state, callback) {
   newRule({
       type: 'dns',
       ip: ip,
       dns: dns,
+      srcType: srcType || 'local',
       state: state
   }, callback);
-}
-
-function dhcpSubnetChangeAsync(ip, state, ignoreError) {
-  return new Promise((resolve, reject) => {
-    dhcpSubnetChange(ip, state, (err) => {
-      if (err && !ignoreError)
-        reject(err);
-      else
-        resolve();
-    });
-  });
 }
 
 function dhcpSubnetChange(ip, state, callback) {
@@ -398,94 +383,100 @@ function dhcpSubnetChange(ip, state, callback) {
   }, callback);
 }
 
-function diagHttpChangeAsync(ip, state, ignoreError) {
-  return new Promise((resolve, reject) => {
-    diagHttpChange(ip, state, (err) => {
-      if (err && !ignoreError)
-        reject(err);
-      else
-        resolve();
-    });
+function flush() {
+  return execAsync(
+    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
+  ).catch(err => {
+    log.error("IP6TABLE:FLUSH:Unable to flush", err)
   });
 }
 
-function diagHttpChange(ip, state, callback) {
-  newRule({
-    type: 'diag_http',
-    ip: ip,
-    state: state
-  }, callback);
-}
-
-function _dnsChange(ip, dns, state, callback) {
-    // TODO need to take care of 5353 as well
-    let action = "-A";
-    if (state == false || state == null) {
-        action = "-D";
-    }
-
-    let _src = " -s " + ip;
-    if (ip.includes("0.0.0.0")) {
-        _src = "-i eth0";
-    }
-
-    let cmd = "iptables";
-    let cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " --dport 53 -j DNAT --to-destination " + dns;
-
-    log.debug("IPTABLE:DNS:Running commandline: ", cmdline);
-    this.process = require('child_process').exec(cmdline, (err, out, code) => {
-        if (err && action !== "-D") {
-            log.error("IPTABLE:DNS:Unable to set", cmdline, err);
-        }
-        if (callback) {
-            callback(err, null);
-        }
+async function run(listofcmds) {
+  for (const cmd of listofcmds || []) {
+    await execAsync(cmd, {timeout: 10000}).catch((err) => {
+      log.error("IPTABLE:RUN:Unable to run command", cmd, err);
     });
+  }
 }
 
-function flush(callback) {
-  this.process = require('child_process').exec(
-    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
-    (err, stdout, stderr) => {
-      if (err) {
-        log.error("IPTABLE:FLUSH:Unable to flush", err, stdout);
+// Rule = {
+//   family: 4,      // default 4
+//   table: "nat",   // default "filter"
+//   proto: "tcp",   // default "all"
+//   chain: "FW_BLOCK",
+//   match: [
+//     { name: "c_bm_39_set", spec: "src", type: "set" },
+//     { name: "c_bd_av_set", spec: "dst", type: "set" }
+//   ],
+//   jump: "FW_DROP"
+// }
+
+exports.Rule = class Rule {
+  constructor(table = 'filter') {
+    this.family = 4;
+    this.table = table;
+    this.proto = 'all';
+    this.match = [];
+  }
+
+  fam(v) { this.family = v; return this }
+  tab(t) { this.tables = t; return this }
+  pro(p) { this.proto = p; return this }
+  chn(c) { this.chain = c; return this }
+  mth(name, spec, type = "set") {
+    this.match.push({ name, spec, type })
+    return this
+  }
+  jmp(j) { this.jump = j; return this }
+
+  clone() {
+    return Object.assign(Object.create(Rule.prototype), this)
+  }
+
+  _rawCmd(operation) {
+    if (!this.chain) throw new Error("chain missing")
+    if (!operation) throw new Error("operation missing")
+
+    let cmd = [
+      'sudo',
+      this.family === 4 ? 'iptables' : 'ip6tables',
+      '-w',
+      '-t', this.table,
+      operation,
+      this.chain,
+      '-p', this.proto,
+    ]
+
+    this.match.forEach((match) => {
+      switch(match.type) {
+        case 'set':
+          cmd.push('-m set --match-set', match.name)
+          if (match.spec === 'both')
+            cmd.push('src,dst')
+          else
+            cmd.push(match.spec)
+          break;
+
+        default:
       }
-      if (callback) {
-        callback(err, null);
-      }
+    })
+
+    cmd.push('-j', this.jump)
+
+    return cmd.join(' ');
+  }
+
+  toCmd(operation) {
+    const checkRule = this._rawCmd('-C')
+    const rule = this._rawCmd(operation)
+
+    switch (operation) {
+      case '-I':
+      case '-A':
+        return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
+
+      case '-D':
+        return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
     }
-  );
-}
-
-function run(listofcmds, eachCallback, finalCallback) {
-  require('async').eachLimit(listofcmds, 1,
-    async (cmd, cb) => { // iteratee
-      log.info("IPTABLE:RUNCOMMAND", cmd);
-
-      await require('child_process').exec(
-        cmd,
-        {timeout: 10000}, // set timeout to 10s
-        (err, stdout, stderr) => {
-          if (err) {
-            log.error("IPTABLE:RUN:Unable to run command", cmd, err.message);
-          }
-          if (stderr) {
-            log.warn("IPTABLE:RUN:", cmd, stderr);
-          }
-          if (stdout) {
-            log.debug("IPTABLE:RUN:", cmd, stdout);
-          }
-
-          if (eachCallback) {
-            eachCallback(err, null);
-          }
-          cb(err);
-        }
-      )
-    },
-    (error) => {
-      if (finalCallback)
-        finalCallback(error, null);
-    }
-  )
+  }
 }

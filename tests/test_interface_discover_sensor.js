@@ -22,9 +22,6 @@ let assert = chai.assert;
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
@@ -39,8 +36,8 @@ let ids = new InterfaceDiscoverSensor();
 describe('InterfaceDiscoverSensor', () => {
 
   beforeEach((done) => {
-    async(() => {
-      await (rclient.hdelAsync('sys:network:info', 'eth0'));
+    (async() =>{
+      await rclient.hdelAsync('sys:network:info', 'eth0');
       done();
     })();
   })
@@ -48,9 +45,9 @@ describe('InterfaceDiscoverSensor', () => {
   describe('.run', () => {
 
     it('should get the interface right', (done) => {
-      async(() => {
-        await (ids.run());
-        let intf = await (rclient.hgetAsync('sys:network:info', 'eth0'));
+      (async() =>{
+        await ids.run();
+        let intf = await rclient.hgetAsync('sys:network:info', 'eth0');
         expect(typeof intf).to.equal('string');
         expect(JSON.parse(intf).name).to.equal('eth0')
         done();

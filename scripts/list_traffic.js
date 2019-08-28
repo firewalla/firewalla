@@ -19,9 +19,6 @@ const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 
 const program = require('commander');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 program.version('0.0.2')
   .option('--alarm [alarm]', 'alarm id to resend notification');
 

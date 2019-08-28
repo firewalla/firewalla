@@ -1,5 +1,5 @@
 {
-  "version": 1.963,
+  "version": 1.965,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -19,12 +19,13 @@
   "iptables": {
     "defaults": [
       "sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
-      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && (sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || false) || true",
+      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || true",
       "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
     ]
   },
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
+  "monitoringWifiInterface": "wlan0",
   "newSpoof": true,
   "timing": {
     "alarm.cooldown": 900,
@@ -38,6 +39,11 @@
     "ip": "192.168.218.1/24",
     "ip2": "192.168.168.1/24"
   },
+  "wifiInterface": {
+    "intf": "wlan0",
+    "ip": "10.0.218.1/24",
+    "mode": "router"
+  },
   "vpnInterface": {
     "subnet": "10.8.0.0/24"
   },
@@ -46,7 +52,7 @@
   },
   "dns": {
     "defaultDNSServer": "8.8.8.8",
-    "fallbackDNSServers" : [
+    "fallbackDNSServers": [
       "8.8.8.8",
       "1.1.1.1"
     ],
@@ -78,7 +84,6 @@
     "DeviceInfoIntel",
     "DestInfoIntel",
     "IPLocationIntel",
-    "AlexaIntel",
     "WhoisIPIntel",
     "WhoisDomainIntel",
     "SSLIntel",
@@ -108,15 +113,25 @@
     },
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
+    "IntelLocalCachePlugin": {
+      "testURLs": [
+        "example.com/test/malware"
+      ]
+    },
     "DNSMASQSensor": {},
     "HeapSensor": {},
     "IntelReportSensor": {},
     "VPNRelaySensor": {},
-    "PublicIPSensor": {},
-    "APIRelaySensor": {},
-    "CategoryUpdateSensor": {},
-    "AutoBlocksRevalidationSensor": {
+    "PublicIPSensor": {
+      "interval": 7200
     },
+    "APIRelaySensor": {},
+    "CategoryUpdateSensor": {
+      "regularInterval": 28800,
+      "securityInterval": 14400,
+      "countryInterval": 86400
+    },
+    "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
     "SafeSearchPlugin": {
@@ -141,7 +156,200 @@
         },
         "google": {
           "forcesafesearch.google.com": [
-            "www.google.com"
+            "www.google.com",
+            "www.google.ac",
+            "www.google.ad",
+            "www.google.ae",
+            "www.google.com.af",
+            "www.google.com.ag",
+            "www.google.com.ai",
+            "www.google.al",
+            "www.google.am",
+            "www.google.co.ao",
+            "www.google.com.ar",
+            "www.google.as",
+            "www.google.at",
+            "www.google.com.au",
+            "www.google.az",
+            "www.google.ba",
+            "www.google.com.bd",
+            "www.google.be",
+            "www.google.bf",
+            "www.google.bg",
+            "www.google.com.bh",
+            "www.google.bi",
+            "www.google.bj",
+            "www.google.com.bn",
+            "www.google.com.bo",
+            "www.google.com.br",
+            "www.google.bs",
+            "www.google.bt",
+            "www.google.co.bw",
+            "www.google.by",
+            "www.google.com.bz",
+            "www.google.ca",
+            "www.google.cd",
+            "www.google.cf",
+            "www.google.cg",
+            "www.google.ch",
+            "www.google.ci",
+            "www.google.co.ck",
+            "www.google.cl",
+            "www.google.cm",
+            "www.google.cn",
+            "www.google.com.co",
+            "www.google.co.cr",
+            "www.google.com.cu",
+            "www.google.cv",
+            "www.google.com.cy",
+            "www.google.cz",
+            "www.google.de",
+            "www.google.dj",
+            "www.google.dk",
+            "www.google.dm",
+            "www.google.com.do",
+            "www.google.dz",
+            "www.google.com.ec",
+            "www.google.ee",
+            "www.google.com.eg",
+            "www.google.es",
+            "www.google.com.et",
+            "www.google.fi",
+            "www.google.com.fj",
+            "www.google.fm",
+            "www.google.fr",
+            "www.google.ga",
+            "www.google.ge",
+            "www.google.gg",
+            "www.google.com.gh",
+            "www.google.com.gi",
+            "www.google.gl",
+            "www.google.gm",
+            "www.google.gp",
+            "www.google.gr",
+            "www.google.com.gt",
+            "www.google.gy",
+            "www.google.com.hk",
+            "www.google.hn",
+            "www.google.hr",
+            "www.google.ht",
+            "www.google.hu",
+            "www.google.co.id",
+            "www.google.ie",
+            "www.google.co.il",
+            "www.google.im",
+            "www.google.co.in",
+            "www.google.iq",
+            "www.google.is",
+            "www.google.it",
+            "www.google.je",
+            "www.google.com.jm",
+            "www.google.jo",
+            "www.google.co.jp",
+            "www.google.co.ke",
+            "www.google.com.kh",
+            "www.google.ki",
+            "www.google.kg",
+            "www.google.co.kr",
+            "www.google.com.kw",
+            "www.google.kz",
+            "www.google.la",
+            "www.google.com.lb",
+            "www.google.li",
+            "www.google.lk",
+            "www.google.co.ls",
+            "www.google.lt",
+            "www.google.lu",
+            "www.google.lv",
+            "www.google.com.ly",
+            "www.google.co.ma",
+            "www.google.md",
+            "www.google.me",
+            "www.google.mg",
+            "www.google.mk",
+            "www.google.ml",
+            "www.google.com.mm",
+            "www.google.mn",
+            "www.google.ms",
+            "www.google.com.mt",
+            "www.google.mu",
+            "www.google.mv",
+            "www.google.mw",
+            "www.google.com.mx",
+            "www.google.com.my",
+            "www.google.co.mz",
+            "www.google.com.na",
+            "www.google.com.nf",
+            "www.google.com.ng",
+            "www.google.com.ni",
+            "www.google.ne",
+            "www.google.nl",
+            "www.google.no",
+            "www.google.com.np",
+            "www.google.nr",
+            "www.google.nu",
+            "www.google.co.nz",
+            "www.google.com.om",
+            "www.google.com.pa",
+            "www.google.com.pe",
+            "www.google.com.pg",
+            "www.google.com.ph",
+            "www.google.com.pk",
+            "www.google.pl",
+            "www.google.pn",
+            "www.google.com.pr",
+            "www.google.ps",
+            "www.google.pt",
+            "www.google.com.py",
+            "www.google.com.qa",
+            "www.google.ro",
+            "www.google.ru",
+            "www.google.rw",
+            "www.google.com.sa",
+            "www.google.com.sb",
+            "www.google.sc",
+            "www.google.se",
+            "www.google.com.sg",
+            "www.google.sh",
+            "www.google.si",
+            "www.google.sk",
+            "www.google.com.sl",
+            "www.google.sn",
+            "www.google.so",
+            "www.google.sm",
+            "www.google.sr",
+            "www.google.st",
+            "www.google.com.sv",
+            "www.google.td",
+            "www.google.tg",
+            "www.google.co.th",
+            "www.google.com.tj",
+            "www.google.tk",
+            "www.google.tl",
+            "www.google.tm",
+            "www.google.tn",
+            "www.google.to",
+            "www.google.com.tr",
+            "www.google.tt",
+            "www.google.com.tw",
+            "www.google.co.tz",
+            "www.google.com.ua",
+            "www.google.co.ug",
+            "www.google.co.uk",
+            "www.google.com.uy",
+            "www.google.co.uz",
+            "www.google.com.vc",
+            "www.google.co.ve",
+            "www.google.vg",
+            "www.google.co.vi",
+            "www.google.com.vn",
+            "www.google.vu",
+            "www.google.ws",
+            "www.google.rs",
+            "www.google.co.za",
+            "www.google.co.zm",
+            "www.google.co.zw",
+            "www.google.cat"
           ]
         },
         "bing": {
@@ -162,6 +370,8 @@
         "duckduckgo": "on"
       }
     },
+    "FamilyProtectPlugin": {},
+    "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "ICMP6Sensor": {},
@@ -195,7 +405,7 @@
       },
       "dns": {
         "expires": 100000,
-        "count": 10000
+        "count": 100
       },
       "software": {
         "expires": 604800,
@@ -248,6 +458,10 @@
       "appflow": {
         "expires": 86400,
         "count": 1000
+      },
+      "safe_urls": {
+        "expires": 604800,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {
@@ -259,9 +473,14 @@
     },
     "SubnetSensor": {},
     "IPChangeSensor": {},
+    "DnsLoopAvoidanceSensor": {},
     "DataMigrationSensor": {
-      "migrationCodeNames": ["clairvoyant"]
-    }
+      "migrationCodeNames": [
+        "clairvoyant",
+        "bipartite_graph"
+      ]
+    },
+    "WirelessInterfaceSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -271,6 +490,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {},
+    "DestURLFoundHook": {},
     "VPNHook": {}
   },
   "bro": {
@@ -281,7 +501,8 @@
         "PacketFilter::Dropped_Packets": "ignore",
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
-        "Weird::Activity": "ignore"
+        "Weird::Activity": "ignore",
+        "HTTP::SQL_Injection_Attacker": "ignore"
       },
       "path": "/blog/current/notice.log",
       "expires": 604800
@@ -345,6 +566,7 @@
     "game": true,
     "large_upload": true,
     "new_device": true,
+    "new_device_block": false,
     "device_online": true,
     "device_offline": true,
     "alarm_upnp": true,
@@ -367,6 +589,7 @@
     "upstream_dns": false,
     "insane_mode": false,
     "cpu_monitor": true,
+    "speed_test": false,
     "safe_search": false
   },
   "hiddenFeatures": [

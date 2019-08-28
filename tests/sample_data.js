@@ -16,6 +16,8 @@
 
 let HostTool = require('../net2/HostTool')
 let hostTool = new HostTool();
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 let Alarm = require('../alarm/Alarm.js');
 let Exception = require('../alarm/Exception.js');
@@ -27,9 +29,6 @@ let Promise = require('bluebird');
 
 let redis = require('redis');
 let rclient = redis.createClient();
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
 
 let flowTool = require('../net2/FlowTool')();
 
@@ -277,47 +276,47 @@ exports.sampleFlow3 = flowObj3;
 exports.sampleFlow4 = flowObj4;
 
 exports.createSampleFlows = () => {
-  return async(() => {
-    await (flowTool.addFlow(hostIP, "in", flowObj));
-    await (flowTool.addFlow(hostIP, "in", flowObj2));
-    await (flowTool.addFlow(hostIP, "out", flowObj3));
-    await (flowTool.addFlow(hostIP, "out", flowObj4));
+  return (async() =>{
+    await flowTool.addFlow(hostIP, "in", flowObj);
+    await flowTool.addFlow(hostIP, "in", flowObj2);
+    await flowTool.addFlow(hostIP, "out", flowObj3);
+    await flowTool.addFlow(hostIP, "out", flowObj4);
   })();
 };
 
 exports.removeSampleFlows = () => {
-  return async(() => {
-    await (flowTool.removeFlow(hostIP, "in", flowObj));
-    await (flowTool.removeFlow(hostIP, "in", flowObj2));
-    await (flowTool.removeFlow(hostIP, "out", flowObj3));
-    await (flowTool.removeFlow(hostIP, "out", flowObj4));
+  return (async() =>{
+    await flowTool.removeFlow(hostIP, "in", flowObj);
+    await flowTool.removeFlow(hostIP, "in", flowObj2);
+    await flowTool.removeFlow(hostIP, "out", flowObj3);
+    await flowTool.removeFlow(hostIP, "out", flowObj4);
   })();
 };
 
 exports.createSampleAggrFlows = () => {
-  return async(() => {
-    await (flowAggrTool.addFlow(hostMac, "download", 600, flowAggrTool.getIntervalTick(ts, 600), destIP, 200));
-    await (flowAggrTool.addFlow(hostMac, "download", 600, flowAggrTool.getIntervalTick(ts, 600) - 600, destIP, 300));
+  return (async() =>{
+    await flowAggrTool.addFlow(hostMac, "download", 600, flowAggrTool.getIntervalTick(ts, 600), destIP, 200);
+    await flowAggrTool.addFlow(hostMac, "download", 600, flowAggrTool.getIntervalTick(ts, 600) - 600, destIP, 300);
   })();
 }
 
 exports.removeSampleAggrFlows = () => {
-  return async(() => {
-    await (flowAggrTool.removeFlow(hostMac, "download", "600", now, destIP));
+  return (async() =>{
+    await flowAggrTool.removeFlow(hostMac, "download", "600", now, destIP);
   })();
 };
 
 exports.removeAllSampleAggrFlows = () => {
-  return async(() => {
-    let keys = await(rclient.keysAsync("aggrflow:F4:0F:24:00:00:01:*"));
+  return (async() =>{
+    let keys = await rclient.keysAsync("aggrflow:F4:0F:24:00:00:01:*");
     keys.forEach((key) => {
-      await (rclient.delAsync(key));
+      await rclient.delAsync(key);
     })
   })();
 };
 
 exports.addSampleSSLInfo = () => {
-  return async(() => {
+  return (async() =>{
     let key = "host:ext.x509:" + hostIP;
 
     let data = {
@@ -330,7 +329,7 @@ exports.addSampleSSLInfo = () => {
 }
 
 exports.removeSampleSSLInfo = () => {
-  return async(() => {
+  return (async() =>{
     let key = "host:ext.x509:" + hostIP;
 
     return rclient.delAsync(key);
@@ -338,41 +337,30 @@ exports.removeSampleSSLInfo = () => {
 }
 
 exports.addSampleDNSInfo = () => {
-  return async(() => {
-    let key = "dns:ip:" + hostIP;
-
-    let data = {
-      host: 'www.google.com',
-      lastActive: '1501220422',
-      count: '24',
-      _intel: '{"ts":1500896988,"rcount":2}'
-    };
-
-    return rclient.hmsetAsync(key, data);
+  return (async() =>{
+    await dnsTool.addDns(hostIP, "www.google.com");
   })();
 }
 
 exports.removeSampleDNSInfo = () => {
-  return async(() => {
-    let key = "dns:ip:" + hostIP;
-
-    return rclient.delAsync(key);
+  return (async() =>{
+    await dnsTool.removeDns(hostIP, "www.google.com");
   })();
 }
 
 exports.addSampleIntelInfo = () => {
-  return async(() => {
+  return (async() =>{
     let ips = [destIP, destIP2];
 
     ips.forEach((ip) => {
       let key = "intel:ip:" + ip;
-      await (rclient.hmsetAsync(key, {
+      await rclient.hmsetAsync(key, {
         ip: ip,
         host: "www.google.com",
         country: "US",
         app: "search",
         apps: '{"search": "100"}'
-      }));
+      });
     });
   })();
 }
@@ -380,10 +368,10 @@ exports.addSampleIntelInfo = () => {
 exports.removeSampleIntelInfo = () => {
   let ips = [destIP, destIP2];
 
-  return async(() => {
+  return (async() =>{
     ips.forEach((ip) => {
       let key = "intel:ip:" + ip;
-      await (rclient.delAsync(key));
+      await rclient.delAsync(key);
     });
   })();
 }

@@ -22,9 +22,6 @@ let assert = chai.assert;
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let Promise = require('bluebird');
@@ -37,8 +34,8 @@ let s = new PublicIPSensor();
 describe('Test public ip sensor', () => {
 
   beforeEach((done) => {
-    async(() => {
-      await (rclient.hdelAsync("sys:network:info", "publicIp"));
+    (async() =>{
+      await rclient.hdelAsync("sys:network:info", "publicIp");
       sem.on("PublicIP:Updated", (event) => {
         this.ip = event.ip;
       });
@@ -51,10 +48,10 @@ describe('Test public ip sensor', () => {
   });
 
   it('should have redis publicIp key', (done) => {
-    async(() => {
+    (async() =>{
       try {
-        await (s.job());
-        let result = await (rclient.hgetAsync("sys:network:info", "publicIp"));
+        await s.job();
+        let result = await rclient.hgetAsync("sys:network:info", "publicIp");
         expect(result).to.not.null;
         expect(result).to.not.equal("");
         expect(this.ip).to.not.null;

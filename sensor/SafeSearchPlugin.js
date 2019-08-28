@@ -25,18 +25,13 @@ const extensionManager = require('./ExtensionManager.js')
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsConfigFolder = `${userConfigFolder}/dns`;
-const safeSearchConfigFile = `${dnsConfigFolder}/safeSearch.conf`;
-
-const devicemasqConfigFolder = `${userConfigFolder}/devicemasq`;
-
-const pidFile = `${f.getRuntimeInfoFolder()}/safeSearch.dnsmasq.pid`;
+const dnsConfigFolder = `${userConfigFolder}/dnsmasq`;
+const safeSearchConfigFile = `${dnsConfigFolder}/safeSearch_system.conf`;
 
 const configKey = "ext.safeSearch.config";
 
-const updateInterval = 3600 * 1000 // once per hour
-
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const domainBlock = require('../control/DomainBlock.js')();
 
@@ -46,18 +41,6 @@ Promise.promisifyAll(fs);
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
-
-const SysManager = require('../net2/SysManager');
-const sysManager = new SysManager();
-
-const exec = require('child-process-promise').exec;
-
-const networkTool = require('../net2/NetworkTool')();
-
-const safeSearchDNSPort = 8863;
-
-
-const iptables = require('../net2/Iptables');
 
 const fc = require('../net2/config.js');
 
@@ -85,7 +68,7 @@ class SafeSearchPlugin extends Sensor {
       stop: this.stop
     });
 
-    await exec(`mkdir -p ${devicemasqConfigFolder}`);
+    //await exec(`mkdir -p ${devicemasqConfigFolder}`);
 
     sem.once('IPTABLES_READY', async () => {
       if(fc.isFeatureOn("safe_search")) {
@@ -283,7 +266,7 @@ class SafeSearchPlugin extends Sensor {
     if(ip) {
       return targetDomains.map((targetDomain) => {
         return this.getDNSMasqEntry(macAddress, ip, targetDomain);
-      });
+      })
     } else {
       return [];
     }
@@ -310,7 +293,7 @@ class SafeSearchPlugin extends Sensor {
     log.info("Applying safe search on device", macAddress);
 
     try {
-      if(this.enabledMacAddresses[macAddress]) {
+      if(this.enabledMacAddresses[macAddress] && this.adminSystemSwitch) {
         const config = await this.getSafeSearchConfig();
         return this.perDeviceStart(macAddress, config)
       } else {
@@ -364,7 +347,7 @@ class SafeSearchPlugin extends Sensor {
 
   getConfigFile(macAddress) {
     if(macAddress) {
-      return `${devicemasqConfigFolder}/safeSearch_${macAddress}.conf`;
+      return `${dnsConfigFolder}/safeSearch_${macAddress}.conf`;
     } else {
       return safeSearchConfigFile;
     }
@@ -375,46 +358,14 @@ class SafeSearchPlugin extends Sensor {
     const existingString = await this.loadConfigFile(this.getConfigFile()).catch((err) => null);
     if(configString !== existingString || existingString === null) {
       await this.saveConfigFile(this.getConfigFile(), configString);
-      await dnsmasq.start(true);
+      await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
     }
     return;
   }
 
   async systemStop() {
     await this.deleteConfigFile(safeSearchConfigFile);
-    await dnsmasq.start(true);
-  }
-
-  /*
-   * Safe Search DNS server will use local primary dns server as upstream server
-   */
-  async startDeviceMasq() {
-    if(this.starting) {
-      return;
-    }
-
-    try {
-      this.starting = true;
-      await this.delay(5000);
-      this.starting = false;
-      return exec("sudo systemctl restart devicemasq");
-    } catch(err) {
-      log.error(`Failed to restart devicemasq, err: ${err}`);
-    }
-  }
-
-  async stopDeviceMasq() {
-    return exec("sudo systemctl stop devicemasq");
-  }
-
-  async isDeviceMasqRunning() {
-    try {
-      await exec("systemctl is-active devicemasq");
-    } catch(err) {
-      return false;
-    }
-
-    return true;
+    await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
   }
 
   async perDeviceStart(mac, config) {
@@ -422,80 +373,25 @@ class SafeSearchPlugin extends Sensor {
     const existingString = await this.loadConfigFile(this.getConfigFile(mac)).catch((err) => null);
     if(configString !== existingString || existingString === null) {
       await this.saveConfigFile(this.getConfigFile(mac), configString);
-      await this.startDeviceMasq();
+      await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
     }
-    await this.delay(8 * 1000); // wait for a while before activating the dns redirect
-    await exec(`sudo ipset -! add devicedns_mac_set ${mac}`);
   }
 
   async perDeviceStop(mac) {
-    await exec(`sudo ipset -! del devicedns_mac_set ${mac}`);
     const file = this.getConfigFile(mac);
     await this.deleteConfigFile(file);
-    await this.startDeviceMasq();
+    await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
   }
 
   // global on/off
   async globalOn() {
-    await this.addIptablesRules();
     this.adminSystemSwitch = true;
-    await this.applySystemSafeSearch();
+    await this.applySafeSearch();
   }
 
   async globalOff() {
-    await this.removeIptablesRules();
     this.adminSystemSwitch = false;
-    await this.applySystemSafeSearch();
-  }
-
-  async addIptablesRules() {
-    const localIP = sysManager.myIp();
-    const deviceDNS = `${localIP}:8863`;
-
-    const ipv6s = sysManager.myIp6();
-
-    for(const protocol of ["tcp", "udp"]) {
-      const deviceDNSRule = `sudo iptables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-      const cmd = iptables.wrapIptables(deviceDNSRule);
-      await exec(cmd).catch(() => undefined);
-
-      for(const ip6 of ipv6s || []) {
-        if (ip6.startsWith("fe80::")) {
-          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-
-          const deviceDNS6 = `[${ip6}]:8863`;
-
-          const deviceDNSRule = `sudo ip6tables -w -t nat -I PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
-          const cmd = iptables.wrapIptables(deviceDNSRule);
-          await exec(cmd).catch(() => undefined);
-        }
-      }
-    }
-  }
-
-  async removeIptablesRules() {
-    const localIP = sysManager.myIp();
-    const deviceDNS = `${localIP}:8863`;
-
-    const ipv6s = sysManager.myIp6();
-
-    for(const protocol of ["tcp", "udp"]) {
-      const deviceDNSRule = `sudo iptables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS}`;
-      const cmd = iptables.wrapIptables(deviceDNSRule);
-      await exec(cmd).catch(() => undefined);
-
-      for(const ip6 of ipv6s || []) {
-        if (ip6.startsWith("fe80::")) {
-          // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-
-          const deviceDNS6 = `[${ip6}]:8863`;
-
-          const deviceDNSRule = `sudo ip6tables -w -t nat -D PREROUTING -p ${protocol} -m set --match-set devicedns_mac_set src --dport 53 -j DNAT --to-destination ${deviceDNS6}`;
-          const cmd = iptables.wrapIptables(deviceDNSRule);
-          await exec(cmd).catch(() => undefined);
-        }
-      }
-    }
+    await this.applySafeSearch();
   }
 }
 

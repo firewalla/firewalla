@@ -64,6 +64,12 @@ class DomainIPTool {
     if(exactDomainKeys && exactDomainKeys.length > 0) {
       await rclient.delAsync(exactDomainKeys);
     }
+
+    const patternBlocksetDomainKey = `ipmapping:blockset:*`
+    const blocksetDomainKeys = await rclient.keysAsync(patternBlocksetDomainKey)
+    if (blocksetDomainKeys && blocksetDomainKeys.length > 0) {
+      await rclient.delAsync(blocksetDomainKeys);
+    }
   }
 
   async getMappedIPAddresses(domain, options) {

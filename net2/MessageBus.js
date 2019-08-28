@@ -50,7 +50,7 @@ module.exports = class {
       sclient.on('message', (channel, message) => {
         try {
           let m = JSON.parse(message);
-          log.debug('Reciving Msg:', m, {});
+          log.debug('Reciving Msg:', m);
           let notified = 0;
           let cbs = null;
           if (
@@ -77,7 +77,7 @@ module.exports = class {
           }
           log.debug('Notified ', notified);
         } catch (err) {
-          //              log.error("Error to process message:", message, "err:", err, {})
+          //              log.error("Error to process message:", message, "err:", err);
           // ignore any non-JSON messages
         }
       });
@@ -91,13 +91,13 @@ module.exports = class {
       ip: ip,
       msg: msg
     };
-    log.debug('MBus:Publish', channel, o, {});
+    log.debug('MBus:Publish', channel, o);
     pclient.publish(channel, JSON.stringify(o));
   }
 
   publishCompressed(channel, type, ip, msg) {
     if (this.sending == true) {
-      log.info('suppressing message:', channel, type, ip, msg, {});
+      log.info('suppressing message:', channel, type, ip, msg);
       return;
     }
 

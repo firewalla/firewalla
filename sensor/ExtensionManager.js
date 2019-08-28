@@ -80,9 +80,9 @@ class ExtensionManager {
     this.onCmds[key] = callback;
   }
 
-  get(key, msg) {
+  get(key, msg, data) {
     if(this.hasGet(key)) {
-      return this.onGets[key](msg)
+      return this.onGets[key](msg, data)
     }
 
     return Promise.reject(new Error("no such key:" + key))
