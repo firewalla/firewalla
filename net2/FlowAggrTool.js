@@ -146,7 +146,6 @@ class FlowAggrTool {
 
     args.push(0);
     args.push("_"); // placeholder to keep key exists
-    log.info("addFlows", args)
     await rclient.zaddAsync(args)
     await rclient.expireAsync(key, expire)
     await this.trimFlow(mac, trafficDirection, interval, ts)
