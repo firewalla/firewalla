@@ -3,7 +3,8 @@
 shopt -s lastpipe
 
 usage() {
-    echo "Usage: conn_check [-h] [-s] [-f \"files\"]"
+    echo "Usage: conn_check [-h] [-f \"files\"]"
+    echo "   -f: wildcard accepted, defaut to /blog/current/conn.log"
     return
 }
 
@@ -13,9 +14,6 @@ FILES="/blog/current/conn.log"
 
 while [[ "$1" != "" ]]; do
     case $1 in
-        -s )    shift
-                SKIP_INSTALL=true
-                ;;
         -f )    shift
                 FILES=$1
                 shift
@@ -29,8 +27,12 @@ while [[ "$1" != "" ]]; do
     esac
 done
 
-if [[ $SKIP_INSTALL == false ]]; then
-    sudo apt install -y jq
+dpkg -s jq &> /dev/null
+
+if [ $? -ne 0 ]; then
+  echo "jq not found, installing... "
+  sudo apt-get update
+  sudo apt-get install -y jq
 fi
 
 GATEWAY="$(redis-cli hget sys:network:info eth0 | jq -r .gateway_ip)"
