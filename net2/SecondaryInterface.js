@@ -67,7 +67,6 @@ function generateRandomIpSubnet(ipSubnet) {
   }
 }
 
-
 exports.create = async function (config) {
   /*
   "secondaryInterface": {

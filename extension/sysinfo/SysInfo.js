@@ -106,7 +106,7 @@ async function getRateLimitInfo() {
 function getDiskInfo() {
   return new Promise((resolve, reject) => {
     df((err, response) => {
-      if(err) {
+      if (err || !response) {
         log.error("Failed to get disk info", err);
         resolve();
         return

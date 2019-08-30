@@ -118,10 +118,11 @@ async function create(name, type, v4 = true) {
     case 'hash:mac':
       options = 'hashsize 128 maxelem 65536'
       break;
-    default:
+    default: {
       let family = 'family inet';
       if (!v4) family = family + '6';
       options = family + ' hashsize 128 maxelem 65536'
+    }
   }
   const cmd = `sudo ipset create -! ${name} ${type} ${options}`
   return exec(cmd)

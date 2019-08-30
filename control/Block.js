@@ -242,30 +242,6 @@ async function delMacFromSet(macAddresses, ipset = null, whitelist = false) {
   }
 }
 
-function blockMac(macAddress, ipset) {
-  ipset = ipset || "blocked_mac_set"
-
-  let cmd = `sudo ipset add -! ${ipset} ${macAddress}`;
-
-  log.info("Control:Block:",cmd);
-
-  accounting.addBlockedDevice(macAddress);
-
-  return exec(cmd)
-}
-
-function unblockMac(macAddress, ipset) {
-  ipset = ipset || "blocked_mac_set"
-
-  let cmd = `sudo ipset del -! ${ipset} ${macAddress}`;
-
-  log.info("Control:Block:",cmd);
-
-  accounting.removeBlockedDevice(macAddress);
-
-  return exec(cmd)
-}
-
 function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
   ipset = ipset || "blocked_ip_port_set";
   log.info("Blocking public port:", localIPAddress, localPort, protocol, ipset);
@@ -297,8 +273,6 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
 
 module.exports = {
   setupBlockChain:setupBlockChain,
-  blockMac: blockMac,
-  unblockMac: unblockMac,
   block: block,
   unblock: unblock,
   setupCategoryEnv: setupCategoryEnv,

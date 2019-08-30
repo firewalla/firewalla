@@ -1026,7 +1026,7 @@ module.exports = class DNSMASQ {
       const intf = wifiIntf.intf || "wlan0";
 
       switch (mode) {
-        case "router":
+        case "router": {
           // need to setup dhcp service on wifi interface for router mode
           if (!wifiIntf.ip)
             break;
@@ -1049,6 +1049,7 @@ module.exports = class DNSMASQ {
           // same dns servers as secondary interface
           cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, intf, wifiDnsServers);
           break;
+        }
         case "bridge":
           break;
         default:
@@ -1163,7 +1164,7 @@ module.exports = class DNSMASQ {
 
     await this.updateResolvConf();
     // no need to stop dnsmasq, this.rawStart() will restart dnsmasq. Otherwise, there is a cooldown before restart, causing dns outage during that cool down window.
-    // await this.rawStop(); 
+    // await this.rawStop();
     try {
       await this.rawStart();
     } catch (err) {
@@ -1390,7 +1391,9 @@ module.exports = class DNSMASQ {
         }
         for (const key in domainMap) {
           const domain = getCanonicalizedHostname(key.replace(/\s+/g, ".")) + '.lan';
-          localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`;
+          if (domainMap[key].ipv4Addr && validator.isIP(domainMap[key].ipv4Addr)) {
+            localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`;
+          }
           await hostTool.updateMACKey({
             domain: domain,
             mac: domainMap[key].mac
