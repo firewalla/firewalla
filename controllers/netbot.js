@@ -60,7 +60,8 @@ const sysTool = new SysTool()
 
 const flowUtil = require('../net2/FlowUtil');
 
-const iptool = require('ip')
+const iptool = require('ip');
+const traceroute = require('../vendor_lib/traceroute.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
@@ -1815,11 +1816,15 @@ class netBot extends ControllerBot {
         })
         break;
       case "publicIp":
-        (async() =>{ 
-          const publicIp = await rclient.hgetAsync('sys:network:info','publicIp')
-          this.simpleTxData(msg, {publicIp:publicIp}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+        let checkHost = value.checkHost || "8.8.8.8";
+        traceroute.trace(checkHost, (err, hops, destination) => {
+          if(err){
+            this.simpleTxData(msg, {}, err, callback);
+          }else{
+            let secondStepIp = hops[1] ? hops[1].ip : "";
+            let isPublic = iptool.isPublic(secondStepIp);
+            this.simpleTxData(msg, {hops:hops, secondStepIp: secondStepIp, isPublic: isPublic, destination: destination}, null, callback);
+          }
         })
         break;
     default:
