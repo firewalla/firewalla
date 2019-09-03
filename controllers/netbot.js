@@ -1089,12 +1089,7 @@ class netBot extends ControllerBot {
       case "language":
         let v2 = value;
 
-        // TODO validate input?
-        if (v2.language) {
-          sysManager.setLanguage(v2.language, (err) => {
-            this.simpleTxData(msg, {}, err, callback);
-          });
-        }
+        this.simpleTxData(msg, {}, err, callback);
         break;
       case "timezone":
         let v3 = value;
