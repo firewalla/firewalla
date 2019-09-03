@@ -23,6 +23,8 @@ const extensionManager = require('./ExtensionManager.js')
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const am2 = new AlarmManager2();
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 class RemoteNotificationSensor extends Sensor {
   constructor() {
     super();
@@ -30,8 +32,18 @@ class RemoteNotificationSensor extends Sensor {
 
   apiRun() {
     extensionManager.onCmd("testRemoteNotification", async (msg, data) => {
-      if(data.alarmID) {        
-        await am2.notifAlarm(data.alarmID);
+      if(data.alarmID) {
+        const alarm = await am2.getAlarm(data.alarmID);
+        if (!alarm) {
+          log.error(`Invalid Alarm ID: ${data.alarmID})`);
+        }
+    
+        sem.emitEvent({
+          type: "Alarm:NewAlarm",
+          message: "A new alarm is generated",
+          alarmID: alarm.aid
+        });
+        
         log.info(`Send remote notification on alarm ${data.alarmID} for debugging purpose`);
       }
       return {};
