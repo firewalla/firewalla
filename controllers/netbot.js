@@ -597,6 +597,18 @@ class netBot extends ControllerBot {
           delete notifMsg.title;
           delete notifMsg.body;
         }
+
+        const includeNameInNotification = await rclient.hgetAsync("sys:config", "includeNameInNotification");
+        if(includeNameInNotification === "1") {
+          notifMsg["title-loc-key"] = notifMsg["title-loc-key"] + ".with_box_name";
+          notifMsg["title_loc_key"] = notifMsg["title_loc_key"] + ".with_box_name";
+
+          const newArray = [];
+          newArray.push.apply(newArray, alarm.localizedNotificationTitleKey());
+          newArray.push(this.getDeviceName());
+          notifMsg["title-loc-args"] = newArray;
+          notifMsg["title_loc_args"] = newArray;
+        }
       }
 
       this.tx2(this.primarygid, "test", notifMsg, data);
