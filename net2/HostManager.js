@@ -1320,6 +1320,9 @@ module.exports = class HostManager {
                 type: 'FW_NOTIFICATION',
                 titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
                 bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
                 payload: {
                   profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
                 }

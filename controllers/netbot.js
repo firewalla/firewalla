@@ -611,7 +611,7 @@ class netBot extends ControllerBot {
 
     });
 
-    sem.on("FW_NOTIFICATION", (event) => {
+    sem.on("FW_NOTIFICATION", async (event) => {
       const titleKey = event.titleKey;
       const bodyKey = event.bodyKey;
       const payload = event.payload;
@@ -625,20 +625,34 @@ class netBot extends ControllerBot {
         body: i18n.__(bodyKey, payload),
       };
 
-      if(event.title_loc_key) {
-        notifyMsg["title-loc-key"] = event.title_loc_key;
-      }
+      if(event.titleLocalKey) {
+        notifyMsg["title-loc-key"] = `notif.title.${event.titleLocalKey}`;
+        notifyMsg["title_loc_key"] = `notif.title.${event.titleLocalKey}`;
 
-      if(event.title_loc_args) {
-        notifyMsg["title-loc-args"] = event.title_loc_args;
-      }
+        let titleArgs = [];
 
-      if(event.loc_key) {
-        notifyMsg["loc-key"] = event.loc_key;
-      }
+        if(event.titleLocalArgs) {
+          titleArgs = event.titleLocalArgs.slice(0);
+        }
 
-      if(event.loc_args) {
-        notifyMsg["loc-args"] = event.loc_args;
+        const includeNameInNotification = await rclient.hgetAsync("sys:config", "includeNameInNotification");
+        if(includeNameInNotification === "1") {
+          titleArgs.push(`[${this.getDeviceName()}] `);
+        } else {
+          titleArgs.push("");
+        }
+        notifyMsg["title-loc-args"] = titleArgs;
+        notifyMsg["title_loc_args"] = titleArgs;
+      }  
+
+      if(event.bodyLocalKey) {
+        notifyMsg["loc-key"] = `notif.title.${event.bodyLocalKey}`;
+        notifyMsg["body_loc_key"] = `notif.title.${event.bodyLocalKey}`;
+
+        if(event.bodyLocalArgs) {
+          notifyMsg["loc-args"] = event.bodyLocalArgs;
+          notifyMsg["body_loc_args"] = event.bodyLocalArgs;
+        }
       }
 
       const data = {
@@ -654,35 +668,44 @@ class netBot extends ControllerBot {
       let branchChanged = await sysManager.isBranchJustChanged();
       let upgradeInfo = await upgradeManager.getUpgradeInfo();
       log.debug('isBranchJustChanged:', branchChanged, ', upgradeInfo:', upgradeInfo);
-      if(branchChanged) {
-        let branch = null
 
-        if(branch) {
-          let msg = i18n.__mf("NOTIF_BRANCH_CHANGE", {
-            deviceName: this.getDeviceName(),
-            branchChanged: branchChanged,
-            version: sysManager.version()
-          })
-          log.info(msg)
-          this.tx(this.primarygid, "200", msg)
-          sysManager.clearBranchChangeFlag()
-        }
-      }
-      else if (upgradeInfo.upgraded) {
-        let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
-          version: fc.getSimpleVersion()
+      if (upgradeInfo.upgraded) {
+        sem.sendEventToFireApi({
+          type: 'FW_NOTIFICATION',
+          titleKey: 'NOTIF_UPGRADE_COMPLETE_TITLE',
+          bodyKey: 'NOTIF_UPGRADE_COMPLETE',
+          titleLocalKey: 'SOFTWARE_UPGRADE',
+          bodyLocalKey: `SOFTWARE_UPGRADE`,
+          bodyLocalArgs: [fc.getSimpleVersion()],
+          payload: {
+            version: fc.getSimpleVersion()
+          }
         });
-        this.tx(this.primarygid, "200", msg);
+
         upgradeManager.updateVersionTag();
       }
       else {
         if (sysManager.systemRebootedByUser(true)) {
           if (nm.canNotify() == true) {
-            this.tx(this.primarygid, "200", i18n.__("NOTIF_REBOOT_COMPLETE"));
+            sem.sendEventToFireApi({
+              type: 'FW_NOTIFICATION',
+              titleKey: 'NOTIF_REBOOT_COMPLETE_TITLE',
+              bodyKey: 'NOTIF_REBOOT_COMPLETE',
+              titleLocalKey: 'REBOOT',
+              bodyLocalKey: 'REBOOT',
+              payload: {}
+            });
           }
         } else if (sysManager.systemRebootedDueToIssue(true) == false) {
           if (nm.canNotify() == true) {
-            this.tx(this.primarygid, "200", i18n.__("NOTIF_AWAKES"));
+            sem.sendEventToFireApi({
+              type: 'FW_NOTIFICATION',
+              titleKey: 'NOTIF_AWAKES',
+              bodyKey: 'NOTIF_AWAKES_BODY',
+              titleLocalKey: 'AWAKEN',
+              bodyLocalKey: 'AWAKEN',
+              payload: {}
+            });
           }
         }
       }
