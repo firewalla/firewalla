@@ -1212,11 +1212,11 @@ class netBot extends ControllerBot {
 
 
   async processAppInfo(appInfo) {
-      if(appInfo.language) {
-        if(sysManager.language !== appInfo.language) {
-          await sysManager.setLanguageAsync(appInfo.language)
-        }
-      }
+      // if(appInfo.language) {
+      //   if(sysManager.language !== appInfo.language) {
+      //     await sysManager.setLanguageAsync(appInfo.language)
+      //   }
+      // }
 
       if(appInfo.deviceName && appInfo.eid) {
         const keyName = "sys:ept:memberNames"
