@@ -646,8 +646,8 @@ class netBot extends ControllerBot {
       }  
 
       if(event.bodyLocalKey) {
-        notifyMsg["loc-key"] = `notif.title.${event.bodyLocalKey}`;
-        notifyMsg["body_loc_key"] = `notif.title.${event.bodyLocalKey}`;
+        notifyMsg["loc-key"] = `notif.content.${event.bodyLocalKey}`;
+        notifyMsg["body_loc_key"] = `notif.content.${event.bodyLocalKey}`;
 
         if(event.bodyLocalArgs) {
           notifyMsg["loc-args"] = event.bodyLocalArgs;
