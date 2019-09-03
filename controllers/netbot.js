@@ -603,8 +603,7 @@ class netBot extends ControllerBot {
           notifMsg["title-loc-key"] = notifMsg["title-loc-key"] + ".with_box_name";
           notifMsg["title_loc_key"] = notifMsg["title_loc_key"] + ".with_box_name";
 
-          const newArray = [];
-          newArray.push.apply(newArray, alarm.localizedNotificationTitleKey());
+          const newArray = alarm.localizedNotificationContentArray().slice(0);
           newArray.push(this.getDeviceName());
           notifMsg["title-loc-args"] = newArray;
           notifMsg["title_loc_args"] = newArray;
