@@ -581,6 +581,14 @@ class netBot extends ControllerBot {
       if(pa && f.isDevelopmentVersion()) {
         notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
       }
+
+      if(alarm) {
+        notifMsg["title-loc-key"] = alarm.localizedNotificationTitleKey();
+        notifMsg["title-loc-args"] = alarm.localizedNotificationTitleArray();
+        notifMsg["loc-key"] = alarm.localizedNotificationContentKey();
+        notifMsg["loc-args"] = alarm.localizedNotificationContentArray();
+      }
+
       this.tx2(this.primarygid, "test", notifMsg, data);
 
     });
@@ -598,6 +606,22 @@ class netBot extends ControllerBot {
         title: i18n.__(titleKey, payload),
         body: i18n.__(bodyKey, payload),
       };
+
+      if(event.title_loc_key) {
+        notifyMsg["title-loc-key"] = event.title_loc_key;
+      }
+
+      if(event.title_loc_args) {
+        notifyMsg["title-loc-args"] = event.title_loc_args;
+      }
+
+      if(event.loc_key) {
+        notifyMsg["loc-key"] = event.loc_key;
+      }
+
+      if(event.loc_args) {
+        notifyMsg["loc-args"] = event.loc_args;
+      }
 
       const data = {
         gid: this.primarygid,

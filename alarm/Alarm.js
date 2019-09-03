@@ -99,6 +99,23 @@ class Alarm {
     return i18n.__(this.getNotificationCategory(), this);
   }
 
+
+  localizedNotificationTitleKey() {
+    return `notif.title.${this.type}`;
+  }
+
+  localizedNotificationTitleArray() {
+    return [];
+  }
+
+  localizedNotificationContentKey() {
+    return `notif.content.${this.type}`;
+  }
+
+  localizedNotificationContentArray() {
+    return [];
+  }
+
   cloudAction() {
     const decision = this["p.cloud.decision"];
     switch(decision) {
@@ -196,6 +213,10 @@ class NewDeviceAlarm extends Alarm {
 
   keysToCompareForDedup() {
     return ["p.device.mac"];
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.device.name"], this["p.device.ip"]];
   }
 }
 
