@@ -837,7 +837,7 @@ module.exports = class HostManager {
 
         json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
         const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
-        if(fnlFlag) {
+        if(fnlFlag === "1") {
           json.forceNotifLocal = true;
         } else {
           json.forceNotifLocal = false;
