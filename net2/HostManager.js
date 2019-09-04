@@ -836,7 +836,12 @@ module.exports = class HostManager {
         await this.legacyHostFlag(json)
 
         json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
-        json.forceNotifLocal = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
+        const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
+        if(fnlFlag) {
+          json.forceNotifLocal = true;
+        } else {
+          json.forceNotifLocal = false;
+        }
 
         // for any pi doesn't have firstBinding key, they are old versions
         let firstBinding = await rclient.getAsync("firstBinding")
