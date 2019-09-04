@@ -587,6 +587,16 @@ class netBot extends ControllerBot {
         notifMsg["title-loc-args"] = alarm.localizedNotificationTitleArray();
         notifMsg["loc-key"] = alarm.localizedNotificationContentKey();
         notifMsg["loc-args"] = alarm.localizedNotificationContentArray();
+        notifMsg["title_loc_key"] = alarm.localizedNotificationTitleKey();
+        notifMsg["title_loc_args"] = alarm.localizedNotificationTitleArray();
+        notifMsg["body_loc_key"] = alarm.localizedNotificationContentKey();
+        notifMsg["body_loc_args"] = alarm.localizedNotificationContentArray();
+
+        const forceUseNotificationLocalization = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
+        if(forceUseNotificationLocalization === "1") {
+          delete notifMsg.title;
+          delete notifMsg.body;
+        }
       }
 
       this.tx2(this.primarygid, "test", notifMsg, data);
@@ -1104,6 +1114,23 @@ class netBot extends ControllerBot {
       })
 
       break;
+    case "forceNotificationLocalization": {
+      let v33 = value;
+
+      let flag = "0";
+
+      if(v33.forceNotificationLocalization) {
+        flag = "1"
+      }
+
+      (async() => {
+        await rclient.hsetAsync("sys:config", "forceNotificationLocalization", flag)
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+    break;
+    }
     case "mode":
       let v4 = value;
       let err = null;
