@@ -47,6 +47,24 @@ const _ = require('lodash');
 
 class NetworkStatsSensor extends Sensor {
   async run() {
+    if (fc.isFeatureOn(featureName)) {
+      await this.turnOn();
+    } else {
+      await this.turnOff();
+    }
+    fc.onFeature(featureName, (feature, status) => {
+      if (feature != featureName)
+        return
+
+      if (status) {
+        this.turnOn();
+      } else {
+        this.turnOff();
+      }
+    })
+  }
+  
+  async turnOn() {
     if(this.config.pingConfig) {
       Ping.configure(this.config.pingConfig);
     } else {
@@ -56,6 +74,22 @@ class NetworkStatsSensor extends Sensor {
     
     this.testGateway();
     this.testDNSServerPing();
+
+    log.info("Feature is turned on.");
+  }
+
+  async turnOff() {
+    if(this.pings) {
+      for(const t in this.pings) {
+        const p = this.pings[t];
+        if(p) {
+          p.stop();
+          delete this.pings[t];
+        }
+      }
+    }
+
+    log.info("Feature is turned off.");
   }
 
   async apiRun() {

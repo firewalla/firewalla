@@ -128,10 +128,6 @@ class FWInvitation {
     return rclient.delAsync(key);
   }
 
-  validateLicense(license) {
-
-  }
-
   async checkInvitation(rid) {
     log.forceInfo(`${this.leftCheckCount} Inviting ${rid} to group ${this.gid}`);
     try {

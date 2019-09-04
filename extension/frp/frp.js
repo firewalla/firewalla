@@ -334,7 +334,8 @@ module.exports = class {
           log.info("Service " + serviceName + " started successfully");
           this.started = true;
           hasTimeout = false;
-          this._startHealthChecker();
+          // do not support health check temporarily
+          // this._startHealthChecker();
           if (this.name == "support") {
             sem.once("RemoteSupport", () => {
               resolve();

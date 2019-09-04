@@ -12,6 +12,7 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 'use strict';
 const log = require('./logger.js')(__filename);
 
@@ -290,10 +291,6 @@ module.exports = class {
   setLanguage(language, callback) {
     callback = callback || function() {}
 
-    // FIXME: disable set language feature temporarliy
-    callback(null);
-    return;
-
     this.language = language;
     const theLanguage = i18n.setLocale(this.language);
     if(theLanguage !== this.language) {
@@ -489,7 +486,7 @@ module.exports = class {
   isIPv6GloballyConnected() {
     let ipv6Addrs = this.myIp6();
     if (ipv6Addrs && ipv6Addrs.length>0) {
-      for (ip6 in ipv6Addrs) {
+      for (const ip6 in ipv6Addrs) {
         if (!ip6.startsWith("fe80")) {
           return true;
         }
