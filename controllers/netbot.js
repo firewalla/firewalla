@@ -583,12 +583,20 @@ class netBot extends ControllerBot {
       }
 
       if(alarm) {
+        const includeNameInNotification = await rclient.hgetAsync("sys:config", "includeNameInNotification");
+        const newArray = alarm.localizedNotificationTitleArray().slice(0);
+        if(includeNameInNotification === "1") {
+          newArray.push(`[${this.getDeviceName()}] `);
+        } else {
+          newArray.push("");
+        }
+        
         notifMsg["title-loc-key"] = alarm.localizedNotificationTitleKey();
-        notifMsg["title-loc-args"] = alarm.localizedNotificationTitleArray();
+        notifMsg["title-loc-args"] = newArray;
         notifMsg["loc-key"] = alarm.localizedNotificationContentKey();
         notifMsg["loc-args"] = alarm.localizedNotificationContentArray();
         notifMsg["title_loc_key"] = alarm.localizedNotificationTitleKey();
-        notifMsg["title_loc_args"] = alarm.localizedNotificationTitleArray();
+        notifMsg["title_loc_args"] = newArray;
         notifMsg["body_loc_key"] = alarm.localizedNotificationContentKey();
         notifMsg["body_loc_args"] = alarm.localizedNotificationContentArray();
 
@@ -596,18 +604,6 @@ class netBot extends ControllerBot {
         if(forceUseNotificationLocalization === "1") {
           delete notifMsg.title;
           delete notifMsg.body;
-        }
-
-        const includeNameInNotification = await rclient.hgetAsync("sys:config", "includeNameInNotification");
-        if(includeNameInNotification === "1") {
-          notifMsg["title-loc-key"] = notifMsg["title-loc-key"] + ".with_box_name";
-          notifMsg["title_loc_key"] = notifMsg["title_loc_key"] + ".with_box_name";
-
-          const newArray = [];
-          newArray.push.apply(newArray, alarm.localizedNotificationTitleKey());
-          newArray.push(this.getDeviceName());
-          notifMsg["title-loc-args"] = newArray;
-          notifMsg["title_loc_args"] = newArray;
         }
       }
 
@@ -1093,12 +1089,7 @@ class netBot extends ControllerBot {
       case "language":
         let v2 = value;
 
-        // TODO validate input?
-        if (v2.language) {
-          sysManager.setLanguage(v2.language, (err) => {
-            this.simpleTxData(msg, {}, err, callback);
-          });
-        }
+        this.simpleTxData(msg, {}, err, callback);
         break;
       case "timezone":
         let v3 = value;
