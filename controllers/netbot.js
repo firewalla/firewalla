@@ -1111,8 +1111,7 @@ class netBot extends ControllerBot {
         break;
       case "language":
         let v2 = value;
-
-        this.simpleTxData(msg, {}, err, callback);
+        this.simpleTxData(msg, {}, null, callback);
         break;
       case "timezone":
         let v3 = value;
