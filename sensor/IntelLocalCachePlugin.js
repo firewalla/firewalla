@@ -26,6 +26,8 @@ const BloomFilter = require('../vendor_lib/bloomfilter.js').BloomFilter;
 
 const urlhash = require("../util/UrlHash.js");
 
+const f = require('../net2/Firewalla.js');
+
 const _ = require('lodash');
 
 const bone = require("../lib/Bone.js");
