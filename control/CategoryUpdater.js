@@ -235,7 +235,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
     await this.updateIPSetByDomain(category, d);
     await this.filterIPSetByDomain(category);
-    await this.updateCategoryBlcok(category, d);
+    await this.updateCategoryBlock(category, d);
   }
 
   getDomainMapping(domain) {
@@ -469,7 +469,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     return rclient.zremrangebyscoreAsync(key, '-inf', date)
   }
-  async updateCategoryBlcok(category, domain) {
+  async updateCategoryBlock(category, domain) {
     domain = domain || "";
     if (domain.startsWith("*.")) {
       domain = domain.substring(2);
