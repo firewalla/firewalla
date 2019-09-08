@@ -197,7 +197,23 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async port_scan() {
+    const ip = await this.randomFindDevice();
+    const remoteIP = "116.62.163.55";
 
+    const payload = {
+      "ts": new Date() / 1000,
+      "note": "Scan::Port_Scan",
+      msg: `${remoteIP} scanned at least 15 unique ports of host ${ip} in 0m3s`,
+      "sub": "local",
+      src: remoteIP,
+      peer_descr: "bro",
+      dst: ip,
+      "actions": ["Notice::ACTION_LOG"],
+      "suppress_for": 1800.0,
+      "dropped": false
+    }
+
+    await this.appendNotice(payload);
   }
 
   async video() {

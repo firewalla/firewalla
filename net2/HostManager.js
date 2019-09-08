@@ -86,7 +86,7 @@ const FlowTool = require('./FlowTool.js');
 const flowTool = new FlowTool();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');	
+const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const vpnClientEnforcer = new VPNClientEnforcer();
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
@@ -202,6 +202,10 @@ module.exports = class HostManager {
 
   basicDataForInit(json, options) {
     let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
+    if(networkinfo.gateway === null) {
+      delete networkinfo.gateway;
+    }
+
     json.network = networkinfo;
 
     sysManager.updateInfo();
@@ -636,7 +640,6 @@ module.exports = class HostManager {
     log.info("Reading individual host policy rules");
 
     await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
-    log.info("Reading individual host policy rules");
   }
 
   async loadDDNSForInit(json) {
@@ -837,6 +840,12 @@ module.exports = class HostManager {
         await this.legacyHostFlag(json)
 
         json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
+        const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
+        if(fnlFlag === "1") {
+          json.forceNotifLocal = true;
+        } else {
+          json.forceNotifLocal = false;
+        }
 
         // for any pi doesn't have firstBinding key, they are old versions
         let firstBinding = await rclient.getAsync("firstBinding")
@@ -978,18 +987,6 @@ module.exports = class HostManager {
     }
   }
 
-  getHostsAsync() {
-    return new Promise((resolve,reject) => {
-      this.getHosts((err, hosts) => {
-        if(err) {
-          reject(err)
-        } else {
-          resolve(hosts)
-        }
-      })
-    })
-  }
-
   safeExecPolicy(skipHosts) {
     // a very dirty hack, only call system policy change every 5 seconds
     const now = new Date() / 1000
@@ -1010,38 +1007,23 @@ module.exports = class HostManager {
     }
   }
 
-  // super resource-heavy function, be careful when calling this
-  getHosts(callback, retry) {
+  getHosts(callback) {
     callback = callback || function(){}
-    log.info("hostmanager:gethosts:started",retry);
-    // ready mark and sweep
+
+    util.callbackify(this.getHostsAsync).bind(this)(callback)
+  }
+
+  // super resource-heavy function, be careful when calling this
+  async getHostsAsync() {
+    log.info("getHosts: started");
+
     // Only allow requests be executed in a frenquency lower than 1 every 5 mins
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
     if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
-      log.info("hostmanager:gethosts:mutx",retry);
-      let stack = new Error().stack
-      let retrykey = retry;
-      if (retry == null) {
-        retrykey = Date.now();
-      }
-      if (Date.now()-retrykey > 1000*10) {
-        log.error("hostmanager:gethosts:mutx:timeout", retrykey, Date.now()-retrykey);
-        callback(null, this.hosts.all);
-        return;
-      }
-      log.debug("hostmanager:gethosts:mutx:stack:",retrykey, stack )
-      setTimeout(() => {
-        this.getHosts(callback,retrykey);
-      },3000);
-      return;
+      log.info("getHosts: too frequent, returning cache");
+      return this.hosts.all
     }
-    if (retry == null) {
-      // let stack = new Error().stack
-      // log.info("hostmanager:gethosts:mutx:first:", stack )
-    } else {
-      let stack = new Error().stack
-      log.info("hostmanager:gethosts:mutx:last:", retry,stack )
-    }
+
     this.getHostsActive = Math.floor(new Date() / 1000);
     // end of mutx check
 
@@ -1053,140 +1035,138 @@ module.exports = class HostManager {
         this.hostsdb[h]._mark = false;
       }
     }
-    rclient.keys("host:mac:*", (err, keys) => {
-      let multiarray = [];
-      for (let i in keys) {
-        multiarray.push(['hgetall', keys[i]]);
+    const keys = await rclient.keysAsync("host:mac:*");
+    let multiarray = [];
+    for (let i in keys) {
+      multiarray.push(['hgetall', keys[i]]);
+    }
+    let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+    const replies = await rclient.multi(multiarray).execAsync();
+    await asyncNative.eachLimit(replies, 2, async (o) => {
+      if (!o) {
+        // defensive programming
+        return;
       }
-      let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
-      rclient.multi(multiarray).exec(async (err, replies) => {
-        await asyncNative.eachLimit(replies, 2, async (o) => {
-          if (!o) {
-            // defensive programming
-            return;
-          }
-          if (o.ipv4) {
-            o.ipv4Addr = o.ipv4;
-          }
-          if (o.ipv4Addr == null) {
-            log.warn("getHosts: no ipv4", o.uid, o.mac);
-            return;
-          }
-          if (!sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline) {
-            return
-          }
-          //log.info("Processing GetHosts ",o);
-          let hostbymac = this.hostsdb["host:mac:" + o.mac];
-          let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
+      if (o.ipv4) {
+        o.ipv4Addr = o.ipv4;
+      }
+      if (o.ipv4Addr == null) {
+        log.warn("getHosts: no ipv4", o.uid, o.mac);
+        return;
+      }
+      if (!sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline) {
+        return
+      }
+      //log.info("Processing GetHosts ",o);
+      let hostbymac = this.hostsdb["host:mac:" + o.mac];
+      let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
 
-          if (hostbymac == null) {
-            hostbymac = new Host(o,this);
-            hostbymac.type = this.type;
-            this.hosts.all.push(hostbymac);
-            this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
-            this.hostsdb['host:mac:' + o.mac] = hostbymac;
+      if (hostbymac == null) {
+        hostbymac = new Host(o,this);
+        hostbymac.type = this.type;
+        this.hosts.all.push(hostbymac);
+        this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        this.hostsdb['host:mac:' + o.mac] = hostbymac;
 
-            let ipv6Addrs = hostbymac.ipv6Addr
-            if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-              for(let i in ipv6Addrs) {
-                let ip6 = ipv6Addrs[i]
-                let key = `host:ip6:${ip6}`
-                this.hostsdb[key] = hostbymac
-              }
-            }
-
-          } else {
-            if (o.ipv4!=hostbymac.o.ipv4) {
-              // the physical host get a new ipv4 address
-              //
-              this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
-            }
-            this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
-
-            let ipv6Addrs = hostbymac.ipv6Addr
-            if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-              for(let i in ipv6Addrs) {
-                let ip6 = ipv6Addrs[i]
-                let key = `host:ip6:${ip6}`
-                this.hostsdb[key] = hostbymac
-              }
-            }
-
-            hostbymac.update(o);
-          }
-          hostbymac._mark = true;
-          if (hostbyip) {
-            hostbyip._mark = true;
-          }
-          // two mac have the same IP,  pick the latest, until the otherone update itself
-          if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
-            log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
-            if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
-              this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
-            }
-          }
-          await hostbymac.cleanV6()
-          if (this.type == "server") {
-            await hostbymac.applyPolicyAsync()
-          }
-          // call apply policy before to ensure policy data is loaded before device indentification
-          await this.syncHost(hostbymac, true)
-        })
-        let removedHosts = [];
-        /*
-        for (let h in this.hostsdb) {
-            let hostbymac = this.hostsdb[h];
-            if (hostbymac) {
-                log.info("BEFORE CLEANING CHECKING MARKING:", h,hostbymac.o.mac,hostbymac._mark);
-            }
-        }
-        */
-        let allIPv6Addrs = [];
-        let allIPv4Addrs = [];
-
-        let myIp = sysManager.myIp();
-
-        for (let h in this.hostsdb) {
-          let hostbymac = this.hostsdb[h];
-          if (hostbymac && h.startsWith("host:mac")) {
-            if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
-              if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
-                allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
-              }
-            }
-            if (hostbymac.o.ipv4Addr!=null && hostbymac.o.ipv4Addr != myIp) {
-              allIPv4Addrs.push(hostbymac.o.ipv4Addr);
-            }
-          }
-          if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
-            let index = this.hosts.all.indexOf(this.hostsdb[h]);
-            if (index!=-1) {
-              this.hosts.all.splice(index,1);
-              log.info("Removing host due to sweeping");
-            }
-            removedHosts.push(h);
-          }  else {
-            if (this.hostsdb[h]) {
-              //this.hostsdb[h]._mark = false;
-            }
+        let ipv6Addrs = hostbymac.ipv6Addr
+        if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+          for(let i in ipv6Addrs) {
+            let ip6 = ipv6Addrs[i]
+            let key = `host:ip6:${ip6}`
+            this.hostsdb[key] = hostbymac
           }
         }
-        for (let h in removedHosts) {
-          delete this.hostsdb[removedHosts[h]];
+
+      } else {
+        if (o.ipv4!=hostbymac.o.ipv4) {
+          // the physical host get a new ipv4 address
+          //
+          this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
         }
-        log.debug("removing:hosts", removedHosts);
-        this.hosts.all.sort(function (a, b) {
-          return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
-        })
-        this.getHostsActive = null;
-        if (this.type === "server") {
-          spoofer.validateV6Spoofs(allIPv6Addrs);
-          spoofer.validateV4Spoofs(allIPv4Addrs);
+        this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
+
+        let ipv6Addrs = hostbymac.ipv6Addr
+        if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+          for(let i in ipv6Addrs) {
+            let ip6 = ipv6Addrs[i]
+            let key = `host:ip6:${ip6}`
+            this.hostsdb[key] = hostbymac
+          }
         }
-        log.info("done Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
-        callback(null, this.hosts.all);
-      });
-    });
+
+        hostbymac.update(o);
+      }
+      hostbymac._mark = true;
+      if (hostbyip) {
+        hostbyip._mark = true;
+      }
+      // two mac have the same IP,  pick the latest, until the otherone update itself
+      if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
+        log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
+        if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
+          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        }
+      }
+      await hostbymac.cleanV6()
+      if (this.type == "server") {
+        await hostbymac.applyPolicyAsync()
+      }
+      // call apply policy before to ensure policy data is loaded before device indentification
+      await this.syncHost(hostbymac, true)
+    })
+    let removedHosts = [];
+    /*
+    for (let h in this.hostsdb) {
+        let hostbymac = this.hostsdb[h];
+        if (hostbymac) {
+            log.info("BEFORE CLEANING CHECKING MARKING:", h,hostbymac.o.mac,hostbymac._mark);
+        }
+    }
+    */
+    let allIPv6Addrs = [];
+    let allIPv4Addrs = [];
+
+    let myIp = sysManager.myIp();
+
+    for (let h in this.hostsdb) {
+      let hostbymac = this.hostsdb[h];
+      if (hostbymac && h.startsWith("host:mac")) {
+        if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
+          if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
+            allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
+          }
+        }
+        if (hostbymac.o.ipv4Addr!=null && hostbymac.o.ipv4Addr != myIp) {
+          allIPv4Addrs.push(hostbymac.o.ipv4Addr);
+        }
+      }
+      if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
+        let index = this.hosts.all.indexOf(this.hostsdb[h]);
+        if (index!=-1) {
+          this.hosts.all.splice(index,1);
+          log.info("Removing host due to sweeping");
+        }
+        removedHosts.push(h);
+      }  else {
+        if (this.hostsdb[h]) {
+          //this.hostsdb[h]._mark = false;
+        }
+      }
+    }
+    for (let h in removedHosts) {
+      delete this.hostsdb[removedHosts[h]];
+    }
+    log.debug("removing:hosts", removedHosts);
+    this.hosts.all.sort(function (a, b) {
+      return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
+    })
+    this.getHostsActive = null;
+    if (this.type === "server") {
+      spoofer.validateV6Spoofs(allIPv6Addrs);
+      spoofer.validateV4Spoofs(allIPv4Addrs);
+    }
+    log.info("done Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
+    return this.hosts.all;
   }
 
   setPolicyAsync(name, data) {
@@ -1344,6 +1324,9 @@ module.exports = class HostManager {
                 type: 'FW_NOTIFICATION',
                 titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
                 bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
                 payload: {
                   profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
                 }

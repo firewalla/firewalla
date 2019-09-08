@@ -23,36 +23,6 @@ let SimpleCache = new _SimpleCache("macCache",60*10);
 
 const Promise = require('bluebird')
 
-function getMACAndVendor(ipaddress, cb) {
-
-  // get MAC Address first
-  let mac_address = null;
-  let mac_address_vendor = null;
-  getMAC(ipaddress, (err, result) => {
-    if(err) {
-      log.error("Failed to get MAC Address for IP " + host.ipv4Addr + ", err: " + err);
-      cb(err);
-      return;
-    } else {
-      mac_address = result;
-    }
-
-    // get MAC OU company
-    cb(err, {mac_address: mac_address});
-    /*
-    mac.lookup(mac_address, (err, result) => {
-      if(err) {
-        log.error("Failed to get vendor info for MAC " + mac_address + ", err: " + err);
-      } else {
-        mac_address_vendor = result;
-      }
-
-      cb(err, {mac_address: mac_address, mac_address_vendor: mac_address_vendor});
-    });
-    */
-  });
-}
-
 function getMAC(ipaddress, cb) {
 
   let _mac = SimpleCache.lookup(ipaddress);
@@ -63,7 +33,7 @@ function getMAC(ipaddress, cb) {
   // ping the ip address to encourage the kernel to populate the arp tables
   let ping = spawn("ping", ["-c", "1", ipaddress ]);
 
-  ping.on('exit', function (code) {
+  ping.on('exit', function () {
     // not bothered if ping did not work
 
     let arp = spawn("cat", ["/proc/net/arp"] );
@@ -78,15 +48,15 @@ function getMAC(ipaddress, cb) {
 
     arp.on('close', function (code) {
       if (code != 0) {
-	      log.info("Error running arp " + code + " " + errstream);
-	      cb(true, code);
+        log.info("Error running arp " + code + " " + errstream);
+        cb(true, code);
       }
       let table = buffer.split('\n');
       for ( let l = 0; l < table.length; l++) {
 
-	// parse this format
-	//IP address       HW type     Flags       HW address            Mask     Device
-	//192.168.1.1      0x1         0x2         50:67:f0:8c:7a:3f     *        em1
+        // parse this format
+        //IP address       HW type     Flags       HW address            Mask     Device
+        //192.168.1.1      0x1         0x2         50:67:f0:8c:7a:3f     *        em1
 
         if (l == 0) continue;
 
@@ -96,7 +66,7 @@ function getMAC(ipaddress, cb) {
              cb(false,null);
              return;
           }
-          SimpleCache.insert(ipaddress,mac); 
+          SimpleCache.insert(ipaddress,mac);
           cb(false, mac);
           return;
         }
@@ -109,6 +79,5 @@ function getMAC(ipaddress, cb) {
 
 module.exports = {
   getMAC:getMAC,
-  getMACAsync: Promise.promisify(getMAC),
-  getMACAndVendor:getMACAndVendor
+  getMACAsync: Promise.promisify(getMAC)
 }

@@ -12,9 +12,6 @@ let jsonfile = require('jsonfile')
 let jsWriteFile = Promise.promisify(jsonfile.writeFile);
 let jsReadFile = Promise.promisify(jsonfile.readFile);
 
-let license = null;
-let signature = null;
-
 async function getLicenseAsync() {
   try {
     return jsReadFile(licensePath);
@@ -50,7 +47,6 @@ function getLegacyLicense() {
   }
   let licenseobj = JSON.parse(license);
   license = licenseobj.DATA;
-  signature = licenseobj.SIGNATURE;
   return licenseobj;
 }
 
@@ -62,8 +58,6 @@ function getLicenseLicense() {
     return null;
   }
 }
-
-function verifyLicense(license) {}
 
 function writeLicense(license) {
   return jsWriteFile(licensePath, license, {
@@ -77,7 +71,6 @@ function writeLicenseAsync(license) {
 
 module.exports = {
   getLicense: getLicense,
-  verifyLicense: verifyLicense,
   writeLicense: writeLicense,
   licensePath: licensePath,
   getLicenseSync: getLicenseSync,

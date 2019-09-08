@@ -28,13 +28,8 @@ const f = require("../net2/Firewalla.js")
 
 const Promise = require('bluebird');
 
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager('info');
-
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
-
-const flowUtil = require('../net2/FlowUtil.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
