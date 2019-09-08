@@ -279,6 +279,7 @@ if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.js
 fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+sudo setcap cap_net_raw+eip $(eval readlink -f `which node`)
 
 # Take care of upgrade differently
 

@@ -4,9 +4,11 @@ FW_PLATFORM_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 UNAME=$(uname -m)
 
+YELLOW=yellow
+
 case "$UNAME" in
 "x86_64")
-  source $FW_PLATFORM_DIR/docker/platform.sh
+  source $FW_PLATFORM_DIR/$YELLOW/platform.sh
   FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/docker
   ;;
 "aarch64")
