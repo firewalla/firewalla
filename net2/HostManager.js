@@ -836,6 +836,12 @@ module.exports = class HostManager {
         await this.legacyHostFlag(json)
 
         json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
+        const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
+        if(fnlFlag === "1") {
+          json.forceNotifLocal = true;
+        } else {
+          json.forceNotifLocal = false;
+        }
 
         // for any pi doesn't have firstBinding key, they are old versions
         let firstBinding = await rclient.getAsync("firstBinding")
@@ -1314,6 +1320,9 @@ module.exports = class HostManager {
                 type: 'FW_NOTIFICATION',
                 titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
                 bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
                 payload: {
                   profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
                 }
