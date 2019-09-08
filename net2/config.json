@@ -77,7 +77,8 @@
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "VPNCheckPlugin": {},
-    "SafeSearchPlugin": {}
+    "SafeSearchPlugin": {},
+    "RemoteNotificationSensor": {}
   },
   "intels": [
     "DedupAlarm",
