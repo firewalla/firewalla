@@ -32,26 +32,63 @@ const bone = require("../lib/Bone.js");
 
 const zlib = require('zlib');
 
+const fs = require('fs');
+
 const Promise = require('bluebird');
 
+Promise.promisifyAll(fs);
+
 const inflateAsync = Promise.promisify(zlib.inflate);
+
+const intelCacheFile = `${f.getUserConfigFolder()}/intel/intel_cache.file`;
 
 class IntelLocalCachePlugin extends Sensor {
 
   async loadCacheFromBone() {
     log.info(`Loading intel cache from cloud...`);
+    const data = await bone.hashsetAsync(hashKey);
+    if(data) {
+      const bf = this.loadCacheFromBase64(data);
+      if(bf) {
+        this.bf = bf;
+      }
+    }
+
+    if(!this.bf) {
+      // fallback to load from local file system
+      this.loadCacheFromLocal(intelCacheFile);
+    }
+  }
+
+  async loadCacheFromLocal(path) {
+    try {
+      await fs.accessAsync(path, fs.constants.R_OK);
+      const data = await fs.readFileAsync(path,{encoding: 'utf8'});
+      if(data) {
+        const bf = this.loadCacheFromBase64(data);
+        if(bf) {
+          this.bf = bf;
+        }
+      }
+    } catch(err) {
+      log.info("Local intel file not exist, skipping...");
+      return;
+    }
+  }
+
+  async loadCacheFromBase64(data) {
     try {
       const data = await bone.hashsetAsync(hashKey)
       const buffer = Buffer.from(data, 'base64');
       const decompressedData = await inflateAsync(buffer);
       const decompressedString = decompressedData.toString();
       const payload = JSON.parse(decompressedString);
-      // jsonfile.writeFileSync("/tmp/x.json", payload);
-      this.bf = new BloomFilter(payload, 16);
+      const bf = new BloomFilter(payload, 16);
       log.info(`Intel cache is loaded successfully! cache size ${decompressedString.length}`);
-    } catch (err) {
-      log.error(`Failed to load intel cache from cloud, err: ${err}`);
-      this.bf = null;
+      return bf;
+    } catch(err) {
+      log.error(`Failed to load cache data, err: ${err}`);
+      return null;
     }
   }
 
