@@ -472,6 +472,10 @@ class IntelAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
+    const url = this["p.dest.url"];
+    if(url) {
+      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port"];
+    }
     return ["p.device.mac", "p.dest.name", "p.dest.port"];
   }
 
