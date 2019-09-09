@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GATEWAY_6=`ip -6 r | grep default | awk '{print $3}'`
+GATEWAY_6=`ip -6 r | grep default | head -n 1 | awk '{print $3}'`
 
 GOOGLE_IP_6=`dig +short AAAA www.google.com | head -n 1`
 
