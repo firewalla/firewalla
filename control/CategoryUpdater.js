@@ -77,7 +77,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
           sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
             if (event.category) {
-              this.recycleIPSet(event.category)
+              this.recycleIPSet(event.category);
+              domainBlock.updateCategoryBlock(event.category);
             }
           });
         }
@@ -182,6 +183,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     return rclient.sismemberAsync(this.getExcludeCategoryKey(category), domain)
   }
+  async defaultDomainExists(category, domain) {
+    if (!this.isActivated(category))
+      return false
+    const defaultDomains = await this.getDefaultDomains(category) || [];
+    return defaultDomains.indexOf(domain) > -1
+  }
+  async dynamicCategoryDomainExists(category, domain) {
+    if (!this.isActivated(category))
+      return false
+    const dynamicCategoryDomains = await this.getDomains(category) || [];
+    return dynamicCategoryDomains.indexOf(domain) > -1
+  }
 
   async getDomainsWithExpireTime(category) {
     const key = this.getCategoryKey(category)
@@ -235,7 +248,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
     await this.updateIPSetByDomain(category, d);
     await this.filterIPSetByDomain(category);
-    await this.updateCategoryBlock(category, d);
+    const dynamicCategoryDomainExists = await this.dynamicCategoryDomainExists(category, d)
+    const defaultDomainExists = await this.defaultDomainExists(category, d);
+    if (!dynamicCategoryDomainExists && !defaultDomainExists) {
+      domainBlock.updateCategoryBlock(category);
+    }
   }
 
   getDomainMapping(domain) {
@@ -468,25 +485,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
 
     return rclient.zremrangebyscoreAsync(key, '-inf', date)
-  }
-  async updateCategoryBlock(category, domain) {
-    domain = domain || "";
-    if (domain.startsWith("*.")) {
-      domain = domain.substring(2);
-    }
-    const PM2 = require('../alarm/PolicyManager2.js');
-    const pm2 = new PM2();
-    const policies = await pm2.loadActivePoliciesAsync();
-    for (const policy of policies) {
-      if (policy.type == "category" && policy.target == category && policy.dnsmasq_entry) {
-        domainBlock.blockDomain(domain, {
-          scope: policy.scope,
-          isCategory: true,
-          category: category,
-          dnsmasq_entry: true
-        })
-      }
-    }
   }
 }
 

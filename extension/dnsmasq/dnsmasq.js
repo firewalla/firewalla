@@ -31,6 +31,7 @@ const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
 const LOCAL_DEVICE_DOMAIN = FILTER_DIR + "/local_device_domain.conf";
 const LOCAL_DEVICE_DOMAIN_KEY = "local:device:domain"
+const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -382,26 +383,114 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
 
     let entry = "";
-    const HOLE_IP = options.use_blue_hole ? BLUE_HOLE_IP : BLACK_HOLE_IP;
     for (const domain of domains) {
       if (options.scope && options.scope.length > 0) {
         for (const mac of options.scope) {
-          entry += `address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}\n`
+          entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
         }
       } else {
-        entry += `address=/${domain}/${HOLE_IP}\n`
+        entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
       }
     }
-    const file = options.isCategory ? `${FILTER_DIR}/policy_${options.category}_filter.conf` : policyFilterFile;
     try {
-      await fs.appendFileAsync(file, entry);
+      await fs.appendFileAsync(policyFilterFile, entry);
     } catch (err) {
       log.error("Failed to add policy filter entry into file:", err);
     } finally {
       this.workingInProgress = false;
     }
   }
-
+  async addPolicyCategoryFilterEntry(domains, options) {
+    log.info("addPolicyCategoryFilterEntry", domains, options)
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+    options = options || {};
+    const category = options.category;
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    try {
+      let entry = "", macSetEntry = "";
+      for (const domain of domains) {
+        entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
+      }
+      if (options.scope && options.scope.length > 0) {
+        for (const mac of options.scope) {
+          macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
+        }
+      } else {
+        macSetEntry = `mac-address-tag=%${systemLevelMac}$${category}_block\n`;
+      }
+      await fs.writeFileAsync(categoryBlockDomainsFile, entry);
+      await fs.appendFileAsync(categoryBlcokMacSetFile, macSetEntry);
+    } catch (err) {
+      log.error("Failed to add category mact set entry into file:", err);
+    } finally {
+      this.workingInProgress = false; // make sure the flag is reset back
+    }
+  }
+  async removePolicyCategoryFilterEntry(domains, options) {
+    log.info("removePolicyCategoryFilterEntry", domains, options)
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+    options = options || {};
+    const category = options.category;
+    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    let macSetEntry = [];
+    if (options.scope && options.scope.length > 0) {
+      for (const mac of options.scope) {
+        macSetEntry.push(`mac-address-tag=%${mac.toUpperCase()}$${category}_block`)
+      }
+    } else {
+      macSetEntry.push(`mac-address-tag=%${systemLevelMac}$${category}_block`)
+    }
+    try {
+      let data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
+      let newData = data.split("\n").filter((line) => {
+        return macSetEntry.indexOf(line) == -1
+      }).join("\n");
+      await fs.writeFileAsync(categoryBlcokMacSetFile, newData);
+    } catch (err) {
+      if (err.code != "ENOENT") {
+        log.error("Failed to update category mact set entry file:", err);
+      }
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+  async updatePolicyCategoryFilterEntry(domains, options) {
+    log.info("updatePolicyCategoryFilterEntry", domains, options)
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+    options = options || {};
+    const category = options.category;
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    let entry = "";
+    for (const domain of domains) {
+      entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
+    }
+    try {
+      await fs.writeFileAsync(categoryBlockDomainsFile, entry);
+      //check dnsmasq need restart or not
+      const data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
+      if (data.indexOf(`$${category}_block`) > -1) this.restartDnsmasq();
+    } catch (err) {
+      if (err.code != 'ENOENT') {
+        log.error("Failed to update category entry into file:", err);
+      }
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
   async removePolicyFilterEntry(domains, options) {
     log.info("removePolicyFilterEntry", domains, options)
     options = options || {}
@@ -411,23 +500,21 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     let entry = [];
-    const HOLE_IP = options.use_blue_hole ? BLUE_HOLE_IP : BLACK_HOLE_IP;
     for (const domain of domains) {
       if (options.scope && options.scope.length > 0) {
         for (const mac of options.scope) {
-          entry.push(`address=/${domain}/${HOLE_IP}%${mac.toUpperCase()}`)
+          entry.push(`address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}`)
         }
       } else {
-        entry.push(`address=/${domain}/${HOLE_IP}`);
+        entry.push(`address=/${domain}/${BLACK_HOLE_IP}`);
       }
     }
-    const file = options.isCategory ? `${FILTER_DIR}/policy_${options.category}_filter.conf` : policyFilterFile;
     try {
-      let data = await fs.readFileAsync(file, 'utf8');
+      let data = await fs.readFileAsync(policyFilterFile, 'utf8');
       let newData = data.split("\n").filter((line) => {
         return entry.indexOf(line) == -1
       }).join("\n");
-      await fs.writeFileAsync(file, newData);
+      await fs.writeFileAsync(policyFilterFile, newData);
     } catch (err) {
       log.error("Failed to write policy data file:", err);
     } finally {

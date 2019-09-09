@@ -208,7 +208,7 @@ class DomainBlock {
     const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
     list.push.apply(list, addresses)  // concat arrays
 
-    if(!options.exactMatch) {
+    if (!options.exactMatch) {
       const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
       list.push.apply(list, patternAddresses)
     }
@@ -241,7 +241,7 @@ class DomainBlock {
       set[addr] = 1
     })
 
-    if(!options.exactMatch) {
+    if (!options.exactMatch) {
       const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
       patternAddresses.forEach((addr) => {
         set[addr] = 1
@@ -268,46 +268,28 @@ class DomainBlock {
   }
   async blockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
-    await dnsmasq.addPolicyFilterEntry(domains, options).catch((err) => undefined);
+    await dnsmasq.addPolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
     sem.emitEvent({
       type: 'ReloadDNSRule',
       message: 'DNSMASQ filter rule is updated',
       toProcess: 'FireMain',
       suppressEventLogging: true
     })
-    sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', async (event) => {
-      let domain;
-      switch (event.action) {
-        case "addIncludeDomain":
-        case "removeExcludeDomain":
-          domain = this.patternDomain(event.domain);
-          this.blockDomain(domain, options);
-          break;
-        case "removeIncludeDomain":
-        case "addExcludeDomain":
-          //there are two rules added by user in same category: *.a.com and a.com
-          //if user only remove rule: *.a.com
-          //a.com should be blocked
-          const finalDomains = await this.getCategoryDomains(event.category);
-          domain = this.patternDomain(event.domain);
-          if (finalDomains.indexOf(domain) == -1) {
-            this.unblockDomain(domain, options)
-          }
-          break;
-        default: ;
-      }
-    });
   }
 
   async unblockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
-    await dnsmasq.removePolicyFilterEntry(domains, options).catch((err) => undefined);
+    await dnsmasq.removePolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
     sem.emitEvent({
       type: 'ReloadDNSRule',
       message: 'DNSMASQ filter rule is updated',
       toProcess: 'FireMain',
       suppressEventLogging: true,
     })
+  }
+  async updateCategoryBlock(category) {
+    const domains = await this.getCategoryDomains(category);
+    await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
   }
   async getCategoryDomains(category) {
     const CategoryUpdater = require('./CategoryUpdater.js');
