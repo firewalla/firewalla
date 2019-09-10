@@ -246,12 +246,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
     log.debug(`Found a ${category} domain: ${d}`)
     const dynamicCategoryDomainExists = await this.dynamicCategoryDomainExists(category, d)
     const defaultDomainExists = await this.defaultDomainExists(category, d);
-    if (!dynamicCategoryDomainExists && !defaultDomainExists) {
-      domainBlock.updateCategoryBlock(category);
-    }
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
     await this.updateIPSetByDomain(category, d);
     await this.filterIPSetByDomain(category);
+    if (!dynamicCategoryDomainExists && !defaultDomainExists) {
+      domainBlock.updateCategoryBlock(category);
+    }
   }
 
   getDomainMapping(domain) {
