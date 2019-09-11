@@ -3240,8 +3240,10 @@ class netBot extends ControllerBot {
                 mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
               }
               await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
+              const dnsmasqPolicy = {secondaryDnsServers: dnsServers};
               if (dhcpRange)
-                this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
+                dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
+              this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
                 let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
@@ -3258,8 +3260,10 @@ class netBot extends ControllerBot {
               updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
               const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
               await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
+              const dnsmasqPolicy = {alternativeDnsServers: dnsServers};
               if (dhcpRange)
-                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers, alternativeDhcpRange: dhcpRange});
+                dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
+              this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
                 let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
@@ -3281,8 +3285,10 @@ class netBot extends ControllerBot {
               updatedWifiConfig.channel = intf.channel || "5";
               const mergedWifiInterface = Object.assign({}, currentWifiInterface, updatedWifiConfig); // if ip2 is not defined, it will be inherited from previous settings
               await fc.updateUserConfig({wifiInterface: mergedWifiInterface});
+              const dnsmasqPolicy = {wifiDnsServers: dnsServers};
               if (dhcpRange)
-                this._dnsmasq("0.0.0.0", {wifiDnsServers: dnsServers, wifiDhcpRange: dhcpRange});
+                dnsmasqPolicy.wifiDhcpRange = dhcpRange;
+              this._dnsmasq("0.0.0.0", dnsmasqPolicy)
               this.simpleTxData(msg, {}, null, callback);
               break;
             }
