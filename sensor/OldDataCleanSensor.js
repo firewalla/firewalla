@@ -47,11 +47,9 @@ const migrationPrefix = "oldDataMigration";
 
 const CommonKeys = require('../net2/CommonKeys.js');
 
-let fConfig = require('../net2/config.js').getConfig();
-
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
-};
+}
 
 class OldDataCleanSensor extends Sensor {
   constructor() {
@@ -140,15 +138,11 @@ class OldDataCleanSensor extends Sensor {
   }
 
   cleanSumFlow() {
-    
+
   }
 
   cleanHourlyFlow() {
-    
-  }
 
-  cleanAggrFlow() {
-    
   }
 
   async cleanHourlyStats() {
@@ -294,10 +288,10 @@ class OldDataCleanSensor extends Sensor {
 
   async cleanupAlarmExtendedKeys() {
     log.info("Cleaning up alarm extended keys");
-    
+
     const basicAlarms = await am2.listBasicAlarms();
     const extendedAlarms = await am2.listExtendedAlarms();
-    
+
     const diff = arrayDiff(extendedAlarms, basicAlarms);
 
     for (let index = 0; index < diff.length; index++) {
@@ -386,7 +380,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
 //    await this.regularClean("sumflow", "sumflow:*");
-//    await this.regularClean("aggrflow", "aggrflow:*");
       await this.regularClean("syssumflow", "syssumflow:*");
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
@@ -410,7 +403,7 @@ class OldDataCleanSensor extends Sensor {
       log.info("scheduledJob is executed successfully");
     } catch(err) {
       log.error("Failed to run scheduled job, err:", err);
-    };
+    }
   }
 
   listen() {
