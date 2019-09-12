@@ -226,7 +226,7 @@ class DestIPFoundHook extends Hook {
   }
 
   async updateCountryIP(intel) {
-    if(intel.host && intel.country) {
+    if(intel.ip && intel.country) {
       await countryUpdater.updateIP(intel.country, intel.ip)
     }
   }
@@ -265,7 +265,7 @@ class DestIPFoundHook extends Hook {
       } catch(e) {
         ip = flow;
       }
-    } 
+    }
     options = options || {};
 
     if (sysManager.isLocalIP(ip)) {
