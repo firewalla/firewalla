@@ -690,6 +690,8 @@ module.exports = class HostManager {
 
     // Delete anything that may be private
     if (json.ssh) delete json.ssh
+    if (json.remoteSupportConnID) delete json.remoteSupportConnID;
+    if (json.remoteSupportPassword) delete json.remoteSupportPassword;
 
     return json;
   }
