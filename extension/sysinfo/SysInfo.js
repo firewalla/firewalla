@@ -26,7 +26,7 @@ const config = require("../../net2/config.js").getConfig();
 
 const df = require('node-df');
 
-const os  = require('../../vendor_lib/osutils.js');
+const os = require('../../vendor_lib/osutils.js');
 
 const exec = require('child-process-promise').exec;
 
@@ -66,25 +66,30 @@ let multiProfileSupport = false;
 getMultiProfileSupportFlag();
 
 async function update() {
-  os.cpuUsage((v) => {
-    log.debug( 'CPU Usage (%): ' + v );
-    cpuUsage = v;
-  });
+  await Promise.all([
+    // this takes 10s
+    os.cpuUsage().then((v) => cpuUsage = v),
 
-  await getRealMemoryUsage();
-  getTemp();
-  await getConns();
-  await getRedisMemoryUsage();
-  await getThreadInfo();
-  await getIntelQueueSize();
-  await getDiskInfo();
-  await getRateLimitInfo();
-  await getMultiProfileSupportFlag();
+    // Redis
+    getRedisMemoryUsage()
+      .then(getConns)
+      .then(getIntelQueueSize)
+      .then(getRateLimitInfo),
+
+    // bash
+    getRealMemoryUsage()
+      .then(getTemp)
+      .then(getThreadInfo)
+      .then(getDiskInfo)
+      .then(getMultiProfileSupportFlag)
+  ])
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
   }
 }
+
+
 
 function startUpdating() {
   updateFlag = 1;
@@ -165,7 +170,7 @@ async function getRealMemoryUsage() {
   }
 }
 
-function getTemp() {
+async function getTemp() {
   try {
     curTemp = platform.getCpuTemperature();
     log.debug("Current Temp: ", curTemp);

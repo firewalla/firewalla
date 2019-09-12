@@ -201,7 +201,7 @@ class IntelTool {
     }
   }
 
-  checkIntelFromCloud(ipList, domainList, fd, appList, flow) {
+  checkIntelFromCloud(ipList, domainList, fd) {
     log.debug("Checking intel for",fd, ipList, domainList);
     if (fd == null) {
       fd = 'in';
@@ -210,9 +210,7 @@ class IntelTool {
     let flowList = [];
     let _ipList = [];
     let _aList = [];
-    let aList = [];
     let _hList = [];
-    let hList = [];
 
     ipList.forEach((ip)=>{
       _ipList = _ipList.concat(flowUtil.hashHost(ip));

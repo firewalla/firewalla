@@ -115,22 +115,21 @@ class NetworkTool {
   }
 
   // same as listInterfaces() but filters out non-local interfaces
-  getLocalNetworkInterface() {
+  async getLocalNetworkInterface() {
     let intfs = fConfig.discovery && fConfig.discovery.networkInterfaces;
     if (!intfs) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    return this.listInterfaces().then(list => {
-      let list2 = list.filter(x => {
-        return intfs.some(y => y === x.name);
-      });
-      if (list2.length === 0) {
-        return null;
-      } else {
-        return list2;
-      }
+    const list = await this.listInterfaces()
+    let list2 = list.filter(x => {
+      return intfs.some(y => y === x.name);
     });
+    if (list2.length === 0) {
+      return null;
+    } else {
+      return list2;
+    }
   }
 
   // same as getSubnet() but filters non-local interfaces
