@@ -314,6 +314,10 @@ function isMonitor() {
   return process.title === "FireMon";
 }
 
+function isApi() {
+  return process.title === "FireApi";
+}
+
 function getProcessName() {
   return process.title;
 }
@@ -357,6 +361,7 @@ module.exports = {
 
   isMain:isMain,
   isMonitor:isMonitor,
+  isApi:isApi,
   getLastCommitDate:getLastCommitDate,
 
   getProcessName:getProcessName,
