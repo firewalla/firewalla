@@ -211,11 +211,15 @@ class CountryUpdater extends CategoryUpdaterBase {
       return
     }
 
-    const ipset = iptool.isV4Format(ip) ?
-      this.getIPSetName(category) :
-      iptool.isV6Format(ip) ?  this.getIPSetNameForIPV6(category) : null
+    let ipset, key;
 
-    if (!ipset) {
+    if (iptool.isV4Format(ip)) {
+      ipset = this.getIPSetName(category)
+      key = this.getDynamicIPv4Key(category)
+    } else if (iptool.isV6Format(ip)) {
+      ipset = this.getIPSetNameForIPV6(category)
+      key = this.getDynamicIPv6Key(category)
+    } else {
       log.error('Invalid IP', ip)
       return
     }
@@ -228,6 +232,10 @@ class CountryUpdater extends CategoryUpdaterBase {
       if (err.stderr.indexOf(`is NOT in set ${ipset}`) > 0)
         await Block.block(ip, this.getIPSetName(category));
     }
+
+    const now = Math.floor(new Date() / 1000)
+
+    await rclient.zaddAsync(key, now, ip)
   }
 }
 
