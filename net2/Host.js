@@ -484,7 +484,7 @@ class Host {
               rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
                 .catch(err => log.error("Unable to set spoofing in redis", err))
                 .then(() => this.dnsmasq.onSpoofChanged());
-              log.info("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
+              log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
               this.spoofing = true;
             }).catch((err) => {
               log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);

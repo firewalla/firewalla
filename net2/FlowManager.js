@@ -134,9 +134,8 @@ class FlowGraph {
 }
 
 module.exports = class FlowManager {
-  constructor(loglevel) {
+  constructor() {
     if (instance == null) {
-      let cache = {};
       instance = this;
     }
     return instance;
@@ -365,7 +364,7 @@ module.exports = class FlowManager {
 
     Object.keys(flow1).map((k) => {
       let sum = flows.reduce((total, flow) => {
-        if(flow[k] && parseInt(flow[k]) !== NaN) {
+        if(flow[k] && !isNaN(parseInt(flow[k]))) {
           return total + parseInt(flow[k]);
         } else {
           return total;
@@ -379,7 +378,7 @@ module.exports = class FlowManager {
 
   sumBytes(flow) {
     return Object.keys(flow).reduce((total, key) => {
-      if(flow[key] && parseInt(flow[key]) !== NaN) {
+      if(flow[key] && !isNaN(parseInt(flow[key]))) {
         return total + parseInt(flow[key]);
       }
       return total;
@@ -387,8 +386,6 @@ module.exports = class FlowManager {
   }
 
   flowToLegacyFormat(flow) {
-    let result = [];
-
     return Object.keys(flow)
       .sort((a,b) => b-a)
       .map((key) => {
@@ -641,11 +638,11 @@ module.exports = class FlowManager {
     }
 
     /*
-        onsole.log("--------------appsdb ---- ");
-        log.info(appdb);
-        log.info("--------------activitydb---- ");
-        log.info(activitydb);
-        */
+    onsole.log("--------------appsdb ---- ");
+    log.info(appdb);
+    log.info("--------------activitydb---- ");
+    log.info(activitydb);
+    */
     //log.info(activitydb);
 
     let flowobj = {id:0,app:{},activity:{}};
@@ -659,9 +656,6 @@ module.exports = class FlowManager {
       }
       // f.name is i, which is the name of app
       flowobj.app[f.name]= f.flowarraySorted(true);
-      for (let k in flowobj.app[f.name]) {
-        let _f = flowobj.app[f.name][k];
-      }
     }
     for (let i in activitydb) {
       let f = new FlowGraph(i);
@@ -669,11 +663,7 @@ module.exports = class FlowManager {
         f.addFlow(activitydb[i][j]);
         hasFlows = true;
       }
-      flowobj.activity[f.name]=f.flowarraySorted(true);;
-      for (let k in flowobj.activity[f.name]) {
-        let _f = flowobj.activity[f.name][k];
-      }
-
+      flowobj.activity[f.name]=f.flowarraySorted(true);
     }
     // linear these flows
 
@@ -766,45 +756,6 @@ module.exports = class FlowManager {
     } else {
       this.mergeFlow(flow, o);
     }
-  }
-
-  // conns in last 24 hours
-  // 2018.11.13 This function is not used
-  recentOutgoingConnections(mac, interval) {
-    interval = interval || 3600 * 24;
-
-    let key = "flow:conn:in:" + mac;
-    let to = new Date() / 1000;
-    let from = to - interval;
-
-    return rclient.zrevrangebyscoreAsync([key, to, from, "LIMIT", 0 , QUERY_MAX_FLOW])
-      .then((results) => {
-
-        if(results === null || results.length === 0)
-          return [];
-
-        let flowObjects = results
-          .map((x) => this.flowStringToJSON(x))
-          .filter((x) => this.isFlowValid(x));
-
-        let conndb = {};
-
-        flowObjects.forEach((flowObject) => {
-          this.appendFlow(conndb, flowObject);
-        });
-
-        let connArray = [];
-
-        for(let i in conndb) {
-          connArray.push(conndb[i]);
-        }
-
-        return connArray;
-
-      }).catch((err) => {
-        log.error("Failed to query flow data for ip", ip, ":", err, err.stack);
-        return;
-      });
   }
 
   async summarizeConnections(mac, direction, from, to, sortby, hours, resolve, saveStats) {
