@@ -82,9 +82,32 @@ class CategoryUpdater extends CategoryUpdaterBase {
           });
         }
       })
+      this.updateIPSetTasks = {};
+      this.filterIPSetTasks = {};
+      setInterval(() => {
+        this.executeIPSetTasks();
+      }, 30000); // execute IP set tasks once every 30 seconds
     }
 
     return instance
+  }
+
+  async executeIPSetTasks() {
+    const tempUpdateTasks = this.updateIPSetTasks;
+    this.updateIPSetTasks = {};
+    const tempFilterTasks = this.filterIPSetTasks;
+    this.filterIPSetTasks = {};
+    for (let key in tempUpdateTasks) {
+      const params = tempUpdateTasks[key];
+      log.info(`Apply category IP set update: ${params.category}, ${params.domain}, ${JSON.stringify(params.options)}`);
+      await this.updateIPSetByDomain(params.category, params.domain, params.options);
+    }
+
+    for (let key in tempFilterTasks) {
+      const params = tempFilterTasks[key];
+      log.info(`Apply category IP set filter: ${params.category}, ${JSON.stringify(params.options)}`);
+      await this.filterIPSetByDomain(params.category, params.options);
+    }
   }
 
   async getDomains(category) {
@@ -228,8 +251,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     log.debug(`Found a ${category} domain: ${d}`)
 
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
-    await this.updateIPSetByDomain(category, d)
-    await this.filterIPSetByDomain(category);
+    this.addUpdateIPSetByDomainTask(category, d);
+    this.addFilterIPSetByDomainTask(category);
   }
 
   getDomainMapping(domain) {
@@ -284,6 +307,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   }
 
+  addUpdateIPSetByDomainTask(category, domain, options) {
+    const key = `${category}_${domain}_${JSON.stringify(options)}`;
+    this.updateIPSetTasks[key] = {category: category, domain: domain, options: options};
+  }
+
   async filterIPSetByDomain(category, options) {
     if (!this.inited) return
 
@@ -304,6 +332,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
         }
       }
     }
+  }
+
+  addFilterIPSetByDomainTask(category, options) {
+    const key = `${category}_${JSON.stringify(options)}`;
+    this.filterIPSetTasks[key] = {category: category, options: options};
   }
 
   async _filterIPSetByDomain(category, domain, options) {
@@ -386,7 +419,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       const smappings = this.getSummedDomainMapping(domain)
       let array = [smappings, mappings.length]
 
-      array.push.apply(array, mappings)
+      array.push.apply(array, mappings, "AGGREGATE", "MAX");
 
       await rclient.zunionstoreAsync(array)
 
@@ -443,13 +476,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
         await domainBlock.resolveDomain(domainSuffix)
       }
 
-      await this.updateIPSetByDomain(category, domain, {useTemp: true}).catch((err) => {
-        log.error(`Failed to update ipset for domain ${domain}, err: ${err}`)
-      })
+      this.addUpdateIPSetByDomainTask(category, domain, {useTemp: true});
 
-      await this.filterIPSetByDomain(category, {useTemp: true}).catch((err) => {
-        log.error(`Failed to filter ipset for domain ${domain}, err: ${err}`)
-      })
+      this.addFilterIPSetByDomainTask(category, {useTemp: true});
     }
 
     await this.swapIpset(category);
