@@ -125,11 +125,16 @@ class Host {
   keepalive() {
     for (let i in this.ipv6Addr) {
       log.debug("keep alive ", this.mac,this.ipv6Addr[i]);
-      linux.ping6(this.ipv6Addr[i]);
+      setTimeout(() => {
+        linux.ping6(this.ipv6Addr[i]);
+      }, (i + 1) * 2000);
     }
+    let delay = 10 * 1000;
+    if (this.ipv6Addr)
+      delay += this.ipv6Addr.length * 2000;
     setTimeout(()=>{
       this.cleanV6();
-    },1000*10);
+    }, delay);
   }
 
   async cleanV6() {
