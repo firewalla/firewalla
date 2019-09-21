@@ -155,12 +155,14 @@ class FamilyProtectPlugin extends Sensor {
 
     async systemStart(dnsaddrs) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf();
+        await dnsmasq.updateResolvConf();
+        await dnsmasq.restartDnsmasq();
     }
 
     async systemStop() {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf();
+        await dnsmasq.updateResolvConf();
+        await dnsmasq.restartDnsmasq();
     }
 
     async perDeviceStart(macAddress, dnsaddrs) {
