@@ -79,7 +79,7 @@ log.info(`Loading data from path: ${path}`);
     }
   }
 
-  async loadCacheFromBase64(data) {
+  async loadCacheFromBase64() {
     try {
       const data = await bone.hashsetAsync(hashKey)
       const buffer = Buffer.from(data, 'base64');

@@ -42,7 +42,7 @@ let instance = null;
 class HttpFlow {
   constructor() {
     if(instance === null) {
-      instance = this;      
+      instance = this;
     }
     return instance;
   }
@@ -105,20 +105,19 @@ class HttpFlow {
 
       const srcIP = obj["id.orig_h"];
       const destIP = obj["id.resp_h"];
-      const destPort = obj["id.resp_p"];
       const host = obj.host;
       const uri = obj.uri;
       let localIP = null;
       let flowDirection = null;
 
-      if (sysManager.isLocalIP(srcIP) && sysManager.isLocalIP(destIP)) {
-        return; // ignore any local http traffic
-      }
-
-      if (sysManager.isLocalIP(srcIP) && sysManager.isLocalIP(destIP) === false) {
-        flowDirection = "outbound";
-        localIP = srcIP;
-      } else if (sysManager.isLocalIP(srcIP) === false && sysManager.isLocalIP(destIP)) {
+      if (sysManager.isLocalIP(srcIP)) {
+        if (sysManager.isLocalIP(destIP)) {
+          return; // ignore any local http traffic
+        } else {
+          flowDirection = "outbound";
+          localIP = srcIP;
+        }
+      } else if (sysManager.isLocalIP(destIP)) {
         flowDirection = "inbound";
         localIP = destIP;
       } else {
@@ -143,7 +142,7 @@ class HttpFlow {
           suppressEventLogging: true
         });
       }
-    
+
       const flowKey = `flow:http:${flowDirection}:${mac}`;
       const strdata = JSON.stringify(obj);
       const redisObj = [flowKey, obj.ts, strdata];
