@@ -5,6 +5,24 @@ shopt -s lastpipe
 usage() {
     echo "Usage: conn_check [-h] [-f \"files\"]"
     echo "   -f: wildcard accepted, defaut to /blog/current/conn.log"
+    echo ""
+    echo "State  | Meaning"
+    echo "---------------------------------------------"
+    echo "S0     | Connection attempt seen, no reply."
+    echo "S1     | Connection established, not terminated."
+    echo "SF     | Normal establishment and termination. Note that this is the same symbol as for state S1. You can tell"
+    echo "       | the two apart because for S1 there will not be any byte counts in the summary, while for SF there will be."
+    echo "REJ    | Connection attempt rejected."
+    echo "S2     | Connection established and close attempt by originator seen (but no reply from responder)."
+    echo "S3     | Connection established and close attempt by responder seen (but no reply from originator)."
+    echo "RSTO   | Connection established, originator aborted (sent a RST)."
+    echo "RSTR   | Responder sent a RST."
+    echo "RSTOS0 | Originator sent a SYN followed by a RST, we never saw a SYN-ACK from the responder."
+    echo "RSTRH  | Responder sent a SYN ACK followed by a RST, we never saw a SYN from the (purported) originator."
+    echo "SH     | Originator sent a SYN followed by a FIN, we never saw a SYN ACK from the responder"
+    echo "       | (hence the connection was “half” open)."
+    echo "SHR    | Responder sent a SYN ACK followed by a FIN, we never saw a SYN from the originator."
+    echo "OTH    | No SYN seen, just midstream traffic (a “partial connection” that was not later closed)."
     return
 }
 
