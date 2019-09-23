@@ -253,7 +253,7 @@ module.exports = class HostManager {
 
     json.cpuid = platform.getBoardSerial();
     json.updateTime = Date.now();
-    if (sysManager.sshPassword) {
+    if (sysManager.sshPassword && f.isApi()) {
       json.ssh = sysManager.sshPassword;
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
@@ -271,7 +271,7 @@ module.exports = class HostManager {
     json.remoteSupport = frp.started;
     json.model = platform.getName();
     json.branch = f.getBranch();
-    if(frp.started) {
+    if(frp.started && f.isApi()) {
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
     }
