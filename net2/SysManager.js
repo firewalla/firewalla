@@ -400,8 +400,7 @@ module.exports = class {
         }
         this.ddns = this.sysinfo["ddns"];
         this.publicIp = this.sysinfo["publicIp"];
-        var self = this;
-        //         log.info("System Manager Initialized with Config", this.sysinfo);
+        // log.info("System Manager Initialized with Config", this.sysinfo);
       }
       if (callback != null) {
         callback(err);
@@ -636,9 +635,10 @@ module.exports = class {
   inMySubnets4(ip4) {
     if (!iptool.isV4Format(ip4)) return false;
     else return (
-      iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
-      (this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) || false) ||
-      (this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) || false)
+      this.mySubnet() && iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
+      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) ||
+      this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) ||
+      false
     )
   }
 

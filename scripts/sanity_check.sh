@@ -235,10 +235,14 @@ check_hosts() {
 
         local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
         DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
-        if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
-            local DEVICE_ONLINE="yes"
-        else
-            local DEVICE_ONLINE="no"
+        if [[ ! -n $DEVICE_ONLINE_TS ]]; then
+            local DEVICE_ONLINE="N/A"
+            else
+                if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
+                    local DEVICE_ONLINE="yes"
+                else
+                    local DEVICE_ONLINE="no"
+                fi
         fi
 
         local COLOR=""

@@ -20,10 +20,6 @@ let Hook = require('./Hook.js');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let bone = require("../lib/Bone.js");
-
-let flowUtil = require("../net2/FlowUtil.js");
-
 let util = require('util');
 
 class NewDeviceHook extends Hook {
@@ -33,7 +29,7 @@ class NewDeviceHook extends Hook {
     this.queue = [];
   }
 
-  findMac(name, mac, from, retry) {
+  async findMac(name, mac, from, retry) {
 
     retry = retry || 0;
 
@@ -41,11 +37,8 @@ class NewDeviceHook extends Hook {
     let d = new Discovery("nmap", null, "info", false);
 
     // get ip address and mac vendor
-    d.discoverMac(mac, (err, result) => {
-      if(err) {
-        log.error("Failed to discover mac address", mac, ": " + err);
-        return;
-      }
+    try {
+      let result = await d.discoverMac(mac)
 
       if(!result) {
         // not found... kinda strange, hack??
@@ -55,7 +48,7 @@ class NewDeviceHook extends Hook {
         // if first time, try again in another 10 seconds
         if(retry === 0) {
           setTimeout(() => this.findMac(name, mac, from, retry + 1),
-                     10 * 1000);
+            10 * 1000);
         }
         return;
       }
@@ -75,7 +68,10 @@ class NewDeviceHook extends Hook {
       //   // alarm will be handled and created by "NewDevice" event
       //
       // });
-    });
+    } catch(err) {
+      log.error("Failed to discover mac address", mac, ": " + err);
+      return;
+    }
   }
 
   run() {

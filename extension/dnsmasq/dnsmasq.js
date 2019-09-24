@@ -384,7 +384,7 @@ module.exports = class DNSMASQ {
   }
 
   async addPolicyFilterEntry(domains, options) {
-    log.info("addPolicyFilterEntry", domains, options)
+    log.debug("addPolicyFilterEntry", domains, options)
     options = options || {}
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
@@ -410,8 +410,9 @@ module.exports = class DNSMASQ {
       this.workingInProgress = false;
     }
   }
+
   async addPolicyCategoryFilterEntry(domains, options) {
-    log.info("addPolicyCategoryFilterEntry", domains, options)
+    log.debug("addPolicyCategoryFilterEntry", domains, options)
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
@@ -441,8 +442,9 @@ module.exports = class DNSMASQ {
       this.workingInProgress = false; // make sure the flag is reset back
     }
   }
+
   async removePolicyCategoryFilterEntry(domains, options) {
-    log.info("removePolicyCategoryFilterEntry", domains, options)
+    log.debug("removePolicyCategoryFilterEntry", domains, options)
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
@@ -473,8 +475,9 @@ module.exports = class DNSMASQ {
       this.workingInProgress = false;
     }
   }
+
   async updatePolicyCategoryFilterEntry(domains, options) {
-    log.info("updatePolicyCategoryFilterEntry", domains, options)
+    log.debug("updatePolicyCategoryFilterEntry", domains, options)
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
@@ -501,8 +504,9 @@ module.exports = class DNSMASQ {
       this.workingInProgress = false;
     }
   }
+
   async removePolicyFilterEntry(domains, options) {
-    log.info("removePolicyFilterEntry", domains, options)
+    log.debug("removePolicyFilterEntry", domains, options)
     options = options || {}
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress");
