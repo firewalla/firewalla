@@ -36,6 +36,15 @@ check_file() {
     return 0
 }
 
+check_dmesg_ethernet() {
+    echo "----------------------- Ethernet Link Up/Down in dmesg ----------------------------"
+
+    dmesg | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
+
+    echo ""
+    echo ""
+}
+
 check_git() {
     _rc=0
     repo_dir=$1
@@ -318,6 +327,7 @@ if [ "$FAST" == false ]; then
     check_systemctl_services
     check_rejection
     check_exception
+    check_dmesg_ethernet
     check_reboot
     check_system_config
     check_sys_features
