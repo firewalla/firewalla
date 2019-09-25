@@ -51,7 +51,11 @@ class GuardianSensor extends Sensor {
     })
 
     extensionManager.onSet("guardianSocketioServer", (msg, data) => {
-      return this.setServer(data.server);
+      return this.setServer(data.server, data.region);
+    });
+
+    extensionManager.onGet("guardianSocketioRegion", (msg) => {
+      return this.getRegion();
     });
 
     extensionManager.onCmd("startGuardianSocketioServer", (msg, data) => {
