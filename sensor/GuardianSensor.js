@@ -138,7 +138,6 @@ class GuardianSensor extends Sensor {
     } else {
       this.socket = io.connect(server);
     }
-    this.socket = io.connect(server);
     if(!this.socket) {
       throw new Error("failed to init socket io");
     }
