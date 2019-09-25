@@ -134,7 +134,7 @@ class GuardianSensor extends Sensor {
     const region = await this.getRegion();
 
     if(region) {
-      this.socket = io.connect(server, {path: `/${region}`});
+      this.socket = io(server, {path: `/${region}/socket.io`});
     } else {
       this.socket = io.connect(server);
     }
