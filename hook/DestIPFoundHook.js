@@ -209,7 +209,7 @@ class DestIPFoundHook extends Hook {
 
   async enrichCountry(ip) {
     const ipinfo = await intelManager.ipinfo(ip);
-    return ipinfo.loc && ipinfo.loc.country || country.getCountry(ip);
+    return ipinfo && ipinfo.country || country.getCountry(ip);
   }
 
   async updateCategoryDomain(intel) {

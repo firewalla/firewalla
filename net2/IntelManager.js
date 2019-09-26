@@ -270,7 +270,7 @@ module.exports = class {
   }
   */
   async ipinfo(ip) {
-    log.info("Looking up location:", ip);
+    log.debug("Looking up location:", ip);
 
     let cached = await this.cacheLookup(ip, "ipinfo");
 
@@ -286,6 +286,7 @@ module.exports = class {
         log.error("Error when parse cache:", cached, err);
       }
       if (ipinfo) {
+        log.debug("Cached ip info:", ip);
         return ipinfo;
       }
     }
