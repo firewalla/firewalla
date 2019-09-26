@@ -89,6 +89,9 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const vpnClientEnforcer = new VPNClientEnforcer();
 
+const iptables = require('./Iptables.js');
+const ip6tables = require('./Ip6tables.js');
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 module.exports = class HostManager {
@@ -1211,10 +1214,14 @@ module.exports = class HostManager {
   async spoof(state) {
     log.debug("System:Spoof:", state, this.spoofing);
     if (state == false) {
+      await iptables.switchMonitoringAsync(false);
+      await ip6tables.switchMonitoringAsync(false);
       // flush all ip addresses
       log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
       await new SpooferManager().emptySpoofSet()
     } else {
+      await iptables.switchMonitoringAsync(true);
+      await ip6tables.switchMonitoringAsync(true);
       // do nothing if state is true
     }
   }

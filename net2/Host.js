@@ -484,6 +484,10 @@ class Host {
             log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
             return;
           }
+          const cmd = `sudo ipset del -! not_monitored_mac_set ${this.o.mac}`;
+          exec(cmd).catch((err) => {
+            log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
+          });
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
               rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
@@ -496,6 +500,10 @@ class Host {
             })
         })
       } else {
+        const cmd = `sudo ipset add -! not_monitored_mac_set ${this.o.mac}`;
+        exec(cmd).catch((err) => {
+          log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
+        });
         spoofer.newUnspoof(this.o.ipv4Addr)
           .then(() => {
             rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
