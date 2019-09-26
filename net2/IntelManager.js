@@ -296,8 +296,6 @@ module.exports = class {
       this.cacheAdd(ip, "ipinfo", JSON.stringify(ipinfo));
     }
 
-    log.info("Ipinfo is:", ipinfo);
-
     return ipinfo;
   }
 }

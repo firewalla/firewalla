@@ -38,7 +38,7 @@ class IpInfo {
       }
     } while (!result && retry -- > 0);
 
-    log.info("ipInfo from ipinfo is:", result);
+    log.debug("ipInfo from ipinfo is:", result);
     return result;
   }
 
