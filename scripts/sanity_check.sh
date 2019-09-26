@@ -178,7 +178,7 @@ check_policies() {
             RULE_ID="* $RULE_ID"
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
-        fi        
+        fi
         printf "%8s %30s %10s %25s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME"
     done
 
