@@ -65,7 +65,7 @@ class IntelLocalCachePlugin extends Sensor {
   async loadCacheFromLocal(path) {
     try {
       await fs.accessAsync(path, fs.constants.R_OK);
-log.info(`Loading data from path: ${path}`);
+      log.info(`Loading data from path: ${path}`);
       const data = await fs.readFileAsync(path,{encoding: 'utf8'});
       if(data) {
         const bf = await this.loadCacheFromBase64(data);

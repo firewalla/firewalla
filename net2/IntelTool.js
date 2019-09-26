@@ -171,7 +171,7 @@ class IntelTool {
   async checkURLIntelFromCloud(urlList, fd) {
     fd = fd || 'in';
 
-    log.info("Checking Intel for urls:", urlList);
+    log.debug("Checking Intel for urls:", urlList);
 
     let list = [];
 
@@ -202,7 +202,7 @@ class IntelTool {
   }
 
   checkIntelFromCloud(ipList, domainList, fd) {
-    log.debug("Checking intel for",fd, ipList, domainList);
+    log.info("Checking intel for",fd, ipList, domainList);
     if (fd == null) {
       fd = 'in';
     }

@@ -1,7 +1,5 @@
 'use strict'
-var URL = require('url');
 var StringCursor = require('./StringCursor');
-var Punycode = require('punycode');
 
 var PERCENT_ESCAPE = /%([A-Fa-f0-9]{2})/g;
 var ESCAPED_CHARCODES = [35, 37];

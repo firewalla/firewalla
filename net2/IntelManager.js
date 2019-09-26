@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,13 +18,11 @@ let instance = null;
 
 const log = require('./logger.js')(__filename);
 
-const rp = require('request-promise');
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const bone = require("../lib/Bone.js");
 const IntelTool = require('./IntelTool');
 const intelTool = new IntelTool();
 
@@ -37,28 +35,11 @@ const A_WEEK = 3600 * 24 * 7;
 const IGNORED_TAGS = ['dnsbl', 'spam'];
 
 module.exports = class {
-  constructor(loglevel) {
+  constructor() {
     if (instance == null) {
       instance = this;
     }
     return instance;
-  }
-
-  action(action, ip, callback) {
-    if (action === "ignore") {
-      rclient.hmset("intel:action:" + ip, {'ignore': true}, (err) => {
-        callback(err, null);
-      });
-    } else if (action === "unignore") {
-      rclient.hmset("intel:action:" + ip, {'ignore': false}, (err) => {
-        callback(err, null);
-      });
-    } else if (action === "block") {
-    } else if (action === "unblock") {
-    } else if (action === "support") {
-    }
-
-    bone.intel(ip, "", action, {});
   }
 
   async cacheLookup(ip, origin) {
@@ -89,11 +70,12 @@ module.exports = class {
 
     log.debug("Add into cache.intel, key:", key, ", value:", value);
 
-    return rclient.setAsync(key, value)
-      .then(result => rclient.expireatAsync(key, this.currentTime() + A_WEEK))
-      .catch(err => {
-        log.warn(`Error when add ip ${ip} from ${origin} to cache`, err);
-      });
+    try {
+      await rclient.setAsync(key, value)
+      await rclient.expireatAsync(key, this.currentTime() + A_WEEK)
+    } catch(err) {
+      log.warn(`Error when add ip ${ip} from ${origin} to cache`, err);
+    }
   }
 
   currentTime() {
@@ -102,11 +84,6 @@ module.exports = class {
 
   async lookupDomain(domain, ip, flowObj) {
     if (!domain || domain === "firewalla.com") {
-      return;
-    }
-
-    if (await this.isIgnored(domain)) {
-      log.info("Ignored domain:", domain, "skip...");
       return;
     }
 
@@ -138,10 +115,6 @@ module.exports = class {
       return;
     }
 
-    if (!intelObj.lobj) {
-      intelObj.lobj = await this.ipinfo(ip);
-    }
-
     if (!intelObj.whois) {
       intelObj.whois = await this.whois(domain);
     }
@@ -164,12 +137,7 @@ module.exports = class {
       return;
     }
 
-    let ipinfo = await this.ipinfo(ip);
-    
     let intelObj = this.addFlowIntel(ip, {}, flowIntel);
-
-    log.debug("Ipinfo:", ipinfo)
-    intelObj.lobj = ipinfo;
 
     log.debug("IntelObj:", intelObj);
 
@@ -202,15 +170,10 @@ module.exports = class {
     return whois;
   }
 
-  async isIgnored(target) {
-    let data = await rclient.hgetallAsync("intel:action:" + target);
-    log.info("Ignore check for domain:", target, " is", data);
-    return data && data.ignore;
-  }
-
   async _lookupDomainInBone(domain, ip) {
     let cloudIntel;
     try {
+      // TODO: save this to intel:ip
       cloudIntel = await intelTool.checkIntelFromCloud([ip], [domain], 'out');
     } catch (err) {
       log.info("Error when check intel from cloud", err);
