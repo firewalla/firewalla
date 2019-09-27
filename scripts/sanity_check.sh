@@ -36,6 +36,15 @@ check_file() {
     return 0
 }
 
+check_dmesg_ethernet() {
+    echo "----------------------- Ethernet Link Up/Down in dmesg ----------------------------"
+
+    dmesg | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
+
+    echo ""
+    echo ""
+}
+
 check_git() {
     _rc=0
     repo_dir=$1
@@ -235,10 +244,14 @@ check_hosts() {
 
         local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
         DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
-        if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
-            local DEVICE_ONLINE="yes"
-        else
-            local DEVICE_ONLINE="no"
+        if [[ ! -n $DEVICE_ONLINE_TS ]]; then
+            local DEVICE_ONLINE="N/A"
+            else
+                if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
+                    local DEVICE_ONLINE="yes"
+                else
+                    local DEVICE_ONLINE="no"
+                fi
         fi
 
         local COLOR=""
@@ -318,6 +331,7 @@ if [ "$FAST" == false ]; then
     check_systemctl_services
     check_rejection
     check_exception
+    check_dmesg_ethernet
     check_reboot
     check_system_config
     check_sys_features

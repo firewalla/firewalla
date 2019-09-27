@@ -105,7 +105,7 @@ class IPv6DiscoverySensor extends Sensor {
     let lines = stdout.split("\n");
     let macHostMap = {};
     for (const o of lines) {
-      log.info("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
+      log.debug("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
       let parts = o.split(" ");
       if (parts[2] == intf) {
         let v6addr = parts[0];

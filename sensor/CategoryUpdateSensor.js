@@ -48,28 +48,42 @@ const securityHashMapping = {
 class CategoryUpdateSensor extends Sensor {
 
   async regularJob() {
-    const categories = Object.keys(categoryHashsetMapping)
-    for (const category of categories) {
-      await this.updateCategory(category);
+    try {
+      const categories = Object.keys(categoryHashsetMapping)
+      log.info('Active categories', categories);
+      for (const category of categories) {
+        await this.updateCategory(category);
+      }
+    } catch(err) {
+      log.error("Failed to update categories", err)
     }
   }
 
   async securityJob() {
-    const securityCategories = Object.keys(securityHashMapping)
-    for (const category of securityCategories) {
-      await this.updateSecurityCategory(category)
+    try {
+      const securityCategories = Object.keys(securityHashMapping)
+      log.info('Active security categories', securityCategories);
+      for (const category of securityCategories) {
+        await this.updateSecurityCategory(category)
+      }
+    } catch(err) {
+      log.error("Failed to update security categories", err)
     }
   }
 
   async countryJob() {
-    await this.renewCountryList();
-    const activeCountries = countryUpdater.getActiveCountries();
-    log.info('Active countries', activeCountries);
-    for (const country of activeCountries) {
-      await this.updateCountryAllocation(country)
-      const category = countryUpdater.getCategory(country)
-      await countryUpdater.refreshCategoryRecord(category)
-      await countryUpdater.recycleIPSet(category)
+    try {
+      await this.renewCountryList();
+      const activeCountries = countryUpdater.getActiveCountries();
+      log.info('Active countries', activeCountries);
+      for (const country of activeCountries) {
+        await this.updateCountryAllocation(country)
+        const category = countryUpdater.getCategory(country)
+        await countryUpdater.refreshCategoryRecord(category)
+        await countryUpdater.recycleIPSet(category)
+      }
+    } catch(err) {
+      log.error("Failed to update conuntry sets", err)
     }
   }
 
@@ -144,10 +158,14 @@ class CategoryUpdateSensor extends Sensor {
       // also triggers dynamic list and ipset update here
       // to make sure blocking takes effect immediately
       sem.on('Policy:CountryActivated', async (event) => {
-        await this.updateCountryAllocation(event.country)
-        const category = countryUpdater.getCategory(event.country)
-        await countryUpdater.refreshCategoryRecord(category)
-        await countryUpdater.recycleIPSet(category, false)
+        try {
+          await this.updateCountryAllocation(event.country)
+          const category = countryUpdater.getCategory(event.country)
+          await countryUpdater.refreshCategoryRecord(category)
+          await countryUpdater.recycleIPSet(category, false)
+        } catch(err) {
+          log.error("Failed to update conuntry set", event.country, err)
+        }
       })
 
       await this.regularJob()

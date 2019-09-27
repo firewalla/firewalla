@@ -32,6 +32,7 @@ alias sr3='touch /home/pi/.firewalla/managed_reboot; sudo systemctl restart fire
 alias sr4='sudo systemctl restart firehttpd'
 alias srb4='sudo systemctl restart bitbridge4'
 alias srb6='sudo systemctl restart bitbridge6'
+alias ss7='sudo systemctl stop frpc.support.service'
 alias sr4='sudo systemctl restart firehttpd'
 alias fufu='sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD'
 alias node='/home/pi/firewalla/bin/node'

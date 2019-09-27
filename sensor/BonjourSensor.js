@@ -146,8 +146,7 @@ class BonjourSensor extends Sensor {
           }
         })
       })
-    }
-    if (ip.isV6Format(ipAddr)) {
+    } else if (ip.isV6Format(ipAddr)) {
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
         log.error("Not able to find mac address for host:", ipAddr, err);
         return null;
@@ -156,8 +155,7 @@ class BonjourSensor extends Sensor {
         if (sysManager.myIp6() && sysManager.myIp6().includes(ipAddr)) {
           mac = sysManager.myMAC();
         }
-      }
-      if (mac) {
+      } else {
         ipMacCache[ipAddr] = {mac: mac, lastSeen: Date.now() / 1000};
         return mac;
       }
@@ -219,12 +217,8 @@ class BonjourSensor extends Sensor {
   getFriendlyDeviceName(service) {
     let bypassList = [/_airdrop._tcp/, /eph:devhi:netbot/, /_apple-mobdev2._tcp/]
 
-    if(service.fqdn) {
-      let matched = bypassList.filter((x) => service.fqdn.match(x))
-
-      if(matched.length > 0) {
-        return this.getDeviceName(service)
-      }
+    if (service.fqdn && bypassList.some((x) => service.fqdn.match(x))) {
+      return this.getDeviceName(service)
     }
 
     let name = service.name
@@ -246,8 +240,7 @@ class BonjourSensor extends Sensor {
     let ipv4addr = null;
     let ipv6addr = [];
 
-    for (let i in service.addresses) {
-      let addr = service.addresses[i];
+    for (const addr of service.addresses) {
       if (ip.isV4Format(addr) && sysManager.isLocalIP(addr)) {
         ipv4addr = addr;
       } else if (ip.isV4Format(addr)) {

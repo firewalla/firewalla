@@ -293,7 +293,7 @@ function constants(name) {
   return __constants[name]
 }
 
-const BLACK_HOLE_IP = "198.51.100.99";
+const BLACK_HOLE_IP = "0.0.0.0";
 const BLUE_HOLE_IP = "198.51.100.100";
 const RED_HOLE_IP = "198.51.100.101";
 
@@ -312,6 +312,10 @@ function isMain() {
 
 function isMonitor() {
   return process.title === "FireMon";
+}
+
+function isApi() {
+  return process.title === "FireApi";
 }
 
 function getProcessName() {
@@ -357,6 +361,7 @@ module.exports = {
 
   isMain:isMain,
   isMonitor:isMonitor,
+  isApi:isApi,
   getLastCommitDate:getLastCommitDate,
 
   getProcessName:getProcessName,

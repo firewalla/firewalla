@@ -448,10 +448,13 @@ class IntelAlarm extends Alarm {
   }
   
   getReadableDestination() {
-    const name = this["p.dest.name"]
-    const port = this["p.dest.port"]
+    const name = this["p.dest.name"];
+    const port = this["p.dest.port"];
+    const url = this["p.dest.url"];
     
-    if( name && port) {
+    if(url) {
+      return url;
+    } else if( name && port) {
       if(port == 80) {
         return `http://${name}`
       } else if(port == 443) {
@@ -469,6 +472,10 @@ class IntelAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
+    const url = this["p.dest.url"];
+    if(url) {
+      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port"];
+    }
     return ["p.device.mac", "p.dest.name", "p.dest.port"];
   }
 

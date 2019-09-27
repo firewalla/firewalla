@@ -82,7 +82,7 @@ async function _enforceSpoofMode() {
       let sm = new SpooferManager();
       sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
       // register v6 spoof instance if v6 gateway is assigned
-      if (sysManager.myGateway6()) { // empty string also returns false
+      if (sysManager.myGateway6() && sysManager.myIp6()) { // empty string also returns false
         sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
         if (sysManager.myDNS() && sysManager.myDNS().includes(sysManager.myGateway())) {
           // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)

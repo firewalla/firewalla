@@ -17,8 +17,6 @@ sudo iptables -w -t nat -A $CHAIN_NAME -d 192.168.0.0/16 -j RETURN
 sudo iptables -w -t nat -A $CHAIN_NAME -d 224.0.0.0/4 -j RETURN
 sudo iptables -w -t nat -A $CHAIN_NAME -d 240.0.0.0/4 -j RETURN
 
-# for black hole ip, return it, no ss routing
-sudo iptables -w -t nat -A $CHAIN_NAME -d 198.51.100.99 -j RETURN
 
 sudo iptables -w -t nat -A $CHAIN_NAME -p tcp -m set --match-set chnroute dst -j RETURN
 
