@@ -91,7 +91,7 @@ let upstreamDNS = null;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
-const BLACK_HOLE_IP = "198.51.100.99"
+const BLACK_HOLE_IP = "0.0.0.0"
 const BLUE_HOLE_IP = "198.51.100.100"
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";

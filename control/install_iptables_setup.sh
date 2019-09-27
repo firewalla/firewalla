@@ -6,7 +6,7 @@ if [[ -e /.dockerenv ]]; then
     exit
 fi
 
-BLACK_HOLE_IP="198.51.100.99"
+BLACK_HOLE_IP="0.0.0.0"
 BLUE_HOLE_IP="198.51.100.100"
 
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
@@ -57,7 +57,6 @@ sudo ipset flush whitelist_remote_port_set
 sudo ipset flush whitelist_mac_set
 sudo ipset flush no_dns_caching_mac_set
 
-sudo ipset add -! blocked_ip_set $BLACK_HOLE_IP
 sudo ipset add -! blocked_ip_set $BLUE_HOLE_IP
 
 # This is to remove all customized ip sets, to have a clean start
