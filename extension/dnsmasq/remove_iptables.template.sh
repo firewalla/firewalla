@@ -7,9 +7,3 @@ for protocol in tcp udp; do
     done
 done
 
-BLACK_HOLE_IP=198.51.100.99
-if ! sudo iptables -w -C FORWARD --destination $BLACK_HOLE_IP -j REJECT &>/dev/null; then
-    exit 0
-else
-    sudo iptables -w -D FORWARD --destination $BLACK_HOLE_IP -j REJECT
-fi
