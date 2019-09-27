@@ -53,8 +53,8 @@ class PlatformLoader {
       this.platform = new RedPlatform();
       break;      
     case "x86_64":
-      const DockerPlatform = require('./docker/DockerPlatform.js');
-      this.platform = new DockerPlatform();
+      const YellowPlatform = require('./yellow/YellowPlatform.js');
+      this.platform = new YellowPlatform();
       break;
     default:
       return null;
