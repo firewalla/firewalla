@@ -145,6 +145,16 @@ class OldDataCleanSensor extends Sensor {
 
   }
 
+  async cleanFlowGraph() {
+    const keys = await rclient.keysAsync("flowgraph:*");
+    for(const key of keys) {
+      const ttl = await rclient.ttlAsync(key);
+      if(ttl === -1) {
+        await rclient.delAsync(key);
+      }
+    }
+  }
+
   async cleanHourlyStats() {
     // FIXME: not well coded here, deprecated code
     let keys = await rclient.keysAsync("stats:hour:*");
@@ -392,7 +402,7 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
       await this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365);
       await this.cleanFlowX509();
-
+      await this.cleanFlowGraph();
       await this.cleanupAlarmExtendedKeys();
       await this.cleanAlarmIndex();
       await this.cleanExceptions();
