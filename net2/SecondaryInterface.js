@@ -49,7 +49,8 @@ function getSubnets(networkInterface, family) {
         interfaceData[i].address,
         interfaceData[i].netmask
       );
-      ipSubnets.push(subnet);
+      const subnetMask = interfaceData[i].address + '/' + subnet.subnetMaskLength;
+      ipSubnets.push(subnetMask);
     }
   }
 
@@ -122,17 +123,12 @@ exports.create = async function (config) {
   for (const intf of list) {
     const subnets = getSubnets(intf.name, 'IPv4');
 
-    const overlapped = subnets.find(net =>
-      net.contains(secondarySubnet.firstAddress) ||
-      net.contains(secondarySubnet.lastAddress) ||
-      secondarySubnet.contains(net.firstAddress) ||
-      secondarySubnet.contains(net.lastAddress)
-    )
+    const overlapped = subnets.includes(secondaryIpSubnet);
 
-    log.warn('Overlapping network found!', overlapped)
     // one intf may have multiple ip addresses assigned
     if (overlapped) {
       // other intf already occupies ip1, use alternative ip
+      log.warn('Overlapping network found!', secondaryIpSubnet);
       secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
       break;
     }
