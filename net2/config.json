@@ -1,5 +1,5 @@
 {
-  "version": 1.965,
+  "version": 1.966,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -77,7 +77,8 @@
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "VPNCheckPlugin": {},
-    "SafeSearchPlugin": {}
+    "SafeSearchPlugin": {},
+    "RemoteNotificationSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -378,7 +379,8 @@
       "internetTestUrls": {
         "google": "http://google.com",
         "github": "http://github.com"
-      }
+      },
+      "interval": 300
     },
     "ICMP6Sensor": {},
     "CPUSensor": {
@@ -448,10 +450,6 @@
       "sumflow": {
         "expires": -1,
         "count": 500
-      },
-      "aggrflow": {
-        "expires": -1,
-        "count": 200
       },
       "syssumflow": {
         "expires": -1,
@@ -600,7 +598,9 @@
     "insane_mode": false,
     "cpu_monitor": true,
     "speed_test": false,
-    "safe_search": false
+    "safe_search": false,
+    "network_stats": false,
+    "link_stats": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

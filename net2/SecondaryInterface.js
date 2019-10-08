@@ -22,6 +22,8 @@ const f = require('./Firewalla.js');
 const fc = require('./config.js');
 const { exec } = require('child-process-promise')
 
+const SysManager = require('./SysManager.js');
+
 function is_interface_valid(netif) {
   return (
     netif.ip_address != null &&
@@ -49,7 +51,8 @@ function getSubnets(networkInterface, family) {
         interfaceData[i].address,
         interfaceData[i].netmask
       );
-      ipSubnets.push(subnet);
+      const subnetMask = interfaceData[i].address + '/' + subnet.subnetMaskLength;
+      ipSubnets.push(subnetMask);
     }
   }
 
@@ -122,17 +125,18 @@ exports.create = async function (config) {
   for (const intf of list) {
     const subnets = getSubnets(intf.name, 'IPv4');
 
-    const overlapped = subnets.find(net =>
-      net.contains(secondarySubnet.firstAddress) ||
-      net.contains(secondarySubnet.lastAddress) ||
-      secondarySubnet.contains(net.firstAddress) ||
-      secondarySubnet.contains(net.lastAddress)
-    )
+    const overlapped = subnets.includes(secondaryIpSubnet);
 
-    log.warn('Overlapping network found!', overlapped)
     // one intf may have multiple ip addresses assigned
     if (overlapped) {
       // other intf already occupies ip1, use alternative ip
+      log.warn('Overlapping network found!', secondaryIpSubnet);
+      secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
+      break;
+    }
+    const sysManager = new SysManager();
+    if (secondaryIpSubnet.split('/')[0] === sysManager.myGateway()) {
+      log.warn("Conflict with gateway IP: ", secondaryIpSubnet);
       secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
       break;
     }

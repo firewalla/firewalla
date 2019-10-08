@@ -89,6 +89,9 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const vpnClientEnforcer = new VPNClientEnforcer();
 
+const iptables = require('./Iptables.js');
+const ip6tables = require('./Ip6tables.js');
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 module.exports = class HostManager {
@@ -253,7 +256,7 @@ module.exports = class HostManager {
 
     json.cpuid = platform.getBoardSerial();
     json.updateTime = Date.now();
-    if (sysManager.sshPassword) {
+    if (sysManager.sshPassword && f.isApi()) {
       json.ssh = sysManager.sshPassword;
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
@@ -271,7 +274,7 @@ module.exports = class HostManager {
     json.remoteSupport = frp.started;
     json.model = platform.getName();
     json.branch = f.getBranch();
-    if(frp.started) {
+    if(frp.started && f.isApi()) {
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
     }
@@ -690,6 +693,8 @@ module.exports = class HostManager {
 
     // Delete anything that may be private
     if (json.ssh) delete json.ssh
+    if (json.remoteSupportConnID) delete json.remoteSupportConnID;
+    if (json.remoteSupportPassword) delete json.remoteSupportPassword;
 
     return json;
   }
@@ -836,6 +841,12 @@ module.exports = class HostManager {
         await this.legacyHostFlag(json)
 
         json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
+        const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
+        if(fnlFlag === "1") {
+          json.forceNotifLocal = true;
+        } else {
+          json.forceNotifLocal = false;
+        }
 
         // for any pi doesn't have firstBinding key, they are old versions
         let firstBinding = await rclient.getAsync("firstBinding")
@@ -1203,10 +1214,14 @@ module.exports = class HostManager {
   async spoof(state) {
     log.debug("System:Spoof:", state, this.spoofing);
     if (state == false) {
+      await iptables.switchMonitoringAsync(false);
+      await ip6tables.switchMonitoringAsync(false);
       // flush all ip addresses
       log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
       await new SpooferManager().emptySpoofSet()
     } else {
+      await iptables.switchMonitoringAsync(true);
+      await ip6tables.switchMonitoringAsync(true);
       // do nothing if state is true
     }
   }
@@ -1314,6 +1329,9 @@ module.exports = class HostManager {
                 type: 'FW_NOTIFICATION',
                 titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
                 bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
                 payload: {
                   profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
                 }

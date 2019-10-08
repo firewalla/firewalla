@@ -61,8 +61,6 @@ sudo iptables -w -t nat -A $FW_SS_CHAIN -d 192.168.0.0/16 -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d 224.0.0.0/4 -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -d 240.0.0.0/4 -j RETURN
 
-# for black hole ip, return it, no ss routing
-sudo iptables -w -t nat -A $FW_SS_CHAIN -d 198.51.100.99 -j RETURN
 #sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp -m set --match-set $FW_OVERTURE_IPSET dst -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 

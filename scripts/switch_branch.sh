@@ -52,9 +52,12 @@ set_redis_flag() {
         release_*)
             redis_flag=1
             ;;
-        beta_*)
-            redis_flag=2
+        beta_7_*)
+            redis_flag=4
             ;;
+        beta_6_*)
+            redis_flag=2
+            ;;            
         master)
             redis_flag=3
             ;;

@@ -12,6 +12,7 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 'use strict';
 const log = require('./logger.js')(__filename);
 
@@ -290,10 +291,6 @@ module.exports = class {
   setLanguage(language, callback) {
     callback = callback || function() {}
 
-    // FIXME: disable set language feature temporarliy
-    callback(null);
-    return;
-
     this.language = language;
     const theLanguage = i18n.setLocale(this.language);
     if(theLanguage !== this.language) {
@@ -403,8 +400,7 @@ module.exports = class {
         }
         this.ddns = this.sysinfo["ddns"];
         this.publicIp = this.sysinfo["publicIp"];
-        var self = this;
-        //         log.info("System Manager Initialized with Config", this.sysinfo);
+        // log.info("System Manager Initialized with Config", this.sysinfo);
       }
       if (callback != null) {
         callback(err);
@@ -639,9 +635,10 @@ module.exports = class {
   inMySubnets4(ip4) {
     if (!iptool.isV4Format(ip4)) return false;
     else return (
-      iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
-      (this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) || false) ||
-      (this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) || false)
+      this.mySubnet() && iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
+      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) ||
+      this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) ||
+      false
     )
   }
 

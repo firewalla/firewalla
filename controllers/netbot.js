@@ -581,11 +581,37 @@ class netBot extends ControllerBot {
       if(pa && f.isDevelopmentVersion()) {
         notifMsg.body = `${notifMsg.body} - Cloud Action ${pa}`;
       }
+
+      if(alarm) {
+        const includeNameInNotification = await rclient.hgetAsync("sys:config", "includeNameInNotification");
+        const newArray = alarm.localizedNotificationTitleArray().slice(0);
+        if(includeNameInNotification === "1") {
+          newArray.push(`[${this.getDeviceName()}] `);
+        } else {
+          newArray.push("");
+        }
+        
+        notifMsg["title-loc-key"] = alarm.localizedNotificationTitleKey();
+        notifMsg["title-loc-args"] = newArray;
+        notifMsg["loc-key"] = alarm.localizedNotificationContentKey();
+        notifMsg["loc-args"] = alarm.localizedNotificationContentArray();
+        notifMsg["title_loc_key"] = alarm.localizedNotificationTitleKey();
+        notifMsg["title_loc_args"] = newArray;
+        notifMsg["body_loc_key"] = alarm.localizedNotificationContentKey();
+        notifMsg["body_loc_args"] = alarm.localizedNotificationContentArray();
+
+        const forceUseNotificationLocalization = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
+        if(forceUseNotificationLocalization === "1") {
+          delete notifMsg.title;
+          delete notifMsg.body;
+        }
+      }
+
       this.tx2(this.primarygid, "test", notifMsg, data);
 
     });
 
-    sem.on("FW_NOTIFICATION", (event) => {
+    sem.on("FW_NOTIFICATION", async (event) => {
       const titleKey = event.titleKey;
       const bodyKey = event.bodyKey;
       const payload = event.payload;
@@ -598,6 +624,36 @@ class netBot extends ControllerBot {
         title: i18n.__(titleKey, payload),
         body: i18n.__(bodyKey, payload),
       };
+
+      if(event.titleLocalKey) {
+        notifyMsg["title-loc-key"] = `notif.title.${event.titleLocalKey}`;
+        notifyMsg["title_loc_key"] = `notif.title.${event.titleLocalKey}`;
+
+        let titleArgs = [];
+
+        if(event.titleLocalArgs) {
+          titleArgs = event.titleLocalArgs.slice(0);
+        }
+
+        const includeNameInNotification = await rclient.hgetAsync("sys:config", "includeNameInNotification");
+        if(includeNameInNotification === "1") {
+          titleArgs.push(`[${this.getDeviceName()}] `);
+        } else {
+          titleArgs.push("");
+        }
+        notifyMsg["title-loc-args"] = titleArgs;
+        notifyMsg["title_loc_args"] = titleArgs;
+      }  
+
+      if(event.bodyLocalKey) {
+        notifyMsg["loc-key"] = `notif.content.${event.bodyLocalKey}`;
+        notifyMsg["body_loc_key"] = `notif.content.${event.bodyLocalKey}`;
+
+        if(event.bodyLocalArgs) {
+          notifyMsg["loc-args"] = event.bodyLocalArgs;
+          notifyMsg["body_loc_args"] = event.bodyLocalArgs;
+        }
+      }
 
       const data = {
         gid: this.primarygid,
@@ -612,35 +668,44 @@ class netBot extends ControllerBot {
       let branchChanged = await sysManager.isBranchJustChanged();
       let upgradeInfo = await upgradeManager.getUpgradeInfo();
       log.debug('isBranchJustChanged:', branchChanged, ', upgradeInfo:', upgradeInfo);
-      if(branchChanged) {
-        let branch = null
 
-        if(branch) {
-          let msg = i18n.__mf("NOTIF_BRANCH_CHANGE", {
-            deviceName: this.getDeviceName(),
-            branchChanged: branchChanged,
-            version: sysManager.version()
-          })
-          log.info(msg)
-          this.tx(this.primarygid, "200", msg)
-          sysManager.clearBranchChangeFlag()
-        }
-      }
-      else if (upgradeInfo.upgraded) {
-        let msg = i18n.__("NOTIF_UPGRADE_COMPLETE", {
-          version: fc.getSimpleVersion()
+      if (upgradeInfo.upgraded) {
+        sem.sendEventToFireApi({
+          type: 'FW_NOTIFICATION',
+          titleKey: 'NOTIF_UPGRADE_COMPLETE_TITLE',
+          bodyKey: 'NOTIF_UPGRADE_COMPLETE',
+          titleLocalKey: 'SOFTWARE_UPGRADE',
+          bodyLocalKey: `SOFTWARE_UPGRADE`,
+          bodyLocalArgs: [fc.getSimpleVersion()],
+          payload: {
+            version: fc.getSimpleVersion()
+          }
         });
-        this.tx(this.primarygid, "200", msg);
+
         upgradeManager.updateVersionTag();
       }
       else {
         if (sysManager.systemRebootedByUser(true)) {
           if (nm.canNotify() == true) {
-            this.tx(this.primarygid, "200", i18n.__("NOTIF_REBOOT_COMPLETE"));
+            sem.sendEventToFireApi({
+              type: 'FW_NOTIFICATION',
+              titleKey: 'NOTIF_REBOOT_COMPLETE_TITLE',
+              bodyKey: 'NOTIF_REBOOT_COMPLETE',
+              titleLocalKey: 'REBOOT',
+              bodyLocalKey: 'REBOOT',
+              payload: {}
+            });
           }
         } else if (sysManager.systemRebootedDueToIssue(true) == false) {
           if (nm.canNotify() == true) {
-            this.tx(this.primarygid, "200", i18n.__("NOTIF_AWAKES"));
+            sem.sendEventToFireApi({
+              type: 'FW_NOTIFICATION',
+              titleKey: 'NOTIF_AWAKES',
+              bodyKey: 'NOTIF_AWAKES_BODY',
+              titleLocalKey: 'AWAKEN',
+              bodyLocalKey: 'AWAKEN',
+              payload: {}
+            });
           }
         }
       }
@@ -1046,13 +1111,7 @@ class netBot extends ControllerBot {
         break;
       case "language":
         let v2 = value;
-
-        // TODO validate input?
-        if (v2.language) {
-          sysManager.setLanguage(v2.language, (err) => {
-            this.simpleTxData(msg, {}, err, callback);
-          });
-        }
+        this.simpleTxData(msg, {}, null, callback);
         break;
       case "timezone":
         let v3 = value;
@@ -1080,6 +1139,23 @@ class netBot extends ControllerBot {
       })
 
       break;
+    case "forceNotificationLocalization": {
+      let v33 = value;
+
+      let flag = "0";
+
+      if(v33.forceNotificationLocalization) {
+        flag = "1"
+      }
+
+      (async() => {
+        await rclient.hsetAsync("sys:config", "forceNotificationLocalization", flag)
+        this.simpleTxData(msg, {}, null, callback)
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback)
+      })
+    break;
+    }
     case "mode":
       let v4 = value;
       let err = null;
@@ -1161,11 +1237,11 @@ class netBot extends ControllerBot {
 
 
   async processAppInfo(appInfo) {
-      if(appInfo.language) {
-        if(sysManager.language !== appInfo.language) {
-          await sysManager.setLanguageAsync(appInfo.language)
-        }
-      }
+      // if(appInfo.language) {
+      //   if(sysManager.language !== appInfo.language) {
+      //     await sysManager.setLanguageAsync(appInfo.language)
+      //   }
+      // }
 
       if(appInfo.deviceName && appInfo.eid) {
         const keyName = "sys:ept:memberNames"
@@ -2707,6 +2783,8 @@ class netBot extends ControllerBot {
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
+            domain: domain,
+            action: "addIncludeDomain",
             toProcess: "FireMain"
           })
           this.simpleTxData(msg, {}, null, callback)
@@ -2723,6 +2801,8 @@ class netBot extends ControllerBot {
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
             category: category,
+            domain: domain,
+            action: "removeIncludeDomain",
             toProcess: "FireMain"
           })
           this.simpleTxData(msg, {}, null, callback)
@@ -2738,6 +2818,8 @@ class netBot extends ControllerBot {
           await categoryUpdater.addExcludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            domain: domain,
+            action: "addExcludeDomain",
             category: category,
             toProcess: "FireMain"
           })
@@ -2754,6 +2836,8 @@ class netBot extends ControllerBot {
           await categoryUpdater.removeExcludedDomain(category,domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            domain: domain,
+            action: "removeExcludeDomain",
             category: category,
             toProcess: "FireMain"
           })
@@ -3268,8 +3352,10 @@ class netBot extends ControllerBot {
                 mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
               }
               await fc.updateUserConfig({secondaryInterface: mergedSecondaryInterface});
+              const dnsmasqPolicy = {secondaryDnsServers: dnsServers};
               if (dhcpRange)
-                this._dnsmasq("0.0.0.0", {secondaryDnsServers: dnsServers, secondaryDhcpRange: dhcpRange});
+                dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
+              this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
                 let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
@@ -3286,8 +3372,10 @@ class netBot extends ControllerBot {
               updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
               const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
               await fc.updateUserConfig({alternativeInterface: mergedAlternativeInterface});
+              const dnsmasqPolicy = {alternativeDnsServers: dnsServers};
               if (dhcpRange)
-                this._dnsmasq("0.0.0.0", {alternativeDnsServers: dnsServers, alternativeDhcpRange: dhcpRange});
+                dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
+              this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
                 let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
@@ -3309,8 +3397,10 @@ class netBot extends ControllerBot {
               updatedWifiConfig.channel = intf.channel || "5";
               const mergedWifiInterface = Object.assign({}, currentWifiInterface, updatedWifiConfig); // if ip2 is not defined, it will be inherited from previous settings
               await fc.updateUserConfig({wifiInterface: mergedWifiInterface});
+              const dnsmasqPolicy = {wifiDnsServers: dnsServers};
               if (dhcpRange)
-                this._dnsmasq("0.0.0.0", {wifiDnsServers: dnsServers, wifiDhcpRange: dhcpRange});
+                dnsmasqPolicy.wifiDhcpRange = dhcpRange;
+              this._dnsmasq("0.0.0.0", dnsmasqPolicy)
               this.simpleTxData(msg, {}, null, callback);
               break;
             }

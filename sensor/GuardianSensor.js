@@ -22,6 +22,7 @@ const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
 
 const configServerKey = "ext.guardian.socketio.server";
+const configRegionKey = "ext.guardian.socketio.region";
 const configAdminStatusKey = "ext.guardian.socketio.adminStatus";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -50,7 +51,11 @@ class GuardianSensor extends Sensor {
     })
 
     extensionManager.onSet("guardianSocketioServer", (msg, data) => {
-      return this.setServer(data.server);
+      return this.setServer(data.server, data.region);
+    });
+
+    extensionManager.onGet("guardianSocketioRegion", (msg) => {
+      return this.getRegion();
     });
 
     extensionManager.onCmd("startGuardianSocketioServer", (msg, data) => {
@@ -67,7 +72,7 @@ class GuardianSensor extends Sensor {
         throw new Error("invalid guardian relay server");
       }
 
-      await this.setServer(socketioServer);
+      await this.setServer(socketioServer, data.region);
       
       await this.start();
     });
@@ -78,17 +83,26 @@ class GuardianSensor extends Sensor {
     }
   }
 
-  async setServer(server) {
+  async setServer(server, region) {
     if(server) {
+      if(region) {
+        await rclient.setAsync(configRegionKey, region);
+      } else {
+        await rclient.delAsync(configRegionKey);
+      }
       return rclient.setAsync(configServerKey, server);
     } else {
       throw new Error("invalid server");
-    }
+    }    
   }
 
   async getServer() {
     const value = await rclient.getAsync(configServerKey);
     return value || "";
+  }
+
+  async getRegion() {
+    return rclient.getAsync(configRegionKey);
   }
 
   async isAdminStatusOn() {
@@ -114,12 +128,32 @@ class GuardianSensor extends Sensor {
 
     await this.adminStatusOn();
 
-    this.socket = io.connect(server);
+    const gid = await et.getGID();
+    const eid = await et.getEID();
+
+    const region = await this.getRegion();
+
+    if(region) {
+      this.socket = io(server, {path: `/${region}/socket.io`});
+    } else {
+      this.socket = io.connect(server);
+    }
     if(!this.socket) {
       throw new Error("failed to init socket io");
     }
 
-    const gid = await et.getGID();
+    this.socket.on('connect', () => {
+      log.info(`Socket IO connection to ${server}, ${region} is connected.`);
+      this.socket.emit("box_registration", {
+        gid: gid,
+        eid: eid
+      });
+    });
+
+    this.socket.on('disconnect', () => {
+      log.info(`Socket IO connection to ${server}, ${region} is disconnected.`);
+    });
+
     const key = `send_to_box_${gid}`;
     this.socket.on(key, (message) => {
       if(message.gid === gid) {

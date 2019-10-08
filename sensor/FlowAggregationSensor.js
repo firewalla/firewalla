@@ -43,8 +43,6 @@ const flowUtil = require('../net2/FlowUtil')
 
 const bone = require('../lib/Bone.js');
 
-function toFloorInt(n){ return Math.floor(Number(n)); };
-
 // This sensor is to aggregate device's flow every 10 minutes
 
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
@@ -138,7 +136,7 @@ class FlowAggregationSensor extends Sensor {
           t.upload += flowTool.getUploadTraffic(flow) || 0;
         }
       })
-    };
+    }
 
     return traffic;
   }
@@ -163,13 +161,19 @@ class FlowAggregationSensor extends Sensor {
       let t = traffic[destIP];
 
       if(typeof t === 'undefined') {
-        traffic[destIP] = {upload: 0, download: 0};
+        traffic[destIP] = {upload: 0, download: 0, port:[]};
         t = traffic[destIP];
       }
 
       t.upload += flowTool.getUploadTraffic(flow);
       t.download += flowTool.getDownloadTraffic(flow);
-
+      for(let port of flowTool.getTrafficPort(flow)){
+        port = ""+port;//make sure it is string
+        if(t.port.indexOf(port)==-1){
+          t.port.push(port)
+        }
+      }
+      t.port.sort((a,b)=>{return a-b})
     });
 
     return traffic;
@@ -452,7 +456,6 @@ class FlowAggregationSensor extends Sensor {
     flows.push.apply(flows, incomingFlows);
 
     let traffic = this.trafficGroupByDestIP(flows);
-
     await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
   }

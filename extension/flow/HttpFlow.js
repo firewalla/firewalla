@@ -1,3 +1,18 @@
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 
 const log = require('../../net2/logger.js')(__filename);
@@ -27,7 +42,7 @@ let instance = null;
 class HttpFlow {
   constructor() {
     if(instance === null) {
-      instance = this;      
+      instance = this;
     }
     return instance;
   }
@@ -90,20 +105,19 @@ class HttpFlow {
 
       const srcIP = obj["id.orig_h"];
       const destIP = obj["id.resp_h"];
-      const destPort = obj["id.resp_p"];
       const host = obj.host;
       const uri = obj.uri;
       let localIP = null;
       let flowDirection = null;
 
-      if (sysManager.isLocalIP(srcIP) && sysManager.isLocalIP(destIP)) {
-        return; // ignore any local http traffic
-      }
-
-      if (sysManager.isLocalIP(srcIP) && sysManager.isLocalIP(destIP) === false) {
-        flowDirection = "outbound";
-        localIP = srcIP;
-      } else if (sysManager.isLocalIP(srcIP) === false && sysManager.isLocalIP(destIP)) {
+      if (sysManager.isLocalIP(srcIP)) {
+        if (sysManager.isLocalIP(destIP)) {
+          return; // ignore any local http traffic
+        } else {
+          flowDirection = "outbound";
+          localIP = srcIP;
+        }
+      } else if (sysManager.isLocalIP(destIP)) {
         flowDirection = "inbound";
         localIP = destIP;
       } else {
@@ -128,7 +142,7 @@ class HttpFlow {
           suppressEventLogging: true
         });
       }
-    
+
       const flowKey = `flow:http:${flowDirection}:${mac}`;
       const strdata = JSON.stringify(obj);
       const redisObj = [flowKey, obj.ts, strdata];

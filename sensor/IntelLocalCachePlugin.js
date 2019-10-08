@@ -18,12 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const extensionManager = require('./ExtensionManager.js')
-
-const f = require('../net2/Firewalla.js');
-
 const updateInterval = 2 * 24 * 3600 * 1000 // once per two days
 
 const hashKey = "gsb:bloomfilter:compressed";
@@ -32,34 +26,72 @@ const BloomFilter = require('../vendor_lib/bloomfilter.js').BloomFilter;
 
 const urlhash = require("../util/UrlHash.js");
 
+const f = require('../net2/Firewalla.js');
+
 const _ = require('lodash');
 
 const bone = require("../lib/Bone.js");
 
-const jsonfile = require('jsonfile');
-
 const zlib = require('zlib');
+
+const fs = require('fs');
 
 const Promise = require('bluebird');
 
+Promise.promisifyAll(fs);
+
 const inflateAsync = Promise.promisify(zlib.inflate);
+
+const intelCacheFile = `${f.getUserConfigFolder()}/intel/intel_cache.file`;
 
 class IntelLocalCachePlugin extends Sensor {
 
   async loadCacheFromBone() {
     log.info(`Loading intel cache from cloud...`);
-    const data = await bone.hashsetAsync(hashKey)
+    const data = await bone.hashsetAsync(hashKey);
+    if(data) {
+      const bf = await this.loadCacheFromBase64(data);
+      if(bf) {
+        this.bf = bf;
+      }
+    }
+
+    if(!this.bf) {
+      // fallback to load from local file system
+      await this.loadCacheFromLocal(intelCacheFile);
+    }
+  }
+
+  async loadCacheFromLocal(path) {
     try {
+      await fs.accessAsync(path, fs.constants.R_OK);
+log.info(`Loading data from path: ${path}`);
+      const data = await fs.readFileAsync(path,{encoding: 'utf8'});
+      if(data) {
+        const bf = await this.loadCacheFromBase64(data);
+        if(bf) {
+          this.bf = bf;
+        }
+      }
+    } catch(err) {
+      log.info("Local intel file not exist, skipping...");
+      return;
+    }
+  }
+
+  async loadCacheFromBase64() {
+    try {
+      const data = await bone.hashsetAsync(hashKey)
       const buffer = Buffer.from(data, 'base64');
       const decompressedData = await inflateAsync(buffer);
       const decompressedString = decompressedData.toString();
       const payload = JSON.parse(decompressedString);
-      // jsonfile.writeFileSync("/tmp/x.json", payload);
-      this.bf = new BloomFilter(payload, 16);
+      const bf = new BloomFilter(payload, 16);
       log.info(`Intel cache is loaded successfully! cache size ${decompressedString.length}`);
-    } catch (err) {
-      log.error(`Failed to load intel cache from cloud, err: ${err}`);
-      this.bf = null;
+      return bf;
+    } catch(err) {
+      log.error(`Failed to load cache data, err: ${err}`);
+      return null;
     }
   }
 

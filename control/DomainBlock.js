@@ -37,13 +37,25 @@ const sysManager = new SysManager()
 const sem = require('../sensor/SensorEventManager.js').getInstance()
 const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
-
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
-
 class DomainBlock {
 
   constructor() {
+    sem.once('IPTABLES_READY', async () => {
+      sem.on('UPDATE_CATEGORY_DEFAULT_DOMAIN', async (event) => {
+        if (event.category) {
+          const PM2 = require('../alarm/PolicyManager2.js');
+          const pm2 = new PM2();
+          const policies = await pm2.loadActivePoliciesAsync();
+          for (const policy of policies) {
+            if (policy.type == "category" && policy.target == event.category && policy.dnsmasq_entry) {
+              await pm2.tryPolicyEnforcement(policy, 'reenforce', policy)
+            }
+          }
+        }
+      })
+    })
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
@@ -51,22 +63,20 @@ class DomainBlock {
     options = options || {}
     log.info(`Implementing Block on ${domain}`);
 
-    if(!options.no_dnsmasq_entry) {
-      await dnsmasq.addPolicyFilterEntry(domain, options).catch((err) => undefined);
-    }
-
-    if(!options.no_dnsmasq_reload) {
+    if (options.dnsmasq_entry) {
+      await dnsmasq.addPolicyFilterEntry([domain], options).catch((err) => undefined);
       sem.emitEvent({
         type: 'ReloadDNSRule',
         message: 'DNSMASQ filter rule is updated',
         toProcess: 'FireMain',
         suppressEventLogging: true
       })
+      return;
     }
 
     await this.syncDomainIPMapping(domain, options)
     domainUpdater.registerUpdate(domain, options);
-    if(!options.ignoreApplyBlock) {
+    if (!options.ignoreApplyBlock) {
       await this.applyBlock(domain, options);
     }
 
@@ -76,38 +86,35 @@ class DomainBlock {
   }
 
   async unblockDomain(domain, options) {
-    if(!options.ignoreUnapplyBlock) {
-      await this.unapplyBlock(domain, options);
-    }
-
-    if(!this.externalMapping) {
-      await domainIPTool.removeDomainIPMapping(domain, options);
-    }
-
-    domainUpdater.unregisterUpdate(domain, options);
-
-    if(!options.no_dnsmasq_entry) {
-      await dnsmasq.removePolicyFilterEntry(domain).catch((err) => undefined);
-    }
-
-    if(!options.no_dnsmasq_reload) {
+    if (options.dnsmasq_entry) {
+      await dnsmasq.removePolicyFilterEntry([domain], options).catch((err) => undefined);
       sem.emitEvent({
         type: 'ReloadDNSRule',
         message: 'DNSMASQ filter rule is updated',
         toProcess: 'FireMain',
         suppressEventLogging: true,
       })
+      return
     }
+    if (!options.ignoreUnapplyBlock) {
+      await this.unapplyBlock(domain, options);
+    }
+
+    if (!this.externalMapping) {
+      await domainIPTool.removeDomainIPMapping(domain, options);
+    }
+
+    domainUpdater.unregisterUpdate(domain, options);
   }
 
   async applyBlock(domain, options) {
     const blockSet = options.blockSet || "blocked_domain_set"
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
-    if(addresses) {
+    if (addresses) {
       for (const addr of addresses) {
         try {
           await Block.block(addr, blockSet)
-        } catch(err) {}
+        } catch (err) { }
       }
     }
   }
@@ -116,11 +123,11 @@ class DomainBlock {
     const blockSet = options.blockSet || "blocked_domain_set"
 
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
-    if(addresses) {
+    if (addresses) {
       for (const addr of addresses) {
         try {
           Block.unblock(addr, blockSet)
-        } catch(err) {}
+        } catch (err) { }
       }
     }
   }
@@ -130,18 +137,18 @@ class DomainBlock {
 
     return new Promise((resolve, reject) => {
       resolve4Async(domain).then((addresses) => {
-        if(!callbackCalled) {
+        if (!callbackCalled) {
           callbackCalled = true
           resolve(addresses)
         }
       }).catch((err) => {
-        if(!callbackCalled) {
+        if (!callbackCalled) {
           callbackCalled = true
           resolve([]) // return empty array in case any error
         }
       })
       setTimeout(() => {
-        if(!callbackCalled) {
+        if (!callbackCalled) {
           callbackCalled = true
           resolve([]) // return empty array in case timeout
         }
@@ -154,18 +161,18 @@ class DomainBlock {
 
     return new Promise((resolve, reject) => {
       resolve6Async(domain).then((addresses) => {
-        if(!callbackCalled) {
+        if (!callbackCalled) {
           callbackCalled = true
           resolve(addresses)
         }
       }).catch((err) => {
-        if(!callbackCalled) {
+        if (!callbackCalled) {
           callbackCalled = true
           resolve([]) // return empty array in case any error
         }
       })
       setTimeout(() => {
-        if(!callbackCalled) {
+        if (!callbackCalled) {
           log.warn("Timeout when query domain", domain)
           callbackCalled = true
           resolve([]) // return empty array in case timeout
@@ -179,7 +186,7 @@ class DomainBlock {
     await dnsTool.addReverseDns(domain, v4Addresses);
 
     const gateway6 = sysManager.myGateway6()
-    if(gateway6) { // only query if ipv6 is supported
+    if (gateway6) { // only query if ipv6 is supported
       const v6Addresses = await this.resolve6WithTimeout(domain, 3 * 1000).catch((err) => []);
       await dnsTool.addReverseDns(domain, v6Addresses);
       return v4Addresses.concat(v6Addresses)
@@ -201,7 +208,7 @@ class DomainBlock {
     const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
     list.push.apply(list, addresses)  // concat arrays
 
-    if(!options.exactMatch) {
+    if (!options.exactMatch) {
       const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
       list.push.apply(list, patternAddresses)
     }
@@ -220,7 +227,7 @@ class DomainBlock {
 
     const existing = await rclient.existsAsync(key);
 
-    if(!existing) {
+    if (!existing) {
       return
     }
 
@@ -234,7 +241,7 @@ class DomainBlock {
       set[addr] = 1
     })
 
-    if(!options.exactMatch) {
+    if (!options.exactMatch) {
       const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
       patternAddresses.forEach((addr) => {
         set[addr] = 1
@@ -249,15 +256,74 @@ class DomainBlock {
     })
 
     // only add new changed ip addresses, there is no need to remove any old ip addrs
-    for(let addr in set) {
-      if(!existingSet[addr]) {
-        await rclient.saddAsync(key,addr);
+    for (let addr in set) {
+      if (!existingSet[addr]) {
+        await rclient.saddAsync(key, addr);
         let blockSet = "blocked_domain_set";
         if (options.blockSet)
           blockSet = options.blockSet;
         await Block.block(addr, blockSet).catch((err) => undefined);
       }
     }
+  }
+  async blockCategory(category, options) {
+    const domains = await this.getCategoryDomains(category);
+    await dnsmasq.addPolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
+    sem.emitEvent({
+      type: 'ReloadDNSRule',
+      message: 'DNSMASQ filter rule is updated',
+      toProcess: 'FireMain',
+      suppressEventLogging: true
+    })
+  }
+
+  async unblockCategory(category, options) {
+    const domains = await this.getCategoryDomains(category);
+    await dnsmasq.removePolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
+    sem.emitEvent({
+      type: 'ReloadDNSRule',
+      message: 'DNSMASQ filter rule is updated',
+      toProcess: 'FireMain',
+      suppressEventLogging: true,
+    })
+  }
+  async updateCategoryBlock(category) {
+    const domains = await this.getCategoryDomains(category);
+    await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+  }
+  async getCategoryDomains(category) {
+    const CategoryUpdater = require('./CategoryUpdater.js');
+    const categoryUpdater = new CategoryUpdater();
+    const domains = await categoryUpdater.getDomainsWithExpireTime(category);
+    const excludedDomains = await categoryUpdater.getExcludedDomains(category);
+    const defaultDomains = await categoryUpdater.getDefaultDomains(category);
+    const includedDomains = await categoryUpdater.getIncludedDomains(category);
+    const finalDomains = domains.filter((de) => {
+      return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
+    }).map((de) => { return de.domain }).concat(defaultDomains, includedDomains)
+
+    function dedupAndPattern(arr) {
+      const pattern = arr.filter((domain) => {
+        return domain.startsWith("*.")
+      }).map((domain) => domain.substring(2))
+      return Array.from(new Set(arr.filter((domain) => {
+        if (!domain.startsWith("*.") && pattern.includes(domain)) {
+          return false;
+        } else if (domain.startsWith("*.")) {
+          return false;
+        } else {
+          return true;
+        }
+      }).concat(pattern)))
+    }
+    return dedupAndPattern(finalDomains)
+  }
+  patternDomain(domain) {
+    domain = domain || "";
+    if (domain.startsWith("*.")) {
+      domain = domain.substring(2);
+    }
+    return domain;
   }
 }
 

@@ -643,6 +643,19 @@ class FlowTool {
       return flow.rb;
     }
   }
+  getTrafficPort(flow) {
+    let port;
+    if(flow.fd == "out"){
+      port = flow.sp
+    }else{
+      port = flow.dp
+    }
+    if(Array.isArray(port)){
+      return port
+    }else{
+      return [port]
+    }
+  }
 }
 
 module.exports = function() {
