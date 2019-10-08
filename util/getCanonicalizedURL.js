@@ -2,6 +2,7 @@
 var URL = require('url');
 var StringCursor = require('./StringCursor');
 var Punycode = require('punycode');
+var Pinyin = require('../vendor_lib/pinyin/index');
 
 var PERCENT_ESCAPE = /%([A-Fa-f0-9]{2})/g;
 var ESCAPED_CHARCODES = [35, 37];
@@ -50,6 +51,13 @@ function getCanonicalizedHostname(hostname) {
   );
 }
 
+function getCanonicalizedDomainname(hostname) {
+  return Pinyin(hostname).toLowerCase().replace(/^\.+/, '')
+    .replace(/\.+$/, '')
+    .replace(/\.+/, '.')
+    .replace(/[^\w.-]/g, '')
+}
+
 function getCanonicalizedPathname(pathname) {
   return getEncodedURI(
     getEntirelyDecodedURI('/' + pathname)
@@ -89,7 +97,8 @@ function getCanonicalizedURL(url) {
   );
 }
 
-module.exports = { 
-  getCanonicalizedURL: getCanonicalizedURL, 
-  getCanonicalizedHostname: getCanonicalizedHostname 
+module.exports = {
+  getCanonicalizedURL: getCanonicalizedURL,
+  getCanonicalizedHostname: getCanonicalizedHostname,
+  getCanonicalizedDomainname: getCanonicalizedDomainname
 };
