@@ -47,6 +47,8 @@ const migrationPrefix = "oldDataMigration";
 
 const CommonKeys = require('../net2/CommonKeys.js');
 
+const exec = require('child-process-promise').exec;
+
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
 }
@@ -143,6 +145,20 @@ class OldDataCleanSensor extends Sensor {
 
   cleanHourlyFlow() {
 
+  }
+
+  async cleanFlowGraph() {
+    const keys = await rclient.keysAsync("flowgraph:*");
+    for(const key of keys) {
+      const ttl = await rclient.ttlAsync(key);
+      if(ttl === -1) {
+        await rclient.delAsync(key);
+      }
+    }
+  }
+
+  async cleanFlowGraphWhenInitializng() {
+    return exec("redis-cli keys 'flowgraph:*' | xargs -n 100 redis-cli del");
   }
 
   async cleanHourlyStats() {
@@ -365,6 +381,7 @@ class OldDataCleanSensor extends Sensor {
     await this.cleanDuplicatedPolicy();
     await this.cleanDuplicatedException();
     await this.cleanInvalidMACAddress();
+    await this.cleanFlowGraphWhenInitializng();
   }
 
   async scheduledJob() {
@@ -392,7 +409,7 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
       await this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365);
       await this.cleanFlowX509();
-
+      await this.cleanFlowGraph();
       await this.cleanupAlarmExtendedKeys();
       await this.cleanAlarmIndex();
       await this.cleanExceptions();
