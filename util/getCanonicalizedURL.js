@@ -2,7 +2,6 @@
 var URL = require('url');
 var StringCursor = require('./StringCursor');
 var Punycode = require('punycode');
-var Pinyin = require('../vendor_lib/pinyin/index');
 
 var PERCENT_ESCAPE = /%([A-Fa-f0-9]{2})/g;
 var ESCAPED_CHARCODES = [35, 37];
@@ -52,7 +51,7 @@ function getCanonicalizedHostname(hostname) {
 }
 
 function getCanonicalizedDomainname(hostname) {
-  return Pinyin(hostname).toLowerCase().replace(/^\.+/, '')
+  return hostname.toLowerCase().replace(/^\.+/, '')
     .replace(/\.+$/, '')
     .replace(/\.+/, '.')
     .replace(/[^\w.-]/g, '')
