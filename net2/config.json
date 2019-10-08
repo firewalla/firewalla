@@ -77,7 +77,8 @@
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "VPNCheckPlugin": {},
-    "SafeSearchPlugin": {}
+    "SafeSearchPlugin": {},
+    "RemoteNotificationSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -374,6 +375,13 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "NetworkStatsSensor": {
+      "internetTestUrls": {
+        "google": "http://google.com",
+        "github": "http://github.com"
+      },
+      "interval": 300
+    },
     "ICMP6Sensor": {},
     "CPUSensor": {
       "interval": 60,
@@ -590,7 +598,9 @@
     "insane_mode": false,
     "cpu_monitor": true,
     "speed_test": false,
-    "safe_search": false
+    "safe_search": false,
+    "network_stats": false,
+    "link_stats": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
