@@ -42,46 +42,58 @@ Promise.promisifyAll(fs);
 
 const inflateAsync = Promise.promisify(zlib.inflate);
 
-const intelCacheFile = `${f.getUserConfigFolder()}/intel/intel_cache.file`;
+const intelCacheFile = `${f.getUserConfigFolder()}/intel_cache.file`;
 
 class IntelLocalCachePlugin extends Sensor {
 
+  async loadCache() {
+    let stats, noent;
+    try {
+      stats = await fs.statAsync(intelCacheFile);
+    } catch (err) {
+      if (err.code !== "ENOENT") {
+        throw err;
+      }
+      noent = true;
+    }
+    // to download from cloud only if filter file has not been updated recently or doesn't exsit
+    if (noent || (new Date() - stats.mtime > updateInterval)) {
+      await this.loadCacheFromBone()
+    } else {
+      await this.loadCacheFromLocal(intelCacheFile);
+    }
+  }
   async loadCacheFromBone() {
     log.info(`Loading intel cache from cloud...`);
     const data = await bone.hashsetAsync(hashKey);
-    if(data) {
+    if (data) {
+      await fs.writeFileAsync(intelCacheFile, data);
       const bf = await this.loadCacheFromBase64(data);
-      if(bf) {
+      if (bf) {
         this.bf = bf;
       }
-    }
-
-    if(!this.bf) {
-      // fallback to load from local file system
-      await this.loadCacheFromLocal(intelCacheFile);
     }
   }
 
   async loadCacheFromLocal(path) {
     try {
       await fs.accessAsync(path, fs.constants.R_OK);
-log.info(`Loading data from path: ${path}`);
-      const data = await fs.readFileAsync(path,{encoding: 'utf8'});
-      if(data) {
+      log.info(`Loading data from path: ${path}`);
+      const data = await fs.readFileAsync(path, { encoding: 'utf8' });
+      if (data) {
         const bf = await this.loadCacheFromBase64(data);
-        if(bf) {
+        if (bf) {
           this.bf = bf;
         }
       }
-    } catch(err) {
+    } catch (err) {
       log.info("Local intel file not exist, skipping...");
       return;
     }
   }
 
-  async loadCacheFromBase64() {
+  async loadCacheFromBase64(data) {
     try {
-      const data = await bone.hashsetAsync(hashKey)
       const buffer = Buffer.from(data, 'base64');
       const decompressedData = await inflateAsync(buffer);
       const decompressedString = decompressedData.toString();
@@ -89,40 +101,40 @@ log.info(`Loading data from path: ${path}`);
       const bf = new BloomFilter(payload, 16);
       log.info(`Intel cache is loaded successfully! cache size ${decompressedString.length}`);
       return bf;
-    } catch(err) {
+    } catch (err) {
       log.error(`Failed to load cache data, err: ${err}`);
       return null;
     }
   }
 
   async run() {
-    await this.loadCacheFromBone();
+    await this.loadCache();
 
     setInterval(() => {
-      this.loadCacheFromBone();
+      this.loadCache();
     }, updateInterval);
   }
 
   checkUrl(url) {
     // for testing only
-    if(this.config && this.config.testURLs && this.config.testURLs.includes(url)) {
+    if (this.config && this.config.testURLs && this.config.testURLs.includes(url)) {
       return true;
     }
 
-    if(!this.bf) {
+    if (!this.bf) {
       return false;
     }
 
     const hashes = urlhash.canonicalizeAndHashExpressions(url);
 
     const matchedHashes = hashes.filter((hash) => {
-      if(!hash) {
+      if (!hash) {
         return false;
       }
 
       const prefix = hash[1];
 
-      if(!prefix) {
+      if (!prefix) {
         return false;
       }
 
