@@ -205,6 +205,10 @@ module.exports = class HostManager {
 
   basicDataForInit(json, options) {
     let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
+    if(networkinfo.gateway === null) {
+      delete networkinfo.gateway;
+    }
+
     json.network = networkinfo;
 
     sysManager.updateInfo();

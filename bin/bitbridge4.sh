@@ -9,6 +9,10 @@ if [[ $(uname -m) == "aarch64" ]]; then
 	ln -sfT real.aarch64 real
 fi
 
+if [[ $(uname -m) == "x86_64" ]]; then
+	ln -sfT real.x86_64 real
+fi       
+
 if [[ -e $FIREWALLA_BIN/dev ]]; then
   cp $FIREWALLA_BIN{/mock,}/$BINARY
 else

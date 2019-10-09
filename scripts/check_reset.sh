@@ -22,8 +22,12 @@
 # 3. if yes, then call the overlayfs reset function, then delete the file if you can. (prevent next reboot, also go to infiitnte reset)
 # 4. if no, proceed.
 
-USB_MOUNT=/media/usb
-USB_DEV=/dev/sda1
+: ${USB_MOUNT:=/media/usb}
+: ${USB_DEV:=/dev/sda1}
+
+if [[ $(uname -m) == "x86_64" ]]; then
+fi
+
 RESET_FILE='firewalla_reset'
 RESET_SPOOF_FILE='firewalla_no_spoof'
 USB_RESET_FILE="${USB_MOUNT}/${RESET_FILE}"
