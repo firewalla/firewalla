@@ -377,14 +377,12 @@
     "IPv6DiscoverySensor": {},
     "NetworkStatsSensor": {
       "internetTestHosts": [
-        "dsafadsewrewqreqw.com",
         "google.com",
         "github.com"
       ],
       "dnsServers": [
         "1.1.1.1",
-        "8.8.8.8",
-        "119.29.29.29"
+        "8.8.8.8"
       ],
       "interval": 300
     },
