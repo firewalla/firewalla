@@ -6,7 +6,7 @@
 const Child = require('child_process');
 const Dns = require('dns');
 const Net = require('net');
-const f = require('../net2/Firewalla.js');
+const f = require('../../net2/Firewalla.js');
 const tracerouteBinary = `${f.getFirewallaHome()}/vendor/traceroute/traceroute`;
 const internals = {};
 
