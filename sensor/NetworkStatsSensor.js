@@ -30,6 +30,9 @@ const Ping = require('../extension/ping/Ping.js');
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager();
 
+const util = require('util');
+const dns = require("dns");
+const dnsLookupAsync = util.promisify(dns.lookup);
 const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js')
 
@@ -54,7 +57,9 @@ class NetworkStatsSensor extends Sensor {
     })
 
     this.previousLog = new Set();
+    this.checkNetworkStatus();
     setInterval(() => {
+      this.checkNetworkStatus();
       if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
 
       this.checkLinkStats();
@@ -62,7 +67,7 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async turnOn() {
-    if(this.config.pingConfig) {
+    if (this.config.pingConfig) {
       Ping.configure(this.config.pingConfig);
     } else {
       Ping.configure();
@@ -76,10 +81,10 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async turnOff() {
-    if(this.pings) {
-      for(const t in this.pings) {
+    if (this.pings) {
+      for (const t in this.pings) {
         const p = this.pings[t];
-        if(p) {
+        if (p) {
           p.stop();
           delete this.pings[t];
         }
@@ -94,7 +99,7 @@ class NetworkStatsSensor extends Sensor {
   }
 
   testPingPerf(type, target, redisKey) {
-    if(this.pings[type]) {
+    if (this.pings[type]) {
       this.pings[type].stop();
       delete this.pings[type];
     }
@@ -114,7 +119,7 @@ class NetworkStatsSensor extends Sensor {
 
   testDNSServerPing() {
     const dnses = sysManager.myDNS();
-    if(!_.isEmpty(dnses)) {
+    if (!_.isEmpty(dnses)) {
       this.testPingPerf("dns", dnses[0], "perf:ping:dns");
     }
   }
@@ -139,7 +144,7 @@ class NetworkStatsSensor extends Sensor {
       // there's always an empty string
       if (lines.length <= 1) return;
 
-      for (let i = 0; i < lines.length - 1; i ++) {
+      for (let i = 0; i < lines.length - 1; i++) {
         const line = lines[i];
         const numberAndTime = line.split(' ')[0].split(':');
         const lineNumber = numberAndTime[0];
@@ -165,9 +170,31 @@ class NetworkStatsSensor extends Sensor {
 
       }
 
-    } catch(err) {
+    } catch (err) {
       log.error("Failed getting device log", err)
     }
+  }
+
+  async checkNetworkStatus() {
+    const internetTestHosts = this.config.internetTestHosts;
+    const dnsServers = this.config.dnsServers;
+    let pingResult, dnslookupResult;
+    for (const dnsServer of dnsServers) {
+      if (!pingResult || (pingResult && pingResult.error)) {
+        try {
+          pingResult = await exec(`ping -c 1 ${dnsServer}`);
+        } catch (err) {
+          log.error("ping error", err)
+        }
+      }
+    }
+    for (const internetTestHost of internetTestHosts) {
+      if (!dnslookupResult || (dnslookupResult && dnslookupResult.err)) {
+        dnslookupResult = await dnsLookupAsync(internetTestHost);
+      }
+    }
+    rclient.hsetAsync("network:status", "ping", !!pingResult);
+    rclient.hsetAsync("network:status", "dnslookup", dnslookupResult ? !dnslookupResult.err : false);
   }
 }
 

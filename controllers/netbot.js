@@ -134,7 +134,7 @@ const migration = require('../migration/migration.js');
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js')
 const FRPSUCCESSCODE = 0
@@ -1901,6 +1901,17 @@ class netBot extends ControllerBot {
             let isPublic = iptool.isPublic(secondStepIp);
             this.simpleTxData(msg, { hops: hops, secondStepIp: secondStepIp, isPublic: isPublic, destination: destination }, null, callback);
           }
+        })
+        break;
+      case "networkStatus":
+        (async () => {
+          const { ping, dnslookup } = await rclient.hgetallAsync("network:status");
+          this.simpleTxData(msg, {
+            ping: ping == "true",
+            dnslookup: dnslookup == "true",
+            gigabit: await platform.getNetworkSpeed() >= 1000,
+            speed: 0
+          }, null, callback);
         })
         break;
       default:
