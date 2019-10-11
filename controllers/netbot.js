@@ -1912,7 +1912,7 @@ class netBot extends ControllerBot {
             gigabit: await platform.getNetworkSpeed() >= 1000,
             speed: 0
           }, null, callback);
-        })
+        })();
         break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
