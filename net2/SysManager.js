@@ -406,6 +406,20 @@ module.exports = class {
         callback(err);
       }
     });
+
+    rclient.hgetall("sys:network:settings", (err, results) => {
+      if (err == null) {
+        this.networkSettings = results;
+        if (this.networkSettings == null)
+          return;
+        
+        for (let r in this.networkSettings) {
+          this.networkSettings[r] = JSON.parse(this.networkSettings[r]);
+        }
+      }
+      if (callback)
+        callback(err);
+    });
   }
 
   setConfig(config) {
@@ -431,6 +445,16 @@ module.exports = class {
   async getVersionUpdate() {
     return rclient.getAsync("sys:versionUpdate").then((versionDesc) => {
       return JSON.parse(versionDesc)
+    }).catch((err) => {
+      return null;
+    });
+  }
+
+  async getLanConfigurations() {
+    return rclient.hgetAsync("sys:network:settings", "lans").then((value) => {
+      if (value)
+        return JSON.parse(value);
+      else return null;
     }).catch((err) => {
       return null;
     });
@@ -632,6 +656,23 @@ module.exports = class {
     return host === "firewalla.encipher.io";
   }
 
+  inLanSubnets4(ip4) {
+    if (!iptool.isV4Format(ip4)) return false;
+    else {
+      if (this.networkSettings && this.networkSettings.lans && Array.isArray(this.networkSettings.lans)) {
+        const lanConfs = this.networkSettings.lans;
+        for (let lanConf of lanConfs) {
+          if (lanConf.enabled === true) {
+            const ip4Prefixes = lanConf.ip4Prefixes;
+            if (iptool.cidrSubnet(ip4Prefixes).contains(ip4))
+              return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   inMySubnets4(ip4) {
     if (!iptool.isV4Format(ip4)) return false;
     else return (
@@ -805,7 +846,7 @@ module.exports = class {
       if (this.isMulticastIP4(ip)) {
         return true;
       }
-      return this.inMySubnets4(ip);
+      return this.inMySubnets4(ip) || this.inLanSubnets4(ip);
 
     } else if (iptool.isV6Format(ip)) {
       if (ip.startsWith('::')) {

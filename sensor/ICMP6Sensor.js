@@ -29,20 +29,22 @@ const Discovery = require('../net2//Discovery.js');
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
+const Config = require('../net2/config.js');
 
 class ICMP6Sensor extends Sensor {
   constructor() {
     super();
     this.myMac = null;
+    this.config = Config.getConfig(true);
   }
 
   run() {
     (async () => {
       try {
-        const result = await execAsync("cat /sys/class/net/eth0/address");
+        const result = await execAsync(`cat /sys/class/net/${this.config.monitoringInterface}/address`);
         this.myMac = result.stdout.trim().toUpperCase();
       } catch (err) {
-        log.warn("Failed to get self MAC address from /sys/class/net/eth0/address");
+        log.warn(`Failed to get self MAC address from /sys/class/net/${this.config.monitoringInterface}/address`);
       }
       if (!this.myMac) {
         const d = new Discovery("ICMP6Sensor", fConfig, "info", false);
@@ -61,7 +63,7 @@ class ICMP6Sensor extends Sensor {
       }
 
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla
-      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', 'eth0', '-en', `!(ether src ${this.myMac}) && icmp6 && ip6[40] == 136`]);
+      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', this.config.monitoringInterface, '-en', `!(ether src ${this.myMac}) && icmp6 && ip6[40] == 136`]);
       const pid = tcpdumpSpawn.pid;
       log.info("TCPDump icmp6 started with PID: ", pid);
   

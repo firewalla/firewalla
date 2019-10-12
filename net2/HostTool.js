@@ -24,6 +24,8 @@ const sysManager = new SysManager('info');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const Config = require('./config.js');
+
 const Hashes = require('../util/Hashes.js');
 
 let instance = null;
@@ -42,8 +44,10 @@ class HostTool {
       instance = this;
 
       this.ipMacMapping = {};
+      this.config = Config.getConfig(true);
       setInterval(() => {
         this._flushIPMacMapping();
+        this.config = Config.getConfig(true);
       }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
     }
     return instance;
@@ -407,7 +411,7 @@ class HostTool {
   }
 
   async linkMacWithIPv6(v6addr, mac) {
-    await require('child-process-promise').exec("ping6 -c 3 -I eth0 " + v6addr)
+    await require('child-process-promise').exec(`ping6 -c 3 -I ${this.config.monitoringInterface} ` + v6addr)
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;

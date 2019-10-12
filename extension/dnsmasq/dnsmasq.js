@@ -724,6 +724,16 @@ module.exports = class DNSMASQ {
       log.info("Add dns rule: ", wifiSubnet, dns);
       await iptables.dnsChangeAsync(wifiSubnet, dns, 'local', true);
     }
+
+    const lanConfs = await sysManager.getLanConfigurations();
+    if (lanConfs && Array.isArray(lanConfs)) {
+      for (let lanConf of lanConfs) {
+        if (lanConf.enabled === true) {
+          const ip4Prefixes = lanConf.ip4Prefixes;
+          await iptables.dnsChangeAsync(ip4Prefixes, dns, 'local', true);
+        }
+      }
+    }
   }
 
   async _add_ip6tables_rules() {
@@ -1085,6 +1095,13 @@ module.exports = class DNSMASQ {
         subnet = ip.cidrSubnet(fConfig.wifiInterface.ip);
     }
 
+    try {
+      // try if network is already a cidr subnet
+      subnet = ip.cidrSubnet(network);
+    } catch (err) {
+      subnet = null;
+    }
+
     if (!subnet)
       return null;
     const firstAddr = ip.toLong(subnet.firstAddress);
@@ -1197,14 +1214,48 @@ module.exports = class DNSMASQ {
       cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, secondaryRouterIp);
 
       // gateway ip as router for unmonitored hosts
-if(alternativeRouterIp) {
-      cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,3,%s", cmd, monitoringInterface, alternativeRouterIp);
-}
+      if (alternativeRouterIp) {
+        cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,3,%s", cmd, monitoringInterface, alternativeRouterIp);
+      }
 
       cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,6,%s", cmd, monitoringInterface, secondaryDnsServers);
       cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,6,%s", cmd, monitoringInterface, alternativeDnsServers);
     }
 
+    if (this.mode === Mode.MODE_ROUTER) {
+      log.info("Router mode is enabled");
+      // allocate IPs to lan/vlan interfaces per configuration
+      const lanConfs = await sysManager.getLanConfigurations();
+      if (lanConfs && Array.isArray(lanConfs)) {
+        for (let lanConf of lanConfs) {
+          const dhcp4Conf = lanConf.dhcp4;
+          if (lanConf.enabled === true && dhcp4Conf && dhcp4Conf.enabled === true) {
+            const gw = dhcp4Conf.gateway;
+            const subnetMask = dhcp4Conf.subnetMask;
+            const gwCidrSubnet = ip.subnet(gw, subnetMask);
+            const defaultRange = this.getDefaultDhcpRange(`${gw}/${gwCidrSubnet.subnetMaskLength}`);
+            const begin = dhcp4Conf.begin || defaultRange.begin;
+            const end = dhcp4Conf.end || defaultRange.end;
+            const leaseTime = dhcp4Conf.leaseTime || "24h";
+            // specify dhcp range
+            cmd = util.format("%s --dhcp-range=tag:%s,%s,%s,%s,%s",
+              cmd,
+              lanConf.intf,
+              begin,
+              end,
+              subnetMask,
+              leaseTime
+            );
+            // specify gateway option
+            cmd = util.format("%s --dhcp-option=tag:%s,3,%s", cmd, lanConf.intf, gw);
+
+            const dnsServers = (dhcp4Conf.dnsServers && dhcp4Conf.dnsServers.join(',')) || gw;
+            // specify dns name servers option
+            cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, lanConf.intf, dnsServers);
+          }
+        }
+      }
+    }
 
     if (this.mode === Mode.MODE_DHCP_SPOOF) {
       log.info("DHCP spoof feature is enabled");

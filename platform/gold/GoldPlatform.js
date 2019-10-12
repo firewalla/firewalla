@@ -28,7 +28,7 @@ const cpuProfilePath = "/etc/default/cpufrequtils";
 class YellowPlatform extends Platform {
 
   getName() {
-    return "yellow";
+    return "gold";
   }
 
   getLicenseTypes() {

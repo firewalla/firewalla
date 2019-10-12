@@ -27,6 +27,7 @@ let fHome = f.getFirewallaHome();
 let userID = f.getUserID();
 let dhcpdumpSpawn = null;
 let pid = null;
+const Config = require('../../net2/config.js');
 
 module.exports = class {
   constructor(loglevel) {
@@ -154,10 +155,11 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
 
   rawStart(callback) {
     callback = callback || function() {}
+    const config = Config.getConfig(true);
 
 
     let spawn = require('child_process').spawn;
-    let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', 'eth0']);
+    let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', config.monitoringInterface]);
     let pid = dhcpdumpSpawn.pid;
     let StringDecoder = require('string_decoder').StringDecoder;
     let decoder = new StringDecoder('utf8');

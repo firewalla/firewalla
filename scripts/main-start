@@ -227,7 +227,6 @@ sudo sysctl -w net.ipv4.tcp_congestion_control=bbr &>/dev/null
 #export FWPRODUCTION=$branch
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
 
-#nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
@@ -424,8 +423,7 @@ sync
 #    sync
 #fi
 
-DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
-#sudo /home/pi/firewalla/bin/bitbridge3 eth0 $DEFAULT_ROUTE > /dev/null 2>&1
+DEFAULT_ROUTE=$(/sbin/ip r | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
 #NMAP_DATA_FILE=$FIREWALLA_HOME/extension/nmap/nmap-mac-prefixes
 #

@@ -18,7 +18,8 @@ const log = require('./logger.js')(__filename);
 
 const linux = require('../util/linux.js');
 
-const fConfig = require('./config.js').getConfig();
+const Config = require('./config.js');
+let fConfig = Config.getConfig();
 
 const os = require('os');
 const ip = require('ip');
@@ -26,6 +27,7 @@ const dns = require('dns');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const exec = require('child-process-promise').exec
 
 let instance = null;
 
@@ -35,6 +37,32 @@ class NetworkTool {
       instance = this;
     }
     return instance;
+  }
+
+  async updateMonitoringInterface() {
+    const cmd = "/sbin/ip route show | awk '/default via/ {print $5}' | head -n 1"
+    const result = await exec(cmd).catch((err) => null);
+    if (result && result.stdout) {
+      const intf = result.stdout.trim();
+      const secondaryInterface = fConfig.secondaryInterface;
+      secondaryInterface.intf = `${intf}:0`;
+      const updatedConfig = {
+        discovery: {
+          networkInterfaces: [
+            intf,
+            `${intf}:0`,
+            "wlan0"
+          ]
+        },
+        monitoringInterface: intf,
+        monitoringInterface2: `${intf}:0`,
+        secondaryInterface: secondaryInterface
+      };
+      await Config.updateUserConfig(updatedConfig);
+      fConfig = Config.getConfig();
+    } else {
+      log.error("WAN interface is not detected");
+    }
   }
 
   _is_interface_valid(netif) {
@@ -116,6 +144,7 @@ class NetworkTool {
 
   // same as listInterfaces() but filters out non-local interfaces
   async getLocalNetworkInterface() {
+    fConfig = Config.getConfig(true);
     let intfs = fConfig.discovery && fConfig.discovery.networkInterfaces;
     if (!intfs) {
       return null;

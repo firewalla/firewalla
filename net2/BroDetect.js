@@ -1429,7 +1429,7 @@ module.exports = class {
       if (obj.note == null) {
         return;
       }
-      // TODO: on DHCP mode, notice could be generated on eth0 or eth0:0 first
+      // TODO: on DHCP mode, notice could be generated on ethx or ethx:0 first
       // and the other one will be suppressed. And we'll lost either device/dest info
       if (obj.src != null && obj.src == sysManager.myIp() ||
           obj.src != null && obj.src == sysManager.myIp2() ||

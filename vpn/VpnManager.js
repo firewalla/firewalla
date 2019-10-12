@@ -40,12 +40,15 @@ const statAsync = util.promisify(fs.stat);
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
+const Config = require('../net2/config.js');
+
 const UPNP = require('../extension/upnp/upnp.js');
 
 class VpnManager {
   constructor() {
     if (instance == null) {
       this.upnp = new UPNP(sysManager.myGateway());
+      this.config = Config.getConfig(true);
       if (firewalla.isMain()) {
         sclient.on("message", async (channel, message) => {
           switch (channel) {
@@ -113,9 +116,9 @@ class VpnManager {
 
     const commands =[
       // delete this rule if it exists, logical opertion ensures correct execution
-      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`),
+      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`),
       // insert back as top rule in table
-      `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`
+      `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`
     ];
     await iptable.run(commands);
   }
@@ -130,7 +133,7 @@ class VpnManager {
     }
     log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
     const commands = [
-      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`),
+      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`),
     ];
     this._currentLocalIp = null;
     await iptable.run(commands);

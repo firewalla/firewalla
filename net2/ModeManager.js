@@ -136,7 +136,7 @@ async function _changeToAlternativeIpSubnet() {
   const oldGateway = sysManager.myGateway();
   const oldIpSubnet = sysManager.mySubnet();
   let cmd = "";
-  // kill dhclient before change eth0 ip address, in case it is overridden by dhcp
+  // kill dhclient before change ethx ip address, in case it is overridden by dhcp
   cmd = "pgrep -x dhclient && sudo pkill dhclient; true";
   try {
     await execAsync(cmd);
@@ -144,17 +144,17 @@ async function _changeToAlternativeIpSubnet() {
     log.warn("Failed to kill dhclient");
   }
   if (oldIpSubnet !== altIpSubnet) {
-    // delete old ip from eth0
+    // delete old ip from ethx
     try {
-      cmd = util.format("sudo /sbin/ip addr del %s dev eth0", oldIpSubnet);
+      cmd = util.format("sudo /sbin/ip addr del %s dev %s", oldIpSubnet, fConfig.monitoringInterface);
       log.info("Command to remove old ip assignment: " + cmd);
       await execAsync(cmd);
       // dns rule change is done in dnsmasq.js
     } catch (err) {
-      log.warn(util.format("Old ip subnet %s is not found on eth0.", oldIpSubnet));
+      log.warn(util.format("Old ip subnet %s is not found on %s.", oldIpSubnet, fConfig.monitoringInterface));
     }
 
-    cmd = util.format("sudo /sbin/ip addr replace %s dev eth0", altIpSubnet);
+    cmd = util.format("sudo /sbin/ip addr replace %s dev %s", altIpSubnet, fConfig.monitoringInterface);
     log.info("Command to add alternative ip assignment: " + cmd);
     await execAsync(cmd);
     // dns rule change is done in dnsmasq.js
@@ -165,7 +165,7 @@ async function _changeToAlternativeIpSubnet() {
 
   if (oldGateway !== altGateway) {
     // update default route
-    cmd = util.format("sudo /sbin/ip route replace default via %s dev eth0", altGateway);
+    cmd = util.format("sudo /sbin/ip route replace default via %s dev %s", altGateway, fConfig.monitoringInterface);
     log.info("Command to update alternative gateway assignment: " + cmd);
     await execAsync(cmd);
     const savedGwFile = firewalla.getHiddenFolder() + "/run/saved_gw";
@@ -206,6 +206,21 @@ async function _enableSecondaryInterface() {
     }
   } catch(err) {
     log.error("Failed to enable secondary interface, err:", err);
+  }
+}
+
+// this should be implemented in network manager
+async function _enableLanInterfaces() {
+  const lanConfs = await sysManager.getLanConfigurations();
+  if (lanConfs && Array.isArray(lanConfs)) {
+    for (let lanConf of lanConfs) {
+      if (lanConf.enabled === true) {
+        const ip4Prefixes = lanConf.ip4Prefixes;
+        await iptables.dhcpSubnetChangeAsync(ip4Prefixes, true).catch((err) => {
+          log.error("Failed to update nat for lan interface: " + ip4Prefixes, err);
+        });
+      }
+    }
   }
 }
 
@@ -281,6 +296,10 @@ async function apply() {
       let sm = new SpooferManager();
       await hostManager.getHostsAsync()
       await sm.loadManualSpoofs(hostManager) // populate monitored_hosts based on manual Spoof configs
+      break;
+    case Mode.MODE_ROUTER:
+      await _enableLanInterfaces();
+      await pclient.publishAsync("System:IPChange", "");
       break;
     case Mode.MODE_NONE:
       // no thing
@@ -399,6 +418,13 @@ function setDHCPAndPublish() {
     });
 }
 
+function setRouterAndPublish() {
+  Mode.routerModeOn()
+    .then(() => {
+      publish(Mode.MODE_ROUTER);
+    });
+}
+
 async function setNoneAndPublish() {
   await Mode.noneModeOn()
   await publish(Mode.MODE_NONE)
@@ -410,6 +436,7 @@ module.exports = {
   listenOnChange: listenOnChange,
   publish: publish,
   setDHCPAndPublish: setDHCPAndPublish,
+  setRouterAndPublish: setRouterAndPublish,
   setSpoofAndPublish: setSpoofAndPublish,
   setAutoSpoofAndPublish: setAutoSpoofAndPublish,
   setDHCPSpoofAndPublish: setDHCPSpoofAndPublish,

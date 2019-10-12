@@ -56,7 +56,6 @@ const WifiInterface = require('./WifiInterface.js');
 // api/main/monitor all depends on sysManager configuration
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
-const config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
 const BoneSensor = require('../sensor/BoneSensor');
 const boneSensor = new BoneSensor();
@@ -64,17 +63,30 @@ const boneSensor = new BoneSensor();
 const fc = require('./config.js')
 const cp = require('child_process');
 
+const networkTool = require('./NetworkTool.js')();
+
 const pclient = require('../util/redis_manager.js').getPublishClient()
+
+let interfaceDetected = false;
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
 
+detectInterface()
 resetModeInInitStage()
 run0()
 
+async function detectInterface() {
+  await networkTool.updateMonitoringInterface().then(() => {
+    interfaceDetected = true;
+  }).catch((err) => {
+    interfaceDetected = true;
+  })
+}
+
 function run0() {
-  if (bone.cloudready()==true &&
+  if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
     boneSensor.checkIn()
@@ -84,7 +96,9 @@ function run0() {
         run() // running firewalla in non-license mode if checkin failed
       });
   } else {
-    if(!bone.cloudready()) {
+    if (!interfaceDetected) {
+      log.info("Awaiting interface detection...");
+    } else if(!bone.cloudready()) {
       log.info("Connecting to Firewalla Cloud...");
     } else if(!bone.isAppConnected()) {
       log.forceInfo("Waiting for first app to connect...");
@@ -190,11 +204,11 @@ async function run() {
   var VpnManager = require('../vpn/VpnManager.js');
 
   var BroDetector = require("./BroDetect.js");
-  let bd = new BroDetector("bro_detector", config, "info");
+  let bd = new BroDetector("bro_detector", firewallaConfig, "info");
   //bd.enableRecordHitsTimer()
 
   var Discovery = require("./Discovery.js");
-  let d = new Discovery("nmap", config, "info");
+  let d = new Discovery("nmap", firewallaConfig, "info");
 
   // make sure there is at least one usable ethernet
   d.discoverInterfaces(function(err, list) {
@@ -253,7 +267,7 @@ async function run() {
     var policyManager = new PolicyManager();
 
     try {
-      await policyManager.flush(config)
+      await policyManager.flush(firewallaConfig)
     } catch(err) {
       log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
       return;

@@ -19,6 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const ip = require('ip');
 const readline = require('readline');
+const Config = require('../net2/config.js');
 
 const cp = require('child-process-promise');
 
@@ -69,11 +70,12 @@ async function startConnCheck(src, dst, duration) {
     duration = hardTimeout;
   if (duration > 60)
     duration = 60; // test lasts at most 1 minute
+  const config = Config.getConfig(true);
   const srcIp = src.ip;
   const dstIp = dst.ip;
   const dstPort = dst.port;
   // src->dst with SYN flag, or dst->src with SYN-ACK flag
-  const tcpdumpSpawn = cp.spawn('sudo', ['timeout', duration, 'tcpdump', '-i', 'eth0', '-en', `port ${dstPort} && ((src ${srcIp} && dst ${dstIp} && tcp[13] & 2 != 0) || (src ${dstIp} && dst ${srcIp} && tcp[13] & 18 != 0))`]);
+  const tcpdumpSpawn = cp.spawn('sudo', ['timeout', duration, 'tcpdump', '-i', config.monitoringInterface, '-en', `port ${dstPort} && ((src ${srcIp} && dst ${dstIp} && tcp[13] & 2 != 0) || (src ${dstIp} && dst ${srcIp} && tcp[13] & 18 != 0))`]);
   tcpdumpSpawn.catch((err) => {}); // killed by timeout
   const tcpdump = tcpdumpSpawn.childProcess;
   const pid = tcpdump.pid;

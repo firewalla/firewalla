@@ -23,6 +23,7 @@ let spawn = require('child_process').spawn
 let Promise = require('bluebird');
 
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
+const Config = require('../../net2/config.js');
 
 const exec = require('child-process-promise').exec
 
@@ -47,7 +48,8 @@ class BitBridge {
       log.error("Cannot create bitbridge instance. Self IP should be specified for ipv4.");
       return null;
     }
-    intf = intf || "eth0";
+    const config = Config.getConfig(true);
+    intf = intf || config.monitoringInterface;
     let key = `${intf}_v4_${routerIP}_${selfIP}`;
     if (isV6) {
       key = `${intf}_v6_${routerIP}`;

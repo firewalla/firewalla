@@ -53,7 +53,7 @@ class PlatformLoader {
       this.platform = new RedPlatform();
       break;      
     case "x86_64":
-      const YellowPlatform = require('./yellow/YellowPlatform.js');
+      const YellowPlatform = require('./gold/GoldPlatform.js');
       this.platform = new YellowPlatform();
       break;
     default:

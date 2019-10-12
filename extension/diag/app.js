@@ -28,6 +28,8 @@ const exec = require('child-process-promise').exec
 const fs = require('fs')
 Promise.promisifyAll(fs)
 
+const Config = require('../../net2/config.js');
+
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 
@@ -163,13 +165,14 @@ class App {
   }
 
   async getPrimaryIP() {
-    const eth0s = require('os').networkInterfaces()["eth0"]
+    const config = Config.getConfig(true);
+    const eths = require('os').networkInterfaces()[config.monitoringInterface];
 
-    if (eth0s) {
-      for (let index = 0; index < eth0s.length; index++) {
-        const eth0 = eth0s[index]
-        if (eth0.family == "IPv4") {
-          return eth0.address
+    if (eths) {
+      for (let index = 0; index < eths.length; index++) {
+        const eth = eths[index]
+        if (eth.family == "IPv4") {
+          return eth.address
         }
       }
     }
@@ -320,8 +323,10 @@ class App {
   }
 
   async iptablesRedirection(create = true) {
-    const findInf = await exec(`ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/`);
+    const config = Config.getConfig(true);
+    const findInf = await exec(`ip addr show dev ${config.monitoringInterface} | awk '/inet / {print $2}'|cut -f1 -d/`);
     const ips = findInf.stdout.split('\n')
+	  log.info("XXXX", ips);
 
     const action = create ? '-A' : '-D';
 

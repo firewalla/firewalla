@@ -1184,6 +1184,9 @@ class netBot extends ControllerBot {
               case "dhcp":
                 modeManager.setDHCPAndPublish()
                 break;
+              case "router":
+                modeManager.setRouterAndPublish()
+                break;
               case "none":
                 modeManager.setNoneAndPublish()
                 break;
@@ -2110,7 +2113,8 @@ class netBot extends ControllerBot {
         await mode.reloadSetupMode();
         let dhcpModeOn = await mode.isDHCPModeOn();
         if (dhcpModeOn) {
-          const dhcpFound = await dhcp.dhcpDiscover("eth0");
+          const currentConfig = fc.getConfig(true);
+          const dhcpFound = await dhcp.dhcpDiscover(currentConfig.monitoringInterface);
           const response = {
             DHCPMode: true,
             DHCPDiscover: dhcpFound
@@ -3333,7 +3337,7 @@ class netBot extends ControllerBot {
           switch (network) {
             case "secondary": {
               const currentSecondaryInterface = currentConfig.secondaryInterface;
-              const updatedConfig = { intf: "eth0:0" };
+              const updatedConfig = { intf: currentConfig.monitoringInterface2 };
               const ipAddress = intf.ipAddress;
               const subnetMask = intf.subnetMask;
               const ipSubnet = iptool.subnet(ipAddress, subnetMask);
@@ -3364,7 +3368,7 @@ class netBot extends ControllerBot {
               break;
             }
             case "alternative": {
-              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on eth0
+              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
               const updatedAltConfig = { gateway: intf.gateway };
               const altIpAddress = intf.ipAddress;
               const altSubnetMask = intf.subnetMask;
@@ -3451,7 +3455,7 @@ class netBot extends ControllerBot {
                 break;
               case "alternative":
                 // convert ip/subnet to ip address and subnet mask
-                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on eth0
+                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
                 const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
                 this.hostManager.loadPolicy((err, data) => {
                   let alternativeDnsServers = sysManager.myDNS();

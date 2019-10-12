@@ -72,7 +72,7 @@ exports.interface_type_for = async function(nic_name) {
 exports.mac_address_for = function(nic_name) {
   // This is a workaround for nodejs bug
   // https://github.com/libuv/libuv/commit/f1e0fc43d17d9f2d16b6c4f9da570a4f3f6063ed
-  // eth0:* virtual interface should use same mac address as main interface eth0
+  // ethx:* virtual interface should use same mac address as main interface ethx
 
   // 19.08.30 os.networkInterfaces() mac address on different node versions
   //    v8.16.1   failed
@@ -103,7 +103,7 @@ exports.gateway_ip6_sync = function() {
 };
 
 /*
-[ { name: 'eth0',
+[ { name: 'ethx',
     ip_address: '192.168.10.4',
     mac_address: '02:81:05:84:b0:5d',
     ip6_addresses: [ 'fe80::81:5ff:fe84:b05d' ],
@@ -111,7 +111,7 @@ exports.gateway_ip6_sync = function() {
     gateway_ip: '192.168.10.1',
     netmask: 'Mask:255.255.255.0',
     type: 'Wired' },
-  { name: 'eth0:0',
+  { name: 'ethx:0',
     ip_address: '192.168.218.1',
     mac_address: '02:81:05:84:b0:5d',
     netmask: 'Mask:255.255.255.0',

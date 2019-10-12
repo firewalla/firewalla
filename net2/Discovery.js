@@ -30,6 +30,8 @@ const hostTool = new HostTool();
 const networkTool = require('./NetworkTool.js')();
 const util = require('util');
 
+const Config = require('./config.js');
+
 /*
  *   config.discovery.networkInterfaces : list of interfaces
  */
@@ -184,6 +186,7 @@ module.exports = class {
 
   discoverInterfaces(callback) {
     this.interfaces = {};
+    const config = Config.getConfig(true);
     networkTool.listInterfaces().then(list => {
       let redisobjs = ['sys:network:info'];
       for (let i in list) {
@@ -203,7 +206,7 @@ module.exports = class {
           "subnet":"192.168.2.0/24"
         }
         */
-        if (list[i].type == "Wired" && list[i].name != "eth0:0") {
+        if (list[i].type == "Wired" && list[i].name != config.monitoringInterface2) {
           let host = {
             name: "Firewalla",
             uid: list[i].ip_address,
@@ -396,97 +399,5 @@ module.exports = class {
         }
       });
     }
-  }
-
-  //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
-  //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
-  // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
-
-  addV6Host(v6addr, mac, callback) {
-    require('child_process').exec("ping6 -c 3 -I eth0 " + v6addr, (err, out, code) => {
-    });
-    log.info("Discovery:AddV6Host:", v6addr, mac);
-    mac = mac.toUpperCase();
-    let v6key = "host:ip6:" + v6addr;
-    log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
-    sysManager.setNeighbor(v6addr);
-    rclient.hgetall(v6key, (err, data) => {
-      log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, data, err);
-      if (err == null) {
-        if (data != null) {
-          data.mac = mac;
-          data.lastActiveTimestamp = Date.now() / 1000;
-        } else {
-          data = {};
-          data.mac = mac;
-          data.lastActiveTimestamp = Date.now() / 1000;
-          data.firstFoundTimestamp = data.lastActiveTimestamp;
-        }
-        rclient.hmset(v6key, data, (err, result) => {
-          log.debug("++++++ Discover:v6Neighbor:Scan:find", err, result);
-          let mackey = "host:mac:" + mac;
-          rclient.expireat(v6key, parseInt((+new Date) / 1000) + 2592000);
-          rclient.hgetall(mackey, (err, data) => {
-            log.debug("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
-            if (err == null) {
-              if (data != null) {
-                let ipv6array = [];
-                if (data.ipv6) {
-                  ipv6array = JSON.parse(data.ipv6);
-                }
-
-                // only keep around 5 ipv6 around
-                ipv6array = ipv6array.slice(0, 8)
-                let oldindex = ipv6array.indexOf(v6addr);
-                if (oldindex != -1) {
-                  ipv6array.splice(oldindex, 1);
-                }
-                ipv6array.unshift(v6addr);
-
-                data.mac = mac.toUpperCase();
-                data.ipv6 = JSON.stringify(ipv6array);
-                data.ipv6Addr = JSON.stringify(ipv6array);
-                //v6 at times will discver neighbors that not there ...
-                //so we don't update last active here
-                //data.lastActiveTimestamp = Date.now() / 1000;
-              } else {
-                data = {};
-                data.mac = mac.toUpperCase();
-                data.ipv6 = JSON.stringify([v6addr]);
-                data.ipv6Addr = JSON.stringify([v6addr]);
-                data.lastActiveTimestamp = Date.now() / 1000;
-                data.firstFoundTimestamp = data.lastActiveTimestamp;
-              }
-              log.debug("Wring Data:", mackey, data);
-              rclient.hmset(mackey, data, (err, result) => {
-                callback(err, null);
-              });
-            } else {
-              log.error("Discover:v6Neighbor:Scan:Find:Error", err);
-              callback(null, null);
-            }
-          });
-
-        });
-      } else {
-        log.error("!!!!!!!!!!! Discover:v6Neighbor:Scan:Find:Error", err);
-        callback(null, null);
-      }
-    });
-  }
-
-  fetchHosts(callback) {
-    this.DB.sync();
-    this.DB.Host.DBModel.findAll().then((objs) => {
-      callback(null, objs);
-    });
-  }
-  fetchPorts(callback) {
-    this.DB.sync();
-    this.DB.Port.DBModel.findAll().then((objs) => {
-      callback(null, objs);
-    });
   }
 }

@@ -198,7 +198,7 @@ check_policies() {
 }
 
 is_router() {
-    GW=$(/sbin/ip route show dev eth0 | awk '/default via/ {print $3}')
+    GW=$(/sbin/ip route show | awk '/default via/ {print $3}')
     if [[ $GW == $1 ]]; then
         return 0
     else

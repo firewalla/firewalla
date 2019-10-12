@@ -27,7 +27,7 @@ fi
 (( mem <= $MIN_FREE_MEMORY )) && /home/pi/firewalla/scripts/free-memory-lastresort 
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
-DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
+DEFAULT_ROUTE=$(ip r | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
 touch /tmp/watchdog 
 
@@ -69,12 +69,12 @@ if [[ $api_process_cnt > 0 && ! -e /home/pi/.firewalla/config/disable_no_network
    exit 0
 fi
 
-FOUND=`grep "eth0:" /proc/net/dev`
+FOUND=`grep "eth.*:" /proc/net/dev`
 if [ -n "$FOUND" ] ; then
    echo found
 else
   if [[ ! -e /home/pi/.firewalla/config/disable_no_eth0_reboot ]]; then
-    /home/pi/firewalla/scripts/firelog -t cloud -m "REBOOT: FIREWALLA PING MISSING ETH0 Local Network REBOOT "
+    /home/pi/firewalla/scripts/firelog -t cloud -m "REBOOT: FIREWALLA PING MISSING ETH Local Network REBOOT "
     /home/pi/firewalla/scripts/fire-rebootf 
   fi
   exit 0

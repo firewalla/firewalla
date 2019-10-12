@@ -302,13 +302,13 @@ module.exports = class {
             return;
         }
         let task = null;
-        let cmdline = "../bin/bitbridge6a -r -w 1 eth0 " + tellIpAddr +" "+  ip6Addr;
+        let cmdline = `../bin/bitbridge6a -r -w 1 ${this.intf} ` + tellIpAddr +" "+  ip6Addr;
         if (ip6Addr.startsWith("fe80")) {
             task = require('child_process').exec(cmdline, (err, out, code) => {
             });
         }
         let taskr = null;
-        let cmdline2 = "../bin/bitbridge6a  -w 1  eth0 " + ip6Addr +" "+ tellIpAddr;
+        let cmdline2 = `../bin/bitbridge6a  -w 1 ${this.intf} ` + ip6Addr +" "+ tellIpAddr;
         if (!ip6Addr.startsWith("fe80")) {
             let taskr = require('child_process').exec(cmdline2, (err, out, code) => {
             });
@@ -458,8 +458,8 @@ module.exports = class {
     }
 
     clean6byIp(ip6Addr,tellIpAddr) {
-        let cmdline = "sudo pkill -f 'bitbridge6a -r -w 1 eth0 " + tellIpAddr +" "+  ip6Addr+"'";
-        let cmdline2 = "sudo pkill -f 'bitbridge6a  -w 1  eth0 " + ip6Addr +" "+ tellIpAddr+"'";
+        let cmdline = `sudo pkill -f 'bitbridge6a -r -w 1 ${this.intf} ` + tellIpAddr +" "+  ip6Addr+"'";
+        let cmdline2 = `sudo pkill -f 'bitbridge6a  -w 1  ${this.intf} ` + ip6Addr +" "+ tellIpAddr+"'";
       let p = require('child_process').exec(cmdline, (err, out, code) => {
         if(err) {
           log.error("Failed to clean up spoofing army: " + err);

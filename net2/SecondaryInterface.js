@@ -152,7 +152,7 @@ exports.create = async function (config) {
 
   // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
   await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)
-  await exec(`sudo ${f.getFirewallaHome()}/scripts/config_secondary_interface.sh ${secondaryIpSubnet}`);
+  await exec(`sudo ${f.getFirewallaHome()}/scripts/config_secondary_interface.sh ${secondaryIpSubnet} ${conf.intf}`);
 
   return { secondaryIpSubnet, legacyIpSubnet };
 };

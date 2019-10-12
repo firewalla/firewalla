@@ -200,7 +200,7 @@ function iptables(rule, callback) {
 
         let _src = " -s " + ip;
         if (ip.includes("0.0.0.0")) {
-            _src = "-i eth0";
+            _src = "";
         }
 
         const chain = _getDNSRedirectChain(srcType);
@@ -323,7 +323,7 @@ function iptablesArgs(rule) {
     if (rule.chain) args = args.concat([rule.action, rule.chain]);
     if (rule.protocol) args = args.concat(["-p", rule.protocol]);
     if (rule.src && rule.src == "0.0.0.0") {
-        args = args.concat(["-i", "eth0"]);
+        
     } else {
         if (rule.src) args = args.concat(["--src", rule.src]);
     }
