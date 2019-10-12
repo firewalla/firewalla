@@ -221,6 +221,8 @@ async function _enableLanInterfaces() {
         });
       }
     }
+    await d.discoverInterfacesAsync();
+    await sysManager.updateAsync();
   }
 }
 
