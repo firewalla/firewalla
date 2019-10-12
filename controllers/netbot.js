@@ -97,6 +97,8 @@ const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP();
 
+const speedtest = require('../extension/speedtest/speedtest.js')
+
 const fireWeb = require('../mgmt/FireWeb.js');
 
 const f = require('../net2/Firewalla.js');
@@ -1906,11 +1908,15 @@ class netBot extends ControllerBot {
       case "networkStatus":
         (async () => {
           const { ping, dnslookup } = await rclient.hgetallAsync("network:status");
+          const { download, upload } = await speedtest();
           this.simpleTxData(msg, {
             ping: ping == "true",
             dnslookup: dnslookup == "true",
             gigabit: await platform.getNetworkSpeed() >= 1000,
-            speed: 0
+            speedtest: {
+              download: download,
+              upload: upload
+            }
           }, null, callback);
         })();
         break;
