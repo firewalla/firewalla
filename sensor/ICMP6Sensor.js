@@ -24,33 +24,60 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
 const SysManager = require('../net2/SysManager.js');
+const Discovery = require('../net2//Discovery.js');
 
 const cp = require('child_process');
+const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
 
 class ICMP6Sensor extends Sensor {
   constructor() {
     super();
+    this.myMac = null;
   }
 
   run() {
-    const sysManager = new SysManager();
-    const myMac = sysManager.myMAC();
-    // listen on icmp6 neighbor-advertisement which is not sent from firewalla
-    const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', 'eth0', '-en', `!(ether src ${myMac}) && icmp6 && ip6[40] == 136`]);
-    const pid = tcpdumpSpawn.pid;
-    log.info("TCPDump icmp6 started with PID: ", pid);
+    (async () => {
+      try {
+        const result = await execAsync("cat /sys/class/net/eth0/address");
+        this.myMac = result.stdout.trim().toUpperCase();
+      } catch (err) {
+        log.warn("Failed to get self MAC address from /sys/class/net/eth0/address");
+      }
+      if (!this.myMac) {
+        const d = new Discovery("ICMP6Sensor", fConfig, "info", false);
+        await d.discoverInterfacesAsync();
+        const sysManager = new SysManager();
+        await sysManager.updateAsync();
+        this.myMac = sysManager.myMAC().toUpperCase();
+      }
 
-    const reader = readline.createInterface({
-      input: tcpdumpSpawn.stdout
+      if (!this.myMac) {
+        setTimeout(() => {
+          log.info("Failed to get self MAC address from sysManager, retry in 60 seconds.");
+          this.run();
+        }, 60000);
+        return;
+      }
+
+      // listen on icmp6 neighbor-advertisement which is not sent from firewalla
+      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', 'eth0', '-en', `!(ether src ${this.myMac}) && icmp6 && ip6[40] == 136`]);
+      const pid = tcpdumpSpawn.pid;
+      log.info("TCPDump icmp6 started with PID: ", pid);
+  
+      const reader = readline.createInterface({
+        input: tcpdumpSpawn.stdout
+      });
+      reader.on('line', (line) => {
+        this.processNeighborAdvertisement(line);
+      });
+      
+      tcpdumpSpawn.on('close', (code) => {
+        log.info("TCPDump icmp6 exited with code: ", code);
+      })
+    })().catch((err) => {
+      log.error("Failed to run ICMP6Sensor", err);
     });
-    reader.on('line', (line) => {
-      this.processNeighborAdvertisement(line);
-    });
-    
-    tcpdumpSpawn.on('close', (code) => {
-      log.info("TCPDump icmp6 exited with code: ", code);
-    })
   }
 
   processNeighborAdvertisement(line) {
@@ -64,7 +91,7 @@ class ICMP6Sensor extends Sensor {
       if (dstMac && ip.isV6Format(tgtIp)) {
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: "A new ipv6 is found @ ICMP6Sensor",
+          message: `A new ipv6 is found @ ICMP6Sensor ${tgtIp} ${dstMac}`,
           suppressAlarm: true,
           host: {
             ipv6Addr: [tgtIp],

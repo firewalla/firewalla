@@ -49,6 +49,7 @@ Device.prototype.getService= function getService(types, callback) {
 
   this._getXml(this.description, function(err, info) {
     if (err) return callback(err);
+    if (!info) return callback(new Error('Empty response'));
 
     var s = self.parseDescription(info).services.filter(function(service) {
       return types.indexOf(service.serviceType) !== -1;

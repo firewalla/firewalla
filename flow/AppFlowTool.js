@@ -18,13 +18,6 @@ const log = require("../net2/logger.js")(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const Promise = require('bluebird')
-
-const async = require('asyncawait/async')
-const await = require('asyncawait/await')
-
-const util = require('util');
-
 let instance = null
 
 class AppFlowTool {
@@ -44,7 +37,7 @@ class AppFlowTool {
     return this.addAppFlow(mac, app, object.ts, object.duration, object.download, object.upload)
   }
 
-  addAppFlow(mac, app, timestamp, duration, downloadBytes, uploadBytes) {
+  async addAppFlow(mac, app, timestamp, duration, downloadBytes, uploadBytes) {
     let json = {
       ts: timestamp,
       duration: duration,
@@ -54,19 +47,13 @@ class AppFlowTool {
 
     let key = this.getAppFlowKey(mac, app)
 
-    return async(() => {
-      await (rclient.zaddAsync(key, timestamp, JSON.stringify(json)))
-      await (rclient.expireAsync(key, this.appExpireTime)) // whenever there is a new update, reset the expire time
-    })()
+    await rclient.zaddAsync(key, timestamp, JSON.stringify(json))
+    await rclient.expireAsync(key, this.appExpireTime) // whenever there is a new update, reset the expire time
   }
 
-  delAllApps(mac) {
-    return async(() => {
-      let apps = await (this.getApps(mac))
-      apps.forEach((app) => {
-        await (this.delAppFlow(mac, app))
-      })
-    })()
+  async delAllApps(mac) {
+    let apps = await this.getApps(mac)
+    return Promise.all(apps.map((app) => this.delAppFlow(mac, app)))
   }
 
   delAppFlow(mac, app) {
@@ -75,44 +62,39 @@ class AppFlowTool {
     return rclient.delAsync(key)
   }
 
-  getApps(mac) {
+  async getApps(mac) {
     mac = mac || '*' // match all mac addresses if mac is not defined
     let keyPattern = this.getAppFlowKey(mac, '*')
-    return async(() => {
-      let keys = await (rclient.keysAsync(keyPattern))
-      let apps = keys.map((key) => {
-        let result = key.match(/[^:]*$/)
-        if(result) {
-          return result[0]
-        } else {
-          return null
-        }
-      }).filter((x) => x != null)
-      
-      return apps.filter((elem, pos) => {
-        return apps.indexOf(elem) == pos;
-      })
+    let keys = await rclient.keysAsync(keyPattern)
+    let apps = keys.map((key) => {
+      let result = key.match(/[^:]*$/)
+      if (result) {
+        return result[0]
+      } else {
+        return null
+      }
+    }).filter((x) => x != null)
 
-    })()
+    return apps.filter((elem, pos) => {
+      return apps.indexOf(elem) == pos;
+    })
   }
 
-  getAppMacAddresses(app) {
+  async getAppMacAddresses(app) {
     let keyPattern = this.getAppFlowKey('*', app)
 
-    return async(() => {
-      let keys = await (rclient.keysAsync(keyPattern))
-      return keys.map((key) => {
-        let result = key.match(/appflow:(.*):[^:]*/) // locate mac address
-        if(result) {
-          return result[1]
-        } else {
-          return null
-        }
-      }).filter((x) => x != null)
-    })()
+    let keys = await rclient.keysAsync(keyPattern)
+    return keys.map((key) => {
+      let result = key.match(/appflow:(.*):[^:]*/) // locate mac address
+      if (result) {
+        return result[1]
+      } else {
+        return null
+      }
+    }).filter((x) => x != null)
   }
 
-  getAppFlow(mac, app, options) {
+  async getAppFlow(mac, app, options) {
     let key = this.getAppFlowKey(mac, app)
 
     options = options || {}
@@ -120,17 +102,15 @@ class AppFlowTool {
     let end = options.end || new Date() / 1000;
     let begin = options.begin || (end - 3600 * 24)
 
-    return async(() => {
-      let results = await (rclient.zrevrangebyscoreAsync(key, end, begin))
-      return results.map((jsonString) => {
-        try {
-          return JSON.parse(jsonString)
-        } catch(err) {
-          log.error("Failed to parse JSON String:", jsonString, {})
-          return null;
-        }
-      }).filter(x => x != null)
-    })()
+    let results = await rclient.zrevrangebyscoreAsync(key, end, begin)
+    return results.map((jsonString) => {
+      try {
+        return JSON.parse(jsonString)
+      } catch (err) {
+        log.error("Failed to parse JSON String:", jsonString);
+        return null;
+      }
+    }).filter(x => x != null)
   }
 
   cleanupAppFlow(mac, app) {

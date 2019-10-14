@@ -22,7 +22,7 @@ var program = require('commander');
 var qrcode = require('qrcode-terminal');
 var publicIp = require('public-ip');
 var builder = require('botbuilder');
-var intercomm = require('../lib/intercomm.js');
+var intercomm = require('../lib/intercomm.js')();
 var Config = require('../lib/Config.js');
 
 var commondialog = require('../lib/commondialog.js');

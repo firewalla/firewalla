@@ -2,11 +2,6 @@
 
 const log = require('../net2/logger.js')(__filename, 'info');
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
-const Promise = require('bluebird');
-
 const minimatch = require('minimatch')
 
 const Exception = require('./Exception.js');
@@ -178,37 +173,35 @@ module.exports = class {
 
   getSameExceptions(exception) {
     let em = this
-    return async(() => {
-      return new Promise(function (resolve, reject) {
-        em.loadExceptions((err, exceptions) =>{
-          if (err) {
-            log.error("failed to load exceptions:", err, {})
-            reject(err)
+    return new Promise(function (resolve, reject) {
+      em.loadExceptions((err, exceptions) => {
+        if (err) {
+          log.error("failed to load exceptions:", err);
+          reject(err)
+        } else {
+          if (exceptions) {
+            resolve(exceptions.filter((e) => e.isEqualToException(exception)))
           } else {
-            if (exceptions) {
-              resolve(exceptions.filter((e) => e.isEqualToException(exception)))
-            } else {
-              resolve([])
-            }
-          }    
-        })
+            resolve([])
+          }
+        }
       })
-    })();
+    })
   }
 
-  checkAndSave(exception, callback) {
-    return async(() => {
-      let exceptions = await(this.getSameExceptions(exception))
+  async checkAndSave(exception, callback) {
+    try {
+      let exceptions = await this.getSameExceptions(exception)
       if (exceptions && exceptions.length > 0) {
         log.info(`exception ${exception} already exists in system: ${exceptions}`)
         callback(null, exceptions[0], true)
       } else {
-        let ee = await (this.saveExceptionAsync(exception))
+        let ee = await this.saveExceptionAsync(exception)
         callback(null, ee)
       }
-    })().catch((err) => {
+    } catch(err) {
       callback(err)
-    })
+    }
   }
 
   async checkAndSaveAsync(exception) {
@@ -289,47 +282,36 @@ module.exports = class {
     return rclient.keysAsync(exceptionPrefix + exceptionID);
   }
 
-  deleteException(exceptionID) {
+  async deleteException(exceptionID) {
     log.info("Trying to delete exception " + exceptionID);
-    return this.exceptionExists(exceptionID)
-      .then((exists) => {
-        if(!exists) {
-          log.error("exception " + exceptionID + " doesn't exists");
-          return Promise.resolve();
-        }
 
-        return new Promise((resolve, reject) => {
-          let multi = rclient.multi();
+    if (!exceptionID) return;
 
-          rclient.hgetall(exceptionPrefix + exceptionID, (err, obj) => {
-            if(err) {
-              log.error(`exception ${exceptionID} doesn't exist`)
-              reject(err)
-              return
-            }
-            
-            log.info("Exception in CB: ", obj, {});
-            let exception = obj;
+    let exists = await this.exceptionExists(exceptionID);
+    if(!exists) {
+      log.error("exception " + exceptionID + " doesn't exists");
+      return;
+    }
 
-            multi.srem(exceptionQueue, exceptionID);
-            multi.del(exceptionPrefix + exceptionID);
-            multi.exec((err) => {
-              if (err) {
-                log.error("Fail to delete exception: " + err);
-                reject(err);
-              }
+    let multi = rclient.multi();
 
-            });
+    let exception = await rclient.hgetallAsync(exceptionPrefix + exceptionID);
 
-            // unignore is set for backward compatibility, it's actually should be called "unallow"
-            Bone.submitIntelFeedback('unignore', exception, "exception");
+    log.info("Deleting Exception:", exception);
 
-            resolve();
-          });
+    multi.srem(exceptionQueue, exceptionID);
+    multi.del(exceptionPrefix + exceptionID);
 
-        });
+    try {
+      await multi.execAsync();
+    }
+    catch(err) {
+      log.error("Fail to delete exception: " + err);
+      throw err;
+    }
 
-      });
+    // unignore is set for backward compatibility, it's actually should be called "unallow"
+    Bone.submitIntelFeedback('unignore', exception, "exception");
   }
 
   async deleteExceptions(idList) {

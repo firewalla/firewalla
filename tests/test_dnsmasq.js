@@ -38,9 +38,6 @@ let s = new DNSMASQSensor();
 
 let ModeManager = require('../net2/ModeManager');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
 
@@ -54,17 +51,17 @@ describe('Test dnsmasq feature', function() {
   this.timeout(10000);
 
   beforeEach((done) => {
-    async(() => {
+    (async() =>{
       require('../control/Block.js').setupBlockChain()
-      await (Bootstrap.bootstrap());
+      await Bootstrap.bootstrap();
       sem.clearAllSubscriptions();
       s.registered = false;
       s.run()
       sem.emitEvent({
         type: 'IPTABLES_READY'
       })
-      await (delay(2000))
-      await (ModeManager.enableSecondaryInterface())
+      await delay(2000)
+      await ModeManager.enableSecondaryInterface()
       done();
     })();
   });
@@ -116,8 +113,8 @@ describe('Test dnsmasq feature', function() {
       type: 'StartDHCP'
     });
 
-    async(() => {
-      await (delay(2000))
+    (async() =>{
+      await delay(2000)
       cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
         expect(err).to.be.null;
         done();
@@ -130,12 +127,12 @@ describe('Test dnsmasq feature', function() {
       type: 'StartDHCP'
     });
 
-    async(() => {
-      await (delay(2000))
+    (async() =>{
+      await delay(2000)
       sem.emitEvent({
         type: 'StopDHCP'
       });
-      await (delay(2000))
+      await delay(2000)
       cp.exec("ps aux | grep dnsma[s]q | grep d[h]cp", (err, stdout, stderr) => {
         expect(err).to.not.null;
         done();

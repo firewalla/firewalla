@@ -14,30 +14,21 @@
  */
 'use strict';
 const log = require('./logger.js')(__filename);
-const ip = require('ip');
-const os = require('os');
-const dns = require('dns');
-const network = require('network');
-const linux = require('../util/linux.js');
 const Nmap = require('./Nmap.js');
 var instances = {};
 
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const l2 = require('../util/Layer2.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
-const async = require('async');
-
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 
 const networkTool = require('./NetworkTool.js')();
+const util = require('util');
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -89,6 +80,8 @@ module.exports = class {
       this.publisher = new p(loglevel);
 
       this.hostCache = {};
+
+      this.discoverInterfacesAsync = util.promisify(this.discoverInterfaces)
     }
 
     return instances[name];
@@ -97,34 +90,28 @@ module.exports = class {
   discoverMac(mac, callback) {
     callback = callback || function () { }
 
-    this.discoverInterfaces((err, list) => {
-      log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces, {});
+    this.discoverInterfaces(async (err, list) => {
+      log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces);
       let found = null;
-      async.eachLimit(this.config.discovery.networkInterfaces, 1, (name, cb) => {
+      for (const name of this.config.discovery.networkInterfaces) {
         let intf = this.interfaces[name];
         if (intf == null) {
-          async.setImmediate(cb);
-          return;
+          continue;
         }
         if (found) {
-          async.setImmediate(cb);
-          return;
+          break;
         }
         if (intf != null) {
-          log.debug("Prepare to scan subnet", intf, {});
+          log.debug("Prepare to scan subnet", intf);
           if (this.nmap == null) {
             this.nmap = new Nmap(intf.subnet, false);
           }
 
-          log.info("Start scanning network ", intf.subnet, "to look for mac", mac, {});
+          log.info("Start scanning network ", intf.subnet, "to look for mac", mac);
 
           // intf.subnet is in v4 CIDR notation
-          this.nmap.scan(intf.subnet, true, (err, hosts, ports) => {
-            if (err) {
-              log.error("Failed to scan: " + err);
-              cb();
-              return;
-            }
+          try {
+            let hosts = await this.nmap.scanAsync(intf.subnet, true)
 
             this.hosts = [];
 
@@ -132,29 +119,29 @@ module.exports = class {
               let host = hosts[i];
               if (host.mac && host.mac === mac) {
                 found = host;
-                cb();
-                return;
+                break;
               }
             }
-            cb();
-          });
+          } catch (err) {
+            log.error("Failed to scan: " + err);
+            continue
+          }
         }
-      }, (err) => {
-        log.info("Discovery::DiscoveryMAC:Found", found);
-        if (found) {
-          callback(null, found);
-        } else {
-          this.getAndSaveArpTable((err, arpList, arpTable) => {
-            log.info("discoverMac:miss", mac);
-            if (arpTable[mac]) {
-              log.info("discoverMac:found via ARP", arpTable[mac]);
-              callback(null, arpTable[mac]);
-            } else {
-              callback(null, null);
-            }
-          });
-        }
-      });
+      }
+      log.info("Discovery::DiscoveryMAC:Found", found);
+      if (found) {
+        callback(null, found);
+      } else {
+        this.getAndSaveArpTable((err, arpList, arpTable) => {
+          log.info("discoverMac:miss", mac);
+          if (arpTable[mac]) {
+            log.info("discoverMac:found via ARP", arpTable[mac]);
+            callback(null, arpTable[mac]);
+          } else {
+            callback(null, null);
+          }
+        });
+      }
     });
   }
 
@@ -206,7 +193,7 @@ module.exports = class {
     networkTool.listInterfaces().then(list => {
       let redisobjs = ['sys:network:info'];
       for (let i in list) {
-        log.debug(list[i], {});
+        log.debug(list[i]);
 
         redisobjs.push(list[i].name);
         this.interfaces[list[i].name] = list[i];
@@ -235,7 +222,7 @@ module.exports = class {
         }
       }
 
-      log.debug("Setting redis", redisobjs, {});
+      log.debug("Setting redis", redisobjs);
 
       rclient.hmset(redisobjs, (error, result) => {
         if (error) {
@@ -276,7 +263,7 @@ module.exports = class {
     log.info("Discovery:Mac:Scan:IpChanged", key, ip, newmac);
     rclient.hgetall(key, (err, data) => {
       log.info("Discovery:Mac:Scan:IpChanged2", key, ip, newmac, JSON.stringify(data));
-      if (err == null && data.ipv4 == ip) {
+      if (err == null && data && data.ipv4 == ip) {
         rclient.hdel(key, 'name');
         rclient.hdel(key, 'bname');
         rclient.hdel(key, 'ipv4');
@@ -305,7 +292,7 @@ module.exports = class {
     let key = "host:ip4:" + host.uid;
     log.info("Discovery:Nmap:Scan:Found", key, host.mac, host.uid, host.ipv4Addr, host.name, host.nname);
     rclient.hgetall(key, (err, data) => {
-      log.debug("Discovery:Nmap:Redis:Search", key, data, {});
+      log.debug("Discovery:Nmap:Redis:Search", key, data);
       if (err == null) {
         if (data != null) {
           let changeset = hostTool.mergeHosts(data, host);
@@ -316,7 +303,7 @@ module.exports = class {
             changeset['firstFoundTimestamp'] = changeset['lastActiveTimestamp'];
           }
           changeset['mac'] = host.mac;
-          log.debug("Discovery:Nmap:Redis:Merge", key, changeset, {});
+          log.debug("Discovery:Nmap:Redis:Merge", key, changeset);
           if (data.mac != null && data.mac != host.mac) {
             this.ipChanged(data.mac, host.uid, host.mac);
           }
@@ -494,53 +481,6 @@ module.exports = class {
         callback(null, null);
       }
     });
-  }
-
-  ping6ForDiscovery(intf, obj, callback) {
-    this.process = require('child_process').exec("ping6 -c2 -I eth0 ff02::1", (err, out, code) => {
-      async.eachLimit(obj.ip6_addresses, 5, (o, cb) => {
-        let pcmd = "ping6 -B -c 2 -I eth0 -I " + o + "  ff02::1";
-        log.info("Discovery:v6Neighbor:Ping6", pcmd);
-        require('child_process').exec(pcmd, (err) => {
-          cb();
-        });
-      }, (err) => {
-        callback(err);
-      });
-    });
-  }
-
-  neighborDiscoveryV6(intf, obj) {
-    if (obj.ip6_addresses == null || obj.ip6_addresses.length <= 1) {
-      log.info("Discovery:v6Neighbor:NoV6", intf, obj);
-      return;
-    }
-    this.ping6ForDiscovery(intf, obj, (err) => {
-      let cmdline = 'ip -6 neighbor show';
-      log.info("Running commandline: ", cmdline);
-
-      this.process = require('child_process').exec(cmdline, (err, out, code) => {
-        let lines = out.split("\n");
-        async.eachLimit(lines, 1, (o, cb) => {
-          log.info("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
-          let parts = o.split(" ");
-          if (parts[2] == intf) {
-            let v6addr = parts[0];
-            let mac = parts[4].toUpperCase();
-            if (mac == "FAILED" || mac.length < 16) {
-              async.setImmediate(cb);
-            } else {
-              this.addV6Host(v6addr, mac, (err) => {
-                cb();
-              });
-            }
-          } else {
-            async.setImmediate(cb);
-          }
-        }, (err) => { });
-      });
-    });
-
   }
 
   fetchHosts(callback) {

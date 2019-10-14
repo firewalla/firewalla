@@ -30,7 +30,9 @@ fi
 disk=$(df -k /bspool | tail -1 | awk '{print $4}')
 (( disk <= 5000 )) && /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA: Disk Delete "+$disk
 (( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
-(( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*-*_*.log
+(( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*.log
+
+test -e /bspool/bro/core && sudo rm /bspool/bro/core
 
 if mount | grep overlay &>/dev/null; then
   # overlay fs uses a separate disk for logs

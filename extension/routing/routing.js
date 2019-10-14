@@ -24,22 +24,34 @@ const util = require('util');
 
 const execAsync = util.promisify(cp.exec);
 
-async function createCustomizedRoutingTable(id, tableName) {
+async function createCustomizedRoutingTable(tableName) {
   let cmd = "cat /etc/iproute2/rt_tables | grep -v '#' | awk '{print $1,\"\\011\",$2}'";
   let result = await execAsync(cmd);
   if (result.stderr !== "") {
     log.error("Failed to read rt_tables.", result.stderr);
   }
   const entries = result.stdout.split('\n');
+  const usedTid = [];
   for (var i in entries) {
     const entry = entries[i];
     const line = entry.split(/\s+/);
     const tid = line[0];
     const name = line[1];
-    if (tid === id + "") {
-      log.info("Table with same id already exists: " + name);
-      return name;
+    usedTid.push(tid);
+    if (name === tableName) {
+      log.info("Table with same name already exists: " + tid);
+      return Number(tid);
     }
+  }
+  // find unoccupied table id between 100-199
+  let id = 100;
+  while (id < 200) {
+    if (!usedTid.includes(id + "")) // convert number to string
+      break;
+    id++;
+  }
+  if (id == 200) {
+    throw "Insufficient space to create routing table";
   }
   cmd = util.format("sudo bash -c 'echo -e %d\\\\t%s >> /etc/iproute2/rt_tables'", id, tableName);
   log.info("Append new routing table: ", cmd);
@@ -48,17 +60,22 @@ async function createCustomizedRoutingTable(id, tableName) {
     log.error("Failed to create customized routing table.", result.stderr);
     throw result.stderr;
   }
-  return tableName;
+  return id;
 }
 
-async function createPolicyRoutingRule(from, tableName) {
+async function createPolicyRoutingRule(from, iif, tableName) {
+  from = from || "all";
   let cmd = "ip rule list";
   let result = await execAsync(cmd);
-  if (result.stdout.includes(util.format("from %s lookup %s", from, tableName))) {
-    log.info("same ip rule already exists");
+  let rule = `from ${from} `;
+  if (iif && iif !== "")
+    rule = `${rule}iif ${iif} `;
+  rule = `${rule}lookup ${tableName}`;
+  if (result.stdout.includes(rule)) {
+    log.info("Same policy routing rule already exists: ", rule);
     return;
   }  
-  cmd = util.format('sudo ip rule add from %s lookup %s', from, tableName);
+  cmd = `sudo ip rule add ${rule}`;
   log.info("Create new policy routing rule: ", cmd);
   let {stdout, stderr} = await execAsync(cmd);
   if (stderr !== "") {
@@ -67,8 +84,19 @@ async function createPolicyRoutingRule(from, tableName) {
   }
 }
 
-async function removePolicyRoutingRule(from, tableName) {
-  let cmd = util.format('sudo ip rule del from %s lookup %s', from, tableName);
+async function removePolicyRoutingRule(from, iif, tableName) {
+  from = from || "all";
+  let cmd = "ip rule list";
+  let result = await execAsync(cmd);
+  let rule = `from ${from} `;
+  if (iif && iif !== "")
+    rule = `${rule}iif ${iif} `;
+  rule = `${rule}lookup ${tableName}`;
+  if (!result.stdout.includes(rule)) {
+    log.info("Policy routing rule does not exist: ", rule);
+    return;
+  }
+  cmd = `sudo ip rule del ${rule}`;
   log.info("Remove policy routing rule: ", cmd);
   let {stdout, stderr} = await execAsync(cmd);
   if (stderr !== "") {
@@ -118,11 +146,45 @@ async function flushRoutingTable(tableName) {
   }
 }
 
+async function testRoute(dstIp, srcIp, srcIntf) {
+  try {
+    let cmd = util.format('ip route get to %s from %s iif %s', dstIp, srcIp, srcIntf);
+    let {stdout, stderr} = await execAsync(cmd);
+    if (stderr !== "") {
+      log.error(util.format("Failed to test route from %s %s to %s", srcIp, srcIntf, dstIp), stderr);
+      return null;
+    }
+    // stdout can be two lines:
+    // 8.8.8.8 from 192.168.218.121 via 192.168.7.1 dev eth0
+    // cache  iif eth0
+    const result = (stdout && stdout.split("\n")[0]) || "";
+    const words = result.split(" ");
+    const entry = {};
+    for (let i = 0; i != words.length; i++) {
+      const word = words[i];
+      switch (word) {
+        case "via":
+          entry["via"] = words[++i];
+          break;
+        case "dev":
+          entry["dev"] = words[++i];
+          break;
+        default:
+      }
+    }
+    return entry;
+  } catch (err) {
+    log.error(util.format("Failed to test route from %s %s to %s", srcIp, srcIntf, dstIp), err);
+    return null;
+  }
+}
+
 module.exports = {
   createCustomizedRoutingTable: createCustomizedRoutingTable,
   createPolicyRoutingRule: createPolicyRoutingRule,
   removePolicyRoutingRule: removePolicyRoutingRule,
   addRouteToTable: addRouteToTable,
   removeRouteFromTable: removeRouteFromTable,
-  flushRoutingTable: flushRoutingTable
+  flushRoutingTable: flushRoutingTable,
+  testRoute: testRoute
 }

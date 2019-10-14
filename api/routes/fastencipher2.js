@@ -13,25 +13,18 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let express = require('express');
-let router = express.Router();
+const express = require('express');
+const router = express.Router();
 
-let Encryption = require('../lib/Encryption'); // encryption middleware
-let encryption = new Encryption();
+const Encryption = require('../lib/Encryption'); // encryption middleware
+const encryption = new Encryption();
 
-let CloudWrapper = require('../lib/CloudWrapper');
-let cloudWrapper = new CloudWrapper();
+const CloudWrapper = require('../lib/CloudWrapper');
+const cloudWrapper = new CloudWrapper();
 
-let f = require('../../net2/Firewalla.js');
+const log = require('../../net2/logger.js')(__filename, "info");
 
-let log = require('../../net2/logger.js')(__filename, "info");
-
-let sc = require('../lib/SystemCheck.js');
-
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
-
+const sc = require('../lib/SystemCheck.js');
 
 /* IMPORTANT 
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
@@ -42,16 +35,17 @@ router.post('/message/:gid',
     encryption.decrypt,
     sc.debugInfo,
     (req, res, next) => {
-      let gid = req.params.gid;
+      const gid = req.params.gid;
       
-      async(() => {
-        let controller = await(cloudWrapper.getNetBotController(gid));
-        let response = await(controller.msgHandlerAsync(gid, req.body));
+      (async() =>{
+        const controller = await cloudWrapper.getNetBotController(gid);
+        const response = await controller.msgHandlerAsync(gid, req.body);
         res.body = JSON.stringify(response);
         next();
       })()
         .catch((err) => {
           // netbot controller is not ready yet, waiting for init complete
+          log.error("Got error when handling api call from app", err, err.stack);
           res.status(503);
           res.json({error: 'Initializing Firewalla Device, please try later'});
         });

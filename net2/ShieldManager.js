@@ -23,6 +23,7 @@ const hostTool = new HostTool();
 const ip = require('ip');
 
 const exec = require('child-process-promise').exec
+const Ipset = require('./Ipset.js')
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -31,41 +32,53 @@ const util = require('util');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 var instance = null;
 
+const wrapIptables = require('./Iptables.js').wrapIptables;
+
 class ShieldManager {
   constructor() {
     if (!instance) {
-      sclient.on("message", (channel, message) => {
-        switch (channel) {
-          case "System:VPNSubnetChanged":
-            const newVpnSubnet = message;
-            this._updateVPNOutgoingRules(newVpnSubnet);
-            break;
-          default:
-
-        }
-      });
+      this.trustedIpv4Addrs = {};
+      this.trustedIpv6Addrs = {};
       if (firewalla.isMain()) {
+        sclient.on("message", (channel, message) => {
+          switch (channel) {
+            case "System:VPNSubnetChanged":
+              const newVpnSubnet = message;
+              this._updateVPNOutgoingRules(newVpnSubnet);
+              break;
+            default:
+  
+          }
+        });
         sclient.subscribe("System:VPNSubnetChanged");
 
         sem.on("DeviceUpdate", (event) => {
-          // add/update device ip address to trusted_ip_set/trusted_ip_set6
-          const host = event.host;
-          if (host.ipv4Addr) {
-            log.info("Update device ip in trusted_ip_set: " + host.ipv4Addr);
-            const cmd = util.format("sudo ipset add -! trusted_ip_set %s", host.ipv4Addr);
-            exec(cmd);
-          }
-          if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-            host.ipv6Addr.forEach(ipv6Addr => {
-              log.info("Update device ip in trusted_ip_set6: " + ipv6Addr);
-              const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ipv6Addr);
-              exec(cmd);
-            });
-          }
-          // update ip address to protected_ip_set/protected_ip_set6
-          if (host.mac && this.protected_macs[host.mac]) {
-            this.activateShield(host.mac);
-          }
+          (async () => {
+            // add/update device ip address to trusted_ip_set/trusted_ip_set6
+            const host = event.host;
+            if (host.ipv4Addr && !this.trustedIpv4Addrs[host.ipv4Addr]) {
+              log.info("Update device ip in trusted_ip_set: " + host.ipv4Addr);
+              const cmd = util.format("sudo ipset add -! trusted_ip_set %s", host.ipv4Addr);
+              await exec(cmd);
+              this.trustedIpv4Addrs[host.ipv4Addr] = 1;
+            }
+            if (host.ipv6Addr && host.ipv6Addr.length > 0) {
+              for (let v6Addr of host.ipv6Addr) {
+                if (this.trustedIpv6Addrs[v6Addr])
+                  continue;
+                log.info("Update device ip in trusted_ip_set6: " + v6Addr);
+                const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", v6Addr);
+                await exec(cmd);
+                this.trustedIpv6Addrs[v6Addr] = 1;
+              };
+            }
+            // update ip address to protected_ip_set/protected_ip_set6
+            if (host.mac && this.protected_macs[host.mac]) {
+              await this.activateShield(host.mac);
+            }
+          })().catch((err) => {
+            log.error("Failed to update trusted_ip_set(6), ", err);
+          })
         });
 
         this.protected_macs = {};
@@ -83,15 +96,13 @@ class ShieldManager {
 
   async addIncomingRule(protocol, dstIp, dstPort) {
     log.info(util.format("Add incoming rule to %s:%s, protocol %s", dstIp, dstPort, protocol));
-    const cmd = util.format("sudo iptables -w -C FW_SHIELD -p %s -d %s --dport %s -j RETURN || sudo iptables -w -I FW_SHIELD -p %s -d %s --dport %s -j RETURN", 
-      protocol, dstIp, dstPort, protocol, dstIp, dstPort);
+    const cmd = wrapIptables(`sudo iptables -w -I FW_SHIELD -p ${protocol} -d ${dstIp} --dport ${dstPort} -j RETURN`)
     await exec(cmd);
   }
 
   async removeIncomingRule(protocol, dstIp, dstPort) {
     log.info(util.format("Remove incoming rule to %s:%s, protocol %s", dstIp, dstPort, protocol));
-    const cmd = util.format("sudo iptables -w -C FW_SHIELD -p %s -d %s --dport %s -j RETURN && sudo iptables -w -D FW_SHIELD -p %s -d %s --dport %s -j RETURN", 
-      protocol, dstIp, dstPort, protocol, dstIp, dstPort);
+    const cmd = wrapIptables(`sudo iptables -w -D FW_SHIELD -p ${protocol} -d ${dstIp} --dport ${dstPort} -j RETURN`);
     await exec(cmd);
   }
 
@@ -106,8 +117,7 @@ class ShieldManager {
     const macEntries = await hostTool.getAllMACEntries();
     const allIpv4Addrs = {};
     const allIpv6Addrs = {};
-    for (let i in macEntries) {
-      const macEntry = macEntries[i];
+    for (const macEntry of macEntries) {
       const ipv4Addr = macEntry.ipv4Addr;
       if (ipv4Addr && ip.isV4Format(ipv4Addr)) {
         allIpv4Addrs[ipv4Addr] = 1;
@@ -116,23 +126,26 @@ class ShieldManager {
       if (macEntry.ipv6Addr)
         ipv6Addrs = JSON.parse(macEntry.ipv6Addr);
       if (ipv6Addrs && ipv6Addrs.length > 0) {
-        for (let j in ipv6Addrs) {
-          const ipv6Addr = ipv6Addrs[j];
+        for (const ipv6Addr of ipv6Addrs) {
           if (ipv6Addr && ip.isV6Format(ipv6Addr)) {
             allIpv6Addrs[ipv6Addr] = 1;
           }
-        }  
+        }
       }
     }
     for (let ip in allIpv4Addrs) {
+      if (this.trustedIpv4Addrs[ip])
+        continue;
       log.info("Add ip to trusted_ip_set: " + ip);
-      const cmd = util.format("sudo ipset add -! trusted_ip_set %s", ip);
-      await exec(cmd);
+      await Ipset.add('trusted_ip_set', ip);
+      this.trustedIpv4Addrs[ip] = 1;
     }
     for (let ip in allIpv6Addrs) {
+      if (this.trustedIpv6Addrs[ip])
+        continue;
       log.info("Add ip to trusted_ip_set6: " + ip);
-      const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", ip);
-      await exec(cmd);
+      await Ipset.add('trusted_ip_set6', ip);
+      this.trustedIpv6Addrs[ip] = 1;
     }
   }
 
@@ -154,12 +167,12 @@ class ShieldManager {
   async activateShield(mac) {
     if (!mac) {
       // enable shield globally
-      let cmd = "sudo iptables -w -C FORWARD -j FW_SHIELD || sudo iptables -w -A FORWARD -j FW_SHIELD";
+      let cmd = wrapIptables("sudo iptables -w -A FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.error("Failed to activate global shield in iptables", err);
       });
   
-      cmd = "sudo ip6tables -w -C FORWARD -j FW_SHIELD || sudo ip6tables -w -A FORWARD -j FW_SHIELD";
+      cmd = wrapIptables("sudo ip6tables -w -A FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.error("Failed to activate global shield in ip6tables", err);
       });
@@ -181,6 +194,7 @@ class ShieldManager {
           await this.deactivateShield(mac);
         } else {
           log.info("IP addresses of " + mac + " are not changed.");
+          return; // no need to call ipset command if ip addresses are not changed.
         }
       }
       
@@ -214,12 +228,12 @@ class ShieldManager {
   async deactivateShield(mac) {
     if (!mac) {
       // disable shield globally
-      let cmd = "sudo iptables -w -C FORWARD -j FW_SHIELD && sudo iptables -w -D FORWARD -j FW_SHIELD";
+      let cmd = wrapIptables("sudo iptables -w -D FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.debug("Failed to deactivate global shield in iptables", err);
       });
   
-      cmd = "sudo ip6tables -w -C FORWARD -j FW_SHIELD && sudo ip6tables -w -D FORWARD -j FW_SHIELD";
+      cmd = wrapIptables("sudo ip6tables -w -D FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.debug("Failed to deactivate global shield in ip6tables", err);
       });
@@ -254,7 +268,7 @@ class ShieldManager {
         delete this.protected_macs[mac];
       } else {
         log.warn("Device " + mac + " is not protected, no need to deactivate shield.");
-      }      
+      }
     }
   }
 }

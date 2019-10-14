@@ -18,9 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const bonjour = require('bonjour')()
 
 const EncipherTool = require('../net2/EncipherTool.js')
@@ -33,24 +30,22 @@ const port = 8833
  * It can speed up the process for App to find local connected pi (even when ip address is changed)
  */
 class APISensor extends Sensor {
-  run() {
-    return async(() => {
-      let gid = await (encipherTool.getGID())
+  async run() {
+    let gid = await encipherTool.getGID()
 
-      if(gid) {
-        const name = `FireAPI-${gid}`
-        bonjour.publish({
-          name: name,
-          type: 'http',
-          port: 8833
-        })
+    if (gid) {
+      const name = `FireAPI-${gid}`
+      bonjour.publish({
+        name: name,
+        type: 'http',
+        port: 8833
+      }).on('error', (err) => log.error("Error publish FireAPI via bonjour", err));
 
-        process.on('exit', () => {
-          log.info("Unpublish FireAPI bonjour broadcast before process exits")
-          bonjour.unpublishAll()
-        })
-      }
-    })()
+      process.on('exit', () => {
+        log.info("Unpublish FireAPI bonjour broadcast before process exits")
+        bonjour.unpublishAll()
+      })
+    }
   }
 }
 

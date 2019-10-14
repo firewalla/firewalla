@@ -18,15 +18,11 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const Promise = require('bluebird');
-
 const iptool = require('ip')
 
 const util = require('util');
 
 const firewalla = require('../net2/Firewalla.js');
-
-const RED_HOLE_IP="198.51.100.101";
 
 let instance = null;
 const DomainUpdater = require('../control/DomainUpdater.js');
@@ -47,11 +43,11 @@ class DNSTool {
   }
 
   getDNSKey(ip) {
-    return util.format("dns:ip:%s", ip);
+    return util.format("rdns:ip:%s", ip);
   }
 
-  getReverseDNSKey(dns) {
-    return `rdns:domain:${dns}`
+  getReverseDNSKey(domainName) {
+    return `rdns:domain:${domainName}`
   }
 
   async reverseDNSKeyExists(domain) {
@@ -60,7 +56,7 @@ class DNSTool {
   }
 
   dnsExists(ip) {
-    let key = this.getDnsKey(ip);
+    let key = this.getDNSKey(ip);
 
     return rclient.existsAsync(key)
       .then((exists) => {
@@ -68,24 +64,57 @@ class DNSTool {
       })
   }
 
-  getDns(ip) {
-    let key = this.getDnsKey(ip);
+  async _convertHashToSortedSet(key) {
+    const now = Math.ceil(Date.now() / 1000);
+    const keyType = await rclient.typeAsync(key);
+    try {
+      // convert hash to zset
+      // although there is a migration task in DataMigrationSensor, it may be not finished when this function is invoked
+      if (keyType === "hash") {
+        const oldDns = await rclient.hgetallAsync(key);
+        await rclient.delAsync(key);
+        if (oldDns.host)
+          rclient.zaddAsync(key, oldDns.lastActive || now, oldDns.host);
+      }
+    } catch (err) {
+      log.warn("Failed to convert " + key + " to zset.");
+    }
+  }
 
-    return rclient.hgetallAsync(key);
-  }  
+  async getDns(ip) {
+    let key = this.getDNSKey(ip);
+    // FIXME: remove this type conversion code after it is released for several months
+    await this._convertHashToSortedSet(key);
+    const domain = await rclient.zrevrangeAsync(key, 0, 1); // get domain with latest timestamp
+    if (domain && domain.length != 0)
+      return domain[0];
+    else
+      return null;
+  }
 
-  addDns(ip, dns, expire) {
-    dns = dns || {}
-    expire = expire || 7 * 24 * 3600; // one week by default
+  async getAllDns(ip) {
+    const key = this.getDNSKey(ip);
+    // FIXME: remove this type conversion code after it is released for several months
+    await this._convertHashToSortedSet(key);
+    const domains = await rclient.zrangeAsync(key, 0, -1);
+    return domains || [];
+  }
 
-    let key = this.getDnsKey(ip);
+  async addDns(ip, domain, expire) {
+    expire = expire || 24 * 3600; // one day by default
+    if (!iptool.isV4Format(ip) && !iptool.isV6Format(ip))
+      return;
+    if (firewalla.isReservedBlockingIP(ip))
+      return;
+    if (!domain)
+      return;
 
-    dns.updateTime = `${new Date() / 1000}`
-
-    return rclient.hmsetAsync(key, dns)
-      .then(() => {
-        return rclient.expireAsync(key, expire);
-      });
+    let key = this.getDNSKey(ip);
+    // FIXME: remove this type conversion code after it is released for several months
+    await this._convertHashToSortedSet(key);
+    const now = Math.ceil(Date.now() / 1000);
+    await rclient.zaddAsync(key, now, domain);
+    await rclient.expireAsync(key, expire);
   }
 
   // doesn't have to keep it long, it's only used for instant blocking
@@ -117,7 +146,7 @@ class DNSTool {
     await domainUpdater.updateDomainMapping(dns, validAddresses);
     
     if(updated === false && existing === false) {
-      await rclient.zaddAsync(key, new Date() / 1000, RED_HOLE_IP); // red hole is a placeholder ip for non-existing domain 
+      await rclient.zaddAsync(key, new Date() / 1000, firewalla.getRedHoleIP()); // red hole is a placeholder ip for non-existing domain
     }
 
     await rclient.expireAsync(key, expire)
@@ -145,10 +174,38 @@ class DNSTool {
     return list
   }
 
-  removeDns(ip) {
-    let key = this.getDnsKey(ip);
+  async removeDns(ip, domain) {
+    let key = this.getDNSKey(ip);
+    await rclient.zremAsync(key, domain);
+  }
 
-    return rclient.delAsync(key);
+  async getLinkedDomains(target, isDomainPattern) {
+    isDomainPattern = isDomainPattern || false;
+    // target can be either ip or domain
+    if (!target)
+      return [];
+    if (iptool.isV4Format(target) || iptool.isV6Format(target)) {
+      // target is ip
+      const domains = await this.getAllDns(target);
+      return domains || [];
+    } else {
+      const domains = {}
+      let addresses = [];
+      if (!isDomainPattern) {
+        domains[target] = 1;
+        addresses = await this.getAddressesByDNS(target);
+      } else {
+        addresses = await this.getAddressesByDNSPattern(target);
+      }
+      if (addresses && Array.isArray(addresses)) {
+        for (const address of addresses) {
+          const linkedDomains = await this.getAllDns(address);
+          for (const linkedDomain of linkedDomains)
+            domains[linkedDomain] = 1;
+        }
+      }
+      return Object.keys(domains);
+    }
   }
 }
 

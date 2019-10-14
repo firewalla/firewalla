@@ -16,7 +16,7 @@
 'use strict';
 
 let instance = null;
-let log = require("../../net2/logger.js")(__filename);
+const log = require("../../net2/logger.js")(__filename);
 
 const firewalla = require('../../net2/Firewalla.js');
 
@@ -25,27 +25,53 @@ const frpDirectory = __dirname
 const configTemplateFile = `${frpDirectory}/frpc.ini.template`  // default template
 const serviceTemplateFile = `${frpDirectory}/frpc.service.template`;
 
-const Promise = require('bluebird');
-
-const async = require('asyncawait/async');
-const await = require('asyncawait/await');
-
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
+const bone = require("../../lib/Bone.js");
+
+const SysManager = require('../../net2/SysManager');
+const sysManager = new SysManager();
 
 //const spawn = require('child-process-promise').spawn;
 const spawn = require('child_process').spawn
 const spawnSync = require('child_process').spawnSync
+const execSync = require('child_process').execSync
+
+const util = require('util');
 
 const fs = require('fs')
-const readFile = Promise.promisify(fs.readFile)
-const writeFile = Promise.promisify(fs.writeFile)
-const unlink = Promise.promisify(fs.unlink)
+const readFile = util.promisify(fs.readFile)
+const writeFile = util.promisify(fs.writeFile)
+const unlink = util.promisify(fs.unlink)
 
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
   });
+}
+
+function getLastServiceLogTime(serviceName) {
+  let str = execSync(
+    `sudo journalctl -u ${serviceName} | tail -n 1`
+  ).toString('utf8').substring(0, 15);
+
+  try {
+    return new Date(str)
+  } catch(err) {
+    return null
+  }
+}
+
+function getLastSystemLogTime(serviceName) {
+  let str = execSync(
+    `sudo grep ${serviceName} /var/log/syslog | tail -n 1`
+  ).toString('utf8').substring(0, 15);
+
+  try {
+    return new Date(str)
+  } catch(err) {
+    return null
+  }
 }
 
 module.exports = class {
@@ -57,7 +83,7 @@ module.exports = class {
 
     // if frp service is started during execution of async block, inconsistency may occur?
     (async () => {
-      if (await this._isUp()) {
+      if (this._isUp()) {
         // need to refresh config
         await this._loadConfigFile();
         this.started = true;
@@ -151,7 +177,7 @@ module.exports = class {
     return `${frpDirectory}/frpc.${this.name}.service`;
   }
 
-  async _isUp() {
+  _isUp() {
     const serviceName = this._getServiceName();
     const o = spawnSync('systemctl', ['is-active', '--quiet', serviceName]);
     const exitCode = o.status;
@@ -233,36 +259,32 @@ module.exports = class {
     return  Math.floor(Math.random() * length) + base
   }
 
-  start() {
-    return async(() => {
-      const isUp = await(this._isUp());
-      if (!isUp) {
-        await(this.createConfigFile());
-        return this._start();
-      } else {
-        await(this._loadConfigFile());
-        this.started = true;
-        this.configComplete = true;
-      }
-    })()
+  async start() {
+    const isUp = this._isUp();
+    if (!isUp) {
+      await this.createConfigFile();
+      return this._start();
+    } else {
+      await this._loadConfigFile();
+      this.started = true;
+      this.configComplete = true;
+    }
   }
 
-  stop() {
-    (async () => {
-      if (await this._isUp()) {
-        this._stop();
-      }
-    })();
+  async stop() {
+    if (this._isUp()) {
+      this._stop();
+    }
     return delay(500)
   }
 
-  _start() {
+  async _start() {
     const serviceName = this._getServiceName();
     const serviceFilePath = this._getServiceFilePath();
     const configFilePath = this._getConfigPath();
     const frpCmd = `${frpDirectory}/frpc.${firewalla.getPlatform()}`;
     /*
-    // TODO: ini file needs to be customized before being used
+      // TODO: ini file needs to be customized before being used
     const args = ["-c", configFilePath];
 
     this.cp = spawn(cmd, args, {cwd: frpDirectory, encoding: 'utf8', detached: true});
@@ -271,32 +293,32 @@ module.exports = class {
     log.info("frp process id: " + childPid);
     */
 
+    // generate service spec file
+    let templateData = await readFile(serviceTemplateFile, 'utf8');
+    templateData = templateData.replace(/FRPC_COMMAND/g, frpCmd);
+    templateData = templateData.replace(/FRPC_CONF/g, configFilePath);
+    await writeFile(serviceFilePath, templateData, 'utf8');
+
+    spawnSync('sudo', ['cp', serviceFilePath, '/etc/systemd/system/']);
+    const cp = spawn('sudo', ['systemctl', 'start', serviceName]);
+    let hasTimeout = true;
+    cp.stderr.on('data', (data) => {
+      log.error(data.toString())
+    })
+
     return new Promise((resolve, reject) => {
-      // generate service spec file 
-      let templateData = await(readFile(serviceTemplateFile, 'utf8'));
-      templateData = templateData.replace(/FRPC_COMMAND/g, frpCmd);
-      templateData = templateData.replace(/FRPC_CONF/g, configFilePath);
-      await(writeFile(serviceFilePath, templateData, 'utf8'));
-
-      spawnSync('sudo', ['cp', serviceFilePath, '/etc/systemd/system/']);
-      const cp = spawn('sudo', ['systemctl', 'start', serviceName]);
-      let hasTimeout = true;
-
-      cp.stderr.on('data', (data) => {
-        log.error(data.toString())
-      })
-      
       cp.on('exit', (code, signal) => {
         if (code === 0) {
           log.info("Service " + serviceName + " started successfully");
           this.started = true;
           hasTimeout = false;
+          this._startHealthChecker();
           resolve();
         } else {
-          log.error("Failed to start " + serviceName, code, signal, {});
+          log.error("Failed to start " + serviceName, code, signal);
         }
       })
-      
+
       /*
       process.on('exit', () => {
         this._stop();
@@ -306,10 +328,12 @@ module.exports = class {
       // wait for 15 seconds
       delay(15000).then(() => {
         if(hasTimeout) {
-          log.error("Timeout, failed to start frp")
-          reject(new Error("Failed to start frp"))
+          log.error("Timeout, failed to start frp");
+          this._boneLog("Timeout, failed to start service.");
+          reject(new Error("Failed to start frp"));
         }
       })
+
     })
   }
 
@@ -317,7 +341,59 @@ module.exports = class {
     const serviceName = this._getServiceName();
     log.info("Try to stop FRP service:" + serviceName);
     spawnSync('sudo', ['systemctl', 'stop', serviceName]);
+    clearInterval(this.healthChecker);
     this.started = false;
+  }
+
+  _boneLog(message) {
+    let syslog = execSync(
+      `sudo grep frpc /var/log/syslog | tail -n 20`
+    ).toString('utf8');
+
+    bone.logAsync("error", {
+      type: this._getServiceName(),
+      msg: message,
+      stack: syslog
+    });
+  }
+
+
+  _startHealthChecker() {
+    const CHECK_INTERVAL = 5 * 60 * 1000; // Don't set this too small
+    const REPORT_THRESHOLD = 3;
+    this.logRefreshCount = 0;
+        if (!this.lastLogTime)
+
+    this.healthChecker = setInterval(() => {
+      try {
+        // systemctl/journalctl won't be able to pick up the service restart log
+        let serviceLogTime = getLastServiceLogTime(this._getServiceName());
+        let systemLogTime = getLastSystemLogTime(this._getServiceName());
+
+        let logTime = serviceLogTime > systemLogTime ? serviceLogTime : systemLogTime; // could be null
+        log.info("logTime", logTime);
+
+        if (!this.lastLogTime) this.lastLogTime = logTime;
+
+        if (logTime && +logTime != +this.lastLogTime) {
+          log.info(this._getServiceName(),
+            'logRefreshCount:', this.logRefreshCount, 'lastLogTime:', logTime);
+          this.lastLogTime = logTime;
+          if (++ this.logRefreshCount > REPORT_THRESHOLD) {
+            throw new Error("Something is wrong!");
+          }
+        } else {
+          this.logRefreshCount = 0;
+        }
+      } catch(err) {
+        log.error(err);
+        this._boneLog(err);
+        clearInterval(this.healthChecker); // report once
+      }
+
+    }, CHECK_INTERVAL);
+
+    log.info(this._getServiceName(), "health checker started");
   }
 }
 

@@ -18,8 +18,6 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 
-const sem = require('../sensor/SensorEventManager.js').getInstance()
-
 const extensionManager = require('./ExtensionManager.js')
 
 const EncipherTool = require('../net2/EncipherTool.js')
