@@ -133,7 +133,7 @@ function sync_time() {
         return 1
     else
         sudo date -s "$time"
-    fi    
+    fi
 }
 
 if [[ ! -f /.dockerenv ]]; then
@@ -142,6 +142,7 @@ if [[ ! -f /.dockerenv ]]; then
     ret=$?
     if [[ $ret -ne 0 ]]; then
         sudo systemctl stop ntp
+        sudo date -s "2019-10-14" # set minimal date here to prevent SSL failure on undergoing HTTPS calls
         sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
         sudo systemctl start ntp
     fi
