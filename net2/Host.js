@@ -80,11 +80,6 @@ class Host {
       }
       this.spoofing = false;
 
-      /*
-      if (this.o.ipv6Addr) {
-      this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-      }
-      */
       this.predictHostNameUsingUserAgent();
 
       this.loadPolicy(callback);
@@ -181,7 +176,7 @@ class Host {
       log.debug("Host:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
     } catch(err) {
       log.error("Got error when cleanV6", err)
-    };
+    }
   }
 
   predictHostNameUsingUserAgent() {
@@ -970,7 +965,6 @@ class Host {
     return await this.getHost(ip);
   }
 
-  // looks like this function is never used
   async getHost(ip) {
     let key = "host:ip4:" + ip;
     log.debug("Discovery:FindHostWithIP", key, ip);
@@ -1113,7 +1107,8 @@ class Host {
     return util.promisify(this.loadPolicy).bind(this)()
   }
 
-  isFlowAllowed(flow) {
+  // this only gets updated when 
+  isInternetAllowed() {
     if (this.policy && this.policy.blockin == true) {
       return false;
     }
