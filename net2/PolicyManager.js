@@ -76,6 +76,13 @@ module.exports = class {
     await ip6table.flush()
     await iptable.flush()
 
+    // In case diag service is running, immediate adds redirection back to prevent pairing failure
+    sem.emitEvent({
+      type: 'DiagRedirectionRenew',
+      toProcess: 'FireKick',
+      message: 'Iptables flushed by FireMain'
+    })
+
     let defaultTable = config['iptables']['defaults'];
     let myip = sysManager.myIp();
     let secondarySubnet = sysManager.mySubnet2();
