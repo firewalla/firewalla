@@ -1907,11 +1907,12 @@ class netBot extends ControllerBot {
         break;
       case "networkStatus":
         (async () => {
-          const { ping, dnslookup } = await rclient.hgetallAsync("network:status");
+          const ping = await rclient.hgetallAsync("network:status:ping");
+          const dig = await rclient.getAsync("network:status:dig");
           const { download, upload } = await speedtest();
           this.simpleTxData(msg, {
-            ping: ping == "true",
-            dnslookup: dnslookup == "true",
+            ping: ping,
+            dig: JSON.parse(dig),
             gigabit: await platform.getNetworkSpeed() >= 1000,
             speedtest: {
               download: download,

@@ -378,7 +378,8 @@
     "NetworkStatsSensor": {
       "internetTestHosts": [
         "google.com",
-        "github.com"
+        "github.com",
+        "firewalla.encipher.io"
       ],
       "dnsServers": [
         "1.1.1.1",

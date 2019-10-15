@@ -31,8 +31,6 @@ const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager();
 
 const util = require('util');
-const dns = require("dns");
-const dnsLookupAsync = util.promisify(dns.lookup);
 const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js')
 
@@ -40,6 +38,7 @@ const _ = require('lodash');
 
 class NetworkStatsSensor extends Sensor {
   async run() {
+    this.processPingConfigure();
     if (fc.isFeatureOn(FEATURE_NETWORK_STATS)) {
       await this.turnOn();
     } else {
@@ -65,13 +64,14 @@ class NetworkStatsSensor extends Sensor {
       this.checkLinkStats();
     }, (this.config.interval || 300) * 1000);
   }
-
-  async turnOn() {
+  processPingConfigure() {
     if (this.config.pingConfig) {
       Ping.configure(this.config.pingConfig);
     } else {
       Ping.configure();
     }
+  }
+  async turnOn() {
     this.pings = {};
 
     this.testGateway();
@@ -177,24 +177,40 @@ class NetworkStatsSensor extends Sensor {
 
   async checkNetworkStatus() {
     const internetTestHosts = this.config.internetTestHosts;
-    const dnsServers = this.config.dnsServers;
-    let pingResult, dnslookupResult;
-    for (const dnsServer of dnsServers) {
-      if (!pingResult || (pingResult && pingResult.error)) {
+    let dnses = sysManager.myDNS();
+    const gateway = sysManager.myGateway();
+    let servers = (this.config.dnsServers || []).concat(dnses);
+    servers.push(gateway);
+    let pings = {};
+    for (const server of servers) {
+      pings[server] = new Ping(server);
+      pings[server].on('ping', (data) => {
+        rclient.hsetAsync("network:status:ping", server, data.time);
+      });
+      pings[server].on('fail', (data) => {
+        rclient.hsetAsync("network:status:ping", server, -1); // -1 as unreachable
+      });
+    }
+    const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(await rclient.hgetAsync("policy:system", "dnsmasq"))
+    secondaryDnsServers && dnses.push(secondaryDnsServers)
+    alternativeDnsServers && dnses.push(alternativeDnsServers)
+    let resultGroupByHost = {};
+    for (const internetTestHost of internetTestHosts) {
+      const resultGroupByDns = {}
+      for (const dns of dnses) {
         try {
-          pingResult = await exec(`ping -c 1 ${dnsServer}`);
+          const result = await exec(`dig @${dns} +short ${internetTestHost}`);
+          resultGroupByDns[dns] = {
+            stdout: result.stdout ? result.stdout.split('\n') : result.stdout,
+            stderr: result.stderr ? result.stderr.split('\n') : result.stderr
+          }
         } catch (err) {
-          log.error("ping error", err)
+          resultGroupByDns[dns] = { err: err }
         }
       }
+      resultGroupByHost[internetTestHost] = resultGroupByDns
     }
-    for (const internetTestHost of internetTestHosts) {
-      if (!dnslookupResult || (dnslookupResult && dnslookupResult.err)) {
-        dnslookupResult = await dnsLookupAsync(internetTestHost);
-      }
-    }
-    rclient.hsetAsync("network:status", "ping", !!pingResult);
-    rclient.hsetAsync("network:status", "dnslookup", dnslookupResult ? !dnslookupResult.err : false);
+    rclient.setAsync("network:status:dig", JSON.stringify(resultGroupByHost));
   }
 }
 
