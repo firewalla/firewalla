@@ -33,6 +33,8 @@ const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 
 const { wrapIptables } = require('../../net2/Iptables.js')
 
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
+
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
 
@@ -335,7 +337,15 @@ class App {
   }
 
   start() {
-    this.app.listen(port, () => log.info(`Httpd listening on port ${port}!`));
+    this.app.listen(port, () => {
+      log.info(`Httpd listening on port ${port}!`)
+
+      sem.on("DiagRedirectionRenew", (event) => {
+        log.info("Renew port redirection")
+        this.iptablesRedirection();
+      })
+
+    });
   }
 }
 
