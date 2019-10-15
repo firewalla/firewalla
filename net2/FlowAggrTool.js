@@ -130,6 +130,7 @@ class FlowAggrTool {
 
     for(let destIP in traffics) {
       let traffic = (traffics[destIP] && traffics[destIP][trafficDirection]) || 0;
+      let port = (traffics[destIP] && traffics[destIP].port) || [];
 
       if(traffic < MIN_AGGR_TRAFFIC) {
         continue                // skip very small traffic
@@ -138,13 +139,13 @@ class FlowAggrTool {
       args.push(traffic)
       args.push(JSON.stringify({
         device: mac,
-        destIP: destIP
+        destIP: destIP,
+        port: port
       }))
     }
 
     args.push(0);
     args.push("_"); // placeholder to keep key exists
-
     await rclient.zaddAsync(args)
     await rclient.expireAsync(key, expire)
     await this.trimFlow(mac, trafficDirection, interval, ts)
@@ -314,7 +315,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             let json = JSON.parse(payload);
-            results.push({ip: json.destIP, device: json.device, count: count});
+            results.push({ip: json.destIP, device: json.device, count: count,port:json.port});
           } catch(err) {
             log.error("Failed to parse payload: ", payload);
           }

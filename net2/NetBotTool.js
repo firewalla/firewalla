@@ -281,7 +281,6 @@ class NetBotTool {
     json.flows[trafficDirection] = enriched.sort((a, b) => {
       return b.count - a.count;
     });
-
     return traffic
   }
 

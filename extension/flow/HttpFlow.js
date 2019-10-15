@@ -41,7 +41,7 @@ let instance = null;
 
 class HttpFlow {
   constructor() {
-    if(instance === null) {
+    if (instance === null) {
       instance = this;
     }
     return instance;
@@ -50,7 +50,7 @@ class HttpFlow {
   async processUserAgent(mac, flowObject) {
     const agent = useragent.parse(flowObject.user_agent);
 
-    if(agent == null || agent.device == null || agent.device.family == null) {
+    if (agent == null || agent.device == null || agent.device.family == null) {
       return;
     }
 
@@ -71,7 +71,7 @@ class HttpFlow {
 
       await rclient.saddAsync(key, JSON.stringify(content));
       await rclient.expireAsync(key, expireTime);
-    } catch(err) {
+    } catch (err) {
       log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
     }
 
@@ -81,7 +81,7 @@ class HttpFlow {
       const destKey = `user_agent:${srcIP}:${destIP}:${destPort}`;
       await rclient.setAsync(destKey, flowObject.user_agent);
       await rclient.expireAsync(destKey, destExpireTime);
-    } catch(err) {
+    } catch (err) {
       log.error(`Failed to save dest user agent info, err: ${err}`);
     }
   }
@@ -100,6 +100,9 @@ class HttpFlow {
       const obj = JSON.parse(flow);
       if (obj == null || !obj.uid) {
         log.error("HTTP:Drop", obj);
+        return;
+      }
+      if (obj && obj.status_code != 200) {
         return;
       }
 
@@ -126,7 +129,7 @@ class HttpFlow {
       }
 
       const mac = await hostTool.getMacByIPWithCache(localIP);
-      if(!mac) {
+      if (!mac) {
         log.error(`No mac address found for ip ${localIP}, dropping http flow`);
         return;
       }
@@ -135,7 +138,7 @@ class HttpFlow {
         await this.processUserAgent(mac, obj);
       }
 
-      if(host && uri) {
+      if (host && uri) {
         sem.emitEvent({
           type: 'DestURLFound', // to have DestURLHook to get intel for this url
           url: `${host}${uri}`,
@@ -153,8 +156,8 @@ class HttpFlow {
         await rclient.zaddAsync(redisObj);
         await rclient.expireAsync(flowKey, expireTime);
 
-        flowLink.recordHttp(obj.uid, obj.ts, {mac, flowDirection});
-      } catch(err) {
+        flowLink.recordHttp(obj.uid, obj.ts, { mac, flowDirection });
+      } catch (err) {
         log.error(`Failed to save http flow, err: ${err}`);
       }
 
