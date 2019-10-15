@@ -5,6 +5,25 @@ shopt -s lastpipe
 usage() {
     echo "Usage: conn_check [-h] [-f \"files\"]"
     echo "   -f: wildcard accepted, defaut to /blog/current/conn.log"
+    echo ""
+    echo "State  | Meaning"
+    echo "---------------------------------------------"
+    echo "S0     | Connection attempt seen, no reply."
+    echo "S1     | Connection established, not terminated."
+    echo "SF     | Normal establishment and termination. Note that this is the same symbol as for state S1. You can tell"
+    echo "       | the two apart because for S1 there will not be any byte counts in the summary, while for SF there will be."
+    echo "REJ    | Connection attempt rejected."
+    echo "S2     | Connection established and close attempt by originator seen (but no reply from responder)."
+    echo "S3     | Connection established and close attempt by responder seen (but no reply from originator)."
+    echo "RSTO   | Connection established, originator aborted (sent a RST)."
+    echo "RSTR   | Responder sent a RST."
+    echo "RSTOS0 | Originator sent a SYN followed by a RST, we never saw a SYN-ACK from the responder."
+    echo "RSTRH  | Responder sent a SYN ACK followed by a RST, we never saw a SYN from the (purported) originator."
+    echo "SH     | Originator sent a SYN followed by a FIN, we never saw a SYN ACK from the responder"
+    echo "       | (hence the connection was “half” open)."
+    echo "SHR    | Responder sent a SYN ACK followed by a FIN, we never saw a SYN from the originator."
+    echo "OTH    | No SYN seen, just midstream traffic (a “partial connection” that was not later closed)."
+    echo ""
     return
 }
 
@@ -44,33 +63,64 @@ SUBNET2=${FIREWALLA2%.*}
 EXCLUDE=($GATEWAY $FIREWALLA $FIREWALLA2)
 
 declare -A HOST
+declare -A TCP
+declare -A UDP
+declare -A SRCPORT
+declare -A DESTPORT
+declare -A DEST
 declare -A CONN
 
 cat $FILES |
 ( [[ $FILES == *"/current/"* ]] && cat || gunzip ) |
-jq -r "select(.proto == \"tcp\") | \"\(.[\"id.orig_h\"]) \(.[\"id.resp_h\"]) \(.conn_state) \(.local_orig) \(.local_resp)\"" |
-while read orig resp state local_orig local_resp; do
+jq -r ". | \"\(.proto) \(.[\"id.orig_h\"]) \(.[\"id.orig_p\"]) \(.[\"id.resp_h\"]) \(.[\"id.resp_p\"]) \(.conn_state) \(.local_orig) \(.local_resp)\"" |
+while read proto orig oport resp rport state local_orig local_resp; do
     #host=""
     if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
-          "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ]]; then continue; fi
+          "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ||
+          "$orig" == ff0?::* || "$resp" == ff0?::* ]]; then continue; fi
     # if [[ "${orig%.*}" == "$SUBNET" || "${orig%.*}" == "$SUBNET2" ]]; then host=$orig; fi
     # if [[ "${resp%.*}" == "$SUBNET" || "${resp%.*}" == "$SUBNET2" ]]; then host=$resp; fi
     # if [[ "$host" == "" ]]; then continue; fi
     if [[ "$local_orig" == "true" ]]
     then
-        if [[ "$local_resp" == "true" ]]; then continue; else host=$orig; fi
+        if [[ "$local_resp" == "true" ]]; then
+            continue;
+        else
+            host=$orig;
+            dest=$resp;
+            srcPort=$oport;
+            destPort=$rport;
+        fi
     else
         host=$resp;
+        dest=$oirg
+        srcPort=$rport;
+        destPort=$oport;
     fi
-    ((HOST["$host"]=1));
-    ((CONN["${host}all"]++));
-    ((CONN["$host$state"]++));
+
+    ((HOST[$host]=1));
+    ((SRCPORT[$host, $srcPort]=1));
+    ((DESTPORT[$host, $destPort]=1));
+    ((DEST[$host, $dest]=1));
+
+    # only check conn_state for TCP connections
+    if [[ "$proto" == "tcp" ]]; then
+        ((CONN[$host, "tcp"]++));
+        ((CONN[$host, $state]++));
+    else
+        ((CONN[$host, "udp"]++));
+    fi
+
 done
 
 STATES=("SF" "S0" "S1" "REJ" "S2" "S3" "RSTO" "RSTR" "RSTOS0" "RSTRH" "SH" "SHR" "OTH")
 
 printf '%-30s' "HOST"
-printf '%-10s' "All"
+printf '%-10s' "SrcPort"
+printf '%-10s' "DestPort"
+printf '%-10s' "DestHost"
+printf '%-10s' "UDP"
+printf '%-10s' "TCP"
 for state in ${STATES[@]}; do
     printf '%-10s' $state
 done
@@ -78,10 +128,28 @@ echo ""
 
 for host in "${!HOST[@]}"; do
     printf '%-30s' "$host"
-    printf '%-10s' ${CONN["${host}all"]}
+
+    srcPorts=0
+    destPorts=0
+    destHosts=0
+    for key in "${!SRCPORT[@]}"; do
+        if [[ $key == $host* ]]; then ((srcPorts++)); fi
+    done
+    for key in "${!DESTPORT[@]}"; do
+        if [[ $key == $host* ]]; then ((destPorts++)); fi
+    done
+    for key in "${!DEST[@]}"; do
+        if [[ $key == $host* ]]; then ((destHosts++)); fi
+    done
+
+    printf '%-10s' $srcPorts
+    printf '%-10s' $destPorts
+    printf '%-10s' $destHosts
+    printf '%-10s' ${CONN[$host, "udp"]}
+    printf '%-10s' ${CONN[$host, "tcp"]}
     for state in ${STATES[@]}; do
-        printf '%-10s' ${CONN["$host$state"]}
+        printf '%-10s' ${CONN[$host, $state]}
     done
     echo ""
 done |
-sort -rn -k2
+sort -rn -k6

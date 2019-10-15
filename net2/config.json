@@ -378,7 +378,8 @@
       "internetTestUrls": {
         "google": "http://google.com",
         "github": "http://github.com"
-      }
+      },
+      "interval": 300
     },
     "ICMP6Sensor": {},
     "CPUSensor": {
@@ -597,7 +598,8 @@
     "cpu_monitor": true,
     "speed_test": false,
     "safe_search": false,
-    "network_stats": false
+    "network_stats": false,
+    "link_stats": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

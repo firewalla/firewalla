@@ -20,7 +20,7 @@
 let hash = require('../util/Hashes.js');
 let util = require('util');
 let argv = require('minimist')(process.argv.slice(2));
-let blackholeIP = "198.51.100.99";
+let blackholeIP = "0.0.0.0";
 
 let domains = argv._;
 

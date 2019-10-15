@@ -80,11 +80,6 @@ class Host {
       }
       this.spoofing = false;
 
-      /*
-      if (this.o.ipv6Addr) {
-      this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-      }
-      */
       this.predictHostNameUsingUserAgent();
 
       this.loadPolicy(callback);
@@ -181,7 +176,7 @@ class Host {
       log.debug("Host:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
     } catch(err) {
       log.error("Got error when cleanV6", err)
-    };
+    }
   }
 
   predictHostNameUsingUserAgent() {
@@ -484,6 +479,10 @@ class Host {
             log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
             return;
           }
+          const cmd = `sudo ipset del -! not_monitored_mac_set ${this.o.mac}`;
+          exec(cmd).catch((err) => {
+            log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
+          });
           spoofer.newSpoof(this.o.ipv4Addr)
             .then(() => {
               rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
@@ -496,6 +495,10 @@ class Host {
             })
         })
       } else {
+        const cmd = `sudo ipset add -! not_monitored_mac_set ${this.o.mac}`;
+        exec(cmd).catch((err) => {
+          log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
+        });
         spoofer.newUnspoof(this.o.ipv4Addr)
           .then(() => {
             rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
@@ -962,7 +965,6 @@ class Host {
     return await this.getHost(ip);
   }
 
-  // looks like this function is never used
   async getHost(ip) {
     let key = "host:ip4:" + ip;
     log.debug("Discovery:FindHostWithIP", key, ip);
@@ -1105,7 +1107,8 @@ class Host {
     return util.promisify(this.loadPolicy).bind(this)()
   }
 
-  isFlowAllowed(flow) {
+  // this only gets updated when 
+  isInternetAllowed() {
     if (this.policy && this.policy.blockin == true) {
       return false;
     }
