@@ -20,6 +20,7 @@ const util = require('util');
 const execAsync = util.promisify(cp.exec);
 const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger.js')(__filename, 'info');
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 const speedtestBinary = `${f.getFirewallaHome()}/extension/speedtest/speedtest-cli`;
 
 
@@ -28,6 +29,7 @@ async function speedtest() {
         const cmd = `${speedtestBinary}.${f.getPlatform()} --json`
         let { stdout } = await execAsync(cmd);
         if (stdout) {
+            rclient.zadd("network:speed:test", Math.floor(new Date() / 1000), stdout);
             stdout = JSON.parse(stdout)
             return stdout
         }

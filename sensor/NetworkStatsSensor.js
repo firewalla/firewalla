@@ -22,6 +22,7 @@ const fc = require('../net2/config.js');
 
 const FEATURE_NETWORK_STATS = "network_stats";
 const FEATURE_LINK_STATS = "link_stats";
+const FEATURE_NETWORK_SPEED_TEST = "network_speed_test";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -32,7 +33,9 @@ const sysManager = new SysManager();
 
 const util = require('util');
 const exec = require('child-process-promise').exec;
-const bone = require('../lib/Bone.js')
+const bone = require('../lib/Bone.js');
+const speedtest = require('../extension/speedtest/speedtest.js');
+const CronJob = require('cron').CronJob;
 
 const _ = require('lodash');
 
@@ -47,11 +50,25 @@ class NetworkStatsSensor extends Sensor {
     fc.onFeature(FEATURE_NETWORK_STATS, (feature, status) => {
       if (feature != FEATURE_NETWORK_STATS)
         return
-
       if (status) {
         this.turnOn();
       } else {
         this.turnOff();
+      }
+    })
+
+    if (fc.isFeatureOn(FEATURE_NETWORK_SPEED_TEST)) {
+      this.runSpeedTest();
+    } else {
+      this.stopSpeedTest();
+    }
+    fc.onFeature(FEATURE_NETWORK_SPEED_TEST, (feature, status) => {
+      if (feature != FEATURE_NETWORK_SPEED_TEST)
+        return
+      if (status) {
+        this.runSpeedTest();
+      } else {
+        this.stopSpeedTest();
       }
     })
 
@@ -211,6 +228,16 @@ class NetworkStatsSensor extends Sensor {
       resultGroupByHost[internetTestHost] = resultGroupByDns
     }
     rclient.setAsync("network:status:dig", JSON.stringify(resultGroupByHost));
+  }
+  async runSpeedTest() {
+    this.cornJob && this.cornJob.stop();
+    this.cornJob = new CronJob("00 30 02 * * *", () => {
+      speedtest();
+    }, null, true, await sysManager.getTimezone())
+  }
+  stopSpeedTest() {
+    this.cornJob && this.cornJob.stop();
+    this.cornJob = null;
   }
 }
 

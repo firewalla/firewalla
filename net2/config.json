@@ -605,7 +605,8 @@
     "speed_test": false,
     "safe_search": false,
     "network_stats": false,
-    "link_stats": true
+    "link_stats": true,
+    "network_speed_test": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
