@@ -218,8 +218,8 @@ class NetworkStatsSensor extends Sensor {
         try {
           const result = await exec(`dig @${dns} +short ${internetTestHost}`);
           resultGroupByDns[dns] = {
-            stdout: result.stdout ? result.stdout.split('\n') : result.stdout,
-            stderr: result.stderr ? result.stderr.split('\n') : result.stderr
+            stdout: result.stdout ? result.stdout.split('\n').filter(x => x) : result.stdout,
+            stderr: result.stderr ? result.stderr.split('\n').filter(x => x) : result.stderr
           }
         } catch (err) {
           resultGroupByDns[dns] = { err: err }
