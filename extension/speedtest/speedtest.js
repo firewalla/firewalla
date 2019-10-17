@@ -18,13 +18,15 @@
 const cp = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(cp.exec);
+const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger.js')(__filename, 'info');
 const rclient = require('../../util/redis_manager.js').getRedisClient();
+const speedtestCli = `${f.getFirewallaHome()}/extension/speedtest/speedtest-cli`;
 
 
 async function speedtest() {
     try {
-        const cmd = `python speedtest-cli --json`
+        const cmd = `python ${speedtestCli} --json`
         let { stdout } = await execAsync(cmd);
         if (stdout) {
             rclient.zadd("network:speed:test", Math.floor(new Date() / 1000), stdout);
