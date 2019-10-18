@@ -213,7 +213,7 @@ class App {
       await exec(cmd);
       return imagePath;
     } catch (err) {
-      return null;
+      throw new Error("Failed to get QRImage", err);
     }
   }
 
