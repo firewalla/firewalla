@@ -45,6 +45,7 @@ const errorCodes = {
   "firemon": 104,
   "memory": 201,
   "database": 301,
+  "databaseConnectivity": 302,
   "gid": 401,
   "ip": 501
 }
@@ -144,6 +145,21 @@ class App {
     return 0
   }
 
+  async getDatabaseConnectivity() {
+    try {
+      const result = await exec("redis-cli -v")
+      if (result && result.stdout &&
+        (result.stdout.indexOf("refused") > -1 || result.stdout.indexOf("failed")) > -1) {
+        return errorCodes.databaseConnectivity
+      }
+      return 0
+    } catch (err) {
+      log.error("Failed to check database connection status", err);
+      return errorCodes.databaseConnectivity
+    }
+    return 0
+  }
+
   async getGID() {
     try {
       const gid = await exec("redis-cli hget sys:ept gid")
@@ -180,7 +196,7 @@ class App {
   }
 
   async getQRImage() {
-    if(!this.broadcastInfo) {
+    if (!this.broadcastInfo) {
       return null;
     }
 
@@ -201,7 +217,7 @@ class App {
 
       await exec(cmd);
       return imagePath;
-    } catch(err) {
+    } catch (err) {
       return null;
     }
   }
@@ -214,7 +230,7 @@ class App {
 
     this.app.use('/log', (req, res) => {
       const filename = "/home/pi/logs/FireKick.log";
-      (async() =>{
+      (async () => {
         const gid = await this.getFullGID()
         await fs.accessAsync(filename, fs.constants.F_OK)
         //tail -n 1000 /home/pi/logs/FireKick.log | sed -r   "s/0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"
@@ -239,7 +255,7 @@ class App {
     });
 
     this.app.use('/pairing', (req, res) => {
-      if(this.broadcastInfo) {
+      if (this.broadcastInfo) {
         res.json(this.broadcastInfo);
       } else {
         res.status(501).send('');
@@ -249,7 +265,7 @@ class App {
     this.app.use('*', (req, res) => {
       log.info("Got a request in *")
 
-      return (async() =>{
+      return (async () => {
         const time = this.getSystemTime()
         const ip = await this.getPrimaryIP()
         const gid = await this.getGID()
@@ -261,51 +277,56 @@ class App {
         const systemServices = await this.getSystemServices()
         const expireDate = this.expireDate;
         const qrImagePath = await this.getQRImage()
-
+        const databaseConnectivity = await this.getDatabaseConnectivity();
         let success = true
         let values = {
           now: new Date() / 1000
         }
 
-        if(!this.broadcastInfo) {
+        if (!this.broadcastInfo) {
           values.err_binding = true
           success = false;
         }
 
-        if(qrImagePath) {
+        if (qrImagePath) {
           values.qrImage = true;
         } else {
           success = false;
         }
 
-        if(ip == "") {
+        if (ip == "") {
           values.err_ip = true
           success = false
         } else {
           values.ip = ip
         }
 
-        if(gid == null) {
+        if (gid == null) {
           values.err_config = true
           success = false
         }
 
-        if(database != 0) {
+        if (database != 0) {
           values.err_database = true
           success = false
         }
 
-        if(memory != 0) {
+        if (databaseConnectivity != 0) {
+          values.err_database_connectivity = true
+          success = false
+        }
+
+        if (memory != 0) {
           values.err_memory = true
           success = false
         }
 
-        if(connected != true) {
+        if (connected != true) {
           values.err_cloud = true
           success = false
         }
 
-        if(systemServices != 0) {
+        if (systemServices != 0) {
           values.err_service = true
           success = false
         }
