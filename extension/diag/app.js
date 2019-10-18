@@ -147,12 +147,7 @@ class App {
 
   async getDatabaseConnectivity() {
     try {
-      const result = await exec("redis-cli -v")
-      if (result && result.stdout &&
-        (result.stdout.indexOf("refused") > -1 || result.stdout.indexOf("failed")) > -1) {
-        return errorCodes.databaseConnectivity
-      }
-      return 0
+      await exec("redis-cli get mode")
     } catch (err) {
       log.error("Failed to check database connection status", err);
       return errorCodes.databaseConnectivity
