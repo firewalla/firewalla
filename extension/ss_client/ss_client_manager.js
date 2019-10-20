@@ -192,7 +192,7 @@ class SSClientManager {
       return this.moveToNextClient(tryCount+1);
     }
 
-    log.info(`Select ${client.name} as primary client now.`);
+    log.info(`Select ${selectedClient.name} as primary client now.`);
     this.curIndex = selectedIndex;
 
     return true;

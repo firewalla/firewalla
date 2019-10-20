@@ -165,7 +165,7 @@ class SSClient {
   }
 
   async statusCheck() {
-    const cmd = `curl --socks5-hostname localhost:${this.ssClientPort} https://google.com &>/dev/null`;
+    const cmd = `curl --socks5-hostname localhost:${this.ssClientPort} https://google.com`;
     log.info("checking cmd", cmd);
     try {
       await exec(cmd);
