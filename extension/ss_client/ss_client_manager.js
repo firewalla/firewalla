@@ -33,34 +33,8 @@ class SSClientManager {
     return instance;
   }
 
-  async getConfig(name = "default") {
-    let key = `${ssConfigKey}`;
-    if(name !== "default") {
-      key = `scisurf.${name}.config`;
-    }
-    const configString = await rclient.getAsync(key);
-    if(!configString) {
-      return null;
-    }
-    
-    try {
-      let config = JSON.parse(configString);
-      if(config.servers && Array.isArray(config.servers)) {
-        if(config.servers.length === 0) {
-          return null;
-        } else {
-          config = config.servers[0];
-        }
-      }
-      return config;
-    } catch(err) {
-      log.error(`Failed to load ss config ${key}, err:`, err);
-      return null;
-    }
-  }
-
   async getAllConfigs() {
-    const configString = await rclient.getAsync(key);
+    const configString = await rclient.getAsync(ssConfigKey);
     if(!configString) {
       return [];
     }
@@ -73,7 +47,7 @@ class SSClientManager {
         return [config];
       }
     } catch(err) {
-      log.error(`Failed to load ss config ${key}, err:`, err);
+      log.error(`Failed to load ss config ${ssConfigKey}, err:`, err);
       return [];
     }
   }
@@ -83,7 +57,7 @@ class SSClientManager {
   }
 
   async initSSClients() {
-    if(self.inited) {
+    if(this.inited) {
       return;
     }
 
@@ -93,7 +67,7 @@ class SSClientManager {
       config.name = config.name || `${config.server}:${config.server_port}`;
 
       const client = new SSClient(Object.assign({}, config, {
-        name,
+        name: config.name,
         overturePort: basePort,
         ssRedirectPort: basePort + 1,
         ssClientPort: basePort + 2
