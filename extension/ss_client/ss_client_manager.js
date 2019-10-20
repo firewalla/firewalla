@@ -22,12 +22,13 @@ const SSClient = require('./ss_client.js');
 const rclient = require('../../util/redis_manager').getRedisClient();
 
 const ssConfigKey = "scisurf.config";
+const ssActiveConfigKey = "scisurf.config.active";
 
 class SSClientManager {
   constructor() {
     if(instance === null) {
       instance = this;
-      this.ssClientMap = {};
+      this.clients = [];
     }
     return instance;
   }
@@ -58,17 +59,84 @@ class SSClientManager {
     }
   }
 
-  async getSSClient(name = "default") {
-    if(!this.ssClientMap[name]) {
-      let config = await this.getConfig(name);
-      if(config) {
-        this.ssClientMap[name] = new SSClient(Object.assign({}, config, {name}));
-      } else {
-        return null;
-      }
+  async getAllConfigs() {
+    const configString = await rclient.getAsync(key);
+    if(!configString) {
+      return [];
     }
 
-    return this.ssClientMap[name];
+    try {
+      let config = JSON.parse(configString);
+      if(config.servers && Array.isArray(config.servers)) {
+        return config.servers;
+      } else {
+        return [config];
+      }
+    } catch(err) {
+      log.error(`Failed to load ss config ${key}, err:`, err);
+      return [];
+    }
+  }
+
+  async resetSSClients() {
+    // TODO
+  }
+
+  async initSSClients() {
+    if(self.inited) {
+      return;
+    }
+
+    const configs = await this.getAllConfigs();
+    let basePort = 9100;
+    for(const config of configs) {
+      config.name = config.name || `${config.server}:${config.server_port}`;
+
+      const client = new SSClient(Object.assign({}, config, {
+        name,
+        overturePort: basePort,
+        ssRedirectPort: basePort + 1,
+        ssClientPort: basePort + 2
+      }));
+      this.clients.push(client);
+      basePort += 10;
+    }
+  }
+
+  async startService() {
+    for(const client of this.clients) {
+      await client.start();
+    }
+  }
+
+  async stopService() {
+    for(const client of this.clients) {
+      await client.stop();
+    }
+  }
+
+  async selectClient() {
+    return 0;
+  }
+
+  async startRedirect() {
+    const index = await this.selectClient();
+    const client = this.clients[index];
+    if(client) {
+      await client.redirectTraffic();
+    } else {
+      log.error(`Invalid client index: ${index}`);
+    }
+  }
+
+  async stopRedirect() {
+    const index = await this.selectClient();
+    const client = this.clients[index];
+    if(client) {
+      await client.unredirectTraffic();
+    } else {
+      log.error(`Invalid client index: ${index}`);
+    }
   }
 }
 

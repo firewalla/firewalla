@@ -3,8 +3,8 @@
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 
 NAME=$1
-if [[ -e $DIR/ss_client.${NAME}.rc ]]; then
-  source $DIR/ss_client.${NAME}.rc
+if [[ -e ${HOME}/.firewalla/run/ss_client.${NAME}.rc ]]; then
+  source "${HOME}/.firewalla/run/ss_client.${NAME}.rc"
 fi
 
 : ${FW_SS_CONFIG_PATH:="${HOME}/.firewalla/run/ss_client.${NAME}.config.json"}
