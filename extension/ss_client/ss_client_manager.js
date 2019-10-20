@@ -116,7 +116,7 @@ class SSClientManager {
   async stopRedirect() {
     const client = this.getCurrentClient();
     if(client) {
-      await client.unredirectTraffic();
+      await client.unRedirectTraffic();
     } else {
       log.error(`Invalid client index: ${index}`);
     }
