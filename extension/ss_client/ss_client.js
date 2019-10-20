@@ -165,6 +165,14 @@ class SSClient {
   }
 
   async statusCheck() {
+    const cmd = `curl --socks5-hostname localhost:${this.ssClientPort} https://google.com &>/dev/null`;
+    try {
+      await exec(cmd);
+      return true;
+    } catch(err) {
+      log.error(`ss server ${this.name} is not available.`);
+      return false;
+    }
   }
 
   // config may contain one or more ss server configurations

@@ -23,12 +23,16 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 
 const ssConfigKey = "scisurf.config";
 const ssActiveConfigKey = "scisurf.config.active";
+const errorClientExpireTime = 3600;
+const statusCheckInterval = 3 * 60 * 1000; // check every 3 minutes
 
 class SSClientManager {
   constructor() {
     if(instance === null) {
       instance = this;
       this.clients = [];
+      this.errorClients = {};
+      this.curIndex = 0;
     }
     return instance;
   }
@@ -75,6 +79,11 @@ class SSClientManager {
       this.clients.push(client);
       basePort += 10;
     }
+
+    this.curIndex = Math.floor(Math.random() * this.clients.length); // random start
+    setInterval(() => {
+      this.statusCheck();
+    }, statusCheckInterval);
   }
 
   async startService() {
@@ -89,13 +98,8 @@ class SSClientManager {
     }
   }
 
-  async selectClient() {
-    return 0;
-  }
-
   async startRedirect() {
-    const index = await this.selectClient();
-    const client = this.clients[index];
+    const client = this.getCurrentClient();
     if(client) {
       await client.redirectTraffic();
     } else {
@@ -104,13 +108,102 @@ class SSClientManager {
   }
 
   async stopRedirect() {
-    const index = await this.selectClient();
-    const client = this.clients[index];
+    const client = this.getCurrentClient();
     if(client) {
       await client.unredirectTraffic();
     } else {
       log.error(`Invalid client index: ${index}`);
     }
+  }
+
+  getCurrentClient() {
+    return this.clients[this.curIndex];
+  }
+
+  async statusCheck() {
+    this.cleanupErrorList();
+    await this.printStatus();
+
+    const client = this.getCurrentClient();
+    const result = await client.statusCheck();
+    if(!result) {
+      log.error(`ss client ${client.name} is down, taking out from the pool`);
+      // add it to error queue
+      this.errorClients[client.name] = Math.floor(new Date() / 1000);
+
+      await this.stopRedirect();
+
+      const moveNext = this.moveToNextClient();
+      if(moveNext) {
+        await this.startRedirect();
+      }
+    }
+  }
+
+  moveToNextClient(tryCount = 0) {
+    if(tryCount > 100) {
+      return false;
+    }
+
+    const cur = this.curIndex;
+    const validClients = this.getValidClients();
+    if(validClients.length === 0) {
+      log.error("No more available clients!!");
+      return false;
+    }
+    const randomIndex = Math.floor(Math.random() * validClients.length);
+    const selectedClient = validClients[randomIndex];
+    const selectedIndex = this.getIndexByName(selectedClient.name);
+    if(selectedIndex === null) {
+      this.errorClients[selectedClient.name] = Math.floor(new Date() / 1000);
+      log.error(`Failed to find the selected client ${selectedClient.name}, trying again`);
+      return this.moveToNextClient(tryCount+1);
+    }
+
+    this.curIndex = selectedIndex;
+
+    return true;
+  }
+
+  getIndexByName(name) {
+    for(const index in this.clients) {
+      const client = this.clients[index];
+      if(client.name === name) {
+        return index;
+      }
+    }
+
+    return null;
+  }
+
+  async printStatus() {
+    const total = this.clients.length;
+    const offline = Object.keys(this.errorClients).length;
+    const online = this.clients.length - offline;
+    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients are offline.`);
+  }
+
+  cleanupErrorList() {
+    for(const clientName in this.errorClients) {
+      const time = this.errorClients[clientName];
+      const now = Math.floor(new Date() / 1000);
+      if(now - time > errorClientExpireTime) {
+        delete this.errorClients[clientName];
+      }
+    }
+  }
+
+  getValidClients() {
+    const list = [];
+
+    for(const client of this.clients) {
+      const name = client.name;
+      if(!this.errorClients.includes(name)) {
+        list.push(client);
+      }
+    }
+
+    return list;
   }
 }
 
