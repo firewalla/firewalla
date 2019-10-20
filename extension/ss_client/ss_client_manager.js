@@ -145,13 +145,14 @@ class SSClientManager {
       // add it to error queue
       this.errorClients[client.name] = Math.floor(new Date() / 1000);
 
-      this.sendSSDownNotification(client);
-
       await this.stopRedirect();
 
       const moveNext = this.moveToNextClient();
       if(moveNext) {
         await this.startRedirect();
+        this.sendSSFailOverNotification(client, this.getCurrentClient());
+      } else {
+        this.sendSSDownNotification(client);
       }
     }
 
@@ -168,6 +169,21 @@ class SSClientManager {
       bodyLocalArgs: [client.name],
       payload: {
         clientName: client.name
+      }
+    });
+  }
+
+  sendSSFailOverNotification(client, newClient) {
+    sem.sendEventToFireApi({
+      type: 'FW_NOTIFICATION',
+      titleKey: 'FW_SS_FAILOVER_TITLE',
+      bodyKey: 'FW_SS_FAILOVER_BODY',
+      titleLocalKey: 'FW_SS_FAILOVER_TITLE',
+      bodyLocalKey: 'FW_SS_FAILOVER_BODY',
+      bodyLocalArgs: [client.name, newClient.name],
+      payload: {
+        clientName: client.name,
+        newClientName: newClient.name
       }
     });
   }
