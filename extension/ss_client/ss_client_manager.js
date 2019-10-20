@@ -28,6 +28,8 @@ const ssActiveConfigKey = "scisurf.config.active";
 const errorClientExpireTime = 3600;
 const statusCheckInterval = 3 * 60 * 1000; // check every 3 minutes
 
+const delay = require('../../util/util.js').delay;
+
 class SSClientManager {
   constructor() {
     if(instance === null) {
@@ -62,10 +64,16 @@ class SSClientManager {
     // TODO
   }
 
+  async stopAllSSServices() {
+    return exec("sudo systemctl stop 'ss_client@*'");
+  }
+
   async initSSClients() {
     if(this.inited) {
       return;
     }
+
+    await this.stopAllSSServices().catch((err) => {});
 
     const configs = await this.getAllConfigs();
     let basePort = 9100;
@@ -107,6 +115,7 @@ class SSClientManager {
   async startRedirect() {
     const client = this.getCurrentClient();
     if(client) {
+      log.info(`Using ${client.name} as primary ss client.`);
       await client.redirectTraffic();
     } else {
       log.error(`Invalid client index: ${index}`);
@@ -183,6 +192,7 @@ class SSClientManager {
       return this.moveToNextClient(tryCount+1);
     }
 
+    log.info(`Select ${client.name} as primary client now.`);
     this.curIndex = selectedIndex;
 
     return true;
@@ -222,7 +232,7 @@ class SSClientManager {
 
     for(const client of this.clients) {
       const name = client.name;
-      if(!this.errorClients.includes(name)) {
+      if(!this.errorClients[name]) {
         list.push(client);
       }
     }

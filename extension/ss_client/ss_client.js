@@ -96,7 +96,7 @@ class SSClient {
   async unRedirectTraffic() {
     // unreroute all traffic
     const chain = `FW_SHADOWSOCKS_${this.name}`;
-    await exec(wrapIptables(`sudo iptables -w -t nat -A PREROUTING -p tcp -j ${chain}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -j ${chain}`));
 
     // set dnsmasq upstream back to default
     await dnsmasq.setUpstreamDNS(null);
