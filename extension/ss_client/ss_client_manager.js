@@ -18,6 +18,8 @@
 let instance = null;
 const log = require('../../net2/logger.js')(__filename);
 
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
+
 const SSClient = require('./ss_client.js');
 const rclient = require('../../util/redis_manager').getRedisClient();
 
@@ -122,7 +124,6 @@ class SSClientManager {
 
   async statusCheck() {
     this.cleanupErrorList();
-    await this.printStatus();
 
     const client = this.getCurrentClient();
     const result = await client.statusCheck();
@@ -131,6 +132,8 @@ class SSClientManager {
       // add it to error queue
       this.errorClients[client.name] = Math.floor(new Date() / 1000);
 
+      this.sendSSDownNotification(client);
+
       await this.stopRedirect();
 
       const moveNext = this.moveToNextClient();
@@ -138,6 +141,22 @@ class SSClientManager {
         await this.startRedirect();
       }
     }
+
+    await this.printStatus();
+  }
+
+  sendSSDownNotification(client) {
+    sem.sendEventToFireApi({
+      type: 'FW_NOTIFICATION',
+      titleKey: 'FW_SS_DOWN_TITLE',
+      bodyKey: 'FW_SS_DOWN_BODY',
+      titleLocalKey: 'FW_SS_DOWN_TITLE',
+      bodyLocalKey: 'FW_SS_DOWN_BODY',
+      bodyLocalArgs: [client.name],
+      payload: {
+        clientName: client.name
+      }
+    });
   }
 
   moveToNextClient(tryCount = 0) {
@@ -180,7 +199,8 @@ class SSClientManager {
     const total = this.clients.length;
     const offline = Object.keys(this.errorClients).length;
     const online = this.clients.length - offline;
-    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients are offline.`);
+    const activeName = this.getCurrentClient().name;
+    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients are offline, active: ${activeName}.`);
   }
 
   cleanupErrorList() {
