@@ -81,17 +81,21 @@ class SSClientManager {
       this.clients.push(client);
       basePort += 10;
     }
-
-    this.curIndex = Math.floor(Math.random() * this.clients.length); // random start
-    setInterval(() => {
-      this.statusCheck();
-    }, statusCheckInterval);
   }
 
   async startService() {
     for(const client of this.clients) {
       await client.start();
     }
+
+    this.curIndex = Math.floor(Math.random() * this.clients.length); // random start
+    setInterval(() => {
+      this.statusCheck();
+    }, statusCheckInterval);
+
+    setTimeout(() => {
+      this.statusCheck();
+    }, 1000 * 30); // fast check in 30 seconds
   }
 
   async stopService() {
