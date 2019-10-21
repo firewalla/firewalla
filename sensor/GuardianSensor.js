@@ -23,6 +23,7 @@ const extensionManager = require('./ExtensionManager.js')
 
 const configServerKey = "ext.guardian.socketio.server";
 const configRegionKey = "ext.guardian.socketio.region";
+const configBizModeKey = "ext.guardian.business.mode";
 const configAdminStatusKey = "ext.guardian.socketio.adminStatus";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -48,10 +49,22 @@ class GuardianSensor extends Sensor {
   async apiRun() {
     extensionManager.onGet("guardianSocketioServer", (msg) => {
       return this.getServer();
-    })
+    });
 
     extensionManager.onSet("guardianSocketioServer", (msg, data) => {
       return this.setServer(data.server, data.region);
+    });
+
+    extensionManager.onGet("guardian.biz.mode", async (msg) => {
+      return (await rclient.getAsync(configBizModeKey)) === "true";
+    });
+
+    extensionManager.onSet("guardian.biz.mode", async (msg, data) => {
+      if(data.mode) {
+        rclient.setAsync(configBizModeKey, "true");
+      } else {
+        rclient.setAsync(configBizModeKey, "false");
+      }
     });
 
     extensionManager.onGet("guardianSocketioRegion", (msg) => {
