@@ -42,7 +42,6 @@ const delay = require('../../util/util.js').delay;
 
 const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
 
-const OVERTURE_PORT = 8854;
 const REMOTE_DNS = "8.8.8.8";
 const REMOTE_DNS_PORT = 53;
 
@@ -61,6 +60,9 @@ class SSClient {
     this.config = config;
     this.started = false;
     this.statusCheckTimer = null;
+    this.overturePort = config.overturePort || 8854;
+    this.ssRedirectPort = config.ssRedirectPort || 8820;
+    this.ssClientPort = config.ssClientPort || 8822;
 
     log.info(`Creating ss client ${this.name}...`);//, config: ${require('util').inspect(this.config, {depth: null})}, options, ${require('util').inspect(this.options, {depth: null})}`);
   }
@@ -83,7 +85,7 @@ class SSClient {
 
   async redirectTraffic() {
     // set dnsmasq upstream to overture
-    const upstreamDNS = `127.0.0.1#${OVERTURE_PORT}`;
+    const upstreamDNS = `127.0.0.1#${this.overturePort}`;
     await dnsmasq.setUpstreamDNS(upstreamDNS);
 
     // reroute all devices's traffic to ss special chain
@@ -94,7 +96,7 @@ class SSClient {
   async unRedirectTraffic() {
     // unreroute all traffic
     const chain = `FW_SHADOWSOCKS_${this.name}`;
-    await exec(wrapIptables(`sudo iptables -w -t nat -A PREROUTING -p tcp -j ${chain}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -j ${chain}`));
 
     // set dnsmasq upstream back to default
     await dnsmasq.setUpstreamDNS(null);
@@ -125,7 +127,7 @@ class SSClient {
 
     const templatePath = `${__dirname}/overture.config.template.json`;
     let content = await fs.readFileAsync(templatePath, {encoding: 'utf8'});
-    content = content.replace("%FIREWALLA_OVERTURE_PORT%", OVERTURE_PORT);
+    content = content.replace("%FIREWALLA_OVERTURE_PORT%", this.overturePort);
     content = content.replace("%FIREWALLA_PRIMARY_DNS%", localDNSServers[0]);
     content = content.replace("%FIREWALLA_PRIMARY_DNS_PORT%", 53);
     content = content.replace("%FIREWALLA_ALTERNATIVE_DNS%", REMOTE_DNS);
@@ -138,7 +140,10 @@ class SSClient {
 
   async prepareServiceConfig() {
     const configPath = `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.rc`;
-    await fs.writeFileAsync(configPath, "");
+    let configContent = "";
+    configContent += `FW_SS_REDIR_PORT=${this.ssRedirectPort}\n`;
+    configContent += `FW_SS_CLIENT_PORT=${this.ssClientPort}\n`;
+    await fs.writeFileAsync(configPath, configContent);
   }
 
   // prepare the chnroute files
@@ -160,6 +165,15 @@ class SSClient {
   }
 
   async statusCheck() {
+    const cmd = `curl --socks5-hostname localhost:${this.ssClientPort} https://google.com`;
+    log.info("checking cmd", cmd);
+    try {
+      await exec(cmd);
+      return true;
+    } catch(err) {
+      log.error(`ss server ${this.name} is not available.`);
+      return false;
+    }
   }
 
   // config may contain one or more ss server configurations
