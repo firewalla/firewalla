@@ -61,9 +61,9 @@ class GuardianSensor extends Sensor {
 
     extensionManager.onSet("guardian.biz.mode", async (msg, data) => {
       if(data.mode) {
-        rclient.setAsync(configBizModeKey, "true");
+        await rclient.setAsync(configBizModeKey, "true");
       } else {
-        rclient.setAsync(configBizModeKey, "false");
+        await rclient.setAsync(configBizModeKey, "false");
       }
     });
 
