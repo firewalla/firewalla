@@ -760,9 +760,19 @@ module.exports = class HostManager {
   }
 
   async getGuardian(json) {
-    const mode = await rclient.getAsync("ext.guardian.business.mode");
-    if(mode === "true") {
-      json.guardianBizMode = true;
+    const data = await rclient.getAsync("ext.guardian.business");
+    if(!data) {
+      return;
+    }
+
+    try {
+      const result = JSON.parse(data);
+      if(result) {
+        json.guardianBiz = result;
+      }
+    } catch(err) {
+      log.error(`Failed to parse data, err: ${err}`);
+      return;
     }
   }
 

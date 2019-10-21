@@ -23,7 +23,7 @@ const extensionManager = require('./ExtensionManager.js')
 
 const configServerKey = "ext.guardian.socketio.server";
 const configRegionKey = "ext.guardian.socketio.region";
-const configBizModeKey = "ext.guardian.business.mode";
+const configBizModeKey = "ext.guardian.business";
 const configAdminStatusKey = "ext.guardian.socketio.adminStatus";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -55,16 +55,22 @@ class GuardianSensor extends Sensor {
       return this.setServer(data.server, data.region);
     });
 
-    extensionManager.onGet("guardian.biz.mode", async (msg) => {
-      return (await rclient.getAsync(configBizModeKey)) === "true";
+    extensionManager.onGet("guardian.business", async (msg) => {
+      const data = await rclient.getAsync(configBizModeKey);
+      if(!data) {
+        return null;
+      }
+
+      try {
+        return JSON.parse(data);
+      } catch(err) {
+        log.error(`Failed to parse data, err: ${err}`);
+        return null;
+      }
     });
 
-    extensionManager.onSet("guardian.biz.mode", async (msg, data) => {
-      if(data.mode) {
-        await rclient.setAsync(configBizModeKey, "true");
-      } else {
-        await rclient.setAsync(configBizModeKey, "false");
-      }
+    extensionManager.onSet("guardian.business", async (msg, data) => {
+      await rclient.setAsync(configBizModeKey, JSON.stringify(data));
     });
 
     extensionManager.onGet("guardianSocketioRegion", (msg) => {
