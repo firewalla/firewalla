@@ -759,6 +759,13 @@ module.exports = class HostManager {
     }
   }
 
+  async getGuardian(json) {
+    const mode = await rclient.getAsync("ext.guardian.business.mode");
+    if(mode === "true") {
+      json.guardianBizMode = true;
+    }
+  }
+
   async encipherMembersForInit(json) {
     let members = await rclient.smembersAsync("sys:ept:members")
     if(members && members.length > 0) {
@@ -823,8 +830,9 @@ module.exports = class HostManager {
           this.groupNameForInit(json),
           this.asyncBasicDataForInit(json),
           this.getRecentFlows(json),
-          this.getGuessedRouters(json)
-        ]
+          this.getGuessedRouters(json),
+          this.getGuardian(json)
+        ];
 
         this.basicDataForInit(json, options);
 
