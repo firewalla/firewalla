@@ -42,7 +42,7 @@ fi
 retry=1
 ping_ok=0
 while (($retry <= $TOTAL_RETRIES)); do
-  if brofish_ping; then
+  if brofish_cpu; then
     ping_ok=1
     break
   fi
