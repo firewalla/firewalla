@@ -33,7 +33,7 @@ brofish_cpu() {
   fi
 }
 
-if brofish_ping; then
+if [ ! brofish_ping ]; then
   /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping FAILED, restart brofish now"
   sudo systemctl restart brofish
   exit
