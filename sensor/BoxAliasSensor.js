@@ -45,14 +45,15 @@ class BoxAliasSensor extends Sensor {
                     log.info(`added ${entry}`);
                 })
                 .catch((reason) => {
-                    log.error(`fail to write ${this.generatedConfigFile}`);
+                    log.error(`fail to write ${this.generatedConfigFile}: ${reason}`);
                 });
         } else {
             await unlinkFileAsync(generatedConfigFile)
-                .catch(() => {
+                .then(() => {
                     log.info(`cleanup ${generatedConfigFile}`);
                 })
                 .catch((reason) => {
+                    log.error(reason);
                 });
         }
         await dnsmasq.restartDnsmasq();
