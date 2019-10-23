@@ -4,7 +4,7 @@
 # In case bro hangs, need to restart it.
 # -----------------------------------------
 
-TOTAL_RETRIES=5
+TOTAL_RETRIES=3
 SLEEP_TIMEOUT=10
 CPU_THRESHOLD=99
 
@@ -33,9 +33,7 @@ brofish_cpu() {
   fi
 }
 
-if [ ! brofish_ping ]; then
-  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping FAILED, restart brofish now"
-  sudo systemctl restart brofish
+if brofish_ping; then
   exit
 fi
 
