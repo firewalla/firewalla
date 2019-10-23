@@ -135,6 +135,7 @@
     "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
+    "BoxAliasSensor": {},
     "SafeSearchPlugin": {
       "mapping": {
         "youtube_strict": {
