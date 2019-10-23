@@ -17,9 +17,9 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
-const sclient = require('../../util/redis_manager.js').getSubscriptionClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
-const util = require('util')
+const util = require('util');
 const fs = require('fs');
 const writeFileAsync = util.promisify(fs.writeFile);
 const unlinkFileAsync = util.promisify(fs.unlink);
@@ -27,26 +27,33 @@ const unlinkFileAsync = util.promisify(fs.unlink);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const SysManager = require('../net2/SysManager.js')
+const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager('info');
 
 const f = require('../net2/Firewalla.js');
+const generatedConfigFile = `${f.getUserConfigFolder()}/dnsmasq/box_alias.generated`;
 
 class BoxAliasSensor extends Sensor {
-
-    generatedConfigFile = `${f.getUserConfigFolder()}/dnsmasq/box_alias.generated`;
 
     async installBoxAlias() {
         const ip = sysManager.myIp();
         if (ip) {
             const entry = `address=/fire.walla/${ip}\n`;
-            await writeFileAsync(this.generatedConfigFile, entry).catch(reason => {
-                log.error(`fail to write ${this.generatedConfigFile}`);
-            });
+            await writeFileAsync(generatedConfigFile, entry)
+                .then(() => {
+                    log.info(`generated ${generatedConfigFile}`);
+                    log.info(`added ${entry}`);
+                })
+                .catch((reason) => {
+                    log.error(`fail to write ${this.generatedConfigFile}`);
+                });
         } else {
-            await unlinkFileAsync(this.generatedConfigFile).catch(reason => {
-                log.error(`fail to remove ${this.generatedConfigFile}`);
-            });
+            await unlinkFileAsync(generatedConfigFile)
+                .catch(() => {
+                    log.info(`cleanup ${generatedConfigFile}`);
+                })
+                .catch((reason) => {
+                });
         }
         await dnsmasq.restartDnsmasq();
     }
@@ -67,3 +74,5 @@ class BoxAliasSensor extends Sensor {
     }
 
 }
+
+module.exports = BoxAliasSensor;
