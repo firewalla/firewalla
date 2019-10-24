@@ -759,6 +759,23 @@ module.exports = class HostManager {
     }
   }
 
+  async getGuardian(json) {
+    const data = await rclient.getAsync("ext.guardian.business");
+    if(!data) {
+      return;
+    }
+
+    try {
+      const result = JSON.parse(data);
+      if(result) {
+        json.guardianBiz = result;
+      }
+    } catch(err) {
+      log.error(`Failed to parse data, err: ${err}`);
+      return;
+    }
+  }
+
   async encipherMembersForInit(json) {
     let members = await rclient.smembersAsync("sys:ept:members")
     if(members && members.length > 0) {
@@ -823,8 +840,9 @@ module.exports = class HostManager {
           this.groupNameForInit(json),
           this.asyncBasicDataForInit(json),
           this.getRecentFlows(json),
-          this.getGuessedRouters(json)
-        ]
+          this.getGuessedRouters(json),
+          this.getGuardian(json)
+        ];
 
         this.basicDataForInit(json, options);
 
