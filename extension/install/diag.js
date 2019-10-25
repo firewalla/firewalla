@@ -159,7 +159,7 @@ class FWDiag {
         await rclient.setAsync("guessed_router", JSON.stringify(result.guessedRouter));
       }
 
-      log.info("submitted info to diag server successfully with result", result);
+      log.info(`submitted ${payload.event} info to diag server successfully with result ${result}`);
     }
   }
 

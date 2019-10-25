@@ -140,6 +140,10 @@ class NetworkTool {
   }
 
   capSubnet(cidrAddr) {
+    if (!cidrAddr) {
+      log.error("Invalid CIDR Address")
+      return null
+    }
     let subnetCap = platform.getSubnetCapacity();
     let subnet = ip.cidrSubnet(cidrAddr);
     if (subnet.subnetMaskLength < subnetCap) {
