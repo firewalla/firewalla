@@ -36,6 +36,8 @@ const fConfig = require('../net2/config.js').getConfig();
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
+const execAsync = require('child-process-promise').exec
+
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
 
@@ -202,16 +204,14 @@ class BoneSensor extends Sensor {
     }
 
     if (data && data.upgrade) {
-        log.info("Bone:Upgrade", data.upgrade);
-        if (data.upgrade.type == "soft") {
-            log.info("Bone:Upgrade:Soft", data.upgrade);
-            require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh soft', (err, out, code) => {
-            });
-        } else if (data.upgrade.type == "hard") {
-            log.info("Bone:Upgrade:Hard", data.upgrade);
-            require('child_process').exec('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard', (err, out, code) => {
-            });
-        }
+      log.info("Bone:Upgrade", data.upgrade);
+      if (data.upgrade.type == "soft") {
+        log.info("Bone:Upgrade:Soft", data.upgrade);
+        execAsync('sync & /home/pi/firewalla/scripts/fireupgrade.sh soft')
+      } else if (data.upgrade.type == "hard") {
+        log.info("Bone:Upgrade:Hard", data.upgrade);
+        execAsync('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard')
+      }
     }
 
     if (data && data.frpToken) {
@@ -224,16 +224,20 @@ class BoneSensor extends Sensor {
       this.scheduledJob();
     }, syncInterval);
 
-    sem.on("CloudURLUpdate", async (event) => {
+    sem.on("CloudURLUpdate", async () => {
       return this.applyNewCloudInstanceURL()
     })
 
-    sem.on("PublicIP:Updated", (event) => {
+    sem.on("PublicIP:Updated", () => {
       this.checkIn();
     });
 
-    sem.on("CloudReCheckin", async (event) => {
-      await this.checkIn();
+    sem.on("CloudReCheckin", async () => {
+      try {
+        await this.checkIn();
+      } catch(err) {
+        log.error('Failed to re-checkin to cloud', err)
+      }
 
       sem.sendEventToFireApi({
         type: 'CloudReCheckinComplete',
