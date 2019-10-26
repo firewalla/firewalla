@@ -139,8 +139,8 @@ class SSClientManager {
     this.cleanupErrorList();
 
     const client = this.getCurrentClient();
-    const result = await client.statusCheck();
-    if(!result) {
+    const result = client.statusCheckResult;
+    if(result && result.status === false) {
       log.error(`ss client ${client.name} is down, taking out from the pool`);
       // add it to error queue
       this.errorClients[client.name] = Math.floor(new Date() / 1000);
