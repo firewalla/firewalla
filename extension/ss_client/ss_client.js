@@ -191,23 +191,22 @@ class SSClient {
     try {
       const result = await exec(cmd);
       if(result.stdout) {
-        const timeString = result.stdout.split("\n").filter((x) => x.match(/X12345X.*X12345X/));
-        const time = timeString.replace('/X12345X/g', '');
-        return {
-          time: Number(time),
-          status: true
-        };
-      } else {
-        return {
-          status: false
-        };
+        const timeStrings = result.stdout.split("\n").filter((x) => x.match(/X12345X.*X12345X/));
+        if(!_.isEmpty(timeStrings)) {
+          const time = timeStrings[0].replace('X12345X', '').replace('X12345X', '');
+          return {
+            time: Number(time),
+            status: true
+          };
+        }
       }
     } catch(err) {
-      log.error(`ss server ${this.name} is not available.`);
-      return {
-        status: false
-      };
+      log.error(`ss server ${this.name} is not available.`, err);
     }
+    return {
+      status: false
+    };
+
   }
 
   // config may contain one or more ss server configurations

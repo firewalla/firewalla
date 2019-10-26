@@ -26,7 +26,7 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 const ssConfigKey = "scisurf.config";
 const ssActiveConfigKey = "scisurf.config.active";
 const errorClientExpireTime = 3600;
-const statusCheckInterval = 3 * 60 * 1000; // check every 3 minutes
+const statusCheckInterval = 1 * 60 * 1000;
 
 const delay = require('../../util/util.js').delay;
 
@@ -138,6 +138,14 @@ class SSClientManager {
   async statusCheck() {
     this.cleanupErrorList();
 
+    const totalStatusResult = this.clients.map(s => {
+      const status = s.statusCheckResult;
+      const config = s.config;
+      const name = s.name;
+      return {status, config, name};
+    });
+    await rclient.setAsync("ext.ss.status", JSON.stringify(totalStatusResult));
+
     const client = this.getCurrentClient();
     const result = client.statusCheckResult;
     if(result && result.status === false) {
@@ -230,7 +238,7 @@ class SSClientManager {
     const offline = Object.keys(this.errorClients).length;
     const online = this.clients.length - offline;
     const activeName = this.getCurrentClient().name;
-    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients are offline, active: ${activeName}.`);
+    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients [${this.errorClients.join(",")}] are offline, active: ${activeName}.`);
   }
 
   cleanupErrorList() {
