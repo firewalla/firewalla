@@ -88,6 +88,10 @@ class SSClient {
     const upstreamDNS = `127.0.0.1#${this.overturePort}`;
     await dnsmasq.setUpstreamDNS(upstreamDNS);
 
+    // dns
+    const dnsChain = `FW_SS_DNS_CHAIN_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -A OUTPUT -p tcp -j ${dnsChain}`));
+
     // reroute all devices's traffic to ss special chain
     const chain = `FW_SHADOWSOCKS_${this.name}`;
     await exec(wrapIptables(`sudo iptables -w -t nat -A PREROUTING -p tcp -j ${chain}`));
@@ -97,6 +101,10 @@ class SSClient {
     // unreroute all traffic
     const chain = `FW_SHADOWSOCKS_${this.name}`;
     await exec(wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -j ${chain}`));
+
+    // dns
+    const dnsChain = `FW_SS_DNS_CHAIN_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -D OUTPUT -p tcp -j ${dnsChain}`));
 
     // set dnsmasq upstream back to default
     await dnsmasq.setUpstreamDNS(null);
