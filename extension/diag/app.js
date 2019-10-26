@@ -246,11 +246,11 @@ class App {
       }
     });
 
-    this.app.use('/pairing/ping', (req, res) => {
+    this.app.use('/pair/ping', (req, res) => {
       res.json({});
     });
 
-    this.app.use('/pairing/ready', async (req, res) => {
+    this.app.use('/pair/ready', async (req, res) => {
       try {
         const values = await this.getPairingStatus();
         if(values.success) {
@@ -259,7 +259,8 @@ class App {
           });
         } else {
           res.json({
-            ready: false
+            ready: false,
+            content: values
           });
         }
       } catch(err) {
