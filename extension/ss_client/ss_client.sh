@@ -75,11 +75,8 @@ FW_SS_DNS_CHAIN="FW_SHADOWSOCKS_DNS_${NAME}"
 sudo iptables -w -t nat -F $FW_SS_DNS_CHAIN
 sudo iptables -w -t nat -X $FW_SS_DNS_CHAIN
 sudo iptables -w -t nat -N $FW_SS_DNS_CHAIN
-# make sure tcp 53 traffic goes to ss tunnel
-sudo iptables -w -t nat -C $FW_SS_DNS_CHAIN -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT || \
 sudo iptables -w -t nat -A $FW_SS_DNS_CHAIN -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT
-
-
+sudo iptables -w -t nat -A $FW_SS_DNS_CHAIN -j RETURN
 
 for job in `jobs -p`; do
     wait $job
