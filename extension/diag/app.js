@@ -246,6 +246,10 @@ class App {
       }
     });
 
+    this.app.use('/pairing_ping', (req, res) => {
+      res.json({});
+    });
+
     this.app.use('*', (req, res) => {
       log.info("Got a request in *")
 
