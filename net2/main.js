@@ -58,8 +58,7 @@ const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 const config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
 
-const BoneSensor = require('../sensor/BoneSensor');
-const boneSensor = new BoneSensor();
+const sensorLoader = require('../sensor/SensorLoader.js');
 
 const fc = require('./config.js')
 const cp = require('child_process');
@@ -77,6 +76,7 @@ function run0() {
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
+    const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
     boneSensor.checkIn()
       .then(() => {
         run() // start running after bone checkin successfully
@@ -183,9 +183,8 @@ async function run() {
   hl.initHooks();
   hl.run();
 
-  const sl = require('../sensor/SensorLoader.js');
-  sl.initSensors();
-  sl.run();
+  sensorLoader.initSensors();
+  sensorLoader.run();
 
   var VpnManager = require('../vpn/VpnManager.js');
 
