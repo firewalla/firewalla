@@ -26,7 +26,7 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 const ssConfigKey = "scisurf.config";
 const ssActiveConfigKey = "scisurf.config.active";
 const errorClientExpireTime = 3600;
-const statusCheckInterval = 3 * 60 * 1000; // check every 3 minutes
+const statusCheckInterval = 1 * 60 * 1000;
 
 const delay = require('../../util/util.js').delay;
 
@@ -138,9 +138,17 @@ class SSClientManager {
   async statusCheck() {
     this.cleanupErrorList();
 
+    const totalStatusResult = this.clients.map(s => {
+      const status = s.statusCheckResult;
+      const config = s.config;
+      const name = s.name;
+      return {status, config, name};
+    });
+    await rclient.setAsync("ext.ss.status", JSON.stringify(totalStatusResult));
+
     const client = this.getCurrentClient();
-    const result = await client.statusCheck();
-    if(!result) {
+    const result = client.statusCheckResult;
+    if(result && result.status === false) {
       log.error(`ss client ${client.name} is down, taking out from the pool`);
       // add it to error queue
       this.errorClients[client.name] = Math.floor(new Date() / 1000);
@@ -164,8 +172,8 @@ class SSClientManager {
       type: 'FW_NOTIFICATION',
       titleKey: 'FW_SS_DOWN_TITLE',
       bodyKey: 'FW_SS_DOWN_BODY',
-      titleLocalKey: 'FW_SS_DOWN_TITLE',
-      bodyLocalKey: 'FW_SS_DOWN_BODY',
+      titleLocalKey: 'FW_SS_DOWN',
+      bodyLocalKey: 'FW_SS_DOWN',
       bodyLocalArgs: [client.name],
       payload: {
         clientName: client.name
@@ -178,8 +186,8 @@ class SSClientManager {
       type: 'FW_NOTIFICATION',
       titleKey: 'FW_SS_FAILOVER_TITLE',
       bodyKey: 'FW_SS_FAILOVER_BODY',
-      titleLocalKey: 'FW_SS_FAILOVER_TITLE',
-      bodyLocalKey: 'FW_SS_FAILOVER_BODY',
+      titleLocalKey: 'FW_SS_FAILOVER',
+      bodyLocalKey: 'FW_SS_FAILOVER',
       bodyLocalArgs: [client.name, newClient.name],
       payload: {
         clientName: client.name,
@@ -230,7 +238,7 @@ class SSClientManager {
     const offline = Object.keys(this.errorClients).length;
     const online = this.clients.length - offline;
     const activeName = this.getCurrentClient().name;
-    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients are offline, active: ${activeName}.`);
+    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients [${Object.keys(this.errorClients).join(",")}] are offline, active: ${activeName}.`);
   }
 
   cleanupErrorList() {
