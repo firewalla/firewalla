@@ -172,8 +172,8 @@ class SSClientManager {
       type: 'FW_NOTIFICATION',
       titleKey: 'FW_SS_DOWN_TITLE',
       bodyKey: 'FW_SS_DOWN_BODY',
-      titleLocalKey: 'FW_SS_DOWN_TITLE',
-      bodyLocalKey: 'FW_SS_DOWN_BODY',
+      titleLocalKey: 'FW_SS_DOWN',
+      bodyLocalKey: 'FW_SS_DOWN',
       bodyLocalArgs: [client.name],
       payload: {
         clientName: client.name
@@ -186,8 +186,8 @@ class SSClientManager {
       type: 'FW_NOTIFICATION',
       titleKey: 'FW_SS_FAILOVER_TITLE',
       bodyKey: 'FW_SS_FAILOVER_BODY',
-      titleLocalKey: 'FW_SS_FAILOVER_TITLE',
-      bodyLocalKey: 'FW_SS_FAILOVER_BODY',
+      titleLocalKey: 'FW_SS_FAILOVER',
+      bodyLocalKey: 'FW_SS_FAILOVER',
       bodyLocalArgs: [client.name, newClient.name],
       payload: {
         clientName: client.name,
@@ -238,7 +238,7 @@ class SSClientManager {
     const offline = Object.keys(this.errorClients).length;
     const online = this.clients.length - offline;
     const activeName = this.getCurrentClient().name;
-    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients [${this.errorClients.join(",")}] are offline, active: ${activeName}.`);
+    log.info(`${total} ss clients, ${online} clients are online, ${offline} clients [${Object.keys(this.errorClients).join(",")}] are offline, active: ${activeName}.`);
   }
 
   cleanupErrorList() {

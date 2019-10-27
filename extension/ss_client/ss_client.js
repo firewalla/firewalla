@@ -58,7 +58,7 @@ class SSClient {
       throw new Error("Invalid name or config when new SSClient");
     }
 
-    this.name = config.name || "default";
+    this.name = config.name || `${config.server}:${config.serverPort}`;
     this.config = config;
     this.started = false;
     this.statusCheckTimer = null;
