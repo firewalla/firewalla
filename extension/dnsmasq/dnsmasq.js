@@ -27,7 +27,7 @@ const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
-const getCanonicalizedHostname = require('../../util/getCanonicalizedURL').getCanonicalizedHostname;
+const getCanonicalizedDomainname = require('../../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
@@ -1505,7 +1505,7 @@ module.exports = class DNSMASQ {
           }
         }
         for (const key in domainMap) {
-          const domain = getCanonicalizedHostname(key.replace(/\s+/g, ".")) + '.lan';
+          const domain = getCanonicalizedDomainname(key.replace(/\s+/g, "")) + '.lan';
           if (domainMap[key].ipv4Addr && validator.isIP(domainMap[key].ipv4Addr)) {
             localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`;
           }
