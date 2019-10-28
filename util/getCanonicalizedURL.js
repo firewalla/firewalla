@@ -50,6 +50,13 @@ function getCanonicalizedHostname(hostname) {
   );
 }
 
+function getCanonicalizedDomainname(hostname) {
+  return hostname.toLowerCase().replace(/^\.+/, '')
+    .replace(/\.+$/, '')
+    .replace(/\.+/, '.')
+    .replace(/[^\w.-]/g, '')
+}
+
 function getCanonicalizedPathname(pathname) {
   return getEncodedURI(
     getEntirelyDecodedURI('/' + pathname)
@@ -89,7 +96,8 @@ function getCanonicalizedURL(url) {
   );
 }
 
-module.exports = { 
-  getCanonicalizedURL: getCanonicalizedURL, 
-  getCanonicalizedHostname: getCanonicalizedHostname 
+module.exports = {
+  getCanonicalizedURL: getCanonicalizedURL,
+  getCanonicalizedHostname: getCanonicalizedHostname,
+  getCanonicalizedDomainname: getCanonicalizedDomainname
 };

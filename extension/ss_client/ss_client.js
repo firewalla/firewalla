@@ -42,9 +42,10 @@ const delay = require('../../util/util.js').delay;
 
 const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
 
-const OVERTURE_PORT = 8854;
 const REMOTE_DNS = "8.8.8.8";
 const REMOTE_DNS_PORT = 53;
+
+const statusCheckInterval = 1 * 60 * 1000;
 
 const _ = require('lodash');
 
@@ -57,10 +58,14 @@ class SSClient {
       throw new Error("Invalid name or config when new SSClient");
     }
 
-    this.name = config.name || "default";
+    this.name = config.name || `${config.server}:${config.serverPort}`;
     this.config = config;
     this.started = false;
     this.statusCheckTimer = null;
+    this.statusCheckResult = null;
+    this.overturePort = config.overturePort || 8854;
+    this.ssRedirectPort = config.ssRedirectPort || 8820;
+    this.ssClientPort = config.ssClientPort || 8822;
 
     log.info(`Creating ss client ${this.name}...`);//, config: ${require('util').inspect(this.config, {depth: null})}, options, ${require('util').inspect(this.options, {depth: null})}`);
   }
@@ -71,10 +76,20 @@ class SSClient {
     await this._createConfigFile();
     await exec(`sudo systemctl restart ss_client@${this.name}`);
     log.info("Started SS backend service.");
+
+    this.statusCheckTimer = setInterval(async () => {
+      const result = await this.statusCheck();
+      log.info(`Status check result for ${this.name}: online ${result.status}, latency ${result.time * 1000} ms`);
+      this.statusCheckResult = result;
+    }, statusCheckInterval)
   }
 
 
   async stop() {
+    if(this.statusCheckTimer) {
+      clearInterval(this.statusCheckTimer);
+      this.statusCheckTimer = null;
+    }
     log.info(`Stopping SS backend service ${this.name}...`);
     await exec(`sudo systemctl stop ss_client@${this.name}`);
     log.info(`Stopped SS backend service ${this.name}.`);
@@ -83,8 +98,12 @@ class SSClient {
 
   async redirectTraffic() {
     // set dnsmasq upstream to overture
-    const upstreamDNS = `127.0.0.1#${OVERTURE_PORT}`;
+    const upstreamDNS = `127.0.0.1#${this.overturePort}`;
     await dnsmasq.setUpstreamDNS(upstreamDNS);
+
+    // dns
+    const dnsChain = `FW_SHADOWSOCKS_DNS_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -A OUTPUT -p tcp -j ${dnsChain}`));
 
     // reroute all devices's traffic to ss special chain
     const chain = `FW_SHADOWSOCKS_${this.name}`;
@@ -94,7 +113,11 @@ class SSClient {
   async unRedirectTraffic() {
     // unreroute all traffic
     const chain = `FW_SHADOWSOCKS_${this.name}`;
-    await exec(wrapIptables(`sudo iptables -w -t nat -A PREROUTING -p tcp -j ${chain}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -j ${chain}`));
+
+    // dns
+    const dnsChain = `FW_SHADOWSOCKS_DNS_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -D OUTPUT -p tcp -j ${dnsChain}`));
 
     // set dnsmasq upstream back to default
     await dnsmasq.setUpstreamDNS(null);
@@ -125,7 +148,7 @@ class SSClient {
 
     const templatePath = `${__dirname}/overture.config.template.json`;
     let content = await fs.readFileAsync(templatePath, {encoding: 'utf8'});
-    content = content.replace("%FIREWALLA_OVERTURE_PORT%", OVERTURE_PORT);
+    content = content.replace("%FIREWALLA_OVERTURE_PORT%", this.overturePort);
     content = content.replace("%FIREWALLA_PRIMARY_DNS%", localDNSServers[0]);
     content = content.replace("%FIREWALLA_PRIMARY_DNS_PORT%", 53);
     content = content.replace("%FIREWALLA_ALTERNATIVE_DNS%", REMOTE_DNS);
@@ -138,7 +161,10 @@ class SSClient {
 
   async prepareServiceConfig() {
     const configPath = `${f.getRuntimeInfoFolder()}/ss_client.${this.name}.rc`;
-    await fs.writeFileAsync(configPath, "");
+    let configContent = "";
+    configContent += `FW_SS_REDIR_PORT=${this.ssRedirectPort}\n`;
+    configContent += `FW_SS_CLIENT_PORT=${this.ssClientPort}\n`;
+    await fs.writeFileAsync(configPath, configContent);
   }
 
   // prepare the chnroute files
@@ -160,6 +186,27 @@ class SSClient {
   }
 
   async statusCheck() {
+    const cmd = `curl -m 10 -s -w 'X12345X%{time_appconnect}X12345X\n' -o  /dev/null --socks5-hostname localhost:${this.ssClientPort} https://google.com`;
+    log.info("checking cmd", cmd);
+    try {
+      const result = await exec(cmd);
+      if(result.stdout) {
+        const timeStrings = result.stdout.split("\n").filter((x) => x.match(/X12345X.*X12345X/));
+        if(!_.isEmpty(timeStrings)) {
+          const time = timeStrings[0].replace('X12345X', '').replace('X12345X', '');
+          return {
+            time: Number(time),
+            status: true
+          };
+        }
+      }
+    } catch(err) {
+      log.error(`ss server ${this.name} is not available.`, err);
+    }
+    return {
+      status: false
+    };
+
   }
 
   // config may contain one or more ss server configurations

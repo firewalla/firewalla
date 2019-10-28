@@ -3,8 +3,8 @@
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 
 NAME=$1
-if [[ -e $DIR/ss_client.${NAME}.rc ]]; then
-  source $DIR/ss_client.${NAME}.rc
+if [[ -e ${HOME}/.firewalla/run/ss_client.${NAME}.rc ]]; then
+  source "${HOME}/.firewalla/run/ss_client.${NAME}.rc"
 fi
 
 : ${FW_SS_CONFIG_PATH:="${HOME}/.firewalla/run/ss_client.${NAME}.config.json"}
@@ -64,13 +64,19 @@ sudo iptables -w -t nat -A $FW_SS_CHAIN -d 240.0.0.0/4 -j RETURN
 #sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp -m set --match-set $FW_OVERTURE_IPSET dst -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 
-# make sure tcp 53 traffic goes to ss tunnel
-sudo iptables -w -t nat -C OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT || \
-sudo iptables -w -t nat -A OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 
 if [[ ! -z $FW_SS_SERVER ]]; then
   sudo iptables -w -t nat -I ${FW_SS_CHAIN} -d ${FW_SS_SERVER} -j RETURN
 fi
+
+# DNS
+FW_SS_DNS_CHAIN="FW_SHADOWSOCKS_DNS_${NAME}"
+
+sudo iptables -w -t nat -F $FW_SS_DNS_CHAIN
+sudo iptables -w -t nat -X $FW_SS_DNS_CHAIN
+sudo iptables -w -t nat -N $FW_SS_DNS_CHAIN
+sudo iptables -w -t nat -A $FW_SS_DNS_CHAIN -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT
+sudo iptables -w -t nat -A $FW_SS_DNS_CHAIN -j RETURN
 
 for job in `jobs -p`; do
     wait $job

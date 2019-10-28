@@ -203,10 +203,10 @@ module.exports = class {
 
     if (config.state == true) {
       (async () => {
-        const client = await ssClientManager.getSSClient();
-        await client.start();
+        await ssClientManager.initSSClients();
+        await ssClientManager.startService();
         await delay(10000);
-        await client.redirectTraffic();
+        await ssClientManager.startRedirect();
         log.info("SciSurf feature is enabled successfully for traffic redirection");
       })().catch((err) => {
         log.error("Failed to start scisurf feature:", err);
@@ -214,10 +214,8 @@ module.exports = class {
 
     } else {
       (async () => {
-        const client = await ssClientManager.getSSClient();
-        if (!client) return
-        await client.unRedirectTraffic();
-        await client.stop();
+        await ssClientManager.stopRedirect();
+        await ssClientManager.stopService();
         log.info("SciSurf feature is disabled successfully for traffic redirection");
       })().catch((err) => {
         log.error("Failed to disable SciSurf feature: " + err);

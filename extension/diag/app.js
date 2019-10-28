@@ -258,84 +258,122 @@ class App {
       }
     });
 
-    this.app.use('*', (req, res) => {
+    this.app.use('/pair/ping', (req, res) => {
+      res.json({});
+    });
+
+    this.app.use('/pair/ready', async (req, res) => {
+      try {
+        const values = await this.getPairingStatus();
+        if(values.success) {
+          res.json({
+            ready: true
+          });
+        } else {
+          res.json({
+            ready: false,
+            content: values
+          });
+        }
+      } catch(err) {
+        log.error("Failed to process request", err);
+        res.json({
+          ready: false
+        });
+      }
+    });
+
+    this.app.use('*', async (req, res) => {
       log.info("Got a request in *")
 
-      return (async () => {
-        const time = this.getSystemTime()
-        const ip = await this.getPrimaryIP()
-        const gid = await this.getGID()
-        const database = await this.getDatabase()
-        const uptime = this.getUptime()
-        const nodeVersion = this.getNodeVersion()
-        const memory = await this.getSystemMemory()
-        const connected = this.getCloudConnectivity()
-        const systemServices = await this.getSystemServices()
-        const expireDate = this.expireDate;
-        const qrImagePath = await this.getQRImage()
-        const databaseConnectivity = await this.getDatabaseConnectivity();
-        let success = true
-        let values = {
-          now: new Date() / 1000
-        }
-
-        if (!this.broadcastInfo) {
-          values.err_binding = true
-          success = false;
-        }
-
-        if (qrImagePath) {
-          values.qrImage = true;
+      try {
+        const values = await this.getPairingStatus();
+        if(values.error) {
+          log.error("Failed to process request", err);
+          res.status(500).send({})
         } else {
-          success = false;
+          res.render('welcome', values)
         }
-
-        if (ip == "") {
-          values.err_ip = true
-          success = false
-        } else {
-          values.ip = ip
-        }
-
-        if (gid == null) {
-          values.err_config = true
-          success = false
-        }
-
-        if (database != 0) {
-          values.err_database = true
-          success = false
-        }
-
-        if (databaseConnectivity != 0) {
-          values.err_database_connectivity = true
-          success = false
-        }
-
-        if (memory != 0) {
-          values.err_memory = true
-          success = false
-        }
-
-        if (connected != true) {
-          values.err_cloud = true
-          success = false
-        }
-
-        if (systemServices != 0) {
-          values.err_service = true
-          success = false
-        }
-
-        values.success = success
-
-        res.render('welcome', values)
-
-      })().catch((err) => {
+      } catch(err) {
         log.error("Failed to process request", err);
         res.status(500).send({})
-      })
+      }
     })
+  }
+
+  async getPairingStatus() {
+    try {
+      const time = this.getSystemTime()
+      const ip = await this.getPrimaryIP();
+      const gid = await this.getGID()
+      const database = await this.getDatabase()
+      const uptime = this.getUptime()
+      const nodeVersion = this.getNodeVersion()
+      const memory = await this.getSystemMemory()
+      const connected = this.getCloudConnectivity()
+      const systemServices = await this.getSystemServices()
+      const expireDate = this.expireDate;
+      const qrImagePath = await this.getQRImage()
+
+      let success = true
+      let values = {
+        now: new Date() / 1000
+      }
+
+      if(!this.broadcastInfo) {
+        values.err_binding = true
+        success = false;
+      }
+
+      if(qrImagePath) {
+        values.qrImage = true;
+      } else {
+        success = false;
+      }
+
+      if(ip == "") {
+        values.err_ip = true
+        success = false
+      } else {
+        values.ip = ip
+      }
+
+      if(gid == null) {
+        values.err_config = true
+        success = false
+      }
+
+      if(database != 0) {
+        values.err_database = true
+        success = false
+      }
+
+      if(memory != 0) {
+        values.err_memory = true
+        success = false
+      }
+
+      if(connected != true) {
+        values.err_cloud = true
+        success = false
+      }
+
+      if(systemServices != 0) {
+        values.err_service = true
+        success = false
+      }
+
+      values.success = success
+
+      return values;
+
+    } catch(err) {
+      log.error("Failed to get pairing status, err:", err);
+      return {
+        success: false,
+        error: true
+      }
+    }
   }
 
   async iptablesRedirection(create = true) {
