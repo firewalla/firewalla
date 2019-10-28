@@ -78,10 +78,22 @@ class SSClient {
     log.info("Started SS backend service.");
 
     this.statusCheckTimer = setInterval(async () => {
-      const result = await this.statusCheck();
-      log.info(`Status check result for ${this.name}: online ${result.status}, latency ${result.time * 1000} ms`);
+      this.statusCheckJob();
+    }, statusCheckInterval);
+  }
+
+  async statusCheckJob (retryCount = 0) {
+    const result = await this.statusCheck();
+    log.info(`[${retryCount}] Status check result for ${this.name}: online ${result.status}, latency ${result.time * 1000} ms`);
+    if(result.status && result.status === true) {
       this.statusCheckResult = result;
-    }, statusCheckInterval)
+    } else {
+      if(retryCount > 5) {
+        this.statusCheckResult = result;
+      } else {
+        return this.statusCheckJob(retryCount+1);
+      }
+    }
   }
 
 
@@ -208,7 +220,6 @@ class SSClient {
     return {
       status: false
     };
-
   }
 
   // config may contain one or more ss server configurations

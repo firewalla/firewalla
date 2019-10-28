@@ -146,6 +146,8 @@ class SSClientManager {
     });
     await rclient.setAsync("ext.ss.status", JSON.stringify(totalStatusResult));
 
+    await this._statusCheck();
+
     const client = this.getCurrentClient();
     const result = client.statusCheckResult;
     if(result && result.status === false) {
@@ -165,6 +167,33 @@ class SSClientManager {
     }
 
     await this.printStatus();
+  }
+
+  async _statusCheck() {
+    const cmd = `dig @${REMOTE_DNS} +tcp google.com +time=3 +retry=2`;
+    log.info("checking cmd", cmd);
+    try {
+      const result = await exec(cmd);
+      if(result.stdout) {
+        const queryTimeMatches = result.stdout.split("\n").filter((x) => x.match(/;; Query time: \d+ msec/));
+        if(!_.isEmpty(queryTimeMatches)) {
+          const m = queryTimeMatches[0];
+          const mr = m.match(/;; Query time: (\d+) msec/);
+          if(mr[1]) {
+            const time = mr[1];
+            return {
+              time: Number(time),
+              status: true
+            };
+          }
+        }
+      }
+    } catch(err) {
+      log.error(`ss server ${this.name} is not available.`, err);
+    }
+    return {
+      status: false
+    };
   }
 
   sendSSDownNotification(client) {
