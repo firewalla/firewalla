@@ -37,6 +37,7 @@ class SSClientManager {
       this.clients = [];
       this.errorClients = {};
       this.curIndex = 0;
+      this.allDown = false;
     }
     return instance;
   }
@@ -163,6 +164,12 @@ class SSClientManager {
         this.sendSSFailOverNotification(client, this.getCurrentClient());
       } else {
         this.sendSSDownNotification(client);
+        this.allDown = true;
+      }
+    } else {
+      if(this.allDown) {
+        await this.startRedirect();
+        this.allDown = false;
       }
     }
 
