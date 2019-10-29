@@ -127,7 +127,8 @@ class OpenVPNClient extends VPNClient {
     let defaultSettings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
-      routeDNS: true
+      routeDNS: true,
+      strictVPN: true
     }; // default settings
     const mergedSettings = Object.assign({}, defaultSettings, settings);
     this.settings = mergedSettings;
@@ -139,7 +140,8 @@ class OpenVPNClient extends VPNClient {
     let settings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
-      routeDNS: true
+      routeDNS: true,
+      strictVPN: true
     }; // default settings
     if (await accessAsync(settingsPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const settingsContent = await readFileAsync(settingsPath, 'utf8');
