@@ -150,6 +150,7 @@ class BoneSensor extends Sensor {
     }
 
     let sysInfo = await sysManager.getSysInfoAsync();
+    sysInfo.totalPolicy = await rclient.getAsync("policy:id");
 
     log.debug("Checking in Cloud...", sysInfo);
 
