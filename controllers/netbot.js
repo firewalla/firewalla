@@ -97,6 +97,8 @@ const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP();
 
+const speedtest = require('../extension/speedtest/speedtest.js')
+
 const fireWeb = require('../mgmt/FireWeb.js');
 
 const f = require('../net2/Firewalla.js');
@@ -134,7 +136,7 @@ const migration = require('../migration/migration.js');
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js')
 const FRPSUCCESSCODE = 0
@@ -1902,6 +1904,22 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, { hops: hops, secondStepIp: secondStepIp, isPublic: isPublic, destination: destination }, null, callback);
           }
         })
+        break;
+      case "networkStatus":
+        (async () => {
+          const ping = await rclient.hgetallAsync("network:status:ping");
+          const dig = await rclient.getAsync("network:status:dig");
+          const { download, upload } = await speedtest();
+          this.simpleTxData(msg, {
+            ping: ping,
+            dig: JSON.parse(dig),
+            gigabit: await platform.getNetworkSpeed() >= 1000,
+            speedtest: {
+              download: download,
+              upload: upload
+            }
+          }, null, callback);
+        })();
         break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
