@@ -1028,7 +1028,9 @@ class Host {
         let obj = {};
         obj[name] = data;
         if (this.subscriber) {
-          this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
+          setTimeout(() => {
+            this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
+          }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
         }
         if (callback) {
           callback(null, obj);
