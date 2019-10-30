@@ -201,28 +201,33 @@ function initializeGroup(callback) {
 }
 
 
-function postAppLinked() {
+async function postAppLinked() {
+  await platform.turnOffPowerLED();
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
-
+  
   // only do this in production and always do after 15 seconds ...
   // the 15 seconds wait is for the process to wake up
-
-  if(f.isProductionOrBeta() &&
-    // resetPassword by default unless resetPassword flag is explictly set to false
-    (typeof fConfig.resetPassword === 'undefined' ||
-      fConfig.resetPassword === true)) {
-    setTimeout(()=> {
-      ssh.resetRandomPassword((err,password) => {
-        if(err) {
-          log.info("Failed to reset ssh password");
-        } else {
-          log.info("A new random SSH password is used!");
-          sysManager.setSSHPassword(password);
-        }
-      });
-    }, 15000);
-  }
+  return new Promise((resolve, reject) => {
+    if (f.isProductionOrBeta() &&
+      // resetPassword by default unless resetPassword flag is explictly set to false
+      (typeof fConfig.resetPassword === 'undefined' ||
+        fConfig.resetPassword === true)) {
+      setTimeout(() => {
+        ssh.resetRandomPassword((err, password) => {
+          if (err) {
+            log.error("Failed to reset ssh password", err);
+          } else {
+            log.info("A new random SSH password is used!");
+            sysManager.setSSHPassword(password);
+          }
+          resolve();
+        });
+      }, 15000);
+    } else {
+      resolve();
+    }
+  });
 }
 
 async function inviteFirstAdmin(gid) {
@@ -286,7 +291,7 @@ async function inviteFirstAdmin(gid) {
     log.forceInfo("EXIT KICKSTART AFTER JOIN");
     log.info("some license stuff on device:", result.payload);
 
-    postAppLinked()
+    await postAppLinked()
 
     if (count > 1) {
       const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
@@ -296,8 +301,6 @@ async function inviteFirstAdmin(gid) {
     }
 
     await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
-
-    await platform.turnOffPowerLED();
 
     await fwDiag.submitInfo({
       event: "PAIREND",
@@ -311,7 +314,8 @@ async function inviteFirstAdmin(gid) {
   } else {
     log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
 
-    if (count > 1) postAppLinked()
+    if (count > 1)
+      await postAppLinked()
 
     await fwDiag.submitInfo({
       event: "PAIREND_TIMEOUT",
