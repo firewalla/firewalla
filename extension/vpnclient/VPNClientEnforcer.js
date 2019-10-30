@@ -168,6 +168,31 @@ class VPNClientEnforcer {
     }
   }
 
+  async enforceStrictVPN(vpnIntf) {
+    if (!vpnIntf) {
+      throw "Interface is not specified";
+    }
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
+    await this._ensureCreateIpset(vpnClientIpset);
+    const cmd = wrapIptables(`sudo iptables -w -A FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to enforce strict vpn on ${vpnIntf}`, err);
+    });
+  }
+
+  async unenforceStrictVPN(vpnIntf) {
+    if (!vpnIntf) {
+      throw "Interface is not specified";
+    }
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
+    await this._ensureCreateIpset(vpnClientIpset);
+    const cmd = wrapIptables(`sudo iptables -w -D FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to unenforce strict vpn on ${vpnIntf}`, err);
+      throw err;
+    });
+  }
+
   async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], overrideDefaultRoute = true) {
     if (!vpnIntf)
       throw "Interface is not specified";

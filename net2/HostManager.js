@@ -1200,7 +1200,9 @@ module.exports = class HostManager {
           let obj = {};
           obj[name] = policy;
           if (this.subscriber) {
+            setTimeout(() => {
             this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
+            }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
           }
           if (callback) {
             callback(null, obj);
@@ -1342,23 +1344,33 @@ module.exports = class HostManager {
           });
           const result = await ovpnClient.start();
           if (result) {
-            ovpnClient.once('link_broken', () => {
-              sem.sendEventToFireApi({
-                type: 'FW_NOTIFICATION',
-                titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
-                bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
-                titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
-                payload: {
-                  profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
+            if (settings.overrideDefaultRoute && settings.strictVPN) {
+              await vpnClientEnforcer.enforceStrictVPN(ovpnClient.getInterfaceName());
+            } else {
+              await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName());
+            }
+            if (ovpnClient.listenerCount('link_broken') === 0) {
+              ovpnClient.once('link_broken', async () => {
+                sem.sendEventToFireApi({
+                  type: 'FW_NOTIFICATION',
+                  titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
+                  bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                  titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                  bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                  bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
+                  payload: {
+                    profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
+                  }
+                });
+                settings = await ovpnClient.loadSettings(); // reload settings in case settings is changed
+                if (!settings.overrideDefaultRoute || !settings.strictVPN) { // do not disable VPN client automatically unless strict VPN is not set or override default route is not set
+                  const updatedPolicy = JSON.parse(JSON.stringify(policy));
+                  updatedPolicy.state = false;
+                  // update vpnClient system policy to state false
+                  this.setPolicy("vpnClient", updatedPolicy);
                 }
               });
-              const updatedPolicy = JSON.parse(JSON.stringify(policy));
-              updatedPolicy.state = false;
-              // update vpnClient system policy to state false
-              this.setPolicy("vpnClient", updatedPolicy);
-            });
+            }
           }
           return result;
         } else {
@@ -1393,6 +1405,8 @@ module.exports = class HostManager {
             }
           });
           await ovpnClient.stop();
+          // will do no harm to unenforce strict VPN even if strict VPN is not set  
+          await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
         }
         break;
       }
