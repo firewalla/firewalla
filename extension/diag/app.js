@@ -45,6 +45,7 @@ const errorCodes = {
   "firemon": 104,
   "memory": 201,
   "database": 301,
+  "databaseConnectivity": 302,
   "gid": 401,
   "ip": 501
 }
@@ -144,6 +145,16 @@ class App {
     return 0
   }
 
+  async getDatabaseConnectivity() {
+    try {
+      await exec("redis-cli get mode")
+    } catch (err) {
+      log.error("Failed to check database connection status", err);
+      return errorCodes.databaseConnectivity
+    }
+    return 0
+  }
+
   async getGID() {
     try {
       const gid = await exec("redis-cli hget sys:ept gid")
@@ -180,7 +191,7 @@ class App {
   }
 
   async getQRImage() {
-    if(!this.broadcastInfo) {
+    if (!this.broadcastInfo) {
       return null;
     }
 
@@ -201,8 +212,9 @@ class App {
 
       await exec(cmd);
       return imagePath;
-    } catch(err) {
-      return null;
+    } catch (err) {
+      log.error("Failed to get QRImage", err);
+      return null
     }
   }
 
@@ -214,7 +226,7 @@ class App {
 
     this.app.use('/log', (req, res) => {
       const filename = "/home/pi/logs/FireKick.log";
-      (async() =>{
+      (async () => {
         const gid = await this.getFullGID()
         await fs.accessAsync(filename, fs.constants.F_OK)
         //tail -n 1000 /home/pi/logs/FireKick.log | sed -r   "s/0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"
@@ -239,7 +251,7 @@ class App {
     });
 
     this.app.use('/pairing', (req, res) => {
-      if(this.broadcastInfo) {
+      if (this.broadcastInfo) {
         res.json(this.broadcastInfo);
       } else {
         res.status(501).send('');
