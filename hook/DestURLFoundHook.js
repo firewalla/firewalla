@@ -22,14 +22,10 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const f = require("../net2/Firewalla.js")
-
 const Promise = require('bluebird');
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
-
-const flowUtil = require('../net2/FlowUtil.js');
 
 const sl = require('../sensor/SensorLoader.js');
 
@@ -41,19 +37,11 @@ const ITEMS_PER_FETCH = 100;
 const QUEUE_SIZE_PAUSE = 2000;
 const QUEUE_SIZE_RESUME = 1000;
 
-const TRUST_THRESHOLD = 10 // to be updated
-
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 
 const CommonKeys = require('../net2/CommonKeys.js');
 
 const _ = require('lodash');
-
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
 
 class DestURLFoundHook extends Hook {
 
@@ -164,7 +152,7 @@ class DestURLFoundHook extends Hook {
     copy.url = url;
     if(copy.c) {
       copy.category = copy.c;
-      delete copy.c;            
+      delete copy.c;
     }
 
     if("flowid" in copy) delete copy.flowid;
@@ -197,7 +185,7 @@ class DestURLFoundHook extends Hook {
       }
 
       await this._storeIntel(url, result);
-    }    
+    }
   }
 
   async markAsSafe(subURL) {
@@ -219,7 +207,7 @@ class DestURLFoundHook extends Hook {
       if(urls.length > 0) {
         const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
 
-	      let filteredURLs = urls.map((urlJSON) => {
+        let filteredURLs = urls.map((urlJSON) => {
           try {
             const urlData = JSON.parse(urlJSON);
             return urlData.url;

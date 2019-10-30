@@ -44,12 +44,10 @@ let a2 = new Alarm.NewDeviceAlarm(new Date() / 1000, "iPad-1", {
 // 54.239.130.241
 
 [a].forEach((alarm) => {
-  alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-    alarmManager2.checkAndSave(alarm, (err) => {
-      if(err) {
-        log.error("Failed to save alarm: " + a);
-      }
-    });
+  alarmManager2.checkAndSave(alarm, (err) => {
+    if (err) {
+      log.error("Failed to save alarm: " + a);
+    }
   });
 });
 

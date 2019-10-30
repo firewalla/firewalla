@@ -14,7 +14,6 @@
  */
 'use strict';
 
-var _ = require('underscore');
 var chai = require('chai');
 var expect = chai.expect;
 
@@ -26,9 +25,6 @@ let alarmManager2 = new AlarmManager2();
 
 let util = require('util');
 
-let i18n = require('../util/i18n.js');
-
-let error = null;
 let date = new Date() / 1000;
 let a = new Alarm.VideoAlarm(date, "10.0.1.25", "VIDEO-1", {"p.device.name": "My Macbook"});
 a["p.device.id"] = "1";
@@ -64,7 +60,6 @@ log.info(b);
 log.info(b.localizedMessage());
 expect(alarmManager2.validateAlarm(b)).to.be.false;
 
-let exception = require('../alarm/Exception.js');
 let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 let e1 = new Exception({"p.device.name": "My Macbook"});
@@ -105,7 +100,9 @@ a5.setDestinationName("youtube.com");
 a5.setDestinationIPAddress("78.16.49.15");
 a5["p.device.id"] = "1";
 
-let promise = alarmManager2.enrichDestInfo(a5);
+const il = require('../intel/IntelLoader.js');
+
+let promise = il.enrichAlarm(a5);
 promise.then((alarm) => {
   log.info(alarm.toString());
 });
@@ -128,13 +125,11 @@ let a6 = new Alarm.LargeTransferAlarm(date, "10.0.1.28", "140.206.133.90", {
   "p.local_is_client": 1
 });
 
-alarmManager2.enrichDestInfo(a6).then((alarm) => {
-  alarmManager2.checkAndSave(alarm, (err) => {
+  alarmManager2.checkAndSave(a6, (err) => {
     console.log(util.inspect(alarm));
     if(!err) {
     }
   });
-});
 
 // Test isDup
 

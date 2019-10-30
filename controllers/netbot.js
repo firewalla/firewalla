@@ -446,7 +446,6 @@ class netBot extends ControllerBot {
     //      this.dialog = new builder.LuisDialog(config.dialog.api);
     this.dialog = new builder.CommandDialog();
     this.bot.add('/', this.dialog);
-    let self = this;
     this.compress = true;
     this.scanning = false;
 
@@ -1000,7 +999,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
           )
         break
-      case "host":
+      case "host": {
         //data.item = "host" test
         //data.value = "{ name: " "}"
         let data = msg.data;
@@ -1081,29 +1080,13 @@ class netBot extends ControllerBot {
         })
 
         break;
-      case "intel":
-        // intel actions
-        //   - ignore / unignore
-        //   - report
-        //   - block / unblockj
-        intelManager.action(msg.target, value.action, (err) => {
-          let reply = {
-            type: 'jsonmsg',
-            mtype: 'init',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-          };
-          reply.code = 200;
-          this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
-        });
-        break;
-      case "scisurfconfig":
+      }
+      case "scisurfconfig": {
         let v = value;
 
         if (v.from && v.from === "firewalla") {
           const ssClient = require('../extension/ss_client/ss_client.js');
-          mssc.saveConfig(v)
+          ssClient.saveConfig(v)
             .then(() => this.simpleTxData(msg, {}, null, callback))
             .catch((err) => this.simpleTxData(msg, null, err, callback));
         } else {
@@ -1111,29 +1094,22 @@ class netBot extends ControllerBot {
         }
 
         break;
-      case "language":
-        let v2 = value;
-        this.simpleTxData(msg, {}, null, callback);
-        break;
+      }
       case "timezone":
-        let v3 = value;
-
-        if (v3.timezone) {
-          sysManager.setTimezone(v3.timezone, (err) => {
+        if (value.timezone) {
+          sysManager.setTimezone(value.timezone, (err) => {
             this.simpleTxData(msg, {}, err, callback);
           });
         }
-        break;
-      case "includeNameInNotification":
-        let v33 = value;
-
+      break;
+      case "includeNameInNotification": {
         let flag = "0";
 
-        if (v33.includeNameInNotification) {
+        if(value.includeNameInNotification) {
           flag = "1"
         }
 
-        (async () => {
+        (async() => {
           await rclient.hsetAsync("sys:config", "includeNameInNotification", flag)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -1141,16 +1117,15 @@ class netBot extends ControllerBot {
         })
 
         break;
+      }
       case "forceNotificationLocalization": {
-        let v33 = value;
-
         let flag = "0";
 
-        if (v33.forceNotificationLocalization) {
+        if(value.forceNotificationLocalization) {
           flag = "1"
         }
 
-        (async () => {
+        (async() => {
           await rclient.hsetAsync("sys:config", "forceNotificationLocalization", flag)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -1158,15 +1133,14 @@ class netBot extends ControllerBot {
         })
         break;
       }
-      case "mode":
+      case "mode": {
         let v4 = value;
         let err = null;
-
         if (v4.mode) {
-          (async () => {
+          (async() => {
             let mode = require('../net2/Mode.js')
             let curMode = await mode.getSetupMode()
-            if (v4.mode === curMode) {
+            if(v4.mode === curMode) {
               this.simpleTxData(msg, {}, err, callback);
               return
             }
@@ -1206,6 +1180,7 @@ class netBot extends ControllerBot {
           })
         }
         break;
+      }
       case "userConfig":
         (async () => {
           const updatedPart = value || {};
@@ -1330,7 +1305,7 @@ class netBot extends ControllerBot {
         })
         break;
       case "vpn":
-      case "vpnreset":
+      case "vpnreset": {
         let regenerate = false
         if (msg.data.item === "vpnreset") {
           regenerate = true;
@@ -1379,8 +1354,9 @@ class netBot extends ControllerBot {
           }
         });
         break;
+      }
       case "shadowsocks":
-      case "shadowsocksResetConfig":
+      case "shadowsocksResetConfig": {
         let shadowsocks = require('../extension/shadowsocks/shadowsocks.js');
         let ss = new shadowsocks('info');
 
@@ -1402,6 +1378,7 @@ class netBot extends ControllerBot {
         };
         this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
         break;
+      }
       case "generateRSAPublicKey": {
         const identity = value.identity;
         (async () => {
@@ -1441,9 +1418,6 @@ class netBot extends ControllerBot {
         break;
       case "sshRecentPassword":
         ssh.getPassword((err, password) => {
-
-          let data = "";
-
           if (err) {
             log.error("Got error when reading password: " + err);
             this.simpleTxData(msg, {}, err, callback);
@@ -1572,7 +1546,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, { exceptions: exceptions, count: exceptions.length }, err, callback);
         });
         break;
-      case "frpConfig":
+      case "frpConfig": {
         let _config = frp.getConfig()
         if (_config.started) {
           let getPasswordAsync = Promise.promisify(ssh.getPassword)
@@ -1586,6 +1560,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, _config, null, callback);
         }
         break;
+      }
       case "last60mins":
         this.hostManager.last60MinStats().then(stats => {
           this.simpleTxData(msg, {
@@ -1764,7 +1739,7 @@ class netBot extends ControllerBot {
           }
         });
         break;
-      case "hosts":
+      case "hosts": {
         let hosts = {};
         this.hostManager.getHosts(() => {
           this.hostManager.legacyHostsStats(hosts)
@@ -1775,8 +1750,9 @@ class netBot extends ControllerBot {
             });
         });
         break;
+      }
       case "vpnProfile":
-      case "ovpnProfile":
+      case "ovpnProfile": {
         const type = (value && value.type) || "openvpn";
         switch (type) {
           case "openvpn":
@@ -1824,6 +1800,7 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
         }
         break;
+      }
       case "vpnProfiles":
       case "ovpnProfiles": {
         const types = (value && value.types) || ["openvpn"];
@@ -2385,7 +2362,7 @@ class netBot extends ControllerBot {
         }
         break;
 
-      case "policy:create":
+      case "policy:create": {
         let policy
         try {
           policy = new Policy(value)
@@ -2408,6 +2385,7 @@ class netBot extends ControllerBot {
           }
         });
         break;
+      }
 
       case "policy:update":
         (async () => {
@@ -3305,7 +3283,7 @@ class netBot extends ControllerBot {
                   "monitor:flow:out:" + ip
                 ]);
               }
-            };
+            }
             await hostTool.deleteMac(hostMac);
             // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
             this.simpleTxData(msg, {}, null, callback);
@@ -3435,7 +3413,7 @@ class netBot extends ControllerBot {
             const dnsmasq = new Dnsmasq();
             let dhcpRange = await dnsmasq.getDefaultDhcpRange(network);
             switch (network) {
-              case "secondary":
+              case "secondary": {
                 // convert ip/subnet to ip address and subnet mask
                 const secondaryInterface = config.secondaryInterface;
                 const secondaryIpSubnet = iptool.cidrSubnet(secondaryInterface.ip);
@@ -3461,7 +3439,8 @@ class netBot extends ControllerBot {
                     }, null, callback);
                 });
                 break;
-              case "alternative":
+              }
+              case "alternative": {
                 // convert ip/subnet to ip address and subnet mask
                 const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on eth0
                 const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
@@ -3488,6 +3467,7 @@ class netBot extends ControllerBot {
                     }, null, callback);
                 });
                 break;
+              }
               default:
                 log.error("Unknwon network type in networkInterface:update, " + network);
                 this.simpleTxData(msg, {}, { code: 400, msg: "Unknown network type: " + network });
