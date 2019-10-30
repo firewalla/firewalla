@@ -3167,25 +3167,19 @@ class netBot extends ControllerBot {
                 if (status) {
                   this.simpleTxData(msg, {}, { code: 400, msg: "OpenVPN client " + profileId + " is still running" }, callback);
                 } else {
-                  const profilePath = ovpnClient.getProfilePath();
-                  await accessAsync(profilePath, fs.constants.F_OK).then(async () => {
-                    await unlinkAsync(profilePath);
-                    const passwordPath = ovpnClient.getPasswordPath();
-                    await accessAsync(passwordPath, fs.constants.F_OK).then(() => {
-                      return unlinkAsync(passwordPath);
-                    }).catch(() => { });
-                    const userPassPath = ovpnClient.getUserPassPath();
-                    await accessAsync(userPassPath, fs.constants.F_OK).then(() => {
-                      return unlinkAsync(userPassPath);
-                    }).catch(() => { });
-                    const settingsPath = ovpnClient.getSettingsPath();
-                    await accessAsync(settingsPath, fs.constants.F_OK).then(() => {
-                      return unlinkAsync(settingsPath);
-                    }).catch(() => { });
+                  const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+                  const files = await readdirAsync(dirPath);
+                  const filesToDelete = files.filter(filename => filename.startsWith(`${profileId}.`));
+                  if (filesToDelete.length > 0) {
+                    for (let file of filesToDelete) {
+                      await unlinkAsync(`${dirPath}/${file}`).catch((err) => {
+                        log.error(`Failed to delete ${dirPath}/${file}`, err);
+                      });
+                    }
                     this.simpleTxData(msg, {}, null, callback);
-                  }).catch((err) => {
+                  } else {
                     this.simpleTxData(msg, {}, { code: 404, msg: "'profileId' '" + profileId + "' does not exist" }, callback);
-                  })
+                  }
                 }
               }
             })().catch((err) => {
