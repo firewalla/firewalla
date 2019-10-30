@@ -1347,7 +1347,7 @@ module.exports = class HostManager {
             if (settings.overrideDefaultRoute && settings.strictVPN) {
               await vpnClientEnforcer.enforceStrictVPN(ovpnClient.getInterfaceName());
             } else {
-              await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName());
+              await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
             }
             if (ovpnClient.listenerCount('link_broken') === 0) {
               ovpnClient.once('link_broken', async () => {
