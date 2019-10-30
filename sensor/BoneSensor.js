@@ -46,7 +46,7 @@ class BoneSensor extends Sensor {
   scheduledJob() {
     Bone.waitUntilCloudReady(() => {
       this.checkIn()
-        .then(() => {})
+        .then(() => { })
         .catch((err) => {
           log.error("Failed to check in", err);
         })
@@ -62,11 +62,11 @@ class BoneSensor extends Sensor {
 
     extensionManager.onGet("boneJWToken", async (msg) => {
       const jwt = await rclient.getAsync("sys:bone:jwt");
-      return {jwt};
+      return { jwt };
     })
 
     extensionManager.onSet("cloudInstance", async (msg, data) => {
-      if(data.instance) {
+      if (data.instance) {
         const url = `https://firewalla.encipher.io/bone/api/${data.instance}`;
         return this.setCloudInstanceURL(url);
       }
@@ -78,7 +78,7 @@ class BoneSensor extends Sensor {
 
         sem.once("CloudReCheckinComplete", async (event) => {
           const jwt = await rclient.getAsync("sys:bone:jwt");
-          resolve({jwt});
+          resolve({ jwt });
         });
 
         sem.sendEventToFireMain({
@@ -99,7 +99,7 @@ class BoneSensor extends Sensor {
 
   async setCloudInstanceURL(url) {
     const curUrl = await this.getCloudInstanceURL();
-    if(curUrl === url) {
+    if (curUrl === url) {
       return;
     }
 
@@ -116,7 +116,7 @@ class BoneSensor extends Sensor {
 
   async setForcedCloudInstanceURL(url) {
     const curUrl = await this.getCloudInstanceURL();
-    if(curUrl === url) {
+    if (curUrl === url) {
       return;
     }
 
@@ -134,23 +134,30 @@ class BoneSensor extends Sensor {
 
     return this.checkIn();
   }
+  async countTotal() {
+    return {
+      totalAlarms: await rclient.getAsync("alarm:id"),
+      totalRules: await rclient.getAsync("policy:id"),
+      totalExceptions: await rclient.getAsync("exception:id")
+    }
+  }
 
   async checkIn() {
     const url = await this.getForcedCloudInstanceURL();
 
-    if(url) {
+    if (url) {
       Bone.setEndpoint(url);
     }
 
     const license = License.getLicense();
 
-    if(!license) {
+    if (!license) {
       log.error("License file is required!");
       // return Promise.resolve();
     }
 
     let sysInfo = await sysManager.getSysInfoAsync();
-    sysInfo.totalPolicy = await rclient.getAsync("policy:id");
+    Object.assign(sysInfo, await this.countTotal());
 
     log.debug("Checking in Cloud...", sysInfo);
 
@@ -163,7 +170,7 @@ class BoneSensor extends Sensor {
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
       }
     } catch (e) {
-      log.error("BoneCheckIn Error fetching hostInfo",e);
+      log.error("BoneCheckIn Error fetching hostInfo", e);
     }
 
     const data = await Bone.checkinAsync(fConfig, license, sysInfo);
@@ -172,7 +179,7 @@ class BoneSensor extends Sensor {
 
     log.info("Cloud checked in successfully:")//, JSON.stringify(data));
 
-    await rclient.setAsync("sys:bone:info",JSON.stringify(data));
+    await rclient.setAsync("sys:bone:info", JSON.stringify(data));
 
     const existingDDNS = await rclient.hgetAsync("sys:network:info", "ddns");
     if (data.ddns) {
@@ -184,7 +191,7 @@ class BoneSensor extends Sensor {
     }
 
     let existingPublicIP = await rclient.hgetAsync("sys:network:info", "publicIp");
-    if(data.publicIp) {
+    if (data.publicIp) {
       sysManager.publicIp = data.publicIp;
       await rclient.hsetAsync(
         "sys:network:info",
@@ -193,8 +200,8 @@ class BoneSensor extends Sensor {
     }
 
     // broadcast new change
-    if(existingDDNS !== JSON.stringify(data.ddns) ||
-    existingPublicIP !== JSON.stringify(data.publicIp)) {
+    if (existingDDNS !== JSON.stringify(data.ddns) ||
+      existingPublicIP !== JSON.stringify(data.publicIp)) {
       sem.emitEvent({
         type: 'DDNS:Updated',
         toProcess: 'FireApi',
@@ -236,7 +243,7 @@ class BoneSensor extends Sensor {
     sem.on("CloudReCheckin", async () => {
       try {
         await this.checkIn();
-      } catch(err) {
+      } catch (err) {
         log.error('Failed to re-checkin to cloud', err)
       }
 
@@ -269,13 +276,13 @@ class BoneSensor extends Sensor {
     log.info("Loading service config from cloud...");
     Bone.getServiceConfig((err, config) => {
 
-      if(config && config.constructor.name === 'Object') {
+      if (config && config.constructor.name === 'Object') {
         rclient.hmsetAsync(serviceConfigKey, this.flattenConfig(config))
           .then(() => {
             log.info("Service config is updated");
           }).catch((err) => {
-          log.error("Failed to store service config in redis:", err);
-        })
+            log.error("Failed to store service config in redis:", err);
+          })
       }
     })
   }
