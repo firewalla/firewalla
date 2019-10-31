@@ -28,6 +28,8 @@ const ssActiveConfigKey = "scisurf.config.active";
 const errorClientExpireTime = 3600;
 const statusCheckInterval = 1 * 60 * 1000;
 
+const exec = require('child-process-promise').exec;
+
 const delay = require('../../util/util.js').delay;
 
 class SSClientManager {
@@ -37,6 +39,7 @@ class SSClientManager {
       this.clients = [];
       this.errorClients = {};
       this.curIndex = 0;
+      this.allDown = false;
     }
     return instance;
   }
@@ -50,7 +53,7 @@ class SSClientManager {
     try {
       let config = JSON.parse(configString);
       if(config.servers && Array.isArray(config.servers)) {
-        return config.servers;
+        return config.servers; //.slice(0, 1);
       } else {
         return [config];
       }
@@ -146,6 +149,8 @@ class SSClientManager {
     });
     await rclient.setAsync("ext.ss.status", JSON.stringify(totalStatusResult));
 
+    await this._statusCheck();
+
     const client = this.getCurrentClient();
     const result = client.statusCheckResult;
     if(result && result.status === false) {
@@ -161,10 +166,43 @@ class SSClientManager {
         this.sendSSFailOverNotification(client, this.getCurrentClient());
       } else {
         this.sendSSDownNotification(client);
+        this.allDown = true;
+      }
+    } else {
+      if(this.allDown) {
+        await this.startRedirect();
+        this.allDown = false;
       }
     }
 
     await this.printStatus();
+  }
+
+  async _statusCheck() {
+    const cmd = `dig @8.8.8.8 +tcp google.com +time=3 +retry=2`;
+    log.info("checking cmd", cmd);
+    try {
+      const result = await exec(cmd);
+      if(result.stdout) {
+        const queryTimeMatches = result.stdout.split("\n").filter((x) => x.match(/;; Query time: \d+ msec/));
+        if(!_.isEmpty(queryTimeMatches)) {
+          const m = queryTimeMatches[0];
+          const mr = m.match(/;; Query time: (\d+) msec/);
+          if(mr[1]) {
+            const time = mr[1];
+            return {
+              time: Number(time),
+              status: true
+            };
+          }
+        }
+      }
+    } catch(err) {
+      log.error(`ss server ${this.name} is not available.`, err);
+    }
+    return {
+      status: false
+    };
   }
 
   sendSSDownNotification(client) {

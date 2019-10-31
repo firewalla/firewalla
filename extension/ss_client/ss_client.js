@@ -78,10 +78,22 @@ class SSClient {
     log.info("Started SS backend service.");
 
     this.statusCheckTimer = setInterval(async () => {
-      const result = await this.statusCheck();
-      log.info(`Status check result for ${this.name}: online ${result.status}, latency ${result.time * 1000} ms`);
+      this.statusCheckJob();
+    }, statusCheckInterval);
+  }
+
+  async statusCheckJob (retryCount = 0) {
+    const result = await this.statusCheck();
+    log.info(`[${retryCount}] Status check result for ${this.name}: online ${result.status}, latency ${result.time * 1000} ms`);
+    if(result.status && result.status === true) {
       this.statusCheckResult = result;
-    }, statusCheckInterval)
+    } else {
+      if(retryCount > 5) {
+        this.statusCheckResult = result;
+      } else {
+        return this.statusCheckJob(retryCount+1);
+      }
+    }
   }
 
 
@@ -102,8 +114,8 @@ class SSClient {
     await dnsmasq.setUpstreamDNS(upstreamDNS);
 
     // dns
-    const dnsChain = `FW_SHADOWSOCKS_DNS_${this.name}`;
-    await exec(wrapIptables(`sudo iptables -w -t nat -A OUTPUT -p tcp -j ${dnsChain}`));
+//    const dnsChain = `FW_SHADOWSOCKS_DNS_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -A OUTPUT -p tcp --destination ${REMOTE_DNS} --destination-port ${REMOTE_DNS_PORT} -j REDIRECT --to-port ${this.ssRedirectPort}`));
 
     // reroute all devices's traffic to ss special chain
     const chain = `FW_SHADOWSOCKS_${this.name}`;
@@ -116,8 +128,9 @@ class SSClient {
     await exec(wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -j ${chain}`));
 
     // dns
-    const dnsChain = `FW_SHADOWSOCKS_DNS_${this.name}`;
-    await exec(wrapIptables(`sudo iptables -w -t nat -D OUTPUT -p tcp -j ${dnsChain}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D OUTPUT -p tcp --destination ${REMOTE_DNS} --destination-port ${REMOTE_DNS_PORT} -j REDIRECT --to-port ${this.ssRedirectPort}`));
+    //const dnsChain = `FW_SHADOWSOCKS_DNS_${this.name}`;
+    //await exec(wrapIptables(`sudo iptables -w -t nat -D OUTPUT -p tcp -j ${dnsChain}`));
 
     // set dnsmasq upstream back to default
     await dnsmasq.setUpstreamDNS(null);
@@ -164,6 +177,7 @@ class SSClient {
     let configContent = "";
     configContent += `FW_SS_REDIR_PORT=${this.ssRedirectPort}\n`;
     configContent += `FW_SS_CLIENT_PORT=${this.ssClientPort}\n`;
+    configContent += `FW_SS_SERVER=${this.config.server}\n`;
     await fs.writeFileAsync(configPath, configContent);
   }
 
@@ -206,7 +220,6 @@ class SSClient {
     return {
       status: false
     };
-
   }
 
   // config may contain one or more ss server configurations
