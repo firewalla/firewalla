@@ -1264,7 +1264,6 @@ class netBot extends ControllerBot {
           log.info("Loading device info in a new way:", ip);
           this.deviceHandler(msg, ip)
             .then((json) => {
-              log.info("network flows", json)
               this.simpleTxData(msg, json, null, callback);
             })
             .catch((err) => {
@@ -1298,7 +1297,7 @@ class netBot extends ControllerBot {
           let data = {
             count: flows.length,
             flows,
-            nextTs: flows[flows.length - 1].ts
+            nextTs: flows[flows.length - 1].ets ? flows[flows.length - 1].ets : flows[flows.length - 1].ts
           }
           this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
