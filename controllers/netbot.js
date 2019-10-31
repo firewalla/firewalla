@@ -1101,15 +1101,15 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, err, callback);
           });
         }
-      break;
+        break;
       case "includeNameInNotification": {
         let flag = "0";
 
-        if(value.includeNameInNotification) {
+        if (value.includeNameInNotification) {
           flag = "1"
         }
 
-        (async() => {
+        (async () => {
           await rclient.hsetAsync("sys:config", "includeNameInNotification", flag)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -1121,11 +1121,11 @@ class netBot extends ControllerBot {
       case "forceNotificationLocalization": {
         let flag = "0";
 
-        if(value.forceNotificationLocalization) {
+        if (value.forceNotificationLocalization) {
           flag = "1"
         }
 
-        (async() => {
+        (async () => {
           await rclient.hsetAsync("sys:config", "forceNotificationLocalization", flag)
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -1137,10 +1137,10 @@ class netBot extends ControllerBot {
         let v4 = value;
         let err = null;
         if (v4.mode) {
-          (async() => {
+          (async () => {
             let mode = require('../net2/Mode.js')
             let curMode = await mode.getSetupMode()
-            if(v4.mode === curMode) {
+            if (v4.mode === curMode) {
               this.simpleTxData(msg, {}, err, callback);
               return
             }
@@ -1264,6 +1264,7 @@ class netBot extends ControllerBot {
           log.info("Loading device info in a new way:", ip);
           this.deviceHandler(msg, ip)
             .then((json) => {
+              log.info("network flows", json)
               this.simpleTxData(msg, json, null, callback);
             })
             .catch((err) => {

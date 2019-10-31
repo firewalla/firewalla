@@ -531,8 +531,9 @@ class FlowTool {
     }
 
     const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
-    let results = await zrange(key, '(' + ts, ets, "LIMIT", 0 , options.count);
-
+    log.info("xxxxxxxxx",ts,ets,options);
+    let results = await zrange(key, ts, ets, "LIMIT", 0 , options.count);
+    log.info("results",results)
     if(results === null || results.length === 0)
       return [];
 
@@ -542,7 +543,8 @@ class FlowTool {
 
     flowObjects.forEach((x) => {
       this.trimFlow(x)
-      if (x.ets) x.ts = x.ets
+      // why set ets as ts?
+      // if (x.ets) x.ts = x.ets
     });
 
     let mergedFlow = null
