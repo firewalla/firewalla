@@ -28,6 +28,8 @@ const ssActiveConfigKey = "scisurf.config.active";
 const errorClientExpireTime = 3600;
 const statusCheckInterval = 1 * 60 * 1000;
 
+const exec = require('child-process-promise').exec;
+
 const delay = require('../../util/util.js').delay;
 
 class SSClientManager {
@@ -51,7 +53,7 @@ class SSClientManager {
     try {
       let config = JSON.parse(configString);
       if(config.servers && Array.isArray(config.servers)) {
-        return config.servers;
+        return config.servers; //.slice(0, 1);
       } else {
         return [config];
       }
@@ -177,7 +179,7 @@ class SSClientManager {
   }
 
   async _statusCheck() {
-    const cmd = `dig @${REMOTE_DNS} +tcp google.com +time=3 +retry=2`;
+    const cmd = `dig @8.8.8.8 +tcp google.com +time=3 +retry=2`;
     log.info("checking cmd", cmd);
     try {
       const result = await exec(cmd);
