@@ -1073,7 +1073,7 @@ module.exports = class {
 
 
         //let redisObj = [key, tmpspec.ts, strdata];
-        // beware that 'now' is used as score in flow:conn:* zset, since now is always monitonically increasing
+        // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
         let redisObj = [key, now, strdata];
         log.debug("Conn:Save:Temp", redisObj);
 
@@ -1138,9 +1138,6 @@ module.exports = class {
           let key = "flow:conn:" + spec.fd + ":" + spec.mac;
           let strdata = JSON.stringify(spec);
           let ts = spec._ts; // this is the last time when this flowspec is updated
-          if (spec.ts > this.flowstashExpires - FLOWSTASH_EXPIRES) {
-            ts = spec.ts;
-          }
           let redisObj = [key, ts, strdata];
           if (stashed[key]) {
             stashed[key].push(redisObj);
