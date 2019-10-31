@@ -531,7 +531,7 @@ class FlowTool {
     }
 
     const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
-    let results = await zrange(key, ts, ets, "LIMIT", 0 , options.count);
+    let results = await zrange(key, '(' + ts, ets, "LIMIT", 0 , options.count);
     if(results === null || results.length === 0)
       return [];
 
