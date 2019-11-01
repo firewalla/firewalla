@@ -140,12 +140,9 @@ module.exports = class {
   }
 
   async vpnClient(host, policy) {
-    const updatedPolicy = JSON.parse(JSON.stringify(policy));
-    const result = await host.vpnClient(policy);
-    if (policy.state === true && !result) {
-      updatedPolicy.state = false;
-      host.setPolicy("vpnClient", updatedPolicy);
-    }
+    const result = await host.vpnClient(policy); // result optionally contains value of state and running
+    const updatedPolicy = Object.assign({}, policy, result); // this may trigger an extra system policy apply but the result should be idempotent
+    host.setPolicy("vpnClient", updatedPolicy);
   }
 
   async ipAllocation(host, policy) {

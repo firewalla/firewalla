@@ -1264,13 +1264,14 @@ module.exports = class HostManager {
   async vpnClient(policy) {
     const type = policy.type;
     const state = policy.state;
+    const reconnecting = policy.reconnecting || 0;
     const appliedInterfaces = policy.appliedInterfaces || [];
     switch (type) {
       case "openvpn": {
         const profileId = policy.openvpn && policy.openvpn.profileId;
         if (!profileId) {
           log.error("profileId is not specified", policy);
-          return false;
+          return {state: false, running: false, reconnecting: 0};
         }
         let settings = policy.openvpn && policy.openvpn.settings || {};
         const ovpnClient = new OpenVPNClient({profileId: profileId});
@@ -1292,7 +1293,7 @@ module.exports = class HostManager {
           }
         } catch (err) {
           log.error("Failed to apply VPN client access to interfaces", err);
-          return false;
+          return {state: false, running: false, reconnecting: 0};
         }
         if (state === true) {
           let setupResult = true;
@@ -1302,53 +1303,56 @@ module.exports = class HostManager {
             setupResult = false;
           });
           if (!setupResult)
-            return false;
-          ovpnClient.once('push_options_start', async (content) => {
-            const dnsServers = [];
-            for (let line of content.split("\n")) {
-              if (line && line.length != 0) {
-                log.info(`Apply push options from ${profileId}: ${line}`);
-                const options = line.split(/\s+/);
-                switch (options[0]) {
-                  case "dhcp-option":
-                    if (options[1] === "DNS") {
-                      dnsServers.push(options[2]);
-                    }
-                    break;
-                  default:
+            return {state: false, running: false, reconnecting: 0};
+          if (ovpnClient.listenerCount('push_options_start') === 0) {
+            ovpnClient.once('push_options_start', async (content) => {
+              const dnsServers = [];
+              for (let line of content.split("\n")) {
+                if (line && line.length != 0) {
+                  log.info(`Apply push options from ${profileId}: ${line}`);
+                  const options = line.split(/\s+/);
+                  switch (options[0]) {
+                    case "dhcp-option":
+                      if (options[1] === "DNS") {
+                        dnsServers.push(options[2]);
+                      }
+                      break;
+                    default:
+                  }
                 }
               }
-            }
-            // redirect dns to vpn channel
-            if (dnsServers.length > 0) {
-              if (settings.routeDNS) {
-                await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-                // set/clear dns redirection of all supported interfaces accordingly
-                for (let supportedInterface in supportedInterfaces) {
-                  const intfName = supportedInterfaces[supportedInterface];
-                  if (appliedInterfaces.includes(supportedInterface)) {
-                    await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                  } else {
+              // redirect dns to vpn channel
+              if (dnsServers.length > 0) {
+                if (settings.routeDNS) {
+                  await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+                  // set/clear dns redirection of all supported interfaces accordingly
+                  for (let supportedInterface in supportedInterfaces) {
+                    const intfName = supportedInterfaces[supportedInterface];
+                    if (appliedInterfaces.includes(supportedInterface)) {
+                      await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+                    } else {
+                      await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
+                    }
+                  }
+                } else {
+                  await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+                  // clear dns redirect for all supported interfaces
+                  for (let supportedInterface in supportedInterfaces) {
+                    const intfName = supportedInterfaces[supportedInterface];
                     await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
                   }
                 }
-              } else {
-                await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-                // clear dns redirect for all supported interfaces
-                for (let supportedInterface in supportedInterfaces) {
-                  const intfName = supportedInterfaces[supportedInterface];
-                  await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                }
               }
-            }
-          });
+            });
+          }
           const result = await ovpnClient.start();
+          // apply strict VPN option even no matter whether VPN client is started successfully
+          if (settings.overrideDefaultRoute && settings.strictVPN) {
+            await vpnClientEnforcer.enforceStrictVPN(ovpnClient.getInterfaceName());
+          } else {
+            await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
+          }
           if (result) {
-            if (settings.overrideDefaultRoute && settings.strictVPN) {
-              await vpnClientEnforcer.enforceStrictVPN(ovpnClient.getInterfaceName());
-            } else {
-              await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
-            }
             if (ovpnClient.listenerCount('link_broken') === 0) {
               ovpnClient.once('link_broken', async () => {
                 sem.sendEventToFireApi({
@@ -1362,17 +1366,27 @@ module.exports = class HostManager {
                     profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
                   }
                 });
+                const updatedPolicy = this.policy["vpnClient"];
+                if (!updatedPolicy) return;
+                updatedPolicy.running = false;
                 settings = await ovpnClient.loadSettings(); // reload settings in case settings is changed
                 if (!settings.overrideDefaultRoute || !settings.strictVPN) { // do not disable VPN client automatically unless strict VPN is not set or override default route is not set
-                  const updatedPolicy = JSON.parse(JSON.stringify(policy));
-                  updatedPolicy.state = false;
                   // update vpnClient system policy to state false
-                  this.setPolicy("vpnClient", updatedPolicy);
+                  updatedPolicy.state = false;
+                  updatedPolicy.reconnecting = 0;
+                } else {
+                  // increment reconnecting count and trigger reconnection
+                  updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
                 }
+                this.setPolicy("vpnClient", updatedPolicy);
               });
             }
           }
-          return result;
+          // do not change state if strict VPN is set
+          if (settings.overrideDefaultRoute && settings.strictVPN) {
+            // clear reconnecting count if successfully connected, otherwise increment the reconnecting count
+            return {running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1)};
+          } else return {state: result, running: result, reconnecting: 0}; // clear reconnecting count if strict VPN is not set
         } else {
           // proceed to stop anyway even if setup is failed
           await ovpnClient.setup().catch((err) => {
@@ -1407,13 +1421,15 @@ module.exports = class HostManager {
           await ovpnClient.stop();
           // will do no harm to unenforce strict VPN even if strict VPN is not set  
           await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
+          return {running: false, reconnecting: 0};
         }
         break;
       }
       default:
         log.warn("Unsupported VPN type: " + type);
     }
-    return true;
+    // do not change state or running by default
+    return {};
   }
 
   policyToString() {
