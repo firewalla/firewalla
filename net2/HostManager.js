@@ -1270,7 +1270,7 @@ module.exports = class HostManager {
         const profileId = policy.openvpn && policy.openvpn.profileId;
         if (!profileId) {
           log.error("profileId is not specified", policy);
-          return false;
+          return {state: false, running: false};
         }
         let settings = policy.openvpn && policy.openvpn.settings || {};
         const ovpnClient = new OpenVPNClient({profileId: profileId});
@@ -1292,7 +1292,7 @@ module.exports = class HostManager {
           }
         } catch (err) {
           log.error("Failed to apply VPN client access to interfaces", err);
-          return false;
+          return {state: false, running: false};
         }
         if (state === true) {
           let setupResult = true;
@@ -1302,7 +1302,7 @@ module.exports = class HostManager {
             setupResult = false;
           });
           if (!setupResult)
-            return false;
+            return {state: false, running: false};
           ovpnClient.once('push_options_start', async (content) => {
             const dnsServers = [];
             for (let line of content.split("\n")) {
@@ -1343,12 +1343,13 @@ module.exports = class HostManager {
             }
           });
           const result = await ovpnClient.start();
+          // apply strict VPN option even no matter whether VPN client is started successfully
+          if (settings.overrideDefaultRoute && settings.strictVPN) {
+            await vpnClientEnforcer.enforceStrictVPN(ovpnClient.getInterfaceName());
+          } else {
+            await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
+          }
           if (result) {
-            if (settings.overrideDefaultRoute && settings.strictVPN) {
-              await vpnClientEnforcer.enforceStrictVPN(ovpnClient.getInterfaceName());
-            } else {
-              await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
-            }
             if (ovpnClient.listenerCount('link_broken') === 0) {
               ovpnClient.once('link_broken', async () => {
                 sem.sendEventToFireApi({
@@ -1362,17 +1363,22 @@ module.exports = class HostManager {
                     profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
                   }
                 });
+                const updatedPolicy = this.policy["vpnClient"];
+                if (!updatedPolicy) return;
+                updatedPolicy.running = false;
                 settings = await ovpnClient.loadSettings(); // reload settings in case settings is changed
                 if (!settings.overrideDefaultRoute || !settings.strictVPN) { // do not disable VPN client automatically unless strict VPN is not set or override default route is not set
-                  const updatedPolicy = JSON.parse(JSON.stringify(policy));
-                  updatedPolicy.state = false;
                   // update vpnClient system policy to state false
-                  this.setPolicy("vpnClient", updatedPolicy);
+                  updatedPolicy.state = false;
                 }
+                this.setPolicy("vpnClient", updatedPolicy);
               });
             }
           }
-          return result;
+          // do not change state if strict VPN is set
+          if (settings.overrideDefaultRoute && settings.strictVPN) {
+            return {running: result};
+          } else return {state: result, running: result};
         } else {
           // proceed to stop anyway even if setup is failed
           await ovpnClient.setup().catch((err) => {
@@ -1407,13 +1413,15 @@ module.exports = class HostManager {
           await ovpnClient.stop();
           // will do no harm to unenforce strict VPN even if strict VPN is not set  
           await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
+          return {running: false};
         }
         break;
       }
       default:
         log.warn("Unsupported VPN type: " + type);
     }
-    return true;
+    // do not change state or running by default
+    return {};
   }
 
   policyToString() {
