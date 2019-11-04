@@ -60,7 +60,7 @@ module.exports = class SpooferManager {
             && host.ipv6Addr && sysManager.myDNS().includes(sysManager.myGateway())) {
             // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
             try {
-              const ipv6Addr = JSON.parse(ipv6Addr)
+              const ipv6Addr = JSON.parse(host.ipv6Addr)
               log.info("Router also acts as dns, spoof all router's v6 addresses: ", ipv6Addr);
               for (const addr of ipv6Addr) {
                 this.registerSpoofInstance(sysManager.monitoringInterface().name, addr, sysManager.myIp6(), true);
