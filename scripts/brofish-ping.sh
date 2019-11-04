@@ -6,10 +6,10 @@
 
 TOTAL_RETRIES=3
 SLEEP_TIMEOUT=10
-CPU_THRESHOLD=99
+CPU_THRESHOLD=80
 
 # there should be updated logs in log file
-MMIN="-10"
+MMIN="-15"
 
 FILE=/blog/current/conn.log
 
