@@ -4,6 +4,8 @@
 # In case bro hangs, need to restart it.
 # -----------------------------------------
 
+: ${FIREWALLA_HOME:='/home/pi/firewalla'}
+
 TOTAL_RETRIES=3
 SLEEP_TIMEOUT=10
 CPU_THRESHOLD=80
@@ -27,7 +29,7 @@ brofish_cpu() {
   RESULT=$(top -bn1 -p$(cat /blog/current/.pid) |grep bro|awk '{print $9}')
 
   if [[ ${RESULT%%.*} -ge $CPU_THRESHOLD ]]; then
-    return 1
+    return ${RESULT%%.*}
   else
     return 0
   fi
@@ -49,6 +51,13 @@ while (($retry <= $TOTAL_RETRIES)); do
 done
 
 if [[ $ping_ok -ne 1 ]]; then
-  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish cpu too high, restart brofish now"
+  cpu=$(brofish_cpu)
+
+  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed, cpu $cpu, restart brofish now"
+
+  cd $FIREWALLA_HOME
+  $FIREWALLA_HOME/bin/node scripts/diag_log.js \
+    --data '{ "msg": "brofish-ping failed", "broCPU": '"$cpu"' }'
+
   sudo systemctl restart brofish
 fi
