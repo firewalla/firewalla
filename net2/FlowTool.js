@@ -147,7 +147,7 @@ class FlowTool {
       return false;
     }
     if (o.f === "s") {
-      // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
+      // short packet flag, maybe caused by arp spoof leaking, ignore these packets
       return false;
     }
 
@@ -384,7 +384,7 @@ class FlowTool {
     const end = options.end || Math.floor(new Date() / 1000);
     const begin = options.begin || end - 3600 * 6; // 6 hours
     const direction = options.direction || 'in';
-    
+
     const key = util.format("flow:conn:%s:%s", direction, target);
 
     const results = await rclient.zrangebyscoreAsync([key, begin, end]);
@@ -396,11 +396,11 @@ class FlowTool {
     const list = results
     .map((jsonString) => {
       try {
-        return JSON.parse(jsonString);        
+        return JSON.parse(jsonString);
       } catch(err) {
         log.error(`Failed to parse json string: ${jsonString}, err: ${err}`);
         return null;
-      }      
+      }
     })
     .filter((x) => x !== null)
     .filter((x) => x.sh === destinationIP || x.dh === destinationIP)
@@ -417,7 +417,7 @@ class FlowTool {
 
   async getTransferTrend(deviceMAC, destinationIP, options) {
     options = options || {};
-    
+
     const transfers = [];
 
     if (!options.direction || options.direction === "in") {
@@ -426,7 +426,7 @@ class FlowTool {
       const t_in = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
       transfers.push.apply(transfers, t_in);
     }
-    
+
     if (!options.direction || options.direction === "out") {
       const optionsCopy = JSON.parse(JSON.stringify(options));
       optionsCopy.direction = "out";
@@ -454,7 +454,7 @@ class FlowTool {
     //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
     //   flowCopy.device = mac;
     // }
-    
+
     await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
     await rclient.zremrangebyrankAsync(key, 0, limit);
     return;
@@ -550,7 +550,7 @@ class FlowTool {
     if(!options.no_merge) {
       mergedFlow = this._mergeFlows(
         _.orderBy(flowObjects, 'ts', options.asc ? 'asc' : 'desc')
-      ); 
+      );
     } else {
       mergedFlow = flowObjects
     }
@@ -620,7 +620,7 @@ class FlowTool {
     if(!flow) {
       return null
     }
-    
+
     if(flow.lh === flow.sh) {
       return flow.dh;
     } else {

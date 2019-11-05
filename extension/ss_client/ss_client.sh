@@ -32,7 +32,7 @@ fi
 #  -l 8820
 #  -f /home/pi/.firewalla/run/ss_client.redir.pid
 #  -b 0.0.0.0
-$FW_SS_REDIR_BINARY -c $FW_SS_CONFIG_PATH -l $FW_SS_REDIR_PORT -f $FW_SS_REDIR_PID_FILE -b $FW_SS_REDIR_ADDRESS
+$FW_SS_REDIR_BINARY -c $FW_SS_CONFIG_PATH --fast-open -l $FW_SS_REDIR_PORT -f $FW_SS_REDIR_PID_FILE -b $FW_SS_REDIR_ADDRESS
 
 # ss_client
 # /home/pi/firewalla/extension/ss_client/fw_ss_client
@@ -40,7 +40,7 @@ $FW_SS_REDIR_BINARY -c $FW_SS_CONFIG_PATH -l $FW_SS_REDIR_PORT -f $FW_SS_REDIR_P
 #  -l 8822
 #  -f /home/pi/.firewalla/run/ss_client.pid
 #  -b 0.0.0.0
-$FW_SS_CLIENT_BINARY -c $FW_SS_CONFIG_PATH -l $FW_SS_CLIENT_PORT -f $FW_SS_CLIENT_PID_FILE -b $FW_SS_CLIENT_ADDRESS
+$FW_SS_CLIENT_BINARY -c $FW_SS_CONFIG_PATH --fast-open -l $FW_SS_CLIENT_PORT -f $FW_SS_CLIENT_PID_FILE -b $FW_SS_CLIENT_ADDRESS
 
 # overture
 $FW_OVERTURE_BINARY -c $FW_OVERTURE_CONFIG &
@@ -64,13 +64,18 @@ sudo iptables -w -t nat -A $FW_SS_CHAIN -d 240.0.0.0/4 -j RETURN
 #sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp -m set --match-set $FW_OVERTURE_IPSET dst -j RETURN
 sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 
-# make sure tcp 53 traffic goes to ss tunnel
-sudo iptables -w -t nat -C OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT || \
-sudo iptables -w -t nat -A OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 
-if [[ ! -z $FW_SS_SERVER ]]; then
-  sudo iptables -w -t nat -I ${FW_SS_CHAIN} -d ${FW_SS_SERVER} -j RETURN
-fi
+#if [[ ! -z $FW_SS_SERVER ]]; then
+#  sudo iptables -w -t nat -I ${FW_SS_CHAIN} -d ${FW_SS_SERVER} -j RETURN
+#fi
+
+# DNS
+# FW_SS_DNS_CHAIN="FW_SHADOWSOCKS_DNS_${NAME}"
+
+#sudo iptables -w -t nat -F $FW_SS_DNS_CHAIN
+#sudo iptables -w -t nat -X $FW_SS_DNS_CHAIN
+#sudo iptables -w -t nat -N $FW_SS_DNS_CHAIN
+#sudo iptables -w -t nat -A $FW_SS_DNS_CHAIN -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_REDIR_PORT
 
 for job in `jobs -p`; do
     wait $job

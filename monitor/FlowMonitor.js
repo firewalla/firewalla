@@ -216,8 +216,7 @@ module.exports = class FlowMonitor {
   }
 
   flowIntel(flows) {
-    for (let i in flows) {
-      let flow = flows[i];
+    for (const flow of flows) {
       log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
         log.debug("######## flowIntel Processing", JSON.stringify(flow));
@@ -250,7 +249,7 @@ module.exports = class FlowMonitor {
           // Intel object
           //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
           //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
-          // ignore partial flows initiated from outside.  They are blocked by firewall and we 
+          // ignore partial flows initiated from outside.  They are blocked by firewall and we
           // see the packet before that due to how libpcap works
 
           if (flowUtil.checkFlag(flow, 's') && flow.fd === "out") {
@@ -359,7 +358,7 @@ module.exports = class FlowMonitor {
 
   //   '17.253.4.125': '{"neighbor":"17.253.4.125","cts":1481438191.098,"ts":1481990573.168,"count":356,"rb":33984,"ob":33504,"du":27.038723000000005,"name":"time-ios.apple.com"}',
   //  '17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}',
-  summarizeNeighbors(host,flows,direction) {
+  summarizeNeighbors(host,flows) {
     let key = "neighbor:"+host.o.mac;
     log.debug("Summarizing Neighbors ",flows.length,key);
 
@@ -484,7 +483,7 @@ module.exports = class FlowMonitor {
     }
   }
 
-  async detect(mac, period,host) {
+  async detect(mac, period, host) {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
@@ -497,7 +496,7 @@ module.exports = class FlowMonitor {
     }
 
     this.flowIntel(result.connections);
-    this.summarizeNeighbors(host,result.connections,'in');
+    this.summarizeNeighbors(host,result.connections);
     if (result.activities !=null) {
       /*
       if (host.activities!=null) {
@@ -523,7 +522,7 @@ module.exports = class FlowMonitor {
       });
     }
     this.flowIntel(result.connections);
-    this.summarizeNeighbors(host,result.connections,'out');
+    this.summarizeNeighbors(host,result.connections);
   }
 
 
@@ -669,7 +668,7 @@ module.exports = class FlowMonitor {
               await this.processSpec(spec.direction, spec.txRatioRanked);
             }
           }
-        } 
+        }
         else if (service === "detect") {
           if (mac) {
             log.info("Running Detect:", mac);
@@ -708,14 +707,6 @@ module.exports = class FlowMonitor {
 
     let msg = "Warning: " + flowManager.toStringShortShort2(flow, direction, 'txdata');
     copy.msg = msg;
-
-    let remoteHost = flow.lh == flow.dh ? flow.sh : flow.dh;
-
-    let loc = await intelManager.ipinfo(remoteHost);
-
-    if (loc) {
-      copy.lobj = loc;
-    }
 
     if (fc.isFeatureOn("large_upload")) {
       // flow in means connection initiated from inside
@@ -822,7 +813,7 @@ module.exports = class FlowMonitor {
   }
 
   async processIntelFlow(flowObj) {
-    log.info("Process intel flow for", flowObj);  
+    log.info("Process intel flow for", flowObj);
     const deviceIP = this.getDeviceIP(flowObj);
     const remoteIP = this.getRemoteIP(flowObj);
 
@@ -855,10 +846,10 @@ module.exports = class FlowMonitor {
     if("urls" in flowObj) {
       if(flowObj.fd === 'in' ) {
         alarmPayload["p.dest.urls"] = flowObj.urls;
-        
+
         if(!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
           alarmPayload["p.dest.url"] = `http://${flowObj.urls[0].url}`;
-        }        
+        }
       } else {
 
         alarmPayload["p.device.urls"] = flowObj.urls;
@@ -970,7 +961,7 @@ module.exports = class FlowMonitor {
 
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
 
- 
+
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true;

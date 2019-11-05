@@ -14,7 +14,7 @@
  */
 
 const log = require("../net2/logger.js")(__filename);
-const rp = require('request-promise');
+const rr = require('requestretry').defaults({timeout: 10000});
 //const bone = require("../lib/Bone.js");
 
 class IpInfo {
@@ -25,21 +25,20 @@ class IpInfo {
       method: 'GET',
       timeout: 2000, // ms
       json: true,
+      maxAttempts: 3,
+      retryDelay: 1000,  // (default) wait for 1s before trying again
     };
 
-    let retry = 3;
-    let result = null;
-    do {
-      try {
-        log.info("Request ipinfo for ip:", ip);
-        result = await rp(options);
-      } catch (err) {
-        log.error("Error while requesting", options.uri, err.code, err.message, err.stack);
-      }
-    } while (!result && retry -- > 0);
+    try {
+      log.info("Request ipinfo for ip:", ip);
+      const result = await rr(options);
+      log.debug("ipInfo from ipinfo is:", result);
+      return result;
+    } catch (err) {
+      log.error("Error while requesting", options.uri, err.code, err.message, err.stack);
+      return null
+    }
 
-    log.info("ipInfo from ipinfo is:", result);
-    return result;
   }
 
   /*
@@ -53,7 +52,6 @@ class IpInfo {
     return null;
   }
   */
-  
 }
 
 module.exports = new IpInfo();

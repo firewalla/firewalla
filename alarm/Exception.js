@@ -22,6 +22,8 @@ var extend = require('util')._extend
 
 const minimatch = require('minimatch')
 
+const _ = require('lodash')
+
 function arraysEqual(a, b) {
   if (a === b) return true;
   if (a == null || b == null) return false;
@@ -120,6 +122,13 @@ module.exports = class {
           }
         } else {
           // not a cidr subnet exception
+
+          // alarm might has field in number
+          // and assume exceptions are always loaded from redis before comparing
+          if (_.isNumber(val2)) {
+            val = _.toNumber(val)
+            if (isNaN(val)) return false;
+          }
           if(val2 !== val) return false;
         }
       }

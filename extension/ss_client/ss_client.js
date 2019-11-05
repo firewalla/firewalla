@@ -45,6 +45,8 @@ const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
 const REMOTE_DNS = "8.8.8.8";
 const REMOTE_DNS_PORT = 53;
 
+const statusCheckInterval = 1 * 60 * 1000;
+
 const _ = require('lodash');
 
 const CountryUpdater = require('../../control/CountryUpdater.js')
@@ -56,10 +58,11 @@ class SSClient {
       throw new Error("Invalid name or config when new SSClient");
     }
 
-    this.name = config.name || "default";
+    this.name = config.name || `${config.server}:${config.serverPort}`;
     this.config = config;
     this.started = false;
     this.statusCheckTimer = null;
+    this.statusCheckResult = null;
     this.overturePort = config.overturePort || 8854;
     this.ssRedirectPort = config.ssRedirectPort || 8820;
     this.ssClientPort = config.ssClientPort || 8822;
@@ -73,10 +76,32 @@ class SSClient {
     await this._createConfigFile();
     await exec(`sudo systemctl restart ss_client@${this.name}`);
     log.info("Started SS backend service.");
+
+    this.statusCheckTimer = setInterval(async () => {
+      this.statusCheckJob();
+    }, statusCheckInterval);
+  }
+
+  async statusCheckJob (retryCount = 0) {
+    const result = await this.statusCheck();
+    log.info(`[${retryCount}] Status check result for ${this.name}: online ${result.status}, latency ${result.time * 1000} ms`);
+    if(result.status && result.status === true) {
+      this.statusCheckResult = result;
+    } else {
+      if(retryCount > 5) {
+        this.statusCheckResult = result;
+      } else {
+        return this.statusCheckJob(retryCount+1);
+      }
+    }
   }
 
 
   async stop() {
+    if(this.statusCheckTimer) {
+      clearInterval(this.statusCheckTimer);
+      this.statusCheckTimer = null;
+    }
     log.info(`Stopping SS backend service ${this.name}...`);
     await exec(`sudo systemctl stop ss_client@${this.name}`);
     log.info(`Stopped SS backend service ${this.name}.`);
@@ -88,6 +113,10 @@ class SSClient {
     const upstreamDNS = `127.0.0.1#${this.overturePort}`;
     await dnsmasq.setUpstreamDNS(upstreamDNS);
 
+    // dns
+//    const dnsChain = `FW_SHADOWSOCKS_DNS_${this.name}`;
+    await exec(wrapIptables(`sudo iptables -w -t nat -A OUTPUT -p tcp --destination ${REMOTE_DNS} --destination-port ${REMOTE_DNS_PORT} -j REDIRECT --to-port ${this.ssRedirectPort}`));
+
     // reroute all devices's traffic to ss special chain
     const chain = `FW_SHADOWSOCKS_${this.name}`;
     await exec(wrapIptables(`sudo iptables -w -t nat -A PREROUTING -p tcp -j ${chain}`));
@@ -97,6 +126,11 @@ class SSClient {
     // unreroute all traffic
     const chain = `FW_SHADOWSOCKS_${this.name}`;
     await exec(wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -j ${chain}`));
+
+    // dns
+    await exec(wrapIptables(`sudo iptables -w -t nat -D OUTPUT -p tcp --destination ${REMOTE_DNS} --destination-port ${REMOTE_DNS_PORT} -j REDIRECT --to-port ${this.ssRedirectPort}`));
+    //const dnsChain = `FW_SHADOWSOCKS_DNS_${this.name}`;
+    //await exec(wrapIptables(`sudo iptables -w -t nat -D OUTPUT -p tcp -j ${dnsChain}`));
 
     // set dnsmasq upstream back to default
     await dnsmasq.setUpstreamDNS(null);
@@ -143,6 +177,7 @@ class SSClient {
     let configContent = "";
     configContent += `FW_SS_REDIR_PORT=${this.ssRedirectPort}\n`;
     configContent += `FW_SS_CLIENT_PORT=${this.ssClientPort}\n`;
+    configContent += `FW_SS_SERVER=${this.config.server}\n`;
     await fs.writeFileAsync(configPath, configContent);
   }
 
@@ -165,15 +200,26 @@ class SSClient {
   }
 
   async statusCheck() {
-    const cmd = `curl --socks5-hostname localhost:${this.ssClientPort} https://google.com`;
+    const cmd = `curl -m 10 -s -w 'X12345X%{time_appconnect}X12345X\n' -o  /dev/null --socks5-hostname localhost:${this.ssClientPort} https://google.com`;
     log.info("checking cmd", cmd);
     try {
-      await exec(cmd);
-      return true;
+      const result = await exec(cmd);
+      if(result.stdout) {
+        const timeStrings = result.stdout.split("\n").filter((x) => x.match(/X12345X.*X12345X/));
+        if(!_.isEmpty(timeStrings)) {
+          const time = timeStrings[0].replace('X12345X', '').replace('X12345X', '');
+          return {
+            time: Number(time),
+            status: true
+          };
+        }
+      }
     } catch(err) {
-      log.error(`ss server ${this.name} is not available.`);
-      return false;
+      log.error(`ss server ${this.name} is not available.`, err);
     }
+    return {
+      status: false
+    };
   }
 
   // config may contain one or more ss server configurations

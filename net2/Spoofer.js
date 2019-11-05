@@ -173,17 +173,6 @@ module.exports = class {
 
     callback = callback || function() {}
 
-/* Jerry
-    if(fConfig.newSpoof) {
-      this.newSpoof(ipAddr)
-        .then(() => {
-          spoofMac6(mac,ipv6Addrs,gateway,null)
-          callback(null)
-        }).catch((err) => callback(err));
-      return;
-    }
-*/
-
       log.debug("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
       if (ipAddr && tellIpAddr) {
         if (ipAddr == tellIpAddr) {
@@ -397,27 +386,10 @@ module.exports = class {
   unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
     callback = callback || function() {}
 
-/* Jerry
-    if(fConfig.newSpoof) {
-      this.newUnspoof(ipAddr)
-        .then(() => {
-          let maxSpoofer = 5;
-          if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
-            for (let i in ip6Addrs) {
-              this._unspoof6(ip6Addrs[i],gateway6,mac);
-            }
-          }
-          callback(null);
-        }).catch((err) => callback(err));
-      return;
-    }
-*/
-
     log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
     if (ipAddr && tellIpAddr) {
       this._unspoof(ipAddr,tellIpAddr,mac);
     }
-    let maxSpoofer = 5;
     if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
       for (let i in ip6Addrs) {
         this._unspoof6(ip6Addrs[i],gateway6,mac);
