@@ -213,10 +213,9 @@ class NetworkStatsSensor extends Sensor {
     for (const pingServer in this.checkNetworkPings) {
       if (servers.indexOf(pingServer) == -1) {
         const p = this.checkNetworkPings[pingServer];
-        if (p) {
-          p.stop();
-          delete this.checkNetworkPings[pingServer];
-        }
+        p && p.stop();
+        delete this.checkNetworkPings[pingServer];
+        rclient.hdelAsync("network:status:ping", pingServer);
       }
     }
     const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(await rclient.hgetAsync("policy:system", "dnsmasq"))
