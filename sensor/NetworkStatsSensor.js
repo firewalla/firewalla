@@ -198,15 +198,26 @@ class NetworkStatsSensor extends Sensor {
     const gateway = sysManager.myGateway();
     let servers = (this.config.dnsServers || []).concat(dnses);
     servers.push(gateway);
-    let pings = {};
+    if (!this.checkNetworkPings) this.checkNetworkPings = {};
+
     for (const server of servers) {
-      pings[server] = new Ping(server);
-      pings[server].on('ping', (data) => {
+      if (this.checkNetworkPings[server]) return;
+      this.checkNetworkPings[server] = new Ping(server);
+      this.checkNetworkPings[server].on('ping', (data) => {
         rclient.hsetAsync("network:status:ping", server, data.time);
       });
-      pings[server].on('fail', (data) => {
+      this.checkNetworkPings[server].on('fail', (data) => {
         rclient.hsetAsync("network:status:ping", server, -1); // -1 as unreachable
       });
+    }
+    for (const pingServer in this.checkNetworkPings) {
+      if (servers.indexOf(pingServer) == -1) {
+        const p = this.checkNetworkPings[pingServer];
+        if (p) {
+          p.stop();
+          delete this.checkNetworkPings[pingServer];
+        }
+      }
     }
     const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(await rclient.hgetAsync("policy:system", "dnsmasq"))
     secondaryDnsServers && dnses.push(secondaryDnsServers)
