@@ -30,7 +30,7 @@ const statusCheckInterval = 1 * 60 * 1000;
 
 const exec = require('child-process-promise').exec;
 
-const delay = require('../../util/util.js').delay;
+const _ = require('lodash')
 
 class SSClientManager {
   constructor() {
@@ -121,7 +121,7 @@ class SSClientManager {
       log.info(`Using ${client.name} as primary ss client.`);
       await client.redirectTraffic();
     } else {
-      log.error(`Invalid client index: ${index}`);
+      log.error(`Invalid client index: ${this.curIndex}`);
     }
   }
 
@@ -130,7 +130,7 @@ class SSClientManager {
     if(client) {
       await client.unRedirectTraffic();
     } else {
-      log.error(`Invalid client index: ${index}`);
+      log.error(`Invalid client index: ${this.curIndex}`);
     }
   }
 
@@ -239,7 +239,6 @@ class SSClientManager {
       return false;
     }
 
-    const cur = this.curIndex;
     const validClients = this.getValidClients();
     if(validClients.length === 0) {
       log.error("No more available clients!!");
