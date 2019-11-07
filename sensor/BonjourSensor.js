@@ -95,11 +95,11 @@ class BonjourSensor extends Sensor {
   // do not process same host in a short time
   isDup(service) {
     let key = service.ipv4Addr;
-    if(!key) {
+    if (!key) {
       return true;
     }
 
-    if(this.hostCache[key]) {
+    if (this.hostCache[key]) {
       log.debug("Ignoring duplicated bonjour services from same ip:", key);
       return true;
     }
@@ -140,7 +140,7 @@ class BonjourSensor extends Sensor {
                 resolve(null);
               }
             } else {
-              ipMacCache[ipAddr] = {mac: mac, lastSeen: Date.now() / 1000};
+              ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
               resolve(mac);
             }
           }
@@ -156,7 +156,7 @@ class BonjourSensor extends Sensor {
           mac = sysManager.myMAC();
         }
       } else {
-        ipMacCache[ipAddr] = {mac: mac, lastSeen: Date.now() / 1000};
+        ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
         return mac;
       }
     }
@@ -171,7 +171,7 @@ class BonjourSensor extends Sensor {
     if (ipv4Addr) {
       mac = await this._getMacFromIP(ipv4Addr);
     }
-    if(!mac && ipv6Addrs && ipv6Addrs.length !== 0) {
+    if (!mac && ipv6Addrs && ipv6Addrs.length !== 0) {
       for (let i in ipv6Addrs) {
         const ipv6Addr = ipv6Addrs[i];
         mac = await this._getMacFromIP(ipv6Addr);
@@ -228,12 +228,17 @@ class BonjourSensor extends Sensor {
 
   bonjourParse(service) {
     log.debug("Discover:Bonjour:Parsing:Received", service);
-      if (service == null) {
+    if (service == null) {
       return;
     }
     if (service.addresses == null ||
-        service.addresses.length == 0 ||
-        service.referer.address == null) {
+      service.addresses.length == 0 ||
+      service.referer.address == null) {
+      return;
+    }
+
+    const uuidReg = new RegExp(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    if (uuidReg.test(this.getDeviceName(service))) {
       return;
     }
 
