@@ -29,6 +29,7 @@ const sysManager = new SysManager('info')
 const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
+const validator = require('validator');
 
 const ipMacCache = {};
 
@@ -237,8 +238,7 @@ class BonjourSensor extends Sensor {
       return;
     }
 
-    const uuidReg = new RegExp(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-    if (uuidReg.test(this.getDeviceName(service))) {
+    if (validator.isUUID(this.getDeviceName(service))) {
       return;
     }
 
