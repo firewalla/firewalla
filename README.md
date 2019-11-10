@@ -8,8 +8,8 @@
 
 ## Software Image
 ### Firewalla Blue
-* https://github.com/firewalla/firewalla/releases/download/v1.963/firewalla.blue.stable.0.28.img.gz
-  * sha256sum: 98e7110c26a9ff4b14eb2edb43aeffbcd1c058baef801d53799d64912202204b
+* https://github.com/firewalla/firewalla/releases/download/blue0.33/firewalla.blue.stable.0.33.img.gz
+  * sha256sum: 055fb76cc1bb3fa11046d355d08227424065bb1e445ac8ceff6175b3c450dbef
 * Flash image to micro sd card, and put into Firewalla Blue
   * Guide: https://help.firewalla.com/hc/en-us/articles/115004796633-Tutorial-Flashing-Image
 * You can order Firewalla Blue at https://firewalla.com
