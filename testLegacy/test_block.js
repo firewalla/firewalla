@@ -9,8 +9,6 @@ let destination = "159.153.186.70";
 
 let b = require('../control/Block.js');
 
-b.blockMac(macAddress,true,(err)=>{
-  
-});
+b.addMacToSet(macAddress)
 
 setTimeout(function() { process.exit(0) }, 30000);

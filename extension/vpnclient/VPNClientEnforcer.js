@@ -168,6 +168,31 @@ class VPNClientEnforcer {
     }
   }
 
+  async enforceStrictVPN(vpnIntf) {
+    if (!vpnIntf) {
+      throw "Interface is not specified";
+    }
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
+    await this._ensureCreateIpset(vpnClientIpset);
+    const cmd = wrapIptables(`sudo iptables -w -A FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to enforce strict vpn on ${vpnIntf}`, err);
+    });
+  }
+
+  async unenforceStrictVPN(vpnIntf) {
+    if (!vpnIntf) {
+      throw "Interface is not specified";
+    }
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
+    await this._ensureCreateIpset(vpnClientIpset);
+    const cmd = wrapIptables(`sudo iptables -w -D FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to unenforce strict vpn on ${vpnIntf}`, err);
+      throw err;
+    });
+  }
+
   async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], overrideDefaultRoute = true) {
     if (!vpnIntf)
       throw "Interface is not specified";
@@ -184,7 +209,10 @@ class VPNClientEnforcer {
     await Promise.all(routes.stdout.split('\n').map(async route => {
       if (route.length > 0) {
         cmd = util.format("sudo ip route add %s table %s", route, tableName);
-        await execAsync(cmd);
+        await execAsync(cmd).catch((err) => {
+          // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+          log.warn(`Failed to add route, ${cmd}`, err);
+        });
       }
     }));
     for (let routedSubnet of routedSubnets) {
@@ -197,7 +225,10 @@ class VPNClientEnforcer {
     }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
-      await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName);
+      await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {
+        // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+        log.warn(`Failed to add default router via ${remoteIP} dev ${vpnIntf} table ${tableName}`, err);
+      });
     }
   }
 

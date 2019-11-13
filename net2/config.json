@@ -1,5 +1,5 @@
 {
-  "version": 1.965,
+  "version": 1.966,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -77,14 +77,13 @@
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "VPNCheckPlugin": {},
-    "SafeSearchPlugin": {}
+    "SafeSearchPlugin": {},
+    "RemoteNotificationSensor": {}
   },
   "intels": [
     "DedupAlarm",
     "DeviceInfoIntel",
     "DestInfoIntel",
-    "IPLocationIntel",
-    "AlexaIntel",
     "WhoisIPIntel",
     "WhoisDomainIntel",
     "SSLIntel",
@@ -135,6 +134,7 @@
     "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
+    "BoxAliasSensor": {},
     "SafeSearchPlugin": {
       "mapping": {
         "youtube_strict": {
@@ -158,6 +158,7 @@
         "google": {
           "forcesafesearch.google.com": [
             "www.google.com",
+            "www.google.ac",
             "www.google.ad",
             "www.google.ae",
             "www.google.com.af",
@@ -374,6 +375,18 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "NetworkStatsSensor": {
+      "internetTestHosts": [
+        "google.com",
+        "github.com",
+        "firewalla.encipher.io"
+      ],
+      "dnsServers": [
+        "1.1.1.1",
+        "8.8.8.8"
+      ],
+      "interval": 300
+    },
     "ICMP6Sensor": {},
     "CPUSensor": {
       "interval": 60,
@@ -443,10 +456,6 @@
         "expires": -1,
         "count": 500
       },
-      "aggrflow": {
-        "expires": -1,
-        "count": 200
-      },
       "syssumflow": {
         "expires": -1,
         "count": 200
@@ -462,6 +471,10 @@
       "safe_urls": {
         "expires": 604800,
         "count": 1000
+      },
+      "perf": {
+        "expires": 86400,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
@@ -591,7 +604,9 @@
     "cpu_monitor": true,
     "speed_test": false,
     "safe_search": false,
-    "family_protect": false
+    "network_stats": false,
+    "link_stats": true,
+    "network_speed_test": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

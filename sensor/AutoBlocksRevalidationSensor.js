@@ -186,6 +186,9 @@ class AutoBlocksRevalidationSensor extends Sensor {
         type: 'FW_NOTIFICATION',
         titleKey: 'NOTIF_REVERT_AUTOBLOCK_TITLE',
         bodyKey: 'NOTIF_REVERT_AUTOBLOCK_BODY',
+        titleLocalKey: 'REVERT_AUTOBLOCK',
+        bodyLocalKey: 'REVERT_AUTOBLOCK',
+        bodyLocalArgs: [revertCount],
         payload: {
           count: revertCount
         }

@@ -25,7 +25,7 @@ const extensionManager = require('./ExtensionManager.js')
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsConfigFolder = `${userConfigFolder}/dns`;
+const dnsConfigFolder = `${userConfigFolder}/dnsmasq`;
 const safeSearchConfigFile = `${dnsConfigFolder}/safeSearch_system.conf`;
 
 const configKey = "ext.safeSearch.config";

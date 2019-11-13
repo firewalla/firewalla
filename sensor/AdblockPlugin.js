@@ -19,11 +19,12 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 const deviceConfigFile = `${dnsmasqConfigFolder}/adblock_mac_set.conf`;
 const systemConfigFile = `${dnsmasqConfigFolder}/adblock_system.conf`;
 const dnsTag = "$ad_block";
@@ -64,26 +65,28 @@ class AdblockPlugin extends Sensor {
         }
 
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        if (fc.isFeatureOn("adblock")) {
-            this.globalOn();
-        } else {
-            this.globalOff();
-        }
-        fc.onFeature("adblock", async (feature, status) => {
-            if (feature !== "adblock") {
-                return;
-            }
-            if (status) {
+        sem.once('IPTABLES_READY', async () => {
+            if (fc.isFeatureOn("adblock")) {
                 this.globalOn();
             } else {
                 this.globalOff();
             }
-        })
+            fc.onFeature("adblock", async (feature, status) => {
+                if (feature !== "adblock") {
+                    return;
+                }
+                if (status) {
+                    this.globalOn();
+                } else {
+                    this.globalOff();
+                }
+            })
 
-        this.job();
-        this.timer = setInterval(async () => {
-            return this.job();
-        }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+            this.job();
+            this.timer = setInterval(async () => {
+                return this.job();
+            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+        });
     }
 
     job() {
@@ -99,6 +102,10 @@ class AdblockPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
+                    if (fc.isFeatureOn("adblock", true)) {//compatibility: new firewlla, old app
+                        await fc.enableDynamicFeature("adblock");
+                        return;
+                    }
                 } else {
                     this.systemSwitch = false;
                 }

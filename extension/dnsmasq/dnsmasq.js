@@ -1,6 +1,16 @@
-
-/**
- * Created by Melvin Tu on 04/01/2017.
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 'use strict';
@@ -17,11 +27,21 @@ const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
+const getCanonicalizedDomainname = require('../../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
+const HostTool = require('../../net2/HostTool.js');
+const hostTool = new HostTool();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-const FILTER_DIR = f.getUserConfigFolder() + "/dns";
+const { delay } = require('../../util/util.js');
+
+const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
+const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
+const LOCAL_DEVICE_DOMAIN = FILTER_DIR + "/local_device_domain.conf";
+const LOCAL_DEVICE_DOMAIN_KEY = "local:device:domain"
+const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -34,7 +54,6 @@ const FILTER_FILE = {
 }
 
 const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
-const familyFilterFile = FILTER_DIR + "/family_filter.conf";
 
 const pclient = require('../../util/redis_manager.js').getPublishClient();
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
@@ -72,7 +91,7 @@ let upstreamDNS = null;
 
 let FILTER_EXPIRE_TIME = 86400 * 1000;
 
-const BLACK_HOLE_IP = "198.51.100.99"
+const BLACK_HOLE_IP = "0.0.0.0"
 const BLUE_HOLE_IP = "198.51.100.100"
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
@@ -299,7 +318,10 @@ module.exports = class DNSMASQ {
       this.nextReloadFilter[type].push(setTimeout(this._reloadFilter.bind(this), RELOAD_INTERVAL, type));
     } else {
       log.warn(`${type}'s next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
-      setImmediate(this._reloadFilter.bind(this), type);
+      if (this.reloadFilterImmediate) {
+        clearImmediate(this.reloadFilterImmediate)
+      }
+      this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this), type);
     }
   }
 
@@ -340,7 +362,10 @@ module.exports = class DNSMASQ {
       this.nextReloadFilter[type].forEach(t => clearTimeout(t));
       this.nextReloadFilter[type].length = 0;
     }
-    setImmediate(this._reloadFilter.bind(this), type);
+    if (this.reloadFilterImmediate) {
+      clearImmediate(this.reloadFilterImmediate)
+    }
+    this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this), type);
   }
 
   async cleanUpFilter(type) {
@@ -358,23 +383,25 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async addPolicyFilterEntry(domain, options) {
+  async addPolicyFilterEntry(domains, options) {
+    log.debug("addPolicyFilterEntry", domains, options)
     options = options || {}
-
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
-      await this.delay(1000);  // try again later
+      await delay(1000);  // try again later
     }
     this.workingInProgress = true;
 
-    let entry = null;
-
-    if (options.use_blue_hole) {
-      entry = util.format("address=/%s/%s\n", domain, BLUE_HOLE_IP)
-    } else {
-      entry = util.format("address=/%s/%s\n", domain, BLACK_HOLE_IP)
+    let entry = "";
+    for (const domain of domains) {
+      if (options.scope && options.scope.length > 0) {
+        for (const mac of options.scope) {
+          entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
+        }
+      } else {
+        entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
+      }
     }
-
     try {
       await fs.appendFileAsync(policyFilterFile, entry);
     } catch (err) {
@@ -384,21 +411,123 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async removePolicyFilterEntry(domain) {
+  async addPolicyCategoryFilterEntry(domains, options) {
+    log.debug("addPolicyCategoryFilterEntry", domains, options)
     while (this.workingInProgress) {
-      log.info("deferred due to dnsmasq is working in progress");
-      await this.delay(1000);  // try again later
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
     }
     this.workingInProgress = true;
+    options = options || {};
+    const category = options.category;
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    try {
+      let entry = "", macSetEntry = "";
+      for (const domain of domains) {
+        entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
+      }
+      if (options.scope && options.scope.length > 0) {
+        for (const mac of options.scope) {
+          macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
+        }
+      } else {
+        macSetEntry = `mac-address-tag=%${systemLevelMac}$${category}_block\n`;
+      }
+      await fs.writeFileAsync(categoryBlockDomainsFile, entry);
+      await fs.appendFileAsync(categoryBlcokMacSetFile, macSetEntry);
+    } catch (err) {
+      log.error("Failed to add category mact set entry into file:", err);
+    } finally {
+      this.workingInProgress = false; // make sure the flag is reset back
+    }
+  }
 
-    let entry = util.format("address=/%s/%s", domain, BLACK_HOLE_IP);
+  async removePolicyCategoryFilterEntry(domains, options) {
+    log.debug("removePolicyCategoryFilterEntry", domains, options)
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+    options = options || {};
+    const category = options.category;
+    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    let macSetEntry = [];
+    if (options.scope && options.scope.length > 0) {
+      for (const mac of options.scope) {
+        macSetEntry.push(`mac-address-tag=%${mac.toUpperCase()}$${category}_block`)
+      }
+    } else {
+      macSetEntry.push(`mac-address-tag=%${systemLevelMac}$${category}_block`)
+    }
+    try {
+      let data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
+      let newData = data.split("\n").filter((line) => {
+        return macSetEntry.indexOf(line) == -1
+      }).join("\n");
+      await fs.writeFileAsync(categoryBlcokMacSetFile, newData);
+    } catch (err) {
+      if (err.code != "ENOENT") {
+        log.error("Failed to update category mact set entry file:", err);
+      }
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+
+  async updatePolicyCategoryFilterEntry(domains, options) {
+    log.debug("updatePolicyCategoryFilterEntry", domains, options)
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+    options = options || {};
+    const category = options.category;
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    let entry = "";
+    for (const domain of domains) {
+      entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
+    }
+    try {
+      await fs.writeFileAsync(categoryBlockDomainsFile, entry);
+      //check dnsmasq need restart or not
+      const data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
+      if (data.indexOf(`$${category}_block`) > -1) this.restartDnsmasq();
+    } catch (err) {
+      if (err.code != 'ENOENT') {
+        log.error("Failed to update category entry into file:", err);
+      }
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+
+  async removePolicyFilterEntry(domains, options) {
+    log.debug("removePolicyFilterEntry", domains, options)
+    options = options || {}
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress");
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+    let entry = [];
+    for (const domain of domains) {
+      if (options.scope && options.scope.length > 0) {
+        for (const mac of options.scope) {
+          entry.push(`address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}`)
+        }
+      } else {
+        entry.push(`address=/${domain}/${BLACK_HOLE_IP}`);
+      }
+    }
     try {
       let data = await fs.readFileAsync(policyFilterFile, 'utf8');
-
-      let newData = data.split("\n")
-        .filter(line => line !== entry)
-        .join("\n");
-
+      let newData = data.split("\n").filter((line) => {
+        return entry.indexOf(line) == -1
+      }).join("\n");
       await fs.writeFileAsync(policyFilterFile, newData);
     } catch (err) {
       log.error("Failed to write policy data file:", err);
@@ -458,7 +587,7 @@ module.exports = class DNSMASQ {
     let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
     log.info("Command to get current name server: ", cmd);
 
-    let { stdout, stderr } = await execAsync(cmd);
+    let { stdout } = await execAsync(cmd);
 
     if (!stdout || stdout === '') {
       return [];
@@ -466,10 +595,6 @@ module.exports = class DNSMASQ {
 
     let list = stdout.split('\n');
     return list.filter((x, i) => list.indexOf(x) === i);
-  }
-
-  async delay(t) {
-    return new Promise(resolve => setTimeout(resolve, t));
   }
 
   async reload() {
@@ -896,7 +1021,7 @@ module.exports = class DNSMASQ {
       // do nothing
     }
 
-    const p = spawn('/bin/bash', ['-c', cmd])
+    const p = spawn('/bin/bash', ['-c', 'sudo service dnsmasq restart'])
 
     p.stdout.on('data', (data) => {
       log.info("DNSMASQ STDOUT:", data.toString());
@@ -906,12 +1031,11 @@ module.exports = class DNSMASQ {
       log.info("DNSMASQ STDERR:", data.toString());
     })
 
-    await this.delay(1000);
+    await delay(1000);
   }
 
   async restartDnsmasq() {
     try {
-      //await execAsync("sudo systemctl restart firemasq");
       if (!this.needRestart)
         this.needRestart = new Date() / 1000;
       if (!statusCheckTimer) {
@@ -1017,7 +1141,7 @@ module.exports = class DNSMASQ {
       const intf = wifiIntf.intf || "wlan0";
 
       switch (mode) {
-        case "router":
+        case "router": {
           // need to setup dhcp service on wifi interface for router mode
           if (!wifiIntf.ip)
             break;
@@ -1040,6 +1164,7 @@ module.exports = class DNSMASQ {
           // same dns servers as secondary interface
           cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, intf, wifiDnsServers);
           break;
+        }
         case "bridge":
           break;
         default:
@@ -1154,7 +1279,7 @@ module.exports = class DNSMASQ {
 
     await this.updateResolvConf();
     // no need to stop dnsmasq, this.rawStart() will restart dnsmasq. Otherwise, there is a cooldown before restart, causing dns outage during that cool down window.
-    // await this.rawStop(); 
+    // await this.rawStop();
     try {
       await this.rawStart();
     } catch (err) {
@@ -1293,23 +1418,109 @@ module.exports = class DNSMASQ {
 
   async cleanUpLeftoverConfig() {
     try {
-      const userConfigFolder = f.getUserConfigFolder(),
-        dnsConfigFolder = `${userConfigFolder}/dns`,
-        devicemasqConfigFolder = `${userConfigFolder}/devicemasq`
-      const configFolders = [dnsConfigFolder, devicemasqConfigFolder]
-      const cleanupPromises = configFolders.map(configFolder => {
-        (async () => {
-          const files = await fs.readdirAsync(configFolder)
-          files.map(filename => {
-            if (filename.indexOf('safeSearch') > -1) {
-              fs.unlinkAsync(`${configFolder}/${filename}`)
+      await fs.mkdirAsync(FILTER_DIR, { recursive: true, mode: 0o755 }).catch((err) => {
+        if (err.code !== "EEXIST")
+          log.error(`Failed to create ${FILTER_DIR}`, err);
+      });
+      const dirs = [FILTER_DIR, LEGACY_FILTER_DIR];
+      for (let dir of dirs) {
+        const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch(() => false);
+        if (!dirExists)
+          continue;
+
+        const files = await fs.readdirAsync(dir);
+        await Promise.all(files.map(async (filename) => {
+          const filePath = `${dir}/${filename}`;
+
+          try {
+            const fileStat = await fs.statAsync(filePath);
+            if (fileStat.isFile()) {
+              await fs.unlinkAsync(filePath).catch((err) => {
+                log.error(`Failed to remove ${filePath}, err:`, err);
+              });
             }
-          });
-        })()
-      })
-      await Promise.all(cleanupPromises)
+          } catch (err) {
+            log.info(`File ${filePath} not exist`);
+          }
+        }));
+      }
     } catch (err) {
-      log.info("clean up leftover config", err)
+      log.error("Failed to clean up leftover config", err);
+    }
+  }
+
+  //save data in redis
+  //{mac:{ipv4Addr:ipv4Addr,name:name}}
+  //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
+  async setupLocalDeviceDomain(restart, hosts, isInit) {
+    const json = await rclient.getAsync(LOCAL_DEVICE_DOMAIN_KEY);
+    try {
+      let needUpdate = false;
+      const deviceDomainMap = JSON.parse(json) || {};
+      for (const host of hosts) {
+        // customize domain name highest priority
+        let hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "customizeDomainName");
+        let ipv4Addr = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "ipv4Addr");
+        if (!hostName) {
+          //if user update device name and ip, should get them from redis not host
+          hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "name");
+          hostName = hostName ? hostName : hostTool.getHostname(host);
+        }
+        ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
+        if (!deviceDomainMap[host.mac]) {
+          deviceDomainMap[host.mac] = {
+            mac: host.mac,
+            ipv4Addr: ipv4Addr,
+            name: hostName,
+            ts: new Date() / 1000
+          }
+          needUpdate = true;
+        } else {
+          const deviceDomain = deviceDomainMap[host.mac];
+          if ((deviceDomain.name != hostName || deviceDomain.ipv4Addr != ipv4Addr)) {
+            needUpdate = true;
+            deviceDomain.mac = host.mac;
+            deviceDomain.ipv4Addr = ipv4Addr;
+            deviceDomain.name = hostName;
+            deviceDomain.ts = new Date() / 1000
+          }
+        }
+      }
+      if (needUpdate || isInit) {
+        await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
+        let localDeviceDomain = "", domainMap = {};
+        // domainMap: domain name as key
+        // override duplicated
+        for (const key in deviceDomainMap) {
+          const deviceDomain = deviceDomainMap[key]
+          if (!domainMap[deviceDomain.name]) {
+            domainMap[deviceDomain.name] = deviceDomain
+          } else if (domainMap[deviceDomain.name] && domainMap[deviceDomain.name].ts < deviceDomain.ts) {
+            const overrideDevice = domainMap[deviceDomain.name]
+            domainMap[deviceDomain.name] = deviceDomain
+            await hostTool.updateMACKey({
+              domain: '',
+              mac: overrideDevice.mac
+            }, true);
+          }
+        }
+        for (const key in domainMap) {
+          const domain = getCanonicalizedDomainname(key.replace(/\s+/g, "")) + '.lan';
+          if (domainMap[key].ipv4Addr && validator.isIP(domainMap[key].ipv4Addr)) {
+            localDeviceDomain += `address=/${domain}/${domainMap[key].ipv4Addr}\n`;
+          }
+          await hostTool.updateMACKey({
+            domain: domain,
+            mac: domainMap[key].mac
+          }, true);
+        }
+        await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
+      }
+      if (needUpdate && restart) {
+        this.restartDnsmasq()
+      }
+    } catch (e) {
+      log.error("Failed to setup local device domain", e);
     }
   }
 };

@@ -19,11 +19,12 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsmasqConfigFolder = `${userConfigFolder}/dns`;
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 
 const FAMILY_DNS = ["8.8.8.8"]; // these are just backup servers
 const fs = require('fs');
@@ -60,26 +61,28 @@ class FamilyProtectPlugin extends Sensor {
             await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
         }
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        if (fc.isFeatureOn("family_protect")) {
-            await this.globalOn();
-        } else {
-            await this.globalOff();
-        }
-        fc.onFeature("family_protect", async (feature, status) => {
-            if (feature !== "family_protect") {
-                return;
-            }
-            if (status) {
+        sem.once('IPTABLES_READY', async () => {
+            if (fc.isFeatureOn("family_protect")) {
                 await this.globalOn();
             } else {
                 await this.globalOff();
             }
-        })
+            fc.onFeature("family_protect", async (feature, status) => {
+                if (feature !== "family_protect") {
+                    return;
+                }
+                if (status) {
+                    await this.globalOn();
+                } else {
+                    await this.globalOff();
+                }
+            })
 
-        await this.job();
-        this.timer = setInterval(async () => {
-            return this.job();
-        }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+            await this.job();
+            this.timer = setInterval(async () => {
+                return this.job();
+            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+        })
     }
 
     async job() {
@@ -96,6 +99,9 @@ class FamilyProtectPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
+                    if (fc.isFeatureOn("family_protect", true)) {//compatibility: new firewlla, old app
+                        await fc.enableDynamicFeature("family_protect");
+                    }
                 } else {
                     this.systemSwitch = false;
                 }
@@ -149,12 +155,14 @@ class FamilyProtectPlugin extends Sensor {
 
     async systemStart(dnsaddrs) {
         dnsmasq.setDefaultNameServers("family", dnsaddrs);
-        dnsmasq.updateResolvConf();
+        await dnsmasq.updateResolvConf();
+        await dnsmasq.restartDnsmasq();
     }
 
     async systemStop() {
         dnsmasq.unsetDefaultNameServers("family"); // reset dns name servers to null no matter whether iptables dns change is failed or successful
-        dnsmasq.updateResolvConf();
+        await dnsmasq.updateResolvConf();
+        await dnsmasq.restartDnsmasq();
     }
 
     async perDeviceStart(macAddress, dnsaddrs) {

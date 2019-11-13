@@ -105,8 +105,8 @@ class NmapSensor extends Sensor {
               break;
             case "title":
               script.title = x["#content"];
-            default:
               break;
+            default:
           }
         });
       }
@@ -240,7 +240,7 @@ class NmapSensor extends Sensor {
               this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
             }, 7 * 1000)
           }
-        })      
+        })
     });
   }
 
@@ -257,7 +257,7 @@ class NmapSensor extends Sensor {
         return
       }
     }
-    
+
     if(host && host.mac) {
       const hostInfo = {
         ipv4: host.ipv4Addr,

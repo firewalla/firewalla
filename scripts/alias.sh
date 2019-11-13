@@ -1,5 +1,6 @@
 #!/bin/bash
 
+alias sudo='sudo '
 alias apt='/home/pi/firewalla/scripts/apt.sh'
 alias apt-get='/home/pi/firewalla/scripts/apt.sh'
 alias t0='tail -F ~/.forever/main.log'
@@ -27,16 +28,18 @@ alias sr00='sudo systemctl restart fire{main,kick,mon,api}'
 alias sr0='sudo systemctl restart firemain'
 alias sr1='sudo systemctl restart firekick'
 alias sr2='sudo systemctl restart firemon'
-alias sr3='sudo systemctl restart fireapi'
+alias sr3='touch /home/pi/.firewalla/managed_reboot; sudo systemctl restart fireapi'
 alias sr4='sudo systemctl restart firehttpd'
 alias srb4='sudo systemctl restart bitbridge4'
 alias srb6='sudo systemctl restart bitbridge6'
+alias ss7='sudo systemctl stop frpc.support.service'
 alias sr4='sudo systemctl restart firehttpd'
 alias fufu='sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD'
 alias node='/home/pi/firewalla/bin/node'
 alias fuc='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias srr='/home/pi/firewalla/scripts/main-run'
 alias srrr='/home/pi/firewalla/scripts/fireupgrade_check.sh'
+alias ct0='/home/pi/firewalla/scripts/estimate_compatibility.sh'
 alias rc='redis-cli'
 alias ll0='redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMain\", \"level\":\"info\"}"'
 alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireKick\", \"level\":\"info\"}"'
@@ -62,3 +65,5 @@ function mycatip () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
   node /tmp/cat.js --ip "$1"
 }
+
+alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi/firewalla/scripts/main-run'

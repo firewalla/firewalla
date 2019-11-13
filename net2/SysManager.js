@@ -12,6 +12,7 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 'use strict';
 const log = require('./logger.js')(__filename);
 
@@ -290,10 +291,6 @@ module.exports = class {
   setLanguage(language, callback) {
     callback = callback || function() {}
 
-    // FIXME: disable set language feature temporarliy
-    callback(null);
-    return;
-
     this.language = language;
     const theLanguage = i18n.setLocale(this.language);
     if(theLanguage !== this.language) {
@@ -403,8 +400,7 @@ module.exports = class {
         }
         this.ddns = this.sysinfo["ddns"];
         this.publicIp = this.sysinfo["publicIp"];
-        var self = this;
-        //         log.info("System Manager Initialized with Config", this.sysinfo);
+        // log.info("System Manager Initialized with Config", this.sysinfo);
       }
       if (callback != null) {
         callback(err);
@@ -419,6 +415,29 @@ module.exports = class {
       }).catch((err) => {
         log.error("Failed to set sys:network:info in redis", err);
       });
+  }
+
+  async syncVersionUpdate() {
+    const version = this.version();
+    if (!version || version === "unknown") return;
+    const isKnownVersion = await rclient.sismemberAsync("sys:versionHistory", version);
+    if (!isKnownVersion) {
+      const versionDesc = {version: version, time: Math.floor(Date.now() / 1000)};
+      await rclient.setAsync("sys:versionUpdate", JSON.stringify(versionDesc));
+      await rclient.saddAsync("sys:versionHistory", version);
+    }
+  }
+
+  async getVersionUpdate() {
+    return rclient.getAsync("sys:versionUpdate").then((versionDesc) => {
+      return JSON.parse(versionDesc)
+    }).catch((err) => {
+      return null;
+    });
+  }
+
+  async clearVersionUpdate() {
+    return rclient.delAsync("sys:versionUpdate");
   }
 
   setOperationalState(state, value) {
@@ -466,7 +485,7 @@ module.exports = class {
   isIPv6GloballyConnected() {
     let ipv6Addrs = this.myIp6();
     if (ipv6Addrs && ipv6Addrs.length>0) {
-      for (ip6 in ipv6Addrs) {
+      for (const ip6 in ipv6Addrs) {
         if (!ip6.startsWith("fe80")) {
           return true;
         }
@@ -556,7 +575,6 @@ module.exports = class {
     return this.ddns;
   }
 
-
   myDNS() { // return array
     let _dns = (this.monitoringInterface() && this.monitoringInterface().dns) || [];
     let v4dns = [];
@@ -569,19 +587,19 @@ module.exports = class {
   }
 
   myDNSAny() {
-    return this.monitoringInterface().dns;
+    return this.monitoringInterface() && this.monitoringInterface().dns;
   }
 
   myGateway() {
-    return this.monitoringInterface().gateway;
+    return this.monitoringInterface() && this.monitoringInterface().gateway;
   }
 
   myGateway6() {
-    return this.monitoringInterface().gateway6;
+    return this.monitoringInterface() && this.monitoringInterface().gateway6;
   }
 
   mySubnet() {
-    return this.monitoringInterface().subnet;
+    return this.monitoringInterface() && this.monitoringInterface().subnet;
   }
 
   mySubnet2() {
@@ -616,9 +634,10 @@ module.exports = class {
   inMySubnets4(ip4) {
     if (!iptool.isV4Format(ip4)) return false;
     else return (
-      iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
-      (this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) || false) ||
-      (this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) || false)
+      this.mySubnet() && iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
+      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) ||
+      this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) ||
+      false
     )
   }
 

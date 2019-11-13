@@ -31,6 +31,10 @@ class EncipherTool {
   async getGID() {
     return rclient.hgetAsync("sys:ept", "gid")
   }
+
+  async getEID() {
+    return rclient.hgetAsync("sys:ept", "eid")
+  }
 }
 
 module.exports = EncipherTool

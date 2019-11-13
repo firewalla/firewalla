@@ -65,6 +65,7 @@ class VpnManager {
         sclient.subscribe("System:IPChange");
       }
       instance = this;
+      this.instanceName = "server"; // defautl value
     }
     return instance;
   }
@@ -177,37 +178,47 @@ class VpnManager {
     });
   }
 
-  async configure(config, needRestart) {
+  async configure(config) {
     if (config) {
       if (config.serverNetwork) {
+        if (this.serverNetwork && this.serverNetwork !== config.serverNetwork)
+          this.needRestart = true;
         this.serverNetwork = config.serverNetwork;
       }
       if (config.netmask) {
+        if (this.netmask && this.netmask !== config.netmask)
+          this.needRestart = true;
         this.netmask = config.netmask;
       }
       if (config.localPort) {
+        if (this.localPort && this.localPort !== config.localPort)
+          this.needRestart = true;
         this.localPort = config.localPort;
       }
       if (config.externalPort) {
+        if (this.externalPort && this.externalPort !== config.externalPort)
+          this.needRestart = true;
         this.externalPort = config.externalPort;
       }
     }
     if (this.serverNetwork == null) {
       this.serverNetwork = this.generateNetwork();
+      this.needRestart = true;
     }
     if (this.netmask == null) {
       this.netmask = "255.255.255.0";
+      this.needRestart = true;
     }
     if (this.localPort == null) {
       this.localPort = "1194";
+      this.needRestart = true;
     }
     if (this.externalPort == null) {
       this.externalPort = this.localPort;
+      this.needRestart = true;
     }
     if (this.instanceName == null) {
       this.instanceName = "server";
-    }
-    if (needRestart === true) {
       this.needRestart = true;
     }
     var mydns = sysManager.myDNS()[0];
@@ -229,6 +240,126 @@ class VpnManager {
       localPort: this.localPort,
       externalPort: this.externalPort
     };
+  }
+
+  async killClient(addr) {
+    if (!addr) return;
+    const cmd = `echo "kill ${addr}" | nc localhost 5194`;
+    await execAsync(cmd).catch((err) => {
+      log.warn(`Failed to kill client with address ${addr}`, err);
+    });
+  }
+
+  async getStatistics() {
+    // statistics include client lists and rx/tx bytes
+    let cmd = `systemctl is-active openvpn@${this.instanceName}`;
+    return await execAsync(cmd).then(async () => {
+      cmd = `echo "status" | nc localhost 5194 | tail -n +2`;
+      /*
+      OpenVPN CLIENT LIST
+      Updated,Fri Aug  9 12:08:18 2019
+      Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since
+      fishboneVPN1,192.168.7.92:57235,271133,174599,Fri Aug  9 12:06:03 2019
+      ROUTING TABLE
+      Virtual Address,Common Name,Real Address,Last Ref
+      10.115.61.6,fishboneVPN1,192.168.7.92:57235,Fri Aug  9 12:08:17 2019
+      GLOBAL STATS
+      Max bcast/mcast queue length,1
+      END
+      */
+      const result = await execAsync(cmd).catch((err) => null);
+      if (result && result.stdout) {
+        const lines = result.stdout.split("\n").map(line => line.trim());
+        let currentSection = null;
+        let colNames = [];
+        const clientMap = {};
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          switch (line) {
+            case "OpenVPN CLIENT LIST":
+              i += 1; // skip one line, which is something like "Updated,Thu Aug  8 18:24:32 2019"
+            case "ROUTING TABLE":
+              currentSection = line;
+              i += 1;
+              colNames = lines[i].split(",");
+              continue;
+            case "GLOBAL STATS":
+            case "END":
+              // do not process these sections
+              currentSection = line;
+              colNames = [];
+              continue;
+            default:
+              // fall through
+          }
+          switch (currentSection) {
+            // line contains contents of the corresponding section
+            case "OpenVPN CLIENT LIST": {
+              const values = line.split(",");
+              const clientDesc = {};
+              for (let j in colNames) {
+                switch (colNames[j]) {
+                  case "Common Name":
+                    clientDesc.cn = values[j];
+                    break;
+                  case "Real Address":
+                    clientDesc.addr = values[j];
+                    break;
+                  case "Bytes Received":
+                    clientDesc.rxBytes = values[j];
+                    break;
+                  case "Bytes Sent":
+                    clientDesc.txBytes = values[j];
+                    break;
+                  case "Connected Since":
+                    clientDesc.since = Math.floor(new Date(values[j]).getTime() / 1000);
+                    break;
+                  default:
+                }
+              }
+              if (clientMap[clientDesc.addr]) {
+                clientMap[clientDesc.addr] = Object.assign({}, clientMap[clientDesc.addr], clientDesc);
+              } else {
+                clientMap[clientDesc.addr] = clientDesc;
+              }
+              break;
+            }
+            case "ROUTING TABLE": {
+              const values = line.split(",");
+              const clientDesc = {};
+              for (let j in colNames) {
+                switch (colNames[j]) {
+                  case "Virtual Address":
+                    break;
+                  case "Common Name":
+                    clientDesc.cn = values[j];
+                    break;
+                  case "Real Address":
+                    clientDesc.addr = values[j];
+                    break;
+                  case "Last Ref":
+                    clientDesc.lastActive = Math.floor(new Date(values[j]).getTime() / 1000);
+                    break;
+                  default:
+                }
+              }
+              if (clientMap[clientDesc.addr]) {
+                clientMap[clientDesc.addr] = Object.assign({}, clientMap[clientDesc.addr], clientDesc);
+              } else {
+                clientMap[clientDesc.addr] = clientDesc;
+              }
+              break;
+            }
+            default:
+          }
+        }
+        return {clients: Object.values(clientMap)};
+      } else {
+        return {clients: []};
+      }
+    }).catch(() => {
+      return {clients: []};
+    })
   }
 
   async stop() {
@@ -273,7 +404,7 @@ class VpnManager {
         serverNetwork: this.serverNetwork,
         netmask: this.netmask,
         localPort: this.localPort,
-        externalPort: this.localPort,
+        externalPort: this.externalPort,
         portmapped: this.portmapped
       };
       // callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);

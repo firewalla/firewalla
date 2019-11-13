@@ -62,7 +62,7 @@ exports.get_active_network_interface_name = function(cb) {
 
 exports.interface_type_for = async function(nic_name) {
   try {
-    const result = await execAsync('cat /proc/net/wireless | grep ' + nic_name)
+    await execAsync('cat /proc/net/wireless | grep ' + nic_name)
     return 'Wireless'
   } catch(err) {
     return 'Wired'
@@ -73,6 +73,11 @@ exports.mac_address_for = function(nic_name) {
   // This is a workaround for nodejs bug
   // https://github.com/libuv/libuv/commit/f1e0fc43d17d9f2d16b6c4f9da570a4f3f6063ed
   // eth0:* virtual interface should use same mac address as main interface eth0
+
+  // 19.08.30 os.networkInterfaces() mac address on different node versions
+  //    v8.16.1   failed
+  //    v10.16.3  failed
+  //    v12.9.1   passed
   let n = nic_name.replace(/:.*$/, "");
   var cmd = 'cat /sys/class/net/' + n + '/address';
   return trim_exec_async(cmd);
@@ -92,7 +97,7 @@ exports.gateway_ip6 = function(cb) {
   trim_exec(cmd, cb);
 };
 
-exports.gateway_ip6_sync = function() {  
+exports.gateway_ip6_sync = function() {
   const cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }' | head -n 1"
   return trim_exec_sync(cmd);
 };
@@ -114,14 +119,12 @@ exports.gateway_ip6_sync = function() {
 */
 exports.get_network_interfaces_list = async function() {
 
-  var count = 0,
-    list = [],
-    nics = os.networkInterfaces();
+  let list = [];
+  const nics = os.networkInterfaces();
 
   for (var key in nics) {
-    if (key != 'lo0' && key != 'lo' && !key.match(/^tun/)) {
+    if (key != 'lo0' && key != 'lo' && !key.match(/^tun.*/) && !key.match(/^vpn_.*/)) { // filter vpn server and vpn client interfaces
 
-      count++;
       var obj = { name: key };
 
       nics[key].forEach(function(type) {

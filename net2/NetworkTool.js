@@ -47,7 +47,7 @@ class NetworkTool {
   }
 
   // returns CIDR or null
-  _getSubnet(interfaceName, family) {
+  _getSubnet(interfaceName, ipAddress, family) {
     let interfaceData = os.networkInterfaces()[interfaceName];
     if (interfaceData == null) {
       return null
@@ -56,7 +56,7 @@ class NetworkTool {
     var ipSubnets = [];
 
     interfaceData.forEach(osIf => {
-      if (osIf.family == family && !osIf.internal && osIf.cidr != null) {
+      if (osIf.family == family && osIf.address == ipAddress && !osIf.internal && osIf.cidr != null) {
         ipSubnets.push(osIf.cidr);
       }
     });
@@ -106,7 +106,7 @@ class NetworkTool {
       log.info('Found interface', i.name, i.ip_address);
 
       i.gateway = require('netroute').getGateway(i.name);
-      i.subnet = this._getSubnet(i.name, 'IPv4');
+      i.subnet = this._getSubnet(i.name, i.ip_address, 'IPv4');
       i.gateway6 = linux.gateway_ip6_sync();
       i.dns = dns.getServers();
     });
@@ -115,22 +115,21 @@ class NetworkTool {
   }
 
   // same as listInterfaces() but filters out non-local interfaces
-  getLocalNetworkInterface() {
+  async getLocalNetworkInterface() {
     let intfs = fConfig.discovery && fConfig.discovery.networkInterfaces;
     if (!intfs) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    return this.listInterfaces().then(list => {
-      let list2 = list.filter(x => {
-        return intfs.some(y => y === x.name);
-      });
-      if (list2.length === 0) {
-        return null;
-      } else {
-        return list2;
-      }
+    const list = await this.listInterfaces()
+    let list2 = list.filter(x => {
+      return intfs.some(y => y === x.name);
     });
+    if (list2.length === 0) {
+      return null;
+    } else {
+      return list2;
+    }
   }
 
   // same as getSubnet() but filters non-local interfaces
@@ -141,6 +140,10 @@ class NetworkTool {
   }
 
   capSubnet(cidrAddr) {
+    if (!cidrAddr) {
+      log.error("Invalid CIDR Address")
+      return null
+    }
     let subnetCap = platform.getSubnetCapacity();
     let subnet = ip.cidrSubnet(cidrAddr);
     if (subnet.subnetMaskLength < subnetCap) {

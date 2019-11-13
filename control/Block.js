@@ -29,7 +29,6 @@ const exec = require('child-process-promise').exec
 
 const f = require('../net2/Firewalla.js')
 
-const _wrapIptables = require('../net2/Iptables.js').wrapIptables;
 const Ipset = require('../net2/Ipset.js');
 
 const { Rule } = require('../net2/Iptables.js');
@@ -227,10 +226,6 @@ async function setupRules(macTag, dstTag, dstType, allow = false, destroy = fals
   }
 }
 
-function destroyRules(macTag, dstTag, whitelist, destroyDstCache = true) {
-  return setupRules(macTag, dstTag, null, whitelist, true, destroyDstCache)
-}
-
 async function addMacToSet(macAddresses, ipset = null, whitelist = false) {
   ipset = ipset || (whitelist ? 'whitelist_mac_set' : 'blocked_mac_set');
 
@@ -245,30 +240,6 @@ async function delMacFromSet(macAddresses, ipset = null, whitelist = false) {
   for (const mac of macAddresses || []) {
     await Ipset.del(ipset, mac);
   }
-}
-
-function blockMac(macAddress, ipset) {
-  ipset = ipset || "blocked_mac_set"
-
-  let cmd = `sudo ipset add -! ${ipset} ${macAddress}`;
-
-  log.info("Control:Block:",cmd);
-
-  accounting.addBlockedDevice(macAddress);
-
-  return exec(cmd)
-}
-
-function unblockMac(macAddress, ipset) {
-  ipset = ipset || "blocked_mac_set"
-
-  let cmd = `sudo ipset del -! ${ipset} ${macAddress}`;
-
-  log.info("Control:Block:",cmd);
-
-  accounting.removeBlockedDevice(macAddress);
-
-  return exec(cmd)
 }
 
 function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
@@ -302,13 +273,10 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
 
 module.exports = {
   setupBlockChain:setupBlockChain,
-  blockMac: blockMac,
-  unblockMac: unblockMac,
   block: block,
   unblock: unblock,
   setupCategoryEnv: setupCategoryEnv,
   setupRules: setupRules,
-  destroyRules: destroyRules,
   addMacToSet: addMacToSet,
   delMacFromSet: delMacFromSet,
   blockPublicPort:blockPublicPort,

@@ -110,8 +110,13 @@ class BluePlatform extends Platform {
 
   // via /etc/update-motd.d/30-armbian-sysinfo
   getCpuTemperature() {
-    const source = '/etc/armbianmonitor/datasources/soctemp';
-    return Number(fs.readFileSync(source)) / 1000;
+    try {
+      const source = '/sys/class/thermal/thermal_zone0/temp';
+      return Number(fs.readFileSync(source)) / 1000;
+    } catch(err) {
+      log.error("Failed to get cpu temperature, use 0 as default, err:", err);
+      return 0;
+    }
   }
 
   getPolicyCapacity() {

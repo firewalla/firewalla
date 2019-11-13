@@ -14,8 +14,6 @@
  */
 'use strict';
 const log = require("../net2/logger.js")(__filename);
-const os = require('os');
-const network = require('network');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -25,8 +23,6 @@ const flowManager = new FlowManager('info');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
-
-const audit = require('../util/audit.js');
 
 const fc = require('../net2/config.js')
 
@@ -48,9 +44,6 @@ const intelManager = new IntelManager('debug');
 
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager('info');
-
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager('info');
 
 const fConfig = require('../net2/config.js').getConfig();
 
@@ -223,8 +216,7 @@ module.exports = class FlowMonitor {
   }
 
   flowIntel(flows) {
-    for (let i in flows) {
-      let flow = flows[i];
+    for (const flow of flows) {
       log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
         log.debug("######## flowIntel Processing", JSON.stringify(flow));
@@ -237,32 +229,32 @@ module.exports = class FlowMonitor {
             alarmManager2.enqueueAlarm(alarm);
           }
         }
-        else if (this.isFlowIntelInClass(flow['intel'], "porn")) {
-          if ((flow.du && Number(flow.du) > 20) &&
-            (flow.rb && Number(flow.rb) > 1000000) ||
-            this.flowIntelRecordFlow(flow, 3)) {
+        else if (
+          this.isFlowIntelInClass(flow['intel'], "porn") &&
+          (
+            (flow.du && Number(flow.du) > 20) && (flow.rb && Number(flow.rb) > 1000000) ||
+            this.flowIntelRecordFlow(flow, 3)
+          )
+        ) {
 
-            // there should be a unique ID between pi and cloud on websites
+          // there should be a unique ID between pi and cloud on websites
 
-            let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-              alarmBootstrap(flow)
-            );
+          let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+            alarmBootstrap(flow)
+          );
 
-            alarmManager2.enqueueAlarm(alarm);
-          }
+          alarmManager2.enqueueAlarm(alarm);
         }
         else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
           // Intel object
           //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
           //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
-          // ignore partial flows initiated from outside.  They are blocked by firewall and we 
+          // ignore partial flows initiated from outside.  They are blocked by firewall and we
           // see the packet before that due to how libpcap works
 
           if (flowUtil.checkFlag(flow, 's') && flow.fd === "out") {
             log.info("Intel:On:Partial:Flows", flow);
           } else {
-            let msg = "Intel " + flow.shname + " " + flow.dhname;
-
             let intelobj = {
               uid: uuid.v4(),
               ts: flow.ts,
@@ -337,14 +329,18 @@ module.exports = class FlowMonitor {
             this.processIntelFlow(intelobj);
           }
         }
-        else if (this.isFlowIntelInClass(flow['intel'], "games") && this.flowIntelRecordFlow(flow, 3)) {
-          if ((flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) || this.flowIntelRecordFlow(flow, 3)) {
-            let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-              alarmBootstrap(flow)
-            );
+        else if (
+          this.isFlowIntelInClass(flow['intel'], "games") &&
+          (
+            (flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) ||
+            this.flowIntelRecordFlow(flow, 3)
+          )
+        ) {
+          let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+            alarmBootstrap(flow)
+          );
 
-            alarmManager2.enqueueAlarm(alarm);
-          }
+          alarmManager2.enqueueAlarm(alarm);
         }
       }
     }
@@ -362,7 +358,7 @@ module.exports = class FlowMonitor {
 
   //   '17.253.4.125': '{"neighbor":"17.253.4.125","cts":1481438191.098,"ts":1481990573.168,"count":356,"rb":33984,"ob":33504,"du":27.038723000000005,"name":"time-ios.apple.com"}',
   //  '17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}',
-  summarizeNeighbors(host,flows,direction) {
+  summarizeNeighbors(host,flows) {
     let key = "neighbor:"+host.o.mac;
     log.debug("Summarizing Neighbors ",flows.length,key);
 
@@ -487,7 +483,7 @@ module.exports = class FlowMonitor {
     }
   }
 
-  async detect(mac, period,host) {
+  async detect(mac, period, host) {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
@@ -500,7 +496,7 @@ module.exports = class FlowMonitor {
     }
 
     this.flowIntel(result.connections);
-    this.summarizeNeighbors(host,result.connections,'in');
+    this.summarizeNeighbors(host,result.connections);
     if (result.activities !=null) {
       /*
       if (host.activities!=null) {
@@ -526,11 +522,12 @@ module.exports = class FlowMonitor {
       });
     }
     this.flowIntel(result.connections);
-    this.summarizeNeighbors(host,result.connections,'out');
+    this.summarizeNeighbors(host,result.connections);
   }
 
 
-  async getFlowSpecs(mac, host) {
+  async getFlowSpecs(host) {
+    const mac = host.o.mac;
     // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
@@ -561,7 +558,7 @@ module.exports = class FlowMonitor {
   // monitor:flow:ip:<>: <ts score> / { notification }
   //
 
-  saveSpecFlow(direction, ip, flow, callback) {
+  async saveSpecFlow(direction, ip, flow) {
     let key = "monitor:flow:" + direction + ":" + ip;
     let strdata = JSON.stringify(flow);
     let redisObj = [key, flow.nts, strdata];
@@ -655,7 +652,7 @@ module.exports = class FlowMonitor {
         if (!service || service === "dlp") {
           log.info("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
-          const {inSpec, outSpec} = await this.getFlowSpecs(mac, host);
+          const {inSpec, outSpec} = await this.getFlowSpecs(host);
           log.debug("monitor:flow:", host.toShortString());
           log.debug("inspec", inSpec);
           log.debug("outspec", outSpec);
@@ -671,7 +668,7 @@ module.exports = class FlowMonitor {
               await this.processSpec(spec.direction, spec.txRatioRanked);
             }
           }
-        } 
+        }
         else if (service === "detect") {
           if (mac) {
             log.info("Running Detect:", mac);
@@ -710,14 +707,6 @@ module.exports = class FlowMonitor {
 
     let msg = "Warning: " + flowManager.toStringShortShort2(flow, direction, 'txdata');
     copy.msg = msg;
-
-    let remoteHost = flow.lh == flow.dh ? flow.sh : flow.dh;
-
-    let loc = await intelManager.ipinfo(remoteHost);
-
-    if (loc) {
-      copy.lobj = loc;
-    }
 
     if (fc.isFeatureOn("large_upload")) {
       // flow in means connection initiated from inside
@@ -824,7 +813,7 @@ module.exports = class FlowMonitor {
   }
 
   async processIntelFlow(flowObj) {
-    log.info("Process intel flow for", flowObj);  
+    log.info("Process intel flow for", flowObj);
     const deviceIP = this.getDeviceIP(flowObj);
     const remoteIP = this.getRemoteIP(flowObj);
 
@@ -857,10 +846,10 @@ module.exports = class FlowMonitor {
     if("urls" in flowObj) {
       if(flowObj.fd === 'in' ) {
         alarmPayload["p.dest.urls"] = flowObj.urls;
-        
+
         if(!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
           alarmPayload["p.dest.url"] = `http://${flowObj.urls[0].url}`;
-        }        
+        }
       } else {
 
         alarmPayload["p.device.urls"] = flowObj.urls;
@@ -972,7 +961,7 @@ module.exports = class FlowMonitor {
 
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
 
- 
+
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true;
@@ -1072,5 +1061,5 @@ module.exports = class FlowMonitor {
     log.info("Host:ProcessIntelFlow:Alarm", alarm);
 
     alarmManager2.enqueueAlarm(alarm)
-  };
+  }
 }

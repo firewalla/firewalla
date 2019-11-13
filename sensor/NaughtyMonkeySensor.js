@@ -83,16 +83,18 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   randomFindTarget() {
-    const list = ["204.85.191.30",
-      "46.235.227.70",
-      "193.107.85.56",
-      "5.79.68.161",
-      "204.8.156.142",
-      "37.48.120.196",
-      "37.187.7.74",
-      "162.247.72.199",
-      "81.129.164.141"
-    ]
+    const list = [
+      "185.220.101.10",
+      "142.44.154.169",
+      "89.144.12.17",
+      "141.255.162.35",
+      "163.172.214.8",
+      "91.219.236.171",
+      "176.123.8.224",
+      "185.234.217.144",
+      "185.234.217.142",
+      "185.234.217.146"
+    ];
 
     return list[Math.floor(Math.random() * list.length)]
 
@@ -195,7 +197,23 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async port_scan() {
+    const ip = await this.randomFindDevice();
+    const remoteIP = "116.62.163.55";
 
+    const payload = {
+      "ts": new Date() / 1000,
+      "note": "Scan::Port_Scan",
+      msg: `${remoteIP} scanned at least 15 unique ports of host ${ip} in 0m3s`,
+      "sub": "local",
+      src: remoteIP,
+      peer_descr: "bro",
+      dst: ip,
+      "actions": ["Notice::ACTION_LOG"],
+      "suppress_for": 1800.0,
+      "dropped": false
+    }
+
+    await this.appendNotice(payload);
   }
 
   async video() {

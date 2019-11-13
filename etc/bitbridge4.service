@@ -5,6 +5,7 @@ After=network.target
 [Service]
 User=pi
 Restart=always
+RestartSec=5
 WorkingDirectory=/home/pi/firewalla/bin
 ExecStart=/bin/bash /home/pi/firewalla/bin/bitbridge4.sh
 

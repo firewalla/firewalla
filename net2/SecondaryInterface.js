@@ -22,6 +22,8 @@ const f = require('./Firewalla.js');
 const fc = require('./config.js');
 const { exec } = require('child-process-promise')
 
+const SysManager = require('./SysManager.js');
+
 function is_interface_valid(netif) {
   return (
     netif.ip_address != null &&
@@ -49,14 +51,26 @@ function getSubnets(networkInterface, family) {
         interfaceData[i].address,
         interfaceData[i].netmask
       );
-      ipSubnets.push(subnet);
+      const subnetMask = interfaceData[i].address + '/' + subnet.subnetMaskLength;
+      ipSubnets.push(subnetMask);
     }
   }
 
   return ipSubnets;
 }
 
-exports.create = async function(config) {
+function generateRandomIpSubnet(ipSubnet) {
+  const max = 250, min = 11;
+  const seg = Math.floor(Math.random() * (max - min + 1)) + min;//[11~250]
+  const randomIpSubnet = "192.168." + seg + ".1/24";
+  if (randomIpSubnet == ipSubnet) {
+    return generateRandomIpSubnet(randomIpSubnet)
+  } else {
+    return randomIpSubnet;
+  }
+}
+
+exports.create = async function (config) {
   /*
   "secondaryInterface": {
      "intf":"eth0:0",
@@ -74,13 +88,20 @@ exports.create = async function(config) {
   if (!conf || !conf.intf) throw new Error("Invalid config");
 
   // ip can sufficiently identify a network configuration, all other configurations are redundant
-  let secondaryIpSubnet = conf.ip;
+  let secondaryIpSubnet;
+  const bootingComplete = await f.isBootingComplete();
+  if (!bootingComplete) {
+    //randomize overlay subnet when initial setup
+    secondaryIpSubnet = generateRandomIpSubnet();
+  } else {
+    secondaryIpSubnet = conf.ip;
+  }
   let secondarySubnet = ip.cidrSubnet(secondaryIpSubnet);
   let legacyIpSubnet = null;
 
   let list = await linux.get_network_interfaces_list()
 
-  list = (list || []).filter(function(x) {
+  list = (list || []).filter(function (x) {
     return is_interface_valid(x);
   });
 
@@ -104,30 +125,30 @@ exports.create = async function(config) {
   for (const intf of list) {
     const subnets = getSubnets(intf.name, 'IPv4');
 
-    const overlapped = subnets.find(net =>
-      net.contains(secondarySubnet.firstAddress) ||
-      net.contains(secondarySubnet.lastAddress) ||
-      secondarySubnet.contains(net.firstAddress) ||
-      secondarySubnet.contains(net.lastAddress)
-    )
+    const overlapped = subnets.includes(secondaryIpSubnet);
 
-    log.warn('Overlapping network found!', overlapped)
     // one intf may have multiple ip addresses assigned
     if (overlapped) {
       // other intf already occupies ip1, use alternative ip
-      secondaryIpSubnet = conf.ip2;
-      let flippedConfig = {
-        secondaryInterface: {
-          intf: conf.intf,
-          ip: conf.ip2,
-          ip2: conf.ip
-        }
-      }
-      fc.updateUserConfig(flippedConfig);
-
+      log.warn('Overlapping network found!', secondaryIpSubnet);
+      secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
+      break;
+    }
+    const sysManager = new SysManager();
+    if (secondaryIpSubnet.split('/')[0] === sysManager.myGateway()) {
+      log.warn("Conflict with gateway IP: ", secondaryIpSubnet);
+      secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
       break;
     }
   }
+
+  let flippedConfig = {
+    secondaryInterface: {
+      intf: conf.intf,
+      ip: secondaryIpSubnet
+    }
+  }
+  fc.updateUserConfig(flippedConfig);
 
   // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
   await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)

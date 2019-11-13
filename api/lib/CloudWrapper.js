@@ -14,48 +14,43 @@
  */
 'use strict';
 
-var Config = require('../../lib/Config.js');
+const f = require('../../net2/Firewalla.js');
+const fHome = f.getFirewallaHome();
 
-let f = require('../../net2/Firewalla.js');
-let fHome = f.getFirewallaHome();
+const log = require('../../net2/logger.js')(__filename, 'info');
 
-let log = require('../../net2/logger.js')(__filename, 'info');
-
-var jsonfile = require('jsonfile');
+const jsonfile = require('jsonfile');
 
 // FIXME, hard coded config file location
-var configFileLocation = "/encipher.config/netbot.config";
+const configFileLocation = "/encipher.config/netbot.config";
 
-var config = jsonfile.readFileSync(configFileLocation);
+const config = jsonfile.readFileSync(configFileLocation);
 if (config == null) {
   console.log("Unable to read config file", configFileLocation);
   process.exit(1);
 }
 
-let eptname = config.endpoint_name;
-let appId = config.appId;
-let appSecret = config.appSecret;
-let cloud = require('../../encipher');
+const eptname = config.endpoint_name;
+const appId = config.appId;
+const appSecret = config.appSecret;
+const cloud = require('../../encipher');
 
 let eptcloud = null;
 let nbControllers = {};
 
 let instance = null;
 
-let Bone = require('./../../lib/Bone');
+const Bone = require('./../../lib/Bone');
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
-let Promise = require('bluebird');
+const { delay } = require('../../util/util.js')
 
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
+const util = require('util')
 
 module.exports = class {
-  constructor(loglevel) {
+  constructor() {
+    
     if (instance == null) {
       instance = this;
 
@@ -90,12 +85,14 @@ module.exports = class {
   }
 
   async tryingInit() {
+    await util.promisify(setImmediate)()  // Magical hack preventing init() being called twice
     try {
       await this.init();
     } catch (err) {
+      log.error('Init failed, retry now...', err)
       await delay(3000);
       return this.tryingInit();
-    };
+    }
   }
 
   isGroupLoaded(gid) {
@@ -153,21 +150,19 @@ module.exports = class {
     })
   }
 
-  getNetBotController(groupID) {
+  async getNetBotController(groupID) {
     let controller = nbControllers[groupID];
     if(controller) {
-      return Promise.resolve(controller);
+      return controller;
     }
 
-    return this.init()
-      .then(() => {
-        controller = nbControllers[groupID];
-        if(controller) {
-          return Promise.resolve(controller);
-        } else {
-          return Promise.reject(new Error("Failed to found group" + groupID));
-        }
-      });
+    await this.init()
+    controller = nbControllers[groupID];
+    if(controller) {
+      return controller;
+    } else {
+      throw new Error("Failed to found group" + groupID);
+    }
   }
 
   getCloud() {

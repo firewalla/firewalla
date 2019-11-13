@@ -28,13 +28,11 @@ const f = require("../net2/Firewalla.js")
 
 const Promise = require('bluebird');
 
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager('info');
-
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
-const flowUtil = require('../net2/FlowUtil.js');
+const IntelManager = require('../net2/IntelManager.js');
+const intelManager = new IntelManager();
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -158,11 +156,11 @@ class DestIPFoundHook extends Hook {
       if(info.action && info.action.block) {
         intel.action = "block"
       }
-      
+
       if(info.s) {
         intel.s = info.s;
       }
- 
+
       if(info.t) {
         intel.t = info.t;
       }
@@ -209,16 +207,10 @@ class DestIPFoundHook extends Hook {
     return domains;
   }
 
-  enrichCountry(ip) {
-    return country.getCountry(ip);
+  async enrichCountry(ip) {
+    const ipinfo = await intelManager.ipinfo(ip);
+    return ipinfo && ipinfo.country || country.getCountry(ip);
   }
-
-  // this code shall be disabled in production.
-  // workaroundIntelUpdate(intel) {
-  //   if(intel.host.match(/weixin.qq.com$/) && !intel.apps) {
-  //     intel.apps = JSON.stringify({"wechat" : "100"});
-  //   }
-  // }
 
   async updateCategoryDomain(intel) {
     if(intel.host && intel.category && intel.t > TRUST_THRESHOLD) {
@@ -231,7 +223,7 @@ class DestIPFoundHook extends Hook {
   }
 
   async updateCountryIP(intel) {
-    if(intel.host && intel.country) {
+    if(intel.ip && intel.country) {
       await countryUpdater.updateIP(intel.country, intel.ip)
     }
   }
@@ -270,7 +262,7 @@ class DestIPFoundHook extends Hook {
       } catch(e) {
         ip = flow;
       }
-    } 
+    }
     options = options || {};
 
     if (sysManager.isLocalIP(ip)) {
@@ -302,7 +294,7 @@ class DestIPFoundHook extends Hook {
         }
       }
 
-      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domains + ", checking intels...");
+      log.debug("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domains + ", checking intels...");
 
       let ips = [ip];
 
@@ -324,9 +316,7 @@ class DestIPFoundHook extends Hook {
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
-      aggrIntelInfo.country = aggrIntelInfo.country || this.enrichCountry(ip) || ""; // empty string for unidentified country
-
-      // this.workaroundIntelUpdate(aggrIntelInfo);
+      aggrIntelInfo.country = aggrIntelInfo.country || await this.enrichCountry(ip) || ""; // empty string for unidentified country
 
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);

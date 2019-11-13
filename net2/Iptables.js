@@ -88,6 +88,8 @@ exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
 exports.dhcpSubnetChangeAsync = util.promisify(dhcpSubnetChange);
+exports.switchMonitoring = switchMonitoring;
+exports.switchMonitoringAsync = util.promisify(switchMonitoring);
 
 var workqueue = [];
 var running = false;
@@ -153,6 +155,39 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
+    } else if (rule.type === "switch_monitoring") {
+      let state = rule.state;
+      let action = "-D";
+      if (state !== true) {
+        action = "-I";
+      }
+
+      let cmdline = "";
+      let getCommand = function(action, table, chain) {
+        return `sudo iptables -w -t ${table} ${action} ${chain} -j ACCEPT`;
+      }
+
+      switch (action) {
+        case "-I":
+          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS")} || ${getCommand(action, "nat", "FW_NAT_BYPASS")})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS")} || ${getCommand(action, "filter", "FW_BYPASS")})`;
+          break;
+        case "-D":
+          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS")} && ${getCommand(action, "nat", "FW_NAT_BYPASS")})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS")} && ${getCommand(action, "filter", "FW_BYPASS")})`;
+          cmdline += ` ; true`;
+          break;
+        default:
+          log.error("Unsupported action for switch_monitoring: " + action);
+          break;
+      }
+
+      cp.exec(cmdline, (err, stdout, stderr) => {
+        if (callback)
+          callback(err, null);
+        running = false;
+        newRule(null, null);
+      });
     } else if (rule.type == "dns") {
         let state = rule.state;
         let ip = rule.ip;
@@ -391,6 +426,13 @@ function flush() {
   });
 }
 
+function switchMonitoring(state, callback) {
+  newRule({
+    type: "switch_monitoring",
+    state: state
+  }, callback);
+} 
+
 async function run(listofcmds) {
   for (const cmd of listofcmds || []) {
     await execAsync(cmd, {timeout: 10000}).catch((err) => {
@@ -455,6 +497,7 @@ exports.Rule = class Rule {
             cmd.push('src,dst')
           else
             cmd.push(match.spec)
+          break;
 
         default:
       }

@@ -35,7 +35,6 @@ storage.initSync({
 
 const eptname = config.endpoint_name;
 const eptcloud = new cloud(eptname, null);
-eptcloud.debug(false);
 
 function getCloud() {
   return eptcloud;

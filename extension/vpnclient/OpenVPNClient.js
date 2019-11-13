@@ -24,6 +24,7 @@ const f = require('../../net2/Firewalla.js');
 const SysManager = require('../../net2/SysManager');
 const sysManager = new SysManager();
 const ipTool = require('ip');
+const iptables = require('../../net2/Iptables.js');
 
 const instances = {};
 
@@ -34,6 +35,7 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 
 const readFileAsync = util.promisify(fs.readFile);
 const writeFileAsync = util.promisify(fs.writeFile);
+const accessAsync = util.promisify(fs.access);
 const execAsync = util.promisify(cp.exec);
 
 const SERVICE_NAME = "openvpn_client";
@@ -66,7 +68,7 @@ class OpenVPNClient extends VPNClient {
     if (!profileId)
       throw "profileId is not set";
     const ovpnPath = this.getProfilePath();
-    if (fs.existsSync(ovpnPath)) {
+    if (await accessAsync(ovpnPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       this.ovpnPath = ovpnPath;
       await this._reviseProfile(this.ovpnPath);
     } else throw util.format("ovpn file %s is not found", ovpnPath);
@@ -125,7 +127,8 @@ class OpenVPNClient extends VPNClient {
     let defaultSettings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
-      routeDNS: true
+      routeDNS: true,
+      strictVPN: false
     }; // default settings
     const mergedSettings = Object.assign({}, defaultSettings, settings);
     this.settings = mergedSettings;
@@ -137,9 +140,10 @@ class OpenVPNClient extends VPNClient {
     let settings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
-      routeDNS: true
+      routeDNS: true,
+      strictVPN: false
     }; // default settings
-    if (fs.existsSync(settingsPath)) {
+    if (await accessAsync(settingsPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const settingsContent = await readFileAsync(settingsPath, 'utf8');
       settings = Object.assign({}, settings, JSON.parse(settingsContent));
     }
@@ -156,7 +160,7 @@ class OpenVPNClient extends VPNClient {
   }
 
   async _parseProfile(ovpnPath) {
-    if (fs.existsSync(ovpnPath)) {
+    if (await accessAsync(ovpnPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const content = await readFileAsync(ovpnPath, 'utf8');
       const lines = content.split("\n");
       this._intfType = "tun";
@@ -201,7 +205,7 @@ class OpenVPNClient extends VPNClient {
       }
     }
     // add private key password file to profile if present
-    if (fs.existsSync(this.getPasswordPath())) {
+    if (await accessAsync(this.getPasswordPath(), fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       if (!revisedContent.match(/^askpass.*$/gm)) {
         revisedContent = `askpass ${this.getPasswordPath()}\n${revisedContent}`;
       } else {
@@ -209,7 +213,7 @@ class OpenVPNClient extends VPNClient {
       }
     }
     // add user/pass file to profile if present
-    if (fs.existsSync(this.getUserPassPath())) {
+    if (await accessAsync(this.getUserPassPath(), fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       if (!revisedContent.match(/^auth-user-pass.*$/gm)) {
         revisedContent = `auth-user-pass ${this.getUserPassPath()}\n${revisedContent}`;
       } else {
@@ -284,21 +288,22 @@ class OpenVPNClient extends VPNClient {
           const remoteIP = await this.getRemoteIP();
           if (remoteIP !== null && remoteIP !== "") {
             this._remoteIP = remoteIP;
-            try {
-              // remove two routes from main table which is inserted by OpenVPN client automatically,
-              // otherwise tunnel will be enabled globally
-              const intf = this.getInterfaceName();
-              await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main");
-              await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main");
-            } catch (err) {
-              // these routes may not exist depending on server config
-              log.warn("Failed to remove default vpn client route", err);
-            }
             clearInterval(establishmentTask);
+            // remove routes from main table which is inserted by OpenVPN client automatically,
+            // otherwise tunnel will be enabled globally
             const intf = this.getInterfaceName();
+            await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => {log.info("No need to remove 0.0.0.0/1 for " + this.profileId)});
+            await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => {log.info("No need to remove 128.0.0.0/1 for " + this.profileId)});
+            await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => {log.info("No need to remove default route for " + this.profileId)});
             // add vpn client specific routes
             const settings = await this.loadSettings();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
+            const vpnSubnet = await this.getVPNSubnet();
+            if (vpnSubnet && vpnSubnet.length != 0) {
+              await iptables.dhcpSubnetChangeAsync(vpnSubnet, true).catch((err) => {
+                log.error("Failed to add SNAT rule for " + vpnSubnet, err);
+              });
+            }
             await this._processPushOptions("start");
             this._started = true;
             resolve(true);
@@ -321,7 +326,7 @@ class OpenVPNClient extends VPNClient {
 
   async _processPushOptions(status) {
     const pushOptionsFile = this._getPushOptionsPath();
-    if (fs.existsSync(pushOptionsFile)) {
+    if (await accessAsync(pushOptionsFile, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const content = await readFileAsync(pushOptionsFile, "utf8");
       if (!content)
         return;
@@ -333,6 +338,10 @@ class OpenVPNClient extends VPNClient {
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
     this._started = false;
+    const vpnSubnet = await this.getVPNSubnet();
+    if (vpnSubnet && vpnSubnet.length != 0) {
+      await iptables.dhcpSubnetChangeAsync(vpnSubnet, false).catch((err) => {});
+    }
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await this._processPushOptions("stop");
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
@@ -362,7 +371,7 @@ class OpenVPNClient extends VPNClient {
       // add read permission in case it is owned by root
       const cmd = util.format("sudo chmod +r %s", statusLogPath);
       await execAsync(cmd);
-      if (!existsSync(statusLogPath)) {
+      if (!await accessAsync(statusLogPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
         log.warn(`status log for ${this.profileId} does not exist`);
         return {};
       }
@@ -397,6 +406,18 @@ class OpenVPNClient extends VPNClient {
       log.error("Failed to parse OpenVPN client status file for " + this.profileId, err);
       return {};
     }
+  }
+
+  async getVPNSubnet() {
+    // extract vpn subnet from 
+    // 10.162.35.0/24 via 10.162.35.21 dev vpn_ff1a_9BE25
+    const cmd = util.format(`ip r | grep -v default | grep ${this.getInterfaceName()} | grep via | awk '{print $1}'`);
+    return execAsync(cmd).then((result) => {
+      return result.stdout.trim();
+    }).catch((err) => {
+      log.error("Failed to get vpn subnet for " + this.profileId, err);
+      return null;
+    });
   }
 
   async getRemoteIP() {
