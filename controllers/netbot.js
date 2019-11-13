@@ -2880,7 +2880,7 @@ class netBot extends ControllerBot {
         }
         const settings = value.settings || {};
         (async () => {
-          const allowCustomizedProfiles = f.isDevelopmentVersion() ? (fc.getConfig().allowCustomizedProfiles || 10) : 1
+          const allowCustomizedProfiles = fc.getConfig().allowCustomizedProfiles || 1;
           const allSettings = await VpnManager.getAllSettings();
           if (Object.keys(allSettings).filter((name) => {
             return name !== "fishboneVPN1" && name !== cn;
