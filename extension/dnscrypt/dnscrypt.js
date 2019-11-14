@@ -15,7 +15,7 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 const templatePath = `${f.getFirewallaHome()}/extension/dnscrypt/dnscrypt.template.toml`;
 const runtimePath = `${f.getRuntimeInfoFolder()}/dnscrypt.toml`;
 
-const exec = require('child-process-exec');
+const exec = require('child-process-promise').exec;
 
 const serverKey = "ext.dnscrypt.servers";
 const allServerKey = "ext.dnscrypt.allServers";
@@ -26,19 +26,23 @@ class DNSCrypt {
   constructor() {
     if(instance === null) {
       instance = this;
+      this.config = {};
     }
 
     return instance;
   }
 
   getLocalServer() {
-    return `127.0.0.1:${config.localPort || 8854}`;
+    return `127.0.0.1#${this.config.localPort || 8854}`;
   }
 
   async prepareConfig(config = {}) {
+    this.config = config;
     let content = await fs.readFileAsync(templatePath, {encoding: 'utf8'});
     content = content.replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1");
-    content = content.replace("%DNSCRYPT_LOCAL_PORT%", this.getLocalServer());
+    content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
+    content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
+    content = content.replace("%DNSCRYPT_IPV6%", "false");
 
     let serverList = config.serverList || this.getDefaultServers();
 
@@ -55,7 +59,7 @@ class DNSCrypt {
     return servers.map((s) => {
       if(!s) return null;
       return `[static.'${s.name}']\n  stamp = '${s.stamp}'\n`;
-    }).filter(Boolean)
+    }).filter(Boolean).join("\n");
   }
 
   async restart() {
@@ -66,7 +70,7 @@ class DNSCrypt {
     return exec("sudo systemctl stop dnscrypt");
   }
 
-  async getDefaultServers() {
+  getDefaultServers() {
     return this.getDefaultAllServers().map(x => x.name);
   }
 
@@ -96,6 +100,10 @@ class DNSCrypt {
 
   async getAllServers() {
     const serversString = await rclient.getAsync(allServerKey);
+    if(!serversString) {
+      return this.getDefaultAllServers();
+    }
+
     try {
       const servers = JSON.parse(serversString);
       return servers;

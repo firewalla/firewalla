@@ -70,12 +70,16 @@ class DNSCryptPlugin extends Sensor {
     log.info("Applying dnscrypt policy:", ip, policy);
     try {
       if (ip === '0.0.0.0') {
-        this.systemSwitch = policy == true;
+	if (policy && policy.state === true) {
+          this.systemSwitch = true;
+        } else {
+          this.systemSwitch = false;
+        }
         return this.applyDoH();
       } else {
         const macAddress = host && host.o && host.o.mac;
         if (macAddress) {
-          if (policy == true) {
+          if (policy && policy.state === true) {
             this.enabledMacAddresses[macAddress] = 1;
           } else {
             delete this.enabledMacAddresses[macAddress];
@@ -89,6 +93,7 @@ class DNSCryptPlugin extends Sensor {
   }
 
   async applyAll() {
+    await dc.prepareConfig({});
     await this.applyDoH();
     for (const macAddress in this.enabledMacAddresses) {
       await this.applyDeviceDoH(macAddress);
@@ -97,25 +102,25 @@ class DNSCryptPlugin extends Sensor {
 
   async applyDoH() {
     if (this.systemSwitch && this.adminSystemSwitch) {
-      return this.systemStart(dnsaddrs);
+      return this.systemStart();
     } else {
-      return this.systemStop(dnsaddrs);
+      return this.systemStop();
     }
   }
 
   async applyDeviceDoH(macAddress) {
     try {
       if (this.enabledMacAddresses[macAddress] && this.adminSystemSwitch) {
-        return this.perDeviceStart(macAddress, dnsaddrs)
+        return this.perDeviceStart(macAddress)
       } else {
-        return this.perDeviceStop(macAddress, dnsaddrs);
+        return this.perDeviceStop(macAddress);
       }
     } catch (err) {
       log.error(`Failed to apply doh on device ${macAddress}, err: ${err}`);
     }
   }
 
-  async systemStart(dnsaddrs) {
+  async systemStart() {
     await dnsmasq.setUpstreamDNS(dc.getLocalServer());
     await dnsmasq.restartDnsmasq();
   }
@@ -125,9 +130,9 @@ class DNSCryptPlugin extends Sensor {
     await dnsmasq.restartDnsmasq();
   }
 
-  async perDeviceStart(macAddress, dnsaddrs) {
+  async perDeviceStart(macAddress) {
     const configFile = `${dnsmasqConfigFolder}/doh_${macAddress}.conf`;
-    const dnsmasqentry = `server=${dnsaddrs[0]}%${macAddress.toUpperCase()}\n`;
+    const dnsmasqentry = `server=${dc.getLocalServer()}%${macAddress.toUpperCase()}\n`;
     await fs.writeFileAsync(configFile, dnsmasqentry);
     dnsmasq.restartDnsmasq();
   }

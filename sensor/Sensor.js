@@ -16,6 +16,11 @@
 
 let log = require('../net2/logger.js')(__filename);
 
+const extensionManager = require('./ExtensionManager.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fc = require('../net2/config.js');
+
+
 let FWEvent = class {
   constructor(eid, type) {
     this.eid = eid;
