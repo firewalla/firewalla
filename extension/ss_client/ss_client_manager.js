@@ -32,8 +32,6 @@ const _ = require('lodash');
 
 const exec = require('child-process-promise').exec;
 
-const _ = require('lodash')
-
 class SSClientManager {
   constructor() {
     if(instance === null) {
