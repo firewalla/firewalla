@@ -57,8 +57,45 @@ let Sensor = class {
   monitorRun() {
 
   }
-  
-}
+
+  async globalOn() {
+
+  }
+
+  async globalOff() {
+
+  }
+
+  hookFeature(featureName) {
+    sem.once('IPTABLES_READY', async () => {
+      if (fc.isFeatureOn(featureName)) {
+        await this.globalOn();
+      } else {
+        await this.globalOff();
+      }
+      fc.onFeature(featureName, async (feature, status) => {
+        if (feature !== featureName) {
+          return;
+        }
+        if (status) {
+          await this.globalOn();
+        } else {
+          await this.globalOff();
+        }
+      })
+
+      await this.job();
+      this.timer = setInterval(async () => {
+        return this.job();
+      }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+    })
+  }
+
+  async job() {
+
+  }
+
+};
 
 module.exports = {
   FWEvent: FWEvent,

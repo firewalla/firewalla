@@ -129,8 +129,8 @@ class FWTokenManager {
     }
   }
 
-  licenseFromToken(token) {
-    const token = this.verify(token);
+  licenseFromToken(tokenString) {
+    const token = this.verify(tokenString);
     if(!token) {
       return null;
     }
