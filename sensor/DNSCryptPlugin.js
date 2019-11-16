@@ -25,10 +25,14 @@ const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
+const systemConfigFile = `${dnsmasqConfigFolder}/doh_system.conf`;
 
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
+
+const dnsTag = "$doh";
+const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -121,16 +125,18 @@ class DNSCryptPlugin extends Sensor {
   }
 
   async systemStart() {
-    await dnsmasq.setUpstreamDNS(dc.getLocalServer());
+    const entry = `server=${dc.getLocalServer()}\n`;
+    await fs.writeFileAsync(systemConfigFile, entry);
     await dnsmasq.restartDnsmasq();
   }
 
   async systemStop() {
-    await dnsmasq.setUpstreamDNS(null);
+    await fs.unlinkAsync(systemConfigFile);
     await dnsmasq.restartDnsmasq();
   }
 
   async perDeviceStart(macAddress) {
+    log.info(`Starting DoH on device ${macAddress}...`);
     const configFile = `${dnsmasqConfigFolder}/doh_${macAddress}.conf`;
     const dnsmasqentry = `server=${dc.getLocalServer()}%${macAddress.toUpperCase()}\n`;
     await fs.writeFileAsync(configFile, dnsmasqentry);
@@ -138,6 +144,7 @@ class DNSCryptPlugin extends Sensor {
   }
 
   async perDeviceStop(macAddress) {
+    log.info(`Stopping DoH on device ${macAddress}...`);
     const configFile = `${dnsmasqConfigFolder}/doh_${macAddress}.conf`;
     try {
       await fs.unlinkAsync(configFile);
@@ -154,12 +161,14 @@ class DNSCryptPlugin extends Sensor {
   // global on/off
   async globalOn() {
     this.adminSystemSwitch = true;
+    await dc.restart();
     await this.applyAll();
   }
 
   async globalOff() {
     this.adminSystemSwitch = false;
     await this.applyAll();
+    await dc.stop();
   }
 }
 
