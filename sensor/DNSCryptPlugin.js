@@ -63,6 +63,10 @@ class DNSCryptPlugin extends Sensor {
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
 
     this.hookFeature(featureName);
+
+    sem.on('DOH_REFRESH', (event) => {
+      this.applyAll();
+    });
   }
 
   async job() {
@@ -169,6 +173,25 @@ class DNSCryptPlugin extends Sensor {
     this.adminSystemSwitch = false;
     await this.applyAll();
     await dc.stop();
+  }
+
+  async apiRun() {
+    extensionManager.onSet("dohConfig", async (msg, data) => {
+      if(data && data.servers) {
+        await dc.setServers(data.servers)
+        sem.sendEventToFireMain({
+          type: 'DOH_REFRESH'
+        });
+      }
+    });
+
+    extensionManager.onGet("dohConfig", async (msg, data) => {
+      const selectedServers = await dc.getServers();
+      const allServers = await dc.getAllServerNames();
+      return {
+        selectedServers, allServers
+      }
+    });
   }
 }
 
