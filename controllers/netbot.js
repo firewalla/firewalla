@@ -45,7 +45,6 @@ const sysManager = new SysManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
-
 const upgradeManager = require('../net2/UpgradeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
@@ -984,17 +983,8 @@ class netBot extends ControllerBot {
               }
             }
           }
-          let reply = {
-            type: 'jsonmsg',
-            mtype: 'policy',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-          };
-          reply.code = 200;
-          reply.data = value;
-          log.info("Repling ", reply.code, reply.data);
-          this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+          log.info("Repling ", value);
+          this.simpleTxData(msg, value, null, callback);
         })().catch(err =>
           this.simpleTxData(msg, {}, err, callback)
           )
@@ -1311,17 +1301,11 @@ class netBot extends ControllerBot {
           regenerate = true;
         }
         this.hostManager.loadPolicy((err, data) => {
-          let datamodel = {
-            type: 'jsonmsg',
-            mtype: 'reply',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-            code: 404,
-          };
+          let datamodel = {};
           if (err != null) {
             log.error("Failed to load system policy for VPN", err);
-            this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+            // msg.data.item = "device"
+            this.simpleTxData(msg, null, err, callback)
           } else {
             const vpnConfig = JSON.parse(data["vpn"] || "{}");
             let externalPort = "1194";
@@ -1330,7 +1314,6 @@ class netBot extends ControllerBot {
             VpnManager.configureClient("fishboneVPN1", null).then(() => {
               VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, (err, ovpnfile, password) => {
                 if (err == null) {
-                  datamodel.code = 200;
                   datamodel.data = {
                     ovpnfile: ovpnfile,
                     password: password,
@@ -1341,15 +1324,16 @@ class netBot extends ControllerBot {
                     if (doublenat !== null) {
                       datamodel.data.doublenat = doublenat;
                     }
-                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                    msg.data.item = "device"
+                    this.simpleTxData(msg, datamodel.data, null, callback);
                   })();
                 } else {
-                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                  this.simpleTxData(msg, null, err, callback)
                 }
               });
             }).catch((err) => {
               log.error("Failed to get ovpn profile", err);
-              this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+              this.simpleTxData(msg, null, err, callback)
             })
           }
         });
@@ -1365,18 +1349,7 @@ class netBot extends ControllerBot {
         }
 
         let config = ss.readConfig();
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'reply',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200,
-          data: {
-            config: config
-          }
-        };
-        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        this.simpleTxData(msg, { config: config }, null, callback)
         break;
       }
       case "generateRSAPublicKey": {
@@ -1401,19 +1374,7 @@ class netBot extends ControllerBot {
             log.error("Got error when loading ssh private key: " + err);
             data = "";
           }
-
-          let datamodel = {
-            type: 'jsonmsg',
-            mtype: 'reply',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-            code: 200,
-            data: {
-              key: data
-            }
-          };
-          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+          this.simpleTxData(msg, { key: data }, null, callback);
         });
         break;
       case "sshRecentPassword":
@@ -2134,17 +2095,7 @@ class netBot extends ControllerBot {
       return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
-        let code = 200;
-
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: code
-        }
-        this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
+        this.simpleTxData(msg, null, null, callback)
       });
       return;
     }
@@ -2259,20 +2210,10 @@ class netBot extends ControllerBot {
       case "ping": {
         let uptime = process.uptime();
         let now = new Date();
-
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'reply',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200,
-          data: {
-            uptime: uptime,
-            timestamp: now
-          }
-        };
-        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        this.simpleTxData(msg, {
+          uptime: uptime,
+          timestamp: now
+        }, null, callback)
         break;
       }
       case "alarm:block":
@@ -3289,16 +3230,7 @@ class netBot extends ControllerBot {
             // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
             this.simpleTxData(msg, {}, null, callback);
           } else {
-            let resp = {
-              type: 'jsonmsg',
-              mtype: 'cmd',
-              id: uuid.v4(),
-              expires: Math.floor(Date.now() / 1000) + 60 * 5,
-              replyid: msg.id,
-              code: 404,
-              data: { "error": "device not found" }
-            };
-            this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
+            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
           }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3562,7 +3494,8 @@ class netBot extends ControllerBot {
       /* type    */ "jsondata",
       /* beepmsg */ "",
       /* whisper */ null,
-      /* callback*/ callback
+      /* callback*/ callback,
+      /* rawmsg  */ msg
     );
   }
 
@@ -3666,7 +3599,6 @@ class netBot extends ControllerBot {
 
   msgHandler(gid, rawmsg, callback) {
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
-
       if (!callback) { // cloud mode
         if ("compressMode" in rawmsg.message) {
           callback = {
@@ -3676,6 +3608,7 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
+      msg.appInfo = rawmsg.message.appInfo;
       if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
         rawmsg.message.obj.data.item === 'ping') {
 
@@ -3728,18 +3661,21 @@ class netBot extends ControllerBot {
                     log.info("Took " + (end - begin) + "ms to load init data");
 
                     this.cacheInitData(json);
-
+                    this.simpleTxData(msg, json, null, callback);
                   } else {
+                    let errModel = {
+                      code: 500,
+                      msg: ''
+                    }
                     if (err) {
                       log.error("got error when calling hostManager.toJson: " + err);
+                      errModel.msg = "got error when calling hostManager.toJson: " + err
                     } else {
                       log.error("json is null when calling init")
+                      errModel.msg = "json is null when calling init"
                     }
-                    datamodel.code = 500;
+                    this.simpleTxData(msg, null, errModel, callback)
                   }
-                  log.info("Sending data", datamodel.replyid, datamodel.id);
-                  this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
-
                 });
               });
             } else {
@@ -3748,19 +3684,8 @@ class netBot extends ControllerBot {
 
               let json = JSON.parse(cachedJson);
 
-              let datamodel = {
-                type: 'jsonmsg',
-                mtype: 'init',
-                id: uuid.v4(),
-                expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                replyid: msg.id,
-                code: 200,
-                data: json
-              }
-
-              log.info("Sending data", datamodel.replyid, datamodel.id);
-              this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
-
+              log.info("Sending data", msg.id);
+              this.simpleTxData(msg, json, null, callback)
             }
           });
 
