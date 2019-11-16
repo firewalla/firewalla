@@ -44,7 +44,7 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
-    let serverList = config.serverList || this.getDefaultServers();
+    let serverList = await this.getServers();
 
     content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
 
@@ -76,6 +76,10 @@ class DNSCrypt {
 
   async getServers() {
     const serversString = await rclient.getAsync(serverKey);
+    if(!serversString) {
+      return this.getDefaultServers();
+    }
+
     try {
       const servers = JSON.parse(serversString);
       return servers;
