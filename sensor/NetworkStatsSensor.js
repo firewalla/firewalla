@@ -153,21 +153,21 @@ class NetworkStatsSensor extends Sensor {
     log.info("checking link stats")
     try {
       // "|| true" prevents grep from yielding error when nothing matches
-      const result = await exec('dmesg --time-format iso | grep -n "Link is Down" || true');
+      const result = await exec('dmesg --time-format iso | grep "Link is Down" || true');
       const lines = result.stdout.split('\n');
 
-      log.info(this.previousLog)
-      log.info(lines)
+      log.debug(this.previousLog)
+      log.debug(lines)
       // there's always an empty string
       if (lines.length <= 1) return;
 
+      const newLines = []
+
       for (let i = 0; i < lines.length - 1; i++) {
         const line = lines[i];
-        const numberAndTime = line.split(' ')[0].split(':');
-        const lineNumber = numberAndTime[0];
-        const lineTime = numberAndTime[1];
+        const lineTime = line.split(' ')[0]
 
-        if (this.previousLog.has(lineNumber)) {
+        if (this.previousLog.has(lineTime)) {
           continue;
         } else {
           // log rotated
@@ -175,16 +175,20 @@ class NetworkStatsSensor extends Sensor {
             this.previousLog.clear()
           }
 
-          this.previousLog.add(lineNumber);
+          this.previousLog.add(lineTime);
 
-          await bone.logAsync("error",
-            {
-              type: 'FIREWALLA.NetworkStatsSensor.LinkDown',
-              msg: { line }
-            }
-          );
+          newLines.push(line)
         }
 
+      }
+
+      if (newLines.length) {
+        await bone.logAsync("error",
+          {
+            type: 'FIREWALLA.NetworkStatsSensor.LinkDown',
+            msg: { newLines }
+          }
+        );
       }
 
     } catch (err) {
