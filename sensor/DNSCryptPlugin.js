@@ -135,7 +135,7 @@ class DNSCryptPlugin extends Sensor {
   }
 
   async systemStop() {
-    await fs.unlinkAsync(systemConfigFile);
+    await fs.unlinkAsync(systemConfigFile).catch(() => undefined);
     await dnsmasq.restartDnsmasq();
   }
 
@@ -171,7 +171,7 @@ class DNSCryptPlugin extends Sensor {
 
   async globalOff() {
     this.adminSystemSwitch = false;
-    await this.applyAll();
+    //await this.applyAll();
     await dc.stop();
   }
 
