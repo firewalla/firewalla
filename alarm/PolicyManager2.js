@@ -19,7 +19,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const audit = require('../util/audit.js');
 const Bone = require('../lib/Bone.js');
 
 const minimatch = require('minimatch')
@@ -409,7 +408,6 @@ class PolicyManager2 {
 
         this.addToActiveQueue(policy, (err) => {
           if(!err) {
-            audit.trace("Created policy", policy.pid);
           }
           this.tryPolicyEnforcement(policy)
           callback(null, policy)

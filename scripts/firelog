@@ -18,7 +18,9 @@ then
     if [[ "$DEBUG" != "debug" ]]
     then 
         /usr/bin/logger "FIREWALLA:("$DEBUG"): "$MESSAGE
+        echo "FIREWALLA:("$DEBUG"): "$MESSAGE >> /home/pi/logs/Trace.log
     fi
 else 
     /usr/bin/logger "FIREWALLA:("$DEBUG"): "$MESSAGE
+    echo "FIREWALLA:("$DEBUG"): "$MESSAGE >> /home/pi/logs/Trace.log
 fi
