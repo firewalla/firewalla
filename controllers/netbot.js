@@ -1262,6 +1262,7 @@ class netBot extends ControllerBot {
         if (msg.target) {
           let ip = msg.target;
           log.info("Loading device info in a new way:", ip);
+          if (msg.data) msg.data.begin = msg.data.begin || msg.data.start;
           this.deviceHandler(msg, ip)
             .then((json) => {
               this.simpleTxData(msg, json, null, callback);
@@ -1297,7 +1298,7 @@ class netBot extends ControllerBot {
           let data = {
             count: flows.length,
             flows,
-            nextTs: flows[flows.length - 1].ts
+            nextTs: flows.length ? flows[flows.length - 1].ts : null
           }
           this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
@@ -1439,7 +1440,7 @@ class netBot extends ControllerBot {
       case "scisurfconfig":
         (async () => {
           const mgr = require('../extension/ss_client/ss_client_manager.js');
-          const client = mgr.getSSClient();
+          const client = mgr.getCurrentClient();
           const result = client.getConfig();
           this.simpleTxData(msg, result || {}, null, callback);
         })().catch((err) => {
@@ -1955,7 +1956,7 @@ class netBot extends ControllerBot {
   async systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
 
-    let begin = msg.data && msg.data.start;
+    let begin = msg.data && msg.data.begin;
     //let end = msg.data && msg.data.end;
     let end = begin && (begin + 3600);
 
@@ -2000,7 +2001,7 @@ class netBot extends ControllerBot {
       return this.systemFlowHandler(msg);
     }
 
-    let begin = msg.data && msg.data.start;
+    let begin = msg.data && msg.data.begin;
     let end = (msg.data && msg.data.end) || begin + 3600 * 24;
 
     // A backward compatbiel fix for query host network stats for 'NOW'
@@ -2052,13 +2053,13 @@ class netBot extends ControllerBot {
       ])
 
       if (!jsonobj.flows["appDetails"]) {
-        log.warn("Fell back to legacy mode on app details:", mac, options);
+        log.warn("Fall back to legacy mode on app details:", mac, options);
         await netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options)
         await this.validateFlowAppIntel(jsonobj)
       }
 
       if (!jsonobj.flows["categoryDetails"]) {
-        log.warn("Fell back to legacy mode on category details:", mac, options);
+        log.warn("Fall back to legacy mode on category details:", mac, options);
         await netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options)
         await this.validateFlowCategoryIntel(jsonobj)
       }
@@ -2246,7 +2247,7 @@ class netBot extends ControllerBot {
         (async () => {
           const mgr = require('../extension/ss_client/ss_client_manager.js');
           try {
-            const client = mgr.getSSClient();
+            const client = mgr.getCurrentClient();
             client.resetConfig();
             // await mssc.stop();
             // await mssc.clearConfig();
