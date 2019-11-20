@@ -33,7 +33,6 @@ const initID = 1;
 const exceptionPrefix = "exception:";
 
 const flat = require('flat');
-const audit = require('../util/audit.js');
 
 const _ = require('lodash');
 
@@ -281,7 +280,6 @@ module.exports = class {
 
       this.enqueue(exception, (err) => {
         if(!err) {
-          audit.trace("Created exception", exception.eid);
 //            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
         }
 
