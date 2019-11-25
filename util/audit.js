@@ -25,7 +25,7 @@ function getFileTransport() {
     json: false,
     dirname: "/home/pi/logs",
     maxsize: 10000000,
-    maxFiles: 1,
+    maxFiles: 3,
     timestamp: function () {
       return moment().format('YYYY-MM-DD HH:mm:ss')
     },

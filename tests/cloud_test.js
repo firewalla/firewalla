@@ -80,7 +80,7 @@ setTimeout(()=>{
 
                  let sdata = {flowlist:sampledata.netflix, hashed:1};
 
-                 bone.intel("*","ip","check",sdata, (err, data) => {
+                 bone.intel("*","check",sdata, (err, data) => {
                      console.log("================= JERRY ++",err,data);
                      console.log(data);
                   
