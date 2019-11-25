@@ -76,6 +76,7 @@
     "EncipherPlugin": {},
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
+    "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
     "RemoteNotificationSensor": {}
@@ -102,6 +103,7 @@
     "NmapSensor": {},
     "BoneSensor": {},
     "APISensor": {},
+    "DNSCryptPlugin": {},
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
@@ -603,6 +605,7 @@
     "insane_mode": false,
     "cpu_monitor": true,
     "speed_test": false,
+    "doh": false,
     "safe_search": false,
     "network_stats": false,
     "link_stats": true,
