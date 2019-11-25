@@ -35,37 +35,36 @@ const generatedConfigFile = `${f.getUserConfigFolder()}/dnsmasq/box_alias.genera
 
 class BoxAliasSensor extends Sensor {
 
-    async installBoxAlias() {
-        const ip = sysManager.myIp();
-        if (ip) {
-            const entry = `address=/fire.walla/${ip}\n`;
-            await writeFileAsync(generatedConfigFile, entry)
-                .then(() => {
-                    log.info(`generated ${generatedConfigFile}`);
-                    log.info(`added ${entry}`);
-                })
-                .catch((reason) => {
-                    log.error(`fail to write ${this.generatedConfigFile}: ${reason}`);
-                });
-        } else {
-            await unlinkFileAsync(generatedConfigFile)
-                .then(() => {
-                    log.info(`cleanup ${generatedConfigFile}`);
-                })
-                .catch((reason) => {
-                    log.error(reason);
-                });
+    async installBoxAliases() {
+        const aliases = [
+            ["fire.walla", sysManager.myIp()],
+            ["overlay.fire.walla", sysManager.myIp2()]
+        ];
+
+        let content = '';
+        for (let alias of aliases) {
+            if (alias[1]) {
+                content += `address=/${alias[0]}/${alias[1]}\n`;
+            }
         }
+
+        await writeFileAsync(generatedConfigFile, content).then(() => {
+            log.info(`generated ${generatedConfigFile}`);
+            log.info(`added\n${content}`);
+        }).catch((reason) => {
+            log.error(`fail to write ${generatedConfigFile}: ${reason}`);
+        });
+
         await dnsmasq.restartDnsmasq();
     }
 
     run() {
-        this.installBoxAlias();
+        this.installBoxAliases();
 
         sclient.on('message', (channel, message) => {
             switch (channel) {
                 case 'System:IPChange':
-                    this.installBoxAlias();
+                    this.installBoxAliases();
                     break;
                 default:
                     break;

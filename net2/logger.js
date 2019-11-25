@@ -17,7 +17,7 @@ var winston = require('winston');
 const config = winston.config;
 
 const loggerManager = require('./LoggerManager.js');
-
+const {argumentsToString} = require('../util/util.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -136,20 +136,6 @@ function setupLogger(transports) {
   });
 
   return logger
-}
-
-// pass in function arguments object and returns string with whitespaces
-function argumentsToString(v) {
-  // convert arguments object to real array
-  var args = Array.prototype.slice.call(v);
-  for (var k in args) {
-    if (typeof args[k] === "object") {
-      // args[k] = JSON.stringify(args[k]);
-      args[k] = require('util').inspect(args[k], false, null, true);
-    }
-  }
-  var str = args.join(" ");
-  return str;
 }
 
 const logger = setupLogger([fileTransport, consoleTransport, testTransport].filter(x => x != null))

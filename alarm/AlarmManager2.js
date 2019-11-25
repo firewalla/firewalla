@@ -24,7 +24,6 @@ const bone = require("../lib/Bone.js");
 
 const flat = require('flat');
 
-const audit = require('../util/audit.js');
 const util = require('util');
 
 const moment = require('moment');
@@ -338,7 +337,6 @@ module.exports = class {
 
         this.addToActiveQueue(alarm, (err) => {
           if (!err) {
-            audit.trace("Created alarm", alarm.aid, "-", alarm.type, "on", alarm.device, ":", alarm.localizedMessage());
 
             // add extended info, extended info are optional
             (async () => {
