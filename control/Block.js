@@ -161,7 +161,7 @@ function setupIpset(target, ipset, whitelist, remove = false) {
   return action(ipset, target)
 }
 
-async function setupRules(macTag, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
+async function setupRules(macTag, dstTag, dstType, iif, allow = false, destroy = false, destroyDstCache = true) {
   if (!dstTag) {
     return;
   }
@@ -199,6 +199,13 @@ async function setupRules(macTag, dstTag, dstType, allow = false, destroy = fals
       outRule6.mth(macSet, 'src')
       natOutRule.mth(macSet, 'src')
       natOutRule6.mth(macSet, 'src')
+    }
+
+    if (iif) {
+      outRule.mth(iif, null, "iif");
+      outRule6.mth(iif, null, "iif");
+      natOutRule.mth(iif, null, "iif");
+      natOutRule6.mth(iif, null, "iif");
     }
 
     const op = destroy ? '-D' : '-I'
