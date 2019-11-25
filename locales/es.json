@@ -95,5 +95,7 @@
   "NOTIF_REVERT_AUTOBLOCK_TITLE": "Revalidacio de Proteccion Activa",
   "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} las reglas de proteccion activa estan eliminadas.",
   "NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE": "VPN Desconectado",
-  "NOTIF_VPN_CLIENT_LINK_BROKEN_BODY": "VPN {{{profileId}}} se ha desconectado asombrosamente."
+  "NOTIF_VPN_CLIENT_LINK_BROKEN_BODY": "VPN {{{profileId}}} se ha desconectado asombrosamente.",
+  "NOTIF_TITLE_ALARM_ABNORMAL_DOWNLOAD": "Abnormal Download",
+  "NOTIF_ALARM_ABNORMAL_DOWNLOAD": "Device {{{p.device.name}}} is downloading too much data from sites {{{p.dest.names}}} and etc."
 }

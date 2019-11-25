@@ -47,6 +47,7 @@ if [ -z "$2" ]
      ls -lt /home/pi/logs/FireKick*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
      ls -lt /home/pi/logs/Trace*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
      ls -lt /var/log/syslog* |head -3 | awk '{print $NF}' | xargs -i sudo cp {} .
+     ls -lt /etc/resolv.conf |head -3 | awk '{print $NF}' | xargs -i sudo cp {} .
 fi 
 sudo chmod 777 syslog*
 cp -r -f /home/pi/.forever/* .
