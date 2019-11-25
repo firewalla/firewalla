@@ -95,6 +95,8 @@ redef SSL::disable_analyzer_after_detection = F;
 # enable link-layer address information to connection logs
 #@load policy/protocols/conn/mac-logging
 
+redef restrict_filters += [["not-mdns"] = "not port 5353"];
+
 redef SSL::disable_analyzer_after_detection = F;
 redef Communication::listen_interface = 127.0.0.1;
 
