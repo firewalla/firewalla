@@ -137,9 +137,7 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay } = require('../util/util.js')
-const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
-const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
+const { delay } = require('../util/util.js');
 const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
