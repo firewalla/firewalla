@@ -92,7 +92,7 @@ class DataUsageSensor extends Sensor {
             "p.download": totalUsage,
             "p.begin.ts": begin,
             "p.end.ts": end,
-            "p.transfers": downloadStats,
+            "e.transfers": downloadStats,
             "p.flows": JSON.stringify(flows),
             "p.dest.names": destNames
         });
