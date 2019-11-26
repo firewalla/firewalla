@@ -28,9 +28,9 @@ const ssActiveConfigKey = "scisurf.config.active";
 const errorClientExpireTime = 3600;
 const statusCheckInterval = 1 * 60 * 1000;
 
-const exec = require('child-process-promise').exec;
+const _ = require('lodash');
 
-const _ = require('lodash')
+const exec = require('child-process-promise').exec;
 
 class SSClientManager {
   constructor() {

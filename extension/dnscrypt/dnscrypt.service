@@ -1,0 +1,13 @@
+[Unit]
+Description=DNSCrypt
+After=network.target
+
+[Service]
+User=pi
+Type=simple
+Restart=always
+WorkingDirectory=/home/pi/firewalla/
+ExecStart=/home/pi/firewalla/extension/dnscrypt/dnscrypt.sh
+
+[Install]
+WantedBy=multi-user.target

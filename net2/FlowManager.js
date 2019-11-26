@@ -203,8 +203,8 @@ module.exports = class FlowManager {
     let keys = Object.keys(stats);
 
 
-    for(let key in keys) {
-      let v = stats[keys[key]];
+    for(const key of keys) {
+      let v = stats[key];
       let o = JSON.parse(v);
       if(o.ts && o.bytes) {
         orderedStats[parseInt(o.ts, 10)] = parseInt(o.bytes, 10);
