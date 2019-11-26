@@ -29,23 +29,18 @@ const flowTool = new FlowTool();
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
+const featureName = 'large_download';
 class DataUsageSensor extends Sensor {
     constructor() {
         super();
     }
     run() {
         //todo add policy for per device data usage monitor or system
-        //todo use hook after Melvin merged
-        //also check feature on/off
-        this.interval = this.config.interval || 60 * 15; // interval default to 15 mintues
         this.stddev_limit = this.config.stddev_limit || 200;
         this.analytics_hours = this.config.analytics_hours || 8;
         this.topXflows = this.config.topXflows || 2;
         this.minsize_download = this.config.minsize_download || 10 * 1000 * 1000;
-        this.job();
-        setInterval(() => {
-            this.job();
-        }, this.interval * 1000);
+        this.hookFeature(featureName);
     }
     job() {
         this.checkDataUsage()
