@@ -83,12 +83,12 @@ class DataUsageSensor extends Sensor {
                 const dataStddev = Math.round(stats.stdev(dataUsage) / 1000 / 1000);
                 log.info("dataStddev", dataStddev, this.stddev_limit)
                 if (dataStddev > this.stddev_limit && dataUsage[dataUsage.length - 1] > dataUsage[dataUsage.length - 2]) {
-                    this.genAbnormalDownloadAlarm(host, downloadStats[0][0], downloadStats[downloadStats.length - 1][0], totalUsage, downloadStats);
+                    this.genAbnormalDownloadAlarm(host, downloadStats[0][0], downloadStats[downloadStats.length - 1][0], totalUsage, downloadStats, uploadStats);
                 }
             }
         }
     }
-    async genAbnormalDownloadAlarm(host, begin, end, totalUsage, downloadStats) {
+    async genAbnormalDownloadAlarm(host, begin, end, totalUsage, downloadStats, uploadStats) {
         log.info("genAbnormalDownloadAlarm", host.o, begin, end)
         //get top flows from begin to end
         const mac = host.o.mac;
@@ -103,7 +103,8 @@ class DataUsageSensor extends Sensor {
             "p.download": totalUsage,
             "p.begin.ts": begin,
             "p.end.ts": end,
-            "e.transfers": downloadStats,
+            "e.download.transfers": downloadStats,
+            "e.upload.transfers": uploadStats,
             "p.flows": JSON.stringify(flows),
             "p.dest.names": destNames
         });
