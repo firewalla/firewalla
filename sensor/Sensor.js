@@ -92,7 +92,7 @@ let Sensor = class {
       await this.job();
       this.timer = setInterval(async () => {
         return this.job();
-      }, this.config.refreshInterval || 3600 * 1000); // one hour by default
+      }, this.refreshInterval || 3600 * 1000); // one hour by default
     })
   }
 
