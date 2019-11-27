@@ -316,6 +316,7 @@ module.exports = class HostManager {
     return { downloadStats, uploadStats }
   }
   async monthlyDataStats(mac) {
+    //default calender month
     const days = new Date().getDate();
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;

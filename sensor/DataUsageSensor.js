@@ -37,14 +37,16 @@ class DataUsageSensor extends Sensor {
     run() {
         //todo add policy for per device data usage monitor or system
         this.refreshInterval = (this.config.refreshInterval || 15) * 1000;
+        this.timewindow = this.config.timewindow || 2;
         this.stddev_limit = this.config.stddev_limit || 200;
-        this.analytics_hours = this.config.analytics_hours || 6;
+        this.analytics_hours = this.config.analytics_hours || 24;
         this.topXflows = this.config.topXflows || 2;
         this.minsize_download = this.config.minsize_download || 10 * 1000 * 1000;
         this.hookFeature(featureName);
     }
     job() {
         this.checkDataUsage()
+        this.checkMonthlyDataUsage()
     }
     globalOn() {
     }
@@ -57,17 +59,30 @@ class DataUsageSensor extends Sensor {
         hosts = hosts.filter(x => x)
         for (const host of hosts) {
             const mac = host.o.mac;
-            const key = `download${mac ? ':' + mac : ''}`;
+            const downloadKey = `download${mac ? ':' + mac : ''}`;
+            const uploadKey = `upload${mac ? ':' + mac : ''}`;
             //[[ts,Bytes]]  [[1574325720, 9396810],[ 1574325780, 3141018 ]]
-            const downloadStats = await getHitsAsync(key, "15minutes", 4 * this.analytics_hours);//get passed 6 hours dowload stats
-            let downloadData = [], totalUsage = 0;
-            downloadStats.forEach((item) => {
-                totalUsage = totalUsage * 1 + item[1] * 1;
-                downloadData.push(item[1]);
+            const slot = 4;// 1hour 4 slots
+            const slots = slot * this.timewindow;
+            const downloadStats = await getHitsAsync(downloadKey, "15minutes", slot * this.analytics_hours);//get passed 24 hours dowload stats
+            const uploadStats = await getHitsAsync(uploadKey, "15minutes", slot * this.analytics_hours);
+            let dataUsage = [], totalUsage = 0;
+            if (downloadStats.length < slots) return;
+            for (let i = slots; i < downloadStats.length; i++) {
+                let temp = 0;
+                for (let j = i - slots; j < i; j++) {
+                    temp = temp * 1 + downloadStats[j][1] * 1 + uploadStats[j][1] * 1;
+                }
+                dataUsage.push(temp)
+            }
+            downloadStats.forEach((item, index) => {
+                totalUsage = totalUsage * 1 + item[1] * 1 + uploadStats[index][1] * 1;
             })
-            if (downloadData.length > 0) {
-                const dataStddev = Math.round(stats.stdev(downloadData) / 1000 / 1000);
-                if (dataStddev > this.stddev_limit) {
+            if (dataUsage.length > 0) {
+                log.info("dataUsage", dataUsage)
+                const dataStddev = Math.round(stats.stdev(dataUsage) / 1000 / 1000);
+                log.info("dataStddev", dataStddev, this.stddev_limit)
+                if (dataStddev > this.stddev_limit && dataUsage[dataUsage.length - 1] > dataUsage[dataUsage.length - 2]) {
                     this.genAbnormalDownloadAlarm(host, downloadStats[0][0], downloadStats[downloadStats.length - 1][0], totalUsage, downloadStats);
                 }
             }
@@ -106,7 +121,7 @@ class DataUsageSensor extends Sensor {
             flows = flows.concat(traffics);
             begin = begin + period;
         }
-        let enrichedFlows = await flowTool.enrichWithIntel(flows);
+        flows = await flowTool.enrichWithIntel(flows);
         let flowsCache = {};
         for (const flow of flows) {
             const destHost = flow.host ? flow.host.split('.').slice(-2).join('.') : flow.ip;
@@ -124,6 +139,15 @@ class DataUsageSensor extends Sensor {
         return flowsGroupByDestHost.sort((a, b) => b.count * 1 - a.count * 1).splice(0, this.topXflows).filter((flow) => {
             return flow.count * 1 > this.minsize_download * 1;
         })
+    }
+    async checkMonthlyDataUsage() {
+        //data plan 1TB,10TB, etc..
+        //monthly? 11.01-11.30 or 11.05 - 12.05
+        const dataPlan = '';
+        const { totalDownload, totalUpload } = await hostManager.monthlyDataStats();
+        if (totalDownload + totalUpload > dataPlan) {
+            //gen over data plan alarm
+        }
     }
 }
 
