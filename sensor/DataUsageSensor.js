@@ -38,10 +38,10 @@ class DataUsageSensor extends Sensor {
         //todo add policy for per device data usage monitor or system
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
         this.timewindow = this.config.timewindow || 2;
-        this.stddev_limit = this.config.stddev_limit || 200;
+        this.stddev_limit = this.config.stddev_limit || 0.2;
         this.analytics_hours = this.config.analytics_hours || 24;
         this.topXflows = this.config.topXflows || 2;
-        this.minsize_download = this.config.minsize_download || 10 * 1000 * 1000;
+        this.minsize_download = this.config.minsize_download || 500 * 1000 * 1000;
         this.hookFeature(featureName);
     }
     job() {
