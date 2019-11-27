@@ -66,23 +66,26 @@ class DataUsageSensor extends Sensor {
             const slots = slot * this.timewindow;
             const downloadStats = await getHitsAsync(downloadKey, "15minutes", slot * this.analytics_hours);//get passed 24 hours dowload stats
             const uploadStats = await getHitsAsync(uploadKey, "15minutes", slot * this.analytics_hours);
-            let dataUsage = [], totalUsage = 0;
+            let dataUsageRatio = [], totalUsage = 0;
             if (downloadStats.length < slots) return;
+            downloadStats.forEach((item, index) => {
+                totalUsage = totalUsage * 1 + item[1] * 1 + uploadStats[index][1] * 1;
+            })
+            if (totalUsage < this.minsize_download) retrun;
             for (let i = slots; i < downloadStats.length; i++) {
                 let temp = 0;
                 for (let j = i - slots; j < i; j++) {
                     temp = temp * 1 + downloadStats[j][1] * 1 + uploadStats[j][1] * 1;
                 }
-                dataUsage.push(temp)
+                temp = temp / totalUsage;
+                dataUsageRatio.push(temp);
             }
-            downloadStats.forEach((item, index) => {
-                totalUsage = totalUsage * 1 + item[1] * 1 + uploadStats[index][1] * 1;
-            })
-            if (dataUsage.length > 0) {
-                log.info("dataUsage", dataUsage)
-                const dataStddev = Math.round(stats.stdev(dataUsage) / 1000 / 1000);
+            if (dataUsageRatio.length > 0) {
+                log.info("dataUsage", dataUsageRatio)
+                const dataStddev = stats.stdev(dataUsageRatio);
                 log.info("dataStddev", dataStddev, this.stddev_limit)
-                if (dataStddev > this.stddev_limit && dataUsage[dataUsage.length - 1] > dataUsage[dataUsage.length - 2]) {
+                if (dataStddev > this.stddev_limit &&
+                    dataUsageRatio[dataUsageRatio.length - 1] > dataUsageRatio[dataUsageRatio.length - 2]) {
                     this.genAbnormalDownloadAlarm(host, downloadStats[0][0], downloadStats[downloadStats.length - 1][0], totalUsage, downloadStats, uploadStats);
                 }
             }
@@ -117,9 +120,11 @@ class DataUsageSensor extends Sensor {
         end = end - end % period + period;
         let flows = [];
         while (begin < end) {
-            const sumFlowKey = flowAggrTool.getSumFlowKey(mac, 'download', begin, begin + period);
-            const traffics = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, 10);//get top 10 flows
-            flows = flows.concat(traffics);
+            const sumDownloadFlowKey = flowAggrTool.getSumFlowKey(mac, 'download', begin, begin + period);
+            const downloadTraffics = await flowAggrTool.getTopSumFlowByKey(sumDownloadFlowKey, 10);//get top 10 flows
+            const sumUploadFlowKey = flowAggrTool.getSumFlowKey(mac, 'upload', begin, begin + period);
+            const uploadTraffics = await flowAggrTool.getTopSumFlowByKey(sumUploadFlowKey, 10);
+            flows = flows.concat(downloadTraffics).concat(uploadTraffics);
             begin = begin + period;
         }
         flows = await flowTool.enrichWithIntel(flows);
@@ -138,7 +143,7 @@ class DataUsageSensor extends Sensor {
             flowsGroupByDestHost.push(flowsCache[destHost]);
         }
         return flowsGroupByDestHost.sort((a, b) => b.count * 1 - a.count * 1).splice(0, this.topXflows).filter((flow) => {
-            return flow.count * 1 > this.minsize_download * 1;
+            return flow.count * 1 > 10 * 1000 * 1000;//return flows bigger than 10MB
         })
     }
     async checkMonthlyDataUsage() {
