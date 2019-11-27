@@ -71,7 +71,7 @@ class DataUsageSensor extends Sensor {
             downloadStats.forEach((item, index) => {
                 totalUsage = totalUsage * 1 + item[1] * 1 + uploadStats[index][1] * 1;
             })
-            if (totalUsage < this.minsize_download) retrun;
+            if (totalUsage < this.minsize_download) return;
             for (let i = slots; i < downloadStats.length; i++) {
                 let temp = 0;
                 for (let j = i - slots; j < i; j++) {
