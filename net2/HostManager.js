@@ -111,24 +111,24 @@ module.exports = class HostManager {
       sysManager.update((err) => {
         if (err == null) {
           log.info("System Manager Updated");
-          if (!f.isDocker()) {
+          if(!f.isDocker()) {
             spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false);
           } else {
             // for docker
             spoofer = {
-              isSecondaryInterfaceIP: () => { },
+              isSecondaryInterfaceIP: () => {},
               newSpoof: () => new Promise(resolve => resolve()),
               newUnspoof: () => new Promise(resolve => resolve()),
               newSpoof6: () => new Promise(resolve => resolve()),
               newUnspoof6: () => new Promise(resolve => resolve()),
-              spoof: () => { },
-              spoofMac6: () => { },
-              clean: () => { },
-              clean7: () => { },
-              clean6byIp: () => { },
-              clean6: () => { },
-              validateV6Spoofs: () => { },
-              validateV4Spoofs: () => { },
+              spoof: () => {},
+              spoofMac6: () => {},
+              clean: () => {},
+              clean7: () => {},
+              clean6byIp: () => {},
+              clean6: () => {},
+              validateV6Spoofs: () => {},
+              validateV4Spoofs: () => {},
             };
           }
         }
@@ -139,7 +139,7 @@ module.exports = class HostManager {
       this.iptablesReady = false;
 
       // ONLY register for these events if hostmanager type IS server
-      if (this.type === "server") {
+      if(this.type === "server") {
         sem.once('IPTABLES_READY', () => {
           log.info("Iptables is ready");
           this.iptablesReady = true;
@@ -179,9 +179,9 @@ module.exports = class HostManager {
         });
 
         this.keepalive();
-        setInterval(() => {
+        setInterval(()=>{
           this.keepalive();
-        }, 1000 * 60 * 5);
+        },1000*60*5);
       }
 
       instances[name] = this;
@@ -209,8 +209,8 @@ module.exports = class HostManager {
 
     sysManager.updateInfo();
 
-    if (f.isDocker() &&
-      !options.simulator &&
+    if(f.isDocker() &&
+      ! options.simulator &&
       fConfig.docker &&
       fConfig.docker.hostIP
     ) {
@@ -222,7 +222,7 @@ module.exports = class HostManager {
     json.cpuid = platform.getBoardSerial();
     json.uptime = process.uptime()
 
-    if (sysManager.language) {
+    if(sysManager.language) {
       json.language = sysManager.language;
     } else {
       json.language = 'en'
@@ -230,7 +230,7 @@ module.exports = class HostManager {
 
     json.releaseType = f.getReleaseType()
 
-    if (sysManager.timezone) {
+    if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
     }
 
@@ -243,12 +243,12 @@ module.exports = class HostManager {
 
     json.runtimeFeatures = fc.getFeatures()
 
-    if (f.isDocker()) {
+    if(f.isDocker()) {
       json.docker = true;
     }
 
     let branch = f.getBranch()
-    if (branch === "master") {
+    if(branch === "master") {
       json.isBeta = true
     } else {
       json.isBeta = false
@@ -274,12 +274,12 @@ module.exports = class HostManager {
     json.remoteSupport = frp.started;
     json.model = platform.getName();
     json.branch = f.getBranch();
-    if (frp.started && f.isApi()) {
+    if(frp.started && f.isApi()) {
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
     }
     json.license = sysManager.license;
-    if (!json.license) {
+    if(!json.license) {
       json.license = license.getLicense()
     }
     json.ept = sysManager.ept;
@@ -305,7 +305,7 @@ module.exports = class HostManager {
     const upload = flowManager.getLast24HoursUploadsStats();
 
     const [d, u] = await Promise.all([download, upload]);
-    json.last24 = { upload: u, download: d, now: Math.round(new Date() / 1000) };
+    json.last24 = { upload: u, download: d, now: Math.round(new Date() / 1000)};
 
     return json;
   }
@@ -340,13 +340,13 @@ module.exports = class HostManager {
     const subKey = mac ? ':' + mac : ''
 
     let downloadStats = await getHitsAsync("download" + subKey, "1minute", 61)
-    if (downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
+    if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
       downloadStats = downloadStats.slice(0, 60)
     } else {
       downloadStats = downloadStats.slice(1)
     }
     let uploadStats = await getHitsAsync("upload" + subKey, "1minute", 61)
-    if (uploadStats[uploadStats.length - 1] && uploadStats[uploadStats.length - 1][1] == 0) {
+    if(uploadStats[uploadStats.length - 1] &&  uploadStats[uploadStats.length - 1][1] == 0) {
       uploadStats = uploadStats.slice(0, 60)
     } else {
       uploadStats = uploadStats.slice(1)
@@ -377,7 +377,7 @@ module.exports = class HostManager {
     values = values.map((value) => {
       try {
         return JSON.parse(value)
-      } catch (err) {
+      } catch(err) {
         return null
       }
     })
@@ -417,7 +417,7 @@ module.exports = class HostManager {
 
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
-        if (err) {
+        if(err) {
           reject(err);
           return;
         }
@@ -433,14 +433,14 @@ module.exports = class HostManager {
   extensionDataForInit(json) {
     log.debug("Loading ExtentsionPolicy");
     let extdata = {};
-    return new Promise((resolve, reject) => {
-      rclient.get("extension.portforward.config", (err, data) => {
+    return new Promise((resolve,reject)=>{
+      rclient.get("extension.portforward.config",(err,data)=>{
         try {
           if (data != null) {
             extdata['portforward'] = JSON.parse(data);
           }
         } catch (e) {
-          log.error("ExtensionData:Unable to parse data", e, data);
+          log.error("ExtensionData:Unable to parse data",e,data);
           resolve(json);
           return;
         }
@@ -467,7 +467,7 @@ module.exports = class HostManager {
 
     return new Promise((resolve, reject) => {
       rclient.hgetall("sys:scan:nat", (err, data) => {
-        if (err) {
+        if(err) {
           reject(err);
           return;
         }
@@ -476,7 +476,7 @@ module.exports = class HostManager {
           json.scan = {};
           for (let d in data) {
             json.scan[d] = JSON.parse(data[d]);
-            if (typeof json.scan[d].description === 'object') {
+            if(typeof json.scan[d].description === 'object') {
               json.scan[d].description = ""
             }
           }
@@ -490,8 +490,8 @@ module.exports = class HostManager {
   boneDataForInit(json) {
     log.debug("Bone for Init");
     return new Promise((resolve, reject) => {
-      f.getBoneInfo((err, boneinfo) => {
-        if (err) {
+      f.getBoneInfo((err,boneinfo)=>{
+        if(err) {
           reject(err);
           return;
         }
@@ -550,8 +550,8 @@ module.exports = class HostManager {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicies({ includingDisabled: 1 }, (err, rules) => {
-        if (err) {
+      policyManager2.loadActivePolicies({includingDisabled: 1}, (err, rules) => {
+        if(err) {
           reject(err);
           return;
         } else {
@@ -567,21 +567,21 @@ module.exports = class HostManager {
           let alarmIDs = rules.map((p) => p.aid);
 
           alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
-            if (err) {
+            if(err) {
               log.error("Failed to get alarms by ids:", err);
               reject(err);
               return;
             }
 
-            for (let i = 0; i < rules.length; i++) {
-              if (rules[i] && alarms[i]) {
+            for(let i = 0; i < rules.length; i ++) {
+              if(rules[i] && alarms[i]) {
                 rules[i].alarmMessage = alarms[i].localizedInfo();
                 rules[i].alarmTimestamp = alarms[i].timestamp;
               }
             }
 
-            rules.sort((x, y) => {
-              if (y.timestamp < x.timestamp) {
+            rules.sort((x,y) => {
+              if(y.timestamp < x.timestamp) {
                 return -1
               } else {
                 return 1
@@ -602,7 +602,7 @@ module.exports = class HostManager {
     log.debug("Reading exception rules");
     return new Promise((resolve, reject) => {
       exceptionManager.loadExceptions((err, rules) => {
-        if (err) {
+        if(err) {
           reject(err);
         } else {
 
@@ -612,7 +612,7 @@ module.exports = class HostManager {
 
           // filters out rules with inactive devices
           rules = rules.filter(rule => {
-            if (!rule) {
+            if(!rule) {
               return false;
             }
 
@@ -626,21 +626,21 @@ module.exports = class HostManager {
           let alarmIDs = rules.map((p) => p.aid);
 
           alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
-            if (err) {
+            if(err) {
               log.error("Failed to get alarms by ids:", err);
               reject(err);
               return;
             }
 
-            for (let i = 0; i < rules.length; i++) {
-              if (rules[i] && alarms[i]) {
+            for(let i = 0; i < rules.length; i ++) {
+              if(rules[i] && alarms[i]) {
                 rules[i].alarmMessage = alarms[i].localizedInfo();
                 rules[i].alarmTimestamp = alarms[i].timestamp;
               }
             }
 
-            rules.sort((x, y) => {
-              if (y.timestamp < x.timestamp) {
+            rules.sort((x,y) => {
+              if(y.timestamp < x.timestamp) {
                 return -1
               } else {
                 return 1
@@ -665,11 +665,11 @@ module.exports = class HostManager {
     log.debug("Reading DDNS");
 
     let ddnsString = await rclient.hgetAsync("sys:network:info", "ddns");
-    if (ddnsString) {
+    if(ddnsString) {
       try {
         let ddns = JSON.parse(ddnsString);
         json.ddns = ddns;
-      } catch (err) {
+      } catch(err) {
         log.error("Failed to parse ddns string:", ddnsString);
       }
     }
@@ -677,7 +677,7 @@ module.exports = class HostManager {
 
   async getCloudURL(json) {
     const url = await rclient.getAsync("sys:bone:url");
-    if (json && json.ept && json.ept.url && json.ept.url !== url) {
+    if(json && json.ept && json.ept.url && json.ept.url !== url)  {
       json.ept.url = url;
     }
   }
@@ -705,7 +705,7 @@ module.exports = class HostManager {
     json.hostCount = this.hosts.all.length;
 
     let firstBinding = await rclient.getAsync("firstBinding")
-    if (firstBinding) {
+    if(firstBinding) {
       json.firstBinding = firstBinding
     }
 
@@ -724,12 +724,12 @@ module.exports = class HostManager {
     const rules = json.policyRules
     const hosts = json.hosts
     rules.forEach((rule) => {
-      if (rule.type === "mac" &&
+      if(rule.type === "mac" &&
         (!rule.disabled || rule.disabled != "1")) { // disable flag not exist or flag is not equal to 1
         let target = rule.target
         for (const index in hosts) {
           const host = hosts[index]
-          if (host.mac === target && host.policy) {
+          if(host.mac === target && host.policy) {
             host.policy.blockin = true
             break
           }
@@ -740,14 +740,14 @@ module.exports = class HostManager {
 
   async jwtTokenForInit(json) {
     const token = await tokenManager.getToken();
-    if (token) {
+    if(token) {
       json.jwt = token;
     }
   }
 
   async groupNameForInit(json) {
     const groupName = await rclient.getAsync("groupName");
-    if (groupName) {
+    if(groupName) {
       json.groupName = groupName;
     }
   }
@@ -768,9 +768,9 @@ module.exports = class HostManager {
   async getGuessedRouters(json) {
     try {
       const routersString = await rclient.getAsync("guessed_router");
-      if (routersString) {
+      if(routersString) {
         const routers = JSON.parse(routersString);
-        if (!_.isEmpty(routers)) {
+        if(!_.isEmpty(routers)) {
           json.guessedRouters = routers;
         }
       }
@@ -781,16 +781,16 @@ module.exports = class HostManager {
 
   async getGuardian(json) {
     const data = await rclient.getAsync("ext.guardian.business");
-    if (!data) {
+    if(!data) {
       return;
     }
 
     try {
       const result = JSON.parse(data);
-      if (result) {
+      if(result) {
         json.guardianBiz = result;
       }
-    } catch (err) {
+    } catch(err) {
       log.error(`Failed to parse data, err: ${err}`);
       return;
     }
@@ -798,26 +798,26 @@ module.exports = class HostManager {
 
   async encipherMembersForInit(json) {
     let members = await rclient.smembersAsync("sys:ept:members")
-    if (members && members.length > 0) {
+    if(members && members.length > 0) {
       const mm = members.map((m) => {
         try {
           return JSON.parse(m)
-        } catch (err) {
+        } catch(err) {
           return null
         }
       }).filter((x) => x != null)
 
-      if (mm && mm.length > 0) {
+      if(mm && mm.length > 0) {
         const names = await rclient.hgetallAsync("sys:ept:memberNames")
         const lastVisits = await rclient.hgetallAsync("sys:ept:member:lastvisit")
 
-        if (names) {
+        if(names) {
           mm.forEach((m) => {
             m.dName = m.eid && names[m.eid]
           })
         }
 
-        if (lastVisits) {
+        if(lastVisits) {
           mm.forEach((m) => {
             m.lastVisit = m.eid && lastVisits[m.eid]
           })
@@ -830,7 +830,7 @@ module.exports = class HostManager {
 
   toJson(includeHosts, options, callback) {
 
-    if (typeof options === 'function') {
+    if(typeof options === 'function') {
       callback = options;
       options = {}
     }
@@ -880,7 +880,7 @@ module.exports = class HostManager {
 
         json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
         const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
-        if (fnlFlag === "1") {
+        if(fnlFlag === "1") {
           json.forceNotifLocal = true;
         } else {
           json.forceNotifLocal = false;
@@ -888,25 +888,25 @@ module.exports = class HostManager {
 
         // for any pi doesn't have firstBinding key, they are old versions
         let firstBinding = await rclient.getAsync("firstBinding")
-        if (firstBinding) {
+        if(firstBinding) {
           json.firstBinding = firstBinding
         }
 
         json.bootingComplete = await f.isBootingComplete()
 
-        if (!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
+        if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
           await this.legacyStats(json);
         }
 
         try {
           await exec("sudo systemctl is-active firekick")
           json.isBindingOpen = 1;
-        } catch (err) {
+        } catch(err) {
           json.isBindingOpen = 0;
         }
 
         callback(null, json);
-      } catch (err) {
+      } catch(err) {
         log.error("Caught error when preparing init data: " + err);
         log.error(err.stack);
         callback(err);
@@ -919,11 +919,11 @@ module.exports = class HostManager {
       return null;
     }
 
-    return this.hostsdb["host:ip4:" + ip];
+    return this.hostsdb["host:ip4:"+ip];
   }
 
   getHostFast6(ip6) {
-    if (ip6) {
+    if(ip6) {
       return this.hostsdb[`host:ip6:${ip6}`]
     }
 
@@ -931,7 +931,7 @@ module.exports = class HostManager {
   }
 
   getHost(target, callback) {
-    callback = callback || function () { }
+    callback = callback || function() {}
 
     this.getHostAsync(target)
       .then(res => callback(null, res))
@@ -973,8 +973,8 @@ module.exports = class HostManager {
     this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
 
     let ipv6Addrs = host.ipv6Addr
-    if (ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-      for (let i in ipv6Addrs) {
+    if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+      for(let i in ipv6Addrs) {
         let ip6 = ipv6Addrs[i]
         let key = `host:ip6:${ip6}`
         this.hostsdb[key] = host
@@ -1029,11 +1029,11 @@ module.exports = class HostManager {
   safeExecPolicy(skipHosts) {
     // a very dirty hack, only call system policy change every 5 seconds
     const now = new Date() / 1000
-    if (this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
+    if(this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
       // just run execPolicy, defer this one
       this.pendingExecPolicy = true
       setTimeout(() => {
-        if (this.pendingExecPolicy) {
+        if(this.pendingExecPolicy) {
           this.lastExecPolicyTime = new Date() / 1000
           this.execPolicy(skipHosts)
           this.pendingExecPolicy = false
@@ -1047,7 +1047,7 @@ module.exports = class HostManager {
   }
 
   getHosts(callback) {
-    callback = callback || function () { }
+    callback = callback || function(){}
 
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
@@ -1066,7 +1066,7 @@ module.exports = class HostManager {
     this.getHostsActive = Math.floor(new Date() / 1000);
     // end of mutx check
 
-    if (this.type === "server") {
+    if(this.type === "server") {
       this.safeExecPolicy(true); // do not apply host policy here, since host information may be out of date. Host policy will be applied later after information is refreshed from host:mac:*
     }
     for (let h in this.hostsdb) {
@@ -1079,7 +1079,7 @@ module.exports = class HostManager {
     for (let i in keys) {
       multiarray.push(['hgetall', keys[i]]);
     }
-    let inactiveTimeline = Date.now() / 1000 - INACTIVE_TIME_SPAN; // one week ago
+    let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
     await asyncNative.eachLimit(replies, 2, async (o) => {
       if (!o) {
@@ -1101,15 +1101,15 @@ module.exports = class HostManager {
       let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
 
       if (hostbymac == null) {
-        hostbymac = new Host(o, this);
+        hostbymac = new Host(o,this);
         hostbymac.type = this.type;
         this.hosts.all.push(hostbymac);
         this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         this.hostsdb['host:mac:' + o.mac] = hostbymac;
 
         let ipv6Addrs = hostbymac.ipv6Addr
-        if (ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-          for (let i in ipv6Addrs) {
+        if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+          for(let i in ipv6Addrs) {
             let ip6 = ipv6Addrs[i]
             let key = `host:ip6:${ip6}`
             this.hostsdb[key] = hostbymac
@@ -1117,7 +1117,7 @@ module.exports = class HostManager {
         }
 
       } else {
-        if (o.ipv4 != hostbymac.o.ipv4) {
+        if (o.ipv4!=hostbymac.o.ipv4) {
           // the physical host get a new ipv4 address
           //
           this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
@@ -1125,8 +1125,8 @@ module.exports = class HostManager {
         this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
         let ipv6Addrs = hostbymac.ipv6Addr
-        if (ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-          for (let i in ipv6Addrs) {
+        if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
+          for(let i in ipv6Addrs) {
             let ip6 = ipv6Addrs[i]
             let key = `host:ip6:${ip6}`
             this.hostsdb[key] = hostbymac
@@ -1170,23 +1170,23 @@ module.exports = class HostManager {
     for (let h in this.hostsdb) {
       let hostbymac = this.hostsdb[h];
       if (hostbymac && h.startsWith("host:mac")) {
-        if (hostbymac.ipv6Addr != null && hostbymac.ipv6Addr.length > 0) {
+        if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
           if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
             allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
           }
         }
-        if (hostbymac.o.ipv4Addr != null && hostbymac.o.ipv4Addr != myIp) {
+        if (hostbymac.o.ipv4Addr!=null && hostbymac.o.ipv4Addr != myIp) {
           allIPv4Addrs.push(hostbymac.o.ipv4Addr);
         }
       }
       if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
         let index = this.hosts.all.indexOf(this.hostsdb[h]);
-        if (index != -1) {
-          this.hosts.all.splice(index, 1);
+        if (index!=-1) {
+          this.hosts.all.splice(index,1);
           log.info("Removing host due to sweeping");
         }
         removedHosts.push(h);
-      } else {
+      }  else {
         if (this.hostsdb[h]) {
           //this.hostsdb[h]._mark = false;
         }
@@ -1204,7 +1204,7 @@ module.exports = class HostManager {
       spoofer.validateV6Spoofs(allIPv6Addrs);
       spoofer.validateV4Spoofs(allIPv4Addrs);
     }
-    log.info("done Devices: ", this.hosts.all.length, " ipv6 addresses ", allIPv6Addrs.length);
+    log.info("done Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
     return this.hosts.all;
   }
 
@@ -1221,7 +1221,7 @@ module.exports = class HostManager {
           obj[name] = policy;
           if (this.subscriber) {
             setTimeout(() => {
-              this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
+            this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
             }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
           }
           if (callback) {
@@ -1291,10 +1291,10 @@ module.exports = class HostManager {
         const profileId = policy.openvpn && policy.openvpn.profileId;
         if (!profileId) {
           log.error("profileId is not specified", policy);
-          return { state: false, running: false, reconnecting: 0 };
+          return {state: false, running: false, reconnecting: 0};
         }
         let settings = policy.openvpn && policy.openvpn.settings || {};
-        const ovpnClient = new OpenVPNClient({ profileId: profileId });
+        const ovpnClient = new OpenVPNClient({profileId: profileId});
         await ovpnClient.saveSettings(settings);
         settings = await ovpnClient.loadSettings(); // settings is merged with default settings
         // apply vpn client access to interfaces in appliedInterfaces
@@ -1313,7 +1313,7 @@ module.exports = class HostManager {
           }
         } catch (err) {
           log.error("Failed to apply VPN client access to interfaces", err);
-          return { state: false, running: false, reconnecting: 0 };
+          return {state: false, running: false, reconnecting: 0};
         }
         if (state === true) {
           let setupResult = true;
@@ -1323,7 +1323,7 @@ module.exports = class HostManager {
             setupResult = false;
           });
           if (!setupResult)
-            return { state: false, running: false, reconnecting: 0 };
+            return {state: false, running: false, reconnecting: 0};
           if (ovpnClient.listenerCount('push_options_start') === 0) {
             ovpnClient.once('push_options_start', async (content) => {
               const dnsServers = [];
@@ -1405,8 +1405,8 @@ module.exports = class HostManager {
           // do not change state if strict VPN is set
           if (settings.overrideDefaultRoute && settings.strictVPN) {
             // clear reconnecting count if successfully connected, otherwise increment the reconnecting count
-            return { running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1) };
-          } else return { state: result, running: result, reconnecting: 0 }; // clear reconnecting count if strict VPN is not set
+            return {running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1)};
+          } else return {state: result, running: result, reconnecting: 0}; // clear reconnecting count if strict VPN is not set
         } else {
           // proceed to stop anyway even if setup is failed
           await ovpnClient.setup().catch((err) => {
@@ -1441,7 +1441,7 @@ module.exports = class HostManager {
           await ovpnClient.stop();
           // will do no harm to unenforce strict VPN even if strict VPN is not set  
           await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
-          return { running: false, reconnecting: 0 };
+          return {running: false, reconnecting: 0};
         }
         break;
       }
@@ -1473,7 +1473,7 @@ module.exports = class HostManager {
     let d = {};
     for (let k in this.policy) {
       const policyValue = this.policy[k];
-      if (policyValue !== undefined) {
+      if(policyValue !== undefined) {
         d[k] = JSON.stringify(policyValue)
       }
     }
@@ -1490,7 +1490,7 @@ module.exports = class HostManager {
   loadPolicyAsync() {
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
-        if (err) {
+        if(err) {
           reject(err)
         } else {
           resolve(data)
@@ -1556,13 +1556,13 @@ module.exports = class HostManager {
     const HUMAN_TRESHOLD = 0.05
 
     this.hosts.all.filter((h) => {
-      if (h.o && h.o.mac) {
+      if(h.o && h.o.mac) {
         const dtype = h.o.dtype
         try {
           const dtypeObject = JSON.parse(dtype)
           const human = dtypeObject.human
           return human > HUMAN_TRESHOLD
-        } catch (err) {
+        } catch(err) {
           return false
         }
       } else {
@@ -1577,20 +1577,20 @@ module.exports = class HostManager {
 
     let monitoredIP4s = await rclient.smembersAsync("monitored_hosts")
 
-    for (let i in monitoredIP4s) {
+    for(let i in monitoredIP4s) {
       let ip4 = monitoredIP4s[i]
       let host = this.getHostFast(ip4)
-      if (host && host.o.lastActiveTimestamp > limit) {
+      if(host && host.o.lastActiveTimestamp > limit) {
         activeHosts.push(host)
       }
     }
 
     let monitoredIP6s = await rclient.smembersAsync("monitored_hosts6")
 
-    for (let i in monitoredIP6s) {
+    for(let i in monitoredIP6s) {
       let ip6 = monitoredIP6s[i]
       let host = this.getHostFast6(ip6)
-      if (host && host.o.lastActiveTimestamp > limit) {
+      if(host && host.o.lastActiveTimestamp > limit) {
         activeHosts.push(host)
       }
     }
@@ -1605,10 +1605,10 @@ module.exports = class HostManager {
 
   cleanHostOperationHistory() {
     // reset oper history for each device
-    if (this.hosts && this.hosts.all) {
-      for (let i in this.hosts.all) {
+    if(this.hosts && this.hosts.all) {
+      for(let i in this.hosts.all) {
         let h = this.hosts.all[i]
-        if (h.oper) {
+        if(h.oper) {
           delete h.oper
         }
       }

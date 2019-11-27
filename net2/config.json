@@ -500,7 +500,7 @@
     "DataUsageSensor": {
       "refreshInterval": 15,
       "stddev_limit": 200,
-      "analytics_hours": 8,
+      "analytics_hours": 6,
       "topXflows": 2,
       "minsize_download": 10000000
     }

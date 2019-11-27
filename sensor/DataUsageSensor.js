@@ -38,7 +38,7 @@ class DataUsageSensor extends Sensor {
         //todo add policy for per device data usage monitor or system
         this.refreshInterval = (this.config.refreshInterval || 15) * 1000;
         this.stddev_limit = this.config.stddev_limit || 200;
-        this.analytics_hours = this.config.analytics_hours || 8;
+        this.analytics_hours = this.config.analytics_hours || 6;
         this.topXflows = this.config.topXflows || 2;
         this.minsize_download = this.config.minsize_download || 10 * 1000 * 1000;
         this.hookFeature(featureName);
@@ -59,7 +59,7 @@ class DataUsageSensor extends Sensor {
             const mac = host.o.mac;
             const key = `download${mac ? ':' + mac : ''}`;
             //[[ts,Bytes]]  [[1574325720, 9396810],[ 1574325780, 3141018 ]]
-            const downloadStats = await getHitsAsync(key, "15minutes", 4 * this.analytics_hours);//get passed 8 hours dowload stats
+            const downloadStats = await getHitsAsync(key, "15minutes", 4 * this.analytics_hours);//get passed 6 hours dowload stats
             let downloadData = [], totalUsage = 0;
             downloadStats.forEach((item) => {
                 totalUsage = totalUsage * 1 + item[1] * 1;

@@ -395,9 +395,11 @@ module.exports = class {
           reject(err);
           return;
         }
+
         let dups = existingAlarms
           .filter((a) => a != null)
           .filter((a) => alarm.isDup(a));
+
         if (dups.length > 0) {
           let latest = dups[0].timestamp;
           let cooldown = duration - (Date.now() / 1000 - latest);
@@ -842,8 +844,8 @@ module.exports = class {
     asc = asc || false;
 
     let query = asc ?
-      rclient.zrangebyscoreAsync(alarmActiveKey, '(' + ts, '+inf', 'limit', 0, count) :
-      rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + ts, '-inf', 'limit', 0, count);
+      rclient.zrangebyscoreAsync(alarmActiveKey, '('+ts, '+inf', 'limit', 0, count) :
+      rclient.zrevrangebyscoreAsync(alarmActiveKey, '('+ts, '-inf', 'limit', 0, count);
 
     let ids = await query;
 
@@ -1379,7 +1381,7 @@ module.exports = class {
   async loadRelatedAlarms(alarm, userInput) {
     const alarms = await this.loadRecentAlarmsAsync("-inf");
     const e = this.createException(alarm, userInput);
-    if (!e) throw new Error("Unsupported Action!");
+    if (!e)  throw new Error("Unsupported Action!");
     const related = alarms
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
