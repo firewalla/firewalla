@@ -315,6 +315,27 @@ module.exports = class HostManager {
     let uploadStats = await getHitsAsync("upload", "1minute", 60)
     return { downloadStats, uploadStats }
   }
+  async monthlyDataStats(mac) {
+    //default calender month
+    const days = new Date().getDate();
+    const downloadKey = `download${mac ? ':' + mac : ''}`;
+    const uploadKey = `upload${mac ? ':' + mac : ''}`;
+    const downloadStats = await getHitsAsync(downloadKey, '1day', days) || [];
+    const uploadStats = await getHitsAsync(uploadKey, '1day', days) || [];
+    let totalDownload = 0, totalUpload = 0;
+    downloadStats.forEach((item) => {
+      totalDownload = totalDownload + item[1] * 1
+    })
+    uploadStats.forEach((item) => {
+      totalUpload = totalUpload + item[1] * 1
+    })
+    return {
+      downloadStats: downloadStats,
+      uploadStats: uploadStats,
+      totalDownload: totalDownload,
+      totalUpload: totalUpload
+    }
+  }
 
   async last60MinStatsForInit(json, mac) {
     const subKey = mac ? ':' + mac : ''
