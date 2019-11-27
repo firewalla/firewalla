@@ -3211,7 +3211,7 @@ class netBot extends ControllerBot {
                 await hostTool.deleteHost(ip);
 
                 // remove port forwarding
-                this._portforward({
+                this._portforward(null, {
                   "toPort": "*",
                   "protocol": "*",
                   "toIP": ip,
