@@ -36,7 +36,7 @@ class DataUsageSensor extends Sensor {
     }
     run() {
         //todo add policy for per device data usage monitor or system
-        this.refreshInterval = (this.config.refreshInterval || 15) * 1000;
+        this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
         this.timewindow = this.config.timewindow || 2;
         this.stddev_limit = this.config.stddev_limit || 200;
         this.analytics_hours = this.config.analytics_hours || 24;

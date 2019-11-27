@@ -499,7 +499,7 @@
     "WirelessInterfaceSensor": {},
     "DataUsageSensor": {
       "refreshInterval": 15,
-      "stddev_limit": 200,
+      "stddev_limit": 500,
       "analytics_hours": 24,
       "timewindow": 2,
       "topXflows": 2,
