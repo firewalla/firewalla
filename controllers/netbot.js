@@ -137,7 +137,7 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay } = require('../util/util.js')
+const { delay } = require('../util/util.js');
 const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
@@ -1858,6 +1858,23 @@ class netBot extends ControllerBot {
               upload: upload
             }
           }, null, callback);
+        })();
+        break;
+      case "monthlyDataUsage":
+        (async () => {
+          let target = msg.target;
+          if (!target || target == '0.0.0.0') {
+            target = null;
+          } else {
+            target = target.toUpperCase();
+          }
+          const { downloadStats, uploadStats, totalDownload, totalUpload } = await this.hostManager.monthlyDataStats(target);
+          this.simpleTxData(msg, {
+            downloadStats: downloadStats,
+            uploadStats: uploadStats,
+            totalDownload: totalDownload,
+            totalUpload: totalUpload
+          }, null, callback)
         })();
         break;
       default:
