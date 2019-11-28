@@ -565,7 +565,7 @@ let legoEptCloud = class {
                 });
             } else {
                 if(body.length == 0) {
-                    callback("invalid group id", null);
+                    callback("invalid group id " + gid, null);
                     return;
                 }
                 let b = null;

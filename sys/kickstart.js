@@ -195,38 +195,39 @@ function initializeGroup(callback) {
 }
 
 
-function postAppLinked() {
+async function postAppLinked() {
+  await platform.turnOffPowerLED();
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
-
+  
   // only do this in production and always do after 15 seconds ...
   // the 15 seconds wait is for the process to wake up
-
-  if(f.isProductionOrBeta() &&
-    // resetPassword by default unless resetPassword flag is explictly set to false
-    (typeof fConfig.resetPassword === 'undefined' ||
-      fConfig.resetPassword === true)) {
-    setTimeout(()=> {
-      ssh.resetRandomPassword((err,password) => {
-        if(err) {
-          log.info("Failed to reset ssh password");
-        } else {
-          log.info("A new random SSH password is used!");
-          sysManager.setSSHPassword(password);
-        }
-      });
-    }, 15000);
-  }
+  return new Promise((resolve, reject) => {
+    if (f.isProductionOrBeta() &&
+      // resetPassword by default unless resetPassword flag is explictly set to false
+      (typeof fConfig.resetPassword === 'undefined' ||
+        fConfig.resetPassword === true)) {
+      setTimeout(() => {
+        ssh.resetRandomPassword((err, password) => {
+          if (err) {
+            log.error("Failed to reset ssh password", err);
+          } else {
+            log.info("A new random SSH password is used!");
+            sysManager.setSSHPassword(password);
+          }
+          resolve();
+        });
+      }, 15000);
+    } else {
+      resolve();
+    }
+  });
 }
 
-async function inviteFirstAdmin(gid) {
+async function inviteAdmin(gid) {
   log.forceInfo("Initializing first admin:", gid);
 
   const gidPrefix = gid.substring(0, 8);
-
-  process.on('SIGTERM', exitHandler.bind(null, {
-    terminated: true, cleanup: true, gid: gid, exit: true
-  }));
 
   const group = await eptcloud.groupFindAsync(gid)
 
@@ -280,7 +281,7 @@ async function inviteFirstAdmin(gid) {
     log.forceInfo("EXIT KICKSTART AFTER JOIN");
     log.info("some license stuff on device:", result.payload);
 
-    postAppLinked()
+    await postAppLinked()
 
     if (count > 1) {
       const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
@@ -290,8 +291,6 @@ async function inviteFirstAdmin(gid) {
     }
 
     await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
-
-    await platform.turnOffPowerLED();
 
     await fwDiag.submitInfo({
       event: "PAIREND",
@@ -305,7 +304,8 @@ async function inviteFirstAdmin(gid) {
   } else {
     log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
 
-    if (count > 1) postAppLinked()
+    if (count > 1)
+      await postAppLinked()
 
     await fwDiag.submitInfo({
       event: "PAIREND_TIMEOUT",
@@ -322,7 +322,7 @@ async function launchService2(gid) {
   await writeFileAsync('/home/pi/.firewalla/ui.conf', JSON.stringify({gid:gid}), 'utf8');
 
   // don't start bro until app is linked
-  await exec("sudo systemctl is-active brofish").catch((err) => {
+  await exec("sudo systemctl is-active brofish").catch(() => {
     // need to restart brofish
     log.info("Restart brofish.service ...");
     return exec("sudo systemctl restart brofish").catch((err) => { // use restart instead. use 'start' may be trapped due to 'TimeoutStartSec' in brofish.service
@@ -367,15 +367,20 @@ function login() {
             token: eptcloud.token,
             gid: gid
           }, (err, data) => {
-            if (err) {
-            }
             log.info("Set sys:ept", err, data, eptcloud.eid, eptcloud.token, gid);
           });
 
-          await inviteFirstAdmin(gid)
+          process.on('SIGTERM', exitHandler.bind(null, {
+            terminated: true, cleanup: true, gid: gid, exit: true, event: "SIGTERM"
+          }));
 
-          await platform.turnOffPowerLED();
-          exec("sleep 2; sudo systemctl stop firekick").catch((err) => {
+          await inviteAdmin(gid)
+
+          await exitHandler({terminated: true, cleanup: true, gid: gid, exit: false, event: "NormalEnd"})
+
+          process.removeAllListeners('SIGTERM')
+
+          exec("sudo systemctl stop firekick").catch(() => {
             // this command will kill the program itself, catch this error silently
           })
 
@@ -412,7 +417,7 @@ async function sendTerminatedInfoToDiagServer(gid) {
 }
 
 async function exitHandler(options, err) {
-  if (err) log.info(err.stack);
+  if (err) log.info("Exiting", options.event, err.message, err.stack);
   if (options.cleanup) {
     await diag.iptablesRedirection(false);
     await platform.turnOffPowerLED();
@@ -425,12 +430,12 @@ async function exitHandler(options, err) {
 
 //do something when app is closing
 process.on('beforeExit', exitHandler.bind(null, {
-  cleanup: true, exit: true
+  cleanup: true, exit: true, event: "beforeExit"
 }));
 
 //catches ctrl+c event
 process.on('SIGINT', exitHandler.bind(null, {
-  cleanup: true, exit: true
+  cleanup: true, exit: true, event: "SIGINT"
 }));
 
 process.on('uncaughtException',(err)=>{

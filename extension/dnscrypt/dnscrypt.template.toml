@@ -1,0 +1,82 @@
+
+# server_names = ['cloudflare', 'cloudflare-ipv6', 'google']
+
+server_names = %DNSCRYPT_SERVER_LIST%
+
+listen_addresses = ['127.0.0.1:%DNSCRYPT_LOCAL_PORT%', '[::1]:%DNSCRYPT_LOCAL_PORT%']
+
+max_clients = 250
+
+ipv4_servers = true
+
+ipv6_servers = %DNSCRYPT_IPV6%
+
+dnscrypt_servers = false
+
+doh_servers = true
+
+
+require_dnssec = false
+
+require_nolog = true
+
+require_nofilter = true
+
+disabled_server_names = []
+
+force_tcp = false
+
+timeout = 5000
+
+keepalive = 30
+
+cert_refresh_delay = 240
+
+fallback_resolver = '%DNSCRYPT_FALLBACK_DNS%:53'
+
+ignore_system_dns = false
+netprobe_timeout = 60
+
+netprobe_address = '9.9.9.9:53'
+
+log_files_max_size = 10
+log_files_max_age = 7
+log_files_max_backups = 1
+
+block_ipv6 = false
+
+reject_ttl = 600
+
+cache = true
+
+cache_size = 1024
+
+cache_min_ttl = 2400
+cache_max_ttl = 86400
+cache_neg_min_ttl = 60
+
+cache_neg_max_ttl = 600
+
+[query_log]
+
+  format = 'tsv'
+
+[nx_log]
+
+  format = 'tsv'
+
+[blacklist]
+
+[ip_blacklist]
+
+[whitelist]
+
+[schedules]
+
+
+[sources]
+
+[anonymized_dns]
+
+
+%DNSCRYPT_ALL_SERVER_LIST%

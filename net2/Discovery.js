@@ -188,6 +188,11 @@ module.exports = class {
     this.interfaces = {};
     const config = Config.getConfig(true);
     networkTool.listInterfaces().then(list => {
+      if (!list.length) {
+        log.warn('No interface')
+        return
+      }
+
       let redisobjs = ['sys:network:info'];
       for (let i in list) {
         log.debug(list[i]);
