@@ -43,6 +43,7 @@ class DataUsageSensor extends Sensor {
         this.minsize = this.config.minsize || 100 * 1000 * 1000;
         this.smWindow = this.config.smWindow || 2;
         this.mdWindow = this.config.mdWindow || 8;
+        this.slot = 4// 1hour 4 slots
         this.hookFeature(featureName);
     }
     job() {
@@ -58,22 +59,21 @@ class DataUsageSensor extends Sensor {
         log.info("Start check data usage")
         let hosts = await hostManager.getHostsAsync();
         const systemDataUsage = await this.getTimewindowDataUsage(0, '');
-        const systemTotalUsage = systemDataUsage.reduce((total, item) => { return { count: total.count * 1 + item.count * 1 } }).count
+        const systemRecentlyTotalUsage = this.getRecentlyDataUsage(systemDataUsage, this.smWindow * this.slot)
         hosts = hosts.filter(x => x)
         for (const host of hosts) {
             const mac = host.o.mac;
             const dataUsage = await this.getTimewindowDataUsage(0, mac);
             const dataUsageSmHourWindow = await this.getTimewindowDataUsage(this.smWindow, mac);
             const dataUsageMdHourWindow = await this.getTimewindowDataUsage(this.mdWindow, mac);
-            const hostTotalUsage = dataUsage.reduce((total, item) => { return { count: total.count * 1 + item.count * 1 } }).count
-            const hostDataUsagePercentage = hostTotalUsage / systemTotalUsage;
+            const hostRecentlyTotalUsage = this.getRecentlyDataUsage(dataUsage, this.smWindow * this.slot)
+            const hostDataUsagePercentage = hostRecentlyTotalUsage / systemRecentlyTotalUsage || 0;
             const begin = dataUsage[0].ts, end = dataUsage[dataUsage.length - 1].ts;
             for (let i = 0; i < dataUsageSmHourWindow.length; i++) {
                 if (dataUsageSmHourWindow[i].count > this.minsize && dataUsageMdHourWindow[i].count > this.minsize) {
                     const ratio = dataUsageSmHourWindow[i].count / dataUsageMdHourWindow[i].count;
-                    log.debug("ratio", ratio, this.ratio)
                     if (ratio > this.ratio && hostDataUsagePercentage > this.percentage) {
-                        this.genAbnormalBandwidthUsageAlarm(host, begin, end, hostTotalUsage, dataUsage);
+                        this.genAbnormalBandwidthUsageAlarm(host, begin, end, hostRecentlyTotalUsage, dataUsage);
                         break;
                     }
                 }
@@ -84,7 +84,7 @@ class DataUsageSensor extends Sensor {
         const downloadKey = `download${mac ? ':' + mac : ''}`;
         const uploadKey = `upload${mac ? ':' + mac : ''}`;
         //[[ts,Bytes]]  [[1574325720, 9396810],[ 1574325780, 3141018 ]]
-        const slot = 4;// 1hour 4 slots
+        const slot = this.slot;
         const slots = slot * timeWindow || 1;
         const sumSlots = (slots + 1) * (slots / 2);
         const analytics_slots = slot * this.analytics_hours + slots
@@ -104,6 +104,16 @@ class DataUsageSensor extends Sensor {
             dataUsageTimeWindow.push(temp);
         }
         return dataUsageTimeWindow
+    }
+    getRecentlyDataUsage(data, steps) {
+        const length = data.length;
+        let total = 0;
+        for (let i = 1; i <= steps; i++) {
+            if (data[length - i] && data[length - i].count) {
+                total = total * 1 + data[length - i].count * 1;
+            }
+        }
+        return total;
     }
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, dataUsage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
