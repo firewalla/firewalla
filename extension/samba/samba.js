@@ -30,6 +30,10 @@ class Samba {
   }
 
   async getSambaName(ip) {
+    if (!ip) {
+      log.warn("getSambaName: Invalid ip")
+      return undefined
+    }
     let cmd = util.format("nbtscan -e %s | head -n 1 | awk '{print $2}'", ip);
     log.info("Running command:", cmd);
 

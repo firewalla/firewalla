@@ -38,6 +38,7 @@ class DeviceNameUpdateSensor extends Sensor {
       if (!macEntry.bnameCheckTime || Number(macEntry.bnameCheckTime) < expireTime) {
         // need to check again
         let ip = macEntry.ipv4Addr;
+        if (!ip) continue;
         let name = await samba.getSambaName(ip);
         if (name) {
           macEntry.bname = name;
