@@ -834,6 +834,8 @@ module.exports = class HostManager {
     if(typeof options === 'function') {
       callback = options;
       options = {}
+    } else if (!options) {
+      options = {}
     }
 
     let json = {};
@@ -911,7 +913,7 @@ module.exports = class HostManager {
         log.error("Caught error when preparing init data: " + err);
         log.error(err.stack);
         callback(err);
-      };
+      }
     });
   }
 
@@ -1500,14 +1502,12 @@ module.exports = class HostManager {
     });
   }
 
-  loadPolicy(callback) {
+  loadPolicy(callback = () => {}) {
     let key = "policy:system"
     rclient.hgetall(key, (err, data) => {
       if (err != null) {
         log.error("System:Policy:Load:Error", key, err);
-        if (callback) {
-          callback(err, null);
-        }
+        callback(err, null);
       } else {
         if (data) {
           this.policy = {};
@@ -1518,12 +1518,10 @@ module.exports = class HostManager {
               log.error(`Failed to parse policy ${k} with value ${data[k]}`, err)
             }
           }
-          if (callback)
-            callback(null, data);
+          callback(null, data);
         } else {
           this.policy = {};
-          if (callback)
-            callback(null, null);
+          callback(null, null);
         }
       }
     });

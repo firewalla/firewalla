@@ -626,7 +626,7 @@ class PolicyManager2 {
 
     multi.exec((err, results) => {
       if(err) {
-        log.error("Failed to load active policies (hgetall): " + err);
+        log.error("Failed to load policies (hgetall): " + err);
         callback(err);
         return;
       }
