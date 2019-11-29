@@ -141,7 +141,7 @@ const { delay } = require('../util/util.js');
 const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
-  _vpn(ip, value, callback) {
+  _vpn(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
@@ -153,19 +153,11 @@ class netBot extends ControllerBot {
         oldValue = JSON.parse(data["vpn"]);
       }
       const newValue = Object.assign({}, oldValue, value);
-      this.hostManager.setPolicy("vpn", newValue, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to enable vpn on ip " + ip);
-        }
-      });
+      this.hostManager.setPolicy("vpn", newValue, callback)
     });
   }
 
-  _ipAllocation(ip, value, callback) {
+  _ipAllocation(ip, value, callback = ()=>{}) {
     if (ip === "0.0.0.0") {
       // ip allocation is only applied on device
       callback(null)
@@ -174,14 +166,14 @@ class netBot extends ControllerBot {
     if (value.alternativeIp && value.type === "static") {
       const mySubnet = sysManager.mySubnet();
       if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
-        callback(`Alternative IP address should be in ${mySubnet}`);
+        callback(new Error(`Alternative IP address should be in ${mySubnet}`));
         return;
       }
     }
     if (value.secondaryIp && value.type === "static") {
       const mySubnet2 = sysManager.mySubnet2();
       if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
-        callback(`Secondary IP address should be in ${mySubnet2}`);
+        callback(new Error(`Secondary IP address should be in ${mySubnet2}`));
         return;
       }
     }
@@ -189,180 +181,105 @@ class netBot extends ControllerBot {
       if (host != null) {
         host.loadPolicy((err, data) => {
           if (err == null) {
-            host.setPolicy("ipAllocation", value, (err, data) => {
-              if (err == null) {
-                if (callback != null)
-                  callback(null, "Success: " + ip);
-              } else {
-                if (callback != null)
-                  callback(err, "Failed to set ip allocation to policy of " + ip);
-              }
-            });
+            host.setPolicy("ipAllocation", value, callback)
           } else {
             log.error("Failed to load policy of " + ip, err);
-            if (callback != null)
-              callback(err, "Failed to load policy");
+            callback(err);
           }
         })
       } else {
-        if (callback != null)
-          callback("error", "host not found: " + ip);
+        callback(new Error("host not found: " + ip));
       }
     })
   }
 
-  _shadowsocks(ip, value, callback) {
+  _shadowsocks(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("shadowsocks", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on shadowsocks: " + value);
-        }
-      });
+      this.hostManager.setPolicy("shadowsocks", value, callback)
     });
   }
 
-  _scisurf(ip, value, callback) {
+  _scisurf(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("scisurf", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on scisurf: " + value);
-        }
-      });
+      this.hostManager.setPolicy("scisurf", value, callback)
     });
   }
 
-  _enhancedSpoof(ip, value, callback) {
+  _enhancedSpoof(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null);
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("enhancedSpoof", value, (err, data) => {
-        if (err == null) {
-          if (callback)
-            callback(null, "Success");
-        } else {
-          if (callback)
-            callback(err, "Unable to apply compatible spoof: " + value);
-        }
-      })
+      this.hostManager.setPolicy("enhancedSpoof", value, callback)
     })
   }
 
-  _vulScan(ip, value, callback) {
+  _vulScan(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("vulScan", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on vulScan: " + value);
-        }
-      });
+      this.hostManager.setPolicy("vulScan", value, callback)
     });
   }
 
-  _dnsmasq(ip, value, callback) {
+  _dnsmasq(ip, value, callback = ()=>{}) {
     if (ip === "0.0.0.0") {
       this.hostManager.loadPolicy((err, data) => {
+        if (!data) callback(new Error('Error loading policy'))
+
         let oldValue = {};
         if (data["dnsmasq"]) {
           oldValue = JSON.parse(data["dnsmasq"]);
         }
         const newValue = Object.assign({}, oldValue, value);
-        this.hostManager.setPolicy("dnsmasq", newValue, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-              callback(err, "Unable to apply config on dnsmasq: " + value);
-          }
-        });
+        this.hostManager.setPolicy("dnsmasq", newValue, callback);
       });
     } else {
       this.hostManager.getHost(ip, (err, host) => {
         if (host != null) {
           host.loadPolicy((err, data) => {
             if (err == null) {
-              host.setPolicy('dnsmasq', value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success:" + ip);
-                } else {
-                  if (callback != null)
-                    callback(err, "Unable to change dnsmasq config of " + ip)
-
-                }
-              });
+              host.setPolicy('dnsmasq', value, callback);
             } else {
-              if (callback != null)
-                callback("error", "Unable to change dnsmasq config of " + ip);
+              callback(new Error("Unable to change dnsmasq config of " + ip));
             }
           });
         } else {
-          if (callback != null)
-            callback("error", "Host not found");
+          callback(new Error("Host not found"));
         }
       });
     }
   }
 
-  _externalAccess(ip, value, callback) {
+  _externalAccess(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("externalAccess", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on externalAccess: " + value);
-        }
-      });
+      this.hostManager.setPolicy("externalAccess", value, callback)
     });
   }
 
-  _ssh(ip, value, callback) {
+  _ssh(ip, value, callback = ()=>{}) {
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("ssh", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to ssh " + ip);
-        }
-      });
+      this.hostManager.setPolicy("ssh", value, callback)
     });
   }
 
@@ -374,23 +291,17 @@ class netBot extends ControllerBot {
    *      ALARM_BEHAVIOR: may be mapped to other alarms
    *   }
    */
-  _notify(ip, value, callback) {
+  _notify(ip, value, callback = ()=>{}) {
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("notify", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to setNotify " + ip);
-        }
+        callback(err)
         log.info("Notification Set", value, " CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
         nm.loadConfig();
       });
     });
   }
 
-  _sendLog(msg, callback) {
+  _sendLog(msg, callback = ()=>{}) {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid + ".tar.gz.gpg";
     log.info("sendLog: ", filename, password);
@@ -414,28 +325,18 @@ class netBot extends ControllerBot {
     });
   }
 
-  _portforward(target, msg, callback) {
+  _portforward(target, msg, callback = ()=>{}) {
     log.info("_portforward", msg);
     let c = require('../net2/MessageBus.js');
     this.channel = new c('debug');
     this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
-    if (callback) {
-      callback(null, null);
-    }
+    callback(null, null);
   }
 
-  _setUpstreamDns(ip, value, callback) {
+  _setUpstreamDns(ip, value, callback = ()=>{}) {
     log.info("In _setUpstreamDns with ip:", ip, "value:", value);
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("upstreamDns", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on upstream_dns: " + value);
-        }
-      });
+      this.hostManager.setPolicy("upstreamDns", value, callback)
     });
   }
 
@@ -891,7 +792,7 @@ class netBot extends ControllerBot {
     }
   }
 
-  scanStart(callback) {
+  scanStart(callback = ()=>{}) {
     this.hostManager.getHosts((err, result) => {
       this.hosts = result;
       for (let i in result) {
@@ -913,14 +814,14 @@ class netBot extends ControllerBot {
           }
         });
       }
-      if (callback)
+      if (callback = ()=>{})
         callback(null, null);
 
     });
 
   }
 
-  setHandler(gid, msg /*rawmsg.message.obj*/, callback) {
+  setHandler(gid, msg /*rawmsg.message.obj*/, callback = ()=>{}) {
     // mtype: set
     // target = "ip address" 0.0.0.0 is self
     // data.item = policy
