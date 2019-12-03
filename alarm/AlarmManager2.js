@@ -1394,6 +1394,7 @@ module.exports = class {
       case "ALARM_NEW_DEVICE":
       case "ALARM_DEVICE_OFFLINE":
       case "ALARM_DEVICE_BACK_ONLINE":
+      case "ALARM_ABNORMAL_BANDWIDTH_USAGE":
         i_type = "mac"; // place holder, not going to be matched by any alarm/policy
         i_target = alarm["p.device.mac"];
         break;
