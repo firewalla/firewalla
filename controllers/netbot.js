@@ -1081,6 +1081,22 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "dataPlan":
+        (async () => {
+          const { total, date, enable } = value;
+          const featureName = 'data_plan';
+          if (enable) {
+            await fc.enableDynamicFeature(featureName)
+            await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
+          } else {
+            await fc.disableDynamicFeature(featureName);
+            await rclient.delAsync("sys:data:plan");
+          }
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;

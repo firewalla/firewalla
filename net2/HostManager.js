@@ -315,9 +315,29 @@ module.exports = class HostManager {
     let uploadStats = await getHitsAsync("upload", "1minute", 60)
     return { downloadStats, uploadStats }
   }
-  async monthlyDataStats(mac) {
+  async monthlyDataStats(mac, date) {
     //default calender month
-    const days = new Date().getDate();
+    const now = new Date();
+    let days = now.getDate();
+    const month = now.getMonth(),
+      year = now.getFullYear(),
+      lastMonthDays = new Date(year, month, 0).getDate(),
+      currentMonthDays = new Date(year, month + 1, 0).getDate();
+    let monthlyBeginTs, monthlyEndTs;
+    if (date && date != 1) {
+      if (days < date) {
+        days = lastMonthDays - date + 1 + days;
+        monthlyBeginTs = new Date(year, month - 1, date);
+        monthlyEndTs = new Date(year, month, date);
+      } else {
+        days = days - date + 1;
+        monthlyBeginTs = new Date(year, month, date);
+        monthlyEndTs = new Date(year, month + 1, date);
+      }
+    } else {
+      monthlyBeginTs = new Date(year, month, 1);
+      monthlyEndTs = new Date(year, month + 1, 1);
+    }
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
     const downloadStats = await getHitsAsync(downloadKey, '1day', days) || [];
@@ -333,7 +353,9 @@ module.exports = class HostManager {
       downloadStats: downloadStats,
       uploadStats: uploadStats,
       totalDownload: totalDownload,
-      totalUpload: totalUpload
+      totalUpload: totalUpload,
+      monthlyBeginTs: monthlyBeginTs / 1000,
+      monthlyEndTs: monthlyEndTs / 1000
     }
   }
 

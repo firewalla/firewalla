@@ -603,6 +603,27 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
     return fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4
   }
 }
+class OverDataPlanUsageAlarm extends Alarm{
+  constructor(timestamp, device, info) {
+    super("ALARM_OVER_DATA_PLAN_USAGE", timestamp, device, info);
+  }
+  isDup(alarm) {
+    let alarm2 = this;
+    if(alarm.type !== alarm2.type) {
+      return false;
+    }
+    if(alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level']){
+      return false;
+    }
+    return true;
+  }
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.data_plan.cooldown") || 60 * 60 * 24 * 30
+  }
+  requiredKeys(){
+    return [];
+  }
+}
 
 class LargeTransferAlarm extends OutboundAlarm {
   constructor(timestamp, device, destID, info) {
@@ -773,6 +794,7 @@ let classMapping = {
   ALARM_GAME: GameAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_ABNORMAL_BANDWIDTH_USAGE: AbnormalBandwidthUsageAlarm.prototype,
+  ALARM_OVER_DATA_PLAN_USAGE: OverDataPlanUsageAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
   ALARM_DEVICE_BACK_ONLINE: DeviceBackOnlineAlarm.prototype,
   ALARM_DEVICE_OFFLINE: DeviceOfflineAlarm.prototype,
@@ -794,6 +816,7 @@ module.exports = {
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   AbnormalBandwidthUsageAlarm: AbnormalBandwidthUsageAlarm,
+  OverDataPlanUsageAlarm: OverDataPlanUsageAlarm,
   NewDeviceAlarm: NewDeviceAlarm,
   DeviceBackOnlineAlarm: DeviceBackOnlineAlarm,
   DeviceOfflineAlarm: DeviceOfflineAlarm,

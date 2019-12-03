@@ -43,6 +43,12 @@ class DestInfoIntel extends Intel {
     if (alarm["p.transfer.inbound.size"]) {
       alarm["p.transfer.inbound.humansize"] = formatBytes(alarm["p.transfer.inbound.size"]);
     }
+    if (alarm["p.totalUsage"]) {
+      alarm["p.totalUsage.humansize"] = formatBytes(alarm["p.totalUsage"]);
+    }
+    if (alarm["p.planUsage"]) {
+      alarm["p.planUsage.humansize"] = formatBytes(alarm["p.planUsage"]);
+    }
 
     let destIP = alarm["p.dest.ip"];
 
