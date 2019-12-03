@@ -957,7 +957,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    const {pid, scope, target, whitelist} = policy
+    let {pid, scope, intf, target, whitelist} = policy
 
     // scope !== []
 
@@ -967,8 +967,8 @@ class PolicyManager2 {
       case "remotePort":
       case "remoteIpPort":
       case "remoteNetPort":
-        if (scope) {
-          await Block.setupRules(pid, pid, ruleSetTypeMap[type], whitelist);
+        if (scope || intf) {
+          await Block.setupRules(scope && pid, pid, ruleSetTypeMap[type], intf, whitelist);
           await Block.addMacToSet(scope, Block.getMacSet(pid));
           await Block.block(target, Block.getDstSet(pid), whitelist)
         } else {
@@ -985,16 +985,17 @@ class PolicyManager2 {
 
       case "domain":
       case "dns":
-        if(scope) {
+        if(scope || intf) {
           if(!policy.dnsmasq_entry){
-            await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
+            await Block.setupRules(scope && pid, pid, "hash:ip", intf, whitelist);
             await Block.addMacToSet(scope, Block.getMacSet(pid));
           }
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
             dnsmasq_entry: policy.dnsmasq_entry,
-            scope: scope
+            scope: scope,
+            intf: intf
           })
         } else {
           let options = {
@@ -1026,10 +1027,11 @@ class PolicyManager2 {
             scope: scope,
             isCategory: true,
             dnsmasq_entry: policy.dnsmasq_entry,
-            category: target
+            category: target,
+            intf: intf
           });
         } else {
-          await Block.setupRules(scope && pid, target, "hash:ip", whitelist);
+          await Block.setupRules(scope && pid, target, "hash:ip", intf, whitelist);
           await Block.addMacToSet(scope, Block.getMacSet(pid));
           if (!scope && !whitelist && target === 'default_c') try {
             await categoryUpdater.iptablesRedirectCategory(target)
@@ -1041,7 +1043,7 @@ class PolicyManager2 {
 
       case "country":
         await countryUpdater.activateCountry(target);
-        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", whitelist);
+        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", intf, whitelist);
         await Block.addMacToSet(scope, Block.getMacSet(pid));
         break;
 
@@ -1076,7 +1078,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    const {pid, scope, target, whitelist} = policy
+    let {pid, scope, intf, target, whitelist} = policy
 
     switch(type) {
       case "ip":
@@ -1084,8 +1086,8 @@ class PolicyManager2 {
       case "remotePort":
       case "remoteIpPort":
       case "remoteNetPort":
-        if (scope) {
-          await Block.setupRules(pid, pid, ruleSetTypeMap[type], whitelist, true);
+        if (scope || intf) {
+          await Block.setupRules(scope && pid, pid, ruleSetTypeMap[type], intf, whitelist, true);
         } else {
           const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type]
 
@@ -1100,16 +1102,17 @@ class PolicyManager2 {
 
       case "domain":
       case "dns":
-        if(scope) {
+        if(scope || intf) {
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
             dnsmasq_entry: policy.dnsmasq_entry,
-            scope: scope
+            scope: scope,
+            intf: intf
           })
           // destroy domain dst cache, since there may be various domain dst cache in different policies
           if(!policy.dnsmasq_entry){
-            await Block.setupRules(pid, pid, 'hash:ip', whitelist, true);
+            await Block.setupRules(scope && pid, pid, 'hash:ip', intf, whitelist, true);
           }
         } else {
           let options = {
@@ -1140,10 +1143,11 @@ class PolicyManager2 {
             scope: scope,
             isCategory: true,
             dnsmasq_entry: policy.dnsmasq_entry,
-            category: target
+            category: target,
+            intf: intf
           });
         }else{
-          await Block.setupRules(scope && pid, target, 'hash:ip', whitelist, true, false);
+          await Block.setupRules(scope && pid, target, 'hash:ip', intf, whitelist, true, false);
           if (!scope && !whitelist && target === 'default_c') try {
             await categoryUpdater.iptablesUnredirectCategory(target)
           } catch(err) {
@@ -1152,7 +1156,7 @@ class PolicyManager2 {
           break;
         }
       case "country":
-        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), 'hash:net', whitelist, true, false);
+        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), 'hash:net', intf, whitelist, true, false);
         break;
 
       default:
