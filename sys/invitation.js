@@ -140,6 +140,7 @@ class FWInvitation {
     try {
       const invite = JSON.parse(payload);
       if(invite.eid && invite.license) {
+        log.info("Going to pair through local:", invite.eid);
         return {
           value: invite.eid,
           evalue: JSON.stringify({
