@@ -1794,6 +1794,21 @@ class netBot extends ControllerBot {
           }, null, callback)
         })();
         break;
+      case "dataPlan":
+        (async () => {
+          const featureName = 'data_plan';
+          let dataPlan = await rclient.getAsync('sys:data:plan');
+          const enable = fc.isFeatureOn(featureName)
+          if (dataPlan) {
+            dataPlan = JSON.parse(dataPlan);
+          } else {
+            dataPlan = {}
+          }
+          this.simpleTxData(msg, { dataPlan: dataPlan, enable: enable }, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
