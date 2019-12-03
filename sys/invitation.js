@@ -128,11 +128,42 @@ class FWInvitation {
     return rclient.delAsync(key);
   }
 
+  async checkLocalInvitation() {
+    const key = "firekick:local:payload";
+    const payload = await rclient.getAsync(key);
+    if(!payload) {
+      return null;
+    }
+
+    await rclient.delAsync(key); // this should always be used only once
+
+    try {
+      const invite = JSON.parse(payload);
+      if(invite.eid && invite.license) {
+        log.info("Going to pair through local:", invite.eid);
+        return {
+          value: invite.eid,
+          evalue: JSON.stringify({
+            license: invite.license
+          })
+        };
+      } else {
+        return null;
+      }
+    } catch(err) {
+      log.forceInfo("Invalid local payload:", payload)
+      return null
+    }
+  }
+
   async checkInvitation(rid) {
     log.forceInfo(`${this.leftCheckCount} Inviting ${rid} to group ${this.gid}`);
     try {
       this.leftCheckCount--;
-      let rinfo = await this.cloud.eptinviteGroupByRidAsync(this.gid, rid);
+      let rinfo = await this.checkLocalInvitation();
+      if(rinfo === null) {
+        rinfo = await this.cloud.eptinviteGroupByRidAsync(this.gid, rid);
+      }
       if(!rinfo || !rinfo.value) {
         throw new Error("Invalid rinfo");
       }
