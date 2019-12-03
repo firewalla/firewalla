@@ -28,27 +28,30 @@ const flowTool = new FlowTool();
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
-const featureName = 'abnormal_bandwidth_usage';
+const abnormalBandwidthUsageFeatureName = 'abnormal_bandwidth_usage';
+const dataPlanFeatureName = 'data_plan';
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const fc = require('../net2/config.js');
 class DataUsageSensor extends Sensor {
     constructor() {
         super();
     }
     run() {
-        //todo add policy for per device data usage monitor or system
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
-        this.ratio = this.config.ratio || 2;
+        this.ratio = this.config.ratio || 1.2;
         this.analytics_hours = this.config.analytics_hours || 8;
         this.percentage = this.config.percentage || 0.8;
-        this.topXflows = this.config.topXflows || 2;
-        this.minsize = this.config.minsize || 100 * 1000 * 1000;
+        this.topXflows = this.config.topXflows || 10;
+        this.minsize = this.config.minsize || 150 * 1000 * 1000;
         this.smWindow = this.config.smWindow || 2;
         this.mdWindow = this.config.mdWindow || 8;
+        this.dataPlanMinPercentage = this.config.dataPlanMinPercentage || 0.8;
         this.slot = 4// 1hour 4 slots
-        this.hookFeature(featureName);
+        this.hookFeature();
     }
     job() {
-        this.checkDataUsage()
-        this.checkMonthlyDataUsage()
+        fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage()
+        fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage()
     }
     globalOn() {
     }
@@ -68,12 +71,18 @@ class DataUsageSensor extends Sensor {
             const dataUsageMdHourWindow = await this.getTimewindowDataUsage(this.mdWindow, mac);
             const hostRecentlyTotalUsage = this.getRecentlyDataUsage(dataUsage, this.smWindow * this.slot)
             const hostDataUsagePercentage = hostRecentlyTotalUsage / systemRecentlyTotalUsage || 0;
-            const begin = dataUsage[0].ts, end = dataUsage[dataUsage.length - 1].ts;
-            for (let i = 0; i < dataUsageSmHourWindow.length; i++) {
-                if (dataUsageSmHourWindow[i].count > this.minsize && dataUsageMdHourWindow[i].count > this.minsize) {
-                    const ratio = dataUsageSmHourWindow[i].count / dataUsageMdHourWindow[i].count;
-                    if (ratio > this.ratio && hostDataUsagePercentage > this.percentage) {
-                        this.genAbnormalBandwidthUsageAlarm(host, begin, end, hostRecentlyTotalUsage, dataUsage);
+            const end = dataUsage[dataUsage.length - 1].ts;
+            const begin = end - this.smWindow * 60 * 60;
+            const steps = this.smWindow * this.slot;
+            const length = dataUsageSmHourWindow.length;
+            if (hostRecentlyTotalUsage < steps * this.minsize || hostDataUsagePercentage < this.percentage) continue;
+            for (let i = 1; i <= steps; i++) {
+                const smUsage = dataUsageSmHourWindow[length - i].count,
+                    mdUsage = dataUsageMdHourWindow[length - i].count;
+                if (smUsage > this.minsize && mdUsage > this.minsize && smUsage > mdUsage) {
+                    const ratio = smUsage / mdUsage;
+                    if (ratio > this.ratio) {
+                        this.genAbnormalBandwidthUsageAlarm(host, begin, end, hostRecentlyTotalUsage, dataUsage, hostDataUsagePercentage);
                         break;
                     }
                 }
@@ -92,7 +101,7 @@ class DataUsageSensor extends Sensor {
         const uploadStats = await getHitsAsync(uploadKey, "15minutes", analytics_slots);
         let dataUsageTimeWindow = [];
         if (downloadStats.length < slots) return;
-        for (let i = slots - 1; i < downloadStats.length; i++) {
+        for (let i = slots; i < downloadStats.length; i++) {
             let temp = {
                 count: 0,
                 ts: downloadStats[i][0]
@@ -115,13 +124,14 @@ class DataUsageSensor extends Sensor {
         }
         return total;
     }
-    async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, dataUsage) {
+    async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, dataUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
         //get top flows from begin to end
         const mac = host.o.mac;
         const name = host.o.name || host.o.bname;
         const flows = await this.getSumFlows(mac, begin, end);
         const destNames = flows.map((flow) => flow.aggregationHost).join(',')
+        percentage = percentage * 100;
         let alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
             "p.device.mac": mac,
             "p.device.id": name,
@@ -132,7 +142,9 @@ class DataUsageSensor extends Sensor {
             "p.end.ts": end,
             "e.transfers": dataUsage,
             "p.flows": JSON.stringify(flows),
-            "p.dest.names": destNames
+            "p.dest.names": destNames,
+            "p.duration": this.smWindow,
+            "p.percentage": percentage.toFixed(2) + '%'
         });
         await alarmManager2.enqueueAlarm(alarm);
     }
@@ -170,12 +182,25 @@ class DataUsageSensor extends Sensor {
         })
     }
     async checkMonthlyDataUsage() {
-        //data plan 1TB,10TB, etc..
-        //monthly? 11.01-11.30 or 11.05 - 12.05
-        const dataPlan = '';
-        const { totalDownload, totalUpload } = await hostManager.monthlyDataStats();
-        if (totalDownload + totalUpload > dataPlan) {
+        log.info("Start check monthly data usage")
+        let dataPlan = await rclient.getAsync('sys:data:plan');
+        if (!dataPlan) return;
+        dataPlan = JSON.parse(dataPlan);
+        const { date, total } = dataPlan;
+        const { totalDownload, totalUpload, monthlyBeginTs, monthlyEndTs } = await hostManager.monthlyDataStats(null, date);
+        let percentage = ((totalDownload + totalUpload) / total)
+        if (percentage >= this.dataPlanMinPercentage) {
             //gen over data plan alarm
+            const level = Math.floor(percentage * 10);
+            percentage = percentage * 100;
+            let alarm = new Alarm.OverDataPlanUsageAlarm(new Date() / 1000, null, {
+                "p.monthly.endts": monthlyEndTs,
+                "p.percentage": percentage.toFixed(2) + '%',
+                "p.totalUsage": totalDownload + totalUpload,
+                "p.planUsage": total,
+                "p.alarm.level": level >= 10 ? 'over' : level
+            });
+            await alarmManager2.enqueueAlarm(alarm);
         }
     }
 }

@@ -1081,6 +1081,22 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "dataPlan":
+        (async () => {
+          const { total, date, enable } = value;
+          const featureName = 'data_plan';
+          if (enable) {
+            await fc.enableDynamicFeature(featureName)
+            await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
+          } else {
+            await fc.disableDynamicFeature(featureName);
+            await rclient.delAsync("sys:data:plan");
+          }
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
@@ -1777,6 +1793,21 @@ class netBot extends ControllerBot {
             totalUpload: totalUpload
           }, null, callback)
         })();
+        break;
+      case "dataPlan":
+        (async () => {
+          const featureName = 'data_plan';
+          let dataPlan = await rclient.getAsync('sys:data:plan');
+          const enable = fc.isFeatureOn(featureName)
+          if (dataPlan) {
+            dataPlan = JSON.parse(dataPlan);
+          } else {
+            dataPlan = {}
+          }
+          this.simpleTxData(msg, { dataPlan: dataPlan, enable: enable }, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
