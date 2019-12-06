@@ -100,13 +100,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     this.filterIPSetTasks = {};
     for (let key in tempUpdateTasks) {
       const params = tempUpdateTasks[key];
-      log.info(`Apply category IP set update: ${params.category}, ${params.domain}, ${JSON.stringify(params.options)}`);
+      log.debug(`Apply category IP set update: ${params.category}, ${params.domain}, ${JSON.stringify(params.options)}`);
       await this.updateIPSetByDomain(params.category, params.domain, params.options);
     }
 
     for (let key in tempFilterTasks) {
       const params = tempFilterTasks[key];
-      log.info(`Apply category IP set filter: ${params.category}, ${JSON.stringify(params.options)}`);
+      log.debug(`Apply category IP set filter: ${params.category}, ${JSON.stringify(params.options)}`);
       await this.filterIPSetByDomain(params.category, params.options);
     }
   }

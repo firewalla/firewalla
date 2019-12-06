@@ -499,6 +499,9 @@ exports.Rule = class Rule {
             cmd.push(match.spec)
           break;
 
+        case 'iif':
+          cmd.push('-i', match.name);
+          break;
         default:
       }
     })

@@ -265,7 +265,7 @@ class PortForward {
       log.info("PortForwarder:removePort Found MAP", dupMap);
       if (!shieldManager)
         shieldManager = new ShieldManager();
-      await shieldManager.removeIncomingRule(map.protocol, map.toIP, map.dport);
+      await shieldManager.removeIncomingRule(dupMap.protocol, dupMap.toIP, dupMap.dport);
 
       // we call remove anyway ... even there is no entry
       dupMap.destIP = sysManager.myIp()

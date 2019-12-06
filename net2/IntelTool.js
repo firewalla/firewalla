@@ -193,7 +193,7 @@ class IntelTool {
     let data = {flowlist:list, hashed:1};
 
     try {
-      const result = await bone.intelAsync("*", "", "check", data);
+      const result = await bone.intelAsync("*", "check", data);
       return result;
     } catch (err) {
       log.error("Failed to get intel for urls", urlList, "err:", err);
@@ -201,7 +201,7 @@ class IntelTool {
     }
   }
 
-  checkIntelFromCloud(ipList, domainList, fd) {
+  async checkIntelFromCloud(ipList, domainList, fd) {
     log.debug("Checking intel for",fd, ipList, domainList);
     if (fd == null) {
       fd = 'in';
@@ -255,26 +255,23 @@ class IntelTool {
 
     //    log.info(require('util').inspect(data, {depth: null}));
 
-    return new Promise((resolve, reject) => {
-      bone.intel("*","", "check", data, (err, data) => {
-        if(err) {
-          log.info("IntelCheck Result FAIL:",ipList, data);
-          reject(err)
-        } else {
-          if(Array.isArray(data)) {
-            data.forEach((result) => {
-              const ip = result.ip
-              if(hashCache[ip]) {
-                result.originIP = hashCache[ip]
-              }
-            })
+    try {
+      const results = await bone.intelAsync('*', 'check', data)
+      if(Array.isArray(results)) {
+        results.forEach((result) => {
+          const ip = result.ip
+          if(hashCache[ip]) {
+            result.originIP = hashCache[ip]
           }
-          log.debug("IntelCheck Result:",ipList, domainList, data);
-          resolve(data);
-        }
+        })
+      }
+      log.debug("IntelCheck Result:",ipList, domainList, data);
 
-      });
-    });
+      return results
+    } catch(err) {
+      log.error("IntelCheck Result FAIL:", ipList, data);
+      throw err;
+    }
   }
 
   getUserAgentKey(src, dst, dstPort) {

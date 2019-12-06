@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -48,8 +48,6 @@ const hostTool = new HostTool();
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 
-const fs = require('fs');
-
 const AUTO_REVERT_INTERVAL = 600 * 1000 // 10 minutes
 
 let timer = null
@@ -68,7 +66,7 @@ async function _enforceSpoofMode() {
   try {
     let bootingComplete = await firewalla.isBootingComplete()
     let firstBindDone = await firewalla.isFirstBindDone()
-    
+
     if(!bootingComplete && firstBindDone) {
       if(timer) {
         clearTimeout(timer)
@@ -77,53 +75,36 @@ async function _enforceSpoofMode() {
       // init stage, reset to none after X seconds if booting not complete
       timer = setTimeout(_revert2None, AUTO_REVERT_INTERVAL)
     }
-    
-    if(fConfig.newSpoof) {
-      let sm = new SpooferManager();
-      sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
-      // register v6 spoof instance if v6 gateway is assigned
-      if (sysManager.myGateway6() && sysManager.myIp6()) { // empty string also returns false
-        sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
-        if (sysManager.myDNS() && sysManager.myDNS().includes(sysManager.myGateway())) {
-          // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
-          const gateway = await hostTool.getMacEntryByIP(sysManager.myGateway());
-          if (gateway.ipv6Addr) {
-            const gatewayIpv6Addrs = JSON.parse(gateway.ipv6Addr);
-            log.info("Router also acts as dns, spoof all router's v6 addresses: ", gatewayIpv6Addrs);
-            for (let i in gatewayIpv6Addrs) {
-              const addr = gatewayIpv6Addrs[i];
-              sm.registerSpoofInstance(sysManager.monitoringInterface().name, addr, sysManager.myIp6(), true);
-            }
+
+    let sm = new SpooferManager();
+    sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
+    // register v6 spoof instance if v6 gateway is assigned
+    if (sysManager.myGateway6() && sysManager.myIp6()) { // empty string also returns false
+      sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
+      if (sysManager.myDNS() && sysManager.myDNS().includes(sysManager.myGateway())) {
+        // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
+        const gateway = await hostTool.getMacEntryByIP(sysManager.myGateway());
+        if (gateway.ipv6Addr) {
+          const gatewayIpv6Addrs = JSON.parse(gateway.ipv6Addr);
+          log.info("Router also acts as dns, spoof all router's v6 addresses: ", gatewayIpv6Addrs);
+          for (let i in gatewayIpv6Addrs) {
+            const addr = gatewayIpv6Addrs[i];
+            sm.registerSpoofInstance(sysManager.monitoringInterface().name, addr, sysManager.myIp6(), true);
           }
         }
       }
-      await sm.startSpoofing()
-      log.info("New Spoof is started");
-    } else {
-      // old style, might not work
-      const Spoofer = require('./Spoofer.js');
-      const spoofer = new Spoofer(config.monitoringInterface,{},true);
-      return Promise.resolve();
     }
+    await sm.startSpoofing()
+    log.info("New Spoof is started");
   } catch(err) {
     log.error("Failed to start new spoof", err);
   }
 }
 
 function _disableSpoofMode() {
-  if(fConfig.newSpoof) {
-    let sm = new SpooferManager();
-    log.info("Stopping spoofing");
-    return sm.stopSpoofing()
-  } else {
-    // old style, might not work
-    var Spoofer = require('./Spoofer.js');
-    let spoofer = new Spoofer(config.monitoringInterface,{},true);
-    return Promise.all([
-      spoofer.clean(),
-      spoofer.clean7()
-    ]);
-  }
+  let sm = new SpooferManager();
+  log.info("Stopping spoofing");
+  return sm.stopSpoofing()
 }
 
 async function _changeToAlternativeIpSubnet() {
@@ -202,7 +183,7 @@ async function _enableSecondaryInterface() {
       } catch(err) {
         log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
         throw err;
-      };
+      }
     }
   } catch(err) {
     log.error("Failed to enable secondary interface, err:", err);
@@ -238,8 +219,7 @@ async function _enforceDHCPMode(mode) {
   return Promise.resolve();
 }
 
-function _disableDHCPMode(mode) {
-  mode = mode || "dhcp";
+function _disableDHCPMode() {
   return Promise.resolve();
 }
 
@@ -290,7 +270,7 @@ async function apply() {
         // enhanced spoof is necessary for dhcp spoof
         hostManager.setPolicy("enhancedSpoof", true);
         // dhcp service is needed for dhcp spoof mode
-        await _enforceDHCPMode(mode)
+        await _enforceDHCPMode()
       }
       break;
     case Mode.MODE_MANUAL_SPOOF:
@@ -317,6 +297,14 @@ async function apply() {
   });
 }
 
+async function switchToNone() {
+  log.info("Switching to none")
+  await Mode.noneModeOn()
+  await _disableDHCPMode()
+  await _disableSpoofMode()
+  return apply()
+}
+
 async function reapply() {
   let lastMode = await Mode.getSetupMode()
   log.info("Old mode is", lastMode)
@@ -328,11 +316,11 @@ async function reapply() {
       await _disableSpoofMode()
       break;
     case "dhcp":
-      await _disableDHCPMode(lastMode)
+      await _disableDHCPMode()
       break;
     case "dhcpSpoof":
       await _disableSpoofMode()
-      await _disableDHCPMode(lastMode)
+      await _disableDHCPMode()
       break;
     case "none":
       // do nothing
@@ -354,7 +342,7 @@ function listenOnChange() {
   sclient.on("message", async (channel, message) => {
     if(channel === "Mode:Change") {
       if(curMode !== message) {
-        log.info("Mode is changed to " + message);                
+        log.info("Mode is changed to " + message);
         // mode is changed
         reapply();
       }
@@ -392,7 +380,7 @@ function setSpoofAndPublish() {
   setAutoSpoofAndPublish()
 }
 
-function setAutoSpoofAndPublish() { 
+function setAutoSpoofAndPublish() {
   Mode.autoSpoofModeOn()
     .then(() => {
       publish(Mode.MODE_AUTO_SPOOF);
@@ -406,7 +394,7 @@ function setDHCPSpoofAndPublish() {
     })
 }
 
-function setManualSpoofAndPublish() { 
+function setManualSpoofAndPublish() {
   Mode.manualSpoofModeOn()
     .then(() => {
       publish(Mode.MODE_MANUAL_SPOOF);

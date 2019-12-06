@@ -55,14 +55,17 @@ module.exports = class SpooferManager {
 
       if (firewalla.isMain()) {
         sem.on("DeviceUpdate", (event) => {
-          const host = event.host;
-          if (sysManager.myGateway6() && this.gatewayMac && host.mac === this.gatewayMac
-            && host.ipv6Addr && sysManager.myDNS().includes(sysManager.myGateway())) {
+          const ipv6Addr = event.host.ipv6Addr;
+          if (sysManager.myGateway6() && sysManager.myIp6() && this.gatewayMac && event.host.mac === this.gatewayMac
+            && ipv6Addr && Array.isArray(ipv6Addr) && sysManager.myDNS().includes(sysManager.myGateway())) {
             // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
-            log.info("Router also acts as dns, spoof all router's v6 addresses: ", host.ipv6Addr);
-            for (let i in host.ipv6Addr) {
-              const addr = host.ipv6Addr[i];
-              this.registerSpoofInstance(sysManager.monitoringInterface().name, addr, sysManager.myIp6(), true);
+            try {
+              log.info("Router also acts as dns, spoof all router's v6 addresses: ", ipv6Addr);
+              for (const addr of ipv6Addr) {
+                this.registerSpoofInstance(sysManager.monitoringInterface().name, addr, sysManager.myIp6(), true);
+              }
+            } catch(err) {
+              log.error("Error register new spoofer on device update", err)
             }
           }
         });
@@ -72,8 +75,10 @@ module.exports = class SpooferManager {
         sclient.on("message", (channel, message) => {
           switch (channel) {
             case "System:IPChange":
-              this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
-              if (sysManager.myGateway6()) {
+              if (sysManager.myGateway() && sysManager.myIp()) {
+                this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
+              }
+              if (sysManager.myGateway6() && sysManager.myIp6() && sysManager.myIp6().length) {
                 this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
               }
               break;

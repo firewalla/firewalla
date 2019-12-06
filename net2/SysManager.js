@@ -599,7 +599,6 @@ module.exports = class {
     return this.ddns;
   }
 
-
   myDNS() { // return array
     let _dns = (this.monitoringInterface() && this.monitoringInterface().dns) || [];
     let v4dns = [];
@@ -612,19 +611,19 @@ module.exports = class {
   }
 
   myDNSAny() {
-    return this.monitoringInterface().dns;
+    return this.monitoringInterface() && this.monitoringInterface().dns;
   }
 
   myGateway() {
-    return this.monitoringInterface().gateway;
+    return this.monitoringInterface() && this.monitoringInterface().gateway;
   }
 
   myGateway6() {
-    return this.monitoringInterface().gateway6;
+    return this.monitoringInterface() && this.monitoringInterface().gateway6;
   }
 
   mySubnet() {
-    return this.monitoringInterface().subnet;
+    return this.monitoringInterface() && this.monitoringInterface().subnet;
   }
 
   mySubnet2() {

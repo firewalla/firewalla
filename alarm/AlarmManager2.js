@@ -24,7 +24,6 @@ const bone = require("../lib/Bone.js");
 
 const flat = require('flat');
 
-const audit = require('../util/audit.js');
 const util = require('util');
 
 const moment = require('moment');
@@ -34,9 +33,6 @@ const fc = require('../net2/config.js')
 const f = require('../net2/Firewalla.js');
 
 const Promise = require('bluebird');
-
-const IntelManager = require('../net2/IntelManager.js')
-const intelManager = new IntelManager('info');
 
 const DNSManager = require('../net2/DNSManager.js');
 const dnsManager = new DNSManager('info');
@@ -49,9 +45,6 @@ const Policy = require('./Policy.js');
 
 const PolicyManager2 = require('./PolicyManager2.js');
 const pm2 = new PolicyManager2();
-
-const IntelTool = require('../net2/IntelTool.js')
-const intelTool = new IntelTool()
 
 let instance = null;
 
@@ -82,15 +75,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const alarmDetailPrefix = "_alarmDetail";
 
 const _ = require('lodash');
-
-function formatBytes(bytes, decimals) {
-  if (bytes == 0) return '0 Bytes';
-  var k = 1000,
-    dm = decimals || 2,
-    sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
-    i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
 
 // TODO: Support suppress alarm for a while
 
@@ -353,7 +337,6 @@ module.exports = class {
 
         this.addToActiveQueue(alarm, (err) => {
           if (!err) {
-            audit.trace("Created alarm", alarm.aid, "-", alarm.type, "on", alarm.device, ":", alarm.localizedMessage());
 
             // add extended info, extended info are optional
             (async () => {
@@ -861,8 +844,8 @@ module.exports = class {
     asc = asc || false;
 
     let query = asc ?
-      rclient.zrangebyscoreAsync(alarmActiveKey, ts, '+inf', 'limit', 0, count) :
-      rclient.zrevrangebyscoreAsync(alarmActiveKey, ts, '-inf', 'limit', 0, count);
+      rclient.zrangebyscoreAsync(alarmActiveKey, '('+ts, '+inf', 'limit', 0, count) :
+      rclient.zrevrangebyscoreAsync(alarmActiveKey, '('+ts, '-inf', 'limit', 0, count);
 
     let ids = await query;
 
@@ -1395,71 +1378,6 @@ module.exports = class {
     });
   }
 
-  async enrichDestInfo(alarm) {
-    if (alarm["p.transfer.outbound.size"]) {
-      alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
-    }
-
-    if (alarm["p.transfer.inbound.size"]) {
-      alarm["p.transfer.inbound.humansize"] = formatBytes(alarm["p.transfer.inbound.size"]);
-    }
-
-    let destIP = alarm["p.dest.ip"];
-
-    if (!destIP) {
-      return alarm;
-    }
-
-    // location
-    const loc = await intelManager.ipinfo(destIP)
-    if (loc && loc.loc) {
-      const location = loc.loc;
-      const ll = location.split(",");
-      if (ll.length === 2) {
-        alarm["p.dest.latitude"] = parseFloat(ll[0]);
-        alarm["p.dest.longitude"] = parseFloat(ll[1]);
-      }
-      alarm["p.dest.country"] = loc.country; // FIXME: need complete location info
-    }
-
-    // intel
-    const intel = await intelTool.getIntel(destIP)
-    if (intel && intel.app) {
-      alarm["p.dest.app"] = intel.app
-    }
-
-    if (intel && intel.category) {
-      // some alarm types are determined by combination of values in intel.category and intel.cs
-      // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
-      switch (alarm["type"]) {
-        case 'ALARM_VIDEO':
-          alarm["p.dest.category"] = 'av';
-          break;
-        case 'ALARM_GAME':
-          alarm["p.dest.category"] = 'games';
-          break;
-        case 'ALARM_PORN':
-          alarm["p.dest.category"] = 'porn';
-          break;
-        default:
-          alarm["p.dest.category"] = intel.category
-      }
-
-    }
-
-    if (intel && intel.host) {
-      alarm["p.dest.name"] = intel.host
-    } else {
-      alarm["p.dest.name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];
-    }
-
-    // whois - domain
-
-
-
-    return alarm;
-  }
-
   async loadRelatedAlarms(alarm, userInput) {
     const alarms = await this.loadRecentAlarmsAsync("-inf");
     const e = this.createException(alarm, userInput);
@@ -1476,6 +1394,7 @@ module.exports = class {
       case "ALARM_NEW_DEVICE":
       case "ALARM_DEVICE_OFFLINE":
       case "ALARM_DEVICE_BACK_ONLINE":
+      case "ALARM_ABNORMAL_BANDWIDTH_USAGE":
         i_type = "mac"; // place holder, not going to be matched by any alarm/policy
         i_target = alarm["p.device.mac"];
         break;

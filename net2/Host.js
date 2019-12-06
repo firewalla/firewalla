@@ -36,8 +36,6 @@ const getPreferredBName = require('../util/util.js').getPreferredBName
 
 const bone = require("../lib/Bone.js");
 
-const fConfig = require('./config.js').getConfig();
-
 const MobileDetect = require('mobile-detect');
 
 const flowUtil = require('../net2/FlowUtil.js');
@@ -80,11 +78,6 @@ class Host {
       }
       this.spoofing = false;
 
-      /*
-      if (this.o.ipv6Addr) {
-      this.o.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-      }
-      */
       this.predictHostNameUsingUserAgent();
 
       this.loadPolicy(callback);
@@ -181,7 +174,7 @@ class Host {
       log.debug("Host:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
     } catch(err) {
       log.error("Got error when cleanV6", err)
-    };
+    }
   }
 
   predictHostNameUsingUserAgent() {
@@ -458,102 +451,100 @@ class Host {
 
     const spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false);
 
-    if(fConfig.newSpoof) {
-      // new spoof supports spoofing on same device for mutliple times,
-      // so no need to check if it is already spoofing or not
-      if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
-        return;
-      }
+    // new spoof supports spoofing on same device for mutliple times,
+    // so no need to check if it is already spoofing or not
+    if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
+      return;
+    }
 
-      /* This is taken care of by DnsLoopAvoidanceSensor
+    /* This is taken care of by DnsLoopAvoidanceSensor
       if (dns && dns.includes(this.o.ipv4Addr)) {
         // do not monitor dns server's traffic
         return;
       }
       */
-      if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
-        return;
-      }
-      if (this.o.mac == "FF:FF:FF:FF:FF:FF" || this.o.mac.indexOf("FF:FF:FF:FF:FF:FF")>-1) {
-        return;
-      }
-      if(state === true) {
-        hostTool.getMacByIP(gateway).then((gatewayMac) => {
-          if (gatewayMac && gatewayMac === this.o.mac) {
-            // ignore devices that has same mac address as gateway
-            log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
-            return;
-          }
-          const cmd = `sudo ipset del -! not_monitored_mac_set ${this.o.mac}`;
-          exec(cmd).catch((err) => {
-            log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
-          });
-          spoofer.newSpoof(this.o.ipv4Addr)
-            .then(() => {
-              rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
-                .catch(err => log.error("Unable to set spoofing in redis", err))
-                .then(() => this.dnsmasq.onSpoofChanged());
-              log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
-              this.spoofing = true;
-            }).catch((err) => {
-              log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
-            })
-        })
-      } else {
-        const cmd = `sudo ipset add -! not_monitored_mac_set ${this.o.mac}`;
+        if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
+          return;
+        }
+    if (this.o.mac == "FF:FF:FF:FF:FF:FF" || this.o.mac.indexOf("FF:FF:FF:FF:FF:FF")>-1) {
+      return;
+    }
+    if(state === true) {
+      hostTool.getMacByIP(gateway).then((gatewayMac) => {
+        if (gatewayMac && gatewayMac === this.o.mac) {
+          // ignore devices that has same mac address as gateway
+          log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
+          return;
+        }
+        const cmd = `sudo ipset del -! not_monitored_mac_set ${this.o.mac}`;
         exec(cmd).catch((err) => {
-          log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
+          log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
         });
-        spoofer.newUnspoof(this.o.ipv4Addr)
+        spoofer.newSpoof(this.o.ipv4Addr)
           .then(() => {
-            rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
+            rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
               .catch(err => log.error("Unable to set spoofing in redis", err))
               .then(() => this.dnsmasq.onSpoofChanged());
-            log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
-            this.spoofing = false;
+            log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
+            this.spoofing = true;
           }).catch((err) => {
-            log.error("Failed to unspoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
+            log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
           })
-      }
+      })
+    } else {
+      const cmd = `sudo ipset add -! not_monitored_mac_set ${this.o.mac}`;
+      exec(cmd).catch((err) => {
+        log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
+      });
+      spoofer.newUnspoof(this.o.ipv4Addr)
+        .then(() => {
+          rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
+            .catch(err => log.error("Unable to set spoofing in redis", err))
+            .then(() => this.dnsmasq.onSpoofChanged());
+          log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
+          this.spoofing = false;
+        }).catch((err) => {
+          log.error("Failed to unspoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
+        })
+    }
 
-      /* put a safety on the spoof */
-      log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr));
-      let myIp6 = sysManager.myIp6();
-      if (this.ipv6Addr && this.ipv6Addr.length>0) {
-        for (let i in this.ipv6Addr) {
-          if (this.ipv6Addr[i] == gateway6) {
-            continue;
+    /* put a safety on the spoof */
+    log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr));
+    let myIp6 = sysManager.myIp6();
+    if (this.ipv6Addr && this.ipv6Addr.length>0) {
+      for (let i in this.ipv6Addr) {
+        if (this.ipv6Addr[i] == gateway6) {
+          continue;
+        }
+        if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
+          continue;
+        }
+        if (dns && dns.indexOf(this.ipv6Addr[i]) > -1) {
+          continue;
+        }
+        if (state == true) {
+          spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
+            log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
+          }).catch((err)=>{
+            log.error("Failed to spoof", this.ipv6Addr, err);
+          })
+          if (i>20) {
+            log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr);
+            break;
           }
-          if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
-            continue;
-          }
-          if (dns && dns.indexOf(this.ipv6Addr[i]) > -1) {
-            continue;
-          }
-          if (state == true) {
-            spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
-              log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
-            }).catch((err)=>{
-              log.error("Failed to spoof", this.ipv6Addr, err);
-            })
-            if (i>20) {
-              log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr);
-              break;
-            }
-            // prototype
-            //   log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
-            //   spoofer.spoof(null, null, this.o.mac, this.ipv6Addr,gateway6);
-            //   this.spoofing = true;
-          } else {
-            spoofer.newUnspoof6(this.ipv6Addr[i]).then(()=>{
-              log.debug("Starting v6 unspoofing", this.ipv6Addr[i]);
-            }).catch((err)=>{
-              log.error("Failed to [v6] unspoof", this.ipv6Addr);
-            })
-            //    log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
-            //    spoofer.unspoof(null, null, this.o.mac,this.ipv6Addr, gateway6);
-            //    this.spoofing = false;
-          }
+          // prototype
+          //   log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
+          //   spoofer.spoof(null, null, this.o.mac, this.ipv6Addr,gateway6);
+          //   this.spoofing = true;
+        } else {
+          spoofer.newUnspoof6(this.ipv6Addr[i]).then(()=>{
+            log.debug("Starting v6 unspoofing", this.ipv6Addr[i]);
+          }).catch((err)=>{
+            log.error("Failed to [v6] unspoof", this.ipv6Addr, err);
+          })
+          //    log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
+          //    spoofer.unspoof(null, null, this.o.mac,this.ipv6Addr, gateway6);
+          //    this.spoofing = false;
         }
       }
     }
@@ -970,7 +961,6 @@ class Host {
     return await this.getHost(ip);
   }
 
-  // looks like this function is never used
   async getHost(ip) {
     let key = "host:ip4:" + ip;
     log.debug("Discovery:FindHostWithIP", key, ip);
@@ -1034,7 +1024,9 @@ class Host {
         let obj = {};
         obj[name] = data;
         if (this.subscriber) {
-          this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
+          setTimeout(() => {
+            this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
+          }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
         }
         if (callback) {
           callback(null, obj);
@@ -1113,7 +1105,8 @@ class Host {
     return util.promisify(this.loadPolicy).bind(this)()
   }
 
-  isFlowAllowed(flow) {
+  // this only gets updated when 
+  isInternetAllowed() {
     if (this.policy && this.policy.blockin == true) {
       return false;
     }
