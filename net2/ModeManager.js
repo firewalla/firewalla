@@ -190,7 +190,6 @@ async function _enableSecondaryInterface() {
   }
 }
 
-<<<<<<< HEAD
 // this should be implemented in network manager
 async function _enableLanInterfaces() {
   const lanConfs = await sysManager.getLanConfigurations();
