@@ -207,8 +207,7 @@ async function _enableLanInterfaces() {
   }
 }
 
-async function _enforceDHCPMode(mode) {
-  mode = mode || "dhcp";
+async function _enforceDHCPMode() {
   // need to kill dhclient otherwise ip lease will be relinquished once it is expired, causing system reboot
   const cmd = "pgrep -x dhclient && sudo pkill dhclient; true";
   try {

@@ -32,7 +32,7 @@ class YellowPlatform extends Platform {
   }
 
   getLicenseTypes() {
-    return ["a2"];
+    return ["b1"];
   }
 
   getBoardSerial() {
