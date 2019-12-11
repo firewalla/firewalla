@@ -16,6 +16,10 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+if [[ $(uname -m) == "x86_64" ]]; then
+	exit 0
+fi
+
 SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
 LOGGER=/usr/bin/logger
 
