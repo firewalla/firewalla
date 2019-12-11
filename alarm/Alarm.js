@@ -602,6 +602,13 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
     // for download activity, only generate one alarm every 4 hours.
     return fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4
   }
+  localizedNotificationContentArray(){
+    return [this["p.device.name"], 
+    this["p.totalUsage.humansize"], 
+    this["p.duration"],
+    this["p.percentage"]
+    ];
+  }
 }
 class OverDataPlanUsageAlarm extends Alarm{
   constructor(timestamp, device, info) {
@@ -622,6 +629,12 @@ class OverDataPlanUsageAlarm extends Alarm{
   }
   requiredKeys(){
     return [];
+  }
+  localizedNotificationContentArray(){
+    return [this["p.percentage"], 
+    this["p.totalUsage.humansize"],
+    this["p.planUsage.humansize"]
+    ];
   }
 }
 
