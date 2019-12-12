@@ -68,6 +68,8 @@ module.exports = class {
       return;
     }
 
+    await ip6table.prepare();
+    await iptable.prepare();
     await ip6table.flush()
     await iptable.flush()
 

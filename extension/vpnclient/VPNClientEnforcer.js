@@ -174,7 +174,7 @@ class VPNClientEnforcer {
     }
     const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
     await this._ensureCreateIpset(vpnClientIpset);
-    const cmd = wrapIptables(`sudo iptables -w -A FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    const cmd = wrapIptables(`sudo iptables -w -A FW_FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to enforce strict vpn on ${vpnIntf}`, err);
     });
@@ -186,7 +186,7 @@ class VPNClientEnforcer {
     }
     const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
     await this._ensureCreateIpset(vpnClientIpset);
-    const cmd = wrapIptables(`sudo iptables -w -D FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    const cmd = wrapIptables(`sudo iptables -w -D FW_FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to unenforce strict vpn on ${vpnIntf}`, err);
       throw err;

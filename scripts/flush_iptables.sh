@@ -11,15 +11,27 @@ then
 fi
 
 # Same situation applies to VPN connection
-mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep POSTROUTING | grep SNAT )
+mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | grep SNAT )
 
 
-sudo iptables -w -F
-sudo iptables -w -F -t nat
+sudo iptables -w -C -j FW_FORWARD &>/dev/null && sudo iptables -w -F FW_FORWARD
+sudo iptables -w -C -j FW_FORWARD &>/dev/null || sudo iptables -w -F
+sudo iptables -w -N FW_FORWARD &>/dev/null
+sudo iptables -w -t nat -C -j FW_PREROUTING &>/dev/null && sudo iptables -w -t nat -F FW_PREROUTING
+sudo iptables -w -t nat -C -j FW_POSTROUTING &>/dev/null && sudo iptables -w -t nat -F FW_POSTROUTING
+sudo iptables -w -t nat -C -j FW_PREROUTING &>/dev/null || sudo iptables -w -F -t nat
+sudo iptables -w -t nat -N FW_PREROUTING &>/dev/null
+sudo iptables -w -t nat -N FW_POSTROUTING &>/dev/null
 sudo iptables -w -F -t raw
 sudo iptables -w -F -t mangle
-sudo ip6tables -w -F
-sudo ip6tables -w -F -t nat
+sudo ip6tables -w -C -j FW_FORWARD &>/dev/null && sudo iptables -w -F FW_FORWARD
+sudo ip6tables -w -C -j FW_FORWARD &>/dev/null || sudo iptables -w -F
+sudo ip6tables -w -N FW_FORWARD &>/dev/null
+sudo ip6tables -w -t nat -C -j FW_PREROUTING &>/dev/null && sudo ip6tables -w -t nat -F FW_PREROUTING
+sudo ip6tables -w -t nat -C -j FW_POSTROUTING &>/dev/null && sudo ip6tables -w -t nat -F FW_POSTROUTING
+sudo ip6tables -w -t nat -C -j FW_PREROUTING &>/dev/null || sudo ip6tables -w -F -t nat
+sudo ip6tables -w -t nat -N FW_PREROUTING &>/dev/null
+sudo ip6tables -w -t nat -N FW_POSTROUTING &>/dev/null
 sudo ip6tables -w -F -t raw
 sudo ip6tables -w -F -t mangle
 
