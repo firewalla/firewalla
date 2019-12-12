@@ -154,9 +154,17 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
+function prepare() {
+  return execAsync(
+    "(sudo ip6tables -w -N FW_FORWARD || true) && (sudo ip6tables -w -t nat -N FW_PREROUTING || true) && (sudo ip6tables -w -t nat -N FW_POSTROUTING || true)"
+  ).catch(err => {
+    log.error("IP6TABLE:PREPARE:Unable to prepare", err);
+  })
+}
+
 function flush() {
   return execAsync(
-    "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
+    "sudo ip6tables -w -F FW_FORWARD && sudo ip6tables -w -t nat -F FW_PREROUTING && sudo ip6tables -w -t nat -F FW_POSTROUTING && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
   ).catch(err => {
     log.error("IP6TABLE:FLUSH:Unable to flush", err)
   });
@@ -325,4 +333,5 @@ exports.dnsRedirectAsync = dnsRedirectAsync
 exports.dnsUnredirectAsync = dnsUnredirectAsync
 exports.switchMonitoringAsync = switchMonitoringAsync
 exports.dnsFlushAsync = dnsFlushAsync
+exports.prepare = prepare
 exports.flush = flush 

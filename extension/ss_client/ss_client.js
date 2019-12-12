@@ -119,13 +119,13 @@ class SSClient {
 
     // reroute all devices's traffic to ss special chain
     const chain = `FW_SHADOWSOCKS_${this.name}`;
-    await exec(wrapIptables(`sudo iptables -w -t nat -A PREROUTING -p tcp -j ${chain}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -p tcp -j ${chain}`));
   }
 
   async unRedirectTraffic() {
     // unreroute all traffic
     const chain = `FW_SHADOWSOCKS_${this.name}`;
-    await exec(wrapIptables(`sudo iptables -w -t nat -D PREROUTING -p tcp -j ${chain}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -p tcp -j ${chain}`));
 
     // dns
     await exec(wrapIptables(`sudo iptables -w -t nat -D OUTPUT -p tcp --destination ${REMOTE_DNS} --destination-port ${REMOTE_DNS_PORT} -j REDIRECT --to-port ${this.ssRedirectPort}`));

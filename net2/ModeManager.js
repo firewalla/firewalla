@@ -224,14 +224,14 @@ function _disableDHCPMode() {
 
 async function toggleCompatibleSpoof(state) {
   if (state) {
-    let cmd = wrapIptables("sudo iptables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
+    let cmd = wrapIptables("sudo iptables -w -t nat -A FW_POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
     await execAsync(cmd);
-    cmd = wrapIptables("sudo ip6tables -w -t nat -A POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
+    cmd = wrapIptables("sudo ip6tables -w -t nat -A FW_POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
     await execAsync(cmd);
   } else {
-    let cmd = wrapIptables("sudo iptables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
+    let cmd = wrapIptables("sudo iptables -w -t nat -D FW_POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
     await execAsync(cmd);
-    cmd = wrapIptables("sudo ip6tables -w -t nat -D POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
+    cmd = wrapIptables("sudo ip6tables -w -t nat -D FW_POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
     await execAsync(cmd);
   }
 }
