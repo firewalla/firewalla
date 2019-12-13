@@ -308,7 +308,14 @@ module.exports = class HostManager {
     const uploadStats = await getHitsAsync(uploadKey, "1hour", countHours);
     downloadStats.splice(downloadStats.length - todayHours);
     uploadStats.splice(uploadStats.length - todayHours);
-    json.yesterday = { upload: uploadStats, download: downloadStats };
+    let totalDownload = 0, totalUpload = 0;
+    downloadStats.forEach((item) => {
+      totalDownload = totalDownload + item[1] * 1
+    })
+    uploadStats.forEach((item) => {
+      totalUpload = totalUpload + item[1] * 1
+    })
+    json.yesterday = { upload: uploadStats, download: downloadStats, totalDownload: totalDownload, totalUpload: totalUpload };
     return json;
   }
 
