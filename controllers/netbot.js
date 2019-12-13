@@ -1957,7 +1957,7 @@ class netBot extends ControllerBot {
 
         netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
         netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options),
-
+        this.hostManager.yesterdayStatsForInit(jsonobj, mac),
         this.hostManager.last60MinStatsForInit(jsonobj, mac),
         this.hostManager.last30daysStatsForInit(jsonobj, mac)
       ])

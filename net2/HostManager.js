@@ -299,6 +299,18 @@ module.exports = class HostManager {
     }
     json.hosts = _hosts;
   }
+  async yesterdayStatsForInit(json, mac) {
+    const downloadKey = `download${mac ? ':' + mac : ''}`;
+    const uploadKey = `upload${mac ? ':' + mac : ''}`;
+    const todayHours = new Date().getHours();
+    const countHours = todayHours + 24;
+    const downloadStats = await getHitsAsync(downloadKey, "1hour", countHours);
+    const uploadStats = await getHitsAsync(uploadKey, "1hour", countHours);
+    downloadStats.splice(downloadStats.length - todayHours);
+    uploadStats.splice(uploadStats.length - todayHours);
+    json.yesterday = { upload: uploadStats, download: downloadStats };
+    return json;
+  }
 
   async last24StatsForInit(json) {
     const download = flowManager.getLast24HoursDownloadsStats();
@@ -866,6 +878,7 @@ module.exports = class HostManager {
       try {
 
         let requiredPromises = [
+          this.yesterdayStatsForInit(json),
           this.last24StatsForInit(json),
           this.last60MinStatsForInit(json),
           //            this.last60MinTopTransferForInit(json),
