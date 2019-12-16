@@ -116,9 +116,9 @@ class VpnManager {
 
     const commands =[
       // delete this rule if it exists, logical opertion ensures correct execution
-      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`),
+      wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`),
       // insert back as top rule in table
-      `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`
+      `sudo iptables -w -t nat -I FW_POSTROUTING 1 -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`
     ];
     await iptable.run(commands);
   }
@@ -133,7 +133,7 @@ class VpnManager {
     }
     log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
     const commands = [
-      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`),
+      wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -o ${this.config.monitoringInterface} -j SNAT --to-source ${localIp}`),
     ];
     this._currentLocalIp = null;
     await iptable.run(commands);

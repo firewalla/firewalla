@@ -166,12 +166,12 @@ class ShieldManager {
   async activateShield(mac) {
     if (!mac) {
       // enable shield globally
-      let cmd = wrapIptables("sudo iptables -w -A FORWARD -j FW_SHIELD");
+      let cmd = wrapIptables("sudo iptables -w -A FW_FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.error("Failed to activate global shield in iptables", err);
       });
 
-      cmd = wrapIptables("sudo ip6tables -w -A FORWARD -j FW_SHIELD");
+      cmd = wrapIptables("sudo ip6tables -w -A FW_FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.error("Failed to activate global shield in ip6tables", err);
       });
@@ -227,12 +227,12 @@ class ShieldManager {
   async deactivateShield(mac) {
     if (!mac) {
       // disable shield globally
-      let cmd = wrapIptables("sudo iptables -w -D FORWARD -j FW_SHIELD");
+      let cmd = wrapIptables("sudo iptables -w -D FW_FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.debug("Failed to deactivate global shield in iptables", err);
       });
 
-      cmd = wrapIptables("sudo ip6tables -w -D FORWARD -j FW_SHIELD");
+      cmd = wrapIptables("sudo ip6tables -w -D FW_FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.debug("Failed to deactivate global shield in ip6tables", err);
       });

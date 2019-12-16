@@ -84,6 +84,7 @@ exports.dnsFlush = dnsFlush;
 exports.dnsFlushAsync = util.promisify(dnsFlush);
 exports.portForwardFlush = portForwardFlush;
 exports.portForwardFlushAsync = util.promisify(portForwardFlush);
+exports.prepare = prepare;
 exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
@@ -130,7 +131,7 @@ function iptables(rule, callback) {
         let _src = " -s " + ip;
         let cmdline = "";
         let getCommand = function(action, src) {
-          return `sudo iptables -w -t nat ${action} POSTROUTING ${src} -j MASQUERADE`;
+          return `sudo iptables -w -t nat ${action} FW_POSTROUTING ${src} -j MASQUERADE`;
         };
 
         switch (action) {
@@ -141,7 +142,7 @@ function iptables(rule, callback) {
             cmdline = `(${getCommand("-C", _src)} && ${getCommand(action, _src)}); true`;
             break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + " POSTROUTING " + _src + " -j MASQUERADE";
+            cmdline = "sudo iptables -w -t nat " + action + " FW_POSTROUTING " + _src + " -j MASQUERADE";
             break;
         }
         log.debug("IPTABLE:DHCP:Running commandline: ", cmdline);
@@ -223,7 +224,7 @@ function iptables(rule, callback) {
             cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns;
+            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns;
           break;
         }
 
@@ -318,7 +319,7 @@ function iptables(rule, callback) {
 function iptablesArgs(rule) {
     let args = [];
 
-    if (!rule.chain) rule.chain = 'FORWARD';
+    if (!rule.chain) rule.chain = 'FW_FORWARD';
 
     if (rule.chain) args = args.concat([rule.action, rule.chain]);
     if (rule.protocol) args = args.concat(["-p", rule.protocol]);
@@ -418,9 +419,17 @@ function dhcpSubnetChange(ip, state, callback) {
   }, callback);
 }
 
+function prepare() {
+  return execAsync(
+    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true)"
+  ).catch(err => {
+    log.error("IPTABLE:PREPARE:Unable to prepare", err);
+  })
+}
+
 function flush() {
   return execAsync(
-    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
+    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
   ).catch(err => {
     log.error("IP6TABLE:FLUSH:Unable to flush", err)
   });
@@ -499,6 +508,9 @@ exports.Rule = class Rule {
             cmd.push(match.spec)
           break;
 
+        case 'iif':
+          cmd.push('-i', match.name);
+          break;
         default:
       }
     })

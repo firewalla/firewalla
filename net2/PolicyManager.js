@@ -44,12 +44,7 @@ const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 
-const features = require('../net2/features');
-
 const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
-
-const CategoryUpdater = require('../control/CategoryUpdater.js')
-const categoryUpdater = new CategoryUpdater()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -73,6 +68,8 @@ module.exports = class {
       return;
     }
 
+    await ip6table.prepare();
+    await iptable.prepare();
     await ip6table.flush()
     await iptable.flush()
 

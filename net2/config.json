@@ -18,7 +18,7 @@
   },
   "iptables": {
     "defaults": [
-      "sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
+      "sudo iptables -w -t nat -A FW_POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
       "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || true",
       "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
     ]
@@ -30,6 +30,8 @@
   "timing": {
     "alarm.cooldown": 900,
     "alarm.large_upload.cooldown": 14400,
+    "alarm.abnormal_bandwidth_usage.cooldown": 14400,
+    "alarm.data_plan.cooldown": 2592000,
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000
@@ -495,7 +497,18 @@
         "bipartite_graph"
       ]
     },
-    "WirelessInterfaceSensor": {}
+    "WirelessInterfaceSensor": {},
+    "DataUsageSensor": {
+      "refreshInterval": 15,
+      "ratio": 1.2,
+      "percentage": 0.8,
+      "analytics_hours": 8,
+      "smWindow": 2,
+      "mdWindow": 8,
+      "topXflows": 10,
+      "minsize": 150000000,
+      "dataPlanMinPercentage": 0.8
+    }
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -580,6 +593,8 @@
     "video": true,
     "game": true,
     "large_upload": true,
+    "abnormal_bandwidth_usage": true,
+    "data_plan": true,
     "new_device": true,
     "new_device_block": false,
     "device_online": true,

@@ -233,14 +233,6 @@ cd $FIREWALLA_HOME
 
 pre_main
 
-if [[ ! -f $FIREWALLA_HOME/node_modules/bleno/package.json && ! -f ~/.node_modules/bleno/package.json ]]; then
-    echo "Updating NPM BLENO"
-    sudo cp $FIREWALLA_HOME/config/netbot.config /encipher.config/.
-    sudo apt-get install -y bluetooth bluez libbluetooth-dev libudev-dev
-    npm install bleno --save
-    sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
-fi
-
 function check_upgrade {
     PACKAGE_NAME=$1
     PACKAGE_VERSION=$2
@@ -249,28 +241,6 @@ function check_upgrade {
         npm install $PACKAGE_NAME@$PACKAGE_VERSION
     fi
 }
-
-if [[ "$branch" == "release_pi_1_0" ]]; then
-  #check_upgrade external-ip ^0.2.4
-  check_upgrade jsonfile ^2.4.0
-  check_upgrade lodash ^4.17.2
-  check_upgrade pty.js 0.3.1
-  check_upgrade stats-lite 2.0.3
-  check_upgrade cron 1.1.0
-  check_upgrade mobile-detect 1.3.3
-  check_upgrade socket.io-client 1.4.8
-  check_upgrade swagger-node-express ~2.0
-  check_upgrade minimist 1.2.x
-  check_upgrade express ^4.14.0
-  check_upgrade body-parser 1.9.x
-  check_upgrade passport 0.3.2
-  check_upgrade passport-http-bearer 1.0.1
-  check_upgrade debug 2.2.0
-fi
-
-if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null && ! fgrep '"version": "0.3.1",' ~/.node_modules/network/package.json &>/dev/null; then
-    npm install network@git+https://git@github.com/melvinto/network.git
-fi
 
 sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 sudo setcap cap_net_raw+eip $(eval readlink -f `which node`)
