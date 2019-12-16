@@ -714,18 +714,23 @@ module.exports = class FlowMonitor {
 
       // clear obsoleted data in largeTransferGuard
       for (let k in this.largeTransferGuard) {
-        if (this.largeTransferGuard[k] < Date.now() / 1000 - this.monitorTime)
+        if (this.largeTransferGuard[k] < Date.now() / 1000 - this.monitorTime * 2)
           delete this.largeTransferGuard[k];
       }
 
+      if (copy.ets < Date.now() / 1000 - this.monitorTime * 2) {
+        log.warn('Traffic out of scope, drop', JSON.stringify(copy))
+        return
+      }
+
       // prevent alarm generation if summed flow starts before last alarm flow ends
-      let guardKey = `${copy.sh}:${copy.dh}:${copy.dp}`;
+      let guardKey = `${copy.sh}:${copy.dh}`;
       if (this.largeTransferGuard[guardKey] > copy.ts) {
         log.warn(`LargeTransferAlarm Guarded: ${guardKey} started ${copy.ts}, last one ended: ${this.largeTransferGuard[guardKey]}`);
         return;
       }
 
-      this.largeTransferGuard[guardKey] = copy.ts + copy.du;
+      this.largeTransferGuard[guardKey] = copy.ets;
 
       let alarm = new Alarm.LargeTransferAlarm(copy.ts, copy.shname, copy.dhname || copy.dh, {
         "p.device.id": copy.shname,
