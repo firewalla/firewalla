@@ -70,7 +70,10 @@ for set in `sudo ipset list -name | egrep "^vpn_client_"`; do
   sudo ipset destroy -! $set
 done
 
-sudo ip rule flush
+rules_to_remove=`ip rule list | grep -v -e "^501:" | grep -v -e "^1001:" | grep -v -e "^2001:" | grep -v -e "^3000:" | grep -v -e "^3001:" | grep -v -e "^4001:" | grep -v -e "^5001:" | grep -v -e "^6001:" | grep -v -e "^7001:" | grep -v -e "^8001:" | grep -v -e "^9001:" | grep -v -e "^10001:" | cut -d: -f2-`;
+while IFS= read -r line; do
+  sudo ip rule del $line
+done <<< "$rules_to_remove"
 sudo ip rule add pref 0 from all lookup local
 sudo ip rule add pref 32766 from all lookup main
 sudo ip rule add pref 32767 from all lookup default
