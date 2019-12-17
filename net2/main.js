@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,8 +13,6 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-
-// config.discovery.networkInterface
 
 process.title = "FireMain";
 
@@ -63,8 +61,6 @@ const fc = require('./config.js')
 const cp = require('child_process');
 
 const networkTool = require('./NetworkTool.js')();
-
-const pclient = require('../util/redis_manager.js').getPublishClient()
 
 let interfaceDetected = false;
 
@@ -202,43 +198,28 @@ async function run() {
 
   var VpnManager = require('../vpn/VpnManager.js');
 
-  var BroDetector = require("./BroDetect.js");
-  let bd = new BroDetector("bro_detector", firewallaConfig, "info");
-  //bd.enableRecordHitsTimer()
+  const fireRouter = require('./FireRouter.js')
+  await fireRouter.init()
 
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", firewallaConfig, "info");
 
   // make sure there is at least one usable ethernet
-  d.discoverInterfaces(function(err, list) {
-    var failure = 1;
-    if (list.length > 0) {
-      for(var i in list) {
-        var interf = list[i];
-        log.info("Active ethernet is found: " + interf.name + " (" + interf.ip_address + ")");
-        failure = 0;
-      }
-    }
+  if (!fireRouter.isReady()) {
+    log.error("FireRouter not ready, taking down the entire main.js")
+    process.exit(1);
+  }
 
-    if(failure) {
-      log.error("Failed to find any alive ethernet, taking down the entire main.js")
-      process.exit(1);
-    }
-  });
+  sysManager.update(null) // if new interface is found, update sysManager
 
   let c = require('./MessageBus.js');
   let publisher = new c('debug');
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
-  d.start();
-  bd.start();
-
-
 
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
-  var os = require('os');
 
   // always create the secondary interface
   await ModeManager.enableSecondaryInterface()
@@ -316,7 +297,6 @@ async function run() {
 
     // ensure getHosts is called after Iptables is flushed
     hostManager.getHosts((err,result)=>{
-      let listip = [];
       for (let i in result) {
 //        log.info(result[i].toShortString());
         result[i].on("Notice:Detected",(type,ip,obj)=>{
@@ -329,7 +309,6 @@ async function run() {
           log.info("Notice :", type,ip,obj);
           log.info("=================================");
         });
-	//            result[i].spoof(true);
       }
     });
 
@@ -344,7 +323,7 @@ async function run() {
       log.info("========= All existing policy rules are applied =========");
     } catch (err) {
       log.error("Failed to apply some policy rules: ", err);
-    };
+    }
     require('./UpgradeManager').finishUpgrade();
 
   },1000*2);

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -82,8 +82,6 @@ module.exports = class {
       this.publisher = new p(loglevel);
 
       this.hostCache = {};
-
-      this.discoverInterfacesAsync = util.promisify(this.discoverInterfaces)
     }
 
     return instances[name];
@@ -171,9 +169,6 @@ module.exports = class {
     }
   }
 
-  start() {
-  }
-
   /**
    * Only call release function when the SysManager instance is no longer
    * needed
@@ -182,6 +177,10 @@ module.exports = class {
     rclient.quit();
     sysManager.release();
     log.debug("Calling release function of Discovery");
+  }
+
+  discoverInterfacesAsync() {
+    return util.promisify(this.discoverInterfaces).bind(this)()
   }
 
   discoverInterfaces(callback) {

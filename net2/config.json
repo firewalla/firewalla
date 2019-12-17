@@ -630,5 +630,12 @@
     "naughty_monkey"
   ],
   "pubKeys": [],
-  "allowCustomizedProfiles": 1
+  "allowCustomizedProfiles": 1,
+  "firerouter": {
+    "interface": {
+      "host": "localhost",
+      "port": 8837,
+      "version": "v1"
+    }
+  }
 }
