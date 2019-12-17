@@ -135,7 +135,7 @@ class DataUsageSensor extends Sensor {
         const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * 24)
         const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", this.slot * 24)
         const recentlyDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * this.smWindow)
-        const recentlyUploadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * this.smWindow)
+        const recentlyUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", this.slot * this.smWindow)
         const last24HoursStats = {
             download: last24HoursDownloadStats,
             upload: last24HoursUploadStats
