@@ -473,6 +473,10 @@ class netBot extends ControllerBot {
         }
       }
 
+      if(data.gid) {
+        data["thread-id"] = data.gid;
+      }
+
       // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
       if (alarm["p.monkey"] && alarm["p.monkey"] == 1) {
         notifMsg.title = `[Monkey] ${notifMsg.title}`;
@@ -1957,7 +1961,7 @@ class netBot extends ControllerBot {
 
         netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
         netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options),
-
+        this.hostManager.yesterdayStatsForInit(jsonobj, mac),
         this.hostManager.last60MinStatsForInit(jsonobj, mac),
         this.hostManager.last30daysStatsForInit(jsonobj, mac)
       ])

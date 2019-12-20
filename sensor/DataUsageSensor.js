@@ -132,6 +132,18 @@ class DataUsageSensor extends Sensor {
         const flows = await this.getSumFlows(mac, begin, end);
         const destNames = flows.map((flow) => flow.aggregationHost).join(',')
         percentage = percentage * 100;
+        const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * 24)
+        const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", this.slot * 24)
+        const recentlyDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * this.smWindow)
+        const recentlyUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", this.slot * this.smWindow)
+        const last24HoursStats = {
+            download: last24HoursDownloadStats,
+            upload: last24HoursUploadStats
+        }
+        const recentlyStats = {
+            download: recentlyDownloadStats,
+            upload: recentlyUploadStats
+        }
         let alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
             "p.device.mac": mac,
             "p.device.id": name,
@@ -140,7 +152,8 @@ class DataUsageSensor extends Sensor {
             "p.totalUsage": totalUsage,
             "p.begin.ts": begin,
             "p.end.ts": end,
-            "e.transfers": dataUsage,
+            "e.transfers": recentlyStats,
+            "e.last24.transfers": last24HoursStats,
             "p.flows": JSON.stringify(flows),
             "p.dest.names": destNames,
             "p.duration": this.smWindow,

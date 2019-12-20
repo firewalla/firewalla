@@ -135,42 +135,42 @@ module.exports = class {
       });
     }
 
-    verifyPassword(password, callback) {
+    // verifyPassword(password, callback) {
 
-      var pty = require('pty.js');
-      const su = pty.spawn('bash',
-          ["-i", "-c", "su " + process.env.USER + " -c 'ls &>/dev/null'"],
-          {
-            name: 'xterm-color',
-            cols: 80,
-            rows: 30,
-            cwd: process.env.HOME,
-            env: process.env
-          }
-        );
+    //   var pty = require('pty.js');
+    //   const su = pty.spawn('bash',
+    //       ["-i", "-c", "su " + process.env.USER + " -c 'ls &>/dev/null'"],
+    //       {
+    //         name: 'xterm-color',
+    //         cols: 80,
+    //         rows: 30,
+    //         cwd: process.env.HOME,
+    //         env: process.env
+    //       }
+    //     );
 
-      var success = true;
+    //   var success = true;
 
-      su.on('data', (data) => {
-        switch(data.toString('utf8')) {
-          case "Password: ":
-            su.write(password+"\n");
-            break;
-          case "su: Authentication failure":
-            success = false;
-          default:
-            break;
-        }
-      });
+    //   su.on('data', (data) => {
+    //     switch(data.toString('utf8')) {
+    //       case "Password: ":
+    //         su.write(password+"\n");
+    //         break;
+    //       case "su: Authentication failure":
+    //         success = false;
+    //       default:
+    //         break;
+    //     }
+    //   });
 
-      su.on('close', (err) => {
-        if(err || !success) {
-          callback(new Error("Password Check Failed"));
-        } else {
-          callback(null, true);
-        }
-      });
-    }
+    //   su.on('close', (err) => {
+    //     if(err || !success) {
+    //       callback(new Error("Password Check Failed"));
+    //     } else {
+    //       callback(null, true);
+    //     }
+    //   });
+    // }
 
     removeRSAKeyPair() {
       fs.existsSync(fileRSAKey) && fs.unlinkSync(fileRSAKey);

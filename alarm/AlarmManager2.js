@@ -1000,6 +1000,7 @@ module.exports = class {
           case "ALARM_NEW_DEVICE":
           case "ALARM_DEVICE_OFFLINE":
           case "ALARM_DEVICE_BACK_ONLINE":
+          case "ALARM_ABNORMAL_BANDWIDTH_USAGE":
             p.type = "mac";
             p.target = alarm["p.device.mac"];
             break;
