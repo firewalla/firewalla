@@ -3,6 +3,7 @@
 alias sudo='sudo '
 alias apt='/home/pi/firewalla/scripts/apt.sh'
 alias apt-get='/home/pi/firewalla/scripts/apt.sh'
+alias tsys='sudo tail -F /var/log/syslog'
 alias t0='tail -F ~/.forever/main.log'
 alias t00='tail -F ~/.forever/*.log'
 alias t1='tail -F ~/.forever/kickui.log'

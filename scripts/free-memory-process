@@ -21,7 +21,7 @@ firemain_mem2=$(pgrep -x FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}
 redis_mem2=$(pgrep -x redis-server | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 bitbridge7_mem2=$(pgrep -x bitbridge7 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 bitbridge6_mem2=$(pgrep -x bitbridge6 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-bro_mem2=$(pgrep -x bro | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+bro_mem2=$(pgrep -x $(bro_proc_name) | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 NOP=`ps -ef |wc -l`
 NOT=`ps -aHx | wc -l`
 firemain_NOF=`lsof -p $firemain_pid | wc -l`

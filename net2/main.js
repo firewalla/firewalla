@@ -36,9 +36,7 @@ function updateTouchFile() {
 
   fs.open(mainTouchFile, 'w', (err, fd) => {
     if(!err) {
-      fs.close(fd, (err2) => {
-
-      })
+      fs.close(fd, () => { })
     }
   })
 }
@@ -51,6 +49,9 @@ const ModeManager = require('./ModeManager.js')
 const mode = require('./Mode.js')
 const WifiInterface = require('./WifiInterface.js');
 
+const fireRouter = require('./FireRouter.js')
+fireRouter.init() // let it crash
+
 // api/main/monitor all depends on sysManager configuration
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
@@ -60,7 +61,7 @@ const sensorLoader = require('../sensor/SensorLoader.js');
 const fc = require('./config.js')
 const cp = require('child_process');
 
-const networkTool = require('./NetworkTool.js')();
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 let interfaceDetected = false;
 
@@ -73,11 +74,8 @@ resetModeInInitStage()
 run0()
 
 async function detectInterface() {
-  await networkTool.updateMonitoringInterface().then(() => {
-    interfaceDetected = true;
-  }).catch((err) => {
-    interfaceDetected = true;
-  })
+  await fireRouter.waitTillReady()
+  interfaceDetected = true;
 }
 
 function run0() {
@@ -184,7 +182,7 @@ async function run() {
   const si = require('../extension/sysinfo/SysInfo.js');
   si.startUpdating();
 
-  const firewallaConfig = require('../net2/config.js').getConfig();
+  const firewallaConfig = fc.getConfig();
   sysManager.setConfig(firewallaConfig).then(() => {
     sysManager.syncVersionUpdate();
   }) // update sys config when start
@@ -198,17 +196,8 @@ async function run() {
 
   var VpnManager = require('../vpn/VpnManager.js');
 
-  const fireRouter = require('./FireRouter.js')
-  await fireRouter.init()
-
   var Discovery = require("./Discovery.js");
   let d = new Discovery("nmap", firewallaConfig, "info");
-
-  // make sure there is at least one usable ethernet
-  if (!fireRouter.isReady()) {
-    log.error("FireRouter not ready, taking down the entire main.js")
-    process.exit(1);
-  }
 
   sysManager.update(null) // if new interface is found, update sysManager
 
@@ -217,20 +206,25 @@ async function run() {
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
+  const BroDetect = require('./BroDetect.js');
+  const bro = new BroDetect("bro_detector", firewallaConfig)
+  bro.start()
 
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
 
-  // always create the secondary interface
-  await ModeManager.enableSecondaryInterface()
-  d.discoverInterfaces((err, list) => {
-    if(!err && list && list.length >= 2) {
-      sysManager.update(null) // if new interface is found, update sysManager
-      pclient.publishAsync("System:IPChange", "");
-      // recreate port direct after secondary interface is created
-      // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
-    }
-  })
+  if (platform.getDHCPCapacity()) {
+    // always create the secondary interface
+    await ModeManager.enableSecondaryInterface()
+    d.discoverInterfaces((err, list) => {
+      if(!err && list && list.length >= 2) {
+        sysManager.update(null) // if new interface is found, update sysManager
+        pclient.publishAsync("System:IPChange", "");
+        // recreate port direct after secondary interface is created
+        // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
+      }
+    })
+  }
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();

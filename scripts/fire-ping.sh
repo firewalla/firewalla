@@ -63,7 +63,7 @@ done
 # reboot ...
 
 api_process_cnt=`sudo systemctl status fireapi |grep 'active (running)' | wc -l`
-if [[ $api_process_cnt > 0 && ! -e /home/pi/.firewalla/config/disable_no_network_reboot ]]; then
+if [[ $api_process_cnt -gt 0 && ! -e /home/pi/.firewalla/config/disable_no_network_reboot ]]; then
    /home/pi/firewalla/scripts/firelog -t cloud -m "REBOOT: FIREWALLA PING NO Local Network REBOOT "
    /home/pi/firewalla/scripts/fire-rebootf 
    exit 0

@@ -40,7 +40,7 @@ class Platform {
         const brightness = `${path}/brightness`;
         await exec(`sudo bash -c 'echo default-on > ${trigger}'`);
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      };
+      }
     } catch(err) {
       log.error("Error turning on LED", err)
     }
@@ -53,7 +53,7 @@ class Platform {
         await exec(`sudo bash -c 'echo none > ${trigger}'`);
         const brightness = `${path}/brightness`;
         await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
-      };
+      }
     } catch(err) {
       log.error("Error turning off LED", err)
     }
@@ -64,10 +64,26 @@ class Platform {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
         await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
-      };
+      }
     } catch(err) {
       log.error("Error blinking LED", err)
     }
+  }
+
+  getName() {}
+
+  getBoardSerial() {}
+
+  getLicenseTypes() {}
+
+  getSubnetCapacity() {}
+
+  getCpuTemperature() {}
+
+  getPolicyCapacity() {}
+
+  getDHCPCapacity() {
+    return true
   }
 }
 
