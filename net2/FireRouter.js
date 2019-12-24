@@ -81,7 +81,7 @@ class FireRouter {
         this.monitoringInterfaces = Object.keys(this.config.lans)
       }
 
-      await broControl.writeClusterConfig(Object.keys(this.monitoringInterfaces))
+      await broControl.writeClusterConfig(this.monitoringInterfaces)
 
       // Update config ??
       // const updatedConfig = {

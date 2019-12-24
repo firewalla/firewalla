@@ -11,6 +11,7 @@ case "$UNAME" in
   source $FW_PLATFORM_DIR/$GOLD/platform.sh
   FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/gold
   BRO_PROC_NAME="zeek"
+  export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
   ;;
 "aarch64")
   source $FW_PLATFORM_DIR/blue/platform.sh

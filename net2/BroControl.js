@@ -18,10 +18,7 @@
 const log = require("./logger.js")(__filename);
 const f = require('./Firewalla.js')
 
-const exec = require('child-process-promise')
-const util = require('util')
-const fs = require('fs')
-const appendFile = util.promisify(fs.appendFile)
+const { exec } = require('child-process-promise')
 
 const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
 
@@ -29,7 +26,7 @@ class BroControl {
 
   async writeClusterConfig(monitoringInterfaces) {
     // rewrite cluster node.cfg
-    await exec(`sudo cp -f ${f.getFirewallaHome}/etc/node.cluster.cfg ${PATH_NODE_CFG}`)
+    await exec(`sudo cp -f ${f.getFirewallaHome()}/etc/node.cluster.cfg ${PATH_NODE_CFG}`)
 
     let workerCfg = []
     let index = 1
@@ -42,7 +39,7 @@ class BroControl {
         `interface=${intf}\n`,
       )
     }
-    await appendFile(PATH_NODE_CFG, workerCfg.join(''))
+    await exec(`echo ${workerCfg.join('')} | sudo tee -a ${PATH_NODE_CFG}`)
   }
 
   async addCronJobs() {
@@ -50,11 +47,11 @@ class BroControl {
   }
 
   async start() {
-    exec(`sudo systemctl start brofish`)
+    await exec(`sudo systemctl start brofish`)
   }
 
   async restart() {
-    exec(`sudo systemctl restart brofish`)
+    await exec(`sudo systemctl restart brofish`)
   }
 
 }
