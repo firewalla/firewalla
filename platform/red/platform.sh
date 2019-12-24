@@ -32,7 +32,7 @@ function get_node_modules_url {
 }
 
 
-CURRENT_DIR=$(dirname $0)
+CURRENT_DIR=$(dirname $BASH_SOURCE)
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"

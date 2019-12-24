@@ -163,7 +163,7 @@ class FireRouter {
 
     }
 
-    await broControl.start()
+    await broControl.restart()
     await broControl.addCronJobs()
 
     this.ready = true

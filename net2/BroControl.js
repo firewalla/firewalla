@@ -39,7 +39,7 @@ class BroControl {
         `interface=${intf}\n`,
       )
     }
-    await exec(`echo ${workerCfg.join('')} | sudo tee -a ${PATH_NODE_CFG}`)
+    await exec(`echo "${workerCfg.join('')}" | sudo tee -a ${PATH_NODE_CFG}`)
   }
 
   async addCronJobs() {
