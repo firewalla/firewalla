@@ -30,7 +30,7 @@
   "timing": {
     "alarm.cooldown": 900,
     "alarm.large_upload.cooldown": 14400,
-    "alarm.abnormal_bandwidth_usage.cooldown": 14400,
+    "alarm.abnormal_bandwidth_usage.cooldown": 28800,
     "alarm.data_plan.cooldown": 2592000,
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
