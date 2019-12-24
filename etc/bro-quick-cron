@@ -2,7 +2,7 @@
 sync
 
 bro_process_cnt=`ps -ef |grep "broctl/standalone broctl/auto" | grep -v grep | wc -l`
-if [[ $bro_process_cnt < 3 ]]; then
+if [[ $bro_process_cnt -lt 3 ]]; then
     logger "FIREWALLA: bro-quick-cron: bro restart due to bro vanished"
     sudo service brofish stop
     sudo service brofish start

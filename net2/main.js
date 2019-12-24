@@ -213,8 +213,7 @@ async function run() {
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
 
-  // No DHCP in Gold
-  if (platform.getName() != 'gold') {
+  if (platform.getDHCPCapacity()) {
     // always create the secondary interface
     await ModeManager.enableSecondaryInterface()
     d.discoverInterfaces((err, list) => {

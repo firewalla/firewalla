@@ -72,7 +72,7 @@ class YellowPlatform extends Platform {
         const brightness = `${path}/brightness`;
         await exec(`sudo bash -c 'echo none > ${trigger}'`);
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      };
+      }
     } catch(err) {
       log.error("Error turning on LED", err)
     }
@@ -117,6 +117,10 @@ class YellowPlatform extends Platform {
 
   getPolicyCapacity() {
     return 3000;
+  }
+
+  getDHCPCapacity() {
+    return false
   }
 }
 
