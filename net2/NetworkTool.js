@@ -60,8 +60,11 @@ class NetworkTool {
       };
       await Config.updateUserConfig(updatedConfig);
       fConfig = Config.getConfig();
+
+      return intf
     } else {
       log.error("WAN interface is not detected");
+      return null
     }
   }
 

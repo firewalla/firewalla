@@ -33,9 +33,6 @@ rm -r -f /blog/*
 rm -r -f /bspool/*
 umount /bspool
 mount -t tmpfs -o size=30m tmpfs /bspool
-cd /home/pi/firewalla
-sudo chown -R pi /home/pi/firewalla/.git
-branch=$(git rev-parse --abbrev-ref HEAD)
 
 sleep 3
 
@@ -52,4 +49,3 @@ sudo cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
 sudo sysctl -p
 
 logger "FIREWALLA: BRO-RUN Finished"
-#(sleep 20; sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab)&

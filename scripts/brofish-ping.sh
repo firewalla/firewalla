@@ -5,6 +5,7 @@
 # -----------------------------------------
 
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 TOTAL_RETRIES=3
 SLEEP_TIMEOUT=10
@@ -26,7 +27,7 @@ brofish_ping() {
 
 brofish_cpu() {
   # Get CPU% from top
-  RESULT=$(top -bn1 -p$(cat /blog/current/.pid) |grep bro|awk '{print $9}')
+  RESULT=$(top -bn1 -p$(cat /blog/current/.pid) |grep $(bro_proc_name)|awk '{print $9}')
 
   if [[ ${RESULT%%.*} -ge $CPU_THRESHOLD ]]; then
     return ${RESULT%%.*}
