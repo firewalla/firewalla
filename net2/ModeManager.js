@@ -120,7 +120,9 @@ async function _changeToAlternativeIpSubnet() {
   // check if is same subnet
   const currIpSubnet = iptool.cidrSubnet(oldIpSubnet);
   const altIp = iptool.cidrSubnet(altIpSubnet);
-  if (!currIpSubnet.contains(altIp.networkAddress) || !currIpSubnet.contains(altGateway)) {
+  if (!currIpSubnet.contains(altIp.networkAddress)
+    || currIpSubnet.subnetMaskLength !== altIp.subnetMaskLength
+    || !currIpSubnet.contains(altGateway)) {
     log.info("Alternative ip or gateway is not in current subnet, change ignore")
     return;
   }
