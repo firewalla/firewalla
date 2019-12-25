@@ -2236,9 +2236,13 @@ class netBot extends ControllerBot {
         break
 
       case "alarm:ignoreAll":
-        am2.ignoreAllAlarm((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
+        (async () => {
+          await am2.ignoreAllAlarm();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to ignoreAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
         break;
         
       case "alarm:report":
@@ -2264,15 +2268,23 @@ class netBot extends ControllerBot {
         break;
 
       case "alarm:deleteActiveAll":
-        am2.deleteActiveAll((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
+        (async () => {
+          await am2.deleteActiveAll();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to ignoreAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
         break;
         
       case "alarm:deleteArchivedAll":
-        am2.deleteArchivedAll((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
+        (async () => {
+          await am2.deleteArchivedAll();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to ignoreAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
         break;
         
       case "policy:create": {

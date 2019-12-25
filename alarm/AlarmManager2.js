@@ -1387,13 +1387,6 @@ module.exports = class {
     return related || []
   }
 
-  ignoreAllAlarm(callback) {
-    this.ignoreAllAlarmAsync().then(
-      res => callback(null, res),
-      err => callback(err, null)
-    )
-  }
-  
   async ignoreAllAlarmAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
     let multi = rclient.multi();
@@ -1405,16 +1398,9 @@ module.exports = class {
       multi.zrem(alarmActiveKey, alarmID);
       multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
     };
-    multi.execAsync();
+    await multi.execAsync();
     
     return alarmIDs;
-  }
-  
-  deleteActiveAll(callback) {
-    this.deleteActiveAllAsync().then(
-      res => callback(null, res),
-      err => callback(err, null)
-    )
   }
   
   async deleteActiveAllAsync() {
@@ -1429,16 +1415,9 @@ module.exports = class {
       multi.del(`${alarmDetailPrefix}:${alarmID}`);
       multi.del(alarmPrefix + alarmID);
     };
-    multi.execAsync();
+    await multi.execAsync();
     
     return alarmIDs;
-  }
-  
-  deleteArchivedAll(callback) {
-    this.deleteArchivedAllAsync().then(
-      res => callback(null, res),
-      err => callback(err, null)
-    )
   }
   
   async deleteArchivedAllAsync() {
@@ -1453,7 +1432,7 @@ module.exports = class {
       multi.del(`${alarmDetailPrefix}:${alarmID}`);
       multi.del(alarmPrefix + alarmID);
     };
-    multi.execAsync();
+    await multi.execAsync();
     
     return alarmIDs;
   }
