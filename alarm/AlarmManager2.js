@@ -1390,11 +1390,8 @@ module.exports = class {
   async ignoreAllAlarmAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
     let multi = rclient.multi();
-    let iCount = 0;
     for (const alarmID of alarmIDs) {
-      //if (iCount > 1) break;
       log.info("ignore alarm_id:" + alarmID);
-      iCount += 1;
       multi.zrem(alarmActiveKey, alarmID);
       multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
     };
@@ -1406,11 +1403,8 @@ module.exports = class {
   async deleteActiveAllAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
     let multi = rclient.multi();
-    let iCount = 0;
     for (const alarmID of alarmIDs) {
-      //if (iCount > 1) break;
       log.info("delete active alarm_id:" + alarmID);
-      iCount += 1;
       multi.zrem(alarmActiveKey, alarmID);
       multi.del(`${alarmDetailPrefix}:${alarmID}`);
       multi.del(alarmPrefix + alarmID);
@@ -1423,11 +1417,8 @@ module.exports = class {
   async deleteArchivedAllAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
     let multi = rclient.multi();
-    let iCount = 0;
     for (const alarmID of alarmIDs) {
-      //if (iCount > 1) break;
       log.info("delete archive alarm_id:" + alarmID);
-      iCount += 1;
       multi.zrem(alarmArchiveKey, alarmID);
       multi.del(`${alarmDetailPrefix}:${alarmID}`);
       multi.del(alarmPrefix + alarmID);

@@ -2272,7 +2272,7 @@ class netBot extends ControllerBot {
           await am2.deleteActiveAll();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
-          log.error("Failed to ignoreAll alarm:", err)
+          log.error("Failed to deleteActiveAll alarm:", err)
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
@@ -2282,7 +2282,7 @@ class netBot extends ControllerBot {
           await am2.deleteArchivedAll();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
-          log.error("Failed to ignoreAll alarm:", err)
+          log.error("Failed to deleteArchivedAll alarm:", err)
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
