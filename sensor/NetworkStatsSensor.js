@@ -205,7 +205,7 @@ class NetworkStatsSensor extends Sensor {
     if (!this.checkNetworkPings) this.checkNetworkPings = {};
 
     for (const server of servers) {
-      if (this.checkNetworkPings[server]) return;
+      if (this.checkNetworkPings[server]) continue;
       this.checkNetworkPings[server] = new Ping(server);
       this.checkNetworkPings[server].on('ping', (data) => {
         rclient.hsetAsync("network:status:ping", server, data.time);
