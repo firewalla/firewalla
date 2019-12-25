@@ -2235,6 +2235,12 @@ class netBot extends ControllerBot {
         })
         break
 
+      case "alarm:ignoreAll":
+        am2.ignoreAllAlarm((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+        
       case "alarm:report":
         (async () => {
           await am2.reportBug(value.alarmID, value.feedback)
@@ -2257,6 +2263,18 @@ class netBot extends ControllerBot {
         }
         break;
 
+      case "alarm:deleteActiveAll":
+        am2.deleteActiveAll((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+        
+      case "alarm:deleteArchivedAll":
+        am2.deleteArchivedAll((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+        
       case "policy:create": {
         let policy
         try {
