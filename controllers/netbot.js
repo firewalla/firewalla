@@ -2235,6 +2235,16 @@ class netBot extends ControllerBot {
         })
         break
 
+      case "alarm:ignoreAll":
+        (async () => {
+          await am2.ignoreAllAlarm();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to ignoreAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
       case "alarm:report":
         (async () => {
           await am2.reportBug(value.alarmID, value.feedback)
@@ -2257,6 +2267,26 @@ class netBot extends ControllerBot {
         }
         break;
 
+      case "alarm:deleteActiveAll":
+        (async () => {
+          await am2.deleteActiveAll();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to deleteActiveAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
+      case "alarm:deleteArchivedAll":
+        (async () => {
+          await am2.deleteArchivedAll();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to deleteArchivedAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
       case "policy:create": {
         let policy
         try {

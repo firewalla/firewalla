@@ -1334,7 +1334,6 @@ module.exports = class {
     await this.updateAlarm(alarm);
   }
 
-
   async enrichDeviceInfo(alarm) {
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
@@ -1387,6 +1386,48 @@ module.exports = class {
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
   }
+
+  async ignoreAllAlarmAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("ignore alarm_id:" + alarmID);
+      multi.zrem(alarmActiveKey, alarmID);
+      multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
+  async deleteActiveAllAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("delete active alarm_id:" + alarmID);
+      multi.zrem(alarmActiveKey, alarmID);
+      multi.del(`${alarmDetailPrefix}:${alarmID}`);
+      multi.del(alarmPrefix + alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
+  async deleteArchivedAllAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("delete archive alarm_id:" + alarmID);
+      multi.zrem(alarmArchiveKey, alarmID);
+      multi.del(`${alarmDetailPrefix}:${alarmID}`);
+      multi.del(alarmPrefix + alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
   createException(alarm, userInput) {
     let i_target = null;
     let i_type = null;
