@@ -101,9 +101,9 @@ else
     echo "WatchDog Stopped"
     $FIREWALLA_HOME/scripts/fire-ping.sh
     sleep 3
-    sudo service watchdog start
-    echo "WatchDog Started"
-    logger "FIREWALLA:WATCHDOG:ENABLED"
+    #sudo service watchdog start
+    #echo "WatchDog Started"
+    #logger "FIREWALLA:WATCHDOG:ENABLED"
 fi
 
 if [[ -n "$NO_FIREKICK_RESTART" ]]; then
