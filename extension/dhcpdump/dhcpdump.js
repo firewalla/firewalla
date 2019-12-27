@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,17 +17,8 @@
 let instance = null;
 let log = null;
 
-let fs = require('fs');
-let util = require('util');
-let jsonfile = require('jsonfile');
-
-let f = require('../../net2/Firewalla.js');
-let fHome = f.getFirewallaHome();
-
-let userID = f.getUserID();
-let dhcpdumpSpawn = null;
-let pid = null;
-const Config = require('../../net2/config.js');
+const util = require('util');
+const networkTool = require('../../net2/NetworkTool')();
 
 module.exports = class {
   constructor(loglevel) {
@@ -153,33 +144,34 @@ OPTION:  12 ( 12) Host name                 Great-Room-3
     }
   }
 
-  rawStart(callback) {
-    callback = callback || function() {}
-    const config = Config.getConfig(true);
+  async rawStart(callback) {
+    callback = callback || function () { }
+    const interfaces = await networkTool.getLocalNetworkInterface();
+    for (const intf of interfaces) {
+      if(!intf.name) continue;
+      let spawn = require('child_process').spawn;
+      let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', intf.name]);
+      let pid = dhcpdumpSpawn.pid;
+      let StringDecoder = require('string_decoder').StringDecoder;
+      let decoder = new StringDecoder('utf8');
 
+      log.info("DHCPDump started with PID: ", pid);
 
-    let spawn = require('child_process').spawn;
-    let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', config.monitoringInterface]);
-    let pid = dhcpdumpSpawn.pid;
-    let StringDecoder = require('string_decoder').StringDecoder;
-    let decoder = new StringDecoder('utf8');
+      dhcpdumpSpawn.stdout.on('data', (data) => {
+        log.debug("Found a dhcpdiscover request");
+        let message = decoder.write(data);
 
-    log.info("DHCPDump started with PID: ", pid);
+        this.parseEvents(message).map(e => callback(e))
+      });
 
-    dhcpdumpSpawn.stdout.on('data', (data) => {
-      log.debug("Found a dhcpdiscover request");
-      let message = decoder.write(data);
+      dhcpdumpSpawn.stderr.on('data', (data) => {
+        log.error("Got error when running dhcp: ", data);
+      });
 
-      this.parseEvents(message).map(e => callback(e))
-    });
-
-    dhcpdumpSpawn.stderr.on('data', (data) => {
-      log.error("Got error when running dhcp: ", data);
-    });
-
-    dhcpdumpSpawn.on('close', (code) => {
-      log.info("DHCPDump exited with error code: ", code);
-    });
+      dhcpdumpSpawn.on('close', (code) => {
+        log.info("DHCPDump exited with error code: ", code);
+      });
+    }
   }
 
   rawStop(callback) {

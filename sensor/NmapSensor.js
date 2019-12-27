@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,7 +35,7 @@ const sysManager = new SysManager('info')
 class NmapSensor extends Sensor {
   constructor() {
     super();
-
+    this.interfaces = null;
     this.enabled = true; // very basic feature, always enabled
 
     let p = require('../net2/MessageBus.js');
@@ -166,13 +166,12 @@ class NmapSensor extends Sensor {
     return host;
   }
 
-  async getNetworkRanges() {
-    let results = await networkTool.getLocalNetworkInterface()
-    return results &&
-      results.map((x) => networkTool.capSubnet(x.subnet))
+  getNetworkRanges() {
+    return this.interfaces && this.interfaces.map((x) => networkTool.capSubnet(x.subnet))
   }
 
-  run() {
+  async run() {
+    this.interfaces = await networkTool.getLocalNetworkInterface();
     process.nextTick(() => {
       this.checkAndRunOnce(false);
     });
@@ -184,9 +183,9 @@ class NmapSensor extends Sensor {
     }, 1000 * 60 * 5); // every 5 minutes, fast scan
   }
 
-  async checkAndRunOnce(fastMode) {
+  checkAndRunOnce(fastMode) {
     if (this.isSensorEnabled()) {
-      let range = await this.getNetworkRanges()
+      let range = this.getNetworkRanges()
       return this.runOnce(fastMode, range)
     }
   }
@@ -246,15 +245,18 @@ class NmapSensor extends Sensor {
 
   _processHost(host) {
     if(!host.mac) {
-      if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp()) {
-        host.mac = sysManager.myMAC()
-      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp()) {
-        host.mac = sysManager.myWifiMAC();
-      } else if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
-        return // do nothing on secondary ip
-      } else {
-        log.error("Invalid MAC Address for host", host);
-        return
+      for(const intf of this.interfaces){
+        const intfName = intf.name;
+        if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intfName)) {
+          host.mac = sysManager.myMAC(intfName)
+        } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intfName)) {
+          host.mac = sysManager.myWifiMAC(intfName);
+        } else if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp2(intfName)) {
+          return // do nothing on secondary ip
+        } else {
+          log.error("Invalid MAC Address for host", host);
+          return
+        }
       }
     }
 

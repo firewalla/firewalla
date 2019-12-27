@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -44,7 +44,7 @@ const cfg = require('../net2/config.js');
 
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager('info');
-
+const networkTool = require('../net2/NetworkTool')();
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -55,16 +55,17 @@ const ALARM_UPNP = 'alarm_upnp';
 
 function compareUpnp(a, b) {
   return a.public && b.public &&
-         a.private && b.private &&
-         a.public.port  == b.public.port &&
-         a.private.host == b.private.host &&
-         a.private.port == b.private.port &&
-         a.protocol     == b.protocol;
+    a.private && b.private &&
+    a.public.port == b.public.port &&
+    a.private.host == b.private.host &&
+    a.private.port == b.private.port &&
+    a.protocol == b.protocol;
 }
 
 class UPNPSensor extends Sensor {
   constructor() {
     super();
+    this.interfaces = null;
   }
 
   isExpired(mapping) {
@@ -86,7 +87,8 @@ class UPNPSensor extends Sensor {
       .filter((mapping) => !this.isExpired(mapping));
   }
 
-  run() {
+  async run() {
+    this.interfaces = await networkTool.getLocalNetworkInterface();
     setInterval(() => {
       upnp.getPortMappingsUPNP(async (err, results) => {
         if (err) {
@@ -108,10 +110,11 @@ class UPNPSensor extends Sensor {
 
           if (cfg.isFeatureOn(ALARM_UPNP)) {
             for (let current of mergedResults) {
-              let firewallaRegistered =
-                current.private.host == sysManager.myIp() &&
-                upnp.getRegisteredUpnpMappings().some( m => upnp.mappingCompare(current, m) );
-
+              let firewallaRegistered = upnp.getRegisteredUpnpMappings().some(m => upnp.mappingCompare(current, m));
+              for (const intf of this.interfaces) {
+                firewallaRegistered && current.private.host == sysManager.myIp(intf.name)
+                if (firewallaRegistered) break;
+              }
               if (
                 !firewallaRegistered &&
                 !preMappings.some(pre => compareUpnp(current, pre))
@@ -122,15 +125,15 @@ class UPNPSensor extends Sensor {
                   {
                     'p.source': 'UPNPSensor',
                     'p.device.ip': current.private.host,
-                    'p.upnp.public.host'  : current.public.host,
-                    'p.upnp.public.port'  : current.public.port.toString(),
-                    'p.upnp.private.host' : current.private.host,
-                    'p.upnp.private.port' : current.private.port.toString(),
-                    'p.upnp.protocol'     : current.protocol,
-                    'p.upnp.enabled'      : current.enabled.toString(),
-                    'p.upnp.description'  : current.description,
-                    'p.upnp.ttl'          : current.ttl.toString(),
-                    'p.upnp.local'        : current.local.toString(),
+                    'p.upnp.public.host': current.public.host,
+                    'p.upnp.public.port': current.public.port.toString(),
+                    'p.upnp.private.host': current.private.host,
+                    'p.upnp.private.port': current.private.port.toString(),
+                    'p.upnp.protocol': current.protocol,
+                    'p.upnp.enabled': current.enabled.toString(),
+                    'p.upnp.description': current.description,
+                    'p.upnp.ttl': current.ttl.toString(),
+                    'p.upnp.local': current.local.toString(),
                     'p.device.port': current.private.port.toString(),
                     'p.protocol': current.protocol
                   }
@@ -141,10 +144,10 @@ class UPNPSensor extends Sensor {
             }
           }
 
-          if (await rclient.hmsetAsync(key, {upnp: JSON.stringify(mergedResults)} ))
+          if (await rclient.hmsetAsync(key, { upnp: JSON.stringify(mergedResults) }))
             log.info("UPNP mapping is updated,", mergedResults.length, "entries");
 
-        } catch(err) {
+        } catch (err) {
           log.error("Failed to scan upnp mapping: " + err);
         }
       });
