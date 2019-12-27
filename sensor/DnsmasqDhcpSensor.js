@@ -19,6 +19,7 @@ const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const ip = require('ip');
 class DnsmasqDhcpSensor extends Sensor {
     constructor() {
         super();
@@ -43,12 +44,18 @@ class DnsmasqDhcpSensor extends Sensor {
     processHost(host) {
         const action = host.action;
         if (action == 'del') return;
-        const hostInfo = {
-            ipv4: host.ip,
-            ipv4Addr: host.ip,
+        let hostInfo = {
             mac: host.mac,
             from: "dnsmasq.dhcp.lease"
         };
+        if (ip.isV4Format(host.ip)) {
+            hostInfo.ipv4 = host.ip;
+            hostInfo.ipv4Addr = host.ip;
+        } else if (ip.isV6Format(host.ip)) {
+            hostInfo.ipv6Addr = host.ip
+        } else {
+            return;
+        }
         sem.emitEvent({
             type: "DeviceUpdate",
             message: `Found a device via dnsmasq dhcp lease ${hostInfo.ipv4} ${hostInfo.mac}`,
