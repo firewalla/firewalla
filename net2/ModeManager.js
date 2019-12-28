@@ -34,6 +34,7 @@ const wrapIptables = iptables.wrapIptables;
 const firewalla = require('./Firewalla.js')
 
 let util = require('util');
+const iptool = require('ip');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -67,8 +68,8 @@ async function _enforceSpoofMode() {
     let bootingComplete = await firewalla.isBootingComplete()
     let firstBindDone = await firewalla.isFirstBindDone()
 
-    if(!bootingComplete && firstBindDone) {
-      if(timer) {
+    if (!bootingComplete && firstBindDone) {
+      if (timer) {
         clearTimeout(timer)
         timer = null
       }
@@ -96,7 +97,7 @@ async function _enforceSpoofMode() {
     }
     await sm.startSpoofing()
     log.info("New Spoof is started");
-  } catch(err) {
+  } catch (err) {
     log.error("Failed to start new spoof", err);
   }
 }
@@ -116,6 +117,15 @@ async function _changeToAlternativeIpSubnet() {
   const altGateway = fConfig.alternativeInterface.gateway;
   const oldGateway = sysManager.myGateway();
   const oldIpSubnet = sysManager.mySubnet();
+  // check if is same subnet
+  const currIpSubnet = iptool.cidrSubnet(oldIpSubnet);
+  const altIp = iptool.cidrSubnet(altIpSubnet);
+  if (!currIpSubnet.contains(altIp.networkAddress)
+    || currIpSubnet.subnetMaskLength !== altIp.subnetMaskLength
+    || !currIpSubnet.contains(altGateway)) {
+    log.info("Alternative ip or gateway is not in current subnet, change ignore")
+    return;
+  }
   let cmd = "";
   // kill dhclient before change eth0 ip address, in case it is overridden by dhcp
   cmd = "pgrep -x dhclient && sudo pkill dhclient; true";
@@ -169,7 +179,7 @@ async function _enableSecondaryInterface() {
   fConfig = Config.getConfig(true);
 
   try {
-    let {secondaryIpSubnet, legacyIpSubnet} = await secondaryInterface.create(fConfig)
+    let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");
     if (legacyIpSubnet) { // secondary ip is changed
       await d.discoverInterfacesAsync()
@@ -180,12 +190,12 @@ async function _enableSecondaryInterface() {
         // dns change is done in dnsmasq.js
         await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false); // remove old DHCP MASQUERADE rule
         await iptables.dhcpSubnetChangeAsync(secondaryIpSubnet, true); // add new DHCP MASQUERADE rule
-      } catch(err) {
+      } catch (err) {
         log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
         throw err;
       }
     }
-  } catch(err) {
+  } catch (err) {
     log.error("Failed to enable secondary interface, err:", err);
   }
 }
@@ -229,7 +239,7 @@ async function apply() {
   let HostManager = require('./HostManager.js')
   let hostManager = new HostManager('cli', 'server', 'info')
 
-  switch(mode) {
+  switch (mode) {
     case Mode.MODE_DHCP:
       //await _saveSimpleModeNetworkSettings() // no need to do this anymore, primary interface IP is editable now
       await _changeToAlternativeIpSubnet();
@@ -318,8 +328,8 @@ function mode() {
 // listen on mode change, if anyone update mode in redis, re-apply it
 function listenOnChange() {
   sclient.on("message", async (channel, message) => {
-    if(channel === "Mode:Change") {
-      if(curMode !== message) {
+    if (channel === "Mode:Change") {
+      if (curMode !== message) {
         log.info("Mode is changed to " + message);
         // mode is changed
         reapply();
@@ -392,7 +402,7 @@ async function setNoneAndPublish() {
 }
 
 module.exports = {
-  apply:apply,
+  apply: apply,
   mode: mode,
   listenOnChange: listenOnChange,
   publish: publish,
@@ -404,6 +414,6 @@ module.exports = {
   setNoneAndPublish: setNoneAndPublish,
   publishManualSpoofUpdate: publishManualSpoofUpdate,
   publishNetworkInterfaceUpdate: publishNetworkInterfaceUpdate,
-  enableSecondaryInterface:_enableSecondaryInterface,
+  enableSecondaryInterface: _enableSecondaryInterface,
   toggleCompatibleSpoof: toggleCompatibleSpoof
 }

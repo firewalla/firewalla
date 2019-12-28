@@ -595,13 +595,6 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
   }
-  keysToCompareForDedup() {
-    return ["p.device.mac"];
-  }
-  getExpirationTime() {
-    // for download activity, only generate one alarm every 4 hours.
-    return fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4
-  }
   localizedNotificationContentArray(){
     return [this["p.device.name"], 
     this["p.totalUsage.humansize"], 
@@ -613,19 +606,6 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
 class OverDataPlanUsageAlarm extends Alarm{
   constructor(timestamp, device, info) {
     super("ALARM_OVER_DATA_PLAN_USAGE", timestamp, device, info);
-  }
-  isDup(alarm) {
-    let alarm2 = this;
-    if(alarm.type !== alarm2.type) {
-      return false;
-    }
-    if(alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level']){
-      return false;
-    }
-    return true;
-  }
-  getExpirationTime() {
-    return fc.getTimingConfig("alarm.data_plan.cooldown") || 60 * 60 * 24 * 30
   }
   requiredKeys(){
     return [];
