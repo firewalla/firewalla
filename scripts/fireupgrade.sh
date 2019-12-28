@@ -243,7 +243,7 @@ sudo systemctl daemon-reload
 if [[ $(uname -m) == "x86_64" ]]; then
     sudo systemctl disable firewalla
     sudo systemctl disable fireupgrade
-    sudo systemctl reenable brofish
+    sudo systemctl disable brofish
 else
     sudo systemctl reenable firewalla
     sudo systemctl reenable fireupgrade
