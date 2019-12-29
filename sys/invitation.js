@@ -138,7 +138,7 @@ class FWInvitation {
     try {
       const invite = JSON.parse(payload);
       if(invite.ts) {
-        const procStartTime = Math.floor(new Date() / 1000) - process.uptime;
+        const procStartTime = Math.floor(new Date() / 1000) - process.uptime();
         if (Number(invite.ts) >= procStartTime) {
           // Only process local payload if the generation time of the payload is older than firekick process
           // this is to ensure the existing running firekick won't process the payload
