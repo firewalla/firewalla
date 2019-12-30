@@ -1,9 +1,6 @@
 'use strict';
-var _ = require('underscore');
 var chai = require('chai');
 var expect = chai.expect;
-
-var fs = require('fs');
 
 let SSH = require('../extension/ssh/ssh.js');
 let ssh = new SSH('debug');
@@ -35,12 +32,50 @@ ssh.generateRSAPair((err) => {
 });
 
 
+function verifyPassword(password, callback) {
+
+  var pty = require('node-pty');
+  const su = pty.spawn('bash',
+    ["-i", "-c", "su " + process.env.USER + " -c 'ls &>/dev/null'"],
+    {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      cwd: process.env.HOME,
+      env: process.env
+    }
+  );
+
+  var success = true;
+
+  su.on('data', (data) => {
+    switch(data.toString('utf8')) {
+      case "Password: ":
+        su.write(password+"\n");
+        break;
+      case "su: Authentication failure":
+        success = false;
+        break;
+      default:
+        break;
+    }
+  });
+
+  su.on('close', (err) => {
+    if(err || !success) {
+      callback(new Error("Password Check Failed"));
+    } else {
+      callback(null, true);
+    }
+  });
+}
+
 // test password
 ssh.resetRandomPassword((result) => {
   expect(result).to.be.null;
   ssh.getPassword((err, password) => {
     expect(err).to.be.null;
-    ssh.verifyPassword(password, (err, result) => {
+    verifyPassword(password, (err, result) => {
       expect(err).to.be.null;
       expect(result).to.be.true;
     })

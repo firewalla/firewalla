@@ -925,7 +925,7 @@ class PolicyManager2 {
         return net
       case 'remotePort':
         return port
-      case 'remoteIpPort':
+      case 'remoteIpPort': {
         let res = []
         for (const i of ip)
           for (const p of port)
@@ -934,7 +934,8 @@ class PolicyManager2 {
             else
               res.push(`${i}:${p}`)
         return res
-      case 'remoteNetPort':
+      }
+      case 'remoteNetPort': {
         let res = []
         for (const n of net)
           for (const p of port)
@@ -943,6 +944,7 @@ class PolicyManager2 {
             else
               res.push(`${n}:${p}`)
         return res
+      }
     }
   }
 
