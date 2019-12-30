@@ -23,9 +23,12 @@
 # 4. if no, proceed.
 
 : ${USB_MOUNT:=/media/usb}
+
+# FIXME: /dev/sda1 is not USB in Gold
 : ${USB_DEV:=/dev/sda1}
 
 if [[ $(uname -m) == "x86_64" ]]; then
+    exit 0
 fi
 
 RESET_FILE='firewalla_reset'
