@@ -299,6 +299,25 @@ module.exports = class HostManager {
     }
     json.hosts = _hosts;
   }
+  async yesterdayStatsForInit(json, mac) {
+    const downloadKey = `download${mac ? ':' + mac : ''}`;
+    const uploadKey = `upload${mac ? ':' + mac : ''}`;
+    const todayHours = new Date().getHours();
+    const countHours = todayHours + 24;
+    const downloadStats = await getHitsAsync(downloadKey, "1hour", countHours);
+    const uploadStats = await getHitsAsync(uploadKey, "1hour", countHours);
+    downloadStats.splice(downloadStats.length - todayHours);
+    uploadStats.splice(uploadStats.length - todayHours);
+    let totalDownload = 0, totalUpload = 0;
+    downloadStats.forEach((item) => {
+      totalDownload = totalDownload + item[1] * 1
+    })
+    uploadStats.forEach((item) => {
+      totalUpload = totalUpload + item[1] * 1
+    })
+    json.yesterday = { upload: uploadStats, download: downloadStats, totalDownload: totalDownload, totalUpload: totalUpload };
+    return json;
+  }
 
   async last24StatsForInit(json) {
     const download = flowManager.getLast24HoursDownloadsStats();
@@ -314,6 +333,49 @@ module.exports = class HostManager {
     let downloadStats = await getHitsAsync("download", "1minute", 60)
     let uploadStats = await getHitsAsync("upload", "1minute", 60)
     return { downloadStats, uploadStats }
+  }
+  async monthlyDataStats(mac, date) {
+    //default calender month
+    const now = new Date();
+    let days = now.getDate();
+    const month = now.getMonth(),
+      year = now.getFullYear(),
+      lastMonthDays = new Date(year, month, 0).getDate(),
+      currentMonthDays = new Date(year, month + 1, 0).getDate();
+    let monthlyBeginTs, monthlyEndTs;
+    if (date && date != 1) {
+      if (days < date) {
+        days = lastMonthDays - date + 1 + days;
+        monthlyBeginTs = new Date(year, month - 1, date);
+        monthlyEndTs = new Date(year, month, date);
+      } else {
+        days = days - date + 1;
+        monthlyBeginTs = new Date(year, month, date);
+        monthlyEndTs = new Date(year, month + 1, date);
+      }
+    } else {
+      monthlyBeginTs = new Date(year, month, 1);
+      monthlyEndTs = new Date(year, month + 1, 1);
+    }
+    const downloadKey = `download${mac ? ':' + mac : ''}`;
+    const uploadKey = `upload${mac ? ':' + mac : ''}`;
+    const downloadStats = await getHitsAsync(downloadKey, '1day', days) || [];
+    const uploadStats = await getHitsAsync(uploadKey, '1day', days) || [];
+    let totalDownload = 0, totalUpload = 0;
+    downloadStats.forEach((item) => {
+      totalDownload = totalDownload + item[1] * 1
+    })
+    uploadStats.forEach((item) => {
+      totalUpload = totalUpload + item[1] * 1
+    })
+    return {
+      downloadStats: downloadStats,
+      uploadStats: uploadStats,
+      totalDownload: totalDownload,
+      totalUpload: totalUpload,
+      monthlyBeginTs: monthlyBeginTs / 1000,
+      monthlyEndTs: monthlyEndTs / 1000
+    }
   }
 
   async last60MinStatsForInit(json, mac) {
@@ -813,6 +875,8 @@ module.exports = class HostManager {
     if(typeof options === 'function') {
       callback = options;
       options = {}
+    } else if (!options) {
+      options = {}
     }
 
     let json = {};
@@ -821,6 +885,7 @@ module.exports = class HostManager {
       try {
 
         let requiredPromises = [
+          this.yesterdayStatsForInit(json),
           this.last24StatsForInit(json),
           this.last60MinStatsForInit(json),
           //            this.last60MinTopTransferForInit(json),
@@ -890,7 +955,7 @@ module.exports = class HostManager {
         log.error("Caught error when preparing init data: " + err);
         log.error(err.stack);
         callback(err);
-      };
+      }
     });
   }
 
@@ -1479,14 +1544,12 @@ module.exports = class HostManager {
     });
   }
 
-  loadPolicy(callback) {
+  loadPolicy(callback = () => {}) {
     let key = "policy:system"
     rclient.hgetall(key, (err, data) => {
       if (err != null) {
         log.error("System:Policy:Load:Error", key, err);
-        if (callback) {
-          callback(err, null);
-        }
+        callback(err, null);
       } else {
         if (data) {
           this.policy = {};
@@ -1497,12 +1560,10 @@ module.exports = class HostManager {
               log.error(`Failed to parse policy ${k} with value ${data[k]}`, err)
             }
           }
-          if (callback)
-            callback(null, data);
+          callback(null, data);
         } else {
           this.policy = {};
-          if (callback)
-            callback(null, null);
+          callback(null, null);
         }
       }
     });

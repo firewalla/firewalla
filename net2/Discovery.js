@@ -185,6 +185,11 @@ module.exports = class {
   discoverInterfaces(callback) {
     this.interfaces = {};
     networkTool.listInterfaces().then(list => {
+      if (!list.length) {
+        log.warn('No interface')
+        return
+      }
+
       let redisobjs = ['sys:network:info'];
       for (let i in list) {
         log.debug(list[i]);

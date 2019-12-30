@@ -19,9 +19,12 @@
 * Flash image to micro sd card, and put into Firewalla Red
   * Guide: https://help.firewalla.com/hc/en-us/articles/115004796633-Tutorial-Flashing-Image
 * You can order Firewalla Red at https://firewalla.com
-### Raspberry Pi (Not recommended, this image is out-of-date)
+### Firewalla Gold
+* You can pre-order Firewalla Gold at Indiegogo Crowdfunding
+  * https://igg.me/at/firewallagold/x#/
+### Raspberry Pi (Strongly Not Recommended, this image is out-of-date)
 ```
-If you have Raspberry Pi 3 and want a preview.  The preview image is a over 6 months old.  
+If you have Raspberry Pi 3 and want a preview.  The preview image is a over two years old.  
 Download https://github.com/firewalla/firewalla/releases/download/1.6/firewalla1.6a.img.gz
 Prepare a blank microsd card > 8GB size
 Follow the same step as installing a raspberry pi image

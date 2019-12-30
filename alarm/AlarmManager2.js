@@ -24,7 +24,6 @@ const bone = require("../lib/Bone.js");
 
 const flat = require('flat');
 
-const audit = require('../util/audit.js');
 const util = require('util');
 
 const moment = require('moment');
@@ -338,7 +337,6 @@ module.exports = class {
 
         this.addToActiveQueue(alarm, (err) => {
           if (!err) {
-            audit.trace("Created alarm", alarm.aid, "-", alarm.type, "on", alarm.device, ":", alarm.localizedMessage());
 
             // add extended info, extended info are optional
             (async () => {
@@ -1002,6 +1000,7 @@ module.exports = class {
           case "ALARM_NEW_DEVICE":
           case "ALARM_DEVICE_OFFLINE":
           case "ALARM_DEVICE_BACK_ONLINE":
+          case "ALARM_ABNORMAL_BANDWIDTH_USAGE":
             p.type = "mac";
             p.target = alarm["p.device.mac"];
             break;
@@ -1335,7 +1334,6 @@ module.exports = class {
     await this.updateAlarm(alarm);
   }
 
-
   async enrichDeviceInfo(alarm) {
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
@@ -1388,6 +1386,48 @@ module.exports = class {
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
   }
+
+  async ignoreAllAlarmAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("ignore alarm_id:" + alarmID);
+      multi.zrem(alarmActiveKey, alarmID);
+      multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
+  async deleteActiveAllAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("delete active alarm_id:" + alarmID);
+      multi.zrem(alarmActiveKey, alarmID);
+      multi.del(`${alarmDetailPrefix}:${alarmID}`);
+      multi.del(alarmPrefix + alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
+  async deleteArchivedAllAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("delete archive alarm_id:" + alarmID);
+      multi.zrem(alarmArchiveKey, alarmID);
+      multi.del(`${alarmDetailPrefix}:${alarmID}`);
+      multi.del(alarmPrefix + alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
   createException(alarm, userInput) {
     let i_target = null;
     let i_type = null;
@@ -1396,6 +1436,7 @@ module.exports = class {
       case "ALARM_NEW_DEVICE":
       case "ALARM_DEVICE_OFFLINE":
       case "ALARM_DEVICE_BACK_ONLINE":
+      case "ALARM_ABNORMAL_BANDWIDTH_USAGE":
         i_type = "mac"; // place holder, not going to be matched by any alarm/policy
         i_target = alarm["p.device.mac"];
         break;

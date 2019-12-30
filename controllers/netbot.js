@@ -45,7 +45,6 @@ const sysManager = new SysManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
-
 const upgradeManager = require('../net2/UpgradeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
@@ -138,11 +137,11 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay } = require('../util/util.js')
+const { delay } = require('../util/util.js');
 const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
-  _vpn(ip, value, callback) {
+  _vpn(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
@@ -154,19 +153,11 @@ class netBot extends ControllerBot {
         oldValue = JSON.parse(data["vpn"]);
       }
       const newValue = Object.assign({}, oldValue, value);
-      this.hostManager.setPolicy("vpn", newValue, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to enable vpn on ip " + ip);
-        }
-      });
+      this.hostManager.setPolicy("vpn", newValue, callback)
     });
   }
 
-  _ipAllocation(ip, value, callback) {
+  _ipAllocation(ip, value, callback = ()=>{}) {
     if (ip === "0.0.0.0") {
       // ip allocation is only applied on device
       callback(null)
@@ -175,14 +166,14 @@ class netBot extends ControllerBot {
     if (value.alternativeIp && value.type === "static") {
       const mySubnet = sysManager.mySubnet();
       if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
-        callback(`Alternative IP address should be in ${mySubnet}`);
+        callback(new Error(`Alternative IP address should be in ${mySubnet}`));
         return;
       }
     }
     if (value.secondaryIp && value.type === "static") {
       const mySubnet2 = sysManager.mySubnet2();
       if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
-        callback(`Secondary IP address should be in ${mySubnet2}`);
+        callback(new Error(`Secondary IP address should be in ${mySubnet2}`));
         return;
       }
     }
@@ -190,180 +181,105 @@ class netBot extends ControllerBot {
       if (host != null) {
         host.loadPolicy((err, data) => {
           if (err == null) {
-            host.setPolicy("ipAllocation", value, (err, data) => {
-              if (err == null) {
-                if (callback != null)
-                  callback(null, "Success: " + ip);
-              } else {
-                if (callback != null)
-                  callback(err, "Failed to set ip allocation to policy of " + ip);
-              }
-            });
+            host.setPolicy("ipAllocation", value, callback)
           } else {
             log.error("Failed to load policy of " + ip, err);
-            if (callback != null)
-              callback(err, "Failed to load policy");
+            callback(err);
           }
         })
       } else {
-        if (callback != null)
-          callback("error", "host not found: " + ip);
+        callback(new Error("host not found: " + ip));
       }
     })
   }
 
-  _shadowsocks(ip, value, callback) {
+  _shadowsocks(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("shadowsocks", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on shadowsocks: " + value);
-        }
-      });
+      this.hostManager.setPolicy("shadowsocks", value, callback)
     });
   }
 
-  _scisurf(ip, value, callback) {
+  _scisurf(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("scisurf", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on scisurf: " + value);
-        }
-      });
+      this.hostManager.setPolicy("scisurf", value, callback)
     });
   }
 
-  _enhancedSpoof(ip, value, callback) {
+  _enhancedSpoof(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null);
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("enhancedSpoof", value, (err, data) => {
-        if (err == null) {
-          if (callback)
-            callback(null, "Success");
-        } else {
-          if (callback)
-            callback(err, "Unable to apply compatible spoof: " + value);
-        }
-      })
+      this.hostManager.setPolicy("enhancedSpoof", value, callback)
     })
   }
 
-  _vulScan(ip, value, callback) {
+  _vulScan(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("vulScan", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on vulScan: " + value);
-        }
-      });
+      this.hostManager.setPolicy("vulScan", value, callback)
     });
   }
 
-  _dnsmasq(ip, value, callback) {
+  _dnsmasq(ip, value, callback = ()=>{}) {
     if (ip === "0.0.0.0") {
       this.hostManager.loadPolicy((err, data) => {
+        if (!data) callback(new Error('Error loading policy'))
+
         let oldValue = {};
         if (data["dnsmasq"]) {
           oldValue = JSON.parse(data["dnsmasq"]);
         }
         const newValue = Object.assign({}, oldValue, value);
-        this.hostManager.setPolicy("dnsmasq", newValue, (err, data) => {
-          if (err == null) {
-            if (callback != null)
-              callback(null, "Success");
-          } else {
-            if (callback != null)
-              callback(err, "Unable to apply config on dnsmasq: " + value);
-          }
-        });
+        this.hostManager.setPolicy("dnsmasq", newValue, callback);
       });
     } else {
       this.hostManager.getHost(ip, (err, host) => {
         if (host != null) {
           host.loadPolicy((err, data) => {
             if (err == null) {
-              host.setPolicy('dnsmasq', value, (err, data) => {
-                if (err == null) {
-                  if (callback != null)
-                    callback(null, "Success:" + ip);
-                } else {
-                  if (callback != null)
-                    callback(err, "Unable to change dnsmasq config of " + ip)
-
-                }
-              });
+              host.setPolicy('dnsmasq', value, callback);
             } else {
-              if (callback != null)
-                callback("error", "Unable to change dnsmasq config of " + ip);
+              callback(new Error("Unable to change dnsmasq config of " + ip));
             }
           });
         } else {
-          if (callback != null)
-            callback("error", "Host not found");
+          callback(new Error("Host not found"));
         }
       });
     }
   }
 
-  _externalAccess(ip, value, callback) {
+  _externalAccess(ip, value, callback = ()=>{}) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("externalAccess", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on externalAccess: " + value);
-        }
-      });
+      this.hostManager.setPolicy("externalAccess", value, callback)
     });
   }
 
-  _ssh(ip, value, callback) {
+  _ssh(ip, value, callback = ()=>{}) {
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("ssh", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to ssh " + ip);
-        }
-      });
+      this.hostManager.setPolicy("ssh", value, callback)
     });
   }
 
@@ -375,23 +291,17 @@ class netBot extends ControllerBot {
    *      ALARM_BEHAVIOR: may be mapped to other alarms
    *   }
    */
-  _notify(ip, value, callback) {
+  _notify(ip, value, callback = ()=>{}) {
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("notify", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to setNotify " + ip);
-        }
+        callback(err)
         log.info("Notification Set", value, " CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
         nm.loadConfig();
       });
     });
   }
 
-  _sendLog(msg, callback) {
+  _sendLog(msg, callback = ()=>{}) {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid + ".tar.gz.gpg";
     log.info("sendLog: ", filename, password);
@@ -415,28 +325,18 @@ class netBot extends ControllerBot {
     });
   }
 
-  _portforward(target, msg, callback) {
+  _portforward(target, msg, callback = ()=>{}) {
     log.info("_portforward", msg);
     let c = require('../net2/MessageBus.js');
     this.channel = new c('debug');
     this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
-    if (callback) {
-      callback(null, null);
-    }
+    callback(null, null);
   }
 
-  _setUpstreamDns(ip, value, callback) {
+  _setUpstreamDns(ip, value, callback = ()=>{}) {
     log.info("In _setUpstreamDns with ip:", ip, "value:", value);
     this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("upstreamDns", value, (err, data) => {
-        if (err == null) {
-          if (callback != null)
-            callback(null, "Success");
-        } else {
-          if (callback != null)
-            callback(err, "Unable to apply config on upstream_dns: " + value);
-        }
-      });
+      this.hostManager.setPolicy("upstreamDns", value, callback)
     });
   }
 
@@ -571,6 +471,10 @@ class netBot extends ControllerBot {
         } else {
           data.category = "com.firewalla.category.alarm." + alarm.getManagementType();
         }
+      }
+
+      if(data.gid) {
+        data["thread-id"] = data.gid;
       }
 
       // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
@@ -892,7 +796,7 @@ class netBot extends ControllerBot {
     }
   }
 
-  scanStart(callback) {
+  scanStart(callback = ()=>{}) {
     this.hostManager.getHosts((err, result) => {
       this.hosts = result;
       for (let i in result) {
@@ -914,14 +818,14 @@ class netBot extends ControllerBot {
           }
         });
       }
-      if (callback)
+      if (callback = ()=>{})
         callback(null, null);
 
     });
 
   }
 
-  setHandler(gid, msg /*rawmsg.message.obj*/, callback) {
+  setHandler(gid, msg /*rawmsg.message.obj*/, callback = ()=>{}) {
     // mtype: set
     // target = "ip address" 0.0.0.0 is self
     // data.item = policy
@@ -984,17 +888,8 @@ class netBot extends ControllerBot {
               }
             }
           }
-          let reply = {
-            type: 'jsonmsg',
-            mtype: 'policy',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-          };
-          reply.code = 200;
-          reply.data = value;
-          log.info("Repling ", reply.code, reply.data);
-          this.txData(this.primarygid, "", reply, "jsondata", "", null, callback);
+          log.info("Repling ", value);
+          this.simpleTxData(msg, value, null, callback);
         })().catch(err =>
           this.simpleTxData(msg, {}, err, callback)
           )
@@ -1190,6 +1085,22 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "dataPlan":
+        (async () => {
+          const { total, date, enable } = value;
+          const featureName = 'data_plan';
+          if (enable) {
+            await fc.enableDynamicFeature(featureName)
+            await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
+          } else {
+            await fc.disableDynamicFeature(featureName);
+            await rclient.delAsync("sys:data:plan");
+          }
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
@@ -1262,6 +1173,7 @@ class netBot extends ControllerBot {
         if (msg.target) {
           let ip = msg.target;
           log.info("Loading device info in a new way:", ip);
+          if (msg.data) msg.data.begin = msg.data.begin || msg.data.start;
           this.deviceHandler(msg, ip)
             .then((json) => {
               this.simpleTxData(msg, json, null, callback);
@@ -1297,7 +1209,7 @@ class netBot extends ControllerBot {
           let data = {
             count: flows.length,
             flows,
-            nextTs: flows[flows.length - 1].ts
+            nextTs: flows.length ? flows[flows.length - 1].ts : null
           }
           this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
@@ -1311,17 +1223,11 @@ class netBot extends ControllerBot {
           regenerate = true;
         }
         this.hostManager.loadPolicy((err, data) => {
-          let datamodel = {
-            type: 'jsonmsg',
-            mtype: 'reply',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-            code: 404,
-          };
+          let datamodel = {};
           if (err != null) {
             log.error("Failed to load system policy for VPN", err);
-            this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+            // msg.data.item = "device"
+            this.simpleTxData(msg, null, err, callback)
           } else {
             const vpnConfig = JSON.parse(data["vpn"] || "{}");
             let externalPort = "1194";
@@ -1330,7 +1236,6 @@ class netBot extends ControllerBot {
             VpnManager.configureClient("fishboneVPN1", null).then(() => {
               VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, (err, ovpnfile, password) => {
                 if (err == null) {
-                  datamodel.code = 200;
                   datamodel.data = {
                     ovpnfile: ovpnfile,
                     password: password,
@@ -1341,15 +1246,16 @@ class netBot extends ControllerBot {
                     if (doublenat !== null) {
                       datamodel.data.doublenat = doublenat;
                     }
-                    this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                    msg.data.item = "device"
+                    this.simpleTxData(msg, datamodel.data, null, callback);
                   })();
                 } else {
-                  this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+                  this.simpleTxData(msg, null, err, callback)
                 }
               });
             }).catch((err) => {
               log.error("Failed to get ovpn profile", err);
-              this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+              this.simpleTxData(msg, null, err, callback)
             })
           }
         });
@@ -1365,18 +1271,7 @@ class netBot extends ControllerBot {
         }
 
         let config = ss.readConfig();
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'reply',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200,
-          data: {
-            config: config
-          }
-        };
-        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        this.simpleTxData(msg, { config: config }, null, callback)
         break;
       }
       case "generateRSAPublicKey": {
@@ -1401,19 +1296,7 @@ class netBot extends ControllerBot {
             log.error("Got error when loading ssh private key: " + err);
             data = "";
           }
-
-          let datamodel = {
-            type: 'jsonmsg',
-            mtype: 'reply',
-            id: uuid.v4(),
-            expires: Math.floor(Date.now() / 1000) + 60 * 5,
-            replyid: msg.id,
-            code: 200,
-            data: {
-              key: data
-            }
-          };
-          this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+          this.simpleTxData(msg, { key: data }, null, callback);
         });
         break;
       case "sshRecentPassword":
@@ -1439,7 +1322,7 @@ class netBot extends ControllerBot {
       case "scisurfconfig":
         (async () => {
           const mgr = require('../extension/ss_client/ss_client_manager.js');
-          const client = mgr.getSSClient();
+          const client = mgr.getCurrentClient();
           const result = client.getConfig();
           this.simpleTxData(msg, result || {}, null, callback);
         })().catch((err) => {
@@ -1898,6 +1781,38 @@ class netBot extends ControllerBot {
           }, null, callback);
         })();
         break;
+      case "monthlyDataUsage":
+        (async () => {
+          let target = msg.target;
+          if (!target || target == '0.0.0.0') {
+            target = null;
+          } else {
+            target = target.toUpperCase();
+          }
+          const { downloadStats, uploadStats, totalDownload, totalUpload } = await this.hostManager.monthlyDataStats(target);
+          this.simpleTxData(msg, {
+            downloadStats: downloadStats,
+            uploadStats: uploadStats,
+            totalDownload: totalDownload,
+            totalUpload: totalUpload
+          }, null, callback)
+        })();
+        break;
+      case "dataPlan":
+        (async () => {
+          const featureName = 'data_plan';
+          let dataPlan = await rclient.getAsync('sys:data:plan');
+          const enable = fc.isFeatureOn(featureName)
+          if (dataPlan) {
+            dataPlan = JSON.parse(dataPlan);
+          } else {
+            dataPlan = {}
+          }
+          this.simpleTxData(msg, { dataPlan: dataPlan, enable: enable }, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -1955,7 +1870,7 @@ class netBot extends ControllerBot {
   async systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
 
-    let begin = msg.data && msg.data.start;
+    let begin = msg.data && msg.data.begin;
     //let end = msg.data && msg.data.end;
     let end = begin && (begin + 3600);
 
@@ -2000,7 +1915,7 @@ class netBot extends ControllerBot {
       return this.systemFlowHandler(msg);
     }
 
-    let begin = msg.data && msg.data.start;
+    let begin = msg.data && msg.data.begin;
     let end = (msg.data && msg.data.end) || begin + 3600 * 24;
 
     // A backward compatbiel fix for query host network stats for 'NOW'
@@ -2046,19 +1961,19 @@ class netBot extends ControllerBot {
 
         netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
         netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options),
-
+        this.hostManager.yesterdayStatsForInit(jsonobj, mac),
         this.hostManager.last60MinStatsForInit(jsonobj, mac),
         this.hostManager.last30daysStatsForInit(jsonobj, mac)
       ])
 
       if (!jsonobj.flows["appDetails"]) {
-        log.warn("Fell back to legacy mode on app details:", mac, options);
+        log.warn("Fall back to legacy mode on app details:", mac, options);
         await netBotTool.prepareAppActivityFlowsForHost(jsonobj, mac, options)
         await this.validateFlowAppIntel(jsonobj)
       }
 
       if (!jsonobj.flows["categoryDetails"]) {
-        log.warn("Fell back to legacy mode on category details:", mac, options);
+        log.warn("Fall back to legacy mode on category details:", mac, options);
         await netBotTool.prepareCategoryActivityFlowsForHost(jsonobj, mac, options)
         await this.validateFlowCategoryIntel(jsonobj)
       }
@@ -2134,17 +2049,7 @@ class netBot extends ControllerBot {
       return;
     } else if (msg.data.item === "resetSSHKey") {
       ssh.resetRSAPassword((err) => {
-        let code = 200;
-
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: code
-        }
-        this.txData(this.primarygid, "resetSSHKey", datamodel, "jsondata", "", null, callback);
+        this.simpleTxData(msg, null, null, callback)
       });
       return;
     }
@@ -2246,7 +2151,7 @@ class netBot extends ControllerBot {
         (async () => {
           const mgr = require('../extension/ss_client/ss_client_manager.js');
           try {
-            const client = mgr.getSSClient();
+            const client = mgr.getCurrentClient();
             client.resetConfig();
             // await mssc.stop();
             // await mssc.clearConfig();
@@ -2259,20 +2164,10 @@ class netBot extends ControllerBot {
       case "ping": {
         let uptime = process.uptime();
         let now = new Date();
-
-        let datamodel = {
-          type: 'jsonmsg',
-          mtype: 'reply',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-          code: 200,
-          data: {
-            uptime: uptime,
-            timestamp: now
-          }
-        };
-        this.txData(this.primarygid, "device", datamodel, "jsondata", "", null, callback);
+        this.simpleTxData(msg, {
+          uptime: uptime,
+          timestamp: now
+        }, null, callback)
         break;
       }
       case "alarm:block":
@@ -2340,6 +2235,16 @@ class netBot extends ControllerBot {
         })
         break
 
+      case "alarm:ignoreAll":
+        (async () => {
+          await am2.ignoreAllAlarm();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to ignoreAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
       case "alarm:report":
         (async () => {
           await am2.reportBug(value.alarmID, value.feedback)
@@ -2362,6 +2267,26 @@ class netBot extends ControllerBot {
         }
         break;
 
+      case "alarm:deleteActiveAll":
+        (async () => {
+          await am2.deleteActiveAll();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to deleteActiveAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
+      case "alarm:deleteArchivedAll":
+        (async () => {
+          await am2.deleteArchivedAll();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to deleteArchivedAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
       case "policy:create": {
         let policy
         try {
@@ -3269,7 +3194,7 @@ class netBot extends ControllerBot {
                 await hostTool.deleteHost(ip);
 
                 // remove port forwarding
-                this._portforward({
+                this._portforward(null, {
                   "toPort": "*",
                   "protocol": "*",
                   "toIP": ip,
@@ -3289,16 +3214,7 @@ class netBot extends ControllerBot {
             // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
             this.simpleTxData(msg, {}, null, callback);
           } else {
-            let resp = {
-              type: 'jsonmsg',
-              mtype: 'cmd',
-              id: uuid.v4(),
-              expires: Math.floor(Date.now() / 1000) + 60 * 5,
-              replyid: msg.id,
-              code: 404,
-              data: { "error": "device not found" }
-            };
-            this.txData(this.primarygid, "host:delete", resp, "jsondata", "", null, callback);
+            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
           }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3360,6 +3276,15 @@ class netBot extends ControllerBot {
               const altIpAddress = intf.ipAddress;
               const altSubnetMask = intf.subnetMask;
               const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
+              const mySubnet = sysManager.mySubnet();
+              const currIpSubnet = iptool.cidrSubnet(mySubnet);
+              const altIp = iptool.subnet(altIpAddress, altSubnetMask);
+              if (!currIpSubnet.contains(altIp.networkAddress)
+                || currIpSubnet.subnetMaskLength !== altIp.subnetMaskLength
+                || !currIpSubnet.contains(intf.gateway)) {
+                log.info("Change ip or gateway is not in current subnet, ignore")
+                throw new Error("Invalid IP address or gateway");
+              }
               updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
               const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
               await fc.updateUserConfig({ alternativeInterface: mergedAlternativeInterface });
@@ -3562,7 +3487,8 @@ class netBot extends ControllerBot {
       /* type    */ "jsondata",
       /* beepmsg */ "",
       /* whisper */ null,
-      /* callback*/ callback
+      /* callback*/ callback,
+      /* rawmsg  */ msg
     );
   }
 
@@ -3666,7 +3592,6 @@ class netBot extends ControllerBot {
 
   msgHandler(gid, rawmsg, callback) {
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
-
       if (!callback) { // cloud mode
         if ("compressMode" in rawmsg.message) {
           callback = {
@@ -3676,6 +3601,7 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
+      msg.appInfo = rawmsg.message.appInfo;
       if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
         rawmsg.message.obj.data.item === 'ping') {
 
@@ -3728,18 +3654,21 @@ class netBot extends ControllerBot {
                     log.info("Took " + (end - begin) + "ms to load init data");
 
                     this.cacheInitData(json);
-
+                    this.simpleTxData(msg, json, null, callback);
                   } else {
+                    let errModel = {
+                      code: 500,
+                      msg: ''
+                    }
                     if (err) {
                       log.error("got error when calling hostManager.toJson: " + err);
+                      errModel.msg = "got error when calling hostManager.toJson: " + err
                     } else {
                       log.error("json is null when calling init")
+                      errModel.msg = "json is null when calling init"
                     }
-                    datamodel.code = 500;
+                    this.simpleTxData(msg, null, errModel, callback)
                   }
-                  log.info("Sending data", datamodel.replyid, datamodel.id);
-                  this.txData(this.primarygid, "hosts", datamodel, "jsondata", null, null, callback);
-
                 });
               });
             } else {
@@ -3748,19 +3677,8 @@ class netBot extends ControllerBot {
 
               let json = JSON.parse(cachedJson);
 
-              let datamodel = {
-                type: 'jsonmsg',
-                mtype: 'init',
-                id: uuid.v4(),
-                expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                replyid: msg.id,
-                code: 200,
-                data: json
-              }
-
-              log.info("Sending data", datamodel.replyid, datamodel.id);
-              this.txData(this.primarygid, "hosts", datamodel, "jsondata", "", null, callback);
-
+              log.info("Sending data", msg.id);
+              this.simpleTxData(msg, json, null, callback)
             }
           });
 

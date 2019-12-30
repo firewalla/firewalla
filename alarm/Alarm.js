@@ -591,7 +591,32 @@ class OutboundAlarm extends Alarm {
     return true;
   }
 }
-
+class AbnormalBandwidthUsageAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
+  }
+  localizedNotificationContentArray(){
+    return [this["p.device.name"], 
+    this["p.totalUsage.humansize"], 
+    this["p.duration"],
+    this["p.percentage"]
+    ];
+  }
+}
+class OverDataPlanUsageAlarm extends Alarm{
+  constructor(timestamp, device, info) {
+    super("ALARM_OVER_DATA_PLAN_USAGE", timestamp, device, info);
+  }
+  requiredKeys(){
+    return [];
+  }
+  localizedNotificationContentArray(){
+    return [this["p.percentage"], 
+    this["p.totalUsage.humansize"],
+    this["p.planUsage.humansize"]
+    ];
+  }
+}
 
 class LargeTransferAlarm extends OutboundAlarm {
   constructor(timestamp, device, destID, info) {
@@ -761,6 +786,8 @@ let classMapping = {
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
+  ALARM_ABNORMAL_BANDWIDTH_USAGE: AbnormalBandwidthUsageAlarm.prototype,
+  ALARM_OVER_DATA_PLAN_USAGE: OverDataPlanUsageAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
   ALARM_DEVICE_BACK_ONLINE: DeviceBackOnlineAlarm.prototype,
   ALARM_DEVICE_OFFLINE: DeviceOfflineAlarm.prototype,
@@ -781,6 +808,8 @@ module.exports = {
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
+  AbnormalBandwidthUsageAlarm: AbnormalBandwidthUsageAlarm,
+  OverDataPlanUsageAlarm: OverDataPlanUsageAlarm,
   NewDeviceAlarm: NewDeviceAlarm,
   DeviceBackOnlineAlarm: DeviceBackOnlineAlarm,
   DeviceOfflineAlarm: DeviceOfflineAlarm,
