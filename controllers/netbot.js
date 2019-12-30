@@ -132,6 +132,8 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
 
+const FireRouter = require('../net2/FireRouter.js');
+
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
@@ -1100,6 +1102,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "networkConfig": {
+        (async () => {
+          await FireRouter.setConfig(value);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
@@ -1812,6 +1823,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "networkConfig": {
+        (async () => {
+          const config = await FireRouter.getConfig();
+          this.simpleTxData(msg, config, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
