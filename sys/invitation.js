@@ -277,7 +277,7 @@ class FWInvitation {
 
     this.leftCheckCount = this.checkCount;
 
-    let obj = this.cloud.eptGenerateInvite(this.gid);
+    let obj = this.cloud.eptGenerateInvite();
 
     let txtfield = {
       'gid': this.gid,
