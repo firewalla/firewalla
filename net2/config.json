@@ -508,7 +508,8 @@
       "topXflows": 10,
       "minsize": 150000000,
       "dataPlanMinPercentage": 0.8
-    }
+    },
+    "DnsmasqDhcpSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
