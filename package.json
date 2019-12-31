@@ -14,12 +14,12 @@
     "grunt-istanbul": "^0.6.1",
     "grunt-mocha": "^0.4.13",
     "grunt-mocha-test": "^0.12.7",
-    "mocha": "^2.2.5"
+    "mocha": "^2.2.5",
+    "node-pty": "^0.9.0"
   },
   "dependencies": {
     "always-tail": "^0.2.0",
     "bee-queue": "^1.2.2",
-    "bleno": "^0.5.0",
     "bluebird": "^3.5.5",
     "body-parser": "1.9.x",
     "bonjour": "^3.2.2",
@@ -57,7 +57,6 @@
     "passport": "*",
     "passport-http-bearer": "^1.0.1",
     "psl": "^1.1.27",
-    "pty.js": "0.3.1",
     "public-ip": "^1.2.0",
     "qrcode-terminal": "^0.10.0",
     "redis": "^2.6.0-2",

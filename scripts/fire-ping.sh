@@ -4,6 +4,10 @@
 #
 # this should deal with /dev/watchdog
 
+if [[ $(uname -m) == "x86_64" ]]; then
+  exit 0 # temp disable fire-ping for gold
+fi
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 source ${FIREWALLA_HOME}/platform/platform.sh
