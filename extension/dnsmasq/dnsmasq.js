@@ -1223,38 +1223,7 @@ module.exports = class DNSMASQ {
     }
 
     if (this.mode === Mode.MODE_ROUTER) {
-      log.info("Router mode is enabled");
-      // allocate IPs to lan/vlan interfaces per configuration
-      const lanConfs = await sysManager.getLanConfigurations();
-      if (lanConfs && Array.isArray(lanConfs)) {
-        for (let lanConf of lanConfs) {
-          const dhcp4Conf = lanConf.dhcp4;
-          if (lanConf.enabled === true && dhcp4Conf && dhcp4Conf.enabled === true) {
-            const gw = dhcp4Conf.gateway;
-            const subnetMask = dhcp4Conf.subnetMask;
-            const gwCidrSubnet = ip.subnet(gw, subnetMask);
-            const defaultRange = this.getDefaultDhcpRange(`${gw}/${gwCidrSubnet.subnetMaskLength}`);
-            const begin = dhcp4Conf.begin || defaultRange.begin;
-            const end = dhcp4Conf.end || defaultRange.end;
-            const leaseTime = dhcp4Conf.leaseTime || "24h";
-            // specify dhcp range
-            cmd = util.format("%s --dhcp-range=tag:%s,%s,%s,%s,%s",
-              cmd,
-              lanConf.intf,
-              begin,
-              end,
-              subnetMask,
-              leaseTime
-            );
-            // specify gateway option
-            cmd = util.format("%s --dhcp-option=tag:%s,3,%s", cmd, lanConf.intf, gw);
-
-            const dnsServers = (dhcp4Conf.dnsServers && dhcp4Conf.dnsServers.join(',')) || gw;
-            // specify dns name servers option
-            cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, lanConf.intf, dnsServers);
-          }
-        }
-      }
+      log.info("Router mode is enabled, firerouter will provide dhcp service.");      
     }
 
     if (this.mode === Mode.MODE_DHCP_SPOOF) {
