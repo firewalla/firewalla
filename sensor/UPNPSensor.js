@@ -114,32 +114,31 @@ class UPNPSensor extends Sensor {
               for (const intf of this.interfaces) {
                 firewallaRegistered && current.private.host == sysManager.myIp(intf.name)
                 if (firewallaRegistered) break;
-              }
-              if (
-                !firewallaRegistered &&
-                !preMappings.some(pre => compareUpnp(current, pre))
-              ) {
-                let alarm = new Alarm.UpnpAlarm(
-                  new Date() / 1000,
-                  current.private.host,
-                  {
-                    'p.source': 'UPNPSensor',
-                    'p.device.ip': current.private.host,
-                    'p.upnp.public.host': current.public.host,
-                    'p.upnp.public.port': current.public.port.toString(),
-                    'p.upnp.private.host': current.private.host,
-                    'p.upnp.private.port': current.private.port.toString(),
-                    'p.upnp.protocol': current.protocol,
-                    'p.upnp.enabled': current.enabled.toString(),
-                    'p.upnp.description': current.description,
-                    'p.upnp.ttl': current.ttl.toString(),
-                    'p.upnp.local': current.local.toString(),
-                    'p.device.port': current.private.port.toString(),
-                    'p.protocol': current.protocol
-                  }
-                );
-
-                await am2.enqueueAlarm(alarm);
+                if (
+                  !firewallaRegistered &&
+                  !preMappings.some(pre => compareUpnp(current, pre))
+                ) {
+                  let alarm = new Alarm.UpnpAlarm(
+                    new Date() / 1000,
+                    current.private.host,
+                    {
+                      'p.source': 'UPNPSensor',
+                      'p.device.ip': current.private.host,
+                      'p.upnp.public.host': current.public.host,
+                      'p.upnp.public.port': current.public.port.toString(),
+                      'p.upnp.private.host': current.private.host,
+                      'p.upnp.private.port': current.private.port.toString(),
+                      'p.upnp.protocol': current.protocol,
+                      'p.upnp.enabled': current.enabled.toString(),
+                      'p.upnp.description': current.description,
+                      'p.upnp.ttl': current.ttl.toString(),
+                      'p.upnp.local': current.local.toString(),
+                      'p.device.port': current.private.port.toString(),
+                      'p.protocol': current.protocol
+                    }
+                  );
+                  await am2.enqueueAlarm(alarm);
+                }
               }
             }
           }
