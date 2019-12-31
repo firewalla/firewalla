@@ -3329,6 +3329,33 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "networkInterface:revert": {
+        (async () => {
+          //remove user customized configuration
+          await fc.removeUserNetworkConfig();
+          //load policy
+          const systemPolicy = await this.hostManager.loadPolicyAsync();
+          const dnsmasqConfig = JSON.parse(systemPolicy["dnsmasq"] || "{}");
+          log.info("dnsmasq", dnsmasqConfig);
+          //delete related customized key
+          delete dnsmasqConfig.alternativeDnsServers;
+          delete dnsmasqConfig.alternativeDhcpRange;
+          delete dnsmasqConfig.secondaryDnsServers;
+          delete dnsmasqConfig.secondaryDhcpRange;
+          delete dnsmasqConfig.wifiDnsServers;
+          delete dnsmasqConfig.wifiDhcpRange;
+          await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqConfig);
+          setTimeout(() => {
+            let modeManager = require('../net2/ModeManager.js');
+            modeManager.publishNetworkInterfaceUpdate();
+          }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+          
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       case "networkInterface:get": {
         (async () => {
           const network = msg.data.value.network;
