@@ -76,8 +76,6 @@ const alarmDetailPrefix = "_alarmDetail";
 
 const _ = require('lodash');
 
-const minimatch = require('minimatch');
-
 // TODO: Support suppress alarm for a while
 
 module.exports = class {
