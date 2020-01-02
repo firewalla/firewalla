@@ -54,6 +54,7 @@
     "node-df": "^0.1.4",
     "node-forge": "^0.7.1",
     "node-persist": "0.0.8",
+    "node-ssdp": "^4.0.0",
     "passport": "*",
     "passport-http-bearer": "^1.0.1",
     "psl": "^1.1.27",
