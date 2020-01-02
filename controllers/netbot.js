@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -46,6 +46,7 @@ const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 const upgradeManager = require('../net2/UpgradeManager.js');
+const modeManager = require('../net2/ModeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -354,7 +355,6 @@ class netBot extends ControllerBot {
 
     this.sensorConfig = config.controller.sensor;
     //flow.summaryhours
-    // sysManager.setConfig(this.sensorConfig);
     sysManager.update((err, data) => {
     });
 
@@ -1036,7 +1036,6 @@ class netBot extends ControllerBot {
               return
             }
 
-            let modeManager = require('../net2/ModeManager.js');
             switch (v4.mode) {
               case "spoof":
               case "autoSpoof":
@@ -2449,7 +2448,6 @@ class netBot extends ControllerBot {
         break
       case "manualSpoofUpdate":
         (async () => {
-          let modeManager = require('../net2/ModeManager.js');
           await modeManager.publishManualSpoofUpdate()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -3234,7 +3232,6 @@ class netBot extends ControllerBot {
                 dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
               this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
-                let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
               this.simpleTxData(msg, {}, null, callback);
@@ -3254,7 +3251,6 @@ class netBot extends ControllerBot {
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
               this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
-                let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
               this.simpleTxData(msg, {}, null, callback);

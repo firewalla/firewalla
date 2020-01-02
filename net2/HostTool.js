@@ -410,15 +410,15 @@ class HostTool {
     }
   }
 
-  async linkMacWithIPv6(v6addr, mac) {
-    await require('child-process-promise').exec(`ping6 -c 3 -I ${this.config.monitoringInterface} ` + v6addr)
+  async linkMacWithIPv6(v6addr, mac, intf) {
+    await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr)
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
     sysManager.setNeighbor(v6addr);
     let ip6Host = await rclient.hgetallAsync(v6key)
-    log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host, err);
+    log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
     if (ip6Host != null) {
       ip6Host.mac = mac;
       ip6Host.lastActiveTimestamp = Date.now() / 1000;

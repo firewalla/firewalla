@@ -183,9 +183,7 @@ async function run() {
   si.startUpdating();
 
   const firewallaConfig = fc.getConfig();
-  sysManager.setConfig(firewallaConfig).then(() => {
-    sysManager.syncVersionUpdate();
-  }) // update sys config when start
+  sysManager.syncVersionUpdate();
 
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -68,7 +68,6 @@ const bone = require("../lib/Bone.js");
 
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager();
-const firewallaConfig = require('../net2/config.js').getConfig();
 
 const InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
 const interfaceDiscoverSensor = new InterfaceDiscoverSensor();
@@ -89,7 +88,6 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 (async() => {
   await rclient.delAsync("firekick:pairing:message");
-  await sysManager.setConfig(firewallaConfig)
   await interfaceDiscoverSensor.run()
 })();
 

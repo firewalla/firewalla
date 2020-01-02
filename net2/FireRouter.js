@@ -39,13 +39,70 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const broControl = require('./BroControl.js')
 const PlatformLoader = require('../platform/PlatformLoader.js')
 const Config = require('./config.js')
-const f = require('./Firewalla.js')
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const { delay } = require('../util/util.js')
+const Gold = require('../platform/gold/GoldPlatform.js')
 
 const util = require('util')
 const rp = util.promisify(require('request'))
-const exec = require('child-process-promise')
+
+
+// not exposing these methods/properties
+async function localGet(endpoint) {
+  const options = {
+    method: "GET",
+    headers: {
+      "Accept": "application/json"
+    },
+    url: routerInterface + endpoint,
+    json: true
+  };
+
+  const resp = await rp(options)
+  if (resp.statusCode !== 200) {
+    throw new Error(`Error getting ${endpoint}`);
+  }
+
+  return resp.body
+}
+
+async function getConfig() {
+  return localGet("/config/active")
+}
+
+async function getWANInterfaces() {
+  return localGet("/config/wans")
+}
+
+async function getLANInterfaces() {
+  return localGet("/config/lans")
+}
+
+function updateMaps() {
+  for (const intfName in intfNameMap) {
+    const intf = intfNameMap[intfName]
+    intfUuidMap[intf.meta.uuid] = intf
+  }
+  for (const type in routerConfig.interface) {
+    for (const intfName in routerConfig[type]) {
+      if (intfNameMap[intfName]) {
+        intfNameMap[intfName].config.meta.type = type
+      }
+    }
+  }
+  for (const intfName in routerConfig.dhcp) {
+    if (intfNameMap[intfName]) {
+      intfNameMap[intfName].config.dhcp = routerConfig.dhcp[intfName]
+    }
+  }
+}
+
+let routerInterface = null
+let routerConfig = null
+let monitoringInterfaces = null
+let intfNameMap = {}
+let intfUuidMap = {}
+
 
 class FireRouter {
   constructor() {
@@ -56,69 +113,59 @@ class FireRouter {
     if (!fwConfig.firerouter || !fwConfig.firerouter.interface) return null
 
     const intf = fwConfig.firerouter.interface;
-    this.routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
+    routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
     this.ready = false
   }
 
   // let it crash
   async init() {
-    if (this.platform.getName() == 'gold') {
+    if (this.platform instanceof Gold) {
       // fireroute
-      this.config = await this.getConfig()
-
-      // router -> this.getLANInterfaces()
-      // simple -> this.getWANInterfaces()
+      routerConfig = await getConfig()
 
       const mode = await rclient.getAsync('mode')
 
+      const wans = await getWANInterfaces();
+      const lans = await getLANInterfaces();
+
+      Object.assign(intfNameMap, wans, lans)
+
+      updateMaps()
+
       if (mode == 'spoof') {
-        this.config.wans = await this.getWANInterfaces();
-        this.monitoringInterfaces = Object.keys(this.config.wans)
+        monitoringInterfaces = Object.keys(wans)
       }
       else if (mode == 'router') {
-        this.config.lans = await this.getLANInterfaces();
-        this.monitoringInterfaces = Object.keys(this.config.lans)
+        monitoringInterfaces = Object.keys(lans)
       }
 
-      await broControl.writeClusterConfig(this.monitoringInterfaces)
+      await broControl.writeClusterConfig(monitoringInterfaces)
 
-      // Update config ??
-      // const updatedConfig = {
-      //   discovery: {
-      //     networkInterfaces: [
-      //       intf,
-      //       `${intf}:0`,
-      //       "wlan0"
-      //     ]
-      //   },
-      //   monitoringInterface: intf,
-      //   monitoringInterface2: `${intf}:0`,
-      //   secondaryInterface: secondaryInterface
-      // };
-      // await Config.updateUserConfig(updatedConfig);
+      // Keep Discovery.discoverMac() working
+      // TODO: is this necessary?
+      const updatedConfig = {
+        discovery: {
+          networkInterfaces: monitoringInterfaces
+        }
+      };
+      await Config.updateuserconfig(updatedConfig);
 
     } else {
       // make sure there is at least one usable ethernet
       const networkTool = require('./NetworkTool.js')();
+      // updates userConfig
       const intf = await networkTool.updateMonitoringInterface().catch((err) => {
         log.error('Error', err)
       })
 
-      const Discovery = require('./Discovery.js');
-      const d = new Discovery("nmap", Config.getConfig(true), "info");
-
-      const intfList = await d.discoverInterfacesAsync()
-      if (!intfList.length) {
-        throw new Error('No active ethernet!')
-      }
 
       // TODO
       //  create secondaryInterface
       //  start dnsmasq
       //  create fireroute compatible config
 
-      this.config = {
+      routerConfig = {
         "interface": {
           "phy": {
             [intf]: {
@@ -160,7 +207,16 @@ class FireRouter {
         // }
       }
 
+      monitoringInterfaces = [ 'eth0', 'eth0:0' ]
+    }
 
+    const Discovery = require('./Discovery.js');
+    const d = new Discovery("nmap");
+
+    // updates sys:network:info
+    const intfList = await d.discoverInterfacesAsync()
+    if (!intfList.length) {
+      throw new Error('No active ethernet!')
     }
 
     await broControl.restart()
@@ -180,34 +236,20 @@ class FireRouter {
     return this.waitTillReady()
   }
 
-  async localGet(endpoint) {
-    const options = {
-      method: "GET",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: this.routerInterface + endpoint,
-      json: true
-    };
-
-    const resp = await rp(options)
-    if (resp.statusCode !== 200) {
-      throw new Error(`Error getting ${endpoint}`);
-    }
-
-    return resp.body
+  getInterfaceViaName(name) {
+    return intfNameMap[name]
   }
 
-  async getConfig() {
-    return this.localGet("/config/active")
+  getInterfaceViaUUID(uuid) {
+    return intfUuidMap[uuid]
   }
 
-  async getWANInterfaces() {
-    return this.localGet("/config/wans")
+  getMonitoringInterfaces() {
+    return monitoringInterfaces.map(name => intfNameMap[name])
   }
 
-  async getLANInterfaces() {
-    return this.localGet("/config/lans")
+  getConfig() {
+    return routerConfig
   }
 
   async setConfig(config) {
@@ -216,7 +258,7 @@ class FireRouter {
       headers: {
         "Accept": "application/json"
       },
-      url: this.routerInterface + "/config/set",
+      url: routerInterface + "/config/set",
       json: true,
       body: config
     };
@@ -228,6 +270,7 @@ class FireRouter {
 
     return resp.body
   }
+
 }
 
 
