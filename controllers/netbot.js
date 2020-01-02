@@ -1832,6 +1832,17 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "networkState": {
+        (async () => {
+          const wans = await FireRouter.getWANInterfaces();
+          const lans = await FireRouter.getLANInterfaces();
+          const networks = Object.assign({}, wans, lans);
+          this.simpleTxData(msg, networks, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
