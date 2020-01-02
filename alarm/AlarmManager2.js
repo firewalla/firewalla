@@ -76,6 +76,8 @@ const alarmDetailPrefix = "_alarmDetail";
 
 const _ = require('lodash');
 
+const minimatch = require('minimatch');
+
 // TODO: Support suppress alarm for a while
 
 module.exports = class {
@@ -1569,7 +1571,12 @@ module.exports = class {
       case "deviceAppPort":
         e["p.device.mac"] = alarm["p.device.mac"];
         if (alarm.type === 'ALARM_UPNP') {
-          e["p.upnp.description"] = alarm["p.upnp.description"];
+          const description = alarm["p.upnp.description"];
+          if(description.startsWith("WhatsApp")) {
+            e["p.upnp.description"] = "WhatsApp*"; //special handling for WhatsApp
+          } else {
+            e["p.upnp.description"] = description;
+          }
         }
         break;
       default:
