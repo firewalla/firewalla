@@ -14,23 +14,22 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let util = require('util');
+const util = require('util');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
+const cp = require('child_process');
 
-let networkTool = require('../net2/NetworkTool')();
-let cp = require('child_process');
+const Firewalla = require('../net2/Firewalla');
 
-let Firewalla = require('../net2/Firewalla');
-
-let xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
+const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
 
 const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager('info')
+const sysManager = new SysManager()
+const networkTool = require('../net2/NetworkTool')();
 
 class NmapSensor extends Sensor {
   constructor() {
@@ -39,11 +38,11 @@ class NmapSensor extends Sensor {
     this.enabled = true; // very basic feature, always enabled
 
     let p = require('../net2/MessageBus.js');
-    this.publisher = new p('info','Scan:Done', 10);
+    this.publisher = new p('info', 'Scan:Done', 10);
   }
 
   static _handleAddressEntry(address, host) {
-    switch(address.addrtype) {
+    switch (address.addrtype) {
       case "ipv4":
         host.ipv4Addr = address.addr;
         break;
@@ -57,7 +56,7 @@ class NmapSensor extends Sensor {
   }
 
   static _handlePortEntry(portJson, host) {
-    if(!host.ports)
+    if (!host.ports)
       host.ports = [];
 
     let thisPort = {};
@@ -65,11 +64,11 @@ class NmapSensor extends Sensor {
     thisPort.protocol = portJson.protocol;
     thisPort.port = portJson.portid;
 
-    if(portJson.service) {
+    if (portJson.service) {
       thisPort.serviceName = portJson.service.name;
     }
 
-    if(portJson.state) {
+    if (portJson.state) {
       thisPort.state = portJson.state.state;
     }
 
@@ -82,7 +81,7 @@ class NmapSensor extends Sensor {
   }
 
   static _handleHostScript(scriptJSON, host) {
-    if(!host.scripts)
+    if (!host.scripts)
       host.scripts = [];
 
     let script = {};
@@ -91,12 +90,12 @@ class NmapSensor extends Sensor {
 
     let table = scriptJSON.table;
 
-    if(table) {
+    if (table) {
       script.key = table.key;
 
-      if(table.elem && table.elem.constructor === Array) {
+      if (table.elem && table.elem.constructor === Array) {
         table.elem.forEach((x) => {
-          switch(x.key) {
+          switch (x.key) {
             case "state":
               script.state = x["#content"];
               break;
@@ -126,39 +125,39 @@ class NmapSensor extends Sensor {
 
     let address = hostResult.address;
 
-    if(address && address.constructor === Object) {
+    if (address && address.constructor === Object) {
       // one address only
       NmapSensor._handleAddressEntry(address, host);
-    } else if(address && address.constructor === Array) {
+    } else if (address && address.constructor === Array) {
       // multiple addresses
       address.forEach((a) => NmapSensor._handleAddressEntry(a, host));
     }
 
     let port = hostResult.ports && hostResult.ports.port;
 
-    if(port && port.constructor === Object) {
+    if (port && port.constructor === Object) {
       // one port only
       NmapSensor._handlePortEntry(port, host);
-    } else if(port && port.constructor === Array) {
+    } else if (port && port.constructor === Array) {
       // multiple ports
       port.forEach((p) => NmapSensor._handlePortEntry(p));
     }
 
-    if(hostResult.os && hostResult.os.osmatch) {
+    if (hostResult.os && hostResult.os.osmatch) {
       host.os_match = hostResult.os.osmatch.name;
       host.os_accuracy = hostResult.os.osmatch.accuracy;
       host.os_class = JSON.stringify(hostResult.os.osmatch.osclass);
     }
 
-    if(hostResult.uptime) {
+    if (hostResult.uptime) {
       host.uptime = hostResult.uptime.seconds;
     }
 
     let hs = hostResult.hostscript;
-    if(hs && hs.script &&
+    if (hs && hs.script &&
       hs.script.constructor === Object) {
       NmapSensor._handleHostScript(hs.script, host);
-    } else if(hs && hs.script &&
+    } else if (hs && hs.script &&
       hs.script.constructor === Array) {
       hs.script.forEach((hr) => NmapSensor._handleHostScript(hr, host));
     }
@@ -167,11 +166,13 @@ class NmapSensor extends Sensor {
   }
 
   getNetworkRanges() {
-    return this.interfaces && this.interfaces.map((x) => networkTool.capSubnet(x.subnet))
+    return this.interfaces && this.interfaces.map((x) => {
+      return { range: networkTool.capSubnet(x.subnet), intf_mac: x.mac_address }
+    })
   }
 
   async run() {
-    this.interfaces = await networkTool.getLocalNetworkInterface();
+    this.interfaces = sysManager.getMonitoringInterfaces();
     process.nextTick(() => {
       this.checkAndRunOnce(false);
     });
@@ -191,10 +192,10 @@ class NmapSensor extends Sensor {
   }
 
   runOnce(fastMode, networkRanges) {
-    if(!networkRanges)
+    if (!networkRanges)
       return Promise.reject(new Error("network range is required"));
 
-    return Promise.all(networkRanges.map((range) => {
+    return Promise.all(networkRanges.map(({ range, intf_mac }) => {
 
       log.info("Scanning network", range, "to detect new devices...");
 
@@ -213,13 +214,13 @@ class NmapSensor extends Sensor {
         .then((hosts) => {
           log.info("Analyzing scan result...");
 
-          if(hosts.length === 0) {
+          if (hosts.length === 0) {
             log.info("No device is found for network", range);
             return;
           }
           hosts.forEach((h) => {
             log.debug("Found device:", h.ipv4Addr);
-            this._processHost(h);
+            this._processHost(h, intf_mac);
           })
 
         }).catch((err) => {
@@ -233,7 +234,7 @@ class NmapSensor extends Sensor {
 
       Firewalla.isBootingComplete()
         .then((result) => {
-          if(!result) {
+          if (!result) {
             setTimeout(() => {
               log.info("publish Scan:Done after scan is finished")
               this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
@@ -243,15 +244,15 @@ class NmapSensor extends Sensor {
     });
   }
 
-  _processHost(host) {
-    if(!host.mac) {
-      for(const intf of this.interfaces){
+  _processHost(host, intf_mac) {
+    if (!host.mac) {
+      for (const intf of this.interfaces) {
         const intfName = intf.name;
-        if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intfName)) {
+        if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intfName)) {
           host.mac = sysManager.myMAC(intfName)
         } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intfName)) {
           host.mac = sysManager.myWifiMAC(intfName);
-        } else if(host.ipv4Addr && host.ipv4Addr === sysManager.myIp2(intfName)) {
+        } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2(intfName)) {
           return // do nothing on secondary ip
         } else {
           log.error("Invalid MAC Address for host", host);
@@ -260,16 +261,17 @@ class NmapSensor extends Sensor {
       }
     }
 
-    if(host && host.mac) {
+    if (host && host.mac) {
       const hostInfo = {
         ipv4: host.ipv4Addr,
         ipv4Addr: host.ipv4Addr,
         mac: host.mac,
         macVendor: host.macVendor,
+        intf_mac: intf_mac,
         from: "nmap"
       };
 
-      if(host.macVendor === 'Unknown') {
+      if (host.macVendor === 'Unknown') {
         delete hostInfo.macVendor;
       }
 
@@ -293,7 +295,7 @@ class NmapSensor extends Sensor {
     return new Promise((resolve, reject) => {
       cp.exec(cmd, (err, stdout, stderr) => {
 
-        if(err || stderr) {
+        if (err || stderr) {
           reject(err || new Error(stderr));
           return;
         }
@@ -305,19 +307,19 @@ class NmapSensor extends Sensor {
           reject(err);
         }
 
-        if(!findings) {
+        if (!findings) {
           reject(new Error("Invalid nmap scan result,", cmd));
           return;
         }
 
         let hostsJSON = findings.nmaprun && findings.nmaprun.host;
 
-        if(!hostsJSON) {
+        if (!hostsJSON) {
           reject(new Error("Invalid nmap scan result,", cmd));
           return;
         }
 
-        if(hostsJSON.constructor !== Array) {
+        if (hostsJSON.constructor !== Array) {
           hostsJSON = [hostsJSON];
         }
 

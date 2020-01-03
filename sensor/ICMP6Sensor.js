@@ -24,8 +24,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
 const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager()
 const Discovery = require('../net2//Discovery.js');
-const networkTool = require('../net2/NetworkTool')();
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
@@ -39,7 +39,7 @@ class ICMP6Sensor extends Sensor {
 
   run() {
     (async () => {
-      this.interfaces = await networkTool.getLocalNetworkInterface();
+      this.interfaces = sysManager.getMonitoringInterfaces();
       for (const intf of this.interfaces) {
         if (!intf.name || !intf.mac_address) continue;
         // listen on icmp6 neighbor-advertisement which is not sent from firewalla
@@ -50,7 +50,7 @@ class ICMP6Sensor extends Sensor {
           input: tcpdumpSpawn.stdout
         });
         reader.on('line', (line) => {
-          this.processNeighborAdvertisement(line);
+          this.processNeighborAdvertisement(line, intf.mac_address);
         });
         tcpdumpSpawn.on('close', (code) => {
           log.info("TCPDump icmp6 exited with code: ", code);
@@ -68,7 +68,7 @@ class ICMP6Sensor extends Sensor {
     });
   }
 
-  processNeighborAdvertisement(line) {
+  processNeighborAdvertisement(line, intf_mac) {
     // Each line of neighbor advertisement is like:
     // 03:06:30.894621 00:0c:29:96:3c:30 > 02:01:f4:16:26:dc, ethertype IPv6 (0x86dd), length 78: 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb > fe80::1:f4ff:fe16:26dc: ICMP6, neighbor advertisement, tgt is 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb, length 24
     try {
@@ -83,7 +83,8 @@ class ICMP6Sensor extends Sensor {
           suppressAlarm: true,
           host: {
             ipv6Addr: [tgtIp],
-            mac: dstMac.toUpperCase()
+            mac: dstMac.toUpperCase(),
+            intf_mac: intf_mac
           }
         });
       }

@@ -25,8 +25,7 @@ const ip = require('ip');
 const Promise = require('bluebird');
 
 const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager('info')
-const networkTool = require('../net2/NetworkTool')();
+const sysManager = new SysManager()
 const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
@@ -50,7 +49,7 @@ class BonjourSensor extends Sensor {
 
   async run() {
     log.info("Bonjour Watch Starting");
-    this.interfaces = await networkTool.getLocalNetworkInterface();
+    this.interfaces = sysManager.getMonitoringInterfaces();
     if (this.bonjourBrowserTCP == null) {
       this.bonjourBrowserTCP = bonjour.find({
         protocol: 'tcp'
@@ -137,7 +136,7 @@ class BonjourSensor extends Sensor {
                 const intfName = intf.name;
                 if (ipAddr === sysManager.myIp(intfName)) {
                   resolve(sysManager.myMAC(intfName));
-                } else if (ipAddr === sysManager.myWifiIp(intfName)) {
+                } else if (ipAddr === sysManager.myWifiIp(intfName)) {// DEPRECATING
                   resolve(sysManager.myWifiMAC(intfName));
                 } else {
                   log.error("Not able to find mac address for host:", ipAddr, mac);
