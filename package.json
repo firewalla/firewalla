@@ -68,7 +68,7 @@
     "socket.io-client": "^2.2.0",
     "stats-lite": "https://registry.npmjs.org/stats-lite/-/stats-lite-2.0.3.tgz",
     "striptags": "^2.1.1",
-    "swagger-node-express": "~2.0",
+    "swagger-node-express": "^2.1.3",
     "underscore": "^1.8.3",
     "ursa": "git+https://git@github.com/JoshKaufman/ursa.git",
     "useragent": "^2.1.9",
