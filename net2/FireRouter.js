@@ -35,7 +35,6 @@
 
 const log = require("./logger.js")(__filename);
 
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const broControl = require('./BroControl.js')
 const PlatformLoader = require('../platform/PlatformLoader.js')
 const Config = require('./config.js')
@@ -81,7 +80,8 @@ async function getLANInterfaces() {
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
-    intfUuidMap[intf.meta.uuid] = intf
+    intf.config.meta.name = intfName
+    intfUuidMap[intf.config.meta.uuid] = intf
   }
   for (const type in routerConfig.interface) {
     for (const intfName in routerConfig[type]) {
@@ -149,7 +149,7 @@ class FireRouter {
           networkInterfaces: monitoringInterfaces
         }
       };
-      await Config.updateuserconfig(updatedConfig);
+      await Config.updateUserConfig(updatedConfig);
 
     } else {
       // make sure there is at least one usable ethernet
@@ -245,7 +245,7 @@ class FireRouter {
   }
 
   getMonitoringInterfaces() {
-    return monitoringInterfaces.map(name => intfNameMap[name])
+    return monitoringInterfaces
   }
 
   getConfig() {

@@ -470,7 +470,7 @@ module.exports = class {
   }
 
   getMonitoringInterfaces() {
-    return fireRouter.monitoringInterfaces.map(intf => this.sysinfo[intf])
+    return fireRouter.getMonitoringInterfaces().map(intf => this.sysinfo[intf])
   }
 
   getInterface(intf) {
