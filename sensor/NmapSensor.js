@@ -171,7 +171,7 @@ class NmapSensor extends Sensor {
     })
   }
 
-  async run() {
+  run() {
     this.interfaces = sysManager.getMonitoringInterfaces();
     process.nextTick(() => {
       this.checkAndRunOnce(false);

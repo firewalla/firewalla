@@ -50,7 +50,7 @@ class IPv6DiscoverySensor extends Sensor {
     }, 1000 * 60 * 5); // start the first run in 5 minutes
   }
 
-  async checkAndRunOnce() {
+  checkAndRunOnce() {
     log.info("Starting IPv6DiscoverySensor Scanning", new Date() / 1000);
     if (this.isSensorEnabled()) {
       const results = sysManager.getMonitoringInterfaces();

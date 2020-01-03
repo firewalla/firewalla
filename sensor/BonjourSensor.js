@@ -47,7 +47,7 @@ class BonjourSensor extends Sensor {
     bonjour._server.mdns.on('error', (err) => log.error("Error on mdns server", err))
   }
 
-  async run() {
+  run() {
     log.info("Bonjour Watch Starting");
     this.interfaces = sysManager.getMonitoringInterfaces();
     if (this.bonjourBrowserTCP == null) {

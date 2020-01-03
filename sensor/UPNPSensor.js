@@ -86,7 +86,7 @@ class UPNPSensor extends Sensor {
       .filter((mapping) => !this.isExpired(mapping));
   }
 
-  async run() {
+  run() {
     this.interfaces = sysManager.getMonitoringInterfaces();
     setInterval(() => {
       upnp.getPortMappingsUPNP(async (err, results) => {
