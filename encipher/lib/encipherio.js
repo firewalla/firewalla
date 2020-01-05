@@ -151,11 +151,6 @@ let legoEptCloud = class {
       if (this.myPublicKey && this.myPrivateKey) {
         return
       }
-      if (this.myprivkeyfile && this.mypubkeyfile) {
-        this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
-        this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-        return
-      }
 
       if (!this.myprivkeyfile || !this.mypubkeyfile) {
         const keys = await this.keyReady()
@@ -202,21 +197,21 @@ let legoEptCloud = class {
       await exec("sync")
     }
 
-    publicEncrypt(utf8String) {
+    publicEncrypt(key, utf8String) {
       if (this.nodeRSASupport) {
         const buffer = Buffer.from(utf8String)
-        return crypto.publicEncrypt(this.myPublicKey, buffer).toString('base64')
+        return crypto.publicEncrypt(key, buffer).toString('base64')
       } else {
-        return this.myPublicKey.encrypt(utf8String, 'utf8', 'base64');
+        return key.encrypt(utf8String, 'utf8', 'base64');
       }
     }
 
-    privateDecrypt(base64String) {
+    privateDecrypt(key, base64String) {
       if (this.nodeRSASupport) {
         const buffer = Buffer.from(base64String, 'base64')
-        return crypto.privateDecrypt(this.myPrivateKey, buffer).toString('utf8')
+        return crypto.privateDecrypt(key, buffer).toString('utf8')
       } else {
-        return this.myPrivateKey.decrypt(base64String, 'base64', 'utf8');
+        return key.decrypt(base64String, 'base64', 'utf8');
       }
     }
 
@@ -321,7 +316,7 @@ let legoEptCloud = class {
     eptcreateGroup(name, info, alias, callback) {
         let symmetricKey = this.keygen();
         let group = {};
-        let encryptedSymmetricKey = this.publicEncrypt(symmetricKey);
+        let encryptedSymmetricKey = this.publicEncrypt(this.myPublicKey, symmetricKey);
 
         if (info) {
             group.info = this.encrypt(info, symmetricKey);
@@ -637,7 +632,7 @@ let legoEptCloud = class {
         if (sk === null) {
             return null;
         } else {
-            let symmetricKey = this.privateDecrypt(sk.key);
+            let symmetricKey = this.privateDecrypt(this.myPrivateKey, sk.key);
             this.groupCache[group._id] = {
                 'group': group,
                 'symanttricKey': sk,
@@ -1242,10 +1237,12 @@ let legoEptCloud = class {
     reKeyForEpt(skey, eid, ept) {
         let publicKey = ept.publicKey;
         log.debug("rekeying with symmetriKey", ept, " and ept ", eid);
-        let symmetricKey = this.privateDecrypt(skey.key);
+        let symmetricKey = this.privateDecrypt(this.myPrivateKey, skey.key);
         log.info("Creating peer publicKey: ", publicKey);
-        let peerPublicKey = ursa.createPublicKey(publicKey);
-        let encryptedSymmetricKey = peerPublicKey.encrypt(symmetricKey, 'utf8', 'base64');
+        let peerPublicKey = this.nodeRSASupport
+          ? crypto.createPublicKey(publicKey)
+          : ursa.createPublicKey(publicKey);
+        let encryptedSymmetricKey = this.publicEncrypt(peerPublicKey, symmetricKey);
         let keyforept = {
             eid: eid,
             key: encryptedSymmetricKey,
