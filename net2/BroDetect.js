@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,6 @@ const Tail = require('always-tail');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const iptool = require("ip");
-const useragent = require('useragent');
 
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
@@ -101,6 +100,7 @@ function ValidateIPaddress(ipaddress)
 module.exports = class {
   initWatchers() {
     log.debug("Initializing watchers", this.config.bro);
+    let failed = false
     if (this.intelLog == null) {
       this.intelLog = new Tail(this.config.bro.intel.path, '\n');
       if (this.intelLog != null) {
@@ -110,7 +110,7 @@ module.exports = class {
           this.processIntelData(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
@@ -123,7 +123,7 @@ module.exports = class {
           this.processNoticeData(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
@@ -135,7 +135,7 @@ module.exports = class {
           this.processDnsData(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
@@ -148,7 +148,7 @@ module.exports = class {
           this.processSoftwareData(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
@@ -161,7 +161,7 @@ module.exports = class {
           httpFlow.process(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
@@ -174,7 +174,7 @@ module.exports = class {
           this.processSslData(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
@@ -186,7 +186,7 @@ module.exports = class {
           await this.processConnData(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
     if (this.connLogdev == null) {
@@ -197,7 +197,7 @@ module.exports = class {
           await this.processConnData(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
@@ -209,7 +209,7 @@ module.exports = class {
           this.processX509Data(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
@@ -221,14 +221,16 @@ module.exports = class {
           this.processknownHostsData(data);
         });
       } else {
-        setTimeout(this.initWatchers, 5000);
+        failed = true
       }
     }
 
-
+    if (failed) {
+      setTimeout(this.initWatchers, 5000);
+    }
   }
 
-  constructor(name, config, loglevel) {
+  constructor(name, config) {
     if (instances[name] != null) {
       return instances[name];
     } else {
@@ -242,7 +244,7 @@ module.exports = class {
       this.initWatchers();
       instances[name] = this;
       let c = require('./MessageBus.js');
-      this.publisher = new c(loglevel);
+      this.publisher = new c();
       this.flowstash = {};
       this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
 

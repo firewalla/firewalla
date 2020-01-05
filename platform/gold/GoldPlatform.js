@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,11 +21,9 @@ const fConfig = require('../../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 
-const fs = require('fs');
-
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
-class YellowPlatform extends Platform {
+class GoldPlatform extends Platform {
 
   getName() {
     return "gold";
@@ -124,4 +122,4 @@ class YellowPlatform extends Platform {
   }
 }
 
-module.exports = YellowPlatform;
+module.exports = GoldPlatform;
