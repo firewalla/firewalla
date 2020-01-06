@@ -789,6 +789,7 @@ module.exports = class FlowManager {
             this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.ob), Number(o.rb), null);
           }
         }
+
         let ts = o.ts;
         if (o._ts) {
           ts = o._ts;
@@ -803,6 +804,7 @@ module.exports = class FlowManager {
           }
           conndb = {};
         }
+
         let key = "";
         // No longer needs to take care of portflow, as flow:conn now sums only 1 dest port
         if (o.sh == o.lh) {
@@ -810,7 +812,6 @@ module.exports = class FlowManager {
         } else {
           key = o.sh + ":" + o.fd;
         }
-        //     let key = o.sh+":"+o.dh+":"+o.fd;
         let flow = conndb[key];
         if (flow == null) {
           conndb[key] = o;
@@ -826,11 +827,13 @@ module.exports = class FlowManager {
           flow.ob += o.ob;
 
           // flow.ts and flow.du should present the time span of all flows
-          if (flow.ts + flow.du < o.ts + o.du) {
-            flow.du = o.ts + o.du - flow.ts;
+          if (flow.ets < o.ets) {
+            flow.ets = o.ets;
+            flow.du = o.ets - flow.ts;
           }
           if (flow.ts > o.ts) {
             flow.ts = o.ts;
+            flow.du = flow.ets - o.ts;
           }
 
           if (o.sp) {
