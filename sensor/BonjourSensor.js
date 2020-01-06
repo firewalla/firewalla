@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,7 +25,7 @@ const ip = require('ip');
 const Promise = require('bluebird');
 
 const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager('info')
+const sysManager = new SysManager()
 const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
@@ -40,7 +40,7 @@ const ipMacCache = {};
 class BonjourSensor extends Sensor {
   constructor() {
     super();
-
+    this.interfaces = null;
     this.hostCache = {};
 
     bonjour._server.mdns.on('warning', (err) => log.warn("Warning on mdns server", err))
@@ -49,7 +49,7 @@ class BonjourSensor extends Sensor {
 
   run() {
     log.info("Bonjour Watch Starting");
-
+    this.interfaces = sysManager.getMonitoringInterfaces();
     if (this.bonjourBrowserTCP == null) {
       this.bonjourBrowserTCP = bonjour.find({
         protocol: 'tcp'
@@ -132,13 +132,16 @@ class BonjourSensor extends Sensor {
             resolve(null);
           } else {
             if (!mac) {
-              if (ipAddr === sysManager.myIp()) {
-                resolve(sysManager.myMAC());
-              } else if (ipAddr === sysManager.myWifiIp()) {
-                resolve(sysManager.myWifiMAC());
-              } else {
-                log.error("Not able to find mac address for host:", ipAddr, mac);
-                resolve(null);
+              for (const intf of this.interfaces) {
+                const intfName = intf.name;
+                if (ipAddr === sysManager.myIp(intfName)) {
+                  resolve(sysManager.myMAC(intfName));
+                } else if (ipAddr === sysManager.myWifiIp(intfName)) {// DEPRECATING
+                  resolve(sysManager.myWifiMAC(intfName));
+                } else {
+                  log.error("Not able to find mac address for host:", ipAddr, mac);
+                  resolve(null);
+                }
               }
             } else {
               ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
@@ -153,8 +156,11 @@ class BonjourSensor extends Sensor {
         return null;
       })
       if (!mac) {
-        if (sysManager.myIp6() && sysManager.myIp6().includes(ipAddr)) {
-          mac = sysManager.myMAC();
+        for (const intf of this.interfaces) {
+          const intfName = intf.name;
+          if (sysManager.myIp6(intfName) && sysManager.myIp6(intfName).includes(ipAddr)) {
+            mac = sysManager.myMAC(intfName);
+          }
         }
       } else {
         ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };

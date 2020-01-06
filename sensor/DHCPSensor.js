@@ -31,12 +31,12 @@ class DHCPSensor extends Sensor {
   run() {
     let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
     this.dhcpDump = new DhcpDump();
-    this.dhcpDump.install((obj)=>{
+    this.dhcpDump.install((obj) => {
       log.info("DHCPDUMP is installed");
-      this.dhcpDump.start(false,(obj)=>{
+      this.dhcpDump.start(false, (obj) => {
         if (obj && obj.mac) {
           // dedup
-          if(this.cache[obj.mac])
+          if (this.cache[obj.mac])
             return;
 
           this.cache[obj.mac] = 1;
@@ -48,6 +48,7 @@ class DHCPSensor extends Sensor {
           sem.emitEvent({
             type: "NewDeviceWithMacOnly",
             mac: obj.mac,
+            intf_mac: obj.intf_mac,
             name: obj.name,
             mtype: obj.mtype,
             from: 'dhcp',
