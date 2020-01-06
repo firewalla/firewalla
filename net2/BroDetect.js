@@ -847,8 +847,21 @@ module.exports = class {
         return;
       }
 
+      // get intf id accroding to intf mac
       if (!intfId) {
         intfId = origMac === localMac ? respMac.toUpperCase() : origMac.toUpperCase();
+      }
+
+      if (!intfId) {
+        let intfInfo = sysManager.getInterfaceViaMac(intfId);
+        if (intfInfo && intfInfo.uuid) {
+          intfId = intfInfo.uuid;
+        } else {
+          intfId = '';
+          log.error(`Unable to find nif uuid, ${intfId}`);
+        }
+      } else {
+        intfId = '';
       }
 
       localMac = localMac.toUpperCase();

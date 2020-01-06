@@ -18,15 +18,22 @@ const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
+const sysManager = require('../net2/SysManager.js')
 
 class IntfInfoIntel extends Intel {
     async enrichAlarm(alarm) {
         if (_.has(alarm, 'p.intf.id')) {
-            // @TODO add intf info
-            // Object.assign(alarm, {
-            //     'p.intf.subnet': '',
-            //     'p.intf.name': ''
-            // });
+            // add intf info
+            let intfInfo = sysManager.getInterfaceViaUUID(alarm['p.intf.id']);
+            if (intfInfo) {
+                Object.assign(alarm, {
+                    'p.intf.subnet': intfInfo.subnet,
+                    'p.intf.subnet6': intfInfo.ip6_subnets,
+                    'p.intf.name': intfInfo.name
+                });
+            } else {
+                log.error(`Unable to find nif uuid, ${intfId}`);
+            }
         }
 
         return alarm;

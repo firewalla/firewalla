@@ -169,9 +169,15 @@ class DeviceHook extends Hook {
 
       if (_.has(host, 'intf_mac')) {
         let intfMac = host.intf_mac;
-        let intf = 1; // @TODO get intf uuid accroding to intf_mac
-        delete host.inft_mac;
-        host.intf = intf;
+        let intfInfo = sysManager.getInterfaceViaMac(intfMac);
+
+        if (intfInfo && intfInfo.uuid) {
+          let intf = intfInfo.uuid; // get intf uuid accroding to intf_mac
+          delete host.inft_mac;
+          host.intf = intf;
+        } else {
+          log.error(`Unable to find nif uuid, ${intfMac}`);
+        }
       }
 
       if (mac != null) {
