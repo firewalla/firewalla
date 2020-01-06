@@ -50,7 +50,6 @@ const mode = require('./Mode.js')
 const WifiInterface = require('./WifiInterface.js');
 
 const fireRouter = require('./FireRouter.js')
-fireRouter.init() // let it crash
 
 // api/main/monitor all depends on sysManager configuration
 const SysManager = require('./SysManager.js');
@@ -214,14 +213,11 @@ async function run() {
   if (platform.getDHCPCapacity()) {
     // always create the secondary interface
     await ModeManager.enableSecondaryInterface()
-    d.discoverInterfaces((err, list) => {
-      if(!err && list && list.length >= 2) {
-        sysManager.update(null) // if new interface is found, update sysManager
-        pclient.publishAsync("System:IPChange", "");
-        // recreate port direct after secondary interface is created
-        // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
-      }
-    })
+    const list = await d.discoverInterfacesAsync()
+    if (list && list.length >= 2) {
+      sysManager.update(null) // if new interface is found, update sysManager
+      await pclient.publishAsync("System:IPChange", "");
+    }
   }
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
@@ -256,36 +252,32 @@ async function run() {
 
     // initialize VPN after Iptables is flushed
     const vpnManager = new VpnManager();
-    hostManager.loadPolicy((err, data) => {
-      if (err != null) {
-        log.error("Failed to load system policy for VPN", err);
-      } else {
-        var vpnConfig = {state: false}; // default value
-        if(data && data["vpn"]) {
-          vpnConfig = JSON.parse(data["vpn"]);
-        }
-        vpnManager.install("server", (err)=>{
-          if (err!=null) {
-            log.info("Unable to install vpn server instance: server", err);
-            hostManager.setPolicy("vpnAvaliable",false);
-          } else {
-            (async () => {
-              const conf = await vpnManager.configure(vpnConfig);
-              if (conf == null) {
-                log.error("Failed to configure VPN manager");
-                vpnConfig.state = false;
-                hostManager.setPolicy("vpn", vpnConfig);
-              } else {
-                hostManager.setPolicy("vpnAvaliable", true, (err) => { // old typo, DO NOT fix it for backward compatibility.
-                  vpnConfig = Object.assign({}, vpnConfig, conf);
-                  hostManager.setPolicy("vpn", vpnConfig);
-                });
-              }
-            })();
-          }
-        });
-      }
-    });
+    const data = await hostManager.loadPolicy().catch(err =>
+      log.error("Failed to load system policy for VPN", err)
+    )
+
+    var vpnConfig = {state: false}; // default value
+    if(data && data["vpn"]) {
+      vpnConfig = JSON.parse(data["vpn"]);
+    }
+
+    try {
+      await vpnManager.installAsync("server")
+    } catch(err) {
+      log.info("Unable to install vpn server instance: server", err);
+      await hostManager.setPolicyAsync("vpnAvaliable",false);
+    }
+
+    const conf = await vpnManager.configure(vpnConfig);
+    if (conf == null) {
+      log.error("Failed to configure VPN manager");
+      vpnConfig.state = false;
+      await hostManager.setPolicyAsync("vpn", vpnConfig);
+    } else {
+      await hostManager.setPolicyAsync("vpnAvaliable", true); // old typo, DO NOT fix it for backward compatibility.
+      vpnConfig = Object.assign({}, vpnConfig, conf);
+      await hostManager.setPolicyAsync("vpn", vpnConfig);
+    }
 
     // ensure getHosts is called after Iptables is flushed
     hostManager.getHosts((err,result)=>{

@@ -44,6 +44,7 @@ const Gold = require('../platform/gold/GoldPlatform.js')
 
 const util = require('util')
 const rp = util.promisify(require('request'))
+const { Address4, Address6 } = require('ip-address')
 
 
 // not exposing these methods/properties
@@ -97,6 +98,27 @@ function updateMaps() {
   }
 }
 
+async function generateNetowrkInfo() {
+  for (const intfName in intfNameMap) {
+    const intf = intfNameMap[intfName]
+    const ip4 = new Address4(intf.state.ip4)
+    const redisIntf = {
+      name:         intfName,
+      uuid:         intf.config.meta.uuid,
+      mac_address:  intf.state.mac,
+      ip_address:   ip4.addressMinusSuffix,
+      subnet:       intf.state.ip4,
+      netmask:      Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address,
+      gateway_ip:   intf.config.dhcp ? intf.config.dhcp.gateway : intf.state.gateway,
+      dns:          intf.config.dhcp ? intf.config.dhcp.dns : intf.state.dns,
+      type:         'Wired', // probably no need to keep this
+    }
+
+    await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
+    await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
+  }
+}
+
 let routerInterface = null
 let routerConfig = null
 let monitoringInterfaces = null
@@ -116,6 +138,13 @@ class FireRouter {
     routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
     this.ready = false
+
+    this.isFireMain = process.title === 'FireMain';
+
+    this.init().catch(err => {
+      log.error('FireRouter failed to initialize', err)
+      process.exit(1);
+    })
   }
 
   // let it crash
@@ -132,6 +161,8 @@ class FireRouter {
       Object.assign(intfNameMap, wans, lans)
 
       updateMaps()
+
+      await generateNetowrkInfo()
 
       if (mode == 'spoof') {
         monitoringInterfaces = Object.keys(wans)
@@ -150,6 +181,7 @@ class FireRouter {
         }
       };
       await Config.updateUserConfig(updatedConfig);
+
 
     } else {
       // make sure there is at least one usable ethernet
@@ -208,25 +240,33 @@ class FireRouter {
       }
 
       monitoringInterfaces = [ 'eth0', 'eth0:0' ]
+
+      const Discovery = require('./Discovery.js');
+      const d = new Discovery("nmap");
+
+      // updates sys:network:info
+      const intfList = await d.discoverInterfacesAsync()
+      if (!intfList.length) {
+        throw new Error('No active ethernet!')
+      }
     }
-
-    const Discovery = require('./Discovery.js');
-    const d = new Discovery("nmap");
-
-    // updates sys:network:info
-    const intfList = await d.discoverInterfacesAsync()
-    if (!intfList.length) {
-      throw new Error('No active ethernet!')
-    }
-
-    await broControl.restart()
-    await broControl.addCronJobs()
 
     this.ready = true
+
+    if (this.isFireMain) {
+      await broControl.restart()
+      await broControl.addCronJobs()
+    }
+
+    this.broReady = true
   }
 
   isReady() {
     return this.ready
+  }
+
+  isBroReady() {
+    return this.broReady
   }
 
   async waitTillReady() {
