@@ -71,6 +71,7 @@ const dns = require('dns');
 module.exports = class {
   constructor() { // loglevel is already ignored
     if (instance == null) {
+      log.info('Initializing SysManager')
       rclient.hdel("sys:network:info", "oper");
       this.multicastlow = iptool.toLong("224.0.0.0");
       this.multicasthigh = iptool.toLong("239.255.255.255");
@@ -167,8 +168,7 @@ module.exports = class {
     }
     this.update(null);
 
-    this.updateAsync = util.promisify(this.update)
-    return instance;
+    return instance
   }
 
   resolveServerDNS(retry) {
@@ -360,8 +360,14 @@ module.exports = class {
   }
 
   update(callback) {
+    if (!callback) callback = () => {}
+    return util.callbackify(this.updateAsync).bind(this)(callback)
+  }
+
+  async updateAsync() {
     log.debug("Loading sysmanager data from redis");
-    rclient.hgetall("sys:config", (err, results) => {
+    try {
+      const results = await rclient.hgetallAsync("sys:config")
       if(results && results.language) {
         this.language = results.language;
         i18n.setLocale(this.language);
@@ -370,59 +376,72 @@ module.exports = class {
       if(results && results.timezone) {
         this.timezone = results.timezone;
       }
-    });
+    } catch(err) {
+      log.error('Error getting sys:config', err)
+    }
 
-    rclient.get("system:debug", (err, result) => {
-      if(result) {
-        if(result === "1") {
-          systemDebug = true;
-        } else {
-          systemDebug = false;
-        }
+    try {
+      const result = await rclient.getAsync("system:debug")
+      if(result && result === "1") {
+        systemDebug = true;
       } else {
         // by default off
         systemDebug = false;
       }
-    });
+    } catch(err) {
+      log.error('Error getting system:debug', err)
+    }
 
-    rclient.hgetall("sys:network:info", (err, results) => {
-      if (err == null) {
-        this.sysinfo = results;
+    try {
+      const results = await rclient.hgetallAsync("sys:network:info")
+      this.sysinfo = results;
 
-        if(this.sysinfo === null) {
-          return;
-        }
-
-        for (let r in this.sysinfo) {
-          this.sysinfo[r] = JSON.parse(this.sysinfo[r]);
-        }
-
-        this.config = Config.getConfig(true)
-        if (this.sysinfo['oper'] == null) {
-          this.sysinfo.oper = {};
-        }
-        this.ddns = this.sysinfo["ddns"];
-        this.publicIp = this.sysinfo["publicIp"];
-        // log.info("System Manager Initialized with Config", this.sysinfo);
+      if(this.sysinfo === null) {
+        throw new Error('Empty key');
       }
-      if (callback != null) {
-        callback(err);
-      }
-    });
 
-    rclient.hgetall("sys:network:settings", (err, results) => {
-      if (err == null) {
-        this.networkSettings = results;
-        if (this.networkSettings == null)
-          return;
-
-        for (let r in this.networkSettings) {
-          this.networkSettings[r] = JSON.parse(this.networkSettings[r]);
+      this.macMap = {}
+      for (let r in this.sysinfo) {
+        const item = JSON.parse(this.sysinfo[r])
+        this.sysinfo[r] = item
+        if (item.mac_address) {
+          this.macMap[item.mac_address] = item
         }
       }
-      if (callback)
-        callback(err);
-    });
+
+      this.config = Config.getConfig(true)
+      if (this.sysinfo['oper'] == null) {
+        this.sysinfo.oper = {};
+      }
+      this.ddns = this.sysinfo["ddns"];
+      this.publicIp = this.sysinfo["publicIp"];
+      // log.info("System Manager Initialized with Config", this.sysinfo);
+    } catch(err) {
+      log.error('Error getting sys:network:info', err)
+    }
+
+    try {
+      const results = await rclient.hgetallAsync("sys:network:settings")
+      this.networkSettings = results;
+      if (this.networkSettings == null)
+        throw new Error('Empty key');
+
+      for (let r in this.networkSettings) {
+        this.networkSettings[r] = JSON.parse(this.networkSettings[r]);
+      }
+    } catch(err) {
+      log.error('Error getting sys:network:settings', err)
+    }
+
+    try {
+      this.uuidMap = await rclient.hgetallAsync('sys:network:uuid')
+
+      for (const uuid in this.uuidMap) {
+        this.uuidMap[uuid] = JSON.parse(this.uuidMap[uuid]);
+      }
+    } catch(err) {
+      log.error('Error getting sys:network:settings', err)
+    }
   }
 
   async syncVersionUpdate() {
@@ -475,6 +494,14 @@ module.exports = class {
 
   getInterface(intf) {
     return this.sysinfo && this.sysinfo[intf]
+  }
+
+  getInterfaceViaUUID(uuid) {
+    return this.uuidMap && this.uuidMap[uuid]
+  }
+
+  getInterfaceViaMac(mac) {
+    return this.macMap && this.macMap[mac]
   }
 
 
@@ -686,15 +713,7 @@ module.exports = class {
   // serial may not come back with anything for some platforms
 
   getSysInfoAsync() {
-    return new Promise((resolve, reject) => {
-      this.getSysInfo((err, data) => {
-        if(err) {
-          reject(err);
-        } else {
-          resolve(data);
-        }
-      });
-    });
+    return util.promisify(this.getSysInfo).bind(this)()
   }
 
   /*
@@ -702,7 +721,6 @@ module.exports = class {
   -rw-rw-r-- 1 pi pi 41 Sep 30 06:55 REPO_HEAD
   -rw-rw-r-- 1 pi pi 19 Sep 30 06:55 REPO_TAG
   */
-
 
 
   getSysInfo(callback) {
@@ -740,7 +758,7 @@ module.exports = class {
       this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD","utf8").trim();
       this.repo.tag = this.repo.tag || require('fs').readFileSync("/tmp/REPO_TAG","utf8").trim();
     } catch (err) {
-      log.error("Failed to load repo info from /tmp");
+      log.error("Failed to load repo info from /tmp", err);
     }
     // ======== end of statics =========
 

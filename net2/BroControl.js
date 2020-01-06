@@ -17,6 +17,7 @@
 
 const log = require("./logger.js")(__filename);
 const f = require('./Firewalla.js')
+const { delay } = require('../util/util.js')
 
 const { exec } = require('child-process-promise')
 
@@ -46,14 +47,16 @@ class BroControl {
     await exec('sudo -u pi crontab -r; sudo -u pi crontab /home/pi/firewalla/etc/crontab')
   }
 
-  async start() {
-    await exec(`sudo systemctl start brofish`)
-  }
-
   async restart() {
-    await exec(`sudo systemctl restart brofish`)
+    try {
+      await exec(`sudo systemctl restart brofish`)
+    } catch(err) {
+      log.error('Failed to restart brofish', err)
+      await delay(5000)
+      this.restart()
+    }
   }
 
 }
 
-module.exports = new BroControl
+module.exports = new BroControl()
