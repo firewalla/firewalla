@@ -172,7 +172,7 @@ module.exports = class {
     upnpClient.portMapping({
       type: protocol,
       protocol: protocol,
-      private: localPort,
+      private: { host: sysManager.myIp(), port: localPort },
       public: externalPort,
       ttl: 0, // set ttl to 0 for better compatibility
       description: description
@@ -265,7 +265,7 @@ module.exports = class {
 
     upnpClient.portUnmapping({
       protocol: protocol,
-      private: localPort,
+      private: { host: sysManager.myIp(), port: localPort },
       public: externalPort
     }, (err) => {
       if (err) {
