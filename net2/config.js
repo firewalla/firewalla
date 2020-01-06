@@ -15,10 +15,10 @@
 
 'use strict'
 
-let log = require("./logger.js")(__filename, "info");
+const log = require("./logger.js")(__filename);
 
-let fs = require('fs');
-let f = require('./Firewalla.js');
+const fs = require('fs');
+const f = require('./Firewalla.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
