@@ -178,7 +178,8 @@ class FireRouter {
       const updatedConfig = {
         discovery: {
           networkInterfaces: monitoringInterfaces
-        }
+        },
+        monitoringInterface: monitoringInterfaces[0]
       };
       await Config.updateUserConfig(updatedConfig);
 

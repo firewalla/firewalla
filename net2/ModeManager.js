@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,14 +15,16 @@
 'use strict';
 const log = require("./logger.js")(__filename);
 const Config = require('./config.js');
-let fConfig = Config.getConfig();
+const fConfig = Config.getConfig();
 
-let secondaryInterface = require("./SecondaryInterface.js");
+const secondaryInterface = require("./SecondaryInterface.js");
 
-let Mode = require('./Mode.js');
+const Mode = require('./Mode.js');
 
-let SysManager = require('./SysManager.js');
-let sysManager = new SysManager('info');
+const fireRouter = require('./FireRouter.js')
+
+const SysManager = require('./SysManager.js');
+const sysManager = new SysManager('info');
 
 const SpooferManager = require('./SpooferManager.js');
 
@@ -33,7 +35,7 @@ const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
 const firewalla = require('./Firewalla.js')
 
-let util = require('util');
+const util = require('util');
 const iptool = require('ip');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -282,14 +284,15 @@ async function apply() {
         await _enforceDHCPMode()
       }
       break;
-    case Mode.MODE_MANUAL_SPOOF:
+    case Mode.MODE_MANUAL_SPOOF: {
       await _enforceSpoofMode()
       let sm = new SpooferManager();
       await hostManager.getHostsAsync()
       await sm.loadManualSpoofs(hostManager) // populate monitored_hosts based on manual Spoof configs
       break;
+    }
     case Mode.MODE_ROUTER:
-      await _enableLanInterfaces();
+      // TODO: start dnsmasq
       await pclient.publishAsync("System:IPChange", "");
       break;
     case Mode.MODE_NONE:

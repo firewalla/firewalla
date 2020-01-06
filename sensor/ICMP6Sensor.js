@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC 
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,7 +24,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
 const SysManager = require('../net2/SysManager.js');
-const Discovery = require('../net2//Discovery.js');
 
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
@@ -40,19 +39,18 @@ class ICMP6Sensor extends Sensor {
 
   run() {
     (async () => {
-      try {
-        const result = await execAsync(`cat /sys/class/net/${this.config.monitoringInterface}/address`);
-        this.myMac = result.stdout.trim().toUpperCase();
-      } catch (err) {
-        log.warn(`Failed to get self MAC address from /sys/class/net/${this.config.monitoringInterface}/address`);
-      }
       if (!this.myMac) {
-        const d = new Discovery("ICMP6Sensor", fConfig, "info", false);
-        await d.discoverInterfacesAsync();
         const sysManager = new SysManager();
-        await sysManager.updateAsync();
         this.myMac = sysManager.myMAC().toUpperCase();
       }
+
+      if (!this.myMac)
+        try {
+          const result = await execAsync(`cat /sys/class/net/${this.config.monitoringInterface}/address`);
+          this.myMac = result.stdout.trim().toUpperCase();
+        } catch (err) {
+          log.warn(`Failed to get self MAC address from /sys/class/net/${this.config.monitoringInterface}/address`);
+        }
 
       if (!this.myMac) {
         setTimeout(() => {
@@ -66,14 +64,14 @@ class ICMP6Sensor extends Sensor {
       const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', this.config.monitoringInterface, '-en', `!(ether src ${this.myMac}) && icmp6 && ip6[40] == 136`]);
       const pid = tcpdumpSpawn.pid;
       log.info("TCPDump icmp6 started with PID: ", pid);
-  
+
       const reader = readline.createInterface({
         input: tcpdumpSpawn.stdout
       });
       reader.on('line', (line) => {
         this.processNeighborAdvertisement(line);
       });
-      
+
       tcpdumpSpawn.on('close', (code) => {
         log.info("TCPDump icmp6 exited with code: ", code);
       })
