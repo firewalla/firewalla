@@ -41,7 +41,7 @@ class ICMP6Sensor extends Sensor {
     (async () => {
       if (!this.myMac) {
         const sysManager = new SysManager();
-        this.myMac = sysManager.myMAC().toUpperCase();
+        this.myMac = sysManager.myMAC()
       }
 
       if (!this.myMac)
