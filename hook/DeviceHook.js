@@ -177,7 +177,7 @@ class DeviceHook extends Hook {
             host.mac = theMac
             this.processDeviceUpdate(event)
           })().catch((err) => {
-            log.error(`Failed to get mac address for ip ${ip}`)
+            log.error(`Failed to get mac address for ip ${ip}`, err)
           })
         }
       }
@@ -242,9 +242,7 @@ class DeviceHook extends Hook {
           log.error("Failed to get vendor info from cloud", err);
         }
 
-        let v = "Unknown";
-        if (vendor)
-          v = vendor;
+        let v = vendor || host.macVendor || "Unknown";
 
         enrichedHost.macVendor = v;
 

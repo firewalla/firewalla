@@ -76,8 +76,6 @@ class NetworkStatsSensor extends Sensor {
     this.checkNetworkStatus();
     setInterval(() => {
       this.checkNetworkStatus();
-      if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
-
       this.checkLinkStats();
     }, (this.config.interval || 300) * 1000);
   }
@@ -150,6 +148,8 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async checkLinkStats() {
+    if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
+
     log.info("checking link stats")
     try {
       // "|| true" prevents grep from yielding error when nothing matches
@@ -205,7 +205,7 @@ class NetworkStatsSensor extends Sensor {
     if (!this.checkNetworkPings) this.checkNetworkPings = {};
 
     for (const server of servers) {
-      if (this.checkNetworkPings[server]) return;
+      if (this.checkNetworkPings[server]) continue;
       this.checkNetworkPings[server] = new Ping(server);
       this.checkNetworkPings[server].on('ping', (data) => {
         rclient.hsetAsync("network:status:ping", server, data.time);
@@ -243,6 +243,7 @@ class NetworkStatsSensor extends Sensor {
     }
     rclient.setAsync("network:status:dig", JSON.stringify(resultGroupByHost));
   }
+
   async runSpeedTest() {
     this.cornJob && this.cornJob.stop();
     this.cornJob = new CronJob("00 30 02 * * *", () => {

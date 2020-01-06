@@ -1000,6 +1000,7 @@ module.exports = class {
           case "ALARM_NEW_DEVICE":
           case "ALARM_DEVICE_OFFLINE":
           case "ALARM_DEVICE_BACK_ONLINE":
+          case "ALARM_ABNORMAL_BANDWIDTH_USAGE":
             p.type = "mac";
             p.target = alarm["p.device.mac"];
             break;
@@ -1333,7 +1334,6 @@ module.exports = class {
     await this.updateAlarm(alarm);
   }
 
-
   async enrichDeviceInfo(alarm) {
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
@@ -1386,6 +1386,48 @@ module.exports = class {
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
   }
+
+  async ignoreAllAlarmAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("ignore alarm_id:" + alarmID);
+      multi.zrem(alarmActiveKey, alarmID);
+      multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
+  async deleteActiveAllAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("delete active alarm_id:" + alarmID);
+      multi.zrem(alarmActiveKey, alarmID);
+      multi.del(`${alarmDetailPrefix}:${alarmID}`);
+      multi.del(alarmPrefix + alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
+  async deleteArchivedAllAsync() {
+    const alarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
+    let multi = rclient.multi();
+    for (const alarmID of alarmIDs) {
+      log.info("delete archive alarm_id:" + alarmID);
+      multi.zrem(alarmArchiveKey, alarmID);
+      multi.del(`${alarmDetailPrefix}:${alarmID}`);
+      multi.del(alarmPrefix + alarmID);
+    };
+    await multi.execAsync();
+    
+    return alarmIDs;
+  }
+  
   createException(alarm, userInput) {
     let i_target = null;
     let i_type = null;
@@ -1527,7 +1569,12 @@ module.exports = class {
       case "deviceAppPort":
         e["p.device.mac"] = alarm["p.device.mac"];
         if (alarm.type === 'ALARM_UPNP') {
-          e["p.upnp.description"] = alarm["p.upnp.description"];
+          const description = alarm["p.upnp.description"];
+          if(description.startsWith("WhatsApp")) {
+            e["p.upnp.description"] = "WhatsApp*"; //special handling for WhatsApp
+          } else {
+            e["p.upnp.description"] = description;
+          }
         }
         break;
       default:

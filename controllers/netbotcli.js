@@ -507,7 +507,6 @@ class netBot extends ControllerBot {
 
         this.sensorConfig = config.controller.sensor;
         //flow.summaryhours
-        // sysmanager.setConfig(this.sensorConfig);
         sysmanager.update((err, data) => {});
 
 

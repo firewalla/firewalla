@@ -15,10 +15,10 @@
 
 'use strict'
 
-let log = require("./logger.js")(__filename, "info");
+const log = require("./logger.js")(__filename);
 
-let fs = require('fs');
-let f = require('./Firewalla.js');
+const fs = require('fs');
+const f = require('./Firewalla.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -43,6 +43,17 @@ async function updateUserConfig(updatedPart) {
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
   getConfig(true);
+}
+
+async function removeUserNetworkConfig() {
+  await getUserConfig(true);
+  
+  delete userConfig.alternativeInterface;
+  delete userConfig.secondaryInterface;
+  delete userConfig.wifiInterface;
+  
+  let userConfigFile = f.getUserConfigFolder() + "/config.json";
+  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
 }
 
 async function getUserConfig(reload) {
@@ -279,5 +290,6 @@ module.exports = {
   disableDynamicFeature:disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
   syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs,
-  onFeature: onFeature  
+  onFeature: onFeature,
+  removeUserNetworkConfig: removeUserNetworkConfig
 };

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -46,6 +46,7 @@ const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 const upgradeManager = require('../net2/UpgradeManager.js');
+const modeManager = require('../net2/ModeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -356,7 +357,6 @@ class netBot extends ControllerBot {
 
     this.sensorConfig = config.controller.sensor;
     //flow.summaryhours
-    // sysManager.setConfig(this.sensorConfig);
     sysManager.update((err, data) => {
     });
 
@@ -473,6 +473,10 @@ class netBot extends ControllerBot {
         } else {
           data.category = "com.firewalla.category.alarm." + alarm.getManagementType();
         }
+      }
+
+      if(data.gid) {
+        data["thread-id"] = data.gid;
       }
 
       // check if device name should be included, sometimes it is helpful if multiple devices are bound to one app
@@ -1038,7 +1042,6 @@ class netBot extends ControllerBot {
               return
             }
 
-            let modeManager = require('../net2/ModeManager.js');
             switch (v4.mode) {
               case "spoof":
               case "autoSpoof":
@@ -1832,6 +1835,17 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "networkState": {
+        (async () => {
+          const wans = await FireRouter.getWANInterfaces();
+          const lans = await FireRouter.getLANInterfaces();
+          const networks = Object.assign({}, wans, lans);
+          this.simpleTxData(msg, networks, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -1980,7 +1994,7 @@ class netBot extends ControllerBot {
 
         netBotTool.prepareDetailedAppFlowsForHostFromCache(jsonobj, mac, options),
         netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options),
-
+        this.hostManager.yesterdayStatsForInit(jsonobj, mac),
         this.hostManager.last60MinStatsForInit(jsonobj, mac),
         this.hostManager.last30daysStatsForInit(jsonobj, mac)
       ])
@@ -2255,6 +2269,16 @@ class netBot extends ControllerBot {
         })
         break
 
+      case "alarm:ignoreAll":
+        (async () => {
+          await am2.ignoreAllAlarm();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to ignoreAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
       case "alarm:report":
         (async () => {
           await am2.reportBug(value.alarmID, value.feedback)
@@ -2277,6 +2301,26 @@ class netBot extends ControllerBot {
         }
         break;
 
+      case "alarm:deleteActiveAll":
+        (async () => {
+          await am2.deleteActiveAll();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to deleteActiveAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
+      case "alarm:deleteArchivedAll":
+        (async () => {
+          await am2.deleteArchivedAll();
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          log.error("Failed to deleteArchivedAll alarm:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+        
       case "policy:create": {
         let policy
         try {
@@ -2469,7 +2513,6 @@ class netBot extends ControllerBot {
         break
       case "manualSpoofUpdate":
         (async () => {
-          let modeManager = require('../net2/ModeManager.js');
           await modeManager.publishManualSpoofUpdate()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -3254,7 +3297,6 @@ class netBot extends ControllerBot {
                 dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
               this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
-                let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
               this.simpleTxData(msg, {}, null, callback);
@@ -3266,6 +3308,15 @@ class netBot extends ControllerBot {
               const altIpAddress = intf.ipAddress;
               const altSubnetMask = intf.subnetMask;
               const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
+              const mySubnet = sysManager.mySubnet();
+              const currIpSubnet = iptool.cidrSubnet(mySubnet);
+              const altIp = iptool.subnet(altIpAddress, altSubnetMask);
+              if (!currIpSubnet.contains(altIp.networkAddress)
+                || currIpSubnet.subnetMaskLength !== altIp.subnetMaskLength
+                || !currIpSubnet.contains(intf.gateway)) {
+                log.info("Change ip or gateway is not in current subnet, ignore")
+                throw new Error("Invalid IP address or gateway");
+              }
               updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
               const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
               await fc.updateUserConfig({ alternativeInterface: mergedAlternativeInterface });
@@ -3274,7 +3325,6 @@ class netBot extends ControllerBot {
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
               this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
-                let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
               this.simpleTxData(msg, {}, null, callback);
@@ -3305,6 +3355,33 @@ class netBot extends ControllerBot {
               log.error("Unknown network type in networkInterface:update, " + network);
               this.simpleTxData(msg, {}, { code: 400, msg: "Unknown network type: " + network }, callback);
           }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "networkInterface:revert": {
+        (async () => {
+          //remove user customized configuration
+          await fc.removeUserNetworkConfig();
+          //load policy
+          const systemPolicy = await this.hostManager.loadPolicyAsync();
+          const dnsmasqConfig = JSON.parse(systemPolicy["dnsmasq"] || "{}");
+          log.info("dnsmasq", dnsmasqConfig);
+          //delete related customized key
+          delete dnsmasqConfig.alternativeDnsServers;
+          delete dnsmasqConfig.alternativeDhcpRange;
+          delete dnsmasqConfig.secondaryDnsServers;
+          delete dnsmasqConfig.secondaryDhcpRange;
+          delete dnsmasqConfig.wifiDnsServers;
+          delete dnsmasqConfig.wifiDhcpRange;
+          await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqConfig);
+          setTimeout(() => {
+            let modeManager = require('../net2/ModeManager.js');
+            modeManager.publishNetworkInterfaceUpdate();
+          }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+          
+          this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })

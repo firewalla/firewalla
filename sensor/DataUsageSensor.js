@@ -32,6 +32,8 @@ const abnormalBandwidthUsageFeatureName = 'abnormal_bandwidth_usage';
 const dataPlanFeatureName = 'data_plan';
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const fc = require('../net2/config.js');
+const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan.cooldown") || 60 * 60 * 24 * 30;
+const abnormalBandwidthUsageCooldown = fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4;
 class DataUsageSensor extends Sensor {
     constructor() {
         super();
@@ -126,12 +128,26 @@ class DataUsageSensor extends Sensor {
     }
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, dataUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
-        //get top flows from begin to end
         const mac = host.o.mac;
+        const dedupKey = `abnormal:bandwidth:usage:${mac}`;
+        if (await this.isDedup(dedupKey, abnormalBandwidthUsageCooldown)) return;
+        //get top flows from begin to end
         const name = host.o.name || host.o.bname;
         const flows = await this.getSumFlows(mac, begin, end);
         const destNames = flows.map((flow) => flow.aggregationHost).join(',')
         percentage = percentage * 100;
+        const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * 24)
+        const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", this.slot * 24)
+        const recentlyDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * this.smWindow)
+        const recentlyUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", this.slot * this.smWindow)
+        const last24HoursStats = {
+            download: last24HoursDownloadStats,
+            upload: last24HoursUploadStats
+        }
+        const recentlyStats = {
+            download: recentlyDownloadStats,
+            upload: recentlyUploadStats
+        }
         let alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
             "p.device.mac": mac,
             "p.device.id": name,
@@ -140,7 +156,8 @@ class DataUsageSensor extends Sensor {
             "p.totalUsage": totalUsage,
             "p.begin.ts": begin,
             "p.end.ts": end,
-            "e.transfers": dataUsage,
+            "e.transfers": recentlyStats,
+            "e.last24.transfers": last24HoursStats,
             "p.flows": JSON.stringify(flows),
             "p.dest.names": destNames,
             "p.duration": this.smWindow,
@@ -191,16 +208,28 @@ class DataUsageSensor extends Sensor {
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
             //gen over data plan alarm
-            const level = Math.floor(percentage * 10);
+            let level = Math.floor(percentage * 10);
+            level = level >= 10 ? 'over' : level;
+            const dedupKey = `data:plan:${level}:${monthlyEndTs}`;
+            if (await this.isDedup(dedupKey, dataPlanCooldown)) return;
             percentage = percentage * 100;
             let alarm = new Alarm.OverDataPlanUsageAlarm(new Date() / 1000, null, {
                 "p.monthly.endts": monthlyEndTs,
                 "p.percentage": percentage.toFixed(2) + '%',
                 "p.totalUsage": totalDownload + totalUpload,
                 "p.planUsage": total,
-                "p.alarm.level": level >= 10 ? 'over' : level
+                "p.alarm.level": level
             });
             await alarmManager2.enqueueAlarm(alarm);
+        }
+    }
+    async isDedup(key, expiring) {
+        const exists = await rclient.existsAsync(key);
+        if (exists == 1) return true;
+        else {
+            await rclient.setAsync(key, 1);
+            await rclient.expireatAsync(key, parseInt(new Date() / 1000) + expiring);
+            return false;
         }
     }
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -55,8 +55,8 @@ class PlatformLoader {
       break;
     }
     case "x86_64": {
-      const YellowPlatform = require('./gold/GoldPlatform.js');
-      this.platform = new YellowPlatform();
+      const GoldPlatform = require('./gold/GoldPlatform.js');
+      this.platform = new GoldPlatform();
       break;
     }
     default:

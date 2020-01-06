@@ -137,9 +137,13 @@ exports.get_network_interfaces_list = async function() {
             if (type.netmask) {
               obj.ip6_masks.push(type.netmask);
             }
+            if (type.cidr) {
+              obj.ip6_subnets.push(type.cidr);
+            }
           } else {
             obj.ip6_addresses=[type.address];
             obj.ip6_masks=[type.netmask];
+            obj.ip6_subnets=[type.cidr];
           }
         }
         if (type.mac) {
