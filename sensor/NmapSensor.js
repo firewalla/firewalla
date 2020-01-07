@@ -140,7 +140,7 @@ class NmapSensor extends Sensor {
       NmapSensor._handlePortEntry(port, host);
     } else if (port && port.constructor === Array) {
       // multiple ports
-      port.forEach((p) => NmapSensor._handlePortEntry(p));
+      port.forEach((p) => NmapSensor._handlePortEntry(p, host));
     }
 
     if (hostResult.os && hostResult.os.osmatch) {
