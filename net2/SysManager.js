@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -679,27 +679,37 @@ module.exports = class {
     return false;
   }
 
-  inMySubnets4(ip4, intf = this.config.monitoringInterface) {
+  inMySubnets4(ip4, intf) {
     ip4 = new Address4(ip4)
     if (!ip4.isValid())
       return false;
-    else
-      return this.getMonitoringInterfaces()
-        .filter(i => i.name.startsWith(intf + ':'))
+    else {
+      let interfaces = this.getMonitoringInterfaces();
+      if (intf) {
+        interfaces = interfaces.filter(i => i.name.startsWith(intf + ':'))
+      }
+
+      return interfaces
         .map(i => ip4.isInSubnet(new Address4(i.subnet)))
         .some(Boolean)
+    }
   }
 
-  inMySubnet6(ip6, intf = this.config.monitoringInterface) {
+  inMySubnet6(ip6, intf) {
     ip6 = new Address6(ip6)
 
     if (!ip6.isValid())
       return false;
-    else
-      return this.getMonitoringInterfaces()
-        .filter(i => i.name.startsWith(intf + ':'))
+    else {
+      let interfaces = this.getMonitoringInterfaces();
+      if (intf) {
+        interfaces = interfaces.filter(i => i.name.startsWith(intf + ':'))
+      }
+
+      return interfaces
         .map(i => i.ip6_subnets.map(subnet => ip6.isInSubnet(new Address6(subnet))).some(Boolean))
         .some(Boolean)
+    }
   }
 
   // hack ...
@@ -828,7 +838,8 @@ module.exports = class {
     return false;
   }
 
-  isLocalIP(ip) {
+  // if intf is not specified, check with all interfaces
+  isLocalIP(ip, intf) {
     if (!ip) {
       log.warn("SysManager:WARN:isLocalIP empty ip");
       // TODO: we should throw error here
@@ -839,7 +850,7 @@ module.exports = class {
       if (this.isMulticastIP4(ip)) {
         return true;
       }
-      return this.inMySubnets4(ip) || this.inLanSubnets4(ip);
+      return this.inMySubnets4(ip, intf)
 
     } else if (new Address6(ip).isValid()) {
       if (ip.startsWith('::')) {
@@ -854,7 +865,7 @@ module.exports = class {
       if (this.locals[ip]) {
         return true;
       }
-      return this.inMySubnet6(ip);
+      return this.inMySubnet6(ip, intf);
     } else {
       log.error("SysManager:ERROR:isLocalIP", ip);
       // TODO: we should throw error here
