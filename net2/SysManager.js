@@ -574,7 +574,7 @@ module.exports = class {
 
   isMyIP6(ip6) {
     let interfaces = this.getMonitoringInterfaces();
-    return interfaces.map(i => i.ip6_addresses.includes(ip6)).some(Boolean);
+    return interfaces.map(i => i.ip6_addresses && i.ip6_addresses.includes(ip6)).some(Boolean);
   }
 
   myIpMask(intf = this.config.monitoringInterface) {
