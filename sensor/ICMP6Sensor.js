@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc. 
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,7 +25,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Sensor = require('./Sensor.js').Sensor;
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager()
-const Discovery = require('../net2//Discovery.js');
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
