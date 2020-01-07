@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -50,7 +50,7 @@ class IPv6DiscoverySensor extends Sensor {
     }, 1000 * 60 * 5); // start the first run in 5 minutes
   }
 
-  checkAndRunOnce() {
+  async checkAndRunOnce() {
     log.info("Starting IPv6DiscoverySensor Scanning", new Date() / 1000);
     if (this.isSensorEnabled()) {
       const results = sysManager.getMonitoringInterfaces();
