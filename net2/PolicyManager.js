@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -47,8 +47,14 @@ const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
+const { Rule } = require('../net2/Iptables.js');
 
 const util = require('util')
+
+const { exec } = require('child-process-promise')
 
 let iptablesReady = false
 
@@ -80,19 +86,17 @@ module.exports = class {
       message: 'Iptables flushed by FireMain'
     })
 
-    let defaultTable = config['iptables']['defaults'];
-    let myip = sysManager.myIp();
-    let secondarySubnet = sysManager.mySubnet2();
-    for (let i in defaultTable) {
-      defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
+    // ======= default iptables =======
+    const secondarySubnet = sysManager.mySubnet2();
+    if (platform.getDHCPCapacity() && secondarySubnet) {
+      const overlayMasquerade =
+        new Rule('nat').chn('FW_POSTROUTING').mth(secondarySubnet, null, 'src').jmp('MASQUERADE');
+      await exec(overlayMasquerade.toCmd('-A'));
     }
-    if (secondarySubnet) {
-      for (let i in defaultTable) {
-        defaultTable[i] = defaultTable[i].replace("LOCALSUBNET2", secondarySubnet);
-      }
-    }
-    log.debug("PolicyManager:flush", defaultTable);
-    iptable.run(defaultTable);
+    const icmpv6Redirect =
+      new Rule().fam(6).chn('OUTPUT').pro('icmpv6').pam('--icmpv6-type redirect').jmp('DROP');
+    await exec(icmpv6Redirect.toCmd('-D'));
+    await exec(icmpv6Redirect.toCmd('-I'));
 
     // Setup iptables so that it's ready for blocking
     await Block.setupBlockChain();
