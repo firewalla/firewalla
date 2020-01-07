@@ -138,6 +138,10 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
+
+const ExternalScanSensor = require('../sensor/ExternalScanSensor');
+const ess = new ExternalScanSensor();
+
 const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
@@ -3474,6 +3478,19 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "externalScan:runOnce":
+        (async () => {
+          const result = await ess.checkAndRunOnce();
+          if (!result) {
+            this.simpleTxData(msg, {}, { code: 407, msg: "External scan failed!" }, callback);
+          } else {
+            this.simpleTxData(msg, result, null, callback);
+          }
+        })().catch((err) => {
+          log.error("Failed to externalScan runOnce:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);

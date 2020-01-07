@@ -103,6 +103,7 @@
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
+    "ExternalScanSensor": {},
     "BoneSensor": {},
     "APISensor": {},
     "DNSCryptPlugin": {},
