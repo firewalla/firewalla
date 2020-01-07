@@ -546,12 +546,10 @@ module.exports = class {
     const myip2 = sysManager.myIp2();
     const myWifiIp = sysManager.myWifiIp();
 
-    if (myip) {
-      // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
-      if (sysManager.isMyIP(data["id.orig_h"]) ||
-        sysManager.isMyIP(data["id.resp_h"])) {
-        return false
-      }
+    // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
+    if (sysManager.isMyIP(data["id.orig_h"]) ||
+      sysManager.isMyIP(data["id.resp_h"])) {
+      return false
     }
 
     if (myip2) {
@@ -848,7 +846,7 @@ module.exports = class {
         intfId = origMac === localMac ? respMac.toUpperCase() : origMac.toUpperCase();
       }
 
-      if (!intfId) {
+      if (intfId) {
         let intfInfo = sysManager.getInterfaceViaMac(intfId);
         if (intfInfo && intfInfo.uuid) {
           intfId = intfInfo.uuid;
