@@ -222,8 +222,11 @@ class NetworkStatsSensor extends Sensor {
         rclient.hdelAsync("network:status:ping", pingServer);
       }
     }
-    const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(await rclient.hgetAsync("policy:system", "dnsmasq"))
-    secondaryDnsServers && dnses.push(secondaryDnsServers)
+    const dnsmasqServers = await rclient.hgetAsync("policy:system", "dnsmasq");
+    if (dnsmasqServers) {
+      const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(dnsmasqServers)
+      secondaryDnsServers && dnses.push(secondaryDnsServers)
+    }
     alternativeDnsServers && dnses.push(alternativeDnsServers)
     let resultGroupByHost = {};
     for (const internetTestHost of internetTestHosts) {

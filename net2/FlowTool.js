@@ -224,6 +224,7 @@ class FlowTool {
     f.ts = flow.ts;
     f.fd = flow.fd;
     f.duration = flow.du
+    f.intf = flow.intf;
 
     if(flow.mac) {
       f.device = flow.mac;

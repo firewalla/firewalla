@@ -501,7 +501,7 @@ module.exports = class {
   }
 
   getInterfaceViaMac(mac) {
-    return this.macMap && this.macMap[mac]
+    return this.macMap && this.macMap[mac.toLowerCase()]
   }
 
 

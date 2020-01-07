@@ -92,7 +92,8 @@
     "SSLIntel",
     "UAIntel",
     "TransferContextIntel",
-    "MonkeyIntel"
+    "MonkeyIntel",
+    "IntfInfoIntel"
   ],
   "sensors": {
     "DHCPSensor": {},

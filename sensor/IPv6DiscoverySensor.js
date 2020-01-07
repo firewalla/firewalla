@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,36 +26,34 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
-
-const networkTool = require('../net2/NetworkTool')();
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager();
 const execAsync = require('child-process-promise').exec
 
 
 class IPv6DiscoverySensor extends Sensor {
   constructor() {
     super();
-    this.networkInterface = networkTool.getLocalNetworkInterface();
     this.enabled = true; // very basic feature, always enabled
     let p = require('../net2/MessageBus.js');
-    this.publisher = new p('info','Scan:Done', 10);
-    log.debug("Starting IPv6DiscoverySensor Interfaces [",this.networkInterface,"]");
+    this.publisher = new p('info', 'Scan:Done', 10);
   }
 
   run() {
-    setTimeout(()=> {
+    setTimeout(() => {
       this.checkAndRunOnce(true);
 
       setInterval(() => {
         this.checkAndRunOnce(true);
       }, 1000 * 60 * 5); // every 5 minutes, fast scan
 
-    },1000*60*5); // start the first run in 5 minutes
+    }, 1000 * 60 * 5); // start the first run in 5 minutes
   }
 
-  async checkAndRunOnce() {
-    log.info("Starting IPv6DiscoverySensor Scanning",new Date()/1000);
+  checkAndRunOnce() {
+    log.info("Starting IPv6DiscoverySensor Scanning", new Date() / 1000);
     if (this.isSensorEnabled()) {
-      const results = await networkTool.getLocalNetworkInterface()
+      const results = sysManager.getMonitoringInterfaces();
       if (results) {
         for (let i in results) {
           let intf = results[i];
@@ -72,21 +70,22 @@ class IPv6DiscoverySensor extends Sensor {
   async ping6ForDiscovery(intf, obj) {
     await execAsync(`ping6 -c2 -I ${intf} ff02::1`)
     return asyncNative.eachLimit(obj.ip6_addresses, 5, async (o) => {
-      let pcmd =`ping6 -B -c 2 -I ${intf} -I ` + o + " ff02::1";
+      let pcmd = `ping6 -B -c 2 -I ${intf} -I ${o} ff02::1`;
       log.info("Discovery:v6Neighbor:Ping6", pcmd);
       return execAsync(pcmd)
     })
   }
 
 
-  addV6Host(v6addrs,mac) {
+  addV6Host(v6addrs, mac, intf_mac) {
     sem.emitEvent({
       type: "DeviceUpdate",
       message: `A new ipv6 is found @ IPv6DisocverySensor ${v6addrs} ${mac}`,
       suppressAlarm: true,
-      host:  {
+      host: {
         ipv6Addr: v6addrs,
         mac: mac.toUpperCase(),
+        intf_mac: intf_mac,
         from: "ip6neighbor"
       }
     });
@@ -130,7 +129,7 @@ class IPv6DiscoverySensor extends Sensor {
       }
     }
     for (let mac in macHostMap) {
-      this.addV6Host(macHostMap[mac], mac)
+      this.addV6Host(macHostMap[mac], mac, obj.mac_address)
     }
 
     // FIXME

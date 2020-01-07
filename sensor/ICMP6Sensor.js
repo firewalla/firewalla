@@ -24,63 +24,50 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
 const SysManager = require('../net2/SysManager.js');
-
+const sysManager = new SysManager()
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
-const Config = require('../net2/config.js');
 
 class ICMP6Sensor extends Sensor {
   constructor() {
     super();
     this.myMac = null;
-    this.config = Config.getConfig(true);
+    this.interfaces = null;
   }
 
   run() {
     (async () => {
-      if (!this.myMac) {
-        const sysManager = new SysManager();
-        this.myMac = sysManager.myMAC()
+      this.interfaces = sysManager.getMonitoringInterfaces();
+      for (const intf of this.interfaces) {
+        if (!intf.name || !intf.mac_address) continue;
+        // listen on icmp6 neighbor-advertisement which is not sent from firewalla
+        const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-en', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136`]);
+        const pid = tcpdumpSpawn.pid;
+        log.info("TCPDump icmp6 started with PID: ", pid);
+        const reader = readline.createInterface({
+          input: tcpdumpSpawn.stdout
+        });
+        reader.on('line', (line) => {
+          this.processNeighborAdvertisement(line, intf.mac_address);
+        });
+        tcpdumpSpawn.on('close', (code) => {
+          log.info("TCPDump icmp6 exited with code: ", code);
+        })
       }
-
-      if (!this.myMac)
-        try {
-          const result = await execAsync(`cat /sys/class/net/${this.config.monitoringInterface}/address`);
-          this.myMac = result.stdout.trim().toUpperCase();
-        } catch (err) {
-          log.warn(`Failed to get self MAC address from /sys/class/net/${this.config.monitoringInterface}/address`);
-        }
-
-      if (!this.myMac) {
+      if (!this.interfaces) {
         setTimeout(() => {
           log.info("Failed to get self MAC address from sysManager, retry in 60 seconds.");
           this.run();
         }, 60000);
         return;
       }
-
-      // listen on icmp6 neighbor-advertisement which is not sent from firewalla
-      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', this.config.monitoringInterface, '-en', `!(ether src ${this.myMac}) && icmp6 && ip6[40] == 136`]);
-      const pid = tcpdumpSpawn.pid;
-      log.info("TCPDump icmp6 started with PID: ", pid);
-
-      const reader = readline.createInterface({
-        input: tcpdumpSpawn.stdout
-      });
-      reader.on('line', (line) => {
-        this.processNeighborAdvertisement(line);
-      });
-
-      tcpdumpSpawn.on('close', (code) => {
-        log.info("TCPDump icmp6 exited with code: ", code);
-      })
     })().catch((err) => {
       log.error("Failed to run ICMP6Sensor", err);
     });
   }
 
-  processNeighborAdvertisement(line) {
+  processNeighborAdvertisement(line, intf_mac) {
     // Each line of neighbor advertisement is like:
     // 03:06:30.894621 00:0c:29:96:3c:30 > 02:01:f4:16:26:dc, ethertype IPv6 (0x86dd), length 78: 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb > fe80::1:f4ff:fe16:26dc: ICMP6, neighbor advertisement, tgt is 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb, length 24
     try {
@@ -95,7 +82,8 @@ class ICMP6Sensor extends Sensor {
           suppressAlarm: true,
           host: {
             ipv6Addr: [tgtIp],
-            mac: dstMac.toUpperCase()
+            mac: dstMac.toUpperCase(),
+            intf_mac: intf_mac
           }
         });
       }
