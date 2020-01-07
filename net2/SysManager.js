@@ -81,18 +81,18 @@ module.exports = class {
       instance = this;
 
       this.ts = Date.now() / 1000;
-      log.info("Init",this.ts);
-      sclient.on("message", (channel, message)=> {
-        log.info("Msg",this.ts,channel,message);
-        switch(channel) {
+      log.info("Init", this.ts);
+      sclient.on("message", (channel, message) => {
+        log.info("Msg", this.ts, channel, message);
+        switch (channel) {
           case "System:Upgrade:Hard":
             this.upgradeEvent = message;
-            log.info("[pubsub] System:Upgrade:Hard",this.ts,this.upgradeEvent);
+            log.info("[pubsub] System:Upgrade:Hard", this.ts, this.upgradeEvent);
             break;
           case "System:DebugChange":
-            if(message === "1") {
+            if (message === "1") {
               systemDebug = true;
-            } else if(message === "0") {
+            } else if (message === "0") {
               systemDebug = false;
             } else {
               log.error("invalid message for channel: " + channel);
@@ -133,22 +133,22 @@ module.exports = class {
       this.license = license.getLicense();
 
       sem.on("PublicIP:Updated", (event) => {
-        if(event.ip)
+        if (event.ip)
           this.publicIp = event.ip;
       });
       sem.on("DDNS:Updated", (event) => {
         log.info("Updating DDNS:", event);
-        if(event.ddns) {
+        if (event.ddns) {
           this.ddns = event.ddns;
         }
 
-        if(event.publicIp) {
+        if (event.publicIp) {
           this.publicIp = event.publicIp;
         }
       })
 
       // only in hard upgrade mode
-      rclient.get("sys:upgrade", (err, data)=>{
+      rclient.get("sys:upgrade", (err, data) => {
         if (data) {
           this.upgradeEvent = data;
         }
@@ -157,14 +157,14 @@ module.exports = class {
       // record firewalla's own server address
       //
       this.resolveServerDNS(true);
-      setInterval(()=>{
+      setInterval(() => {
         this.resolveServerDNS(false);
-      },1000*60*60*8);
+      }, 1000 * 60 * 60 * 8);
 
       // update system information more often
-      setInterval(()=>{
+      setInterval(() => {
         this.update(null);
-      },1000*60*20);
+      }, 1000 * 60 * 20);
     }
     this.update(null);
 
@@ -173,15 +173,15 @@ module.exports = class {
 
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-      log.info("resolveServerDNS:",retry,err,addresses,null);
+      log.info("resolveServerDNS:", retry, err, addresses, null);
       if (err && retry) {
-        setTimeout(()=>{
+        setTimeout(() => {
           this.resolveServerDNS(false);
-        },1000*60*10);
+        }, 1000 * 60 * 10);
       } else {
         if (addresses) {
           this.serverIps = addresses;
-          log.info("resolveServerDNS:Set",retry,err,this.serverIps,null);
+          log.info("resolveServerDNS:Set", retry, err, this.serverIps, null);
         }
       }
     });
@@ -197,14 +197,14 @@ module.exports = class {
   }
 
   delayedActions() {
-    setTimeout(()=>{
+    setTimeout(() => {
       let SSH = require('../extension/ssh/ssh.js');
       let ssh = new SSH('info');
 
       ssh.getPassword((err, password) => {
         this.setSSHPassword(password);
       });
-    },2000);
+    }, 2000);
   }
 
   version() {
@@ -267,7 +267,7 @@ module.exports = class {
         }
         return true;
       }
-    } catch(e) {
+    } catch (e) {
       return false;
     }
     return false;
@@ -294,17 +294,17 @@ module.exports = class {
   }
 
   setLanguage(language, callback) {
-    callback = callback || function() {}
+    callback = callback || function () { }
 
     this.language = language;
     const theLanguage = i18n.setLocale(this.language);
-    if(theLanguage !== this.language) {
+    if (theLanguage !== this.language) {
       callback(new Error("invalid language"))
       return
     }
 
     rclient.hset("sys:config", "language", language, (err) => {
-      if(err) {
+      if (err) {
         log.error("Failed to set language " + language + ", err: " + err);
       }
       pclient.publish("System:LanguageChange", language);
@@ -315,7 +315,7 @@ module.exports = class {
   setLanguageAsync(language) {
     return new Promise((resolve, reject) => {
       this.setLanguage(language, (err) => {
-        if(err) {
+        if (err) {
           reject(err)
         } else {
           resolve()
@@ -330,17 +330,17 @@ module.exports = class {
   }
 
   setTimezone(timezone, callback) {
-    callback = callback || function() {}
+    callback = callback || function () { }
 
     this.timezone = timezone;
     rclient.hset("sys:config", "timezone", timezone, (err) => {
-      if(err) {
+      if (err) {
         log.error("Failed to set timezone " + timezone + ", err: " + err);
       }
       pclient.publish("System:TimezoneChange", timezone);
 
       // TODO: each running process may not be set to the target timezone until restart
-      (async() =>{
+      (async () => {
         try {
           let cmd = `sudo timedatectl set-timezone ${timezone}`
           await exec(cmd)
@@ -351,7 +351,7 @@ module.exports = class {
           await exec(cronRestartCmd)
 
           callback(null)
-        } catch(err) {
+        } catch (err) {
           log.error("Failed to set timezone:", err);
           callback(err)
         }
@@ -360,7 +360,7 @@ module.exports = class {
   }
 
   update(callback) {
-    if (!callback) callback = () => {}
+    if (!callback) callback = () => { }
     return util.callbackify(this.updateAsync).bind(this)(callback)
   }
 
@@ -368,27 +368,27 @@ module.exports = class {
     log.debug("Loading sysmanager data from redis");
     try {
       const results = await rclient.hgetallAsync("sys:config")
-      if(results && results.language) {
+      if (results && results.language) {
         this.language = results.language;
         i18n.setLocale(this.language);
       }
 
-      if(results && results.timezone) {
+      if (results && results.timezone) {
         this.timezone = results.timezone;
       }
-    } catch(err) {
+    } catch (err) {
       log.error('Error getting sys:config', err)
     }
 
     try {
       const result = await rclient.getAsync("system:debug")
-      if(result && result === "1") {
+      if (result && result === "1") {
         systemDebug = true;
       } else {
         // by default off
         systemDebug = false;
       }
-    } catch(err) {
+    } catch (err) {
       log.error('Error getting system:debug', err)
     }
 
@@ -396,7 +396,7 @@ module.exports = class {
       const results = await rclient.hgetallAsync("sys:network:info")
       this.sysinfo = results;
 
-      if(this.sysinfo === null) {
+      if (this.sysinfo === null) {
         throw new Error('Empty key');
       }
 
@@ -416,7 +416,7 @@ module.exports = class {
       this.ddns = this.sysinfo["ddns"];
       this.publicIp = this.sysinfo["publicIp"];
       // log.info("System Manager Initialized with Config", this.sysinfo);
-    } catch(err) {
+    } catch (err) {
       log.error('Error getting sys:network:info', err)
     }
 
@@ -429,7 +429,7 @@ module.exports = class {
       for (let r in this.networkSettings) {
         this.networkSettings[r] = JSON.parse(this.networkSettings[r]);
       }
-    } catch(err) {
+    } catch (err) {
       log.error('Error getting sys:network:settings', err)
     }
 
@@ -439,7 +439,7 @@ module.exports = class {
       for (const uuid in this.uuidMap) {
         this.uuidMap[uuid] = JSON.parse(this.uuidMap[uuid]);
       }
-    } catch(err) {
+    } catch (err) {
       log.error('Error getting sys:network:settings', err)
     }
   }
@@ -449,7 +449,7 @@ module.exports = class {
     if (!version || version === "unknown") return;
     const isKnownVersion = await rclient.sismemberAsync("sys:versionHistory", version);
     if (!isKnownVersion) {
-      const versionDesc = {version: version, time: Math.floor(Date.now() / 1000)};
+      const versionDesc = { version: version, time: Math.floor(Date.now() / 1000) };
       await rclient.setAsync("sys:versionUpdate", JSON.stringify(versionDesc));
       await rclient.saddAsync("sys:versionHistory", version);
     }
@@ -536,9 +536,14 @@ module.exports = class {
     return this.getInterface(intf) && this.getInterface(intf).ip_address;
   }
 
+  isMyIP(ip) {
+    let interfaces = this.getMonitoringInterfaces();
+    return interfaces.map(i => i.ip_address === ip).some(Boolean);
+  }
+
   isIPv6GloballyConnected() {
     let ipv6Addrs = this.myIp6();
-    if (ipv6Addrs && ipv6Addrs.length>0) {
+    if (ipv6Addrs && ipv6Addrs.length > 0) {
       for (const ip6 in ipv6Addrs) {
         if (!ip6.startsWith("fe80")) {
           return true;
@@ -567,6 +572,11 @@ module.exports = class {
     return this.getInterface(intf) && this.getInterface(intf).ip6_addresses;
   }
 
+  isMyIP6(ip6) {
+    let interfaces = this.getMonitoringInterfaces();
+    return interfaces.map(i => i.ip6_addresses.includes(ip6)).some(Boolean);
+  }
+
   myIpMask(intf = this.config.monitoringInterface) {
     if (this.getInterface(intf)) {
       let mask = this.getInterface(intf).netmask;
@@ -583,7 +593,7 @@ module.exports = class {
     const if2 = intf + ':0'
 
     if (this.getInterface(if2)) {
-      let mask =  this.getInterface(if2).netmask;
+      let mask = this.getInterface(if2).netmask;
       if (mask.startsWith("Mask:")) {
         mask = mask.substr(5);
       }
@@ -591,6 +601,11 @@ module.exports = class {
     } else {
       return undefined;
     }
+  }
+
+  isMyMac(mac) {
+    let interfaces = this.getMonitoringInterfaces();
+    return interfaces.map(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()).some(Boolean);
   }
 
   myMAC(intf = this.config.monitoringInterface) {
@@ -733,13 +748,13 @@ module.exports = class {
         for (let index = 0; index < serialFiles.length; index++) {
           const serialFile = serialFiles[index];
           try {
-            serial = require('fs').readFileSync(serialFile,'utf8');
+            serial = require('fs').readFileSync(serialFile, 'utf8');
             break;
-          } catch(err) {
+          } catch (err) {
           }
         }
 
-        if(serial === null) {
+        if (serial === null) {
           serial = "unknown";
         }
 
@@ -754,9 +769,9 @@ module.exports = class {
     }
 
     try {
-      this.repo.branch = this.repo.branch || require('fs').readFileSync("/tmp/REPO_BRANCH","utf8").trim();
-      this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD","utf8").trim();
-      this.repo.tag = this.repo.tag || require('fs').readFileSync("/tmp/REPO_TAG","utf8").trim();
+      this.repo.branch = this.repo.branch || require('fs').readFileSync("/tmp/REPO_BRANCH", "utf8").trim();
+      this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD", "utf8").trim();
+      this.repo.tag = this.repo.tag || require('fs').readFileSync("/tmp/REPO_TAG", "utf8").trim();
     } catch (err) {
       log.error("Failed to load repo info from /tmp", err);
     }
@@ -764,8 +779,8 @@ module.exports = class {
 
 
     let stat = require("../util/Stats.js");
-    stat.sysmemory(null,(err,data)=>{
-      callback(null,{
+    stat.sysmemory(null, (err, data) => {
+      callback(null, {
         ip: this.myIp(),
         mac: this.myMAC(),
         serial: this.serial,
@@ -784,7 +799,7 @@ module.exports = class {
   // if the ip is part of our cloud, no need to log it, since it might cost space and memory
   isMyServer(ip) {
     if (this.serverIps) {
-      return (this.serverIps.indexOf(ip)>-1);
+      return (this.serverIps.indexOf(ip) > -1);
     }
     return false;
   }
