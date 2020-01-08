@@ -830,22 +830,50 @@ module.exports = class {
       })
   }
 
+  async loadPeriodAlarms(options) {
+    options = options || {};
+    let { begin, end } = options;
+    end = end || Date.now() / 1000;
+    const activeAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + end, begin ? begin + ')' : '-inf');
+    let activeAlarms = await this.idsToAlarmsAsync(await activeAlarmsQuery);
+    activeAlarms = activeAlarms.filter(a => a != null);
+
+    const archivedAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmArchiveKey, '(' + end, begin ? begin + ')' : '-inf', 'withscores');
+    const archivedAlarmIdsWithScores = await archivedAlarmsQuery;
+    let archivedAlarmIds = []
+    let idScoreMap = {};
+    for (let i = 0; i < archivedAlarmIdsWithScores.length; i++) {
+      if (i % 2 === 1) {
+        const id = archivedAlarmIdsWithScores[i - 1]
+        const score = Number(archivedAlarmIdsWithScores[i])
+        idScoreMap[id] = score
+        archivedAlarmIds.push(id)
+      }
+    }
+    let archivedAlarms = await this.idsToAlarmsAsync(archivedAlarmIds);
+    archivedAlarms = archivedAlarms.filter(a => a != null)
+    archivedAlarms.map((a) => { a['action.time'] = idScoreMap[a.aid] })
+    return { activeAlarms: activeAlarms, archivedAlarms: archivedAlarms }
+  }
+
   async loadActiveAlarmsAsync(options) {
-    let count, ts, asc;
+    let count, ts, asc, type;
 
     if (_.isNumber(options)) {
       count = options;
     } else if (options) {
-      ({ count, ts, asc } = options);
+      ({ count, ts, asc, type } = options);
     }
 
     count = count || 50;
     ts = ts || Date.now() / 1000;
     asc = asc || false;
+    type = type || 'active';
+    let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
 
     let query = asc ?
-      rclient.zrangebyscoreAsync(alarmActiveKey, '('+ts, '+inf', 'limit', 0, count) :
-      rclient.zrevrangebyscoreAsync(alarmActiveKey, '('+ts, '-inf', 'limit', 0, count);
+      rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
+      rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
 
     let ids = await query;
 
@@ -1381,7 +1409,7 @@ module.exports = class {
   async loadRelatedAlarms(alarm, userInput) {
     const alarms = await this.loadRecentAlarmsAsync("-inf");
     const e = this.createException(alarm, userInput);
-    if (!e)  throw new Error("Unsupported Action!");
+    if (!e) throw new Error("Unsupported Action!");
     const related = alarms
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
@@ -1396,10 +1424,10 @@ module.exports = class {
       multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   async deleteActiveAllAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
     let multi = rclient.multi();
@@ -1410,10 +1438,10 @@ module.exports = class {
       multi.del(alarmPrefix + alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   async deleteArchivedAllAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
     let multi = rclient.multi();
@@ -1424,10 +1452,10 @@ module.exports = class {
       multi.del(alarmPrefix + alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   createException(alarm, userInput) {
     let i_target = null;
     let i_type = null;
