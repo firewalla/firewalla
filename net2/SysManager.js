@@ -722,7 +722,7 @@ module.exports = class {
       }
 
       return interfaces
-        .map(i => i.ip6_subnets.map(subnet => ip6.isInSubnet(new Address6(subnet))).some(Boolean))
+        .map(i => i.ip6_subnets && i.ip6_subnets.map(subnet => ip6.isInSubnet(new Address6(subnet))).some(Boolean))
         .some(Boolean)
     }
   }
