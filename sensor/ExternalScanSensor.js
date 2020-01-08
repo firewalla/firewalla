@@ -14,22 +14,22 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let util = require('util');
+const util = require('util');
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
-let cp = require('child_process');
+const cp = require('child_process');
 
-let Firewalla = require('../net2/Firewalla');
+const Firewalla = require('../net2/Firewalla');
 
-let xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
+const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
 
-let PublicIPSensor = require('../sensor/PublicIPSensor');
-let pips = new PublicIPSensor();
+const PublicIPSensor = require('../sensor/PublicIPSensor');
+const pips = new PublicIPSensor();
 
 class ExternalScanSensor extends Sensor {
   constructor() {
