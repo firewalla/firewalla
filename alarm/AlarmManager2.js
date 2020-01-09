@@ -1595,6 +1595,6 @@ module.exports = class {
       "ALARM_VULNERABILITY"
     ];
     const featureName = "cyber_security";
-    return securityAlarmTypes.includes(alarm.type) && fc.isFeatureOn(featureName);
+    return securityAlarmTypes.includes(alarm.type) && !fc.isFeatureOn(featureName);
   }
 }
