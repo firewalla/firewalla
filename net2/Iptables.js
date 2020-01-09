@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,7 +16,6 @@
 
 const log = require('./logger.js')(__filename);
 
-const ip = require('ip');
 const cp = require('child_process');
 const spawn = cp.spawn;
 const execAsync = require('util').promisify(cp.exec)
@@ -468,6 +467,7 @@ exports.Rule = class Rule {
     this.table = table;
     this.proto = 'all';
     this.match = [];
+    this.params = null;
   }
 
   fam(v) { this.family = v; return this }
@@ -479,6 +479,8 @@ exports.Rule = class Rule {
     return this
   }
   jmp(j) { this.jump = j; return this }
+
+  pam(p) { this.params = p; return this }
 
   clone() {
     return Object.assign(Object.create(Rule.prototype), this)
@@ -496,6 +498,7 @@ exports.Rule = class Rule {
       operation,
       this.chain,
       '-p', this.proto,
+      this.params
     ]
 
     this.match.forEach((match) => {
@@ -511,6 +514,15 @@ exports.Rule = class Rule {
         case 'iif':
           cmd.push('-i', match.name);
           break;
+
+        case 'src':
+          cmd.push('-s', match.name);
+          break;
+
+        case 'dst':
+          cmd.push('-d', match.name);
+          break;
+
         default:
       }
     })
