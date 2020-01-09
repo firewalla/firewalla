@@ -476,6 +476,7 @@ module.exports = class {
         log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
       }
     }
+    if (this.isMuteSecurityAlarm(alarm)) return 0;
 
     return util.promisify(this._checkAndSave.bind(this))(alarm);
   }
@@ -491,7 +492,6 @@ module.exports = class {
     }
 
     log.info("Checking if similar alarms are generated recently");
-
     this.dedup(alarm).then((dup) => {
 
       if (dup) {
@@ -844,8 +844,8 @@ module.exports = class {
     asc = asc || false;
 
     let query = asc ?
-      rclient.zrangebyscoreAsync(alarmActiveKey, '('+ts, '+inf', 'limit', 0, count) :
-      rclient.zrevrangebyscoreAsync(alarmActiveKey, '('+ts, '-inf', 'limit', 0, count);
+      rclient.zrangebyscoreAsync(alarmActiveKey, '(' + ts, '+inf', 'limit', 0, count) :
+      rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + ts, '-inf', 'limit', 0, count);
 
     let ids = await query;
 
@@ -1381,7 +1381,7 @@ module.exports = class {
   async loadRelatedAlarms(alarm, userInput) {
     const alarms = await this.loadRecentAlarmsAsync("-inf");
     const e = this.createException(alarm, userInput);
-    if (!e)  throw new Error("Unsupported Action!");
+    if (!e) throw new Error("Unsupported Action!");
     const related = alarms
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
@@ -1396,10 +1396,10 @@ module.exports = class {
       multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   async deleteActiveAllAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
     let multi = rclient.multi();
@@ -1410,10 +1410,10 @@ module.exports = class {
       multi.del(alarmPrefix + alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   async deleteArchivedAllAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
     let multi = rclient.multi();
@@ -1424,10 +1424,10 @@ module.exports = class {
       multi.del(alarmPrefix + alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   createException(alarm, userInput) {
     let i_target = null;
     let i_type = null;
@@ -1570,7 +1570,7 @@ module.exports = class {
         e["p.device.mac"] = alarm["p.device.mac"];
         if (alarm.type === 'ALARM_UPNP') {
           const description = alarm["p.upnp.description"];
-          if(description.startsWith("WhatsApp")) {
+          if (description.startsWith("WhatsApp")) {
             e["p.upnp.description"] = "WhatsApp*"; //special handling for WhatsApp
           } else {
             e["p.upnp.description"] = description;
@@ -1586,5 +1586,15 @@ module.exports = class {
     }
     log.info("Exception object:", e);
     return e;
+  }
+  isMuteSecurityAlarm(alarm) {
+    const securityAlarmTypes = [
+      "ALARM_SPOOFING_DEVICE",
+      "ALARM_BRO_NOTICE",
+      "ALARM_INTEL",
+      "ALARM_VULNERABILITY"
+    ];
+    const featureName = "cyber_security";
+    return securityAlarmTypes.includes(alarm.type) && fc.isFeatureOn(featureName);
   }
 }
