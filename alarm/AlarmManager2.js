@@ -445,7 +445,6 @@ module.exports = class {
   }
 
   async checkAndSaveAsync(alarm) {
-    if (this.isMuteSecurityAlarm(alarm)) return 0;
     const il = require('../intel/IntelLoader.js');
 
     alarm = await il.enrichAlarm(alarm);
@@ -1586,14 +1585,5 @@ module.exports = class {
     }
     log.info("Exception object:", e);
     return e;
-  }
-  isMuteSecurityAlarm(alarm) {
-    const securityAlarmTypes = [
-      "ALARM_BRO_NOTICE",
-      "ALARM_INTEL",
-      "ALARM_VULNERABILITY"
-    ];
-    const featureName = "cyber_security";
-    return alarm && securityAlarmTypes.includes(alarm.type) && !fc.isFeatureOn(featureName);
   }
 }
