@@ -722,9 +722,9 @@ module.exports = class {
       }
 
       return interfaces
-        .filter(i => {return Array.isArray(i.ip6_subnets)})
-        .map(i => i.ip6_subnets.map(subnet => ip6.isInSubnet(new Address6(subnet))).some(Boolean))
-        .some(Boolean)
+        .map(i => Array.isArray(i.ip6_subnets) &&
+          i.ip6_subnets.map(subnet => ip6.isInSubnet(new Address6(subnet))).some(Boolean)
+        ).some(Boolean)
     }
   }
 

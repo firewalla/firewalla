@@ -44,13 +44,13 @@ class BroControl {
   }
 
   async addCronJobs() {
-    await exec('sudo -u pi crontab -r; sudo -u pi crontab /home/pi/firewalla/etc/crontab')
+    await exec('sudo -u pi crontab -r; sudo -u pi crontab /home/pi/firewalla/etc/brotab')
   }
 
   async restart() {
     try {
       await exec(`sudo systemctl restart brofish`)
-    } catch(err) {
+    } catch (err) {
       log.error('Failed to restart brofish', err)
       await delay(5000)
       this.restart()
