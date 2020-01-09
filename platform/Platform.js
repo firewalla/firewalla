@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,8 +25,13 @@ const { exec } = require('child-process-promise');
 
 class Platform {
   async getNetworkSpeed() {
-    const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
-    return output.trim();
+    try {
+      const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
+      return output.trim();
+    } catch(err) {
+      log.debug('Error getting network speed', err)
+      return null
+    }
   }
 
   getLedPaths() {
