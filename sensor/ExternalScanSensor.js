@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2020 Firewalla LLC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,13 @@ const Firewalla = require('../net2/Firewalla');
 
 const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
 
-const PublicIPSensor = require('../sensor/PublicIPSensor');
-const pips = new PublicIPSensor();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
+const fc = require('../net2/config.js');
+
+const redisKey = "sys:scan:external";
+const redisIpKey = "sys:network:info";
+const redisIpField = "publicIp";
 
 class ExternalScanSensor extends Sensor {
   constructor() {
@@ -37,19 +42,50 @@ class ExternalScanSensor extends Sensor {
   }
 
   run() {
-    let firstScanTime = (120 + Math.random() * 60) * 1000; // 120 ~ 180 seconds
+    let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
     setTimeout(() => {
       this.checkAndRunOnce();
     }, firstScanTime);
 
-    let interval = 30 * 60 * 1000; // 30 minutes
+    let interval = this.config.interval * 1000 || 30 * 60 * 1000; // 30 minutes
     setInterval(() => {
       this.checkAndRunOnce();
     }, interval);
+
+    sem.on("PublicIP:Updated", (event) => {
+      this.checkAndRunOnce();
+    });
   }
 
   isSensorEnable() {
-    return true;
+    return fc.isFeatureOn("external_scan");
+  }
+
+  async getExternalPorts() {
+    try {
+      const result = await rclient.hgetallAsync(redisKey);
+      if (result && result.scan) {
+        const lastFoundTimestamp = result.lastActiveTimestamp;
+        if (lastFoundTimestamp && lastFoundTimestamp > new Date() / 1000 - 300) {  //valid for 5 minutes
+          let publicIP = await rclient.hgetAsync(redisIpKey, redisIpField);
+          try {
+            publicIP = JSON.parse(publicIP);
+          } catch (err) {
+            log.error("Failed to parse strings:", publicIP);
+          }
+          if (result.ip == publicIP) {
+            result.scan = JSON.parse(result.scan);
+            return result;
+          }
+        }
+      }
+
+      return await this.runOnce();
+    } catch(err) {
+      log.error('Failed to get external ports: ', err);
+    };
+
+    return null;
   }
 
   async checkAndRunOnce() {
@@ -68,23 +104,27 @@ class ExternalScanSensor extends Sensor {
   async runOnce() {
     log.info('External scan start...');
 
-    await pips.job();
-    let publicIP = await rclient.hgetAsync("sys:network:info", "publicIp");
+    let publicIP = await rclient.hgetAsync(redisIpKey, redisIpField);
 
-    log.info('External scan ports: ', publicIP);
     if (!publicIP)
       throw new Error('Failed to scan external ports.');
-    
+
+    try {
+      publicIP = JSON.parse(publicIP);
+    } catch (err) {
+      log.error("Failed to parse strings:", publicIP);
+    }
+
+    log.info('External scan ports: ', publicIP);
     let host = await this._scan(publicIP);
     //log.info('Analyzing external scan result...', host);
 
-    const key = "sys:scan:external";
     try {
       log.info("External ports is updated,", host.scan.length, "entries");
       let redisHost = Object.assign({}, host);
       redisHost.scan = JSON.stringify(host.scan);
-      await rclient.hmsetAsync(key, redisHost);
-      await rclient.expireAsync(key, 86400);
+      await rclient.hmsetAsync(redisKey, redisHost);
+      await rclient.expireAsync(redisKey, 86400);
     } catch(err) {
       log.error("Failed to scan external ports: " + err);
     }
@@ -180,6 +220,7 @@ class ExternalScanSensor extends Sensor {
 
       if (!host.ip)
         host.ip = "";
+      host.lastActiveTimestamp = new Date() / 1000;
 
       let port = hostResult.ports && hostResult.ports.port;
 
