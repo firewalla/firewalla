@@ -445,6 +445,7 @@ module.exports = class {
   }
 
   async checkAndSaveAsync(alarm) {
+    if (this.isMuteSecurityAlarm(alarm)) return 0;
     const il = require('../intel/IntelLoader.js');
 
     alarm = await il.enrichAlarm(alarm);
@@ -476,7 +477,6 @@ module.exports = class {
         log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
       }
     }
-    if (this.isMuteSecurityAlarm(alarm)) return 0;
 
     return util.promisify(this._checkAndSave.bind(this))(alarm);
   }
@@ -1594,6 +1594,6 @@ module.exports = class {
       "ALARM_VULNERABILITY"
     ];
     const featureName = "cyber_security";
-    return securityAlarmTypes.includes(alarm.type) && !fc.isFeatureOn(featureName);
+    return alarm && securityAlarmTypes.includes(alarm.type) && !fc.isFeatureOn(featureName);
   }
 }
