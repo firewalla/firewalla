@@ -252,7 +252,7 @@ async function run() {
 
     // initialize VPN after Iptables is flushed
     const vpnManager = new VpnManager();
-    const data = await hostManager.loadPolicy().catch(err =>
+    const data = await hostManager.loadPolicyAsync().catch(err =>
       log.error("Failed to load system policy for VPN", err)
     )
 

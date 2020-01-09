@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,8 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 const HostManager = require('../net2/HostManager.js');
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');

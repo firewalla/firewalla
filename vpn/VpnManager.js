@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -103,6 +103,10 @@ class VpnManager {
           callback(err, null);
       }
     });
+  }
+
+  async installAsync(instance) {
+    return util.promisify(this.install).bind(this)(instance)
   }
 
   async setIptables() {

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,7 +19,7 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = new SysManager();
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();

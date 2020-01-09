@@ -16,13 +16,6 @@
       "wlan0"
     ]
   },
-  "iptables": {
-    "defaults": [
-      "sudo iptables -w -t nat -A FW_POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
-      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || true",
-      "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
-    ]
-  },
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
   "monitoringWifiInterface": "wlan0",
