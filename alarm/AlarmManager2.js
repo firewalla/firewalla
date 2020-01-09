@@ -1589,7 +1589,6 @@ module.exports = class {
   }
   isMuteSecurityAlarm(alarm) {
     const securityAlarmTypes = [
-      "ALARM_SPOOFING_DEVICE",
       "ALARM_BRO_NOTICE",
       "ALARM_INTEL",
       "ALARM_VULNERABILITY"
