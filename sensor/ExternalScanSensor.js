@@ -36,6 +36,14 @@ const redisKey = "sys:scan:external";
 const redisIpKey = "sys:network:info";
 const redisIpField = "publicIp";
 
+const Alarm = require('../alarm/Alarm.js');
+const AM2 = require('../alarm/AlarmManager2.js');
+const am2 = new AM2();
+
+function comparePort(a, b) {
+  return a.portid == b.portid && a.protocol  == b.protocol;
+}
+
 class ExternalScanSensor extends Sensor {
   constructor() {
     super();
@@ -120,6 +128,22 @@ class ExternalScanSensor extends Sensor {
     //log.info('Analyzing external scan result...', host);
 
     try {
+      let entries = await rclient.hgetAsync(redisKey, 'scan');
+      let preEntries = JSON.parse(entries) || [];
+      let openPorts = [];
+      let waitedPorts = [];
+      for (let current of host.scan) {
+        if (!preEntries.some(pre => comparePort(pre, current))) {
+          waitedPorts.push(current);
+        } else {
+          openPorts.push(current);
+        }
+      }
+
+      let confirmedPorts = await this.cloudScanPorts(host.ip, waitedPorts);
+      openPorts.push.apply(openPorts, confirmedPorts);
+      host.scan = openPorts;
+
       log.info("External ports is updated,", host.scan.length, "entries");
       let redisHost = Object.assign({}, host);
       redisHost.scan = JSON.stringify(host.scan);
@@ -130,6 +154,36 @@ class ExternalScanSensor extends Sensor {
     }
 
     return host;
+  }
+
+  async cloudScanPorts(publicIP, waitedPorts) {
+    //Cloud confirm whether the port is open
+    const confirmedPorts = waitedPorts;
+    try {
+      //
+      if (fc.isFeatureOn("alarm_openport")) {
+        for (let current of confirmedPorts) {
+          let alarm = new Alarm.OpenPortAlarm(
+            new Date() / 1000,
+            current.serviceName,
+            {
+              'p.source': 'ExternalScanSensor',
+              'p.host.ip': publicIP,
+              'p.scan.port': current.portid,
+              'p.scan.protocol': current.protocol,
+              'p.scan.state': current.state,
+              'p.scan.servicename'  : current.serviceName
+            }
+          );
+
+          await am2.enqueueAlarm(alarm);
+        }
+      }
+    } catch(err) {
+      log.error("Failed to clound confirm ports: " + err);
+    }
+
+    return confirmedPorts;
   }
 
   _scan(publicIP) {

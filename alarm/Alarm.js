@@ -781,6 +781,34 @@ class UpnpAlarm extends Alarm {
   }
 }
 
+class OpenPortAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_OPENPORT', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return [
+      'p.scan.protocol',
+      'p.scan.port'
+    ];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup()
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.openport.cooldown') || super.getExpirationTime();
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.scan.protocol"], 
+    this["p.scan.port"],
+    this["p.scan.servicename"]];
+  }
+}
+
 let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
@@ -798,7 +826,8 @@ let classMapping = {
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
   ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
   ALARM_SUBNET: SubnetAlarm.prototype,
-  ALARM_UPNP: UpnpAlarm.prototype
+  ALARM_UPNP: UpnpAlarm.prototype,
+  ALARM_OPENPORT: OpenPortAlarm.prototype
 }
 
 module.exports = {
@@ -821,5 +850,6 @@ module.exports = {
   IntelReportAlarm: IntelReportAlarm,
   SubnetAlarm: SubnetAlarm,
   UpnpAlarm: UpnpAlarm,
+  OpenPortAlarm: OpenPortAlarm,
   mapping: classMapping
 }

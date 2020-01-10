@@ -2704,7 +2704,7 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
-          const regex = /^[-a-zA-Z0-9\.]+?/;
+          const regex = /^[-a-zA-Z0-9\.\*]+?/;
           if (!regex.test(domain)) {
             this.simpleTxData(msg, {}, { code: 400, msg: "Invalid domain." }, callback);
             return;
