@@ -985,8 +985,16 @@ class netBot extends ControllerBot {
             await hostTool.updateMACKey(macObject, true);
             const host = await this.hostManager.getHostAsync(macAddress);
             const pureHost = host.o || {};
-            const dnsmasq = new Dnsmasq();
-            await dnsmasq.setupLocalDeviceDomain(true, [pureHost]);
+            sem.emitEvent({
+              type: "DeviceUpdate",
+              message: "customize domain name",
+              host: {
+                ipv4Addr: pureHost.ipv4Addr,
+                mac: macAddress,
+                customizeDomainName: customizeDomainName
+              },
+              toProcess: 'FireMain'
+            })
             this.simpleTxData(msg, {}, null, callback)
           } else {
             this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);
