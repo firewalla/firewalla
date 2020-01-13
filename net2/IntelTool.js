@@ -180,7 +180,7 @@ class IntelTool {
     if (this.debugMode) {
       list.push({
         _alist:hashList,
-        alist:urlList,
+        alist:urlList.map(item => item[0]),
         flow:{ fd }
       });
     } else {
