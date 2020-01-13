@@ -269,7 +269,7 @@ class IntelTool {
 
       return results
     } catch(err) {
-      log.error("IntelCheck Result FAIL:", ipList, data);
+      log.error("IntelCheck Result FAIL:", ipList, data, err);
       throw err;
     }
   }
