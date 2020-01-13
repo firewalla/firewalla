@@ -1458,34 +1458,32 @@ module.exports = class DNSMASQ {
       let needUpdate = false;
       let deviceDomainMap = JSON.parse(json) || {};
       for (const host of hosts) {
-        // customize domain name highest priority
-        let hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "customizeDomainName");
+        const customizeDomainName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "customizeDomainName");
         let ipv4Addr = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "ipv4Addr");
-        if (!hostName) {
-          //if user update device name and ip, should get them from redis not host
-          hostName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "name");
-          hostName = hostName ? hostName : hostTool.getHostname(host);
-        }
-        let bname = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "bname")
+        const name = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "name");
+        const bname = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "bname")
         ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
-        if (!ipv4Addr || (!bname && !hostName)) continue;
+        if (!ipv4Addr || (!bname && !name && !customizeDomainName)) continue;
         if (!deviceDomainMap[host.mac]) {
           deviceDomainMap[host.mac] = {
             mac: host.mac,
             ipv4Addr: ipv4Addr,
-            name: hostName,
+            name: name,
             bname: bname,
+            customizeDomainName: customizeDomainName,
             ts: new Date() / 1000
           }
           needUpdate = true;
         } else {
           let deviceDomain = deviceDomainMap[host.mac];
-          deviceDomain.bname = bname;
-          if ((deviceDomain.name != hostName || deviceDomain.ipv4Addr != ipv4Addr)) {
+          if ((deviceDomain.name != name || deviceDomain.ipv4Addr != ipv4Addr ||
+            deviceDomain.customizeDomainName != customizeDomainName || deviceDomain.bname != bname)) {
             needUpdate = true;
             deviceDomain.mac = host.mac;
             deviceDomain.ipv4Addr = ipv4Addr;
-            deviceDomain.name = hostName;
+            deviceDomain.name = name;
+            deviceDomain.customizeDomainName = customizeDomainName;
+            deviceDomain.bname = bname;
             deviceDomain.ts = new Date() / 1000
           }
         }
@@ -1495,16 +1493,18 @@ module.exports = class DNSMASQ {
         let localDeviceDomain = "";
         for (const key in deviceDomainMap) {
           const deviceDomain = deviceDomainMap[key];
-          let { name, bname } = deviceDomain;
-          name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."))
-          bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."))
+          let { name, bname, customizeDomainName } = deviceDomain;
+          name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
+          bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
+          name = name || bname;
+          customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
           if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
-            (name != bname) && name && (localDeviceDomain += `address=/${name}.lan/${deviceDomain.ipv4Addr}\n`);
-            bname && (localDeviceDomain += `address=/${bname}.lan/${deviceDomain.ipv4Addr}\n`);
+            name && (localDeviceDomain += `address=/${name}.lan/${deviceDomain.ipv4Addr}\n`);
+            customizeDomainName && (localDeviceDomain += `address=/${customizeDomainName}.lan/${deviceDomain.ipv4Addr}\n`);
           }
           await hostTool.updateMACKey({
-            domain: name ? `${name}.lan` : '',
-            defaultDoamin: bname ? `${bname}.lan` : '',
+            localDomain: name ? `${name}.lan` : '',
+            userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
             mac: deviceDomain.mac
           }, true);
         }

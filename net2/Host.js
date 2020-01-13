@@ -842,8 +842,8 @@ class Host {
       bonjourName: this.o.bonjourName,
       nmapName: this.o.nmapName,
       ssdpName: this.o.ssdpName,
-      domain: this.o.domain,
-      defaultDoamin: this.o.defaultDoamin
+      userLocalDomain: this.o.userLocalDomain,
+      localDomain: this.o.localDomain
     }
 
     if (this.o.ipv4Addr == null) {
