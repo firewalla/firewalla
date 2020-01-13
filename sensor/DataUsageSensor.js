@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC 
+/*    Copyright 2019-2020 Firewalla INC 
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -52,8 +52,10 @@ class DataUsageSensor extends Sensor {
         this.hookFeature();
     }
     job() {
-        fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage()
-        fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage()
+        setTimeout(() => {
+            fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage()
+            fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage()
+        }, 5 * 60 * 1000)
     }
     globalOn() {
     }
