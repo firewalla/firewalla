@@ -1467,8 +1467,6 @@ module.exports = class DNSMASQ {
           hostName = hostName ? hostName : hostTool.getHostname(host);
         }
         let bname = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "bname")
-        hostName = hostName && getCanonicalizedDomainname(hostName.replace(/\s+/g, "."))
-        bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."))
         ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
         if (!ipv4Addr || (!bname && !hostName)) continue;
         if (!deviceDomainMap[host.mac]) {
@@ -1497,7 +1495,9 @@ module.exports = class DNSMASQ {
         let localDeviceDomain = "";
         for (const key in deviceDomainMap) {
           const deviceDomain = deviceDomainMap[key];
-          const { name, bname } = deviceDomain;
+          let { name, bname } = deviceDomain;
+          name = hostName && getCanonicalizedDomainname(name.replace(/\s+/g, "."))
+          bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."))
           if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
             (name != bname) && (localDeviceDomain += `address=/${name}.lan/${deviceDomain.ipv4Addr}\n`);
             bname && (localDeviceDomain += `address=/${bname}.lan/${deviceDomain.ipv4Addr}\n`);
