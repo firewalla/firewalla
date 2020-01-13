@@ -990,19 +990,20 @@ module.exports = class HostManager {
     let host, o;
     if (hostTool.isMacAddress(target)) {
       host = this.hostsdb[`host:mac:${target}`];
-
+      o = await hostTool.getMACEntry(target)
       if (host) {
+        o && host.update(o);
         return host;
       }
 
-      o = await hostTool.getMACEntry(target)
+      
     } else {
       o = await dnsManager.resolveLocalHostAsync(target)
 
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
 
       if (host) {
-        host.update(o);
+        o && host.update(o);
         return host
       }
     }
