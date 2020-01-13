@@ -200,35 +200,36 @@ class FWInvitation {
       if(userInfo && userInfo.license && userInfo.license.length != 8) {
         // validate license first
         await bone.waitUntilCloudReadyAsync();
-        let infs = await networkTool.getLocalNetworkInterface()
-        if(infs.length > 0) {
-          let mac = infs[0].mac_address;
-
-          try {
-            let lic = await bone.getLicenseAsync(userInfo.license, mac);
-            if(lic) {
-              const types = platform.getLicenseTypes();
-              if(types && lic.DATA && lic.DATA.LICENSE &&
-                lic.DATA.LICENSE.constructor.name === 'String' &&
-                !types.includes(lic.DATA.LICENSE.toLowerCase())) {
-                // invalid license
-                log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
-                return {
-                  status: "pending"
-                };
-              } else {
-                log.forceInfo("Got a new license");
-                log.info("Got a new license:", lic && lic.DATA && lic.DATA.UUID && lic.DATA.UUID.substring(0, 8));
-                await license.writeLicense(lic);
-              }
-            }
-          } catch(err) {
-            log.error("Invalid license");
-            return {
-              status : "pending"
+        const mac = await networkTool.getIdentifierMAC();
+        if (!mac)
+          return {
+            status: "pending"
+          };
+        try {
+          let lic = await bone.getLicenseAsync(userInfo.license, mac);
+          if (lic) {
+            const types = platform.getLicenseTypes();
+            if (types && lic.DATA && lic.DATA.LICENSE &&
+              lic.DATA.LICENSE.constructor.name === 'String' &&
+              !types.includes(lic.DATA.LICENSE.toLowerCase())) {
+              // invalid license
+              log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
+              return {
+                status: "pending"
+              };
+            } else {
+              log.forceInfo("Got a new license");
+              log.info("Got a new license:", lic && lic.DATA && lic.DATA.UUID && lic.DATA.UUID.substring(0, 8));
+              await license.writeLicense(lic);
             }
           }
+        } catch (err) {
+          log.error("Invalid license");
+          return {
+            status: "pending"
+          }
         }
+        
       }
 
       let inviteResult = await this.cloud.eptinviteGroupAsync(this.gid, eid);
