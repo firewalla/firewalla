@@ -972,30 +972,6 @@ class netBot extends ControllerBot {
 
         break;
       }
-      case "hostDomain": {
-        let data = msg.data;
-        (async () => {
-          if (hostTool.isMacAddress(msg.target)) {
-            const macAddress = msg.target
-            const { customizeDomainName } = data.value
-            let macObject = {
-              mac: macAddress,
-              customizeDomainName: customizeDomainName ? customizeDomainName : ''
-            }
-            await hostTool.updateMACKey(macObject, true);
-            const host = await this.hostManager.getHostAsync(macAddress);
-            const pureHost = host.o || {};
-            const dnsmasq = new Dnsmasq();
-            await dnsmasq.setupLocalDeviceDomain(true, [pureHost]);
-            this.simpleTxData(msg, {}, null, callback)
-          } else {
-            this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
-      }
       case "scisurfconfig": {
         let v = value;
 

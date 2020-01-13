@@ -1496,10 +1496,10 @@ module.exports = class DNSMASQ {
         for (const key in deviceDomainMap) {
           const deviceDomain = deviceDomainMap[key];
           let { name, bname } = deviceDomain;
-          name = hostName && getCanonicalizedDomainname(name.replace(/\s+/g, "."))
+          name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."))
           bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."))
           if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
-            (name != bname) && (localDeviceDomain += `address=/${name}.lan/${deviceDomain.ipv4Addr}\n`);
+            (name != bname) && name && (localDeviceDomain += `address=/${name}.lan/${deviceDomain.ipv4Addr}\n`);
             bname && (localDeviceDomain += `address=/${bname}.lan/${deviceDomain.ipv4Addr}\n`);
           }
           await hostTool.updateMACKey({
