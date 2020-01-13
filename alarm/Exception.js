@@ -103,6 +103,16 @@ module.exports = class {
         continue;
       }
 
+      //special exception
+      if (key === "p.upnp.description") {
+        if (val.endsWith("*")) {
+          if (minimatch(val2, val)) {
+            matched = true;
+            continue;
+          }
+        }
+      }
+
       if(val.startsWith("*.")) {
         // use glob matching
         if(!minimatch(val2, val) && // NOT glob match

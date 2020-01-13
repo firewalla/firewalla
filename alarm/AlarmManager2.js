@@ -491,7 +491,6 @@ module.exports = class {
     }
 
     log.info("Checking if similar alarms are generated recently");
-
     this.dedup(alarm).then((dup) => {
 
       if (dup) {
@@ -1598,7 +1597,12 @@ module.exports = class {
       case "deviceAppPort":
         e["p.device.mac"] = alarm["p.device.mac"];
         if (alarm.type === 'ALARM_UPNP') {
-          e["p.upnp.description"] = alarm["p.upnp.description"];
+          const description = alarm["p.upnp.description"];
+          if (description.startsWith("WhatsApp")) {
+            e["p.upnp.description"] = "WhatsApp*"; //special handling for WhatsApp
+          } else {
+            e["p.upnp.description"] = description;
+          }
         }
         break;
       default:
