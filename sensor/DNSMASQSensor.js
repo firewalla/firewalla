@@ -132,7 +132,7 @@ class DNSMASQSensor extends Sensor {
           })
       })
   }
-  registerLocalDomain() {
+  async registerLocalDomain() {
     const hostManager = new HostManager("cli", 'client', 'info');
     const hosts = await hostManager.getHostsAsync();
     let pureHosts = [];
