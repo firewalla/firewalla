@@ -851,8 +851,8 @@ module.exports = class {
         if (intfInfo && intfInfo.uuid) {
           intfId = intfInfo.uuid;
         } else {
-          intfId = '';
           log.error(`Unable to find nif uuid, ${intfId}`);
+          intfId = '';
         }
       } else {
         intfId = '';
