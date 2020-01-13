@@ -18,7 +18,8 @@ const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
-const sysManager = require('../net2/SysManager.js')
+let SysManager = require('../net2/SysManager.js');
+let sysManager = new SysManager('info');)
 
 class IntfInfoIntel extends Intel {
     async enrichAlarm(alarm) {
