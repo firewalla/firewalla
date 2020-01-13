@@ -141,7 +141,7 @@ class DNSMASQSensor extends Sensor {
         pureHosts.push(host.o)
       }
     }
-    log.info("pureHosts", pureHosts)
+    log.debug("pureHosts", pureHosts)
     dnsmasq.setupLocalDeviceDomain(false, pureHosts, true);
   }
 }
