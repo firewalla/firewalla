@@ -829,31 +829,36 @@ module.exports = class {
       })
   }
 
-  async loadPeriodAlarms(options) {
+  async loadAlarmsWithRange(options) {
     options = options || {};
-    let { begin, end, count, offset } = options;
+    let { begin, end, count, offset, type } = options;
     end = end || Date.now() / 1000;
     count = count || 1000;
     offset = offset || 0;
-    const activeAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', offset, count);
-    let activeAlarms = await this.idsToAlarmsAsync(await activeAlarmsQuery);
-    activeAlarms = activeAlarms.filter(a => a != null);
-
-    const archivedAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmArchiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', offset, count, 'withscores');
-    const archivedAlarmIdsWithScores = await archivedAlarmsQuery;
-    let archivedAlarmIds = []
-    let idScoreMap = {};
-    for (let i = 0; i < archivedAlarmIdsWithScores.length; i++) {
-      if (i % 2 === 1) {
-        const id = archivedAlarmIdsWithScores[i - 1]
-        const score = Number(archivedAlarmIdsWithScores[i])
-        idScoreMap[id] = score
-        archivedAlarmIds.push(id)
-      }
+    type = type || 'all';
+    let activeAlarms = [], archivedAlarms = [];
+    if (type == 'all' || type == 'active') {
+      const activeAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', offset, count);
+      activeAlarms = await this.idsToAlarmsAsync(await activeAlarmsQuery);
+      activeAlarms = activeAlarms.filter(a => a != null);
     }
-    let archivedAlarms = await this.idsToAlarmsAsync(archivedAlarmIds);
-    archivedAlarms = archivedAlarms.filter(a => a != null)
-    archivedAlarms.map((a) => { a['action.time'] = idScoreMap[a.aid] })
+    if (type == 'all' || type == 'archived') {
+      const archivedAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmArchiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', offset, count, 'withscores');
+      const archivedAlarmIdsWithScores = await archivedAlarmsQuery;
+      let archivedAlarmIds = []
+      let idScoreMap = {};
+      for (let i = 0; i < archivedAlarmIdsWithScores.length; i++) {
+        if (i % 2 === 1) {
+          const id = archivedAlarmIdsWithScores[i - 1]
+          const score = Number(archivedAlarmIdsWithScores[i])
+          idScoreMap[id] = score
+          archivedAlarmIds.push(id)
+        }
+      }
+      archivedAlarms = await this.idsToAlarmsAsync(archivedAlarmIds);
+      archivedAlarms = archivedAlarms.filter(a => a != null)
+      archivedAlarms.map((a) => { a['action.time'] = idScoreMap[a.aid] })
+    }
     return { activeAlarms: activeAlarms, archivedAlarms: archivedAlarms }
   }
 
@@ -1423,7 +1428,7 @@ module.exports = class {
       log.info("ignore alarm_id:" + alarmID);
       multi.zrem(alarmActiveKey, alarmID);
       multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
-    };
+    }
     await multi.execAsync();
 
     return alarmIDs;
@@ -1437,7 +1442,7 @@ module.exports = class {
       multi.zrem(alarmActiveKey, alarmID);
       multi.del(`${alarmDetailPrefix}:${alarmID}`);
       multi.del(alarmPrefix + alarmID);
-    };
+    }
     await multi.execAsync();
 
     return alarmIDs;
@@ -1451,7 +1456,7 @@ module.exports = class {
       multi.zrem(alarmArchiveKey, alarmID);
       multi.del(`${alarmDetailPrefix}:${alarmID}`);
       multi.del(alarmPrefix + alarmID);
-    };
+    }
     await multi.execAsync();
 
     return alarmIDs;
