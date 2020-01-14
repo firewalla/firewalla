@@ -92,6 +92,8 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 const iptables = require('./Iptables.js');
 const ip6tables = require('./Ip6tables.js');
 
+const Alarm = require('../alarm/Alarm.js');
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 module.exports = class HostManager {
@@ -1326,6 +1328,24 @@ module.exports = class HostManager {
     }
   }
 
+  async getVpnActiveDeviceCount(profileId) {
+    let activeDevices = this.getActiveHumanDevices();
+    let iCount = 0;
+    for (const mac of activeDevices) {
+      const policy = await hostTool.loadDevicePolicyByMAC(mac);
+      if (policy && policy["vpnClient"]) {
+        try {
+          const vpnClientConfig = JSON.parse(policy["vpnClient"]);
+          if (vpnClientConfig.state && vpnClientConfig.profileId == profileId)
+            iCount += 1;
+        } catch (err) {
+          log.error(`Failed to parse policy`, err)
+        }
+      }
+    }
+    return iCount;
+  }
+
   async vpnClient(policy) {
     const type = policy.type;
     const state = policy.state;
@@ -1408,6 +1428,27 @@ module.exports = class HostManager {
                   }
                 }
               }
+
+              if (settings.strictVPN) {
+                const updatedPolicy = this.policy["vpnClient"];
+                if (updatedPolicy && updatedPolicy.waitresume && updatedPolicy.waitresume == 1){
+                  const device_cout = await this.getVpnActiveDeviceCount(profileId);
+                  let alarm = new Alarm.VPNConnectAlarm(
+                    new Date() / 1000,
+                    null,
+                    {
+                      'p.vpn.profileid': profileId,
+                      'p.vpn.subtype': settings && settings.subtype,
+                      'p.vpn.devicecount': device_cout,
+                      'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
+                      'p.vpn.time': new Date() / 1000
+                    }
+                  );
+                  await am2.enqueueAlarm(alarm);
+                  updatedPolicy.waitresume = 0;
+                  await this.setPolicyAsync("vpnClient", updatedPolicy);
+                }
+              }
             });
           }
           const result = await ovpnClient.start();
@@ -1443,7 +1484,22 @@ module.exports = class HostManager {
                   // increment reconnecting count and trigger reconnection
                   updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
                 }
-                this.setPolicy("vpnClient", updatedPolicy);
+                updatedPolicy.waitresume = (settings.strictVPN) ? 1 : 0;
+                await this.setPolicyAsync("vpnClient", updatedPolicy);
+                
+                const device_cout = await this.getVpnActiveDeviceCount(profileId);
+                let alarm = new Alarm.VPNDisconnectAlarm(
+                  new Date() / 1000,
+                  null,
+                  {
+                    'p.vpn.profileId': profileId,
+                    'p.vpn.subtype': settings && settings.subtype,
+                    'p.vpn.devicecount': device_cout,
+                    'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
+                    'p.vpn.time': new Date() / 1000
+                  }
+                );
+                await am2.enqueueAlarm(alarm);
               });
             }
           }

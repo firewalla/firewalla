@@ -325,6 +325,42 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 }
 
+class VPNConnectAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_CONNECT", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.vpn.profileid"];
+  }
+
+  requiredKeys() {
+    return ["p.vpn.profileid"];
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"]];
+  }
+}
+
+class VPNDisconnectAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_DISCONNECT", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.vpn.profileid"];
+  }
+
+  requiredKeys() {
+    return ["p.vpn.profileid"];
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"]];
+  }
+}
+
 class VulnerabilityAlarm extends Alarm {
   constructor(timestamp, device, vulnerabilityID, info) {
     super("ALARM_VULNERABILITY", timestamp, device, info);
@@ -793,6 +829,8 @@ let classMapping = {
   ALARM_DEVICE_OFFLINE: DeviceOfflineAlarm.prototype,
   ALARM_SPOOFING_DEVICE: SpoofingDeviceAlarm.prototype,
   ALARM_VPN_CLIENT_CONNECTION: VPNClientConnectionAlarm.prototype,
+  ALARM_VPN_CONNECT: VPNConnectAlarm.prototype,
+  ALARM_VPN_DISCONNECT: VPNDisconnectAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
@@ -815,6 +853,8 @@ module.exports = {
   DeviceOfflineAlarm: DeviceOfflineAlarm,
   SpoofingDeviceAlarm: SpoofingDeviceAlarm,
   VPNClientConnectionAlarm: VPNClientConnectionAlarm,
+  VPNConnectAlarm: VPNConnectAlarm,
+  VPNDisconnectAlarm: VPNDisconnectAlarm,
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,
