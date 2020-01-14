@@ -751,11 +751,11 @@ module.exports = class {
 
     let alarmIDs = await rclient.
       zrevrangebyscoreAsync(alarmArchiveKey,
-      "+inf",
-      "-inf",
-      "limit",
-      offset,
-      limit);
+        "+inf",
+        "-inf",
+        "limit",
+        offset,
+        limit);
 
     let alarms = await this.idsToAlarmsAsync(alarmIDs);
 
@@ -844,8 +844,8 @@ module.exports = class {
     asc = asc || false;
 
     let query = asc ?
-      rclient.zrangebyscoreAsync(alarmActiveKey, '('+ts, '+inf', 'limit', 0, count) :
-      rclient.zrevrangebyscoreAsync(alarmActiveKey, '('+ts, '-inf', 'limit', 0, count);
+      rclient.zrangebyscoreAsync(alarmActiveKey, '(' + ts, '+inf', 'limit', 0, count) :
+      rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + ts, '-inf', 'limit', 0, count);
 
     let ids = await query;
 
@@ -1115,6 +1115,10 @@ module.exports = class {
             p.scope = [info.device];
           }
 
+          if (info.intf) {
+            p.tag = [Policy.INTF_PREFIX + info.intf]; // or use tag array
+          }
+
           if (info.category) {
             p.category = info.category
           } else {
@@ -1381,7 +1385,7 @@ module.exports = class {
   async loadRelatedAlarms(alarm, userInput) {
     const alarms = await this.loadRecentAlarmsAsync("-inf");
     const e = this.createException(alarm, userInput);
-    if (!e)  throw new Error("Unsupported Action!");
+    if (!e) throw new Error("Unsupported Action!");
     const related = alarms
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
     return related || []
@@ -1396,10 +1400,10 @@ module.exports = class {
       multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   async deleteActiveAllAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
     let multi = rclient.multi();
@@ -1410,10 +1414,10 @@ module.exports = class {
       multi.del(alarmPrefix + alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   async deleteArchivedAllAsync() {
     const alarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
     let multi = rclient.multi();
@@ -1424,10 +1428,10 @@ module.exports = class {
       multi.del(alarmPrefix + alarmID);
     };
     await multi.execAsync();
-    
+
     return alarmIDs;
   }
-  
+
   createException(alarm, userInput) {
     let i_target = null;
     let i_type = null;
@@ -1570,7 +1574,7 @@ module.exports = class {
         e["p.device.mac"] = alarm["p.device.mac"];
         if (alarm.type === 'ALARM_UPNP') {
           const description = alarm["p.upnp.description"];
-          if(description.startsWith("WhatsApp")) {
+          if (description.startsWith("WhatsApp")) {
             e["p.upnp.description"] = "WhatsApp*"; //special handling for WhatsApp
           } else {
             e["p.upnp.description"] = description;
@@ -1583,6 +1587,9 @@ module.exports = class {
     }
     if (userInput && userInput.device && !userInput.archiveAlarmByType) {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
+    }
+    if (userInput && userInput.intf) {
+      e["tag"] = [Policy.INTF_PREFIX + userInput.intf];
     }
     log.info("Exception object:", e);
     return e;
