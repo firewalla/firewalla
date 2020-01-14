@@ -45,6 +45,17 @@ async function updateUserConfig(updatedPart) {
   getConfig(true);
 }
 
+async function removeUserNetworkConfig() {
+  await getUserConfig(true);
+  
+  delete userConfig.alternativeInterface;
+  delete userConfig.secondaryInterface;
+  delete userConfig.wifiInterface;
+  
+  let userConfigFile = f.getUserConfigFolder() + "/config.json";
+  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
+}
+
 async function getUserConfig(reload) {
   if (!userConfig || reload === true) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
@@ -279,5 +290,6 @@ module.exports = {
   disableDynamicFeature:disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
   syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs,
-  onFeature: onFeature  
+  onFeature: onFeature,
+  removeUserNetworkConfig: removeUserNetworkConfig
 };

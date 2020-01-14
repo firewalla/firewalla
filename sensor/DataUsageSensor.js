@@ -128,10 +128,10 @@ class DataUsageSensor extends Sensor {
     }
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, dataUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
+        const mac = host.o.mac;
         const dedupKey = `abnormal:bandwidth:usage:${mac}`;
         if (await this.isDedup(dedupKey, abnormalBandwidthUsageCooldown)) return;
         //get top flows from begin to end
-        const mac = host.o.mac;
         const name = host.o.name || host.o.bname;
         const flows = await this.getSumFlows(mac, begin, end);
         const destNames = flows.map((flow) => flow.aggregationHost).join(',')
@@ -166,18 +166,14 @@ class DataUsageSensor extends Sensor {
         await alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {
-        // hourly sum
-        const period = 60 * 60;
-        begin = begin - begin % period;
-        end = end - end % period + period;
+        const rawFlows = [].concat(await flowTool.queryFlows(mac, "out", begin, end), await flowTool.queryFlows(mac, "in", begin, end))
         let flows = [];
-        while (begin < end) {
-            const sumDownloadFlowKey = flowAggrTool.getSumFlowKey(mac, 'download', begin, begin + period);
-            const downloadTraffics = await flowAggrTool.getTopSumFlowByKey(sumDownloadFlowKey, 10);//get top 10 flows
-            const sumUploadFlowKey = flowAggrTool.getSumFlowKey(mac, 'upload', begin, begin + period);
-            const uploadTraffics = await flowAggrTool.getTopSumFlowByKey(sumUploadFlowKey, 10);
-            flows = flows.concat(downloadTraffics).concat(uploadTraffics);
-            begin = begin + period;
+        for (const rawFlow of rawFlows) {
+            flows.push({
+                count: flowTool.getUploadTraffic(rawFlow) * 1 + flowTool.getDownloadTraffic(rawFlow) * 1,
+                ip: flowTool.getDestIP(rawFlow),
+                device: mac
+            })
         }
         flows = await flowTool.enrichWithIntel(flows);
         let flowsCache = {};

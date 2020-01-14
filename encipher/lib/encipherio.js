@@ -277,6 +277,34 @@ let legoEptCloud = class {
         }
     }
 
+    async rename(gid, name) {
+        if(!gid || !name) {
+            return new Error("parameter errors");
+        }
+
+        const uri = `${this.endpoint}/group/${this.appId}/${gid}`;
+        const key = await this.getKeyAsync(gid);
+        const cryptedXNAME = this.encrypt(name, key);
+
+        const body = {
+            name: crypto.createHash('md5').update(name).digest('hex'),
+            xname: cryptedXNAME
+        };
+
+        const options = {
+            uri: uri,
+            family: 4,
+            method: 'POST',
+            auth: {
+                bearer: this.token
+            },
+            json: body
+        }
+
+        log.info("Setting box name to", name);
+        return rp(options);
+    }
+
     eptcreateGroup(name, info, alias, callback) {
         let symmetricKey = this.keygen();
         let group = {};
@@ -619,6 +647,18 @@ let legoEptCloud = class {
 
             return this.groupCache[group._id];
         }
+    }
+
+    getKeyAsync(gid) {
+        return new Promise((resolve, reject) => {
+            this.getKey(gid, (err, key, cachedGroup) => {
+                if(err) {
+                    reject(err);
+                } else {
+                    resolve(key);
+                }
+            });
+        })
     }
 
     getKey(gid, callback) {

@@ -78,6 +78,10 @@ class UPNPSensor extends Sensor {
       mapping.expire = Math.floor(new Date() / 1000);
     });
 
+    preMappings.forEach((mapping) => {
+      if (!mapping.expire) mapping.expire = Math.floor(new Date() / 1000);
+    });
+
     const fullMappings = [...curMappings, ...preMappings];
 
     const uniqMappings = _.uniqWith(fullMappings, compareUpnp);
