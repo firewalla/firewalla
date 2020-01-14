@@ -39,6 +39,8 @@ const dnsManager = new DNSManager('error');
 const FlowManager = require('./FlowManager.js');
 const flowManager = new FlowManager('debug');
 
+const FireRouter = require('./FireRouter.js');
+
 const Host = require('./Host.js');
 
 const ShieldManager = require('./ShieldManager.js');
