@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -920,12 +920,8 @@ class netBot extends ControllerBot {
             log.info("set host name alias by mac address", macAddress);
 
             let macObject = {
-              mac: macAddress
-            }
-            if (data.value.name) {
-              macObject.name = data.value.name
-            } else if (data.value.customizeDomainName) {
-              macObject.customizeDomainName = data.value.customizeDomainName
+              mac: macAddress,
+              name: data.value.name,
             }
 
             await hostTool.updateMACKey(macObject, true);
@@ -974,6 +970,38 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
 
+        break;
+      }
+      case "hostDomain": {
+        let data = msg.data;
+        (async () => {
+          if (hostTool.isMacAddress(msg.target)) {
+            const macAddress = msg.target
+            const { customizeDomainName } = data.value
+            let macObject = {
+              mac: macAddress,
+              customizeDomainName: customizeDomainName ? customizeDomainName : ''
+            }
+            await hostTool.updateMACKey(macObject, true);
+            const host = await this.hostManager.getHostAsync(macAddress);
+            const pureHost = host.o || {};
+            sem.emitEvent({
+              type: "DeviceUpdate",
+              message: "customize domain name",
+              host: {
+                ipv4Addr: pureHost.ipv4Addr,
+                mac: macAddress,
+                customizeDomainName: customizeDomainName
+              },
+              toProcess: 'FireMain'
+            })
+            this.simpleTxData(msg, {}, null, callback)
+          } else {
+            this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
         break;
       }
       case "scisurfconfig": {

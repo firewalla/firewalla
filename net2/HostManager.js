@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -990,19 +990,20 @@ module.exports = class HostManager {
     let host, o;
     if (hostTool.isMacAddress(target)) {
       host = this.hostsdb[`host:mac:${target}`];
-
+      o = await hostTool.getMACEntry(target)
       if (host) {
+        o && host.update(o);
         return host;
       }
 
-      o = await hostTool.getMACEntry(target)
+      
     } else {
       o = await dnsManager.resolveLocalHostAsync(target)
 
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
 
       if (host) {
-        host.update(o);
+        o && host.update(o);
         return host
       }
     }
@@ -1105,7 +1106,9 @@ module.exports = class HostManager {
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
     if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
       log.info("getHosts: too frequent, returning cache");
-      return this.hosts.all
+      if(this.hosts.all && this.hosts.all.length>0){
+        return this.hosts.all
+      }
     }
 
     this.getHostsActive = Math.floor(new Date() / 1000);
