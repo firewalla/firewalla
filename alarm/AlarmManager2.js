@@ -1543,6 +1543,7 @@ module.exports = class {
       //eg: archive all ALARM_DEVICE_OFFLINE alarms
       //only match alarm type, ignore p.device.mac,p.dest.ip, etc
       i_type = alarm.type;
+      i_target = alarm.type;
     }
     if (!i_type || !i_target) {
       throw new Error("Unsupported Action!")
@@ -1609,7 +1610,7 @@ module.exports = class {
         // not supported
         break;
     }
-    if (userInput && userInput.device && !userInput.archiveAlarmByType) {
+    if (userInput && userInput.device && userInput.archiveAlarmByType) {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
     log.info("Exception object:", e);
