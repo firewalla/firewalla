@@ -95,6 +95,18 @@ class NetworkTool {
     return ipSubnets[0];
   }
 
+  async getIdentifierMAC() {
+    // eth0 is default WAN interface for red, blue and gold.
+    // It is hardcoded. But it fits for red, blue and gold. It may not be changed in a long time
+    const iface = "eth0";
+    const result = await exec(`cat /sys/class/net/${iface}/address`).catch((err) => {return null});
+    if (result) {
+      const mac = result.stdout.trim();
+      return mac;
+    }
+    return null;
+  }
+
 
   // listInterfaces(), output example:
   // [
