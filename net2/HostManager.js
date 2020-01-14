@@ -874,6 +874,11 @@ module.exports = class HostManager {
     }
   }
 
+  async networkConfig(json) {
+    const config = await FireRouter.getConfig();
+    json.networkConfig = config;
+  }
+
   toJson(includeHosts, options, callback) {
 
     if(typeof options === 'function') {
@@ -910,7 +915,8 @@ module.exports = class HostManager {
           this.asyncBasicDataForInit(json),
           this.getRecentFlows(json),
           this.getGuessedRouters(json),
-          this.getGuardian(json)
+          this.getGuardian(json),
+          this.networkConfig(json)
         ];
 
         this.basicDataForInit(json, options);
