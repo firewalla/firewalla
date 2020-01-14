@@ -64,7 +64,13 @@ class Policy {
     }
 
     if (raw.tag) {
-      if (_.isArray(raw.tag)) {
+      if (_.isString(raw.tag)) {
+        try {
+          this.tag = JSON.parse(raw.tag)
+        } catch (e) {
+          log.error("Failed to parse policy tag string:", raw.tag, e)
+        }
+      } else if (_.isArray(raw.tag)) {
         this.tag = Array.from(raw.tag); // clone array to avoide side effects
       } else {
         log.error("Unsupported tag", raw.tag)

@@ -1589,7 +1589,7 @@ module.exports = class {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
     if (userInput && userInput.intf) {
-      e["tag"] = [Policy.INTF_PREFIX + userInput.intf];
+      e["intf.id"] = userInput.intf;
     }
     log.info("Exception object:", e);
     return e;
