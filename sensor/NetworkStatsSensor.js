@@ -31,7 +31,6 @@ const Ping = require('../extension/ping/Ping.js');
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager();
 
-const util = require('util');
 const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js');
 const speedtest = require('../extension/speedtest/speedtest.js');
@@ -226,8 +225,8 @@ class NetworkStatsSensor extends Sensor {
     if (dnsmasqServers) {
       const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(dnsmasqServers)
       secondaryDnsServers && dnses.push(secondaryDnsServers)
+      alternativeDnsServers && dnses.push(alternativeDnsServers)
     }
-    alternativeDnsServers && dnses.push(alternativeDnsServers)
     let resultGroupByHost = {};
     for (const internetTestHost of internetTestHosts) {
       const resultGroupByDns = {}
