@@ -831,14 +831,15 @@ module.exports = class {
 
   async loadPeriodAlarms(options) {
     options = options || {};
-    let { begin, end, count } = options;
+    let { begin, end, count, offset } = options;
     end = end || Date.now() / 1000;
     count = count || 1000;
-    const activeAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', 0, count);
+    offset = offset || 0;
+    const activeAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', offset, count);
     let activeAlarms = await this.idsToAlarmsAsync(await activeAlarmsQuery);
     activeAlarms = activeAlarms.filter(a => a != null);
 
-    const archivedAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmArchiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', 0, count, 'withscores');
+    const archivedAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmArchiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', offset, count, 'withscores');
     const archivedAlarmIdsWithScores = await archivedAlarmsQuery;
     let archivedAlarmIds = []
     let idScoreMap = {};
