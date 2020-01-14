@@ -740,7 +740,7 @@ class Host {
       if (!results) return obj;
 
       obj.agents = results;
-      let data = await util.promisify(bone.device)("identify", obj)
+      let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
 
