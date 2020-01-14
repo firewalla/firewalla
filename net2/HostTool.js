@@ -294,7 +294,7 @@ class HostTool {
     return rclient.hsetAsync(key, "recentActivity", string)
   }
 
-  async removeDupIPv4FromMacEntry(mac, ip) {
+  async removeDupIPv4FromMacEntry(mac, ip, newMac) {
     // Keep uid for now as it's used as keys in a lot of places
     // TODO: use mac as uid should be a true fix to this
 
@@ -303,7 +303,7 @@ class HostTool {
       log.error('removeDupIPv4FromMacEntry:', mac, 'not found')
       return Promise.resolve();
     }
-    log.info('removeDupIPv4FromMacEntry:', mac, macEntry);
+    log.info('removeDupIPv4FromMacEntry:', ip, 'old:', mac, 'new:', newMac, macEntry);
 
     let trans = rclient.multi()
 
