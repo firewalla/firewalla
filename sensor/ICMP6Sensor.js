@@ -23,8 +23,7 @@ const ip = require('ip');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager()
+const sysManager = require('../net2/SysManager.js');
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;

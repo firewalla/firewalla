@@ -39,8 +39,7 @@ const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
-const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js')
 
 const IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
 

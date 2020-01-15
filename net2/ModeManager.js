@@ -15,7 +15,7 @@
 'use strict';
 const log = require("./logger.js")(__filename);
 const Config = require('./config.js');
-const fConfig = Config.getConfig();
+let fConfig = Config.getConfig();
 
 const secondaryInterface = require("./SecondaryInterface.js");
 
@@ -23,8 +23,7 @@ const Mode = require('./Mode.js');
 
 const fireRouter = require('./FireRouter.js')
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const SpooferManager = require('./SpooferManager.js');
 
@@ -178,9 +177,9 @@ async function _changeToAlternativeIpSubnet() {
 }
 
 async function _enableSecondaryInterface() {
-  fConfig = Config.getConfig(true);
-
   try {
+    fConfig = Config.getConfig(true);
+
     let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");
     if (legacyIpSubnet) { // secondary ip is changed

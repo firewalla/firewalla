@@ -28,8 +28,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const Ping = require('../extension/ping/Ping.js');
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 
 const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js');

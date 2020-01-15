@@ -58,7 +58,7 @@ class NetworkTool {
         monitoringInterface2: `${intf}:0`,
         secondaryInterface: secondaryInterface
       };
-      await Config.updateUserConfig(updatedConfig);
+      Config.updateUserConfigSync(updatedConfig);
       fConfig = Config.getConfig();
 
       return intf

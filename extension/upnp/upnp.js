@@ -30,8 +30,7 @@ let instance = null;
 const log = require("../../net2/logger.js")(__filename);
 const util = require('util');
 
-const SysManager = require('../../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../../net2/SysManager.js');
 
 const _ = require('lodash');
 

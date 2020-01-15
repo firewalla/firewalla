@@ -24,8 +24,7 @@ const bonjour = require('bonjour')();
 const ip = require('ip');
 const Promise = require('bluebird');
 
-const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager()
+const sysManager = require('../net2/SysManager.js')
 const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');

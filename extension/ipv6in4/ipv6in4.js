@@ -27,8 +27,7 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird')
 
-const SysManager = require('../../net2/SysManager')
-const sysManager = new SysManager()
+const sysManager = require('../../net2/SysManager')
 
 const rp = require('request-promise')
 

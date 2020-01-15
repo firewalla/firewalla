@@ -18,8 +18,7 @@ let instance = null;
 
 const log = require('./logger.js')(__filename);
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 

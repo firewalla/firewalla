@@ -181,7 +181,7 @@ class FireRouter {
         },
         monitoringInterface: monitoringInterfaces[0]
       };
-      await Config.updateUserConfig(updatedConfig);
+      Config.updateUserConfigSync(updatedConfig);
 
 
     } else {

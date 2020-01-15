@@ -33,8 +33,7 @@ Promise.promisifyAll(fs);
 
 const f = require('../../net2/Firewalla.js');
 
-const SysManager = require('../../net2/SysManager');
-const sysManager = new SysManager();
+const sysManager = require('../../net2/SysManager');
 
 const ssConfigKey = "scisurf.config";
 

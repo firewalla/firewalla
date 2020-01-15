@@ -23,8 +23,7 @@ const Bone = require('../lib/Bone.js');
 
 const minimatch = require('minimatch')
 
-const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js')
 
 let instance = null;
 

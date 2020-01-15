@@ -27,8 +27,7 @@ const unlinkFileAsync = util.promisify(fs.unlink);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const f = require('../net2/Firewalla.js');
 const generatedConfigFile = `${f.getUserConfigFolder()}/dnsmasq/box_alias.generated`;

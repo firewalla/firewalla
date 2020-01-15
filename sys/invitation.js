@@ -42,8 +42,7 @@ const clientMgmt = require('../mgmt/ClientMgmt.js');
 
 const config = require('../net2/config.js').getConfig();
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 
 const FW_SERVICE = "Firewalla";
 const FW_SERVICE_TYPE = "fb";

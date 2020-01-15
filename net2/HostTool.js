@@ -18,8 +18,7 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('./SysManager.js');
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();

@@ -16,8 +16,7 @@
 
 var instance = null;
 const log = require("./logger.js")("PolicyManager");
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const fc = require('../net2/config.js');
 

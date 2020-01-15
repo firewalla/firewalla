@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const SysManager = require('../net2/SysManager.js');
+const sysManager = require('../net2/SysManager.js');
 
 const HostManager = require('../net2/HostManager.js');
 const HostTool = require('../net2/HostTool.js');
@@ -40,7 +40,6 @@ class DnsLoopAvoidanceSensor extends Sensor {
 
   async check() {
     const hostManager = new HostManager("cli", 'client', 'info');
-    const sysManager = new SysManager();
     const dnsServers = sysManager.myDNS() || [];
     log.info("Current dns servers: ", dnsServers);
     const macEntries = await hostTool.getAllMACEntries();

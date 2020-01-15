@@ -21,8 +21,7 @@ const cp = require('child_process');
 
 const execAsync = util.promisify(cp.exec);
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 const fConfig = require('../net2/config.js').getConfig();
 
 const ERROR_STR = "ERROR";

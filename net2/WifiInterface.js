@@ -29,8 +29,7 @@ const iptables = require('../net2/Iptables');
 const firewalla = require('../net2/Firewalla.js');
 const Discovery = require('../net2/Discovery.js');
 const discovery = new Discovery("nmap", fConfig, "info");
-const SysManager = require("../net2/SysManager.js");
-const sysManager = new SysManager();
+const sysManager = require("../net2/SysManager.js");
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const intfConfigs = {};

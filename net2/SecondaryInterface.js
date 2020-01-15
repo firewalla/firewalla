@@ -22,7 +22,7 @@ const f = require('./Firewalla.js');
 const fc = require('./config.js');
 const { exec } = require('child-process-promise')
 
-const SysManager = require('./SysManager.js');
+const sysManager = require('./SysManager.js');
 
 function is_interface_valid(netif) {
   return (
@@ -134,7 +134,6 @@ exports.create = async function (config) {
       secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
       break;
     }
-    const sysManager = new SysManager();
     if (secondaryIpSubnet.split('/')[0] === sysManager.myGateway()) {
       log.warn("Conflict with gateway IP: ", secondaryIpSubnet);
       secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
@@ -148,7 +147,7 @@ exports.create = async function (config) {
       ip: secondaryIpSubnet
     }
   }
-  fc.updateUserConfig(flippedConfig);
+  fc.updateUserConfigSync(flippedConfig);
 
   // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
   await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)

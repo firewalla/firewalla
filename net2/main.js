@@ -52,8 +52,7 @@ const WifiInterface = require('./WifiInterface.js');
 const fireRouter = require('./FireRouter.js')
 
 // api/main/monitor all depends on sysManager configuration
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const sensorLoader = require('../sensor/SensorLoader.js');
 

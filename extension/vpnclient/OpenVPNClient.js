@@ -21,8 +21,7 @@ const cp = require('child_process');
 const Promise = require('bluebird');
 const util = require('util');
 const f = require('../../net2/Firewalla.js');
-const SysManager = require('../../net2/SysManager');
-const sysManager = new SysManager();
+const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const iptables = require('../../net2/Iptables.js');
 

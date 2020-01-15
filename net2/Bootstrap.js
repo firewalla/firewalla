@@ -23,8 +23,7 @@ let log = require("../net2/logger.js")(__filename);
 
 let cw = require("../net2/FWCloudWrapper");
 
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager();
+let sysManager = require('../net2/SysManager.js');
 
 let firewallaConfig = require('../net2/config.js').getConfig();
 

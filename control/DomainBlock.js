@@ -31,8 +31,7 @@ const util = require('util');
 const resolve4Async = util.promisify(dns.resolve4)
 const resolve6Async = util.promisify(dns.resolve6)
 
-const SysManager = require("../net2/SysManager.js")
-const sysManager = new SysManager()
+const sysManager = require("../net2/SysManager.js")
 
 const sem = require('../sensor/SensorEventManager.js').getInstance()
 const DomainUpdater = require('./DomainUpdater.js');

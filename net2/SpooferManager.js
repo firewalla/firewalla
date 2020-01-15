@@ -18,8 +18,7 @@ const firewalla = require('./Firewalla.js');
 
 const BitBridge = require('../extension/bitbridge/bitbridge.js')
 
-const SysManager = require("./SysManager.js");
-const sysManager = new SysManager();
+const sysManager = require("./SysManager.js");
 
 const iptool = require('ip')
 

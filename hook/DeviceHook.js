@@ -42,8 +42,7 @@ const dnsmasq = new DNSMASQ();
 
 const HostManager = require('../net2/HostManager.js');
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const l2 = require('../util/Layer2.js');
 

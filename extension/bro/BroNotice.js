@@ -16,8 +16,7 @@
 'use strict';
 let instance = null;
 
-const SysManager = require('../../net2/SysManager.js')
-const sysManager = new SysManager();
+const sysManager = require('../../net2/SysManager.js')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
