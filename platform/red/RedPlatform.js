@@ -74,6 +74,10 @@ class RedPlatform extends Platform {
   getPolicyCapacity() {
     return 1000;
   }
+
+  isFireRouterManaged() {
+    return false;
+  }
 }
 
 module.exports = RedPlatform;

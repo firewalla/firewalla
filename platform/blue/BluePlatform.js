@@ -122,6 +122,10 @@ class BluePlatform extends Platform {
   getPolicyCapacity() {
     return 3000;
   }
+
+  isFireRouterManaged() {
+    return false;
+  }
 }
 
 module.exports = BluePlatform;

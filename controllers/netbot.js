@@ -135,8 +135,6 @@ const migration = require('../migration/migration.js');
 
 const FireRouter = require('../net2/FireRouter.js');
 
-const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
-
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
@@ -3394,8 +3392,7 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, { code: 400, msg: "network should be specified." }, callback);
           } else {
             const config = fc.getConfig(true);
-            const dnsmasq = new Dnsmasq();
-            let dhcpRange = await dnsmasq.getDefaultDhcpRange(network);
+            let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
             switch (network) {
               case "secondary": {
                 // convert ip/subnet to ip address and subnet mask

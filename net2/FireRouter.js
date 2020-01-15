@@ -40,7 +40,6 @@ const PlatformLoader = require('../platform/PlatformLoader.js')
 const Config = require('./config.js')
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const { delay } = require('../util/util.js')
-const Gold = require('../platform/gold/GoldPlatform.js')
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -149,7 +148,7 @@ class FireRouter {
 
   // let it crash
   async init() {
-    if (this.platform instanceof Gold) {
+    if (this.platform.isFireRouterManaged()) {
       // fireroute
       routerConfig = await getConfig()
 
@@ -164,17 +163,19 @@ class FireRouter {
 
       await generateNetowrkInfo()
 
-      if (mode == 'spoof') {
-        monitoringInterfaces = Object.keys(wans)
-      }
-      else if (mode == 'router') {
-        monitoringInterfaces = Object.keys(lans)
+      switch(mode) {
+        case 'spoof':
+          monitoringInterfaces = Object.keys(wans)
+          break;
+
+        default: // router mode
+          monitoringInterfaces = Object.keys(lans)
+          break
       }
 
       await broControl.writeClusterConfig(monitoringInterfaces)
 
-      // Keep Discovery.discoverMac() working
-      // TODO: is this necessary?
+      // Legacy code compatibility
       const updatedConfig = {
         discovery: {
           networkInterfaces: monitoringInterfaces

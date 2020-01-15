@@ -630,6 +630,8 @@
       "host": "localhost",
       "port": 8837,
       "version": "v1"
-    }
+    },
+    "homeFolder": "/firerouter",
+    "hiddenFolder": "/.router"
   }
 }

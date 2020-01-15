@@ -497,7 +497,10 @@ module.exports = class {
   }
 
   getInterfaceViaUUID(uuid) {
-    return this.uuidMap && this.uuidMap[uuid]
+    const intf = this.uuidMap && this.uuidMap[uuid]
+    return Object.assign({}, intf, {
+      active: this.getMonitoringInterfaces().some(i => i.uuid == uuid)
+    })
   }
 
   getInterfaceViaMac(mac) {
