@@ -1444,7 +1444,8 @@ module.exports = class HostManager {
                       'p.vpn.subtype': settings && settings.subtype,
                       'p.vpn.devicecount': device_cout,
                       'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
-                      'p.vpn.time': new Date() / 1000
+                      'p.vpn.time': new Date() / 1000,
+                      'p.vpn.strictvpn': settings && settings.strictVPN || false
                     }
                   );
                   await am2.enqueueAlarm(alarm);
@@ -1495,11 +1496,12 @@ module.exports = class HostManager {
                   new Date() / 1000,
                   null,
                   {
-                    'p.vpn.profileId': profileId,
+                    'p.vpn.profileid': profileId,
                     'p.vpn.subtype': settings && settings.subtype,
                     'p.vpn.devicecount': device_cout,
                     'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
-                    'p.vpn.time': new Date() / 1000
+                    'p.vpn.time': new Date() / 1000,
+                    'p.vpn.strictvpn': settings && settings.strictVPN || false
                   }
                 );
                 await am2.enqueueAlarm(alarm);

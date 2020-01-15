@@ -328,6 +328,9 @@ class VPNClientConnectionAlarm extends Alarm {
 class VPNConnectAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_CONNECT", timestamp, device, info);
+    if (info && info["p.vpn.subtype"]) {
+      this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${this['p.vpn.subtype']}`);
+    }
   }
 
   keysToCompareForDedup() {
@@ -339,13 +342,24 @@ class VPNConnectAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"]];
+    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
   }
 }
 
 class VPNDisconnectAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_DISCONNECT", timestamp, device, info);
+    if (info && info["p.vpn.subtype"]) {
+      this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${this['p.vpn.subtype']}`);
+    }
+  }
+
+  getI18NCategory() {
+    let category = super.getI18NCategory();
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      category = category + "_KILLSWITCH";
+    }
+    return category;
   }
 
   keysToCompareForDedup() {
@@ -357,7 +371,7 @@ class VPNDisconnectAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"]];
+    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
   }
 }
 
