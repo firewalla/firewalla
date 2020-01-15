@@ -1,4 +1,20 @@
 #!/usr/bin/env node
+
+/*    Copyright 2018-2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict'
 
 let log = require('../net2/logger.js')(__filename, 'info');
@@ -28,12 +44,10 @@ let a2 = new Alarm.NewDeviceAlarm(new Date() / 1000, "iPad-1", {
 // 54.239.130.241
 
 [a].forEach((alarm) => {
-  alarmManager2.enrichDestInfo(alarm).then((alarm) => {
-    alarmManager2.checkAndSave(alarm, (err) => {
-      if(err) {
-        log.error("Failed to save alarm: " + a);
-      }
-    });
+  alarmManager2.checkAndSave(alarm, (err) => {
+    if (err) {
+      log.error("Failed to save alarm: " + a);
+    }
   });
 });
 

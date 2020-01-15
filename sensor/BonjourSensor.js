@@ -29,6 +29,7 @@ const sysManager = new SysManager('info')
 const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
+const validator = require('validator');
 
 const ipMacCache = {};
 
@@ -95,11 +96,11 @@ class BonjourSensor extends Sensor {
   // do not process same host in a short time
   isDup(service) {
     let key = service.ipv4Addr;
-    if(!key) {
+    if (!key) {
       return true;
     }
 
-    if(this.hostCache[key]) {
+    if (this.hostCache[key]) {
       log.debug("Ignoring duplicated bonjour services from same ip:", key);
       return true;
     }
@@ -140,14 +141,13 @@ class BonjourSensor extends Sensor {
                 resolve(null);
               }
             } else {
-              ipMacCache[ipAddr] = {mac: mac, lastSeen: Date.now() / 1000};
+              ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
               resolve(mac);
             }
           }
         })
       })
-    }
-    if (ip.isV6Format(ipAddr)) {
+    } else if (ip.isV6Format(ipAddr)) {
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
         log.error("Not able to find mac address for host:", ipAddr, err);
         return null;
@@ -156,9 +156,8 @@ class BonjourSensor extends Sensor {
         if (sysManager.myIp6() && sysManager.myIp6().includes(ipAddr)) {
           mac = sysManager.myMAC();
         }
-      }
-      if (mac) {
-        ipMacCache[ipAddr] = {mac: mac, lastSeen: Date.now() / 1000};
+      } else {
+        ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
         return mac;
       }
     }
@@ -173,7 +172,7 @@ class BonjourSensor extends Sensor {
     if (ipv4Addr) {
       mac = await this._getMacFromIP(ipv4Addr);
     }
-    if(!mac && ipv6Addrs && ipv6Addrs.length !== 0) {
+    if (!mac && ipv6Addrs && ipv6Addrs.length !== 0) {
       for (let i in ipv6Addrs) {
         const ipv6Addr = ipv6Addrs[i];
         mac = await this._getMacFromIP(ipv6Addr);
@@ -219,12 +218,8 @@ class BonjourSensor extends Sensor {
   getFriendlyDeviceName(service) {
     let bypassList = [/_airdrop._tcp/, /eph:devhi:netbot/, /_apple-mobdev2._tcp/]
 
-    if(service.fqdn) {
-      let matched = bypassList.filter((x) => service.fqdn.match(x))
-
-      if(matched.length > 0) {
-        return this.getDeviceName(service)
-      }
+    if (service.fqdn && bypassList.some((x) => service.fqdn.match(x))) {
+      return this.getDeviceName(service)
     }
 
     let name = service.name
@@ -234,20 +229,23 @@ class BonjourSensor extends Sensor {
 
   bonjourParse(service) {
     log.debug("Discover:Bonjour:Parsing:Received", service);
-      if (service == null) {
+    if (service == null) {
       return;
     }
     if (service.addresses == null ||
-        service.addresses.length == 0 ||
-        service.referer.address == null) {
+      service.addresses.length == 0 ||
+      service.referer.address == null) {
+      return;
+    }
+
+    if (validator.isUUID(this.getDeviceName(service))) {
       return;
     }
 
     let ipv4addr = null;
     let ipv6addr = [];
 
-    for (let i in service.addresses) {
-      let addr = service.addresses[i];
+    for (const addr of service.addresses) {
       if (ip.isV4Format(addr) && sysManager.isLocalIP(addr)) {
         ipv4addr = addr;
       } else if (ip.isV4Format(addr)) {

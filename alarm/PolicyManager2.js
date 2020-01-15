@@ -19,7 +19,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const audit = require('../util/audit.js');
 const Bone = require('../lib/Bone.js');
 
 const minimatch = require('minimatch')
@@ -409,7 +408,6 @@ class PolicyManager2 {
 
         this.addToActiveQueue(policy, (err) => {
           if(!err) {
-            audit.trace("Created policy", policy.pid);
           }
           this.tryPolicyEnforcement(policy)
           callback(null, policy)
@@ -628,7 +626,7 @@ class PolicyManager2 {
 
     multi.exec((err, results) => {
       if(err) {
-        log.error("Failed to load active policies (hgetall): " + err);
+        log.error("Failed to load policies (hgetall): " + err);
         callback(err);
         return;
       }
@@ -959,7 +957,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    const {pid, scope, target, whitelist} = policy
+    let {pid, scope, intf, target, whitelist} = policy
 
     // scope !== []
 
@@ -969,8 +967,8 @@ class PolicyManager2 {
       case "remotePort":
       case "remoteIpPort":
       case "remoteNetPort":
-        if (scope) {
-          await Block.setupRules(pid, pid, ruleSetTypeMap[type], whitelist);
+        if (scope || intf) {
+          await Block.setupRules(scope && pid, pid, ruleSetTypeMap[type], intf, whitelist);
           await Block.addMacToSet(scope, Block.getMacSet(pid));
           await Block.block(target, Block.getDstSet(pid), whitelist)
         } else {
@@ -987,22 +985,26 @@ class PolicyManager2 {
 
       case "domain":
       case "dns":
-        if(scope) {
-          await Block.setupRules(scope && pid, pid, "hash:ip", whitelist);
-          await Block.addMacToSet(scope, Block.getMacSet(pid));
+        if(scope || intf) {
+          if(!policy.dnsmasq_entry){
+            await Block.setupRules(scope && pid, pid, "hash:ip", intf, whitelist);
+            await Block.addMacToSet(scope, Block.getMacSet(pid));
+          }
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
-            no_dnsmasq_entry: true,
-            no_dnsmasq_reload: true
+            dnsmasq_entry: policy.dnsmasq_entry,
+            scope: scope,
+            intf: intf
           })
         } else {
-          let options = {exactMatch: policy.domainExactMatch};
+          let options = {
+            exactMatch: policy.domainExactMatch,
+            dnsmasq_entry: policy.dnsmasq_entry
+          };
           if (whitelist) {
             options.blockSet = "whitelist_domain_set";
             // whitelist rule should not add dnsmasq filter rule
-            options.no_dnsmasq_entry = true;
-            options.no_dnsmasq_reload = true;
           }
           await domainBlock.blockDomain(target, options);
         }
@@ -1020,19 +1022,28 @@ class PolicyManager2 {
         break;
 
       case "category":
-        await Block.setupRules(scope && pid, target, "hash:ip", whitelist);
-        await Block.addMacToSet(scope, Block.getMacSet(pid));
-
-        if (!scope && !whitelist && target === 'default_c') try {
-          await categoryUpdater.iptablesRedirectCategory(target)
-        } catch(err) {
-          log.error("Failed to redirect default_c traffic", err)
+        if(policy.dnsmasq_entry){
+          await domainBlock.blockCategory(target,{
+            scope: scope,
+            isCategory: true,
+            dnsmasq_entry: policy.dnsmasq_entry,
+            category: target,
+            intf: intf
+          });
+        } else {
+          await Block.setupRules(scope && pid, target, "hash:ip", intf, whitelist);
+          await Block.addMacToSet(scope, Block.getMacSet(pid));
+          if (!scope && !whitelist && target === 'default_c') try {
+            await categoryUpdater.iptablesRedirectCategory(target)
+          } catch(err) {
+            log.error("Failed to redirect default_c traffic", err)
+          }
         }
         break;
 
       case "country":
         await countryUpdater.activateCountry(target);
-        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", whitelist);
+        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", intf, whitelist);
         await Block.addMacToSet(scope, Block.getMacSet(pid));
         break;
 
@@ -1067,7 +1078,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    const {pid, scope, target, whitelist} = policy
+    let {pid, scope, intf, target, whitelist} = policy
 
     switch(type) {
       case "ip":
@@ -1075,8 +1086,8 @@ class PolicyManager2 {
       case "remotePort":
       case "remoteIpPort":
       case "remoteNetPort":
-        if (scope) {
-          await Block.setupRules(pid, pid, ruleSetTypeMap[type], whitelist, true);
+        if (scope || intf) {
+          await Block.setupRules(scope && pid, pid, ruleSetTypeMap[type], intf, whitelist, true);
         } else {
           const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type]
 
@@ -1091,21 +1102,25 @@ class PolicyManager2 {
 
       case "domain":
       case "dns":
-        if(scope) {
+        if(scope || intf) {
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
-            no_dnsmasq_entry: true,
-            no_dnsmasq_reload: true
+            dnsmasq_entry: policy.dnsmasq_entry,
+            scope: scope,
+            intf: intf
           })
           // destroy domain dst cache, since there may be various domain dst cache in different policies
-          await Block.setupRules(pid, pid, 'hash:ip', whitelist, true);
+          if(!policy.dnsmasq_entry){
+            await Block.setupRules(scope && pid, pid, 'hash:ip', intf, whitelist, true);
+          }
         } else {
-          let options = {exactMatch: policy.domainExactMatch};
+          let options = {
+            exactMatch: policy.domainExactMatch,
+            dnsmasq_entry: policy.dnsmasq_entry
+          };
           if (whitelist) {
             options.blockSet = "whitelist_domain_set";
-            options.no_dnsmasq_entry = true;
-            options.no_dnsmasq_reload = true;
           }
           await domainBlock.unblockDomain(target, options);
         }
@@ -1123,17 +1138,25 @@ class PolicyManager2 {
         break;
 
       case "category":
-        await Block.setupRules(scope && pid, target, 'hash:ip', whitelist, true, false);
-
-        if (!scope && !whitelist && target === 'default_c') try {
-          await categoryUpdater.iptablesUnredirectCategory(target)
-        } catch(err) {
-          log.error("Failed to redirect default_c traffic", err)
+        if(policy.dnsmasq_entry){
+          await domainBlock.unblockCategory(target,{
+            scope: scope,
+            isCategory: true,
+            dnsmasq_entry: policy.dnsmasq_entry,
+            category: target,
+            intf: intf
+          });
+        }else{
+          await Block.setupRules(scope && pid, target, 'hash:ip', intf, whitelist, true, false);
+          if (!scope && !whitelist && target === 'default_c') try {
+            await categoryUpdater.iptablesUnredirectCategory(target)
+          } catch(err) {
+            log.error("Failed to redirect default_c traffic", err)
+          }
+          break;
         }
-        break;
-
       case "country":
-        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), 'hash:net', whitelist, true, false);
+        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), 'hash:net', intf, whitelist, true, false);
         break;
 
       default:

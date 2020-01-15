@@ -1,5 +1,5 @@
 {
-  "version": 1.965,
+  "version": 1.966,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -30,6 +30,8 @@
   "timing": {
     "alarm.cooldown": 900,
     "alarm.large_upload.cooldown": 14400,
+    "alarm.abnormal_bandwidth_usage.cooldown": 28800,
+    "alarm.data_plan.cooldown": 2592000,
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000
@@ -76,6 +78,7 @@
     "EncipherPlugin": {},
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
+    "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
     "RemoteNotificationSensor": {}
@@ -84,7 +87,6 @@
     "DedupAlarm",
     "DeviceInfoIntel",
     "DestInfoIntel",
-    "IPLocationIntel",
     "WhoisIPIntel",
     "WhoisDomainIntel",
     "SSLIntel",
@@ -103,6 +105,7 @@
     "NmapSensor": {},
     "BoneSensor": {},
     "APISensor": {},
+    "DNSCryptPlugin": {},
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
@@ -120,7 +123,6 @@
       ]
     },
     "DNSMASQSensor": {},
-    "HeapSensor": {},
     "IntelReportSensor": {},
     "VPNRelaySensor": {},
     "PublicIPSensor": {
@@ -135,6 +137,7 @@
     "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {},
     "IntelRevalidationSensor": {},
+    "BoxAliasSensor": {},
     "SafeSearchPlugin": {
       "mapping": {
         "youtube_strict": {
@@ -376,10 +379,15 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "NetworkStatsSensor": {
-      "internetTestUrls": {
-        "google": "http://google.com",
-        "github": "http://github.com"
-      },
+      "internetTestHosts": [
+        "google.com",
+        "github.com",
+        "firewalla.encipher.io"
+      ],
+      "dnsServers": [
+        "1.1.1.1",
+        "8.8.8.8"
+      ],
       "interval": 300
     },
     "ICMP6Sensor": {},
@@ -451,10 +459,6 @@
         "expires": -1,
         "count": 500
       },
-      "aggrflow": {
-        "expires": -1,
-        "count": 200
-      },
       "syssumflow": {
         "expires": -1,
         "count": 200
@@ -470,6 +474,10 @@
       "safe_urls": {
         "expires": 604800,
         "count": 1000
+      },
+      "perf": {
+        "expires": 86400,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
@@ -488,7 +496,18 @@
         "bipartite_graph"
       ]
     },
-    "WirelessInterfaceSensor": {}
+    "WirelessInterfaceSensor": {},
+    "DataUsageSensor": {
+      "refreshInterval": 15,
+      "ratio": 1.2,
+      "percentage": 0.8,
+      "analytics_hours": 8,
+      "smWindow": 2,
+      "mdWindow": 8,
+      "topXflows": 10,
+      "minsize": 150000000,
+      "dataPlanMinPercentage": 0.8
+    }
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -573,6 +592,8 @@
     "video": true,
     "game": true,
     "large_upload": true,
+    "abnormal_bandwidth_usage": true,
+    "data_plan": true,
     "new_device": true,
     "new_device_block": false,
     "device_online": true,
@@ -598,12 +619,15 @@
     "insane_mode": false,
     "cpu_monitor": true,
     "speed_test": false,
+    "doh": false,
     "safe_search": false,
     "network_stats": false,
-    "link_stats": true
+    "link_stats": true,
+    "network_speed_test": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
   ],
-  "pubKeys": []
+  "pubKeys": [],
+  "allowCustomizedProfiles": 1
 }

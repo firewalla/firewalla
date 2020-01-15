@@ -26,11 +26,11 @@ const log = require('../../net2/logger.js')(__filename);
 
 class BroNotice {
   constructor() {
-    if(instance === null) {
+    if (instance === null) {
       instance = this;
     }
   }
-  
+
   //  src: guesser
   //  sub: target
   //  dst: no presence
@@ -38,7 +38,7 @@ class BroNotice {
     const subMessage = broObj.sub
     // sub message:
     //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
-    
+
     let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
     addresses = addresses.filter((v, i, array) => {
       return array.indexOf(v) === i
@@ -47,6 +47,12 @@ class BroNotice {
     if (addresses.length == 0) {
       alarm["p.local.decision"] == "ignore";
       return;
+    }
+    let deivceNames = [];
+    for (const address of addresses) {
+      let deviceName = await hostTool.getName(address);
+      deviceName = deviceName ? deviceName : address;
+      deivceNames.push(deviceName)
     }
 
     let target = addresses[0];
@@ -62,7 +68,7 @@ class BroNotice {
       alarm["device"] = target;
     }
 
-    alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
+    alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${deivceNames.join(",")}`
   }
 
   //  src: scanner
@@ -77,7 +83,7 @@ class BroNotice {
   }
 
   async processHeartbleed(alarm, broObj) {
-    if(sysManager.isLocalIP(broObj["src"])) {
+    if (sysManager.isLocalIP(broObj["src"])) {
       alarm["p.local_is_client"] = "1";
     } else {
       // initiated from outside
@@ -92,7 +98,7 @@ class BroNotice {
   async processSSHInterestingLogin(alarm, broObj) {
     const sub = broObj["sub"];
 
-    if(sub) {
+    if (sub) {
       alarm["p.dest.name"] = sub;
     }
   }
@@ -108,15 +114,15 @@ class BroNotice {
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
     }
 
-    if(broObj["file_mime_type"]) {
+    if (broObj["file_mime_type"]) {
       alarm["p.file.type"] = broObj["file_mime_type"];
     }
 
-    if(broObj["file_desc"]) {
+    if (broObj["file_desc"]) {
       alarm["p.file.desc"] = broObj["file_desc"];
     }
 
-    if(broObj.sub) {
+    if (broObj.sub) {
       alarm["p.malware.reference"] = broObj.sub;
     }
   }
@@ -135,18 +141,18 @@ class BroNotice {
   async processNotice(alarm, broObj) {
     const noticeType = alarm["p.noticeType"];
 
-    if(!noticeType || !broObj) {
+    if (!noticeType || !broObj) {
       return;
     }
 
     alarm["e.bro.raw"] = JSON.stringify(broObj);
 
-    switch(noticeType) {
+    switch (noticeType) {
       case "SSH::Password_Guessing":
         await this.processSSHScan(alarm, broObj);
         break;
 
-      case "Heartbleed::SSL_Heartbeat_Attack":  
+      case "Heartbleed::SSL_Heartbeat_Attack":
       case "Heartbleed::SSL_Heartbeat_Attack_Success":
         await this.processHeartbleed(alarm, broObj);
         break;
@@ -179,7 +185,7 @@ class BroNotice {
       type: "ip",
       target: alarm["p.dest.ip"]
     }
-  }  
+  }
 };
 
 module.exports = new BroNotice();

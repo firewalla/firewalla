@@ -16,9 +16,6 @@
 'use strict'
 
 let log = require('../net2/logger.js')(__filename, 'info');
-let jsonfile = require('jsonfile');
-let util = require('util');
-let Alarm = require('./Alarm.js')
 let ip = require('ip')
 
 var extend = require('util')._extend
@@ -90,10 +87,9 @@ module.exports = class {
   match(alarm) {
 
     let matched = false;
-    
     // FIXME: exact match only for now, and only supports String
     for (var key in this) {
-      
+
       if(!key.startsWith("p.") && key !== "type") {
         continue;
       }
@@ -105,6 +101,16 @@ module.exports = class {
       if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
         matched = true;
         continue;
+      }
+
+      //special exception
+      if (key === "p.upnp.description") {
+        if (val.endsWith("*")) {
+          if (minimatch(val2, val)) {
+            matched = true;
+            continue;
+          }
+        }
       }
 
       if(val.startsWith("*.")) {
@@ -139,7 +145,7 @@ module.exports = class {
 
       matched = true;
     }
-    
+
     return matched;
   }
 }

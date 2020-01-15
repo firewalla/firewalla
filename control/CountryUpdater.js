@@ -123,27 +123,27 @@ class CountryUpdater extends CategoryUpdaterBase {
 
   async addDynamicEntries(category, options) {
     const getKey    = [this.getDynamicIPv4Key, this.getDynamicIPv6Key]
-    const getSet    = [this.getIPSetName, this.getIPSet6Name]
-    const getTmpSet = [this.getTempIPSetName, this.getTempIPSet6Name]
+    const getSet    = [this.getIPSetName, this.getIPSetNameForIPV6]
+    const getTmpSet = [this.getTempIPSetName, this.getTempIPSetNameForIPV6]
 
     for (let i = 0; i < 2; i++) {
       const key = getKey[i](category)
       const exists = await rclient.zcountAsync(key, '-inf', '+inf')
 
+      const ipsetName = options && options.useTemp ?
+        getSet[i](category) :
+        getTmpSet[i](category);
+      const cmd = `redis-cli zrange ${key} 0 -1 | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+
       if (exists) try {
-        const ipsetName = options && options.useTemp ?
-          getSet[i](category) :
-          getTmpSet[i](category);
-        const cmd = `redis-cli zrange ${key} 0 -1 | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
         await exec(cmd)
       } catch(err) {
         log.error(`Failed to update ipset for ${category}, cmd: ${cmd}`, err)
       }
     }
   }
-  
+
   async updateIpset(category, ip6 = false, options) {
-    const key = ip6 ? this.getIPv6CategoryKey(category) : this.getIPv4CategoryKey(category)
 
     let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
 
@@ -211,11 +211,15 @@ class CountryUpdater extends CategoryUpdaterBase {
       return
     }
 
-    const ipset = iptool.isV4Format(ip) ?
-      this.getIPSetName(category) :
-      iptool.isV6Format(ip) ?  this.getIPSetNameForIPV6(category) : null
+    let ipset, key;
 
-    if (!ipset) {
+    if (iptool.isV4Format(ip)) {
+      ipset = this.getIPSetName(category)
+      key = this.getDynamicIPv4Key(category)
+    } else if (iptool.isV6Format(ip)) {
+      ipset = this.getIPSetNameForIPV6(category)
+      key = this.getDynamicIPv6Key(category)
+    } else {
       log.error('Invalid IP', ip)
       return
     }
@@ -228,6 +232,10 @@ class CountryUpdater extends CategoryUpdaterBase {
       if (err.stderr.indexOf(`is NOT in set ${ipset}`) > 0)
         await Block.block(ip, this.getIPSetName(category));
     }
+
+    const now = Math.floor(new Date() / 1000)
+
+    await rclient.zaddAsync(key, now, ip)
   }
 }
 

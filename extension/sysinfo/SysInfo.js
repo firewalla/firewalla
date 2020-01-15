@@ -1,5 +1,16 @@
-/**
- * Created by Melvin Tu on 04/01/2017.
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 'use strict';
@@ -15,7 +26,7 @@ const config = require("../../net2/config.js").getConfig();
 
 const df = require('node-df');
 
-const os  = require('../../vendor_lib/osutils.js');
+const os = require('../../vendor_lib/osutils.js');
 
 const exec = require('child-process-promise').exec;
 
@@ -55,25 +66,30 @@ let multiProfileSupport = false;
 getMultiProfileSupportFlag();
 
 async function update() {
-  os.cpuUsage((v) => {
-    log.debug( 'CPU Usage (%): ' + v );
-    cpuUsage = v;
-  });
+  await Promise.all([
+    // this takes 10s
+    os.cpuUsage().then((v) => cpuUsage = v),
 
-  await getRealMemoryUsage();
-  getTemp();
-  await getConns();
-  await getRedisMemoryUsage();
-  await getThreadInfo();
-  await getIntelQueueSize();
-  await getDiskInfo();
-  await getRateLimitInfo();
-  await getMultiProfileSupportFlag();
+    // Redis
+    getRedisMemoryUsage()
+      .then(getConns)
+      .then(getIntelQueueSize)
+      .then(getRateLimitInfo),
+
+    // bash
+    getRealMemoryUsage()
+      .then(getTemp)
+      .then(getThreadInfo)
+      .then(getDiskInfo)
+      .then(getMultiProfileSupportFlag)
+  ])
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
   }
 }
+
+
 
 function startUpdating() {
   updateFlag = 1;
@@ -106,7 +122,7 @@ async function getRateLimitInfo() {
 function getDiskInfo() {
   return new Promise((resolve, reject) => {
     df((err, response) => {
-      if(err) {
+      if (err || !response) {
         log.error("Failed to get disk info", err);
         resolve();
         return
@@ -154,7 +170,7 @@ async function getRealMemoryUsage() {
   }
 }
 
-function getTemp() {
+async function getTemp() {
   try {
     curTemp = platform.getCpuTemperature();
     log.debug("Current Temp: ", curTemp);

@@ -64,7 +64,6 @@ rclient.hget("sys:config", "language", (err, result) => {
  * Module dependencies.
  */
 
-let config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
 let debug = require('debug')('api:server');
 let http = require('http');
 let port = normalizePort(process.env.PORT || '8833');

@@ -17,7 +17,6 @@
 let ursa = require('ursa');
 let crypto = require('crypto');
 let fs = require('fs');
-let path = require('path');
 let request = require('requestretry');
 let uuid = require("uuid");
 let io2 = require('socket.io-client');
@@ -29,8 +28,6 @@ Promise.promisifyAll(fs);
 
 let zlib = require('zlib');
 let License = require('../../util/license.js');
-
-let debugging = false;
 
 let fConfig = require('../../net2/config.js').getConfig();
 
@@ -80,20 +77,11 @@ let legoEptCloud = class {
             this.cryptoalgorithem = 'aes-256-cbc';
             this.name = name;
             this.errTtl = 2; // only retry x times for bad requests
-            debugging = false;
             this.notifySocket = false;
             this.notifyGids = [];
 
         }
         // NO LONGER create keypair in sync node during constructor
-
-        // if (true == this.keypair(name, pathname)) {
-        //     return instance[name];
-        // } else {
-        //     log.info("ENCIPHER.IO Failed to create keys");
-        //     instance[name] = null;
-        //     return null;
-        // }
     }
 
     async keyReady() {
@@ -132,7 +120,7 @@ let legoEptCloud = class {
         return true;
     }
 
-    async cleanupKeys() {
+    async cleanupKeys(pathname) {
         log.info("Cleaning up key pairs");
 
         this.myprivkeyfile = null;
@@ -190,58 +178,6 @@ let legoEptCloud = class {
       this.mypubkeyfile = pubKeyPem;
       this.myprivkeyfile = privateKeyPem;
     }
-
-    debug(state) {
-      debugging = state;
-    }
-
-    keypair(name, pathname) {
-        log.info("Reading pem from ", pathname + name + ".privkey.pem");
-        if (fs.existsSync(pathname + name + ".privkey.pem") && fs.existsSync(pathname + name + ".pubkey.pem")) {
-            try {
-                this.myprivkeyfile = fs.readFileSync(pathname + name + ".privkey.pem");
-                this.mypubkeyfile = fs.readFileSync(pathname + name + ".pubkey.pem");
-                if (this.myprivkeyfile.length<10 || this.mypubkeyfile.length<10) {
-                    log.info("ENCIPHER.IO Unable to read keys, keylength error", this.myprivkeyfile.length, this.mypubkeyfile.length);
-                    this.myprivkeyfile = null;
-                    this.mypubkeyfile = null;
-                    require('child_process').execSync("sudo rm -f "+pathname+"/db/groupId");
-                    require('child_process').execSync("sync");
-                }
-            } catch (err) {
-                log.info("ENCIPHER.IO Unable to read keys");
-                return false;
-            }
-        }
-        if (this.myprivkeyfile == null || this.mypubkeyfile == null) {
-            let key = ursa.generatePrivateKey(2048, 65537);
-            let privateKeyPem = key.toPrivatePem();
-            let pubKeyPem = key.toPublicPem();
-
-            try {
-                fs.writeFileSync(path.join(pathname, name + ".privkey.pem"), privateKeyPem, 'ascii');
-                fs.writeFileSync(path.join(pathname, name + ".pubkey.pem"), pubKeyPem, 'ascii');
-                require('child_process').execSync("sync");
-            } catch (err) {
-                log.info("ENCIPHER.IO Unable to write keys");
-                return false;
-            }
-
-            this.myPublicKey = ursa.createPublicKey(pubKeyPem);
-            this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
-        } else {
-            this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
-            this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-        }
-        return true;
-    }
-
-    addPeer(publicKey, pid) {
-        if (this.publicKeyStore(pid)) {
-
-        }
-    }
-
 
     eptloginAsync(appId, appSecret, eptInfo, tag) {
       return new Promise((resolve, reject) => {
@@ -339,6 +275,34 @@ let legoEptCloud = class {
                 callback(code, null);
             }
         }
+    }
+
+    async rename(gid, name) {
+        if(!gid || !name) {
+            return new Error("parameter errors");
+        }
+
+        const uri = `${this.endpoint}/group/${this.appId}/${gid}`;
+        const key = await this.getKeyAsync(gid);
+        const cryptedXNAME = this.encrypt(name, key);
+
+        const body = {
+            name: crypto.createHash('md5').update(name).digest('hex'),
+            xname: cryptedXNAME
+        };
+
+        const options = {
+            uri: uri,
+            family: 4,
+            method: 'POST',
+            auth: {
+                bearer: this.token
+            },
+            json: body
+        }
+
+        log.info("Setting box name to", name);
+        return rp(options);
     }
 
     eptcreateGroup(name, info, alias, callback) {
@@ -629,7 +593,7 @@ let legoEptCloud = class {
                 });
             } else {
                 if(body.length == 0) {
-                    callback("invalid group id", null);
+                    callback("invalid group id " + gid, null);
                     return;
                 }
                 let b = null;
@@ -683,6 +647,18 @@ let legoEptCloud = class {
 
             return this.groupCache[group._id];
         }
+    }
+
+    getKeyAsync(gid) {
+        return new Promise((resolve, reject) => {
+            this.getKey(gid, (err, key, cachedGroup) => {
+                if(err) {
+                    reject(err);
+                } else {
+                    resolve(key);
+                }
+            });
+        })
     }
 
     getKey(gid, callback) {

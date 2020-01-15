@@ -16,6 +16,11 @@
 
 let log = require('../net2/logger.js')(__filename);
 
+const extensionManager = require('./ExtensionManager.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fc = require('../net2/config.js');
+
+
 let FWEvent = class {
   constructor(eid, type) {
     this.eid = eid;
@@ -57,8 +62,45 @@ let Sensor = class {
   monitorRun() {
 
   }
-  
-}
+
+  async globalOn() {
+
+  }
+
+  async globalOff() {
+
+  }
+
+  hookFeature(featureName) {
+    sem.once('IPTABLES_READY', async () => {
+      if (fc.isFeatureOn(featureName)) {
+        await this.globalOn();
+      } else {
+        await this.globalOff();
+      }
+      fc.onFeature(featureName, async (feature, status) => {
+        if (feature !== featureName) {
+          return;
+        }
+        if (status) {
+          await this.globalOn();
+        } else {
+          await this.globalOff();
+        }
+      })
+
+      await this.job();
+      this.timer = setInterval(async () => {
+        return this.job();
+      }, this.refreshInterval || 3600 * 1000); // one hour by default
+    })
+  }
+
+  async job() {
+
+  }
+
+};
 
 module.exports = {
   FWEvent: FWEvent,

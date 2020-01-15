@@ -46,6 +46,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const updateFeature = "adblock";
 const updateFlag = "2";
 
+const featureName = "adblock";
+
 class AdblockPlugin extends Sensor {
     async run() {
         this.systemSwitch = false;
@@ -65,28 +67,7 @@ class AdblockPlugin extends Sensor {
         }
 
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        sem.once('IPTABLES_READY', async () => {
-            if (fc.isFeatureOn("adblock")) {
-                this.globalOn();
-            } else {
-                this.globalOff();
-            }
-            fc.onFeature("adblock", async (feature, status) => {
-                if (feature !== "adblock") {
-                    return;
-                }
-                if (status) {
-                    this.globalOn();
-                } else {
-                    this.globalOff();
-                }
-            })
-
-            this.job();
-            this.timer = setInterval(async () => {
-                return this.job();
-            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
-        });
+        this.hookFeature(featureName);
     }
 
     job() {

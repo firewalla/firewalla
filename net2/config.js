@@ -1,3 +1,18 @@
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict'
 
 let log = require("./logger.js")(__filename, "info");
@@ -28,6 +43,17 @@ async function updateUserConfig(updatedPart) {
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
   getConfig(true);
+}
+
+async function removeUserNetworkConfig() {
+  await getUserConfig(true);
+  
+  delete userConfig.alternativeInterface;
+  delete userConfig.secondaryInterface;
+  delete userConfig.wifiInterface;
+  
+  let userConfigFile = f.getUserConfigFolder() + "/config.json";
+  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
 }
 
 async function getUserConfig(reload) {
@@ -264,5 +290,6 @@ module.exports = {
   disableDynamicFeature:disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
   syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs,
-  onFeature: onFeature  
+  onFeature: onFeature,
+  removeUserNetworkConfig: removeUserNetworkConfig
 };

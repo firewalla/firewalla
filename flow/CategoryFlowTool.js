@@ -85,21 +85,17 @@ class CategoryFlowTool {
 
   async getCategories(mac) {
     mac = mac || '*' // match all mac addresses if mac is not defined
-    let keyPattern = this.getCategoryFlowKey(mac, '*')
-    let keys = await rclient.keysAsync(keyPattern)
-    let categories = keys.map((key) => {
-      let result = key.match(/[^:]*$/)
+    const keyPattern = this.getCategoryFlowKey(mac, '*')
+    const keys = await rclient.keysAsync(keyPattern)
+    const categories = new Set();
+    keys && keys.forEach((key) => {
+      const result = key.split(':').pop();
       if (result && result !== 'intel') {
-        return result[0]
-      } else {
-        return null
+        categories.add(result)
       }
-    }).filter((x) => x != null)
-
-    // removes duplicate
-    return categories.filter((elem, pos) => {
-      return categories.indexOf(elem) == pos;
     })
+
+    return [ ... categories ];
   }
 
   async getCategoryMacAddresses(category) {

@@ -1,3 +1,18 @@
+/*    Copyright 2016-2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 
 const log = require('../net2/logger.js')(__filename, 'info');
@@ -433,10 +448,13 @@ class IntelAlarm extends Alarm {
   }
   
   getReadableDestination() {
-    const name = this["p.dest.name"]
-    const port = this["p.dest.port"]
+    const name = this["p.dest.name"];
+    const port = this["p.dest.port"];
+    const url = this["p.dest.url"];
     
-    if( name && port) {
+    if(url) {
+      return url;
+    } else if( name && port) {
       if(port == 80) {
         return `http://${name}`
       } else if(port == 443) {
@@ -454,6 +472,10 @@ class IntelAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
+    const url = this["p.dest.url"];
+    if(url) {
+      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port"];
+    }
     return ["p.device.mac", "p.dest.name", "p.dest.port"];
   }
 
@@ -569,7 +591,32 @@ class OutboundAlarm extends Alarm {
     return true;
   }
 }
-
+class AbnormalBandwidthUsageAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
+  }
+  localizedNotificationContentArray(){
+    return [this["p.device.name"], 
+    this["p.totalUsage.humansize"], 
+    this["p.duration"],
+    this["p.percentage"]
+    ];
+  }
+}
+class OverDataPlanUsageAlarm extends Alarm{
+  constructor(timestamp, device, info) {
+    super("ALARM_OVER_DATA_PLAN_USAGE", timestamp, device, info);
+  }
+  requiredKeys(){
+    return [];
+  }
+  localizedNotificationContentArray(){
+    return [this["p.percentage"], 
+    this["p.totalUsage.humansize"],
+    this["p.planUsage.humansize"]
+    ];
+  }
+}
 
 class LargeTransferAlarm extends OutboundAlarm {
   constructor(timestamp, device, destID, info) {
@@ -739,6 +786,8 @@ let classMapping = {
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
+  ALARM_ABNORMAL_BANDWIDTH_USAGE: AbnormalBandwidthUsageAlarm.prototype,
+  ALARM_OVER_DATA_PLAN_USAGE: OverDataPlanUsageAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
   ALARM_DEVICE_BACK_ONLINE: DeviceBackOnlineAlarm.prototype,
   ALARM_DEVICE_OFFLINE: DeviceOfflineAlarm.prototype,
@@ -759,6 +808,8 @@ module.exports = {
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
+  AbnormalBandwidthUsageAlarm: AbnormalBandwidthUsageAlarm,
+  OverDataPlanUsageAlarm: OverDataPlanUsageAlarm,
   NewDeviceAlarm: NewDeviceAlarm,
   DeviceBackOnlineAlarm: DeviceBackOnlineAlarm,
   DeviceOfflineAlarm: DeviceOfflineAlarm,

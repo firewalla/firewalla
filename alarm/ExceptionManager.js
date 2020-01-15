@@ -1,3 +1,18 @@
+/*    Copyright 2016-2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 
 const log = require('../net2/logger.js')(__filename, 'info');
@@ -18,7 +33,6 @@ const initID = 1;
 const exceptionPrefix = "exception:";
 
 const flat = require('flat');
-const audit = require('../util/audit.js');
 
 const _ = require('lodash');
 
@@ -266,7 +280,6 @@ module.exports = class {
 
       this.enqueue(exception, (err) => {
         if(!err) {
-          audit.trace("Created exception", exception.eid);
 //            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
         }
 
