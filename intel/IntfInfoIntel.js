@@ -18,13 +18,14 @@ const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
-const sysManager = require('../net2/SysManager.js')
+const SysManager = require('../net2/SysManager.js');
+const sysManager = new SysManager('info');)
 
 class IntfInfoIntel extends Intel {
     async enrichAlarm(alarm) {
         if (_.has(alarm, 'p.intf.id')) {
             // add intf info
-            let intfInfo = sysManager.getInterfaceViaUUID(alarm['p.intf.id']);
+            const intfInfo = sysManager.getInterfaceViaUUID(alarm['p.intf.id']);
             if (intfInfo) {
                 Object.assign(alarm, {
                     'p.intf.subnet': intfInfo.subnet,
