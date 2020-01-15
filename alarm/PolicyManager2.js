@@ -370,6 +370,9 @@ class PolicyManager2 {
     if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope)) {
       await rclient.hdelAsync(policyKey, "scope");
     }
+    if (policy.hasOwnProperty('tag') && _.isEmpty(policy.tag)) {
+      await rclient.hdelAsync(policyKey, "tag");
+    }
   }
 
   savePolicyAsync(policy) {
