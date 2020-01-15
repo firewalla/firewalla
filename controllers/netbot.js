@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -141,7 +141,7 @@ const { delay } = require('../util/util.js');
 const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
-  _vpn(ip, value, callback = ()=>{}) {
+  _vpn(ip, value, callback = () => { }) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
@@ -157,7 +157,7 @@ class netBot extends ControllerBot {
     });
   }
 
-  _ipAllocation(ip, value, callback = ()=>{}) {
+  _ipAllocation(ip, value, callback = () => { }) {
     if (ip === "0.0.0.0") {
       // ip allocation is only applied on device
       callback(null)
@@ -193,7 +193,7 @@ class netBot extends ControllerBot {
     })
   }
 
-  _shadowsocks(ip, value, callback = ()=>{}) {
+  _shadowsocks(ip, value, callback = () => { }) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
@@ -204,7 +204,7 @@ class netBot extends ControllerBot {
     });
   }
 
-  _scisurf(ip, value, callback = ()=>{}) {
+  _scisurf(ip, value, callback = () => { }) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
@@ -215,7 +215,7 @@ class netBot extends ControllerBot {
     });
   }
 
-  _enhancedSpoof(ip, value, callback = ()=>{}) {
+  _enhancedSpoof(ip, value, callback = () => { }) {
     if (ip !== "0.0.0.0") {
       callback(null);
       return;
@@ -226,7 +226,7 @@ class netBot extends ControllerBot {
     })
   }
 
-  _vulScan(ip, value, callback = ()=>{}) {
+  _vulScan(ip, value, callback = () => { }) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
@@ -237,7 +237,7 @@ class netBot extends ControllerBot {
     });
   }
 
-  _dnsmasq(ip, value, callback = ()=>{}) {
+  _dnsmasq(ip, value, callback = () => { }) {
     if (ip === "0.0.0.0") {
       this.hostManager.loadPolicy((err, data) => {
         if (!data) callback(new Error('Error loading policy'))
@@ -266,7 +266,7 @@ class netBot extends ControllerBot {
     }
   }
 
-  _externalAccess(ip, value, callback = ()=>{}) {
+  _externalAccess(ip, value, callback = () => { }) {
     if (ip !== "0.0.0.0") {
       callback(null); // per-device policy rule is not supported
       return;
@@ -277,7 +277,7 @@ class netBot extends ControllerBot {
     });
   }
 
-  _ssh(ip, value, callback = ()=>{}) {
+  _ssh(ip, value, callback = () => { }) {
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("ssh", value, callback)
     });
@@ -291,7 +291,7 @@ class netBot extends ControllerBot {
    *      ALARM_BEHAVIOR: may be mapped to other alarms
    *   }
    */
-  _notify(ip, value, callback = ()=>{}) {
+  _notify(ip, value, callback = () => { }) {
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("notify", value, (err, data) => {
         callback(err)
@@ -301,7 +301,7 @@ class netBot extends ControllerBot {
     });
   }
 
-  _sendLog(msg, callback = ()=>{}) {
+  _sendLog(msg, callback = () => { }) {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid + ".tar.gz.gpg";
     log.info("sendLog: ", filename, password);
@@ -325,7 +325,7 @@ class netBot extends ControllerBot {
     });
   }
 
-  _portforward(target, msg, callback = ()=>{}) {
+  _portforward(target, msg, callback = () => { }) {
     log.info("_portforward", msg);
     let c = require('../net2/MessageBus.js');
     this.channel = new c('debug');
@@ -333,7 +333,7 @@ class netBot extends ControllerBot {
     callback(null, null);
   }
 
-  _setUpstreamDns(ip, value, callback = ()=>{}) {
+  _setUpstreamDns(ip, value, callback = () => { }) {
     log.info("In _setUpstreamDns with ip:", ip, "value:", value);
     this.hostManager.loadPolicy((err, data) => {
       this.hostManager.setPolicy("upstreamDns", value, callback)
@@ -473,7 +473,7 @@ class netBot extends ControllerBot {
         }
       }
 
-      if(data.gid) {
+      if (data.gid) {
         data["thread-id"] = data.gid;
       }
 
@@ -796,7 +796,7 @@ class netBot extends ControllerBot {
     }
   }
 
-  scanStart(callback = ()=>{}) {
+  scanStart(callback = () => { }) {
     this.hostManager.getHosts((err, result) => {
       this.hosts = result;
       for (let i in result) {
@@ -818,14 +818,14 @@ class netBot extends ControllerBot {
           }
         });
       }
-      if (callback = ()=>{})
+      if (callback = () => { })
         callback(null, null);
 
     });
 
   }
 
-  setHandler(gid, msg /*rawmsg.message.obj*/, callback = ()=>{}) {
+  setHandler(gid, msg /*rawmsg.message.obj*/, callback = () => { }) {
     // mtype: set
     // target = "ip address" 0.0.0.0 is self
     // data.item = policy
@@ -920,12 +920,8 @@ class netBot extends ControllerBot {
             log.info("set host name alias by mac address", macAddress);
 
             let macObject = {
-              mac: macAddress
-            }
-            if (data.value.name) {
-              macObject.name = data.value.name
-            } else if (data.value.customizeDomainName) {
-              macObject.customizeDomainName = data.value.customizeDomainName
+              mac: macAddress,
+              name: data.value.name,
             }
 
             await hostTool.updateMACKey(macObject, true);
@@ -974,6 +970,38 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
 
+        break;
+      }
+      case "hostDomain": {
+        let data = msg.data;
+        (async () => {
+          if (hostTool.isMacAddress(msg.target)) {
+            const macAddress = msg.target
+            const { customizeDomainName } = data.value
+            let macObject = {
+              mac: macAddress,
+              customizeDomainName: customizeDomainName ? customizeDomainName : ''
+            }
+            await hostTool.updateMACKey(macObject, true);
+            const host = await this.hostManager.getHostAsync(macAddress);
+            const pureHost = host.o || {};
+            sem.emitEvent({
+              type: "DeviceUpdate",
+              message: "customize domain name",
+              host: {
+                ipv4Addr: pureHost.ipv4Addr,
+                mac: macAddress,
+                customizeDomainName: customizeDomainName
+              },
+              toProcess: 'FireMain'
+            })
+            this.simpleTxData(msg, {}, null, callback)
+          } else {
+            this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
         break;
       }
       case "scisurfconfig": {
@@ -1338,6 +1366,15 @@ class netBot extends ControllerBot {
       case "alarms":
         am2.loadActiveAlarms(value, (err, alarms) => {
           this.simpleTxData(msg, { alarms: alarms, count: alarms.length }, err, callback);
+        });
+        break;
+      case "periodAlarms":
+        (async () => {
+          //value {bedin:'',end:''}
+          const result = await am2.loadPeriodAlarms(value);
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
         });
         break;
       case "fetchNewAlarms":
@@ -2244,7 +2281,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
-        
+
       case "alarm:report":
         (async () => {
           await am2.reportBug(value.alarmID, value.feedback)
@@ -2276,7 +2313,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
-        
+
       case "alarm:deleteArchivedAll":
         (async () => {
           await am2.deleteArchivedAll();
@@ -2286,7 +2323,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
-        
+
       case "policy:create": {
         let policy
         try {
@@ -3349,7 +3386,7 @@ class netBot extends ControllerBot {
             let modeManager = require('../net2/ModeManager.js');
             modeManager.publishNetworkInterfaceUpdate();
           }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
-          
+
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);

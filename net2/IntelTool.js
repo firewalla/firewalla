@@ -180,7 +180,7 @@ class IntelTool {
     if (this.debugMode) {
       list.push({
         _alist:hashList,
-        alist:urlList,
+        alist:urlList.map(item => item[0]),
         flow:{ fd }
       });
     } else {
@@ -269,7 +269,7 @@ class IntelTool {
 
       return results
     } catch(err) {
-      log.error("IntelCheck Result FAIL:", ipList, data);
+      log.error("IntelCheck Result FAIL:", ipList, data, err);
       throw err;
     }
   }
