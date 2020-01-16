@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -88,7 +88,8 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 (async() => {
   await rclient.delAsync("firekick:pairing:message");
-  await interfaceDiscoverSensor.run()
+  if (!platform.isFireRouterManaged())
+    await interfaceDiscoverSensor.run()
 })();
 
 const license = require('../util/license.js');
