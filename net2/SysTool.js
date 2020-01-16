@@ -37,7 +37,7 @@ class SysTool {
 
   // call main-run
   async restartServices(time = 0) {
-    log.warn(`======= System Reboot in ${time} seconds =======`)
+    log.warn(`All services restart in ${time} seconds`)
     await delay(time * 1000)
     return exec(`NO_MGIT_RECOVER=1 NO_FIREKICK_RESTART=1 ${firewalla.getFirewallaHome()}/scripts/main-run`)
   }
