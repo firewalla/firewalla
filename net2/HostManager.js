@@ -45,8 +45,6 @@ const Host = require('./Host.js');
 
 const ShieldManager = require('./ShieldManager.js');
 
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP()
@@ -93,6 +91,9 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 
 const iptables = require('./Iptables.js');
 const ip6tables = require('./Ip6tables.js');
+
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -340,6 +341,7 @@ module.exports = class HostManager {
     let uploadStats = await getHitsAsync("upload", "1minute", 60)
     return { downloadStats, uploadStats }
   }
+
   async monthlyDataStats(mac, date) {
     //default calender month
     const now = new Date();
@@ -562,15 +564,14 @@ module.exports = class HostManager {
 
     let promises = this.hosts.all.map((host) => flowManager.getStats2(host));
     await Promise.all(promises);
-    await this.hostPolicyRulesForInit();
+    await this.loadHostsPolicyRules();
     await this.hostsInfoForInit(json);
     return json;
   }
 
   async dhcpRangeForInit(network, json) {
     const key = network + "DhcpRange";
-    const dnsmasq = new DNSMASQ();
-    let dhcpRange = dnsmasq.getDefaultDhcpRange(network);
+    let dhcpRange = dnsTool.getDefaultDhcpRange(network);
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
         if (data && data.dnsmasq) {
@@ -703,7 +704,7 @@ module.exports = class HostManager {
     });
   }
 
-  async hostPolicyRulesForInit() {
+  async loadHostsPolicyRules() {
     log.info("Reading individual host policy rules");
 
     await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())

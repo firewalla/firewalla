@@ -120,6 +120,10 @@ class GoldPlatform extends Platform {
   getDHCPCapacity() {
     return false
   }
+
+  isFireRouterManaged() {
+    return true;
+  }
 }
 
 module.exports = GoldPlatform;

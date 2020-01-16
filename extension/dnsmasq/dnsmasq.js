@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -34,6 +34,10 @@ const Mode = require('../../net2/Mode.js');
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 const rclient = require('../../util/redis_manager.js').getRedisClient();
+const PlatformLoader = require('../../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
+const DNSTool = require('../../net2/DNSTool.js')
+const dnsTool = new DNSTool()
 
 const { delay } = require('../../util/util.js');
 
@@ -74,12 +78,9 @@ const networkTool = require('../../net2/NetworkTool')();
 
 const dnsmasqBinary = __dirname + "/dnsmasq";
 const pidFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
-const altPidFile = f.getRuntimeInfoFolder() + "/dnsmasq-alt.pid";
 const startScriptFile = __dirname + "/dnsmasq.sh";
 
 const configFile = __dirname + "/dnsmasq.conf";
-
-const hostsFile = f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
@@ -89,25 +90,28 @@ let defaultNameServers = {};
 let interfaceNameServers = {};
 let upstreamDNS = null;
 
-let FILTER_EXPIRE_TIME = 86400 * 1000;
+const FILTER_EXPIRE_TIME = 86400 * 1000;
 
 const BLACK_HOLE_IP = "0.0.0.0"
 const BLUE_HOLE_IP = "198.51.100.100"
 
-let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
-
+const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || ["8.8.8.8", "1.1.1.1"];
+const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
+const RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
-let VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
+const SERVICE_NAME = platform.isFireRouterManaged() ? 'firerouter_dhcp' : 'firemasq';
+const HOSTFILE_PATH = platform.isFireRouterManaged() ?
+  f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
+  f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 
-let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
 let statusCheckTimer = null;
 
 module.exports = class DNSMASQ {
   constructor(loglevel) {
     if (instance == null) {
-      log = require("../../net2/logger.js")("dnsmasq", loglevel);
+      log = require("../../net2/logger.js")(__filename);
 
       instance = this;
 
@@ -176,9 +180,6 @@ module.exports = class DNSMASQ {
                     await this.start(false); // raw restart dnsmasq to refresh all confs and iptables
                 })();
                 break;
-              case "DHCPReservationChanged":
-                this.onDHCPReservationChanged();
-                break;
               case "System:VPNSubnetChanged":
                 (async () => {
                   const newVpnSubnet = message;
@@ -192,7 +193,6 @@ module.exports = class DNSMASQ {
           });
 
           sclient.subscribe("System:IPChange");
-          sclient.subscribe("DHCPReservationChanged");
           sclient.subscribe("System:VPNSubnetChanged");
         }
       })
@@ -889,7 +889,10 @@ module.exports = class DNSMASQ {
   }
 
   onDHCPReservationChanged() {
-    if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
+    if (this.mode === Mode.MODE_DHCP ||
+        this.mode === Mode.MODE_DHCP_SPOOF ||
+        this.mode === Mode.MODE_ROUTER
+    ) {
       this.needWriteHostsFile = true;
       log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
     }
@@ -922,62 +925,55 @@ module.exports = class DNSMASQ {
     this.counter.writeHostsFile++;
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
-    // let cidrPri = ip.cidrSubnet(sysManager.mySubnet());
-    // let cidrSec = ip.cidrSubnet(sysManager.mySubnet2());
-    let lease_time = '24h';
+    const lease_time = '24h';
 
-    let hosts = await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key));
-    // static ip reservation is set in host:mac:*
-    /*
-    let static_hosts = await redis.hgetallAsync('dhcp:static');
+    // legacy ip reservation is set in host:mac:*
+    const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
+      .filter((x) => (x && x.mac) != null)
+      .sort((a, b) => a.mac.localeCompare(b.mac));
 
-    log.debug("static hosts:", util.inspect(static_hosts));
+    hosts.forEach(h => {
+      try {
+        if (h.intfIp) h.intfIp = JSON.parse(h.intfIp)
+      } catch(err) {
+        log.error('Invalid host:mac->intfIp', h.intfIp, err)
+        delete h.intfIp
+      }
+    })
 
-    if (static_hosts) {
-      let _hosts = Object.entries(static_hosts).map(kv => {
-        let mac = kv[0], ip = kv[1];
-        let h = {mac, ip};
+    // const policyKeys = await rclient.keysAsync("policy:mac:*")
+    // // generate a map of mac -> ipAllocation host policy
+    // const policyMap = policyKeys.reduce(async (mapResult, key) => {
+    //   const map = await mapResult
+    //   const mac = key.substring(11)
 
-        if (cidrPri.contains(ip)) {
-          h.spoofing = 'false';
-        } else if (cidrSec.contains(ip)) {
-          h.spoofing = 'true';
-        } else {
-          h = null;
+    //   const policy = await rclient.hgetAsync(key, 'ipAllocation')
+    //   if (policy) map[mac] = policy
+    //   return map
+    // }, Promise.resolve({}))
+
+    const hostsList = []
+
+    for (const h of hosts) {
+      for (const intf of sysManager.getMonitoringInterfaces()) {
+        const monitor = h.spoofing === 'true' ? 'monitor' : 'unmonitor'
+
+        let reservedIp = null;
+        if (h.intfIp && h.intfIp[intf.uuid]) {
+          reservedIp = h.intfIp[intf.uuid].ipv4
+        } else if (h.staticAltIp && (!monitor || this.mode == Mode.MODE_DHCP_SPOOF)) {
+          reservedIp = h.staticAltIp
+        } else if (h.staticSecIp && monitor && this.mode == Mode.MODE_DHCP) {
+          reservedIp = h.staticSecIp
         }
-        //log.debug("static host:", util.inspect(h));
 
-        let idx = hosts.findIndex(h => h.mac === mac);
-        if (idx > -1 && h) {
-          hosts[idx] = h;
-          h = null;
-        }
-        return h;
-      }).filter(x => x);
+        reservedIp = reservedIp ? reservedIp + ',' : ''
 
-      hosts = hosts.concat(_hosts);
+        hostsList.push(
+          `${h.mac},set:${monitor},${reservedIp}${lease_time}`
+        )
+      }
     }
-    */
-
-    hosts = hosts.filter((x) => (x && x.mac) != null);
-    hosts = hosts.sort((a, b) => a.mac.localeCompare(b.mac));
-
-    let hostsList = [];
-
-    if (this.mode === Mode.MODE_DHCP) {
-      hostsList = hosts.map(h => (h.spoofing === 'false') ?
-        `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
-        `${h.mac},set:monitor,${h.staticSecIp ? h.staticSecIp + ',' : ''}${lease_time}`
-      );
-    }
-
-    if (this.mode === Mode.MODE_DHCP_SPOOF) {
-      hostsList = hosts.map(h => (h.spoofing === 'false') ?
-        `${h.mac},set:unmonitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}` :
-        `${h.mac},set:monitor,${h.staticAltIp ? h.staticAltIp + ',' : ''}${lease_time}`
-      );
-    }
-
 
     let _hosts = hostsList.join("\n") + "\n";
 
@@ -996,7 +992,7 @@ module.exports = class DNSMASQ {
 
     log.debug("HostsFile:", util.inspect(hostsList));
 
-    fs.writeFileSync(hostsFile, _hosts);
+    fs.writeFileSync(HOSTFILE_PATH, _hosts);
     log.info("Hosts file has been updated:", this.counter.writeHostsFile)
 
     return true;
@@ -1080,45 +1076,10 @@ module.exports = class DNSMASQ {
     };
   }
 
-  getDefaultDhcpRange(network) {
-    let subnet = null;
-    if (network === "alternative") {
-      subnet = ip.cidrSubnet(sysManager.mySubnet());
-    }
-    if (network === "secondary") {
-      const subnet2 = sysManager.mySubnet2() || "192.168.218.1/24";
-      subnet = ip.cidrSubnet(subnet2);
-    }
-    if (network === "wifi") {
-      fConfig = Config.getConfig(true);
-      if (fConfig && fConfig.wifiInterface && fConfig.wifiInterface.ip)
-        subnet = ip.cidrSubnet(fConfig.wifiInterface.ip);
-    }
-
-    try {
-      // try if network is already a cidr subnet
-      subnet = ip.cidrSubnet(network);
-    } catch (err) {
-      subnet = null;
-    }
-
-    if (!subnet)
-      return null;
-    const firstAddr = ip.toLong(subnet.firstAddress);
-    const lastAddr = ip.toLong(subnet.lastAddress);
-    const midAddr = firstAddr + (lastAddr - firstAddr) / 5;
-    let rangeBegin = ip.fromLong(midAddr);
-    let rangeEnd = ip.fromLong(lastAddr - 3);
-    return {
-      begin: rangeBegin,
-      end: rangeEnd
-    };
-  }
-
   getDhcpRange(network) {
     let range = interfaceDhcpRange[network];
     if (!range) {
-      range = this.getDefaultDhcpRange(network);
+      range = dnsTool.getDefaultDhcpRange(network);
     }
     return range;
   }
@@ -1253,7 +1214,7 @@ module.exports = class DNSMASQ {
   async rawStop() {
     let cmd = null;
     if (f.isDocker()) {
-      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", pidFile, altPidFile);
+      cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", pidFile, pidFile);
     } else {
       cmd = "sudo systemctl stop firemasq";
     }
@@ -1276,11 +1237,7 @@ module.exports = class DNSMASQ {
     log.info("Restarting dnsmasq...")
     this.counter.restart++;
 
-    let cmd = "sudo systemctl restart firemasq";
-
-    if (require('fs').existsSync("/.dockerenv")) {
-      cmd = "sudo service dnsmasq restart";
-    }
+    const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
 
     try {
       await execAsync(cmd);
@@ -1301,7 +1258,6 @@ module.exports = class DNSMASQ {
 
     await this.updateResolvConf();
     // no need to stop dnsmasq, this.rawStart() will restart dnsmasq. Otherwise, there is a cooldown before restart, causing dns outage during that cool down window.
-    // await this.rawStop();
     try {
       await this.rawStart();
     } catch (err) {
