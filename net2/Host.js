@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -740,7 +740,7 @@ class Host {
       if (!results) return obj;
 
       obj.agents = results;
-      let data = await util.promisify(bone.device)("identify", obj)
+      let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
 
@@ -842,7 +842,8 @@ class Host {
       bonjourName: this.o.bonjourName,
       nmapName: this.o.nmapName,
       ssdpName: this.o.ssdpName,
-      domain: this.o.domain
+      userLocalDomain: this.o.userLocalDomain,
+      localDomain: this.o.localDomain
     }
 
     if (this.o.ipv4Addr == null) {

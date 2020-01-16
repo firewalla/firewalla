@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1035,7 +1035,7 @@ class PolicyManager2 {
         }
         break;
 
-      case "devicePort":
+      case "devicePort": {
         let data = await this.parseDevicePortRule(target);
         if (data) {
           if (whitelist) {
@@ -1045,6 +1045,7 @@ class PolicyManager2 {
           }
         }
         break;
+      }
 
       case "category":
         if (policy.dnsmasq_entry) {
@@ -1172,7 +1173,7 @@ class PolicyManager2 {
         }
         break;
 
-      case "devicePort":
+      case "devicePort": {
         let data = await this.parseDevicePortRule(target)
         if (data) {
           if (whitelist) {
@@ -1182,6 +1183,7 @@ class PolicyManager2 {
           }
         }
         break;
+      }
 
       case "category":
         if (policy.dnsmasq_entry) {
@@ -1199,8 +1201,9 @@ class PolicyManager2 {
           } catch (err) {
             log.error("Failed to redirect default_c traffic", err)
           }
-          break;
         }
+        break;
+
       case "country":
         await Block.setupRules(scope && pid, countryUpdater.getCategory(target), 'hash:net', intf, whitelist, true, false);
         break;

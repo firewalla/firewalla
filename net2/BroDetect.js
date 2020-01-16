@@ -56,6 +56,7 @@ const l2 = require('../util/Layer2.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fc = require('../net2/config.js')
 let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
@@ -1445,6 +1446,7 @@ module.exports = class {
 
 
   async processNoticeData(data) {
+    if(!fc.isFeatureOn("cyber_security")) return;
     try {
       let obj = JSON.parse(data);
       if (obj.note == null) {
