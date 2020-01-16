@@ -16,7 +16,8 @@
 
 const log = require('./logger.js')(__filename);
 
-const exec = require('child-process-promise').exec
+const { exec } = require('child-process-promise')
+const { delay } = require('../util/util.js')
 
 let firewalla = require('../net2/Firewalla.js');
 
@@ -35,11 +36,15 @@ class SysTool {
   }
 
   // call main-run
-  restartServices() {
+  async restartServices(time = 0) {
+    log.warn(`======= System Reboot in ${time} seconds =======`)
+    await delay(time * 1000)
     return exec(`NO_MGIT_RECOVER=1 NO_FIREKICK_RESTART=1 ${firewalla.getFirewallaHome()}/scripts/main-run`)
   }
 
-  rebootServices() {
+  async rebootSystem(time = 0) {
+    log.warn(`======= System Reboot in ${time} seconds =======`)
+    await delay(time * 1000)
     return exec("sync & /home/pi/firewalla/scripts/fire-reboot-normal")
   }
 

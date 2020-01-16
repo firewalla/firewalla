@@ -25,6 +25,17 @@ const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
 
 class BroControl {
 
+  constructor() {
+    this.monitoringInterfaces = []
+  }
+
+  interfaceChanged(monitoringInterfaces) {
+    if (this.monitoringInterfaces.length != monitoringInterfaces.length)
+      return false
+
+    return this.monitoringInterfaces.every(intf => monitoringInterfaces.includes(intf))
+  }
+
   async writeClusterConfig(monitoringInterfaces) {
     // rewrite cluster node.cfg
     await exec(`sudo cp -f ${f.getFirewallaHome()}/etc/node.cluster.cfg ${PATH_NODE_CFG}`)
@@ -41,6 +52,8 @@ class BroControl {
       )
     }
     await exec(`echo "${workerCfg.join('')}" | sudo tee -a ${PATH_NODE_CFG}`)
+
+    this.monitoringInterfaces = monitoringInterfaces
   }
 
   async addCronJobs() {

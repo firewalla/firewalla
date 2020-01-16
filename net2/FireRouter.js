@@ -35,6 +35,9 @@
 
 const log = require("./logger.js")(__filename);
 
+const f = require('../net2/Firewalla.js');
+const SysTool = require('../net2/SysTool.js')
+const sysTool = new SysTool()
 const broControl = require('./BroControl.js')
 const PlatformLoader = require('../platform/PlatformLoader.js')
 const Config = require('./config.js')
@@ -77,18 +80,15 @@ async function getLANInterfaces() {
   return localGet("/config/lans")
 }
 
+async function getInterfaces() {
+  return localGet("/config/interfaces")
+}
+
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     intf.config.meta.name = intfName
     intfUuidMap[intf.config.meta.uuid] = intf
-  }
-  for (const type in routerConfig.interface) {
-    for (const intfName in routerConfig[type]) {
-      if (intfNameMap[intfName]) {
-        intfNameMap[intfName].config.meta.type = type
-      }
-    }
   }
   for (const intfName in routerConfig.dhcp) {
     if (intfNameMap[intfName]) {
@@ -109,7 +109,7 @@ async function generateNetowrkInfo() {
       subnet:       intf.state.ip4,
       netmask:      Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address,
       gateway_ip:   intf.config.dhcp ? intf.config.dhcp.gateway : intf.state.gateway,
-      dns:          intf.config.dhcp ? intf.config.dhcp.dns : intf.state.dns,
+      dns:          intf.config.dhcp ? intf.config.dhcp.nameservers : intf.state.dns,
       type:         'Wired', // probably no need to keep this
     }
 
@@ -120,7 +120,7 @@ async function generateNetowrkInfo() {
 
 let routerInterface = null
 let routerConfig = null
-let monitoringInterfaces = null
+let monitoringIntfNames = null
 let intfNameMap = {}
 let intfUuidMap = {}
 
@@ -138,26 +138,25 @@ class FireRouter {
 
     this.ready = false
 
-    this.isFireMain = process.title === 'FireMain';
-
-    this.init().catch(err => {
+    this.init(true).catch(err => {
       log.error('FireRouter failed to initialize', err)
       process.exit(1);
     })
   }
 
   // let it crash
-  async init() {
+  async init(first = false) {
     if (this.platform.isFireRouterManaged()) {
       // fireroute
       routerConfig = await getConfig()
 
       const mode = await rclient.getAsync('mode')
 
-      const wans = await getWANInterfaces();
-      const lans = await getLANInterfaces();
+      // const wans = await getWANInterfaces();
+      // const lans = await getLANInterfaces();
 
-      Object.assign(intfNameMap, wans, lans)
+      // Object.assign(intfNameMap, wans, lans)
+      intfNameMap = await getInterfaces()
 
       updateMaps()
 
@@ -165,25 +164,26 @@ class FireRouter {
 
       switch(mode) {
         case 'spoof':
-          monitoringInterfaces = Object.keys(wans)
+          monitoringIntfNames = Object.values(intfNameMap)
+            .filter(intf => intf.config.meta.type == 'wan')
+            .map(intf => intf.config.meta.name)
           break;
 
         default: // router mode
-          monitoringInterfaces = Object.keys(lans)
+          monitoringIntfNames = Object.values(intfNameMap)
+            .filter(intf => intf.config.meta.type == 'lan')
+            .map(intf => intf.config.meta.name)
           break
       }
-
-      await broControl.writeClusterConfig(monitoringInterfaces)
 
       // Legacy code compatibility
       const updatedConfig = {
         discovery: {
-          networkInterfaces: monitoringInterfaces
+          networkInterfaces: monitoringIntfNames
         },
-        monitoringInterface: monitoringInterfaces[0]
+        monitoringInterface: monitoringIntfNames[0]
       };
       await Config.updateUserConfig(updatedConfig);
-
 
     } else {
       // make sure there is at least one usable ethernet
@@ -192,12 +192,6 @@ class FireRouter {
       const intf = await networkTool.updateMonitoringInterface().catch((err) => {
         log.error('Error', err)
       })
-
-
-      // TODO
-      //  create secondaryInterface
-      //  start dnsmasq
-      //  create fireroute compatible config
 
       routerConfig = {
         "interface": {
@@ -241,7 +235,25 @@ class FireRouter {
         // }
       }
 
-      monitoringInterfaces = [ 'eth0', 'eth0:0' ]
+      // intfNameMap = {
+      //   eth0: {
+      //     config: {
+      //       enabled: true,
+      //       meta: {
+      //         name: 'eth0',
+      //         uuid: uuid.v4(),
+      //       }
+      //     },
+      //     state: {
+      //       mac: 'a2:c6:b7:a9:4b:f7',
+      //       ip4: '',
+      //       gateway: '',
+      //       dns: null
+      //     }
+      //   }
+      // }
+
+      monitoringIntfNames = [ 'eth0', 'eth0:0' ]
 
       const Discovery = require('./Discovery.js');
       const d = new Discovery("nmap");
@@ -255,7 +267,11 @@ class FireRouter {
 
     this.ready = true
 
-    if (this.isFireMain) {
+    if (f.isMain() && (
+      this.platform.isFireRouterManaged() && broControl.interfaceChanged(monitoringIntfNames) ||
+      !this.platform.isFireRouterManaged() && first
+    )) {
+      await broControl.writeClusterConfig(monitoringIntfNames)
       await broControl.restart()
       await broControl.addCronJobs()
     }
@@ -279,21 +295,34 @@ class FireRouter {
   }
 
   getInterfaceViaName(name) {
-    return intfNameMap[name]
+    return JSON.parse(JSON.stringify(intfNameMap[name]))
   }
 
   getInterfaceViaUUID(uuid) {
-    return intfUuidMap[uuid]
+    return JSON.parse(JSON.stringify(intfUuidMap[uuid]))
   }
 
-  getMonitoringInterfaces() {
-    return monitoringInterfaces
+  getInterfaceAll() {
+    return JSON.parse(JSON.stringify(intfNameMap))
+  }
+
+  getMonitoringIntfNames() {
+    return JSON.parse(JSON.stringify(monitoringIntfNames))
   }
 
   getConfig() {
-    return routerConfig
+    return JSON.parse(JSON.stringify(routerConfig))
   }
 
+  checkConfig(newConfig) {
+    // TODO: compare firerouter config and return if firewalla service/box should be restarted
+    return {
+      serviceRestart: false,
+      systemRestart: false,
+    }
+  }
+
+  // call checkConfig() for the impact before actually commit it
   async setConfig(config) {
     const options = {
       method: "POST",
@@ -309,6 +338,18 @@ class FireRouter {
     if (resp.statusCode !== 200) {
       throw new Error("Error getting fireroute config", resp.body);
     }
+
+    const impact = this.checkConfig(config)
+
+    if (impact.serviceRestart) {
+      sysTool.rebootServices(5)
+    }
+
+    if (impact.systemRestart) {
+      sysTool.rebootSystem(5)
+    }
+
+    this.init()
 
     return resp.body
   }
