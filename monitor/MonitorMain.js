@@ -30,8 +30,7 @@ log.info("Monitor Starting:",config.version);
 log.info("================================================================================");
 
 // api/main/monitor all depends on sysManager configuration
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager('info');
+let sysManager = require('../net2/SysManager.js');
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");

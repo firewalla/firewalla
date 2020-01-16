@@ -68,7 +68,7 @@ const i18n = require('../util/i18n.js');
 
 const dns = require('dns');
 
-module.exports = class {
+class SysManager {
   constructor() { // loglevel is already ignored
     if (instance == null) {
       log.info('Initializing SysManager')
@@ -907,3 +907,6 @@ module.exports = class {
     return false;
   }
 };
+
+let _sysManager = new SysManager();
+module.exports = _sysManager; 

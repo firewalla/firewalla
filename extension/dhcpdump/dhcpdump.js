@@ -18,8 +18,7 @@ let instance = null;
 let log = null;
 
 const util = require('util');
-const SysManager = require('../../net2/SysManager.js')
-const sysManager = new SysManager()
+const sysManager = require('../../net2/SysManager.js')
 
 module.exports = class {
   constructor(loglevel) {

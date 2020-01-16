@@ -27,8 +27,7 @@ const Firewalla = require('../net2/Firewalla');
 
 const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
 
-const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager()
+const sysManager = require('../net2/SysManager.js')
 const networkTool = require('../net2/NetworkTool')();
 
 class NmapSensor extends Sensor {

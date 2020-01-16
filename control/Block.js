@@ -22,8 +22,7 @@ const iptool = require("ip");
 const Accounting = require('./Accounting.js');
 const accounting = new Accounting();
 
-const SysManager = require("../net2/SysManager.js")
-const sysManager = new SysManager()
+const sysManager = require("../net2/SysManager.js")
 
 const exec = require('child-process-promise').exec
 

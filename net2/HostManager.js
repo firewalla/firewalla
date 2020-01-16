@@ -32,8 +32,7 @@ const platform = platformLoader.getPlatform();
 
 const Spoofer = require('./Spoofer.js');
 var spoofer = null;
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
 const FlowManager = require('./FlowManager.js');

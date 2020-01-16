@@ -38,10 +38,9 @@ const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
 const categoryFlowTool = new CategoryFlowTool()
 
 const HostManager = require('../net2/HostManager.js');
-const SysManager = require('../net2/SysManager.js');
+const sysManager = require('../net2/SysManager.js');
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager('info');
-const sysManager = new SysManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
@@ -1105,7 +1104,7 @@ class netBot extends ControllerBot {
       case "userConfig":
         (async () => {
           const updatedPart = value || {};
-          await fc.updateUserConfig(updatedPart);
+          fc.updateUserConfigSync(updatedPart);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3329,7 +3328,7 @@ class netBot extends ControllerBot {
                 mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
                 mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
               }
-              await fc.updateUserConfig({ secondaryInterface: mergedSecondaryInterface });
+              fc.updateUserConfigSync({ secondaryInterface: mergedSecondaryInterface });
               const dnsmasqPolicy = { secondaryDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
@@ -3357,7 +3356,7 @@ class netBot extends ControllerBot {
               }
               updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
               const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
-              await fc.updateUserConfig({ alternativeInterface: mergedAlternativeInterface });
+              fc.updateUserConfigSync({ alternativeInterface: mergedAlternativeInterface });
               const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
@@ -3381,7 +3380,7 @@ class netBot extends ControllerBot {
               updatedWifiConfig.band = intf.band || "g";
               updatedWifiConfig.channel = intf.channel || "5";
               const mergedWifiInterface = Object.assign({}, currentWifiInterface, updatedWifiConfig); // if ip2 is not defined, it will be inherited from previous settings
-              await fc.updateUserConfig({ wifiInterface: mergedWifiInterface });
+              fc.updateUserConfigSync({ wifiInterface: mergedWifiInterface });
               const dnsmasqPolicy = { wifiDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.wifiDhcpRange = dhcpRange;

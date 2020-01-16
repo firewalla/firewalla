@@ -23,8 +23,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const iptool = require("ip");
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager();
 const Alarm = require('../alarm/Alarm.js');

@@ -28,10 +28,9 @@ var intercomm = require('../lib/intercomm.js')();
 var ControllerBot = require('../lib/ControllerBot.js');
 
 var HostManager = require('../net2/HostManager.js');
-var SysManager = require('../net2/SysManager.js');
+var sysmanager = require('../net2/SysManager.js');
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
-var sysmanager = new SysManager();
 
 var builder = require('botbuilder');
 

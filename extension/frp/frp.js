@@ -30,8 +30,7 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance()
 
 const bone = require("../../lib/Bone.js");
 
-const SysManager = require('../../net2/SysManager');
-const sysManager = new SysManager();
+const sysManager = require('../../net2/SysManager');
 
 //const spawn = require('child-process-promise').spawn;
 const spawn = require('child_process').spawn

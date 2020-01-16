@@ -33,8 +33,7 @@ const bone = require("../../lib/Bone.js");
 let f = require("../../net2/Firewalla.js");
 
 // api/main/monitor all depends on sysManager configuration
-let SysManager = require('../../net2/SysManager.js');
-let sysManager = new SysManager('info');
+let sysManager = require('../../net2/SysManager.js');
 
 log.info("Waiting for cloud token...");
 

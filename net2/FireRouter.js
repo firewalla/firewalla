@@ -183,7 +183,7 @@ class FireRouter {
         },
         monitoringInterface: monitoringIntfNames[0]
       };
-      await Config.updateUserConfig(updatedConfig);
+      Config.updateUserConfigSync(updatedConfig);
 
     } else {
       // make sure there is at least one usable ethernet

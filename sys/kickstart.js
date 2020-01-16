@@ -66,8 +66,7 @@ const fConfig = require('../net2/config.js');
 
 const bone = require("../lib/Bone.js");
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 
 const InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
 const interfaceDiscoverSensor = new InterfaceDiscoverSensor();

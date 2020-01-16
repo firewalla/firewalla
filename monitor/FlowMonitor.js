@@ -42,8 +42,7 @@ const deafult_outbound_min_length = 500000;
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const fConfig = require('../net2/config.js').getConfig();
 

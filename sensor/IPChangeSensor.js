@@ -18,8 +18,7 @@
  const Sensor = require('./Sensor.js').Sensor;
 
  const pclient = require('../util/redis_manager').getPublishClient();
- const SysManager = require('../net2/SysManager.js');
- const sysManager = new SysManager();
+ const sysManager = require('../net2/SysManager.js');
  const networkTool = require('../net2/NetworkTool.js')();
  const Discovery = require('../net2/Discovery.js');
  const d = new Discovery();

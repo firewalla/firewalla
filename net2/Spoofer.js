@@ -32,7 +32,7 @@ const unmonitoredKeyAll = "unmonitored_hosts_all";
 let monitoredKey6 = "monitored_hosts6";
 let unmonitoredKey6 = "unmonitored_hosts6";
 
-const SysManager = require('./SysManager.js');
+const sysManager = require('./SysManager.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -43,7 +43,6 @@ let mode = require('./Mode.js')
 module.exports = class {
 
   isPrimaryInterfaceIP(ip) {
-    const sysManager = new SysManager();
     const primaryIp = sysManager.myIp();
     const primaryIpMask = sysManager.myIpMask();
 
@@ -54,7 +53,6 @@ module.exports = class {
   }
 
   isSecondaryInterfaceIP(ip) {
-    const sysManager = new SysManager();
     const ip2 = sysManager.myIp2();
     const ipMask2 = sysManager.myIpMask2();
     

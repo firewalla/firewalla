@@ -28,7 +28,7 @@ let fConfig = Config.getConfig();
 const iptables = require('../../net2/Iptables.js');
 const wrapIptables = iptables.wrapIptables;
 
-const SysManager = require('../../net2/SysManager.js');
+const sysManager = require('../../net2/SysManager.js');
 
 const execAsync = util.promisify(cp.exec);
 var instance = null;
@@ -404,7 +404,6 @@ class VPNClientEnforcer {
   }
 
   _isSecondaryInterfaceIP(ip) {
-    const sysManager = new SysManager();
     const ip2 = sysManager.myIp2();
     const ipMask2 = sysManager.myIpMask2();
     

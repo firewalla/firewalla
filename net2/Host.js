@@ -21,8 +21,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const exec = require('child-process-promise').exec
 
 const Spoofer = require('./Spoofer.js');
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const ShieldManager = require('./ShieldManager.js');
 
