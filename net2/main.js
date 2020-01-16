@@ -85,7 +85,7 @@ function run0() {
     boneSensor.checkIn()
       .then(() => {
         run() // start running after bone checkin successfully
-      }).catch((err) => {
+      }).catch(() => {
         run() // running firewalla in non-license mode if checkin failed
       });
   } else {
@@ -141,8 +141,8 @@ process.on('unhandledRejection', (reason, p)=>{
 
 async function resetModeInInitStage() {
   // this needs to be execute early!!
-  let bootingComplete = await firewalla.isBootingComplete()
-  let firstBindDone = await firewalla.isFirstBindDone()
+  const bootingComplete = await firewalla.isBootingComplete()
+  const firstBindDone = await firewalla.isFirstBindDone()
 
   // always reset to none mode if
   //        bootingComplete flag is off
@@ -152,7 +152,8 @@ async function resetModeInInitStage() {
   // in case something wrong with the spoof, firemain will not
   // start spoofing again when restarting
 
-  if(!bootingComplete && firstBindDone) {
+  // Do not fallback to none on router/DHCP mode
+  if(!bootingComplete && firstBindDone && (mode.isSpoofModeOn() || mode.isDHCPSpoofModeOn())) {
     await mode.noneModeOn()
   }
 }

@@ -90,6 +90,9 @@ class Platform {
   getDHCPCapacity() {
     return true
   }
+
+  isFireRouterManaged() {
+  }
 }
 
 module.exports = Platform;

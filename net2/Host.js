@@ -420,21 +420,42 @@ class Host {
   }
 
   async ipAllocation(policy) {
-    const type = policy.type;
+    // to ensure policy set by different client won't conflict each other.
+    // delete fields in host:mac for all versions
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
-    if (type === "dynamic") {
-      this.dnsmasq.onDHCPReservationChanged();
+
+    if (policy.allocations) {
+      const intfIp = {}
+      for (const uuid of Object.keys(policy.allocations)) {
+        const allocation = policy.allocations[uuid]
+        if (allocation.type == 'static') {
+          intfIp[uuid] = {
+            ipv4: allocation.ipv4
+          }
+        }
+      }
+      await rclient.hsetAsync("host:mac:" + this.o.mac, "intfIp", JSON.stringify(intfIp));
     }
-    if (type === "static") {
-      const alternativeIp = policy.alternativeIp;
-      const secondaryIp = policy.secondaryIp;
-      if (alternativeIp)
-        await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
-      if (secondaryIp)
-        await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
-      this.dnsmasq.onDHCPReservationChanged();
+    else if (policy.type) {
+      const type = policy.type;
+
+      if (type === "dynamic") {
+        // nothing to do now
+      }
+      else if (type === "static") {
+        // Red/Blue
+        const alternativeIp = policy.alternativeIp;
+        const secondaryIp = policy.secondaryIp;
+        if (alternativeIp)
+          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
+        if (secondaryIp)
+          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
+      }
     }
+
+    this.dnsmasq.onDHCPReservationChanged();
   }
 
 
@@ -458,14 +479,11 @@ class Host {
     }
 
     /* This is taken care of by DnsLoopAvoidanceSensor
-      if (dns && dns.includes(this.o.ipv4Addr)) {
-        // do not monitor dns server's traffic
-        return;
-      }
-      */
-        if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
-          return;
-        }
+    // do not monitor dns server's traffic
+    */
+    if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
+      return;
+    }
     if (this.o.mac == "FF:FF:FF:FF:FF:FF" || this.o.mac.indexOf("FF:FF:FF:FF:FF:FF")>-1) {
       return;
     }
@@ -949,13 +967,12 @@ class Host {
     }
   }
 
-  //This is an older function replaced by redisclean
   redisCleanRange(hours) {
     let now = Date.now() / 1000;
-    rclient.zremrangebyrank("flow:conn:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
-    rclient.zremrangebyrank("flow:conn:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
-    rclient.zremrangebyrank("flow:http:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
-    rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
+    rclient.zremrangebyrank("flow:conn:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
+    rclient.zremrangebyrank("flow:conn:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
+    rclient.zremrangebyrank("flow:http:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
+    rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
   }
 
   async getHostAsync(ip) {
@@ -1001,47 +1018,29 @@ class Host {
     }
   }
 
-  redisclean() {
-    // deprecated, do nothing
-  }
-
-  setPolicyAsync(name, data) {
-    return util.promisify(this.setPolicy).bind(this)(name, data)
+  setPolicy(name, data, callback) {
+    callback = callback || function() {}
+    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
   }
 
   // policy:mac:xxxxx
-  setPolicy(name, data, callback) {
-    callback = callback || function() {}
-
+  async setPolicyAsync(name, data) {
     if (this.policy[name] != null && this.policy[name] == data) {
-      callback(null, null);
       log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
       return;
     }
-    this.policy[name] = data;
     log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
-    this.savePolicy((err, data) => {
-      if (err == null) {
-        let obj = {};
-        obj[name] = data;
-        if (this.subscriber) {
-          setTimeout(() => {
-            this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
-          }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
-        }
-        if (callback) {
-          callback(null, obj);
-        }
-      } else {
-        if (callback) {
-          callback(null, null);
-        }
+    await this.saveSinglePolicy(name, data)
 
-      }
-    });
-
+    const obj = {};
+    obj[name] = data;
+    if (this.subscriber) {
+      setTimeout(() => {
+        this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
+      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+    }
+    return obj
   }
-
 
   policyToString() {
     if (this.policy == null || Object.keys(this.policy).length == 0) {
@@ -1055,24 +1054,19 @@ class Host {
     }
   }
 
-  savePolicy(callback) {
+  async saveSinglePolicy(name, policy) {
+    this.policy[name] = policy
+    let key = "policy:mac:" + this.o.mac;
+    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
+  }
+
+  async savePolicy() {
     let key = "policy:mac:" + this.o.mac;
     let d = {};
     for (let k in this.policy) {
       d[k] = JSON.stringify(this.policy[k]);
     }
-    rclient.hmset(key, d, (err, data) => {
-      if (err != null) {
-        log.error("Host:Policy:Save:Error", key, err);
-      }
-      if (callback)
-        callback(err, null);
-    });
-
-  }
-
-  savePolicyAsync() {
-    return util.promisify(this.savePolicy).bind(this)()
+    await rclient.hmsetAsync(key, d)
   }
 
   loadPolicy(callback) {

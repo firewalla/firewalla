@@ -24,10 +24,15 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 const networkTool = require('./NetworkTool.js')();
 const util = require('util');
 
 const Config = require('./config.js');
+
+const uuid = require('uuid')
+const _ = require('lodash')
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -188,6 +193,21 @@ module.exports = class {
     if (!list.length) {
       log.warn('No interface')
       return
+    }
+
+    // add consistent uuid to interfaces
+    if (!platform.isFireRouterManaged()) {
+      const uuidIntf = await rclient.hgetallAsync('sys:network:uuid');
+      for (const intf of list) {
+        let uuidAssigned = _.findKey(uuidIntf, i => i.name == intf.name)
+        if (!uuidAssigned) {
+          uuidAssigned = uuid.v4()
+          intf.uuid = uuidAssigned
+          await rclient.hsetAsync('sys:network:uuid', uuidAssigned, JSON.stringify(intf))
+        } else {
+          intf.uuid = uuidAssigned
+        }
+      }
     }
 
     let redisobjs = ['sys:network:info'];

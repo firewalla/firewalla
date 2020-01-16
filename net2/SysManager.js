@@ -489,7 +489,7 @@ module.exports = class {
   }
 
   getMonitoringInterfaces() {
-    return fireRouter.getMonitoringInterfaces().map(intf => this.sysinfo[intf])
+    return fireRouter.getMonitoringIntfNames().map(name => this.sysinfo[name])
   }
 
   getInterface(intf) {
@@ -497,7 +497,10 @@ module.exports = class {
   }
 
   getInterfaceViaUUID(uuid) {
-    return this.uuidMap && this.uuidMap[uuid]
+    const intf = this.uuidMap && this.uuidMap[uuid]
+    return Object.assign({}, intf, {
+      active: this.getMonitoringInterfaces().some(i => i.uuid == uuid)
+    })
   }
 
   getInterfaceViaMac(mac) {

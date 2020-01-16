@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,7 +31,6 @@ const safeSearchConfigFile = `${dnsConfigFolder}/safeSearch_system.conf`;
 const configKey = "ext.safeSearch.config";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const domainBlock = require('../control/DomainBlock.js')();
 
@@ -47,7 +46,7 @@ const fc = require('../net2/config.js');
 const iptool = require('ip')
 
 class SafeSearchPlugin extends Sensor {
-  
+
   async run() {
 
     this.systemSwitch = false;
@@ -167,7 +166,7 @@ class SafeSearchPlugin extends Sensor {
     }
 
   }
-  
+
   // {
   //   google: "on", // "on", "off"
   //   youtube: "strict", // "strict", "moderate", "off"
@@ -323,7 +322,7 @@ class SafeSearchPlugin extends Sensor {
           entries.push(...configs);
         }));
       }
-    }  
+    }
 
     entries.push("");
 
@@ -355,7 +354,7 @@ class SafeSearchPlugin extends Sensor {
 
   async systemStart(config) {
     const configString = await this.generateConfigFile(undefined, config);
-    const existingString = await this.loadConfigFile(this.getConfigFile()).catch((err) => null);
+    const existingString = await this.loadConfigFile(this.getConfigFile()).catch(() => null);
     if(configString !== existingString || existingString === null) {
       await this.saveConfigFile(this.getConfigFile(), configString);
       await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
@@ -370,7 +369,7 @@ class SafeSearchPlugin extends Sensor {
 
   async perDeviceStart(mac, config) {
     const configString = await this.generateConfigFile(mac, config);
-    const existingString = await this.loadConfigFile(this.getConfigFile(mac)).catch((err) => null);
+    const existingString = await this.loadConfigFile(this.getConfigFile(mac)).catch(() => null);
     if(configString !== existingString || existingString === null) {
       await this.saveConfigFile(this.getConfigFile(mac), configString);
       await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.

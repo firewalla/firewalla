@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2020 Firewalla INC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -72,7 +72,6 @@ const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const unlinkAsync = util.promisify(fs.unlink);
 const existsAsync = util.promisify(fs.exists);
-const accessAsync = util.promisify(fs.access);
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -134,8 +133,6 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 const migration = require('../migration/migration.js');
 
 const FireRouter = require('../net2/FireRouter.js');
-
-const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -287,7 +284,6 @@ class netBot extends ControllerBot {
   }
 
   /*
-   *
    *   {
    *      state: BOOL;  overall notification
    *      ALARM_XXX: standard alarm definition
@@ -820,9 +816,7 @@ class netBot extends ControllerBot {
           }
         });
       }
-      if (callback = () => { })
-        callback(null, null);
-
+      callback(null, null);
     });
 
   }
@@ -1135,7 +1129,7 @@ class netBot extends ControllerBot {
         break;
       case "networkConfig": {
         (async () => {
-          await FireRouter.setConfig(value);
+          await FireRouter.setConfig(value.config, value.restart);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1872,11 +1866,18 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "networkConfigImpact": {
+        (async () => {
+          const result = FireRouter.checkConfig(value.config);
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "networkState": {
         (async () => {
-          const wans = await FireRouter.getWANInterfaces();
-          const lans = await FireRouter.getLANInterfaces();
-          const networks = Object.assign({}, wans, lans);
+          const networks = await FireRouter.getInterfaceAll();
           this.simpleTxData(msg, networks, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2145,7 +2146,7 @@ class netBot extends ControllerBot {
         break
       case "reboot":
         (async () => {
-          sysTool.rebootServices()
+          sysTool.rebootSystem()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3431,8 +3432,7 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, { code: 400, msg: "network should be specified." }, callback);
           } else {
             const config = fc.getConfig(true);
-            const dnsmasq = new Dnsmasq();
-            let dhcpRange = await dnsmasq.getDefaultDhcpRange(network);
+            let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
             switch (network) {
               case "secondary": {
                 // convert ip/subnet to ip address and subnet mask
