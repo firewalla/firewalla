@@ -279,6 +279,9 @@ async function run() {
       await hostManager.setPolicyAsync("vpn", vpnConfig);
     }
 
+    const NetworkProfileManager = require('./NetworkProfileManager.js');
+    const networkProfileManager = new NetworkProfileManager();
+
     // ensure getHosts is called after Iptables is flushed
     hostManager.getHosts((err,result)=>{
       for (let i in result) {

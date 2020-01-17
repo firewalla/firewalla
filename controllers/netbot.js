@@ -38,6 +38,7 @@ const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
 const categoryFlowTool = new CategoryFlowTool()
 
 const HostManager = require('../net2/HostManager.js');
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const sysManager = require('../net2/SysManager.js');
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager('info');
@@ -377,6 +378,8 @@ class netBot extends ControllerBot {
 
     this.hostManager = new HostManager("cli", 'client', 'debug');
     this.hostManager.loadPolicy((err, data) => { });  //load policy
+
+    this.networkProfileManager = new NetworkProfileManager();
 
     // no subscription for api mode
     if (apiMode) {
@@ -873,12 +876,21 @@ class netBot extends ControllerBot {
                 await this.hostManager.loadPolicyAsync()
                 await this.hostManager.setPolicyAsync(o, policyData);
               } else {
-                let host = await this.hostManager.getHostAsync(target)
-                if (host) {
-                  await host.loadPolicyAsync()
-                  await host.setPolicyAsync(o, policyData)
+                if (target.startsWith("network:")) {
+                  const uuid = target.substring(8);
+                  const network = await this.networkProfileManager.getNetworkProfile(uuid);
+                  if (network) {
+                    await network.loadPolicy();
+                    await network.setPolicy(o, policyData);
+                  }
                 } else {
-                  throw new Error('Invalid host')
+                  let host = await this.hostManager.getHostAsync(target)
+                  if (host) {
+                    await host.loadPolicyAsync()
+                    await host.setPolicyAsync(o, policyData)
+                  } else {
+                    throw new Error('Invalid host')
+                  }
                 }
               }
             }
