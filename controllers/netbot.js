@@ -1262,12 +1262,13 @@ class netBot extends ControllerBot {
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
             VpnManager.configureClient("fishboneVPN1", null).then(() => {
-              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, (err, ovpnfile, password) => {
+              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, (err, ovpnfile, password, timestamp) => {
                 if (err == null) {
                   datamodel.data = {
                     ovpnfile: ovpnfile,
                     password: password,
-                    portmapped: JSON.parse(data['vpnPortmapped'] || "false")
+                    portmapped: JSON.parse(data['vpnPortmapped'] || "false"),
+                    timestamp: timestamp
                   };
                   (async () => {
                     const doublenat = await rclient.getAsync("ext.doublenat");
@@ -2856,9 +2857,9 @@ class netBot extends ControllerBot {
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
             await VpnManager.configureClient(cn, settings).then(() => {
-              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, (err, ovpnfile, password) => {
+              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, (err, ovpnfile, password, timestamp) => {
                 if (!err) {
-                  this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings }, null, callback);
+                  this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
                 } else {
                   this.simpleTxData(msg, null, err, callback);
                 }
@@ -2904,9 +2905,9 @@ class netBot extends ControllerBot {
           let externalPort = "1194";
           if (vpnConfig && vpnConfig.externalPort)
             externalPort = vpnConfig.externalPort;
-          VpnManager.getOvpnFile(cn, null, false, externalPort, (err, ovpnfile, password) => {
+          VpnManager.getOvpnFile(cn, null, false, externalPort, (err, ovpnfile, password, timestamp) => {
             if (!err) {
-              this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings }, null, callback);
+              this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
             } else {
               this.simpleTxData(msg, null, err, callback);
             }
@@ -2923,7 +2924,8 @@ class netBot extends ControllerBot {
           const vpnProfiles = [];
           for (let cn in allSettings) {
             // special handling for common name starting with fishboneVPN1
-            vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [] });
+            const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
+            vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp});
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
         })().catch((err) => {
