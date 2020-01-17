@@ -38,7 +38,6 @@ const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
 const categoryFlowTool = new CategoryFlowTool()
 
 const HostManager = require('../net2/HostManager.js');
-const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const sysManager = require('../net2/SysManager.js');
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager('info');
@@ -379,7 +378,7 @@ class netBot extends ControllerBot {
     this.hostManager = new HostManager("cli", 'client', 'debug');
     this.hostManager.loadPolicy((err, data) => { });  //load policy
 
-    this.networkProfileManager = new NetworkProfileManager();
+    this.networkProfileManager = require('../net2/NetworkProfileManager.js');
 
     // no subscription for api mode
     if (apiMode) {

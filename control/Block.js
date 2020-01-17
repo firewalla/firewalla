@@ -85,6 +85,27 @@ async function setupGlobalWhitelist(state) {
   }
 }
 
+async function setupInterfaceWhitelist(state, iface) {
+  if (!iface) {
+    log.error("interface is not defined while setting up whitelist");
+    return;
+  }
+  const ruleSet = [
+    new Rule().chn('FW_WHITELIST_PREROUTE').mth(iface, null, "iif").jmp('FW_WHITELIST'),
+    new Rule().chn('FW_WHITELIST_PREROUTE').mth(iface, null, "oif").jmp('FW_WHITELIST'),
+    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(iface, null, "iif").jmp('FW_NAT_WHITELIST')
+  ];
+
+  const ruleSet6 = ruleSet.map(r => r.clone().fam(6));
+
+  for (const rule of ruleSet.concat(ruleSet6)) {
+    const op = state ? '-A' : '-D';
+    await exec(rule.toCmd(op)).catch((err) => {
+      log.error(`Failed to execute rule ${rule.toCmd(op)}`, err);
+    });
+  }
+}
+
 async function setupCategoryEnv(category, dstType = "hash:ip") {
   if(!category) {
     return;
@@ -291,5 +312,6 @@ module.exports = {
   getDstSet6: getDstSet6,
   getMacSet: getMacSet,
   existsBlockingEnv: existsBlockingEnv,
-  setupGlobalWhitelist: setupGlobalWhitelist
+  setupGlobalWhitelist: setupGlobalWhitelist,
+  setupInterfaceWhitelist: setupInterfaceWhitelist
 }

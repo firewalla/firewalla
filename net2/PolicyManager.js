@@ -234,6 +234,19 @@ module.exports = class {
         })
     }
 
+    if (host.constructor.name == "NetworkProfile") {
+      if (iptablesReady) {
+        return Block.setupInterfaceWhitelist(config.state, host.o && host.o.intf);
+      } else {
+        return new Promise((resolve, reject) => {
+          sem.once('IPTABLES_READY', () => {
+            Block.setupInterfaceWhitelist(config.state, host.o && host.o.intf)
+              .then(resolve).catch(reject);
+          })
+        });
+      }
+    }
+
     if (!host.o.mac) throw new Error('Invalid host MAC');
 
     if (config.state)

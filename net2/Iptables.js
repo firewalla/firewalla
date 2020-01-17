@@ -207,13 +207,14 @@ function iptables(rule, callback) {
         case "-I":
           // nat table does not support -o option
           cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "in", iface)} || ${getCommand(action, "nat", "FW_NAT_BYPASS", "in", iface)})`;
-          cmdline += `(${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} || ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
-          cmdline += `(${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) || ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} || ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) || ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
           break;
         case "-D":
           cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "in", iface)} && ${getCommand(action, "nat", "FW_NAT_BYPASS", "in", iface)})`;
-          cmdline += `(${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} && ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
-          cmdline += `(${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) && ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} && ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) && ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          cmdline += ` ; true`;
           break;
         default:
           log.error("Unsupport action for switch_interfce_monitoring: " + action);
@@ -558,6 +559,10 @@ exports.Rule = class Rule {
 
         case 'iif':
           cmd.push('-i', match.name);
+          break;
+
+        case 'oif':
+          cmd.push('-o', match.name);
           break;
 
         case 'src':

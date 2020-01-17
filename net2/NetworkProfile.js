@@ -17,9 +17,11 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-
+const PolicyManager = require('./PolicyManager.js');
+const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const iptables = require('./Iptables.js');
+const ip6tables = require('./Ip6tables.js');
 
 class NetworkProfile {
   constructor(o) {
@@ -55,7 +57,7 @@ class NetworkProfile {
     await this.savePolicy();
     if (this.subscriber) {
       setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, data);
+        this.subscriber.publish("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, {name, data});
       }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
     }
   }
@@ -63,8 +65,6 @@ class NetworkProfile {
   async applyPolicy() {
     await this.loadPolicy();
     const policy = JSON.parse(JSON.stringify(this._policy));
-    const PolicyManager = require('./PolicyManager.js');
-    const pm = new PolicyManager();
     await pm.executeAsync(this, this.o.uuid, policy);
   }
 
@@ -100,17 +100,16 @@ class NetworkProfile {
   // This actually incidates monitoring state. Old glossary used in PolicyManager.js
   async spoof(state) {
     if (state === true) {
-      await iptables.switchInterfaceMonitoringAsync(true);
+      await iptables.switchInterfaceMonitoringAsync(true, this.o.intf);
+      await ip6tables.switchInterfaceMonitoringAsync(true, this.o.intf);
     } else {
-      await iptables.switchInterfaceMonitoringAsync(false);
+      await iptables.switchInterfaceMonitoringAsync(false, this.o.intf);
+      await ip6tables.switchInterfaceMonitoringAsync(false, this.o.intf);
     }
+    // TODO: not finished yet. Need to start/stop spoof instance on the interface
   }
 
   async vpnClient(policy) {
-
-  }
-
-  async whitelist(state) {
 
   }
 
@@ -120,7 +119,12 @@ class NetworkProfile {
 
   // underscore prefix? follow same function name in Host.js :(
   async _dnsmasq(policy) {
+    const dnsCaching = policy.dnsCaching;
+    if (dnsCaching === true) {
+      
+    } else {
 
+    }
   }
 }
 

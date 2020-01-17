@@ -329,9 +329,57 @@ function switchMonitoring(state, cb) {
   });
 }
 
+function switchInterfaceMonitoringAsync(state, iface) {
+  return new Promise((resolve, reject) => {
+    switchInterfaceMonitoring(state, iface, (err) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+function switchInterfaceMonitoring(state, iface, cb) {
+  let action = "-D";
+  if (state !== true)
+    action = "-I";
+  let rule = {
+    sudo: true,
+    chain: "FW_NAT_BYPASS",
+    action: action,
+    table: "nat",
+    target: "ACCEPT",
+    in: iface,
+    checkBeforeAction: true
+  };
+  
+  newRule(rule, (err) => {
+    if (err) {
+      log.error("Failed to apply rule: ", rule);
+      cb(err);
+    } else {
+      rule.chain = "FW_BYPASS";
+      rule.table = "filter";
+      newRule(rule, (err) => {
+        if (err) {
+          log.error("Failed to apply rule: ", rule);
+          cb(err);
+        } else {
+          delete rule["in"];
+          rule.out = iface;
+          newRule(rule, cb);
+        }
+      });
+    }
+  });
+}
+
 exports.dnsRedirectAsync = dnsRedirectAsync
 exports.dnsUnredirectAsync = dnsUnredirectAsync
 exports.switchMonitoringAsync = switchMonitoringAsync
+exports.switchInterfaceMonitoringAsync = switchInterfaceMonitoringAsync
 exports.dnsFlushAsync = dnsFlushAsync
 exports.prepare = prepare
 exports.flush = flush 

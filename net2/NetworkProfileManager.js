@@ -19,27 +19,28 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const fireRouter = require('./FireRouter.js');
-
-let instance = null;
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const NetworkProfile = require('./NetworkProfile.js');
 
-module.exports = class NetworkProfileManager {
+class NetworkProfileManager {
   constructor() {
-    if (!instance) {
-      const c = require('./MessageBus.js');
-      this.subscriber = new c("info");
+    const c = require('./MessageBus.js');
+    this.subscriber = new c("info");
 
-      this.networkProfiles = {};
-      if (f.isMain()) {
-        setInterval(() => {
-          this.refreshNetworkProfiles();
-        }, 60 * 1000 * 5);
-      }
-      instance = this;
-      this.refreshNetworkProfiles();
+    this.networkProfiles = {};
+    if (f.isMain()) {
+      sem.once('IPTABLES_READY', async () => {
+        log.info("Iptables is ready, apply network profile policies ...");
+        await this.refreshNetworkProfiles();
+        for (let uuid in this.networkProfiles) {
+          const networkProfile = this.networkProfiles[uuid];
+          await networkProfile.applyPolicy();
+        }
+      });
     }
-    return instance;
+    this.refreshNetworkProfiles();
+    return this;
   }
 
   redisfy(obj) {
@@ -88,10 +89,12 @@ module.exports = class NetworkProfileManager {
       this.networkProfiles[uuid].setActive(false);
     }
 
-    const monitoringInterfaces = fireRouter.getMonitoringInterfaces();
+    const monitoringInterfaces = fireRouter.getMonitoringIntfNames();
 
     for (let intf of monitoringInterfaces) {
       const profile = fireRouter.getInterfaceViaName(intf);
+      if (!profile) // FIXME: this is taken on red/blue. need to support network concept on them later
+        continue;
       const meta = profile.config && profile.config.meta;
       const uuid = meta && meta.uuid;
       if (!uuid) {
@@ -127,3 +130,6 @@ module.exports = class NetworkProfileManager {
     return this.networkProfiles;
   }
 }
+
+const instance = new NetworkProfileManager();
+module.exports = instance;

@@ -210,6 +210,8 @@ async function run() {
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
 
+  const NetworkProfileManager = require('./NetworkProfileManager.js');
+
   if (platform.getDHCPCapacity()) {
     // always create the secondary interface
     await ModeManager.enableSecondaryInterface()
@@ -278,9 +280,6 @@ async function run() {
       vpnConfig = Object.assign({}, vpnConfig, conf);
       await hostManager.setPolicyAsync("vpn", vpnConfig);
     }
-
-    const NetworkProfileManager = require('./NetworkProfileManager.js');
-    const networkProfileManager = new NetworkProfileManager();
 
     // ensure getHosts is called after Iptables is flushed
     hostManager.getHosts((err,result)=>{
