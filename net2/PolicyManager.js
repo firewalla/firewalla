@@ -234,6 +234,19 @@ module.exports = class {
         })
     }
 
+    if (host.constructor.name == "NetworkProfile") {
+      if (iptablesReady) {
+        return Block.setupInterfaceWhitelist(config.state, host.o && host.o.intf);
+      } else {
+        return new Promise((resolve, reject) => {
+          sem.once('IPTABLES_READY', () => {
+            Block.setupInterfaceWhitelist(config.state, host.o && host.o.intf)
+              .then(resolve).catch(reject);
+          })
+        });
+      }
+    }
+
     if (!host.o.mac) throw new Error('Invalid host MAC');
 
     if (config.state)
@@ -359,15 +372,15 @@ module.exports = class {
     }
   }
 
-  execute(host, ip, policy, callback) {
-    if (host.oper == null) {
-      host.oper = {};
+  execute(target, ip, policy, callback) {
+    if (target.oper == null) {
+      target.oper = {};
     }
 
     if (policy == null || Object.keys(policy).length == 0) {
       log.debug("PolicyManager:Execute:NoPolicy", ip, policy);
-      host.spoof(true);
-      host.oper['monitor'] = true;
+      target.spoof(true);
+      target.oper['monitor'] = true;
       if (callback)
         callback(null, null);
       return;
@@ -375,10 +388,10 @@ module.exports = class {
     log.debug("PolicyManager:Execute:", ip, policy);
 
     for (let p in policy) {
-      if (host.oper[p] != null && JSON.stringify(host.oper[p]) === JSON.stringify(policy[p])) {
-        log.debug("PolicyManager:AlreadyApplied", p, host.oper[p]);
+      if (target.oper[p] != null && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
+        log.debug("PolicyManager:AlreadyApplied", p, target.oper[p]);
         if (p === "monitor") {
-          host.spoof(policy[p]);
+          target.spoof(policy[p]);
         }
         continue;
       }
@@ -387,9 +400,9 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            hook(host, ip, policy[p])
+            hook(target, ip, policy[p])
           } catch (err) {
-            log.error(`Failed to call applyPolicy hook on ip ${ip} policy ${p}, err: ${err}`)
+            log.error(`Failed to call applyPolicy hook on target ${ip} policy ${p}, err: ${err}`)
           }
         }
       }
@@ -402,31 +415,31 @@ module.exports = class {
           }
         })();
       } else if (p === "monitor") {
-        host.spoof(policy[p]);
+        target.spoof(policy[p]);
       } else if (p === "vpnClient") {
-        this.vpnClient(host, policy[p]);
+        this.vpnClient(target, policy[p]);
       } else if (p === "vpn") {
-        this.vpn(host, policy[p], policy);
+        this.vpn(target, policy[p], policy);
       } else if (p === "shadowsocks") {
-        this.shadowsocks(host, policy[p]);
+        this.shadowsocks(target, policy[p]);
       } else if (p === "scisurf") {
-        this.scisurf(host, policy[p]);
+        this.scisurf(target, policy[p]);
       } else if (p === "whitelist") {
-        this.whitelist(host, policy[p]);
+        this.whitelist(target, policy[p]);
       } else if (p === "shield") {
-        host.shield(policy[p]);
+        target.shield(policy[p]);
       } else if (p === "enhancedSpoof") {
-        this.enhancedSpoof(host, policy[p]);
+        this.enhancedSpoof(target, policy[p]);
       } else if (p === "externalAccess") {
-        this.externalAccess(host, policy[p]);
+        this.externalAccess(target, policy[p]);
       } else if (p === "ipAllocation") {
-        this.ipAllocation(host, policy[p]);
+        this.ipAllocation(target, policy[p]);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
       }
 
       if (p !== "dnsmasq") {
-        host.oper[p] = policy[p];
+        target.oper[p] = policy[p];
       }
 
     }
@@ -434,28 +447,28 @@ module.exports = class {
     // put dnsmasq logic at the end, as it is foundation feature
 
     if (policy["dnsmasq"]) {
-      if (host.oper["dnsmasq"] != null &&
-        JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+      if (target.oper["dnsmasq"] != null &&
+        JSON.stringify(target.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
         // do nothing
       } else {
-        this.dnsmasq(host, policy["dnsmasq"]);
-        host.oper["dnsmasq"] = policy["dnsmasq"];
+        this.dnsmasq(target, policy["dnsmasq"]);
+        target.oper["dnsmasq"] = policy["dnsmasq"];
       }
     }
 
 
     if (policy['monitor'] == null) {
       log.debug("PolicyManager:ApplyingMonitor", ip);
-      host.spoof(true);
+      target.spoof(true);
       log.debug("PolicyManager:ApplyingMonitorDone", ip);
-      host.oper['monitor'] = true;
+      target.oper['monitor'] = true;
     }
 
     if (callback)
       callback(null, null);
   }
 
-  executeAsync(host, ip, policy) {
-    return util.promisify(this.execute).bind(this)(host, ip, policy)
+  executeAsync(target, ip, policy) {
+    return util.promisify(this.execute).bind(this)(target, ip, policy)
   }
 }

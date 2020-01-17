@@ -90,6 +90,8 @@ exports.dhcpSubnetChange = dhcpSubnetChange;
 exports.dhcpSubnetChangeAsync = util.promisify(dhcpSubnetChange);
 exports.switchMonitoring = switchMonitoring;
 exports.switchMonitoringAsync = util.promisify(switchMonitoring);
+exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
+exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
 
 var workqueue = [];
 var running = false;
@@ -182,6 +184,42 @@ function iptables(rule, callback) {
           break;
       }
 
+      cp.exec(cmdline, (err, stdout, stderr) => {
+        if (callback)
+          callback(err, null);
+        running = false;
+        newRule(null, null);
+      });
+    } else if (rule.type === "switch_interface_monitoring") {
+      const state = rule.state;
+      const iface = rule.iface;
+      let action = "-D";
+      if (state !== true) {
+        action = "-I";
+      }
+
+      let cmdline = "";
+      const getCommand = function(action, table, chain, direction, iface) {
+        return `sudo iptables -w -t ${table} ${action} ${chain} ${direction === "in" ? "-i" : "-o"} ${iface} -j ACCEPT`;
+      }
+
+      switch (action) {
+        case "-I":
+          // nat table does not support -o option
+          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "in", iface)} || ${getCommand(action, "nat", "FW_NAT_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} || ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) || ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          break;
+        case "-D":
+          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "in", iface)} && ${getCommand(action, "nat", "FW_NAT_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} && ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) && ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          cmdline += ` ; true`;
+          break;
+        default:
+          log.error("Unsupport action for switch_interfce_monitoring: " + action);
+          break;
+      }
       cp.exec(cmdline, (err, stdout, stderr) => {
         if (callback)
           callback(err, null);
@@ -441,6 +479,14 @@ function switchMonitoring(state, callback) {
   }, callback);
 } 
 
+function switchInterfaceMonitoring(state, iface, callback) {
+  newRule({
+    type: "switch_interface_monitoring",
+    iface: iface,
+    state: state
+  }, callback);
+}
+
 async function run(listofcmds) {
   for (const cmd of listofcmds || []) {
     await execAsync(cmd, {timeout: 10000}).catch((err) => {
@@ -513,6 +559,10 @@ exports.Rule = class Rule {
 
         case 'iif':
           cmd.push('-i', match.name);
+          break;
+
+        case 'oif':
+          cmd.push('-o', match.name);
           break;
 
         case 'src':

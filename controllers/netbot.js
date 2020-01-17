@@ -378,6 +378,8 @@ class netBot extends ControllerBot {
     this.hostManager = new HostManager("cli", 'client', 'debug');
     this.hostManager.loadPolicy((err, data) => { });  //load policy
 
+    this.networkProfileManager = require('../net2/NetworkProfileManager.js');
+
     // no subscription for api mode
     if (apiMode) {
       log.info("Skipping event subscription during API mode.");
@@ -873,12 +875,21 @@ class netBot extends ControllerBot {
                 await this.hostManager.loadPolicyAsync()
                 await this.hostManager.setPolicyAsync(o, policyData);
               } else {
-                let host = await this.hostManager.getHostAsync(target)
-                if (host) {
-                  await host.loadPolicyAsync()
-                  await host.setPolicyAsync(o, policyData)
+                if (target.startsWith("network:")) {
+                  const uuid = target.substring(8);
+                  const network = await this.networkProfileManager.getNetworkProfile(uuid);
+                  if (network) {
+                    await network.loadPolicy();
+                    await network.setPolicy(o, policyData);
+                  }
                 } else {
-                  throw new Error('Invalid host')
+                  let host = await this.hostManager.getHostAsync(target)
+                  if (host) {
+                    await host.loadPolicyAsync()
+                    await host.setPolicyAsync(o, policyData)
+                  } else {
+                    throw new Error('Invalid host')
+                  }
                 }
               }
             }

@@ -210,6 +210,8 @@ async function run() {
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
 
+  const NetworkProfileManager = require('./NetworkProfileManager.js');
+
   if (platform.getDHCPCapacity()) {
     // always create the secondary interface
     await ModeManager.enableSecondaryInterface()
