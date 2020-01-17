@@ -860,7 +860,8 @@ class Host {
       nmapName: this.o.nmapName,
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
-      localDomain: this.o.localDomain
+      localDomain: this.o.localDomain,
+      intf: this.o.intf ? this.o.intf : 'Unknown'
     }
 
     if (this.o.ipv4Addr == null) {
