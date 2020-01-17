@@ -818,8 +818,6 @@ module.exports = class {
         if (!sysManager.isMyIP(lhost) && lhost !== sysManager.myIp2() && !(sysManager.isMyIP6(lhost))) {
           log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
           localMac = null; // discard local mac from bro log since it is not correct
-        } else {
-          intfId = localMac.toUpperCase();
         }
       }
       if (!localMac) {
@@ -841,20 +839,11 @@ module.exports = class {
         return;
       }
 
-      // get intf id accroding to intf mac
-      if (!intfId) {
-        intfId = origMac === localMac ? respMac.toUpperCase() : origMac.toUpperCase();
-      }
-
-      if (intfId) {
-        let intfInfo = sysManager.getInterfaceViaMac(intfId);
-        if (intfInfo && intfInfo.uuid) {
-          intfId = intfInfo.uuid;
-        } else {
-          log.error(`Unable to find nif uuid, ${intfId}`);
-          intfId = '';
-        }
+      const intfInfo = sysManager.getInterfaceViaIP4(lhost);
+      if (intfInfo && intfInfo.uuid) {
+        intfId = intfInfo.uuid;
       } else {
+        log.error(`Unable to find nif uuid, ${intfId}`);
         intfId = '';
       }
 
@@ -863,7 +852,7 @@ module.exports = class {
       // Mark all flows that are partially completed.
       // some of these flows may be valid
       //
-      //  flag == s 
+      //  flag == s
       if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
         if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||

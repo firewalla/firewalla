@@ -19,9 +19,6 @@ const log = require("../net2/logger.js")(__filename);
 
 const iptool = require("ip");
 
-const Accounting = require('./Accounting.js');
-const accounting = new Accounting();
-
 const sysManager = require("../net2/SysManager.js")
 
 const exec = require('child-process-promise').exec

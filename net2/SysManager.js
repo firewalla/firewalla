@@ -407,6 +407,10 @@ class SysManager {
         if (item.mac_address) {
           this.macMap[item.mac_address] = item
         }
+
+        if (item.subnet) {
+          this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
+        }
       }
 
       this.config = Config.getConfig(true)
@@ -503,9 +507,15 @@ class SysManager {
     })
   }
 
-  getInterfaceViaMac(mac) {
-    return this.macMap && this.macMap[mac.toLowerCase()]
+  getInterfaceViaIP4(ip) {
+    const ipAddress = new Address4(ip)
+    return this.getMonitoringInterfaces().find(i => ipAddress.isInSubnet(i.subnetAddress4))
   }
+
+  // this method is not safe as we'll have interfaces with same mac
+  // getInterfaceViaMac(mac) {
+  //   return this.macMap && this.macMap[mac.toLowerCase()]
+  // }
 
 
   // DEPRECATING
@@ -680,37 +690,18 @@ class SysManager {
     return host === "firewalla.encipher.io";
   }
 
-  inLanSubnets4(ip4) {
-    if (!new Address4(ip4).isValid()) return false;
-    else {
-      if (this.networkSettings && this.networkSettings.lans && Array.isArray(this.networkSettings.lans)) {
-        const lanConfs = this.networkSettings.lans;
-        for (let lanConf of lanConfs) {
-          if (lanConf.enabled === true) {
-            const ip4Prefixes = lanConf.ip4Prefixes;
-            if (new Address4(ip4).isInSubnet(new Address4(ip4Prefixes)))
-              return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
   inMySubnets4(ip4, intf) {
     ip4 = new Address4(ip4)
-    if (!ip4.isValid())
-      return false;
-    else {
-      let interfaces = this.getMonitoringInterfaces();
-      if (intf) {
-        interfaces = interfaces.filter(i => i.name.startsWith(intf + ':'))
-      }
+    if (!ip4.isValid()) return false;
 
-      return interfaces
-        .map(i => ip4.isInSubnet(new Address4(i.subnet)))
-        .some(Boolean)
+    let interfaces = this.getMonitoringInterfaces();
+    if (intf) {
+      interfaces = interfaces.filter(i => i.name.startsWith(intf + ':'))
     }
+
+    return interfaces
+      .map(i => ip4.isInSubnet(i.subnetAddress4))
+      .some(Boolean)
   }
 
   inMySubnet6(ip6, intf) {

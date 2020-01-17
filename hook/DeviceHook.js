@@ -166,16 +166,15 @@ class DeviceHook extends Hook {
       let host = event.host
       let mac = host.mac;
 
-      if (_.has(host, 'intf_mac')) {
-        let intfMac = host.intf_mac;
-        let intfInfo = sysManager.getInterfaceViaMac(intfMac);
+      if (_.isString(host.ipv4)) {
+        const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
 
         if (intfInfo && intfInfo.uuid) {
           let intf = intfInfo.uuid; // get intf uuid accroding to intf_mac
           delete host.inft_mac;
           host.intf = intf;
         } else {
-          log.error(`Unable to find nif uuid, ${intfMac}`);
+          log.error(`Unable to find nif uuid, ${host.ipv4}`);
         }
       }
 

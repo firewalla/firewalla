@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,7 +13,6 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-const ip = require('ip');
 const cp = require('child_process');
 const execAsync = require('util').promisify(cp.exec)
 
@@ -46,7 +45,7 @@ exports.deleteRule = deleteRule;
 function iptables(rule, callback) {
   log.debug("IP6TABLE: rule:",rule);
   running = true;
-  
+
   let cmd = 'ip6tables';
   let args = iptablesArgs(rule);
 
@@ -60,7 +59,7 @@ function iptables(rule, callback) {
     checkRule.action = '-C'
     let checkArgs = iptablesArgs(checkRule)
     let checkCmd = ['sudo', 'ip6tables', '-w'].concat(checkArgs).join(" ")
-    
+
     switch(rule.action) {
     case "-A":
       // check if exits before insertion
@@ -71,9 +70,9 @@ function iptables(rule, callback) {
       break
     default:
       break
-    }    
+    }
   }
-  
+
   log.debug("IPTABLE6:", cmd, workqueue.length);
 
   // for testing purpose only
@@ -86,7 +85,7 @@ function iptables(rule, callback) {
     newRule(null, null);
     return
   }
-  
+
   cp.exec(cmd, (err, stdout, stderr) => {
     if (err) {
       log.error("Failed to execute cmd ", cmd, err);
@@ -172,19 +171,17 @@ function flush() {
 
 function _getDNSRedirectChain(type) {
   type = type || "local";
-  let chain = "PREROUTING_DNS_DEFAULT";
+  let chain;
   switch (type) {
-    case "local":
-      chain = "PREROUTING_DNS_DEFAULT";
-      break;
     case "vpn":
-      chain = "PREROUTING_DNS_VPN";
+      chain = "FW_PREROUTING_DNS_VPN";
       break;
     case "vpnClient":
-      chain = "PREROUTING_DNS_VPN_CLIENT";
+      chain = "FW_PREROUTING_DNS_VPN_CLIENT";
       break;
+    case "local":
     default:
-      chain = "PREROUTING_DNS_DEFAULT";
+      chain = "FW_PREROUTING_DNS_DEFAULT";
   }
   return chain;
 }
@@ -204,7 +201,7 @@ async function dnsFlushAsync(type) {
     newRule(rule, (err) => {
       if (err) {
         log.error("Failed to apply rule: ", rule);
-        reject(err);  
+        reject(err);
       } else {
         resolve();
       }
@@ -212,7 +209,7 @@ async function dnsFlushAsync(type) {
   });
 }
 
-// run() is deleted as same functionality is provided in Iptables.run() 
+// run() is deleted as same functionality is provided in Iptables.run()
 
 function dnsRedirectAsync(server, port, type) {
   return new Promise((resolve, reject) => {
@@ -239,7 +236,7 @@ function dnsRedirect(server, port, type, cb) {
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
-    checkBeforeAction: true    
+    checkBeforeAction: true
   }
 
   newRule(rule, (err) => {
@@ -334,4 +331,4 @@ exports.dnsUnredirectAsync = dnsUnredirectAsync
 exports.switchMonitoringAsync = switchMonitoringAsync
 exports.dnsFlushAsync = dnsFlushAsync
 exports.prepare = prepare
-exports.flush = flush 
+exports.flush = flush
