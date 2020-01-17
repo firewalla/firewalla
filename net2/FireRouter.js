@@ -128,6 +128,7 @@ let intfUuidMap = {}
 class FireRouter {
   constructor() {
     this.platform = PlatformLoader.getPlatform()
+    log.info(`This platform is:${this.platform}`);
 
     const fwConfig = Config.getConfig();
 
@@ -271,7 +272,9 @@ class FireRouter {
       this.platform.isFireRouterManaged() && broControl.interfaceChanged(monitoringIntfNames) ||
       !this.platform.isFireRouterManaged() && first
     )) {
-      await broControl.writeClusterConfig(monitoringIntfNames)
+      if(this.platform.isFireRouterManaged()) {
+        await broControl.writeClusterConfig(monitoringIntfNames)
+      }
       await broControl.restart()
       await broControl.addCronJobs()
     }
