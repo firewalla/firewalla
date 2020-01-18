@@ -38,8 +38,11 @@ const PlatformLoader = require('../../platform/PlatformLoader.js')
 const platform = PlatformLoader.getPlatform()
 const DNSTool = require('../../net2/DNSTool.js')
 const dnsTool = new DNSTool()
+const fireRouter = require('../../net2/FireRouter.js')
 
 const { delay } = require('../../util/util.js');
+
+const { Rule, CHAINS } = require('../../net2/Iptables.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
@@ -73,8 +76,6 @@ const bone = require("../../lib/Bone.js");
 const iptables = require('../../net2/Iptables');
 const ip6tables = require('../../net2/Ip6tables.js')
 
-const networkTool = require('../../net2/NetworkTool')();
-
 const dnsmasqBinary = __dirname + "/dnsmasq";
 const pidFile = f.getRuntimeInfoFolder() + "/dnsmasq.pid";
 const startScriptFile = __dirname + "/dnsmasq.sh";
@@ -103,12 +104,16 @@ const SERVICE_NAME = platform.isFireRouterManaged() ? 'firerouter_dhcp' : 'firem
 const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
+const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
+const STATUS_CHECK_INTERFACE = platform.isFireRouterManaged() ?
+  sysManager.getMonitoringInterfaces()[0].ip_address :
+  'localhost';
 
 
 let statusCheckTimer = null;
 
 module.exports = class DNSMASQ {
-  constructor(loglevel) {
+  constructor() {
     if (instance == null) {
       log = require("../../net2/logger.js")(__filename);
 
@@ -681,8 +686,8 @@ module.exports = class DNSMASQ {
 
   async updateVpnIptablesRules(newVpnSubnet, force) {
     const oldVpnSubnet = this.vpnSubnet;
-    const localIP = sysManager.myIp();
-    const dns = `${localIP}:8853`;
+    // TODO: to another dnsmasq instance
+    const dns = `127.0.0.1:${MASQ_PORT}`;
     const started = await this.checkStatus();
     if (!started)
       return;
@@ -707,60 +712,28 @@ module.exports = class DNSMASQ {
   }
 
   async _add_iptables_rules() {
-    let subnets = await networkTool.getLocalNetworkSubnets() || [];
-    let localIP = sysManager.myIp();
-    let dns = `${localIP}:8853`;
-
-    for (let index = 0; index < subnets.length; index++) {
-      const subnet = subnets[index];
-      log.info("Add dns rule: ", subnet, dns);
-
-      await iptables.dnsChangeAsync(subnet, dns, 'local', true);
-    }
-
-    const wifiSubnet = fConfig.wifiInterface && fConfig.wifiInterface.ip;
-    if (wifiSubnet) {
-      log.info("Add dns rule: ", wifiSubnet, dns);
-      await iptables.dnsChangeAsync(wifiSubnet, dns, 'local', true);
-    }
-
-    const lanConfs = await sysManager.getLanConfigurations();
-    if (lanConfs && Array.isArray(lanConfs)) {
-      for (let lanConf of lanConfs) {
-        if (lanConf.enabled === true) {
-          const ip4Prefixes = lanConf.ip4Prefixes;
-          await iptables.dnsChangeAsync(ip4Prefixes, dns, 'local', true);
-        }
-      }
+    const interfaces = sysManager.getMonitoringInterfaces()
+    for (const intf of interfaces) {
+      const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
+        .mth(intf.subnet, null, 'src')
+        .pam('-m set ! --match-set no_dns_caching_mac_set src')
+        .mth(53, null, 'dport')
+        .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
+      const redirectUDP = redirectTCP.clone().pro('udp')
+      await execAsync(redirectTCP.toCmd('-I'))
+      await execAsync(redirectUDP.toCmd('-I'))
     }
   }
 
   async _add_ip6tables_rules() {
-    let ipv6s = sysManager.myIp6();
+    const ipv6s = sysManager.myIp6();
 
     for (let index in ipv6s) {
-      let ip6 = ipv6s[index]
+      const ip6 = ipv6s[index]
       if (ip6.startsWith("fe80::")) {
         // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-        await ip6tables.dnsRedirectAsync(ip6, 8853, 'local');
+        await ip6tables.dnsRedirectAsync(ip6, MASQ_PORT, 'local');
       }
-    }
-  }
-
-  async add_iptables_rules() {
-    let dnses = sysManager.myDNS();
-    let dnsString = dnses.join(" ");
-    let localIP = sysManager.myIp();
-
-    let rule = util.format("DNS_IPS=\"%s\" LOCAL_IP=%s bash %s", dnsString, localIP, require('path').resolve(__dirname, "add_iptables.template.sh"));
-    log.info("Command to add iptables rules: ", rule);
-
-    try {
-      await execAsync(rule);
-      log.info("DNSMASQ:IPTABLES", "Iptables rules are added successfully");
-    } catch (err) {
-      log.error("DNSMASQ:IPTABLES:Error", "Failed to add iptables rules:", err);
-      throw err;
     }
   }
 
@@ -774,7 +747,8 @@ module.exports = class DNSMASQ {
 
   async _remove_iptables_rules() {
     try {
-      await iptables.dnsFlushAsync('local');
+      const flush = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT')
+      await execAsync(flush.toCmd('-F'))
     } catch (err) {
       log.error("Error when removing iptable rules", err);
     }
@@ -782,25 +756,10 @@ module.exports = class DNSMASQ {
 
   async _remove_ip6tables_rules() {
     try {
-      await ip6tables.dnsFlushAsync('local');
+      const flush = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT')
+      await execAsync(flush.toCmd('-F'))
     } catch (err) {
       log.error("Error when remove ip6tables rules", err);
-    }
-  }
-
-  async remove_iptables_rules() {
-    let dnses = sysManager.myDNS();
-    let dnsString = dnses.join(" ");
-    let localIP = sysManager.myIp();
-
-    let rule = util.format("DNS_IPS=\"%s\" LOCAL_IP=%s bash %s", dnsString, localIP, require('path').resolve(__dirname, "remove_iptables.template.sh"));
-
-    try {
-      await execAsync(rule);
-      log.info("DNSMASQ:IPTABLES", "Iptables rules are removed successfully");
-    } catch (err) {
-      log.error("DNSMASQ:IPTABLES:Error", "Failed to remove iptables rules: " + err);
-      throw err;
     }
   }
 
@@ -1324,7 +1283,7 @@ module.exports = class DNSMASQ {
   async verifyDNSConnectivity() {
     for (let i in VERIFICATION_DOMAINS) {
       const domain = VERIFICATION_DOMAINS[i];
-      let cmd = `dig -4 +short +time=5 -p 8853 @localhost ${domain}`;
+      let cmd = `dig -4 +short +time=5 -p ${MASQ_PORT} @${STATUS_CHECK_INTERFACE} ${domain}`;
       log.debug(`Verifying DNS connectivity via ${domain}...`)
 
       try {

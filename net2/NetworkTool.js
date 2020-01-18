@@ -157,32 +157,6 @@ class NetworkTool {
     return list
   }
 
-  // same as listInterfaces() but filters out non-local interfaces
-  async getLocalNetworkInterface() {
-    fConfig = Config.getConfig(true);
-    let intfs = fConfig.discovery && fConfig.discovery.networkInterfaces;
-    if (!intfs) {
-      return null;
-    }
-
-    const list = await this.listInterfaces()
-    let list2 = list.filter(x => {
-      return intfs.some(y => y === x.name);
-    });
-    if (list2.length === 0) {
-      return null;
-    } else {
-      return list2;
-    }
-  }
-
-  // same as getSubnet() but filters non-local interfaces
-  async getLocalNetworkSubnets() {
-    let interfaces = await this.getLocalNetworkInterface();
-    // a very hard code for 16 subnet
-    return interfaces && interfaces.map(x => this.capSubnet(x.subnet));
-  }
-
   capSubnet(cidrAddr) {
     if (!cidrAddr) {
       log.error("Invalid CIDR Address")

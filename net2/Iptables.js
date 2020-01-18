@@ -243,7 +243,6 @@ function iptables(rule, callback) {
 
         const chain = _getDNSRedirectChain(srcType);
 
-        let cmd = "iptables";
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
@@ -361,7 +360,7 @@ function iptablesArgs(rule) {
     if (rule.chain) args = args.concat([rule.action, rule.chain]);
     if (rule.protocol) args = args.concat(["-p", rule.protocol]);
     if (rule.src && rule.src == "0.0.0.0") {
-        
+
     } else {
         if (rule.src) args = args.concat(["--src", rule.src]);
     }
@@ -408,19 +407,17 @@ function deleteRule(rule, callback) {
 
 function _getDNSRedirectChain(type) {
   type = type || "local";
-  let chain = "PREROUTING_DNS_DEFAULT";
+  let chain;
   switch (type) {
-    case "local":
-      chain = "PREROUTING_DNS_DEFAULT";
-      break;
     case "vpn":
-      chain = "PREROUTING_DNS_VPN";
+      chain = "FW_PREROUTING_DNS_VPN";
       break;
     case "vpnClient":
-      chain = "PREROUTING_DNS_VPN_CLIENT";
+      chain = "FW_PREROUTING_DNS_VPN_CLIENT";
       break;
+    case "local":
     default:
-      chain = "PREROUTING_DNS_DEFAULT";
+      chain = "FW_PREROUTING_DNS_DEFAULT";
   }
   return chain;
 }
@@ -477,7 +474,7 @@ function switchMonitoring(state, callback) {
     type: "switch_monitoring",
     state: state
   }, callback);
-} 
+}
 
 function switchInterfaceMonitoring(state, iface, callback) {
   newRule({
@@ -511,7 +508,6 @@ exports.Rule = class Rule {
   constructor(table = 'filter') {
     this.family = 4;
     this.table = table;
-    this.proto = 'all';
     this.match = [];
     this.params = null;
   }
@@ -543,9 +539,9 @@ exports.Rule = class Rule {
       '-t', this.table,
       operation,
       this.chain,
-      '-p', this.proto,
-      this.params
     ]
+
+    this.proto && cmd.push('-p', this.proto)
 
     this.match.forEach((match) => {
       switch(match.type) {
@@ -573,11 +569,21 @@ exports.Rule = class Rule {
           cmd.push('-d', match.name);
           break;
 
+        case 'sport':
+          cmd.push('--sport', match.name);
+          break;
+
+        case 'dport':
+          cmd.push('--dport', match.name);
+          break;
+
         default:
       }
     })
 
-    cmd.push('-j', this.jump)
+    this.params && cmd.push(this.params)
+
+    this.jump && cmd.push('-j', this.jump)
 
     return cmd.join(' ');
   }
@@ -593,6 +599,21 @@ exports.Rule = class Rule {
 
       case '-D':
         return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
+
+      case '-F':
+        return `bash -c '${rule}; true'`;
     }
   }
+}
+
+exports.CHAINS = {
+  PREROUTING: 'FW_PREROUTING',
+  WHITELIST: 'FW_WHITELIST',
+  WHITELIST_PREROUTE: 'FW_WHITELIST_PREROUTE',
+  NAT_PREROUTING: 'FW_NAT_PREROUTING',
+  NAT_WHITELIST: 'FW_NAT_WHITELIST',
+  NAT_WHITELIST_PREROUTE: 'FW_NAT_WHITELIST_PREROUTE',
+  BLOCK: 'FW_BLOCK',
+  DROP: 'FW_DROP',
+  PREROUTING_DNS_DEFAULT: 'FW_PREROUTING_DNS_DEFAULT',
 }

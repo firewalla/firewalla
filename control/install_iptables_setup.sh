@@ -278,23 +278,23 @@ sudo iptables -w -t nat -C FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888 &
 
 
 # create dns redirect chain in PREROUTING
-sudo iptables -w -t nat -N PREROUTING_DNS_DEFAULT &> /dev/null
-sudo iptables -w -t nat -F PREROUTING_DNS_DEFAULT
-sudo iptables -w -t nat -C FW_PREROUTING -j PREROUTING_DNS_DEFAULT || sudo iptables -w -t nat -I FW_PREROUTING -j PREROUTING_DNS_DEFAULT
-sudo iptables -w -t nat -N PREROUTING_DNS_VPN &> /dev/null
-sudo iptables -w -t nat -F PREROUTING_DNS_VPN
-sudo iptables -w -t nat -C FW_PREROUTING -j PREROUTING_DNS_VPN || sudo iptables -w -t nat -I FW_PREROUTING -j PREROUTING_DNS_VPN
-sudo iptables -w -t nat -N PREROUTING_DNS_SAFE_SEARCH &> /dev/null
-sudo iptables -w -t nat -F PREROUTING_DNS_SAFE_SEARCH
-sudo iptables -w -t nat -C FW_PREROUTING -j PREROUTING_DNS_SAFE_SEARCH || sudo iptables -w -t nat -I FW_PREROUTING -j PREROUTING_DNS_SAFE_SEARCH
-sudo iptables -w -t nat -N PREROUTING_DNS_VPN_CLIENT &> /dev/null
-sudo iptables -w -t nat -F PREROUTING_DNS_VPN_CLIENT
-sudo iptables -w -t nat -C FW_PREROUTING -j PREROUTING_DNS_VPN_CLIENT || sudo iptables -w -t nat -I FW_PREROUTING -j PREROUTING_DNS_VPN_CLIENT
+sudo iptables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT || sudo iptables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN || sudo iptables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_DNS_VPN
+sudo iptables -w -t nat -N FW_PREROUTING_DNS_SAFE_SEARCH &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_DNS_SAFE_SEARCH
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_SAFE_SEARCH || sudo iptables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_DNS_SAFE_SEARCH
+sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT || sudo iptables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 
 # create port forward chain in PREROUTING, this is used in ipv4 only
-sudo iptables -w -t nat -N PREROUTING_PORT_FORWARD &> /dev/null
-sudo iptables -w -t nat -F PREROUTING_PORT_FORWARD
-sudo iptables -w -t nat -C FW_PREROUTING -j PREROUTING_PORT_FORWARD || sudo iptables -w -t nat -I FW_PREROUTING -j PREROUTING_PORT_FORWARD
+sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_PORT_FORWARD || sudo iptables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_PORT_FORWARD
 
 # create nat bypass chain in PREROUTING
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo iptables -w -t nat -I FW_PREROUTING -j FW_NAT_BYPASS
@@ -534,18 +534,18 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888 &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888
 
   # create dns redirect chain in PREROUTING
-  sudo ip6tables -w -t nat -N PREROUTING_DNS_DEFAULT &> /dev/null
-  sudo ip6tables -w -t nat -F PREROUTING_DNS_DEFAULT
-  sudo ip6tables -w -t nat -C FW_REROUTING -j PREROUTING_DNS_DEFAULT || sudo ip6tables -w -t nat -I FW_PREROUTING -j PREROUTING_DNS_DEFAULT
-  sudo ip6tables -w -t nat -N PREROUTING_DNS_VPN &> /dev/null
-  sudo ip6tables -w -t nat -F PREROUTING_DNS_VPN
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j PREROUTING_DNS_VPN || sudo ip6tables -w -t nat -I FW_PREROUTING -j PREROUTING_DNS_VPN
-  sudo ip6tables -w -t nat -N PREROUTING_DNS_SAFE_SEARCH &> /dev/null
-  sudo ip6tables -w -t nat -F PREROUTING_DNS_SAFE_SEARCH
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j PREROUTING_DNS_SAFE_SEARCH || sudo ip6tables -w -t nat -I FW_PREROUTING -j PREROUTING_DNS_SAFE_SEARCH
-  sudo ip6tables -w -t nat -N PREROUTING_DNS_VPN_CLIENT &> /dev/null
-  sudo ip6tables -w -t nat -F PREROUTING_DNS_VPN_CLIENT
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j PREROUTING_DNS_VPN_CLIENT || sudo ip6tables -w -t nat -I FW_PREROUTING -j PREROUTING_DNS_VPN_CLIENT
+  sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
+  sudo ip6tables -w -t nat -C FW_REROUTING -j FW_PREROUTING_DNS_DEFAULT || sudo ip6tables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+  sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN || sudo ip6tables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_DNS_VPN
+  sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_SAFE_SEARCH &> /dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_SAFE_SEARCH
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_SAFE_SEARCH || sudo ip6tables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_DNS_SAFE_SEARCH
+  sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT || sudo ip6tables -w -t nat -I FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 
   # create nat bypass chain in PREROUTING
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo ip6tables -w -t nat -I FW_PREROUTING -j FW_NAT_BYPASS
