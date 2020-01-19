@@ -48,8 +48,7 @@ class LocalDomainSensor extends Sensor {
             await hostTool.generateLocalDomain(host);
         })
         await Promise.all(promises);
-        await dnsmasq.setupLocalDeviceDomain(pureHosts);
-        dnsmasq.restartDnsmasq();
+        await dnsmasq.setupLocalDeviceDomain(pureHosts, true);
     }
     async globalOff() {
         try {

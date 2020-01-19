@@ -927,16 +927,8 @@ class netBot extends ControllerBot {
             await hostTool.updateMACKey(macObject, true);
             const host = await this.hostManager.getHostAsync(macAddress);
             const pureHost = host.o || {};
-            sem.emitEvent({
-              type: "DeviceUpdate",
-              message: "Update device name",
-              host: {
-                ipv4Addr: pureHost.ipv4Addr,
-                mac: macAddress,
-                name: data.value.name
-              },
-              toProcess: 'FireMain'
-            })
+            const dnsmasq = new Dnsmasq();
+            dnsmasq.setupLocalDeviceDomain([pureHost])
             this.simpleTxData(msg, {}, null, callback)
             return
 
@@ -985,16 +977,8 @@ class netBot extends ControllerBot {
             await hostTool.updateMACKey(macObject, true);
             const host = await this.hostManager.getHostAsync(macAddress);
             const pureHost = host.o || {};
-            sem.emitEvent({
-              type: "DeviceUpdate",
-              message: "customize domain name",
-              host: {
-                ipv4Addr: pureHost.ipv4Addr,
-                mac: macAddress,
-                customizeDomainName: customizeDomainName
-              },
-              toProcess: 'FireMain'
-            })
+            const dnsmasq = new Dnsmasq();
+            dnsmasq.setupLocalDeviceDomain([pureHost])
             this.simpleTxData(msg, {}, null, callback)
           } else {
             this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);

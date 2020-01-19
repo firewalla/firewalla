@@ -1453,11 +1453,11 @@ module.exports = class DNSMASQ {
   //save data in redis
   //{mac:{ipv4Addr:ipv4Addr,name:name}}
   //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
-  async setupLocalDeviceDomain(hosts) {
+  async setupLocalDeviceDomain(hosts, isInit) {
     if (this.updatingLocalDomain) {
       const cooldown = 3 * 1000;
       return setTimeout(() => {
-        this.setupLocalDeviceDomain(hosts)
+        this.setupLocalDeviceDomain(hosts, isInit)
       }, cooldown)
     }
     this.updatingLocalDomain = true;
@@ -1504,19 +1504,18 @@ module.exports = class DNSMASQ {
         const deviceDomain = deviceDomainMap[key];
         let { localDomain, userLocalDomain } = deviceDomain;
         if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
-          localDomain && (localDeviceDomain += `address=/${localDomain}.lan/${deviceDomain.ipv4Addr}\n`);
-          userLocalDomain && (localDeviceDomain += `address=/${userLocalDomain}.lan/${deviceDomain.ipv4Addr}\n`);
+          localDomain && (localDeviceDomain += `address=/${localDomain}/${deviceDomain.ipv4Addr}\n`);
+          userLocalDomain && (localDeviceDomain += `address=/${userLocalDomain}/${deviceDomain.ipv4Addr}\n`);
         }
       }
-      needUpdate && log.info(`Device updated, trying to update ${LOCAL_DOMAIN_FILE}`);
-      this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain)
+      (isInit || needUpdate) && this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
     this.updatingLocalDomain = false;
   }
   async throttleUpdatingConf(filePath, data) {
-    const cooldown = 10 * 1000;
+    const cooldown = 5 * 1000;
     if (this.throttleTimer[filePath]) {
       clearTimeout(this.throttleTimer[filePath])
     }
