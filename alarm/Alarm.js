@@ -325,6 +325,66 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 }
 
+class VPNRestoreAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_RESTORE", timestamp, device, info);
+    if (info && info["p.vpn.subtype"]) {
+      let subtype = (['s2s', 'cs', 'openvpn'].indexOf(info["p.vpn.subtype"]) !== -1) ? info["p.vpn.subtype"] : 'openvpn';
+      this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
+    }
+  }
+
+  keysToCompareForDedup() {
+    return ["p.vpn.profileid"];
+  }
+
+  requiredKeys() {
+    return ["p.vpn.profileid"];
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.vpn_connect.cooldown") || 60 * 5;
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
+  }
+}
+
+class VPNDisconnectAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_DISCONNECT", timestamp, device, info);
+    if (info && info["p.vpn.subtype"]) {
+      let subtype = (['s2s', 'cs', 'openvpn'].indexOf(info["p.vpn.subtype"]) !== -1) ? info["p.vpn.subtype"] : 'openvpn';
+      this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
+    }
+  }
+
+  getI18NCategory() {
+    let category = super.getI18NCategory();
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      category = category + "_KILLSWITCH";
+    }
+    return category;
+  }
+
+  keysToCompareForDedup() {
+    return ["p.vpn.profileid"];
+  }
+
+  requiredKeys() {
+    return ["p.vpn.profileid"];
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.vpn_connect.cooldown") || 60 * 5;
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
+  }
+}
+
 class VulnerabilityAlarm extends Alarm {
   constructor(timestamp, device, vulnerabilityID, info) {
     super("ALARM_VULNERABILITY", timestamp, device, info);
@@ -793,6 +853,8 @@ let classMapping = {
   ALARM_DEVICE_OFFLINE: DeviceOfflineAlarm.prototype,
   ALARM_SPOOFING_DEVICE: SpoofingDeviceAlarm.prototype,
   ALARM_VPN_CLIENT_CONNECTION: VPNClientConnectionAlarm.prototype,
+  ALARM_VPN_RESTORE: VPNRestoreAlarm.prototype,
+  ALARM_VPN_DISCONNECT: VPNDisconnectAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
@@ -815,6 +877,8 @@ module.exports = {
   DeviceOfflineAlarm: DeviceOfflineAlarm,
   SpoofingDeviceAlarm: SpoofingDeviceAlarm,
   VPNClientConnectionAlarm: VPNClientConnectionAlarm,
+  VPNRestoreAlarm: VPNRestoreAlarm,
+  VPNDisconnectAlarm: VPNDisconnectAlarm,
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,

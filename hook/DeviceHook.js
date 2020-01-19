@@ -407,7 +407,7 @@ class DeviceHook extends Hook {
         //
         // Another issue in this scenario is that this could mess up flow-device mappings
         // which could only be fix once flow is associated with mac address
-        await hostTool.removeDupIPv4FromMacEntry(event.oldMac, host.ipv4Addr);
+        await hostTool.removeDupIPv4FromMacEntry(event.oldMac, host.ipv4Addr, host.mac);
 
         log.info("MAC entry is updated with new IP");
 
