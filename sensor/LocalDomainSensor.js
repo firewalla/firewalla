@@ -43,7 +43,7 @@ class LocalDomainSensor extends Sensor {
             }
         }
         log.debug("pureHosts", pureHosts)
-        await dnsmasq.setupLocalDeviceDomain(false, pureHosts, true);
+        await dnsmasq.setupLocalDeviceDomain(pureHosts, true);
     }
     async globalOff() {
         try {

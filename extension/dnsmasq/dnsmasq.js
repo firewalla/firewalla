@@ -1453,11 +1453,11 @@ module.exports = class DNSMASQ {
   //save data in redis
   //{mac:{ipv4Addr:ipv4Addr,name:name}}
   //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
-  async setupLocalDeviceDomain(restart, hosts, isInit) {
+  async setupLocalDeviceDomain(hosts, isInit) {
     if (this.updatingLocalDomain) {
-      const cooldown = 5 * 1000;
+      const cooldown = 3 * 1000;
       return setTimeout(() => {
-        this.setupLocalDeviceDomain(restart, hosts, isInit)
+        this.setupLocalDeviceDomain(hosts, isInit)
       }, cooldown)
     }
     this.updatingLocalDomain = true;
@@ -1516,10 +1516,8 @@ module.exports = class DNSMASQ {
             mac: deviceDomain.mac
           }, true);
         }
-        log.info(`Device updated, update ${LOCAL_DEVICE_DOMAIN}`, localDeviceDomain);
+        needUpdate && log.info(`Device updated, update ${LOCAL_DEVICE_DOMAIN}`, localDeviceDomain);
         await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
-      }
-      if (needUpdate && restart) {
         this.restartDnsmasq()
       }
     } catch (e) {

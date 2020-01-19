@@ -693,7 +693,7 @@ class DeviceHook extends Hook {
     const hostManager = new HostManager("cli", 'server', 'info');
     const host = await hostManager.getHostAsync(mac);
     if (!host.o) return;
-    await dnsmasq.setupLocalDeviceDomain(true, [host.o]);
+    await dnsmasq.setupLocalDeviceDomain([host.o]);
   }
 
 
