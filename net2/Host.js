@@ -740,6 +740,9 @@ class Host {
       if (!results) return obj;
 
       obj.agents = results;
+      if (this.policy['vpnClient']) {
+        obj.vpnClient = this.policy['vpnClient'];
+      }
       let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
