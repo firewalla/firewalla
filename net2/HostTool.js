@@ -39,7 +39,7 @@ const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCan
 
 class HostTool {
   constructor() {
-    if(!instance) {
+    if (!instance) {
       instance = this;
 
       this.ipMacMapping = {};
@@ -61,7 +61,7 @@ class HostTool {
   }
 
   getIPv4Entry(ip) {
-    if(!ip)
+    if (!ip)
       return Promise.reject("invalid ip addr");
 
     let key = "host:ip4:" + ip;
@@ -69,20 +69,20 @@ class HostTool {
   }
 
   getMACEntry(mac) {
-    if(!mac)
+    if (!mac)
       return Promise.reject("invalid mac address");
 
     return rclient.hgetallAsync(this.getMacKey(mac));
   }
 
   getHostname(hostEntry) {
-    if(hostEntry.name)
+    if (hostEntry.name)
       return hostEntry.name;
 
-    if(hostEntry.bname && hostEntry.bname !== "_")
+    if (hostEntry.bname && hostEntry.bname !== "_")
       return hostEntry.bname;
 
-    if(hostEntry.sambaName && hostEntry.sambaName !== "_")
+    if (hostEntry.sambaName && hostEntry.sambaName !== "_")
       return hostEntry.sambaName;
 
     return hostEntry.ipv4;
@@ -106,7 +106,7 @@ class HostTool {
 
     let hostCopy = JSON.parse(JSON.stringify(host))
 
-    if(hostCopy.ipv6Addr) {
+    if (hostCopy.ipv6Addr) {
       delete hostCopy.ipv6Addr
     }
 
@@ -120,13 +120,13 @@ class HostTool {
 
     let hostCopy = JSON.parse(JSON.stringify(host))
 
-    if(hostCopy.mac && hostCopy.mac === "00:00:00:00:00:00") {
+    if (hostCopy.mac && hostCopy.mac === "00:00:00:00:00:00") {
       log.error("Invalid MAC Address (00:00:00:00:00:00)", new Error().stack);
       //return Promise.reject(new Error("Invalid MAC Address (00:00:00:00:00:00)"));
       return // ignore 00:00:00:00:00:00
     }
 
-    if(hostCopy.ipv6Addr && hostCopy.ipv6Addr.constructor.name === "Array") {
+    if (hostCopy.ipv6Addr && hostCopy.ipv6Addr.constructor.name === "Array") {
       hostCopy.ipv6Addr = JSON.stringify(hostCopy.ipv6Addr);
     }
 
@@ -135,7 +135,7 @@ class HostTool {
     let key = this.getMacKey(hostCopy.mac);
     await rclient.hmsetAsync(key, hostCopy)
 
-    if(skipUpdatingExpireTime) {
+    if (skipUpdatingExpireTime) {
       return;
     } else {
       return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
@@ -154,7 +154,7 @@ class HostTool {
 
   cleanupData(data) {
     Object.keys(data).forEach((key) => {
-      if(data[key] == undefined) {
+      if (data[key] == undefined) {
         delete data[key];
       }
     })
@@ -196,15 +196,15 @@ class HostTool {
   async getIPsByMac(mac) {
     let ips = [];
     let macObject = await this.getMACEntry(mac);
-    if(!macObject) {
+    if (!macObject) {
       return ips
     }
 
-    if(macObject.ipv4Addr) {
+    if (macObject.ipv4Addr) {
       ips.push(macObject.ipv4Addr);
     }
 
-    if(macObject.ipv6Addr) {
+    if (macObject.ipv6Addr) {
       let json = macObject.ipv6Addr;
       let ipv6s = JSON.parse(json);
       ips.push.apply(ips, ipv6s);
@@ -221,7 +221,7 @@ class HostTool {
 
     if (iptool.isV4Format(ip)) {
       host = await this.getIPv4Entry(ip);
-    } else if(iptool.isV6Format(ip)) {
+    } else if (iptool.isV6Format(ip)) {
       host = await this.getIPv6Entry(ip);
     } else {
       return null
@@ -276,7 +276,7 @@ class HostTool {
     for (const mac of macKeys) {
       let ips = await this.getIPsByMac(mac);
       if (ips) {
-        allIPs.push({ips: ips, mac: mac})
+        allIPs.push({ ips: ips, mac: mac })
       }
     }
 
@@ -284,7 +284,7 @@ class HostTool {
   }
 
   updateRecentActivity(mac, activity) {
-    if(!activity || !mac) {
+    if (!activity || !mac) {
       // do nothing if activity or mac is null
       return Promise.resolve()
     }
@@ -317,7 +317,7 @@ class HostTool {
   ////////////// IPV6 /////////////////////
 
   getIPv6Entry(ip) {
-    if(!ip)
+    if (!ip)
       return Promise.reject("invalid ip addr");
 
     let key = this.getIPv6HostKey(ip)
@@ -336,14 +336,14 @@ class HostTool {
 
   async updateIPv6Host(host, ipv6Addr, skipTimeUpdate) {
     skipTimeUpdate = skipTimeUpdate || false;
-    if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
+    if (ipv6Addr && ipv6Addr.constructor.name === "Array") {
       for (const addr of ipv6Addr) {
         let key = this.getIPv6HostKey(addr)
 
         let existingData = await rclient.hgetallAsync(key)
         let data = null
 
-        if(existingData && existingData.mac === host.mac) {
+        if (existingData && existingData.mac === host.mac) {
           // just update last timestamp for existing device
           if (!skipTimeUpdate) {
             data = {
@@ -470,14 +470,14 @@ class HostTool {
   async getIPv6AddressesByMAC(mac) {
     let key = this.getMacKey(mac)
     let v6String = await rclient.hgetAsync(key, "ipv6Addr")
-    if(!v6String) {
+    if (!v6String) {
       return []
     }
 
     try {
       let v6Addrs = JSON.parse(v6String)
       return v6Addrs
-    } catch(err) {
+    } catch (err) {
       log.error(`Failed to parse v6 addrs: ${v6String}`)
       return []
     }
@@ -489,12 +489,12 @@ class HostTool {
   }
 
   isMacAddress(mac) {
-    const macAddressPattern =  /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
+    const macAddressPattern = /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
     return macAddressPattern.test(mac)
   }
 
   async getName(ip) {
-    if(sysManager.isLocalIP(ip)) {
+    if (sysManager.isLocalIP(ip)) {
       const macEntry = await this.getMacEntryByIP(ip)
       return getPreferredBName(macEntry)
     } else {
@@ -504,10 +504,10 @@ class HostTool {
   }
 
   async findMacByMacHash(hash) {
-    const allMacs = await this.getAllMACs();    
-    for(const mac of allMacs) {
+    const allMacs = await this.getAllMACs();
+    for (const mac of allMacs) {
       const hashObject = Hashes.getHashObject(mac);
-      if(hashObject && hashObject.hash === hash) {
+      if (hashObject && hashObject.hash === hash) {
         return mac;
       }
     }
@@ -521,17 +521,17 @@ class HostTool {
     for (const index in validHosts) {
       const host = validHosts[index]
       const ip = host.ipv4Addr
-      if(!ip) {
+      if (!ip) {
         continue
       }
 
-      if(!activeHosts[ip]) {
+      if (!activeHosts[ip]) {
         activeHosts[ip] = host
       } else {
         const existingHost = activeHosts[ip]
 
         // new one is newer
-        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
+        if (parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
           activeHosts[ip] = host
         }
       }
@@ -550,10 +550,11 @@ class HostTool {
     bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
     name = name || bname;
     customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
-    return {
-      localDomain:name ? `${name}.lan` : '',
-      userLocalDomain:customizeDomainName ? `${customizeDomainName}.lan` : ''
-    }
+    await this.updateMACKey({
+      localDomain: name ? `${name}.lan` : '',
+      userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
+      mac: mac
+    }, true);
   }
 }
 

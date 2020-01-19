@@ -689,12 +689,7 @@ class DeviceHook extends Hook {
   async setupLocalDeviceDomain(mac, type) {
     if (!mac) return;
     if (type == 'new_device') {
-      const { localDomain, userLocalDomain } = await hostTool.generateLocalDomain(mac);
-      await hostTool.updateMACKey({
-        mac: mac,
-        localDomain: localDomain,
-        userLocalDomain: userLocalDomain
-      })
+      await hostTool.generateLocalDomain(mac);
     }
     await dnsmasq.setupLocalDeviceDomain([mac]);
   }

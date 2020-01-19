@@ -918,15 +918,12 @@ class netBot extends ControllerBot {
           if (hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
             log.info("set host name alias by mac address", macAddress);
-
-            const { localDomain, userLocalDomain } = await hostTool.generateLocalDomain(macAddress);
             let macObject = {
               mac: macAddress,
-              name: data.value.name,
-              localDomain: localDomain,
-              userLocalDomain: userLocalDomain
+              name: data.value.name
             }
             await hostTool.updateMACKey(macObject, true);
+            await hostTool.generateLocalDomain(macAddress);
             const dnsmasq = new Dnsmasq();
             dnsmasq.setupLocalDeviceDomain([macAddress])
             this.simpleTxData(msg, {}, null, callback)
@@ -970,14 +967,12 @@ class netBot extends ControllerBot {
           if (hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
             const { customizeDomainName } = data.value
-            const { localDomain, userLocalDomain } = await hostTool.generateLocalDomain(macAddress);
             let macObject = {
               mac: macAddress,
-              customizeDomainName: customizeDomainName ? customizeDomainName : '',
-              localDomain: localDomain,
-              userLocalDomain: userLocalDomain
+              customizeDomainName: customizeDomainName ? customizeDomainName : ''
             }
             await hostTool.updateMACKey(macObject, true);
+            await hostTool.generateLocalDomain(macAddress);
             const dnsmasq = new Dnsmasq();
             dnsmasq.setupLocalDeviceDomain([macAddress])
             this.simpleTxData(msg, {}, null, callback)

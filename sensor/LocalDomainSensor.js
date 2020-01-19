@@ -54,12 +54,7 @@ class LocalDomainSensor extends Sensor {
         }
         if (this.newFeature) {
             const promises = macArr.map(async (mac) => {
-                const { localDomain, userLocalDomain } = await hostTool.generateLocalDomain(mac);
-                await hostTool.updateMACKey({
-                    mac: mac,
-                    localDomain: localDomain,
-                    userLocalDomain: userLocalDomain
-                })
+                await hostTool.generateLocalDomain(mac);
             })
             await Promise.all(promises);
         }
