@@ -116,6 +116,7 @@ module.exports = class DNSMASQ {
       this.deleteInProgress = false;
       this.shouldStart = false;
       this.needRestart = null;
+      this.updatingLocalDomain = false;
       this.needWriteHostsFile = null;
       this.failCount = 0 // this is used to track how many dnsmasq status check fails in a row
 
@@ -1453,6 +1454,13 @@ module.exports = class DNSMASQ {
   //{mac:{ipv4Addr:ipv4Addr,name:name}}
   //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
   async setupLocalDeviceDomain(restart, hosts, isInit) {
+    if (this.updatingLocalDomain) {
+      const cooldown = 5 * 1000;
+      return setTimeout(() => {
+        this.setupLocalDeviceDomain(restart, hosts, isInit)
+      }, cooldown)
+    }
+    this.updatingLocalDomain = true;
     const json = await rclient.getAsync(LOCAL_DEVICE_DOMAIN_KEY);
     try {
       let needUpdate = false;
@@ -1508,6 +1516,7 @@ module.exports = class DNSMASQ {
             mac: deviceDomain.mac
           }, true);
         }
+        log.info(`Device updated, update ${LOCAL_DEVICE_DOMAIN}`, localDeviceDomain);
         await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
       }
       if (needUpdate && restart) {
@@ -1516,5 +1525,6 @@ module.exports = class DNSMASQ {
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
+    this.updatingLocalDomain = false;
   }
 };

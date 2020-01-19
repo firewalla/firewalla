@@ -688,11 +688,12 @@ class DeviceHook extends Hook {
     });
   }
   async setupLocalDeviceDomain(mac) {
+    if (!fc.isFeatureOn('local_domain')) return;
     if (!mac) return;
     const hostManager = new HostManager("cli", 'server', 'info');
     const host = await hostManager.getHostAsync(mac);
     if (!host.o) return;
-    dnsmasq.setupLocalDeviceDomain(true, [host.o]);
+    await dnsmasq.setupLocalDeviceDomain(true, [host.o]);
   }
 
 
