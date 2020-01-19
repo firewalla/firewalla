@@ -918,25 +918,18 @@ class netBot extends ControllerBot {
           if (hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
             log.info("set host name alias by mac address", macAddress);
-
             let macObject = {
               mac: macAddress,
-              name: data.value.name,
+              name: data.value.name
             }
-
             await hostTool.updateMACKey(macObject, true);
-            const host = await this.hostManager.getHostAsync(macAddress);
-            const pureHost = host.o || {};
+            await hostTool.generateLocalDomain(macAddress);
             sem.emitEvent({
-              type: "DeviceUpdate",
-              message: "Update device name",
-              host: {
-                ipv4Addr: pureHost.ipv4Addr,
-                mac: macAddress,
-                name: data.value.name
-              },
+              type: "LocalDomainUpdate",
+              message: `Update device:${macAddress} localDomain`,
+              macArr: [macAddress],
               toProcess: 'FireMain'
-            })
+            });
             this.simpleTxData(msg, {}, null, callback)
             return
 
@@ -983,18 +976,13 @@ class netBot extends ControllerBot {
               customizeDomainName: customizeDomainName ? customizeDomainName : ''
             }
             await hostTool.updateMACKey(macObject, true);
-            const host = await this.hostManager.getHostAsync(macAddress);
-            const pureHost = host.o || {};
+            await hostTool.generateLocalDomain(macAddress);
             sem.emitEvent({
-              type: "DeviceUpdate",
-              message: "customize domain name",
-              host: {
-                ipv4Addr: pureHost.ipv4Addr,
-                mac: macAddress,
-                customizeDomainName: customizeDomainName
-              },
+              type: "LocalDomainUpdate",
+              message: `Update device:${macAddress} userLocalDomain`,
+              macArr: [macAddress],
               toProcess: 'FireMain'
-            })
+            });
             this.simpleTxData(msg, {}, null, callback)
           } else {
             this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);

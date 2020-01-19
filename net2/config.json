@@ -508,7 +508,8 @@
       "topXflows": 10,
       "minsize": 150000000,
       "dataPlanMinPercentage": 0.8
-    }
+    },
+    "LocalDomainSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -626,7 +627,8 @@
     "link_stats": true,
     "network_speed_test": false,
     "vpn_restore": true,
-    "vpn_disconnect": true
+    "vpn_disconnect": true,
+    "local_domain": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
