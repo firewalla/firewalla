@@ -1453,6 +1453,7 @@ module.exports = class DNSMASQ {
   //{mac:{ipv4Addr:ipv4Addr,name:name}}
   //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
   async setupLocalDeviceDomain(restart, hosts, isInit) {
+    return;
     const json = await rclient.getAsync(LOCAL_DEVICE_DOMAIN_KEY);
     try {
       let needUpdate = false;
