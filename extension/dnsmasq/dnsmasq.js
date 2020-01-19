@@ -118,6 +118,7 @@ module.exports = class DNSMASQ {
       this.needRestart = null;
       this.updatingLocalDomain = false;
       this.needWriteHostsFile = null;
+      this.throttleTimer = {};
       this.failCount = 0 // this is used to track how many dnsmasq status check fails in a row
 
       this.hashTypes = {
@@ -1516,13 +1517,23 @@ module.exports = class DNSMASQ {
             mac: deviceDomain.mac
           }, true);
         }
-        needUpdate && log.info(`Device updated, update ${LOCAL_DEVICE_DOMAIN}`, localDeviceDomain);
-        await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
-        this.restartDnsmasq()
+        needUpdate && log.info(`Device updated, trying to update ${LOCAL_DEVICE_DOMAIN}`);
+        this.throttleUpdatingConf(LOCAL_DEVICE_DOMAIN, localDeviceDomain)
       }
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
     this.updatingLocalDomain = false;
+  }
+  async throttleUpdatingConf(filePath, data) {
+    const cooldown = 10 * 1000;
+    if (this.throttleTimer[filePath]) {
+      clearTimeout(this.throttleTimer[filePath])
+    }
+    this.throttleTimer[filePath] = setTimeout(async () => {
+      log.info(`Going to update ${filePath}`)
+      await fs.writeFileAsync(filePath, data);
+      this.restartDnsmasq()
+    }, cooldown)
   }
 };
