@@ -33,7 +33,7 @@ const Mode = require('../../net2/Mode.js');
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 const rclient = require('../../util/redis_manager.js').getRedisClient();
-
+const fc = require('../../net2/config.js')
 const { delay } = require('../../util/util.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
@@ -1453,11 +1453,14 @@ module.exports = class DNSMASQ {
   //save data in redis
   //{mac:{ipv4Addr:ipv4Addr,name:name}}
   //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
-  async setupLocalDeviceDomain(hosts, isInit) {
+  async setupLocalDeviceDomain(macArr, isInit) {
+    if (!fc.isFeatureOn('local_domain')) {
+      return;
+    }
     if (this.updatingLocalDomain) {
       const cooldown = 3 * 1000;
       return setTimeout(() => {
-        this.setupLocalDeviceDomain(hosts, isInit)
+        this.setupLocalDeviceDomain(macArr, isInit)
       }, cooldown)
     }
     this.updatingLocalDomain = true;
@@ -1465,15 +1468,14 @@ module.exports = class DNSMASQ {
     try {
       let needUpdate = false;
       let deviceDomainMap = JSON.parse(json) || {};
-      for (const host of hosts) {
-        const key = hostTool.getMacKey(host.mac);
+      for (const mac of macArr) {
+        const key = hostTool.getMacKey(mac);
         const localDomain = await rclient.hgetAsync(key, "localDomain");
         const userLocalDomain = await rclient.hgetAsync(key, "userLocalDomain");
-        let ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
-        ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
-        if (!deviceDomainMap[host.mac]) {
-          deviceDomainMap[host.mac] = {
-            mac: host.mac,
+        const ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
+        if (!deviceDomainMap[mac]) {
+          deviceDomainMap[mac] = {
+            mac: mac,
             ipv4Addr: ipv4Addr,
             localDomain: localDomain,
             userLocalDomain: userLocalDomain
@@ -1481,7 +1483,7 @@ module.exports = class DNSMASQ {
           // new device found
           needUpdate = true;
         } else {
-          let deviceDomain = deviceDomainMap[host.mac];
+          let deviceDomain = deviceDomainMap[mac];
           if (deviceDomain.localDomain != localDomain || deviceDomain.userLocalDomain != userLocalDomain) {
             if (deviceDomain.userLocalDomain) {
               //If userLocalDomain is specified,only update when userLocalDomain changed
@@ -1491,7 +1493,7 @@ module.exports = class DNSMASQ {
               needUpdate = (deviceDomain.localDomain != localDomain);
             }
             needUpdate = (deviceDomain.ipv4Addr != ipv4Addr || needUpdate);
-            deviceDomain.mac = host.mac;
+            deviceDomain.mac = mac;
             deviceDomain.ipv4Addr = ipv4Addr;
             deviceDomain.userLocalDomain = userLocalDomain;
             deviceDomain.localDomain = localDomain;

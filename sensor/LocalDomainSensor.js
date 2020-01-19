@@ -29,26 +29,41 @@ const fs = require('fs');
 const unlinkAsync = util.promisify(fs.unlink);
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
+const updateFlag = "1";
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
 class LocalDomainSensor extends Sensor {
     constructor() {
         super();
+        this.newFeature = false;
     }
-    run() {
+    async run() {
+        if (await rclient.hgetAsync("sys:upgrade", featureName) != updateFlag) {
+            this.newFeature = true;
+            await rclient.hsetAsync("sys:upgrade", featureName, updateFlag)
+        }
         this.hookFeature(featureName);
     }
     async globalOn() {
         const hosts = await hostManager.getHostsAsync();
-        let pureHosts = [];
+        let macArr = [];
         for (const host of hosts) {
-            if (host && host.o) {
-                pureHosts.push(host.o)
+            if (host && host.o && host.o.mac) {
+                macArr.push(host.o.mac)
             }
         }
-        const promises = pureHosts.map(async (host) => {
-            await hostTool.generateLocalDomain(host);
-        })
-        await Promise.all(promises);
-        await dnsmasq.setupLocalDeviceDomain(pureHosts, true);
+        if (this.newFeature) {
+            const promises = macArr.map(async (mac) => {
+                const { localDomain, userLocalDomain } = await hostTool.generateLocalDomain(mac);
+                await hostTool.updateMACKey({
+                    mac: mac,
+                    localDomain: localDomain,
+                    userLocalDomain: userLocalDomain
+                })
+            })
+            await Promise.all(promises);
+        }
+        await dnsmasq.setupLocalDeviceDomain(macArr, true);
     }
     async globalOff() {
         try {

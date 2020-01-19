@@ -919,16 +919,16 @@ class netBot extends ControllerBot {
             const macAddress = msg.target
             log.info("set host name alias by mac address", macAddress);
 
+            const { localDomain, userLocalDomain } = await hostTool.generateLocalDomain(macAddress);
             let macObject = {
               mac: macAddress,
               name: data.value.name,
+              localDomain: localDomain,
+              userLocalDomain: userLocalDomain
             }
-
             await hostTool.updateMACKey(macObject, true);
-            const host = await this.hostManager.getHostAsync(macAddress);
-            const pureHost = host.o || {};
             const dnsmasq = new Dnsmasq();
-            dnsmasq.setupLocalDeviceDomain([pureHost])
+            dnsmasq.setupLocalDeviceDomain([macAddress])
             this.simpleTxData(msg, {}, null, callback)
             return
 
@@ -970,15 +970,16 @@ class netBot extends ControllerBot {
           if (hostTool.isMacAddress(msg.target)) {
             const macAddress = msg.target
             const { customizeDomainName } = data.value
+            const { localDomain, userLocalDomain } = await hostTool.generateLocalDomain(macAddress);
             let macObject = {
               mac: macAddress,
-              customizeDomainName: customizeDomainName ? customizeDomainName : ''
+              customizeDomainName: customizeDomainName ? customizeDomainName : '',
+              localDomain: localDomain,
+              userLocalDomain: userLocalDomain
             }
             await hostTool.updateMACKey(macObject, true);
-            const host = await this.hostManager.getHostAsync(macAddress);
-            const pureHost = host.o || {};
             const dnsmasq = new Dnsmasq();
-            dnsmasq.setupLocalDeviceDomain([pureHost])
+            dnsmasq.setupLocalDeviceDomain([macAddress])
             this.simpleTxData(msg, {}, null, callback)
           } else {
             this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);

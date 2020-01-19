@@ -539,23 +539,21 @@ class HostTool {
 
     return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)
   }
-  async generateLocalDomain(host) {
-    const key = this.getMacKey(host.mac);
+  async generateLocalDomain(mac) {
+    const key = this.getMacKey(mac);
     let customizeDomainName = await rclient.hgetAsync(key, "customizeDomainName");
     let ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
     let name = await rclient.hgetAsync(key, "name");
     let bname = await rclient.hgetAsync(key, "bname")
-    ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
     if (!ipv4Addr || (!bname && !name && !customizeDomainName)) return;
     name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
     bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
     name = name || bname;
     customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
-    await this.updateMACKey({
-      localDomain: name ? `${name}.lan` : '',
-      userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
-      mac: host.mac
-    }, true);
+    return {
+      localDomain:name ? `${name}.lan` : '',
+      userLocalDomain:customizeDomainName ? `${customizeDomainName}.lan` : ''
+    }
   }
 }
 

@@ -279,7 +279,7 @@ class DeviceHook extends Hook {
             host.spoof(true);
           }
         });
-        this.setupLocalDeviceDomain(host.mac);
+        this.setupLocalDeviceDomain(host.mac, 'new_device');
       })().catch((err) => {
         log.error("Failed to handle NewDeviceFound event:", err);
       });
@@ -341,7 +341,7 @@ class DeviceHook extends Hook {
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
         let hostManager = new HostManager("cli", 'server', 'info')
         hostManager.getHost(host.ipv4Addr);
-        this.setupLocalDeviceDomain(host.mac);
+        this.setupLocalDeviceDomain(host.mac, 'ip_change');
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err);
       })
@@ -414,7 +414,7 @@ class DeviceHook extends Hook {
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
         let hostManager = new HostManager("cli", 'server', 'info');
         hostManager.getHost(host.ipv4Addr);
-        this.setupLocalDeviceDomain(host.mac);
+        this.setupLocalDeviceDomain(host.mac, 'ip_change');
       })().catch((err) => {
         log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
       })
@@ -686,14 +686,17 @@ class DeviceHook extends Hook {
       }
     });
   }
-  async setupLocalDeviceDomain(mac) {
-    if (!fc.isFeatureOn('local_domain')) return;
+  async setupLocalDeviceDomain(mac, type) {
     if (!mac) return;
-    const hostManager = new HostManager("cli", 'server', 'info');
-    const host = await hostManager.getHostAsync(mac);
-    if (!host.o) return;
-    await hostTool.generateLocalDomain(host.o);
-    await dnsmasq.setupLocalDeviceDomain([host.o]);
+    if (type == 'new_device') {
+      const { localDomain, userLocalDomain } = await hostTool.generateLocalDomain(mac);
+      await hostTool.updateMACKey({
+        mac: mac,
+        localDomain: localDomain,
+        userLocalDomain: userLocalDomain
+      })
+    }
+    await dnsmasq.setupLocalDeviceDomain([mac]);
   }
 
 
