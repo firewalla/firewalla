@@ -23,10 +23,12 @@ const dnsmasq = new DNSMASQ();
 const featureName = 'local_domain';
 const f = require('../net2/Firewalla.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
-const LOCAL_DEVICE_DOMAIN = FILTER_DIR + "/local_device_domain.conf";
+const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
 const util = require('util');
 const fs = require('fs');
 const unlinkAsync = util.promisify(fs.unlink);
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool();
 class LocalDomainSensor extends Sensor {
     constructor() {
         super();
@@ -42,18 +44,22 @@ class LocalDomainSensor extends Sensor {
                 pureHosts.push(host.o)
             }
         }
-        log.debug("pureHosts", pureHosts)
-        await dnsmasq.setupLocalDeviceDomain(pureHosts, true);
+        const promises = pureHosts.map(async (host) => {
+            await hostTool.generateLocalDomain(host);
+        })
+        await Promise.all(promises);
+        await dnsmasq.setupLocalDeviceDomain(pureHosts);
+        dnsmasq.restartDnsmasq();
     }
     async globalOff() {
         try {
-            await unlinkAsync(LOCAL_DEVICE_DOMAIN);
+            await unlinkAsync(LOCAL_DOMAIN_FILE);
             dnsmasq.restartDnsmasq();
         } catch (err) {
             if (err.code === 'ENOENT') {
-                log.info(`Dnsmasq: No ${LOCAL_DEVICE_DOMAIN}, skip remove`);
+                log.info(`Dnsmasq: No ${LOCAL_DOMAIN_FILE}, skip remove`);
             } else {
-                log.warn(`Dnsmasq: Error when remove ${LOCAL_DEVICE_DOMAIN}`, err);
+                log.warn(`Dnsmasq: Error when remove ${LOCAL_DOMAIN_FILE}`, err);
             }
         }
     }

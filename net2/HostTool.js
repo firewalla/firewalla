@@ -35,6 +35,7 @@ const asyncNative = require('../util/asyncNative.js');
 const iptool = require('ip');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
+const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
 class HostTool {
   constructor() {
@@ -277,7 +278,7 @@ class HostTool {
       if (ips) {
         allIPs.push({ips: ips, mac: mac})
       }
-    };
+    }
 
     return allIPs;
   }
@@ -414,7 +415,7 @@ class HostTool {
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
     sysManager.setNeighbor(v6addr);
     let ip6Host = await rclient.hgetallAsync(v6key)
-    log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host, err);
+    log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
     if (ip6Host != null) {
       ip6Host.mac = mac;
       ip6Host.lastActiveTimestamp = Date.now() / 1000;
@@ -457,7 +458,7 @@ class HostTool {
     } else {
       macHost = {};
       macHost.mac = mac.toUpperCase();
-      macHost.ipv6Addr = JSON.stringify([v6addr]);;
+      macHost.ipv6Addr = JSON.stringify([v6addr]);
       macHost.lastActiveTimestamp = Date.now() / 1000;
       macHost.firstFoundTimestamp = macHost.lastActiveTimestamp;
       log.info("HostTool:Writing macHost:", mackey, macHost);
@@ -537,6 +538,24 @@ class HostTool {
     }
 
     return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)
+  }
+  async generateLocalDomain(host) {
+    const key = this.getMacKey(host.mac);
+    let customizeDomainName = await rclient.hgetAsync(key, "customizeDomainName");
+    let ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
+    let name = await rclient.hgetAsync(key, "name");
+    let bname = await rclient.hgetAsync(key, "bname")
+    ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
+    if (!ipv4Addr || (!bname && !name && !customizeDomainName)) return;
+    name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
+    bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
+    name = name || bname;
+    customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
+    await this.updateMACKey({
+      localDomain: name ? `${name}.lan` : '',
+      userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
+      mac: host.mac
+    }, true);
   }
 }
 
