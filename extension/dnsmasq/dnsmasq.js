@@ -1482,12 +1482,20 @@ module.exports = class DNSMASQ {
             customizeDomainName: customizeDomainName,
             ts: new Date() / 1000
           }
+          // new device found
           needUpdate = true;
         } else {
           let deviceDomain = deviceDomainMap[host.mac];
           if ((deviceDomain.name != name || deviceDomain.ipv4Addr != ipv4Addr ||
-            deviceDomain.customizeDomainName != customizeDomainName || deviceDomain.bname != bname)) {
-            needUpdate = true;
+            deviceDomain.customizeDomainName != customizeDomainName)) {
+            if (deviceDomain.customizeDomainName) {
+              //If userLocalDomain is specified,only update when customizeDomainName changed
+              needUpdate = (deviceDomain.customizeDomainName != customizeDomainName);
+            } else {
+              //If userLocalDomain is not specified, update when preferredName is changed
+              needUpdate = (deviceDomain.name != name);
+            }
+            needUpdate = (deviceDomain.ipv4Addr != ipv4Addr || needUpdate);
             deviceDomain.mac = host.mac;
             deviceDomain.ipv4Addr = ipv4Addr;
             deviceDomain.name = name;
