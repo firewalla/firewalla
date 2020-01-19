@@ -1505,29 +1505,27 @@ module.exports = class DNSMASQ {
           }
         }
       }
-      if (needUpdate || isInit) {
-        await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
-        let localDeviceDomain = "";
-        for (const key in deviceDomainMap) {
-          const deviceDomain = deviceDomainMap[key];
-          let { name, bname, customizeDomainName } = deviceDomain;
-          name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
-          bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
-          name = name || bname;
-          customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
-          if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
-            name && (localDeviceDomain += `address=/${name}.lan/${deviceDomain.ipv4Addr}\n`);
-            customizeDomainName && (localDeviceDomain += `address=/${customizeDomainName}.lan/${deviceDomain.ipv4Addr}\n`);
-          }
-          await hostTool.updateMACKey({
-            localDomain: name ? `${name}.lan` : '',
-            userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
-            mac: deviceDomain.mac
-          }, true);
+      await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
+      let localDeviceDomain = "";
+      for (const key in deviceDomainMap) {
+        const deviceDomain = deviceDomainMap[key];
+        let { name, bname, customizeDomainName } = deviceDomain;
+        name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
+        bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
+        name = name || bname;
+        customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
+        if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
+          name && (localDeviceDomain += `address=/${name}.lan/${deviceDomain.ipv4Addr}\n`);
+          customizeDomainName && (localDeviceDomain += `address=/${customizeDomainName}.lan/${deviceDomain.ipv4Addr}\n`);
         }
-        needUpdate && log.info(`Device updated, trying to update ${LOCAL_DEVICE_DOMAIN}`);
-        this.throttleUpdatingConf(LOCAL_DEVICE_DOMAIN, localDeviceDomain)
+        await hostTool.updateMACKey({
+          localDomain: name ? `${name}.lan` : '',
+          userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
+          mac: deviceDomain.mac
+        }, true);
       }
+      needUpdate && log.info(`Device updated, trying to update ${LOCAL_DEVICE_DOMAIN}`);
+      this.throttleUpdatingConf(LOCAL_DEVICE_DOMAIN, localDeviceDomain)
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
