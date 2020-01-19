@@ -19,6 +19,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager("cli", 'client', 'info');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 const dnsmasq = new DNSMASQ();
 const featureName = 'local_domain';
 const f = require('../net2/Firewalla.js');
@@ -43,6 +44,10 @@ class LocalDomainSensor extends Sensor {
             await rclient.hsetAsync("sys:upgrade", featureName, updateFlag)
         }
         this.hookFeature(featureName);
+        sem.on('LocalDomainUpdate', async (event) => {
+            const macArr = event.macArr;
+            await dnsmasq.setupLocalDeviceDomain(macArr, true);
+        });
     }
     async globalOn() {
         const hosts = await hostManager.getHostsAsync();

@@ -924,8 +924,12 @@ class netBot extends ControllerBot {
             }
             await hostTool.updateMACKey(macObject, true);
             await hostTool.generateLocalDomain(macAddress);
-            const dnsmasq = new Dnsmasq();
-            dnsmasq.setupLocalDeviceDomain([macAddress])
+            sem.emitEvent({
+              type: "LocalDomainUpdate",
+              message: `Update device:${macAddress} localDomain`,
+              macArr: [macAddress],
+              toProcess: 'FireMain'
+            });
             this.simpleTxData(msg, {}, null, callback)
             return
 
@@ -973,8 +977,12 @@ class netBot extends ControllerBot {
             }
             await hostTool.updateMACKey(macObject, true);
             await hostTool.generateLocalDomain(macAddress);
-            const dnsmasq = new Dnsmasq();
-            dnsmasq.setupLocalDeviceDomain([macAddress])
+            sem.emitEvent({
+              type: "LocalDomainUpdate",
+              message: `Update device:${macAddress} userLocalDomain`,
+              macArr: [macAddress],
+              toProcess: 'FireMain'
+            });
             this.simpleTxData(msg, {}, null, callback)
           } else {
             this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);
