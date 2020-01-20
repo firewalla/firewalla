@@ -53,7 +53,10 @@ async function createCustomizedRoutingTable(tableName) {
   if (id == 200) {
     throw "Insufficient space to create routing table";
   }
-  cmd = util.format("sudo bash -c 'echo -e %d\\\\t%s >> /etc/iproute2/rt_tables'", id, tableName);
+  cmd = `sudo bash -c 'flock /tmp/rt_tables.lock -c "echo -e ${id}\\\t${tableName} >> /etc/iproute2/rt_tables; \
+    cat /etc/iproute2/rt_tables | sort | uniq > /etc/iproute2/rt_tables.new; \
+    cp /etc/iproute2/rt_tables.new /etc/iproute2/rt_tables; \
+    rm /etc/iproute2/rt_tables.new"'`;
   log.info("Append new routing table: ", cmd);
   result = await execAsync(cmd);
   if (result.stderr !== "") {

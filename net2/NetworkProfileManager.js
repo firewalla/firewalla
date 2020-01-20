@@ -71,6 +71,10 @@ class NetworkProfileManager {
     return obj;
   }
 
+  toJson() {
+
+  }
+
   getNetworkProfile(uuid) {
     return this.networkProfiles[uuid];
   }
@@ -93,7 +97,7 @@ class NetworkProfileManager {
 
     for (let intf of monitoringInterfaces) {
       const profile = fireRouter.getInterfaceViaName(intf);
-      if (!profile) // FIXME: this is taken on red/blue. need to support network concept on them later
+      if (!profile) // FIXME: this is taken on red/blue. Probably support network concept on them later?
         continue;
       const meta = profile.config && profile.config.meta;
       const uuid = meta && meta.uuid;
