@@ -255,10 +255,6 @@ class DeviceBackOnlineAlarm extends Alarm {
     super("ALARM_DEVICE_BACK_ONLINE", timestamp, device, info);
   }
 
-  getManagementType() {
-    return "info";
-  }
-
   keysToCompareForDedup() {
     return ["p.device.mac", "p.intf.id"];
   }
@@ -274,10 +270,6 @@ class DeviceOfflineAlarm extends Alarm {
     if (info && info["p.device.lastSeen"]) {
       this['p.device.lastSeenTimezone'] = moment(info["p.device.lastSeen"] * 1000).format('LT')
     }
-  }
-
-  getManagementType() {
-    return "info";
   }
 
   keysToCompareForDedup() {
@@ -754,10 +746,6 @@ class SubnetAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_SUBNET", timestamp, device, info);
     this["p.showMap"] = false;
-  }
-
-  getManagementType() {
-    return "info";
   }
 
   keysToCompareForDedup() {
