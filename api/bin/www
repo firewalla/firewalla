@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,6 +25,9 @@ let log = require("../../net2/logger.js")(__filename);
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 log.info("API Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+// init FireRouter ASAP
+const fireRouter = require('../../net2/FireRouter.js')
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
@@ -88,7 +91,7 @@ let serverForLocalAPI;
 let portForLocalAPI = normalizePort('8834');
 
 function run() {
-  let app = require('../app');
+  let app = require('../app.js');
   app.set('port', port);
 
   /**

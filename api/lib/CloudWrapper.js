@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -50,7 +50,7 @@ const util = require('util')
 
 module.exports = class {
   constructor() {
-    
+
     if (instance == null) {
       instance = this;
 
@@ -75,7 +75,7 @@ module.exports = class {
 
         // setup API sensors
         this.sl = require('../../sensor/APISensorLoader.js');
-        this.sl.initSensors(eptcloud);
+        await this.sl.initSensors(eptcloud);
         this.sl.run();
       })();
 
