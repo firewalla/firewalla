@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla INC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,16 +18,16 @@
  */
 'use strict';
 
-var express = require('express');
-var path = require('path');
-var logger = require('morgan');
-var cookieParser = require('cookie-parser');
-var bodyParser = require('body-parser');
+const express = require('express');
+const path = require('path');
+const logger = require('morgan');
+const cookieParser = require('cookie-parser');
+const bodyParser = require('body-parser');
 const passport = require('passport');
-var Strategy = require('passport-http-bearer').Strategy;
-var db = require('./db');
+const Strategy = require('passport-http-bearer').Strategy;
+const db = require('./db');
 
-let log = require('../net2/logger.js')(__filename, 'info')
+const log = require('../net2/logger.js')(__filename, 'info')
 
 passport.use(new Strategy(
   function(token, cb) {

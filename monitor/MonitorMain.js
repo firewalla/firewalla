@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,6 +15,9 @@
 'use strict';
 process.title = 'FireMon';
 require('events').EventEmitter.prototype._maxListeners = 100;
+
+// init FireRouter ASAP
+const fireRouter = require('../net2/FireRouter.js')
 
 let log = require("../net2/logger.js")(__filename, "info");
 

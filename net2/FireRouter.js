@@ -128,7 +128,7 @@ let intfUuidMap = {}
 class FireRouter {
   constructor() {
     this.platform = PlatformLoader.getPlatform()
-    log.info(`This platform is:${this.platform}`);
+    log.info(`This platform is:${this.platform.constructor.name}`);
 
     const fwConfig = Config.getConfig();
 
@@ -266,6 +266,7 @@ class FireRouter {
       }
     }
 
+    log.info('FireRouter initialization complete')
     this.ready = true
 
     if (f.isMain() && (
@@ -279,6 +280,7 @@ class FireRouter {
       await broControl.addCronJobs()
     }
 
+    log.info('Bro restarted')
     this.broReady = true
   }
 
