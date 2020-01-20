@@ -16,24 +16,24 @@
 process.title = 'FireMon';
 require('events').EventEmitter.prototype._maxListeners = 100;
 
-// init FireRouter ASAP
-const fireRouter = require('../net2/FireRouter.js')
-
-let log = require("../net2/logger.js")(__filename, "info");
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-var bone = require("../lib/Bone.js");
-var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
-
-const fs = require('fs');
+const log = require("../net2/logger.js")(__filename, "info");
+const config = require('../net2/config.js').getConfig();
 
 log.info("================================================================================");
 log.info("Monitor Starting:",config.version);
 log.info("================================================================================");
 
+// init FireRouter ASAP
+require('../net2/FireRouter.js')
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
+const bone = require("../lib/Bone.js");
+
+const fs = require('fs');
+
 // api/main/monitor all depends on sysManager configuration
-let sysManager = require('../net2/SysManager.js');
+const sysManager = require('../net2/SysManager.js');
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");

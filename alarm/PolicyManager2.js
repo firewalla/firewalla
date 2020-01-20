@@ -62,6 +62,9 @@ const policyCapacity = platform.getPolicyCapacity();
 const Accounting = require('../control/Accounting.js');
 const accounting = new Accounting();
 
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+
 const _ = require('lodash')
 
 const delay = require('../util/util.js').delay
@@ -995,7 +998,7 @@ class PolicyManager2 {
       case "remoteIpPort":
       case "remoteNetPort":
         if (scope || intf) {
-          await Block.setupRules(scope && pid, pid, ruleSetTypeMap[type], intf, whitelist);
+          await Block.setupRules(pid, pid, ruleSetTypeMap[type], intf, whitelist);
           await Block.addMacToSet(scope, Block.getMacSet(pid));
           await Block.block(target, Block.getDstSet(pid), whitelist)
         } else {
@@ -1012,28 +1015,26 @@ class PolicyManager2 {
 
       case "domain":
       case "dns":
-        if (scope || intf) {
-          if (!policy.dnsmasq_entry) {
-            await Block.setupRules(scope && pid, pid, "hash:ip", intf, whitelist);
-            await Block.addMacToSet(scope, Block.getMacSet(pid));
-          }
+        // dnsmasq_entry: use dnsmasq instead of iptables
+        if (policy.dnsmasq_entry) {
+          await dnsmasq.addPolicyFilterEntry([target], {scope, intf}).catch(() => {});
+          await dnsmasq.restartDnsmasq()
+        }
+        else if (scope || intf) {
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
-            dnsmasq_entry: policy.dnsmasq_entry,
             scope: scope,
             intf: intf
           })
         } else {
-          let options = {
-            exactMatch: policy.domainExactMatch,
-            dnsmasq_entry: policy.dnsmasq_entry
-          };
+          const options = { exactMatch: policy.domainExactMatch };
           if (whitelist) {
             options.blockSet = "whitelist_domain_set";
             // whitelist rule should not add dnsmasq filter rule
           }
           await domainBlock.blockDomain(target, options);
+          // await Block.setupRules(null, pid, "hash:ip", intf, whitelist);
         }
         break;
 
@@ -1053,14 +1054,12 @@ class PolicyManager2 {
         if (policy.dnsmasq_entry) {
           await domainBlock.blockCategory(target, {
             scope: scope,
-            isCategory: true,
-            dnsmasq_entry: policy.dnsmasq_entry,
             category: target,
             intf: intf
           });
         } else {
-          await Block.setupRules(scope && pid, target, "hash:ip", intf, whitelist);
-          await Block.addMacToSet(scope, Block.getMacSet(pid));
+          await Block.setupRules((scope || intf) && pid, target, "hash:ip", intf, whitelist);
+          if (scope) await Block.addMacToSet(scope, Block.getMacSet(pid));
           if (!scope && !whitelist && target === 'default_c') try {
             await categoryUpdater.iptablesRedirectCategory(target)
           } catch (err) {
@@ -1071,7 +1070,7 @@ class PolicyManager2 {
 
       case "country":
         await countryUpdater.activateCountry(target);
-        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), "hash:net", intf, whitelist);
+        await Block.setupRules((scope || intf) && pid, countryUpdater.getCategory(target), "hash:net", intf, whitelist);
         await Block.addMacToSet(scope, Block.getMacSet(pid));
         break;
 
@@ -1136,7 +1135,7 @@ class PolicyManager2 {
       case "remoteIpPort":
       case "remoteNetPort":
         if (scope || intf) {
-          await Block.setupRules(scope && pid, pid, ruleSetTypeMap[type], intf, whitelist, true);
+          await Block.setupRules(pid, pid, ruleSetTypeMap[type], intf, whitelist, true);
         } else {
           const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type]
 
@@ -1151,23 +1150,22 @@ class PolicyManager2 {
 
       case "domain":
       case "dns":
-        if (scope || intf) {
+        // dnsmasq_entry: use dnsmasq instead of iptables
+        if (policy.dnsmasq_entry) {
+          await dnsmasq.removePolicyFilterEntry([target], {scope, intf}).catch(() => {});
+          await dnsmasq.restartDnsmasq()
+        }
+        else if (scope || intf) {
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
-            dnsmasq_entry: policy.dnsmasq_entry,
             scope: scope,
             intf: intf
           })
           // destroy domain dst cache, since there may be various domain dst cache in different policies
-          if (!policy.dnsmasq_entry) {
-            await Block.setupRules(scope && pid, pid, 'hash:ip', intf, whitelist, true);
-          }
+          await Block.setupRules(pid, pid, 'hash:ip', intf, whitelist, true);
         } else {
-          let options = {
-            exactMatch: policy.domainExactMatch,
-            dnsmasq_entry: policy.dnsmasq_entry
-          };
+          const options = { exactMatch: policy.domainExactMatch };
           if (whitelist) {
             options.blockSet = "whitelist_domain_set";
           }
@@ -1191,13 +1189,11 @@ class PolicyManager2 {
         if (policy.dnsmasq_entry) {
           await domainBlock.unblockCategory(target, {
             scope: scope,
-            isCategory: true,
-            dnsmasq_entry: policy.dnsmasq_entry,
             category: target,
             intf: intf
           });
         } else {
-          await Block.setupRules(scope && pid, target, 'hash:ip', intf, whitelist, true, false);
+          await Block.setupRules((scope || intf) && pid, target, 'hash:ip', intf, whitelist, true, false);
           if (!scope && !whitelist && target === 'default_c') try {
             await categoryUpdater.iptablesUnredirectCategory(target)
           } catch (err) {
@@ -1207,7 +1203,7 @@ class PolicyManager2 {
         break;
 
       case "country":
-        await Block.setupRules(scope && pid, countryUpdater.getCategory(target), 'hash:net', intf, whitelist, true, false);
+        await Block.setupRules((scope || intf) && pid, countryUpdater.getCategory(target), 'hash:net', intf, whitelist, true, false);
         break;
 
       default:

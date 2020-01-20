@@ -128,7 +128,7 @@ let intfUuidMap = {}
 class FireRouter {
   constructor() {
     this.platform = PlatformLoader.getPlatform()
-    log.info(`This platform is:${this.platform.constructor.name}`);
+    log.info(`This platform is: ${this.platform.constructor.name}`);
 
     const fwConfig = Config.getConfig();
 

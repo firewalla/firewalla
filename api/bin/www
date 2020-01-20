@@ -27,7 +27,7 @@ log.info("API Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
 // init FireRouter ASAP
-const fireRouter = require('../../net2/FireRouter.js')
+require('../../net2/FireRouter.js')
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
