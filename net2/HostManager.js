@@ -1444,7 +1444,6 @@ module.exports = class HostManager {
                       'p.vpn.subtype': settings && settings.subtype,
                       'p.vpn.devicecount': device_cout,
                       'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
-                      'p.vpn.time': new Date() / 1000,
                       'p.vpn.strictvpn': settings && settings.strictVPN || false
                     }
                   );
@@ -1500,14 +1499,13 @@ module.exports = class HostManager {
                     if (!updatedPolicy.running) {
                       const device_cout = await this.getVpnActiveDeviceCount(profileId);
                       let alarm = new Alarm.VPNDisconnectAlarm(
-                        new Date() / 1000,
+                        broken_time,
                         null,
                         {
                           'p.vpn.profileid': profileId,
                           'p.vpn.subtype': settings && settings.subtype,
                           'p.vpn.devicecount': device_cout,
                           'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
-                          'p.vpn.time': broken_time,
                           'p.vpn.strictvpn': settings && settings.strictVPN || false
                         }
                       );

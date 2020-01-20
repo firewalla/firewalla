@@ -347,7 +347,7 @@ class VPNRestoreAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
+    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
   }
 }
 
@@ -381,7 +381,7 @@ class VPNDisconnectAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this["p.vpn.time"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
+    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
   }
 }
 
