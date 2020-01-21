@@ -21,7 +21,6 @@ const Sensor = require('./Sensor.js').Sensor;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const bonjour = require('bonjour')();
-const ip = require('ip');
 const Promise = require('bluebird');
 
 const sysManager = require('../net2/SysManager.js')
@@ -29,6 +28,7 @@ const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
 const validator = require('validator');
+const { Address4, Address6 } = require('ip-address')
 
 const ipMacCache = {};
 
@@ -123,7 +123,7 @@ class BonjourSensor extends Sensor {
         delete ipMacCache[ipAddr];
       }
     }
-    if (ip.isV4Format(ipAddr)) {
+    if (new Address4(ipAddr).isValid()) {
       return new Promise((resolve, reject) => {
         l2.getMAC(ipAddr, (err, mac) => {
           if (err) {
@@ -149,7 +149,7 @@ class BonjourSensor extends Sensor {
           }
         })
       })
-    } else if (ip.isV6Format(ipAddr)) {
+    } else if (new Address6(ipAddr).isValid()) {
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
         log.error("Not able to find mac address for host:", ipAddr, err);
         return null;
@@ -251,12 +251,13 @@ class BonjourSensor extends Sensor {
     let ipv6addr = [];
 
     for (const addr of service.addresses) {
-      if (ip.isV4Format(addr) && sysManager.isLocalIP(addr)) {
-        ipv4addr = addr;
-      } else if (ip.isV4Format(addr)) {
-        log.debug("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
-        continue;
-      } else if (ip.isV6Format(addr)) {
+      if (new Address4(addr).isValid()) {
+        if (sysManager.isLocalIP(addr)) {
+          ipv4addr = addr;
+        } else {
+          log.debug("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
+        }
+      } else if (new Address6(addr).isValid()) {
         ipv6addr.push(addr);
       }
     }

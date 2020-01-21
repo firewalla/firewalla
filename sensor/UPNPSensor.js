@@ -33,8 +33,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const UPNP = require('../extension/upnp/upnp.js');

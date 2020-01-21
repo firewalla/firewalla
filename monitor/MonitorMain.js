@@ -24,7 +24,7 @@ log.info("Monitor Starting:",config.version);
 log.info("================================================================================");
 
 // init FireRouter ASAP
-require('../net2/FireRouter.js')
+const fireRouter = require('../net2/FireRouter.js')
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -47,7 +47,8 @@ run0();
 function run0() {
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
-   // this is to ensure sysManager is already initliazed when called in API code
+      fireRouter.isReady() &&
+      // this is to ensure sysManager is already initliazed when called in API code
       sysManager.isConfigInitialized()) {
     run();
   } else {
