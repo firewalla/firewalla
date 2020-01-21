@@ -105,10 +105,6 @@ const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
-const STATUS_CHECK_INTERFACE = platform.isFireRouterManaged() ?
-  sysManager.getMonitoringInterfaces()[0].ip_address :
-  'localhost';
-
 
 let statusCheckTimer = null;
 
@@ -1283,6 +1279,9 @@ module.exports = class DNSMASQ {
   async verifyDNSConnectivity() {
     for (let i in VERIFICATION_DOMAINS) {
       const domain = VERIFICATION_DOMAINS[i];
+      const STATUS_CHECK_INTERFACE = platform.isFireRouterManaged() && sysManager.getMonitoringInterfaces().length > 0 ?
+          sysManager.getMonitoringInterfaces()[0].ip_address :
+          'localhost';
       let cmd = `dig -4 +short +time=5 -p ${MASQ_PORT} @${STATUS_CHECK_INTERFACE} ${domain}`;
       log.debug(`Verifying DNS connectivity via ${domain}...`)
 
