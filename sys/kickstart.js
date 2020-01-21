@@ -43,6 +43,12 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 
 const log = require("../net2/logger.js")(__filename);
 
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+log.forceInfo("FireKick Starting ");
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+const fireRouter = require('../net2/FireRouter.js')
+
 const fs = require('fs');
 const cp = require('child_process');
 const exec = require('child-process-promise').exec;
@@ -80,10 +86,6 @@ const FWInvitation = require('./invitation.js');
 const Diag = require('../extension/diag/app.js');
 
 let terminated = false;
-
-log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-log.forceInfo("FireKick Starting ");
-log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
 (async() => {
   await rclient.delAsync("firekick:pairing:message");
@@ -223,6 +225,7 @@ async function postAppLinked() {
 }
 
 async function inviteAdmin(gid) {
+  await fireRouter.waitTillReady()
   log.forceInfo("Initializing first admin:", gid);
 
   const gidPrefix = gid.substring(0, 8);
