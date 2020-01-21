@@ -1483,17 +1483,17 @@ module.exports = class HostManager {
                 if (fc.isFeatureOn("vpn_disconnect")) {
                   const broken_time = new Date() / 1000;
                   setTimeout(async () => {
-                    sem.sendEventToFireApi({
-                      type: 'FW_NOTIFICATION',
-                      titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
-                      bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
-                      titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                      bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                      bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
-                      payload: {
-                        profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
-                      }
-                    });
+                    // sem.sendEventToFireApi({
+                    //   type: 'FW_NOTIFICATION',
+                    //   titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
+                    //   bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                    //   titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                    //   bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                    //   bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
+                    //   payload: {
+                    //     profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
+                    //   }
+                    // });
                     const updatedPolicy = this.policy["vpnClient"];
                     if (!updatedPolicy) return;
                     if (!updatedPolicy.running) {

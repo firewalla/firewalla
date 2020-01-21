@@ -332,6 +332,9 @@ class VPNRestoreAlarm extends Alarm {
       let subtype = (['s2s', 'cs', 'openvpn'].indexOf(info["p.vpn.subtype"]) !== -1) ? info["p.vpn.subtype"] : 'openvpn';
       this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
     }
+    if (this.timestamp) {
+      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+    }
   }
 
   keysToCompareForDedup() {
@@ -346,8 +349,16 @@ class VPNRestoreAlarm extends Alarm {
     return fc.getTimingConfig("alarm.vpn_connect.cooldown") || 60 * 5;
   }
 
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+
+    key += "." + this["p.vpn.subtype"];
+    
+    return key;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
+    return [this["p.vpn.displayname"], this["p.timestampTimezone"], this["p.vpn.devicecount"]];
   }
 }
 
@@ -357,6 +368,9 @@ class VPNDisconnectAlarm extends Alarm {
     if (info && info["p.vpn.subtype"]) {
       let subtype = (['s2s', 'cs', 'openvpn'].indexOf(info["p.vpn.subtype"]) !== -1) ? info["p.vpn.subtype"] : 'openvpn';
       this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
+    }
+    if (this.timestamp) {
+      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
     }
   }
 
@@ -368,6 +382,14 @@ class VPNDisconnectAlarm extends Alarm {
     return category;
   }
 
+  getNotifType() {
+    let notify_type = super.getNotifType();
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      notify_type = notify_type + "_KILLSWITCH";
+    }
+    return notify_type;
+  }
+
   keysToCompareForDedup() {
     return ["p.vpn.profileid"];
   }
@@ -380,8 +402,29 @@ class VPNDisconnectAlarm extends Alarm {
     return fc.getTimingConfig("alarm.vpn_connect.cooldown") || 60 * 5;
   }
 
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+
+    key += "." + this["p.vpn.subtype"];
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      key += ".FALLBACK";
+    }
+
+    return key;
+  }
+
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      key += ".FALLBACK";
+    }
+
+    return key;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.vpn.subtype"], this["p.vpn.devicecount"], this["p.vpn.displayname"], this['p.vpn.subtypename'], this["p.vpn.strictvpn"]];
+    return [this["p.vpn.displayname"], this["p.timestampTimezone"], this["p.vpn.devicecount"]];
   }
 }
 
