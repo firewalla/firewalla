@@ -226,6 +226,7 @@ async function postAppLinked() {
 
 async function inviteAdmin(gid) {
   await fireRouter.waitTillReady()
+  await sysManager.updateAsync()
   log.forceInfo("Initializing first admin:", gid);
 
   const gidPrefix = gid.substring(0, 8);
