@@ -31,7 +31,7 @@ class BroControl {
 
   interfaceChanged(monitoringInterfaces) {
     if (this.monitoringInterfaces.length != monitoringInterfaces.length)
-      return false
+      return true;
 
     return this.monitoringInterfaces.every(intf => monitoringInterfaces.includes(intf))
   }
