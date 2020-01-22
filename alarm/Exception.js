@@ -24,6 +24,8 @@ const minimatch = require('minimatch')
 
 const _ = require('lodash')
 
+const validator = require('validator');
+
 function arraysEqual(a, b) {
   if (a === b) return true;
   if (a == null || b == null) return false;
@@ -84,6 +86,30 @@ module.exports = class {
     return securityAlarmTypes.includes(alarm.type);
   }
 
+  jsonComparisonMatch(val, val2) {
+    if (!isFinite(val2)) return false;
+    let comparison = JSON.parse(val);
+    if (isFinite(comparison["$gt"])) {
+      if (val2 > comparison["$gt"]) {
+        return true;
+      }
+    } else if (isFinite(comparison["$lt"])) {
+      if (val2 < comparison["$lt"]) {
+        return true;
+      }
+    } else if (isFinite(comparison["$gte"])) {
+      if (val2 > comparison["$gte"] || val2 == comparison["$gte"]) {
+        return true;
+      }
+    } else if (isFinite(comparison["$lte"])) {
+      if (val2 < comparison["$lte"] || val2 == comparison["$lte"]) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
   match(alarm) {
 
     let matched = false;
@@ -101,6 +127,13 @@ module.exports = class {
       if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
         matched = true;
         continue;
+      }
+
+      if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
+        if (this.jsonComparisonMatch(val, val2)) {
+          matched = true;
+          continue;
+        }
       }
 
       //special exception
