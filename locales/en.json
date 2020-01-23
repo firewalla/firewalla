@@ -107,11 +107,12 @@
   "VPN_SUBTYPE_cs": "Remote Access VPN",
   "VPN_SUBTYPE_openvpn": "3rd-Party VPN",
   "NOTIF_TITLE_ALARM_VPN_RESTORE": "VPN Connection Restored",
-  "NOTIF_ALARM_VPN_RESTORE": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is restored, Internet access on {{{p.vpn.devicecount}}} devices is resumed.",
-  "INFO_ALARM_VPN_RESTORE": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is restored, Internet access on {{{p.vpn.devicecount}}} devices is resumed.",
-  "NOTIF_TITLE_ALARM_VPN_DISCONNECT": "VPN Connection Error",
-  "NOTIF_ALARM_VPN_DISCONNECT": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error, Internet access on {{{p.vpn.devicecount}}} devices has switched to local ISP.",
-  "INFO_ALARM_VPN_DISCONNECT": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error, Internet access on {{{p.vpn.devicecount}}} devices has switched to local ISP.",
-  "NOTIF_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error, Internet access on {{{p.vpn.devicecount}}} devices is paused until the VPN connection is restored.",
-  "INFO_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error, Internet access on {{{p.vpn.devicecount}}} devices is paused until the VPN connection is restored."
+  "NOTIF_ALARM_VPN_RESTORE": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is restored at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is resumed.",
+  "INFO_ALARM_VPN_RESTORE": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is restored at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is resumed.",
+  "NOTIF_TITLE_ALARM_VPN_DISCONNECT": "VPN Disconnected",
+  "NOTIF_ALARM_VPN_DISCONNECT": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is disconnected at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) has switched to local ISP.",
+  "INFO_ALARM_VPN_DISCONNECT": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is disconnected at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) has switched to local ISP.",
+  "NOTIF_TITLE_ALARM_VPN_DISCONNECT_KILLSWITCH": "VPN Connection Error",
+  "NOTIF_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is paused until the VPN connection is restored.",
+  "INFO_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is paused until the VPN connection is restored."
 }
