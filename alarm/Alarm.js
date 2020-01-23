@@ -325,6 +325,109 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 }
 
+class VPNRestoreAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_RESTORE", timestamp, device, info);
+    if (info && info["p.vpn.subtype"]) {
+      let subtype = (['s2s', 'cs', 'openvpn'].indexOf(info["p.vpn.subtype"]) !== -1) ? info["p.vpn.subtype"] : 'openvpn';
+      this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
+    }
+    if (this.timestamp) {
+      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+    }
+  }
+
+  keysToCompareForDedup() {
+    return ["p.vpn.profileid"];
+  }
+
+  requiredKeys() {
+    return ["p.vpn.profileid"];
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.vpn_connect.cooldown") || 60 * 5;
+  }
+
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+
+    key += "." + this["p.vpn.subtype"];
+    
+    return key;
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.vpn.displayname"], this["p.timestampTimezone"], this["p.vpn.devicecount"]];
+  }
+}
+
+class VPNDisconnectAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_VPN_DISCONNECT", timestamp, device, info);
+    if (info && info["p.vpn.subtype"]) {
+      let subtype = (['s2s', 'cs', 'openvpn'].indexOf(info["p.vpn.subtype"]) !== -1) ? info["p.vpn.subtype"] : 'openvpn';
+      this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
+    }
+    if (this.timestamp) {
+      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+    }
+  }
+
+  getI18NCategory() {
+    let category = super.getI18NCategory();
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      category = category + "_KILLSWITCH";
+    }
+    return category;
+  }
+
+  getNotifType() {
+    let notify_type = super.getNotifType();
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      notify_type = notify_type + "_KILLSWITCH";
+    }
+    return notify_type;
+  }
+
+  keysToCompareForDedup() {
+    return ["p.vpn.profileid"];
+  }
+
+  requiredKeys() {
+    return ["p.vpn.profileid"];
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.vpn_connect.cooldown") || 60 * 5;
+  }
+
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+
+    key += "." + this["p.vpn.subtype"];
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      key += ".FALLBACK";
+    }
+
+    return key;
+  }
+
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+
+    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+      key += ".FALLBACK";
+    }
+
+    return key;
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.vpn.displayname"], this["p.timestampTimezone"], this["p.vpn.devicecount"]];
+  }
+}
+
 class VulnerabilityAlarm extends Alarm {
   constructor(timestamp, device, vulnerabilityID, info) {
     super("ALARM_VULNERABILITY", timestamp, device, info);
@@ -793,6 +896,8 @@ let classMapping = {
   ALARM_DEVICE_OFFLINE: DeviceOfflineAlarm.prototype,
   ALARM_SPOOFING_DEVICE: SpoofingDeviceAlarm.prototype,
   ALARM_VPN_CLIENT_CONNECTION: VPNClientConnectionAlarm.prototype,
+  ALARM_VPN_RESTORE: VPNRestoreAlarm.prototype,
+  ALARM_VPN_DISCONNECT: VPNDisconnectAlarm.prototype,
   ALARM_BRO_NOTICE: BroNoticeAlarm.prototype,
   ALARM_INTEL: IntelAlarm.prototype,
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
@@ -815,6 +920,8 @@ module.exports = {
   DeviceOfflineAlarm: DeviceOfflineAlarm,
   SpoofingDeviceAlarm: SpoofingDeviceAlarm,
   VPNClientConnectionAlarm: VPNClientConnectionAlarm,
+  VPNRestoreAlarm: VPNRestoreAlarm,
+  VPNDisconnectAlarm: VPNDisconnectAlarm,
   BroNoticeAlarm: BroNoticeAlarm,
   IntelAlarm: IntelAlarm,
   VulnerabilityAlarm: VulnerabilityAlarm,
