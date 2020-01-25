@@ -103,3 +103,4 @@ If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth 
 * For router compatibility, please check out detail information at https://help.firewalla.com/hc/en-us/articles/360009401874-Router-Compatibility
 
 
+
