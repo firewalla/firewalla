@@ -398,10 +398,6 @@ class DestIPFoundHook extends Hook {
       if(this.paused)
         return;
 
-      if(f.isReservedBlockingIP(ip)) {
-        return; // reserved black hole and blue hole...
-      }
-
       this.appendNewFlow(ip, fd);
     });
 

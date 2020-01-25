@@ -218,7 +218,7 @@ is_firewalla() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %35s %25s %25s %10s %10s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online"
+    printf "%35s %35s %25s %25s %10s %10s %10s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient"
     NOW=$(date +%s)
     for DEVICE in $DEVICES; do
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
@@ -254,6 +254,18 @@ check_hosts() {
                 fi
         fi
 
+        local DEVICE_VPN="N/A"
+        local DEVICE_VPN_INFO=$(redis-cli hget $POLICY_MAC vpnClient)
+        if [[ -n $DEVICE_VPN_INFO ]]; then
+            local DEVICE_VPN_TRUE=$(echo $DEVICE_VPN_INFO | grep '\"state\":true')
+            local DEVICE_VPN_FALSE=$(echo $DEVICE_VPN_INFO | grep '\"state\":false')
+            if [[ -n $DEVICE_VPN_TRUE ]]; then
+                DEVICE_VPN="true"
+            elif [[ -n $DEVICE_VPN_FALSE ]]; then
+                DEVICE_VPN="false"
+            fi
+        fi
+
         local COLOR=""
         local UNCOLOR="\e[0m"
         if [[ $DEVICE_ONLINE == "yes" && $DEVICE_B7_MONITORING == "false" ]]; then
@@ -261,7 +273,7 @@ check_hosts() {
             COLOR="\e[91m"
           fi
         fi
-        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s $UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE"
+        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s %10s $UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN"
     done
 
     echo ""

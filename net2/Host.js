@@ -739,7 +739,8 @@ class Host {
       ua_name : this.o.ua_name,
       ua_os_name : this.o.ua_os_name,
       name : this.name(),
-      monitored: this.policy['monitor']
+      monitored: this.policy['monitor'],
+      vpnClient: this.policy['vpnClient']
     };
 
     // Do not pass vendor info to cloud if vendor is unknown, this can force cloud to validate vendor oui info again.

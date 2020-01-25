@@ -17,7 +17,6 @@
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
-const HostManager = require('../net2/HostManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
@@ -41,7 +40,6 @@ class DNSMASQSensor extends Sensor {
         throw err;
       })
       .then(async () => {
-        this.registerLocalDomain();
         dnsmasq.start(false)
       })
       .catch(err => log.error("Failed to start dnsmasq: " + err))
@@ -129,18 +127,6 @@ class DNSMASQSensor extends Sensor {
             this._emitBufferedEvent();
           })
       })
-  }
-  async registerLocalDomain() {
-    const hostManager = new HostManager("cli", 'client', 'info');
-    const hosts = await hostManager.getHostsAsync();
-    let pureHosts = [];
-    for (const host of hosts) {
-      if (host && host.o) {
-        pureHosts.push(host.o)
-      }
-    }
-    log.debug("pureHosts", pureHosts)
-    dnsmasq.setupLocalDeviceDomain(false, pureHosts, true);
   }
 }
 

@@ -126,7 +126,7 @@ class DNSTool {
     addresses = addresses || []
 
     addresses = addresses.filter((addr) => {
-      return firewalla.isReservedBlockingIP(addr) != true
+      return addr && firewalla.isReservedBlockingIP(addr) != true
     })
 
     let key = this.getReverseDNSKey(domain)

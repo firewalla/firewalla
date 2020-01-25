@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -200,7 +200,7 @@ class SSClient {
 
   async statusCheck() {
     const cmd = `curl -m 10 -s -w 'X12345X%{time_appconnect}X12345X\n' -o  /dev/null --socks5-hostname localhost:${this.ssClientPort} https://google.com`;
-    log.info("checking cmd", cmd);
+    log.debug("checking cmd", cmd);
     try {
       const result = await exec(cmd);
       if(result.stdout) {
@@ -214,7 +214,8 @@ class SSClient {
         }
       }
     } catch(err) {
-      log.error(`ss server ${this.name} is not available.`, err);
+      log.error(`ss server ${this.name} is not available.`, err.message);
+      log.debug(err);
     }
     return {
       status: false

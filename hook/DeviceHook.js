@@ -289,7 +289,7 @@ class DeviceHook extends Hook {
             host.spoof(true);
           }
         });
-        this.setupLocalDeviceDomain(host.mac);
+        this.setupLocalDeviceDomain(host.mac, 'new_device');
       })().catch((err) => {
         log.error("Failed to handle NewDeviceFound event:", err);
       });
@@ -351,7 +351,7 @@ class DeviceHook extends Hook {
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
         let hostManager = new HostManager("cli", 'server', 'info')
         hostManager.getHost(host.ipv4Addr);
-        this.setupLocalDeviceDomain(host.mac);
+        this.setupLocalDeviceDomain(host.mac, 'ip_change');
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err);
       })
@@ -424,7 +424,7 @@ class DeviceHook extends Hook {
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
         let hostManager = new HostManager("cli", 'server', 'info');
         hostManager.getHost(host.ipv4Addr);
-        this.setupLocalDeviceDomain(host.mac);
+        this.setupLocalDeviceDomain(host.mac, 'ip_change');
       })().catch((err) => {
         log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
       })
@@ -477,7 +477,6 @@ class DeviceHook extends Hook {
         }
 
         await hostTool.updateMACKey(enrichedHost); // host:mac:.....
-        this.setupLocalDeviceDomain(host.mac);
 
         // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
         // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
@@ -701,12 +700,12 @@ class DeviceHook extends Hook {
       }
     });
   }
-  async setupLocalDeviceDomain(mac) {
+  async setupLocalDeviceDomain(mac, type) {
     if (!mac) return;
-    const hostManager = new HostManager("cli", 'server', 'info');
-    const host = await hostManager.getHostAsync(mac);
-    if (!host.o) return;
-    dnsmasq.setupLocalDeviceDomain(true, [host.o]);
+    if (type == 'new_device') {
+      await hostTool.generateLocalDomain(mac);
+    }
+    await dnsmasq.setupLocalDeviceDomain([mac]);
   }
 
 
