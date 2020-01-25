@@ -82,15 +82,44 @@ async function setupGlobalWhitelist(state) {
   }
 }
 
-async function setupInterfaceWhitelist(state, iface) {
-  if (!iface) {
-    log.error("interface is not defined while setting up whitelist");
+async function setupInterfaceWhitelist(state, uuid) {
+  if (!uuid) {
+    log.error("network uuid is not defined while setting up whitelist");
+    return;
+  }
+  const networkIpsetName = require('../net2/NetworkProfile.js').getNetIpsetName(uuid);
+  if (!networkIpsetName) {
+    log.error(`Failed to get ipset name for network ${uuid}`);
     return;
   }
   const ruleSet = [
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(iface, null, "iif").jmp('FW_WHITELIST'),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(iface, null, "oif").jmp('FW_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(iface, null, "iif").jmp('FW_NAT_WHITELIST')
+    new Rule().chn('FW_WHITELIST_PREROUTE').mth(networkIpsetName, "src,src", "set").jmp('FW_WHITELIST'),
+    new Rule().chn('FW_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_WHITELIST'),
+    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "src,src", "set").jmp('FW_NAT_WHITELIST'),
+    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_NAT_WHITELIST')
+  ];
+
+  const ruleSet6 = ruleSet.map(r => r.clone().fam(6));
+
+  for (const rule of ruleSet.concat(ruleSet6)) {
+    const op = state ? '-A' : '-D';
+    await exec(rule.toCmd(op)).catch((err) => {
+      log.error(`Failed to execute rule ${rule.toCmd(op)}`, err);
+    });
+  }
+}
+
+async function setupTagWhitelist(state, tagUid) {
+  if (!tagUid) {
+    log.error("tag uid is not defined while setting up whitelist");
+    return;
+  }
+  const tagSet = require('../net2/Tag.js').getTagIpsetName(tagUid);
+  const ruleSet = [
+    new Rule().chn('FW_WHITELIST_PREROUTE').mth(tagSet, "src,src", "set").jmp('FW_WHITELIST'),
+    new Rule().chn('FW_WHITELIST_PREROUTE').mth(tagSet, "dst,dst", "set").jmp('FW_WHITELIST'),
+    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(tagSet, "src,src", "set").jmp('FW_NAT_WHITELIST'),
+    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(tagSet, "dst,dst", "set").jmp('FW_NAT_WHITELIST')
   ];
 
   const ruleSet6 = ruleSet.map(r => r.clone().fam(6));
@@ -310,5 +339,6 @@ module.exports = {
   getMacSet: getMacSet,
   existsBlockingEnv: existsBlockingEnv,
   setupGlobalWhitelist: setupGlobalWhitelist,
-  setupInterfaceWhitelist: setupInterfaceWhitelist
+  setupInterfaceWhitelist: setupInterfaceWhitelist,
+  setupTagWhitelist: setupTagWhitelist
 }

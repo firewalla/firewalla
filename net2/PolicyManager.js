@@ -234,13 +234,27 @@ module.exports = class {
         })
     }
 
+    if (host.constructor.name === "Tag") {
+      if (iptablesReady)
+        return Block.setupTagWhitelist(config.state, host.o && host.o.uid);
+      else {
+        // wait until basic iptables are all set
+        return new Promise((resolve, reject) => {
+          sem.once('IPTABLES_READY', () => {
+            Block.setupTagWhitelist(config.state, host.o && host.o.uid)
+              .then(resolve).catch(reject);
+          });
+        })
+      }
+    }
+
     if (host.constructor.name == "NetworkProfile") {
       if (iptablesReady) {
-        return Block.setupInterfaceWhitelist(config.state, host.o && host.o.intf);
+        return Block.setupInterfaceWhitelist(config.state, host.o && host.o.uuid);
       } else {
         return new Promise((resolve, reject) => {
           sem.once('IPTABLES_READY', () => {
-            Block.setupInterfaceWhitelist(config.state, host.o && host.o.intf)
+            Block.setupInterfaceWhitelist(config.state, host.o && host.o.uuid)
               .then(resolve).catch(reject);
           })
         });
@@ -372,6 +386,16 @@ module.exports = class {
     }
   }
 
+  tags(target, config) {
+    if (!target)
+      return;
+    if (target.constructor.name === 'HostManager') {
+      log.error("tags doesn't support system policy");
+      return;
+    }
+    target.tags(config);
+  }
+
   execute(target, ip, policy, callback) {
     if (target.oper == null) {
       target.oper = {};
@@ -436,6 +460,8 @@ module.exports = class {
         this.ipAllocation(target, policy[p]);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
+      } else if (p === "tags") {
+        this.tags(target, policy[p]);
       }
 
       if (p !== "dnsmasq") {

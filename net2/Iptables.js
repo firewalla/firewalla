@@ -305,7 +305,7 @@ function iptables(rule, callback) {
         let cmdline = "";
 
         let getCommand = function(action, protocol, destIP, dport, toIP, toPort) {
-          return `sudo iptables -w -t nat ${action} PREROUTING_PORT_FORWARD -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
+          return `sudo iptables -w -t nat ${action} FW_PREROUTING_PORT_FORWARD -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
         }
 
         switch(action) {
@@ -330,7 +330,7 @@ function iptables(rule, callback) {
             newRule(null, null);
         });
     } else if (rule.type === "port_forward_flush") {
-      const cmdline = `sudo iptables -w -t nat -F PREROUTING_PORT_FORWARD`;
+      const cmdline = `sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD`;
       log.debug("IPTABLE:PORT_FORWARD_FLUSH:Running commandline: ", cmdline);
       cp.exec(cmdline, (err, stdout, stderr) => {
         if (err) {

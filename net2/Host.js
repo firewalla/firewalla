@@ -49,6 +49,9 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 
+const TagManager = require('./TagManager.js');
+const Tag = require('./Tag.js');
+
 class Host {
   constructor(obj, mgr, callback) {
     this.callbacks = {};
@@ -1106,6 +1109,42 @@ class Host {
       return false;
     }
     return true;
+  }
+
+  async tags(tags) {
+    tags = tags || [];
+    this._tags = this._tags || [];
+    if (!this.o || !this.o.mac) {
+      log.error(`Mac address is not defined`);
+      return;
+    }
+    // remove old tags that are not in updated tags
+    const removedTags = this._tags.filter(uid => !(tags.includes(Number(uid)) || tags.includes(String(uid))));
+    for (let removedTag of removedTags) {
+      const tag = TagManager.getTagByUid(removedTag);
+      if (tag) {
+        await exec(`sudo ipset del -! ${Tag.getTagMacIpsetName(removedTag)} ${this.o.mac}`).catch((err) => {
+          log.error(`Failed to delete tag ${removedTag} ${tag.o.name} from mac ${this.o.mac}`, err);
+        });
+      } else {
+        log.warn(`Tag ${removedTag} not found`);
+      }
+    }
+    // filter updated tags in case some tag is already deleted from system
+    const updatedTags = [];
+    for (let uid of tags) {
+      const tag = TagManager.getTagByUid(uid);
+      if (tag) {
+        await exec(`sudo ipset add -! ${Tag.getTagMacIpsetName(uid)} ${this.o.mac}`).catch((err) => {
+          log.error(`Failed to add tag ${uid} ${tag.o.name} to mac ${this.o.mac}`, err);
+        });
+        updatedTags.push(uid);
+      } else {
+        log.warn(`Tag ${uid} not found`);
+      }
+    }
+    this._tags = updatedTags;
+    this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
   }
 }
 
