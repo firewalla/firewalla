@@ -43,6 +43,8 @@ const Config = require('../net2/config.js');
 
 const UPNP = require('../extension/upnp/upnp.js');
 
+const moment = require('moment');
+
 class VpnManager {
   constructor() {
     if (instance == null) {
@@ -627,7 +629,10 @@ class VpnManager {
       if (ovpn != null && regenerate == false) {
         let password = fs.readFileSync(ovpn_password, 'utf8').trim();
         log.info("VPNManager:Found older ovpn file: " + ovpn_file);
-        callback(null, ovpn, password);
+        (async () => {
+          const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
+          callback(null, ovpn, password, timestamp);
+        })();
         return;
       }
 
@@ -656,11 +661,44 @@ class VpnManager {
         }
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
           if (callback) {
-            callback(err, ovpn, password);
+            (async () => {
+              const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
+              callback(err, ovpn, password, timestamp);
+            })();
           }
         });
       });
     });
+  }
+
+  static async getVpnConfigureTimestamp(commonName) {
+    if (!commonName || commonName.trim().length == 0)
+      return null;
+
+    const cmd = "sudo cat /etc/openvpn/easy-rsa/keys/index.txt";
+    const result = await execAsync(cmd);
+    if (result.stderr !== "") {
+      log.error("Failed to read file.", result.stderr);
+      return null;
+    }
+
+    try {
+      const lines = result.stdout.toString("utf8").split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        const contents = lines[i].split(/\t/);
+        if (contents.length != 6)
+          continue;
+
+        if (!(contents[0] == "V" && contents[5] && contents[5].indexOf('/CN=' + commonName + '/') > -1))
+          continue;
+
+        return moment(contents[1], "YYMMDDHHmmssZ").subtract(3650, 'days').format('YYYY-MM-DD HH:mm:ss');
+      }
+    } catch(err) {
+      log.error("Failed to get timestamp:", err);
+    }
+
+    return null;
   }
 }
 

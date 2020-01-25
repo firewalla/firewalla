@@ -27,7 +27,6 @@ const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
-const getCanonicalizedDomainname = require('../../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
@@ -39,15 +38,15 @@ const platform = PlatformLoader.getPlatform()
 const DNSTool = require('../../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const fireRouter = require('../../net2/FireRouter.js')
-
+const fc = require('../../net2/config.js')
 const { delay } = require('../../util/util.js');
 
 const { Rule, CHAINS } = require('../../net2/Iptables.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
-const LOCAL_DEVICE_DOMAIN = FILTER_DIR + "/local_device_domain.conf";
-const LOCAL_DEVICE_DOMAIN_KEY = "local:device:domain"
+const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
+const LOCAL_DOMAIN_KEY = "local:device:domain"
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const FILTER_FILE = {
@@ -120,7 +119,9 @@ module.exports = class DNSMASQ {
       this.deleteInProgress = false;
       this.shouldStart = false;
       this.needRestart = null;
+      this.updatingLocalDomain = false;
       this.needWriteHostsFile = null;
+      this.throttleTimer = {};
       this.failCount = 0 // this is used to track how many dnsmasq status check fails in a row
 
       this.hashTypes = {
@@ -1387,69 +1388,78 @@ module.exports = class DNSMASQ {
   //save data in redis
   //{mac:{ipv4Addr:ipv4Addr,name:name}}
   //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
-  async setupLocalDeviceDomain(restart, hosts, isInit) {
-    const json = await rclient.getAsync(LOCAL_DEVICE_DOMAIN_KEY);
+  async setupLocalDeviceDomain(macArr, isInit) {
+    if (!fc.isFeatureOn('local_domain')) {
+      return;
+    }
+    if (this.updatingLocalDomain) {
+      const cooldown = 3 * 1000;
+      return setTimeout(() => {
+        this.setupLocalDeviceDomain(macArr, isInit)
+      }, cooldown)
+    }
+    this.updatingLocalDomain = true;
+    const json = await rclient.getAsync(LOCAL_DOMAIN_KEY);
     try {
       let needUpdate = false;
       let deviceDomainMap = JSON.parse(json) || {};
-      for (const host of hosts) {
-        const customizeDomainName = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "customizeDomainName");
-        let ipv4Addr = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "ipv4Addr");
-        const name = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "name");
-        const bname = await rclient.hgetAsync(hostTool.getMacKey(host.mac), "bname")
-        ipv4Addr = ipv4Addr ? ipv4Addr : host.ipv4Addr;
-        if (!ipv4Addr || (!bname && !name && !customizeDomainName)) continue;
-        if (!deviceDomainMap[host.mac]) {
-          deviceDomainMap[host.mac] = {
-            mac: host.mac,
+      for (const mac of macArr) {
+        const key = hostTool.getMacKey(mac);
+        const localDomain = await rclient.hgetAsync(key, "localDomain");
+        const userLocalDomain = await rclient.hgetAsync(key, "userLocalDomain");
+        const ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
+        if (!deviceDomainMap[mac]) {
+          deviceDomainMap[mac] = {
+            mac: mac,
             ipv4Addr: ipv4Addr,
-            name: name,
-            bname: bname,
-            customizeDomainName: customizeDomainName,
-            ts: new Date() / 1000
+            localDomain: localDomain,
+            userLocalDomain: userLocalDomain
           }
+          // new device found
           needUpdate = true;
         } else {
-          let deviceDomain = deviceDomainMap[host.mac];
-          if ((deviceDomain.name != name || deviceDomain.ipv4Addr != ipv4Addr ||
-            deviceDomain.customizeDomainName != customizeDomainName || deviceDomain.bname != bname)) {
-            needUpdate = true;
-            deviceDomain.mac = host.mac;
+          let deviceDomain = deviceDomainMap[mac];
+          if (deviceDomain.localDomain != localDomain || deviceDomain.userLocalDomain != userLocalDomain) {
+            if (deviceDomain.userLocalDomain) {
+              //If userLocalDomain is specified,only update when userLocalDomain changed
+              needUpdate = (deviceDomain.userLocalDomain != userLocalDomain);
+            } else {
+              //If userLocalDomain is not specified, update when preferredName is changed
+              needUpdate = (deviceDomain.localDomain != localDomain);
+            }
+            needUpdate = (deviceDomain.ipv4Addr != ipv4Addr || needUpdate);
+            deviceDomain.mac = mac;
             deviceDomain.ipv4Addr = ipv4Addr;
-            deviceDomain.name = name;
-            deviceDomain.customizeDomainName = customizeDomainName;
-            deviceDomain.bname = bname;
-            deviceDomain.ts = new Date() / 1000
+            deviceDomain.userLocalDomain = userLocalDomain;
+            deviceDomain.localDomain = localDomain;
           }
         }
       }
-      if (needUpdate || isInit) {
-        await rclient.setAsync(LOCAL_DEVICE_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
-        let localDeviceDomain = "";
-        for (const key in deviceDomainMap) {
-          const deviceDomain = deviceDomainMap[key];
-          let { name, bname, customizeDomainName } = deviceDomain;
-          name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
-          bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
-          name = name || bname;
-          customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
-          if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
-            name && (localDeviceDomain += `address=/${name}.lan/${deviceDomain.ipv4Addr}\n`);
-            customizeDomainName && (localDeviceDomain += `address=/${customizeDomainName}.lan/${deviceDomain.ipv4Addr}\n`);
-          }
-          await hostTool.updateMACKey({
-            localDomain: name ? `${name}.lan` : '',
-            userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
-            mac: deviceDomain.mac
-          }, true);
+      await rclient.setAsync(LOCAL_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
+      let localDeviceDomain = "";
+      for (const key in deviceDomainMap) {
+        const deviceDomain = deviceDomainMap[key];
+        let { localDomain, userLocalDomain } = deviceDomain;
+        if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
+          localDomain && (localDeviceDomain += `address=/${localDomain}/${deviceDomain.ipv4Addr}\n`);
+          userLocalDomain && (localDeviceDomain += `address=/${userLocalDomain}/${deviceDomain.ipv4Addr}\n`);
         }
-        await fs.writeFileAsync(LOCAL_DEVICE_DOMAIN, localDeviceDomain);
       }
-      if (needUpdate && restart) {
-        this.restartDnsmasq()
-      }
+      (isInit || needUpdate) && this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
+    this.updatingLocalDomain = false;
+  }
+  async throttleUpdatingConf(filePath, data) {
+    const cooldown = 5 * 1000;
+    if (this.throttleTimer[filePath]) {
+      clearTimeout(this.throttleTimer[filePath])
+    }
+    this.throttleTimer[filePath] = setTimeout(async () => {
+      log.info(`Going to update ${filePath}`)
+      await fs.writeFileAsync(filePath, data);
+      this.restartDnsmasq()
+    }, cooldown)
   }
 };

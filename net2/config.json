@@ -27,7 +27,8 @@
     "alarm.data_plan.cooldown": 2592000,
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
-    "alarm.subnet.cooldown": 2592000
+    "alarm.subnet.cooldown": 2592000,
+    "alarm.vpn_connect.cooldown": 300
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -502,7 +503,8 @@
       "minsize": 150000000,
       "dataPlanMinPercentage": 0.8
     },
-    "DnsmasqDhcpSensor": {}
+    "DnsmasqDhcpSensor": {},
+    "LocalDomainSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -618,7 +620,10 @@
     "safe_search": false,
     "network_stats": false,
     "link_stats": true,
-    "network_speed_test": false
+    "network_speed_test": false,
+    "vpn_restore": true,
+    "vpn_disconnect": true,
+    "local_domain": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
