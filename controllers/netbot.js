@@ -379,6 +379,7 @@ class netBot extends ControllerBot {
     this.hostManager.loadPolicy((err, data) => { });  //load policy
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
+    this.tagManager = require('../net2/TagManager.js');
 
     // no subscription for api mode
     if (apiMode) {
@@ -883,12 +884,21 @@ class netBot extends ControllerBot {
                     await network.setPolicy(o, policyData);
                   }
                 } else {
-                  let host = await this.hostManager.getHostAsync(target)
-                  if (host) {
-                    await host.loadPolicyAsync()
-                    await host.setPolicyAsync(o, policyData)
+                  if (target.startsWith("tag:")) {
+                    const tagUid = target.substring(4);
+                    const tag = await this.tagManager.getTagByUid(tagUid);
+                    if (tag) {
+                      await tag.loadPolicy();
+                      await tag.setPolicy(o, policyData)
+                    }
                   } else {
-                    throw new Error('Invalid host')
+                    let host = await this.hostManager.getHostAsync(target)
+                    if (host) {
+                      await host.loadPolicyAsync()
+                      await host.setPolicyAsync(o, policyData)
+                    } else {
+                      throw new Error('Invalid host')
+                    }
                   }
                 }
               }
@@ -2250,6 +2260,35 @@ class netBot extends ControllerBot {
           uptime: uptime,
           timestamp: now
         }, null, callback)
+        break;
+      }
+      case "tag:create": {
+        (async () => {
+          if (!value || !value.name)
+            this.simpleTxData(msg, {}, {code: 400, msg: "'name' is not specified."}, callback);
+          else {
+            const name = value.name;
+            const obj = value.obj;
+            const tag = await this.tagManager.createTag(name, obj);
+            this.simpleTxData(msg, tag, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "tag:remove": {
+        (async () => {
+          if (!value || !value.name)
+            this.simpleTxData(msg, {}, {code: 400, msg: "'name' is not specified"}, callback);
+          else {
+            const name = value.name;
+            await this.tagManager.removeTag(name);
+            this.simpleTxData(msg, {}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
         break;
       }
       case "alarm:block":

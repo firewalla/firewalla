@@ -211,6 +211,7 @@ async function run() {
   var hostManager= new HostManager("cli",'server','debug');
 
   const NetworkProfileManager = require('./NetworkProfileManager.js');
+  const TagManager = require('./TagManager.js');
 
   if (platform.getDHCPCapacity()) {
     // always create the secondary interface

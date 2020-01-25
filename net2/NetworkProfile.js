@@ -22,6 +22,9 @@ const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const iptables = require('./Iptables.js');
 const ip6tables = require('./Ip6tables.js');
+const exec = require('child-process-promise').exec;
+const TagManager = require('./TagManager.js');
+const Tag = require('./Tag.js');
 
 class NetworkProfile {
   constructor(o) {
@@ -46,10 +49,6 @@ class NetworkProfile {
 
   toJson() {
     return this.o;
-  }
-
-  setActive(active) {
-    this.o.active = active;
   }
 
   async setPolicy(name, data) {
@@ -125,6 +124,103 @@ class NetworkProfile {
     } else {
 
     }
+  }
+
+  static getNetIpsetName(uuid) {
+    const networkProfile = require('./NetworkProfileManager.js').getNetworkProfile(uuid);
+    if (networkProfile) {
+      const iface = networkProfile.o.intf;
+      if (!iface || iface.length == 0) {
+        log.error(`Failed to get interface name of network ${uuid}`);
+        return null;
+      }
+      return `c_net_${networkProfile.o.intf}_set`;
+    } else {
+      log.warn(`Network ${uuid} not found`);
+      return null;
+    }
+  }
+
+  async createEnv() {
+    // create related ipsets
+    const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+    if (!netIpsetName) {
+      log.error(`Failed to get ipset name for ${this.o.uuid}`);
+    } else {
+      await exec(`sudo ipset create -! ${netIpsetName} hash:net,iface maxelem 1024`).then(() => {
+        return exec(`sudo ipset flush -! ${netIpsetName}`);
+      }).then(() => {
+        if (this.o && this.o.ipv4 && this.o.ipv4.length != 0)
+          return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4},${this.o.intf}`);
+      }).catch((err) => {
+        log.error(`Failed to create network profile ipset ${netIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset create -! ${netIpsetName}6 hash:net,iface family inet6 maxelem 1024`).then(() => {
+        // TODO: add ipv6 prefixes to ipset
+      }).catch((err) => {
+        log.error(`Failed to create network profile ipset ${netIpsetName}6`, err.message);
+      });
+    }
+  }
+
+  async destroyEnv() {
+    const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+    if (!netIpsetName) {
+      log.error(`Failed to get ipset name for ${this.o.uuid}`);
+    } else {
+      await exec(`sudo ipset flush -! ${netIpsetName}`).then(() => {
+      }).catch((err) => {
+        log.error(`Failed to flush network profile ipset ${netIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset flush -! ${netIpsetName}6`).then(() => {
+      }).catch((err) => {
+        log.error(`Failed to flush network profile ipset ${netIpsetName}6`, err.message);
+      });
+      // delete related dnsmasq config files
+      if (this.o.intf)
+        await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/*`).catch((err) => {});
+    }
+  }
+
+  async tags(tags) {
+    tags = tags || [];
+    this._tags = this._tags || [];
+    const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+    if (!netIpsetName) {
+      log.error(`Failed to get ipset name for network profile ${this.o.uuid}`);
+      return;
+    }
+    // remove old tags that are not in updated tags
+    const removedTags = this._tags.filter(uid => !(tags.includes(Number(uid)) || tags.includes(String(uid))));
+    for (let removedTag of removedTags) {
+      const tag = TagManager.getTagByUid(removedTag);
+      if (tag) {
+        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}6`);
+        }).catch((err) => {
+          log.error(`Failed to delete tag ${removedTag} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
+        });
+      } else {
+        log.warn(`Tag ${removedTag} not found`);
+      }
+    }
+    // filter updated tags in case some tag is already deleted from system
+    const updatedTags = [];
+    for (let uid of tags) {
+      const tag = TagManager.getTagByUid(uid);
+      if (tag) {
+        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}6`);
+        }).catch((err) => {
+          log.error(`Failed to add tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
+        });
+        updatedTags.push(uid);
+      } else {
+        log.warn(`Tag ${uid} not found`);
+      }
+    }
+    this._tags = updatedTags;
+    this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
   }
 }
 

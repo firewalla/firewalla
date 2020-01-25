@@ -27,10 +27,12 @@ class NetworkProfileManager {
   constructor() {
     const c = require('./MessageBus.js');
     this.subscriber = new c("info");
-
+    this.iptablesReady = false;
     this.networkProfiles = {};
+
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
+        this.iptablesReady = true;
         log.info("Iptables is ready, apply network profile policies ...");
         await this.refreshNetworkProfiles();
         for (let uuid in this.networkProfiles) {
@@ -71,8 +73,28 @@ class NetworkProfileManager {
     return obj;
   }
 
+  toJson() {
+    const json = {}
+    for (let uuid in this.networkProfiles) {
+      json[uuid] = this.networkProfiles[uuid].toJson();
+    }
+    return json;
+  }
+
   getNetworkProfile(uuid) {
     return this.networkProfiles[uuid];
+  }
+
+  async scheduleCreateEnv(networkProfile) {
+    if (this.iptablesReady) {
+      log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
+      await networkProfile.createEnv();
+    } else {
+      sem.once('IPTABLES_READY', async () => {
+        log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
+        await networkProfile.createEnv();
+      });
+    }
   }
 
   async refreshNetworkProfiles() {
@@ -82,18 +104,30 @@ class NetworkProfileManager {
       const o = this.parse(redisProfile);
       const uuid = key.substring(13);
       if (this.networkProfiles[uuid]) {
-        this.networkProfiles[uuid].update(o);
+        const networkProfile = this.networkProfiles[uuid];
+        const previousIpv4 = networkProfile.o.ipv4;
+        networkProfile.update(o);
+        if (o.ipv4 && previousIpv4 !== o.ipv4) {
+          // network prefix changed, need to reapply createEnv
+          if (f.isMain()) {
+            log.info(`Network prefix of ${uuid} ${networkProfile.o.intf} changed from ${previousIpv4} to ${o.ipv4}, updating environment ...`);
+            await this.scheduleCreateEnv(networkProfile);
+          }
+        }
       } else {
         this.networkProfiles[uuid] = new NetworkProfile(o);
+        if (f.isMain()) {
+          await this.scheduleCreateEnv(this.networkProfiles[uuid]);
+        }
       }
-      this.networkProfiles[uuid].setActive(false);
+      this.networkProfiles[uuid].active = false;
     }
 
     const monitoringInterfaces = fireRouter.getMonitoringIntfNames();
 
     for (let intf of monitoringInterfaces) {
       const profile = fireRouter.getInterfaceViaName(intf);
-      if (!profile) // FIXME: this is taken on red/blue. need to support network concept on them later
+      if (!profile) // FIXME: this is taken on red/blue. Probably support network concept on them later?
         continue;
       const meta = profile.config && profile.config.meta;
       const uuid = meta && meta.uuid;
@@ -110,22 +144,55 @@ class NetworkProfileManager {
         dns: state && state.dns,
         gateway: state && state.gateway,
         intfs: config && config.intf || [intf],
-        active: config && config.enabled || false,
+        enabled: config && config.enabled || false,
         meta: meta
       };
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
+        if (f.isMain()) {
+          await this.scheduleCreateEnv(this.networkProfiles[uuid]);
+        }
       } else {
-        this.networkProfiles[uuid].update(updatedProfile);
+        const networkProfile = this.networkProfiles[uuid];
+        const previousIpv4 = networkProfile.o.ipv4;
+        networkProfile.update(updatedProfile);
+        if (updatedProfile.ipv4 && previousIpv4 !== updatedProfile.ipv4) {
+          // network prefix changed, need to reapply createEnv
+          if (f.isMain()) {
+            log.info(`Network prefix of ${uuid} ${networkProfile.o.intf} changed from ${previousIpv4} to ${updatedProfile.ipv4}, updating environment ...`);
+            await this.scheduleCreateEnv(networkProfile);
+          }
+        }
       }
+      this.networkProfiles[uuid].active = true;
+    }
+
+    const removedNetworkProfiles = {};
+    Object.keys(this.networkProfiles).filter(uuid => this.networkProfiles[uuid].active === false).map((uuid) => {
+      removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
+    });
+    for (let uuid in removedNetworkProfiles) {
+      if (f.isMain()) {
+        await rclient.delAsync(`network:uuid:${uuid}`);
+        if (this.iptablesReady) {
+          log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
+          await removedNetworkProfiles[uuid].destroyEnv();
+        } else {
+          sem.once('IPTABLES_READY', async () => {
+            log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
+            await removedNetworkProfiles[uuid].destroyEnv();
+          });
+        }
+      }
+      delete this.networkProfiles[uuid];
     }
 
     for (let uuid in this.networkProfiles) {
       const key = `network:uuid:${uuid}`;
       const profileJson = this.networkProfiles[uuid].toJson();
-      // delete then set, ensure legacy data is removed
-      await rclient.delAsync(key);
-      await rclient.hmsetAsync(key, this.redisfy(profileJson));
+      if (f.isMain()) {
+        await rclient.hmsetAsync(key, this.redisfy(profileJson));
+      }
     }
     return this.networkProfiles;
   }

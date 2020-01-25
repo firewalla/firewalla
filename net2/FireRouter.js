@@ -361,5 +361,5 @@ class FireRouter {
 
 }
 
-
-module.exports = new FireRouter()
+const instance = new FireRouter();
+module.exports = instance;

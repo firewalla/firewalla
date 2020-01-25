@@ -55,7 +55,6 @@ module.exports = class {
           let cbs = null;
           if (
             m.ip &&
-            m.ip.length > 3 &&
             this.callbacks[channel + '.' + m.type + '.' + m.ip] != null
           ) {
             cbs = this.callbacks[channel + '.' + m.type + '.' + m.ip];

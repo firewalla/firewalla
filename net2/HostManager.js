@@ -94,6 +94,9 @@ const ip6tables = require('./Ip6tables.js');
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
+const NetworkProfileManager = require('./NetworkProfileManager.js');
+const TagManager = require('./TagManager.js');
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 module.exports = class HostManager {
@@ -881,6 +884,16 @@ module.exports = class HostManager {
     json.networkConfig = config;
   }
 
+  async tagsForInit(json) {
+    await TagManager.refreshTags();
+    json.tags = TagManager.toJson();
+  }
+
+  async networkProfilesForInit(json) {
+    await NetworkProfileManager.refreshNetworkProfiles();
+    json.networkProfiles = NetworkProfileManager.toJson();
+  }
+
   toJson(includeHosts, options, callback) {
 
     if(typeof options === 'function') {
@@ -918,7 +931,9 @@ module.exports = class HostManager {
           this.getRecentFlows(json),
           this.getGuessedRouters(json),
           this.getGuardian(json),
-          this.networkConfig(json)
+          this.networkConfig(json),
+          this.networkProfilesForInit(json),
+          this.tagsForInit(json)
         ];
 
         this.basicDataForInit(json, options);
