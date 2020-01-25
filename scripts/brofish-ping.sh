@@ -17,7 +17,7 @@ FILE=/blog/current/conn.log
 
 brofish_ping() {
   RESULT=$(find $FILE -mmin ${MMIN} 2>/dev/null)
-  if [[ -e $FILE && "x$RESULT" == "x" ]]; then
+  if [[ ! -e $FILE || "x$RESULT" == "x" ]]; then
     return 1
   else
     return 0
@@ -42,9 +42,11 @@ fi
 retry=1
 ping_ok=0
 while (($retry <= $TOTAL_RETRIES)); do
-  if brofish_cpu; then
-    ping_ok=1
-    break
+  if brofish_ping; then
+    if brofish_cpu; then
+      ping_ok=1
+      break
+    fi
   fi
   sleep $SLEEP_TIMEOUT
   ((retry++))
