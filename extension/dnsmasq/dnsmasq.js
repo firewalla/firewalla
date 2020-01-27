@@ -99,7 +99,7 @@ const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || 
 const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
 const RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
-const SERVICE_NAME = platform.isFireRouterManaged() ? 'firerouter_dhcp' : 'firemasq';
+const SERVICE_NAME = platform.isFireRouterManaged() ? 'firerouter_dns' : 'firemasq';
 const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
@@ -1191,8 +1191,9 @@ module.exports = class DNSMASQ {
   async rawRestart() {
     log.info("Restarting dnsmasq...")
     this.counter.restart++;
-
-    const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
+    
+    // stop first to ensure the child processes are fully terminated before start
+    const cmd = `sudo systemctl stop ${SERVICE_NAME}; sudo systemctl start ${SERVICE_NAME}`; 
 
     try {
       await execAsync(cmd);
@@ -1359,10 +1360,11 @@ module.exports = class DNSMASQ {
           log.error(`Failed to create ${FILTER_DIR}`, err);
       });
       const dirs = [FILTER_DIR, LEGACY_FILTER_DIR];
-      for (let dir of dirs) {
+
+      const cleanDir = (async (dir) => {
         const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch(() => false);
         if (!dirExists)
-          continue;
+          return;
 
         const files = await fs.readdirAsync(dir);
         await Promise.all(files.map(async (filename) => {
@@ -1375,10 +1377,17 @@ module.exports = class DNSMASQ {
                 log.error(`Failed to remove ${filePath}, err:`, err);
               });
             }
+            if (fileStat.isDirectory()) {
+              await cleanDir(filePath);
+            }
           } catch (err) {
             log.info(`File ${filePath} not exist`);
           }
         }));
+      });
+
+      for (let dir of dirs) {
+        await cleanDir(dir);
       }
     } catch (err) {
       log.error("Failed to clean up leftover config", err);

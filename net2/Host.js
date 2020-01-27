@@ -52,6 +52,13 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
+const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new Dnsmasq();
+
 class Host {
   constructor(obj, mgr, callback) {
     this.callbacks = {};
@@ -73,10 +80,10 @@ class Host {
         this.processNotifications(channel, message);
       });
 
-      if (obj != null) {
-        this.subscribe(this.o.ipv4Addr, "Notice:Detected");
-        this.subscribe(this.o.ipv4Addr, "Intel:Detected");
-        this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
+      if (obj && obj.mac) {
+        this.subscribe(this.o.mac, "Notice:Detected");
+        this.subscribe(this.o.mac, "Intel:Detected");
+        this.subscribe(this.o.mac, "HostPolicy:Changed");
       }
       this.spoofing = false;
 
@@ -95,10 +102,10 @@ class Host {
     }
 
     if(this.mgr.type === 'server') {
-      if (obj != null) {
-        this.subscribe(this.o.ipv4Addr, "Notice:Detected");
-        this.subscribe(this.o.ipv4Addr, "Intel:Detected");
-        this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
+      if (obj && obj.mac) {
+        this.subscribe(this.o.mac, "Notice:Detected");
+        this.subscribe(this.o.mac, "Intel:Detected");
+        this.subscribe(this.o.mac, "HostPolicy:Changed");
       }
       this.predictHostNameUsingUserAgent();
       this.loadPolicy(null);
@@ -595,19 +602,19 @@ class Host {
     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
     .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
     */
-  subscribe(ip, e) {
-    this.subscriber.subscribeOnce("DiscoveryEvent", e, ip, (channel, type, ip2, obj) => {
-      log.debug("Host:Subscriber", channel, type, ip2, obj);
+  subscribe(mac, e) {
+    this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, (channel, type, ip, obj) => {
+      log.debug("Host:Subscriber", channel, type, ip, obj);
       if (type === "Notice:Detected") {
         if (this.callbacks[e]) {
-          this.callbacks[e](channel, ip2, type, obj);
+          this.callbacks[e](channel, ip, type, obj);
         }
       } else if (type === "Intel:Detected") {
         // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && this.type === "server") {
         this.applyPolicy((err)=>{
         });
-        log.info("HostPolicy:Changed", channel, ip, ip2, type, obj);
+        log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       }
     });
   }
@@ -979,49 +986,6 @@ class Host {
     rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
   }
 
-  async getHostAsync(ip) {
-    return await this.getHost(ip);
-  }
-
-  async getHost(ip) {
-    let key = "host:ip4:" + ip;
-    log.debug("Discovery:FindHostWithIP", key, ip);
-    let start = "-inf";
-    let end = "+inf";
-    let now = Date.now() / 1000;
-    this.summarygap = Number(24);
-    if (this.summarygap != null) {
-      start = now - this.summarygap * 60 * 60;
-      end = now;
-    }
-    try {
-      const data = await rclient.hgetallAsync(key);
-      if (data != null) {
-        this.o = data;
-
-        if(this.mgr.type === 'server') {
-          this.subscribe(ip, "Notice:Detected");
-          this.subscribe(ip, "Intel:Detected");
-        }
-
-        const {byCount, byTime} = await this.summarizeSoftware(ip, start, end);
-        //      rclient.zrevrangebyscore(["software:ip:"+ip,'+inf','-inf'], (err,result)=> {
-        this.softwareByCount = byCount;
-        this.softwareByRecent = byTime;
-        let result = await rclient.zrevrangebyscoreAsync(["notice:" + ip, end, start]);
-        this.notice = result
-        result = await rclient.zrevrangebyscoreAsync(["flow:http:in:" + ip, end, start, "LIMIT", 0, 10]);
-        this.http = result;
-        return this;
-      } else {
-        return null;
-      }
-    } catch (err) {
-      log.error("Discovery:FindHostWithIP:Error", key, err);
-      return null;
-    }
-  }
-
   setPolicy(name, data, callback) {
     callback = callback || function() {}
     return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
@@ -1040,7 +1004,7 @@ class Host {
     obj[name] = data;
     if (this.subscriber) {
       setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
+        this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
       }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
     }
     return obj
@@ -1127,6 +1091,7 @@ class Host {
         await exec(`sudo ipset del -! ${Tag.getTagMacIpsetName(removedTag)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to delete tag ${removedTag} ${tag.o.name} from mac ${this.o.mac}`, err);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
@@ -1137,8 +1102,12 @@ class Host {
       const tag = TagManager.getTagByUid(uid);
       if (tag) {
         await exec(`sudo ipset add -! ${Tag.getTagMacIpsetName(uid)} ${this.o.mac}`).catch((err) => {
-          log.error(`Failed to add tag ${uid} ${tag.o.name} to mac ${this.o.mac}`, err);
+          log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         });
+        const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
+        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
+          log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+        })
         updatedTags.push(uid);
       } else {
         log.warn(`Tag ${uid} not found`);
@@ -1146,6 +1115,7 @@ class Host {
     }
     this._tags = updatedTags;
     this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
+    await dnsmasq.restartDnsmasq();
   }
 }
 

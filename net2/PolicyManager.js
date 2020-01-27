@@ -412,7 +412,7 @@ module.exports = class {
     log.debug("PolicyManager:Execute:", ip, policy);
 
     for (let p in policy) {
-      if (target.oper[p] != null && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
+      if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
         log.debug("PolicyManager:AlreadyApplied", p, target.oper[p]);
         if (p === "monitor") {
           target.spoof(policy[p]);
