@@ -53,7 +53,8 @@ class NetworkProfile {
   }
 
   toJson() {
-    return this.o;
+    const json = Object.assign({}, this.o, {policy: this._policy});
+    return json;
   }
 
   async setPolicy(name, data) {

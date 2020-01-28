@@ -53,9 +53,10 @@ class TagManager {
     return this;
   }
 
-  toJson() {
+  async toJson() {
     const json = {};
     for (let uid in this.tags) {
+      await this.tags[uid].loadPolicy();
       json[uid] = this.tags[uid].toJson();
     }
     return json;

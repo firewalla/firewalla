@@ -887,12 +887,12 @@ module.exports = class HostManager {
 
   async tagsForInit(json) {
     await TagManager.refreshTags();
-    json.tags = TagManager.toJson();
+    json.tags = await TagManager.toJson();
   }
 
   async networkProfilesForInit(json) {
     await NetworkProfileManager.refreshNetworkProfiles();
-    json.networkProfiles = NetworkProfileManager.toJson();
+    json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
   toJson(includeHosts, options, callback) {
