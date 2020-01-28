@@ -19,7 +19,6 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
-const sem = require('../sensor/SensorEventManager.js').getInstance();
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const TagManager = require('../net2/TagManager.js');
 
@@ -37,8 +36,6 @@ Promise.promisifyAll(fs);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const exec = require('child-process-promise').exec;
-
 const fc = require('../net2/config.js');
 
 const spt = require('../net2/SystemPolicyTool')();
@@ -46,9 +43,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const updateFeature = "family";
 const updateFlag = "2";
 
-const CONFIG_TAG = "family_protect";
-
 const featureName = "family_protect";
+const policyKeyName = "family";
 
 class FamilyProtectPlugin extends Sensor {
     async run() {
@@ -57,19 +53,18 @@ class FamilyProtectPlugin extends Sensor {
         this.macAddressSettings = {};
         this.networkSettings = {};
         this.tagSettings = {};
-        extensionManager.registerExtension("family", this, {
+        extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
             stop: this.stop
         });
         if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
-            const isPolicyEnabled = await spt.isPolicyEnabled('family');
+            const isPolicyEnabled = await spt.isPolicyEnabled(policyKeyName);
             if (isPolicyEnabled) {
-                await fc.enableDynamicFeature("family");
+                await fc.enableDynamicFeature(featureName);
             }
             await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
         }
-        await exec(`mkdir -p ${dnsmasqConfigFolder}`);
 
         this.hookFeature(featureName);
     }
@@ -88,8 +83,8 @@ class FamilyProtectPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
-                    if (fc.isFeatureOn("family_protect", true)) {//compatibility: new firewlla, old app
-                        await fc.enableDynamicFeature("family_protect");
+                    if (fc.isFeatureOn(featureName, true)) {//compatibility: new firewlla, old app
+                        await fc.enableDynamicFeature(featureName);
                     }
                 } else {
                     this.systemSwitch = false;
@@ -148,10 +143,10 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async applyFamilyProtect() {
-      const configFilePath = `${dnsmasqConfigFolder}/familyProtect.conf`;
+      const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
       if (this.adminSystemSwitch) {
         const dnsaddrs = await this.familyDnsAddr();
-        const dnsmasqEntry = `server=${dnsaddrs[0]}$${CONFIG_TAG}`;
+        const dnsmasqEntry = `server=${dnsaddrs[0]}$${featureName}`;
         await fs.writeFileAsync(configFilePath, dnsmasqEntry);
       } else {
         await fs.unlinkAsync(configFilePath).catch((err) => {});
@@ -165,7 +160,7 @@ class FamilyProtectPlugin extends Sensor {
         const tag = TagManager.getTagByUid(tagUid);
         if (!tag)
           // reset tag if it is already deleted
-          this.tagSettings[tagUid] = 0
+          this.tagSettings[tagUid] = 0;
         await this.applyTagFamilyProtect(tagUid);
         if (!tag)
           delete this.tagSettings[tagUid];
@@ -212,35 +207,35 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async systemStart() {
-        const configFile = `${dnsmasqConfigFolder}/familyProtect_system.conf`;
-        const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${CONFIG_TAG}\n`;
+        const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
+        const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
         await dnsmasq.restartDnsmasq();
     }
 
     async systemStop() {
-      const configFile = `${dnsmasqConfigFolder}/familyProtect_system.conf`;
-      const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${CONFIG_TAG}\n`;
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
+      const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       await dnsmasq.restartDnsmasq();
     }
 
     async perTagStart(tagUid) {
-      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_familyProtect.conf`;
-      const dnsmasqEntry = `group-tag=@${tagUid}$${CONFIG_TAG}\n`;
+      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       await dnsmasq.restartDnsmasq();
     }
 
     async perTagStop(tagUid) {
-      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_familyProtect.conf`;
-      const dnsmasqEntry = `group-tag=@${tagUid}$!${CONFIG_TAG}\n`; // match negative tag
+      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\n`; // match negative tag
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       await dnsmasq.restartDnsmasq();
     }
 
     async perTagReset(tagUid) {
-      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_familyProtect.conf`;
+      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       await fs.unlinkAsync(configFile).catch((err) => {});
       await dnsmasq.restartDnsmasq();
     }
@@ -252,8 +247,8 @@ class FamilyProtectPlugin extends Sensor {
         log.warn(`Interface name is not found on ${uuid}`);
         return;
       }
-      const configFile = `${dnsmasqConfigFolder}/${iface}/familyProtect_${iface}.conf`;
-      const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${CONFIG_TAG}\n`;
+      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+      const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.restartDnsmasq();
     }
@@ -265,9 +260,9 @@ class FamilyProtectPlugin extends Sensor {
         log.warn(`Interface name is not found on ${uuid}`);
         return;
       }
-      const configFile = `${dnsmasqConfigFolder}/${iface}/familyProtect_${iface}.conf`;
+      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
       // explicit disable family protect
-      const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${CONFIG_TAG}\n`;
+      const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.restartDnsmasq();
     }
@@ -279,28 +274,28 @@ class FamilyProtectPlugin extends Sensor {
         log.warn(`Interface name is not found on ${uuid}`);
         return;
       }
-      const configFile = `${dnsmasqConfigFolder}/${iface}/familyProtect_${iface}.conf`;
+      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.restartDnsmasq();
     }
 
     async perDeviceStart(macAddress) {
-      const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
-      const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${CONFIG_TAG}\n`;
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
+      const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
       dnsmasq.restartDnsmasq();
     }
 
     async perDeviceStop(macAddress) {
-      const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
-      const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${CONFIG_TAG}\n`;
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
+      const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
       dnsmasq.restartDnsmasq();
     }
 
     async perDeviceReset(macAddress) {
-      const configFile = `${dnsmasqConfigFolder}/familyProtect_${macAddress}.conf`;
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.restartDnsmasq();

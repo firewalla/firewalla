@@ -155,7 +155,7 @@ module.exports = class DNSMASQ {
         restart: 0
       }
       this.dnsTag = {
-        adblock: "$ad_block"
+        adblock: "$adblock"
       }
       sem.once('IPTABLES_READY', () => {
         if (f.isMain()) {
