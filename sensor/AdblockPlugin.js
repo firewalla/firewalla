@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016 - 2020 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,16 +19,11 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
-const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
-const deviceConfigFile = `${dnsmasqConfigFolder}/adblock_mac_set.conf`;
-const systemConfigFile = `${dnsmasqConfigFolder}/adblock_system.conf`;
-const dnsTag = "$ad_block";
-const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -37,7 +32,8 @@ Promise.promisifyAll(fs);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const exec = require('child-process-promise').exec;
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+const TagManager = require('../net2/TagManager.js');
 
 const fc = require('../net2/config.js');
 
@@ -47,120 +43,263 @@ const updateFeature = "adblock";
 const updateFlag = "2";
 
 const featureName = "adblock";
+const policyKeyName = "adblock";
 
 class AdblockPlugin extends Sensor {
     async run() {
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
         this.enabledMacAddresses = [];
-        extensionManager.registerExtension("adblock", this, {
+        this.macAddressSettings = {};
+        this.networkSettings = {};
+        this.tagSettings = {};
+        extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
             stop: this.stop
         });
         if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
-            const isPolicyEnabled = await spt.isPolicyEnabled('adblock');
+            const isPolicyEnabled = await spt.isPolicyEnabled(policyKeyName);
             if (isPolicyEnabled) {
-                await fc.enableDynamicFeature("adblock");
+                await fc.enableDynamicFeature(featureName);
             }
             await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
         }
 
-        await exec(`mkdir -p ${dnsmasqConfigFolder}`);
         this.hookFeature(featureName);
     }
 
-    job() {
-        this.applyAdblock();
+    async job() {
+        await this.applyAdblock();
     }
 
     async apiRun() {
     }
 
     async applyPolicy(host, ip, policy) {
-        log.info("Applying adblock policy:", ip, policy);
-        try {
-            if (ip === '0.0.0.0') {
-                if (policy == true) {
-                    this.systemSwitch = true;
-                    if (fc.isFeatureOn("adblock", true)) {//compatibility: new firewlla, old app
-                        await fc.enableDynamicFeature("adblock");
-                        return;
-                    }
-                } else {
-                    this.systemSwitch = false;
-                }
-                return this.applySystemAdblock();
-            } else {
-                const macAddress = host && host.o && host.o.mac;
-                if (macAddress) {
-                    if (policy == true) {
-                        this.enabledMacAddresses.push(macAddress);
-                    } else {
-                        const index = this.enabledMacAddresses.indexOf(macAddress);
-                        if (index > -1) {
-                            this.enabledMacAddresses.splice(index, 1);
-                        }
-                    }
-                    return this.applyDeviceAdblock();
-                }
+      log.info("Applying adblock policy:", ip, policy);
+      try {
+        if (ip === '0.0.0.0') {
+          if (policy === true) {
+            this.systemSwitch = true;
+            if (fc.isFeatureOn(featureName, true)) {//compatibility: new firewlla, old app
+              await fc.enableDynamicFeature(featureName);
+              return;
             }
-        } catch (err) {
-            log.error("Got error when applying adblock policy", err);
+          } else {
+            this.systemSwitch = false;
+          }
+          return this.applySystemAdblock();
+        } else {
+          if (!host)
+            return;
+          switch (host.constructor.name) {
+            case "Tag": {
+              const tagUid = host.o && host.o.uid
+              if (tagUid) {
+                if (policy === true)
+                  this.tagSettings[tagUid] = 1;
+                if (policy === false)
+                  this.tagSettings[tagUid] = -1;
+                if (policy === null)
+                  this.tagSettings[tagUid] = 0;
+                await this.applyTagAdblock(tagUid);
+              }
+              break;
+            }
+            case "NetworkProfile": {
+              const uuid = host.o && host.o.uuid;
+              if (uuid) {
+                if (policy === true)
+                  this.networkSettings[uuid] = 1;
+                if (policy === false)
+                  this.networkSettings[uuid] = -1;
+                if (policy === null)
+                  this.networkSettings[uuid] = 0;
+                await this.applyNetworkAdblock(uuid);
+              }
+              break;
+            }
+            case "Host": {
+              const macAddress = host && host.o && host.o.mac;
+              if (macAddress) {
+                if (policy === true)
+                  this.macAddressSettings[macAddress] = 1;
+                if (policy === false)
+                  this.macAddressSettings[macAddress] = -1;
+                if (policy === null)
+                  this.macAddressSettings[macAddress] = 0
+                await this.applyDeviceAdblock(macAddress);
+              }
+              break;
+            }
+            default:
+          }
         }
+      } catch (err) {
+        log.error("Got error when applying adblock policy", err);
+      }
     }
 
-    applyAdblock() {
-        this.applySystemAdblock();
-        this.applyDeviceAdblock();
+    async applyAdblock() {
+      dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
+
+      await this.applySystemAdblock();
+      for (const macAddress in this.macAddressSettings) {
+        await this.applyDeviceAdblock(macAddress);
+      }
+      for (const tagUid in this.tagSettings) {
+        const tag = TagManager.getTagByUid(tagUid);
+        if (!tag)
+          // reset tag if it is already deleted
+          this.tagSettings[tagUid] = 0;
+        await this.applyTagAdblock(tagUid);
+        if (!tag)
+          delete this.tagSettings[tagUid];
+      }
+      for (const uuid in this.networkSettings) {
+        const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+        if (!networkProfile)
+          delete this.networkSettings[uuid];
+        else
+          await this.applyNetworkAdblock(uuid);
+      }
     }
 
     async applySystemAdblock() {
-        if (this.systemSwitch && this.adminSystemSwitch) {
-            const adblocktagset = `mac-address-tag=%${systemLevelMac}${dnsTag}\n`;
-            await fs.writeFileAsync(systemConfigFile, adblocktagset);
-        } else {
-            try {
-                await fs.unlinkAsync(systemConfigFile);
-            } catch (err) {
-                if (err.code === 'ENOENT') {
-                    log.info(`Dnsmasq: No ${systemConfigFile}, skip remove`);
-                } else {
-                    log.warn(`Dnsmasq: Error when remove ${systemConfigFile}`, err);
-                }
-            }
-        }
-        dnsmasq.controlFilter('adblock', this.adminSystemSwitch);
+      if(this.systemSwitch) {
+        return this.systemStart();
+      } else {
+        return this.systemStop();
+      }
+    }
+  
+    async applyTagAdblock(tagUid) {
+      if (this.tagSettings[tagUid] == 1)
+        return this.perTagStart(tagUid);
+      if (this.tagSettings[tagUid] == -1)
+        return this.perTagStop(tagUid);
+      return this.perTagReset(tagUid);
+    }
+  
+    async applyNetworkAdblock(uuid) {
+      if (this.networkSettings[uuid] == 1)
+        return this.perNetworkStart(uuid);
+      if (this.networkSettings[uuid] == -1)
+        return this.perNetworkStop(uuid);
+      return this.perNetworkReset(uuid);
+    }
+  
+    async applyDeviceAdblock(macAddress) {
+      if (this.macAddressSettings[macAddress] == 1)
+        return this.perDeviceStart(macAddress);
+      if (this.macAddressSettings[macAddress] == -1)
+        return this.perDeviceStop(macAddress);
+      return this.perDeviceReset(macAddress);
     }
 
-    async applyDeviceAdblock() {
-        const macAddressArr = this.enabledMacAddresses;
-        if (macAddressArr.length > 0 && this.adminSystemSwitch) {
-            let adblocktagset = "";
-            macAddressArr.forEach((macAddress) => {
-                adblocktagset += `mac-address-tag=%${macAddress}${dnsTag}\n`
-            })
-            await fs.writeFileAsync(deviceConfigFile, adblocktagset);
-        } else {
-            try {
-                await fs.unlinkAsync(deviceConfigFile);
-            } catch (err) {
-                if (err.code === 'ENOENT') {
-                    log.info(`Dnsmasq: No ${deviceConfigFile}, skip remove`);
-                } else {
-                    log.warn(`Dnsmasq: Error when remove ${deviceConfigFile}`, err);
-                }
-            }
+    async systemStart() {
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
+      const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      await dnsmasq.restartDnsmasq();
+    }
+  
+    async systemStop() {
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
+      const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      await dnsmasq.restartDnsmasq();
+    }
+  
+    async perTagStart(tagUid) {
+      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      await dnsmasq.restartDnsmasq();
+    }
+  
+    async perTagStop(tagUid) {
+      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\n`; // match negative tag
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      await dnsmasq.restartDnsmasq();
+    }
+  
+    async perTagReset(tagUid) {
+      const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
+      await fs.unlinkAsync(configFile).catch((err) => {});
+      await dnsmasq.restartDnsmasq();
+    }
+  
+    async perNetworkStart(uuid) {
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+        const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
+        if (!iface) {
+          log.warn(`Interface name is not found on ${uuid}`);
+          return;
         }
+        const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+        const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
+        await fs.writeFileAsync(configFile, dnsmasqEntry);
         dnsmasq.restartDnsmasq();
     }
+  
+    async perNetworkStop(uuid) {
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
+      if (!iface) {
+        log.warn(`Interface name is not found on ${uuid}`);
+        return;
+      }
+      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+      // explicit disable family protect
+      const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.restartDnsmasq();
+    }
+  
+    async perNetworkReset(uuid) {
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
+      if (!iface) {
+        log.warn(`Interface name is not found on ${uuid}`);
+        return;
+      }
+      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+      // remove config file
+      await fs.unlinkAsync(configFile).catch((err) => {});
+      dnsmasq.restartDnsmasq();
+    }
+  
+    async perDeviceStart(macAddress) {
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
+      const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqentry);
+      dnsmasq.restartDnsmasq();
+    }
+  
+    async perDeviceStop(macAddress) {
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
+      const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqentry);
+      dnsmasq.restartDnsmasq();
+    }
+  
+    async perDeviceReset(macAddress) {
+      const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
+      // remove config file
+      await fs.unlinkAsync(configFile).catch((err) => {});
+      dnsmasq.restartDnsmasq();
+    }
+
     // global on/off
-    globalOn() {
+    async globalOn() {
         this.adminSystemSwitch = true;
         this.applyAdblock();
     }
 
-    globalOff() {
+    async globalOff() {
         this.adminSystemSwitch = false;
         this.applyAdblock();
     }

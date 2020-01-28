@@ -73,9 +73,10 @@ class NetworkProfileManager {
     return obj;
   }
 
-  toJson() {
+  async toJson() {
     const json = {}
     for (let uuid in this.networkProfiles) {
+      await this.networkProfiles[uuid].loadPolicy();
       json[uuid] = this.networkProfiles[uuid].toJson();
     }
     return json;
@@ -189,7 +190,7 @@ class NetworkProfileManager {
 
     for (let uuid in this.networkProfiles) {
       const key = `network:uuid:${uuid}`;
-      const profileJson = this.networkProfiles[uuid].toJson();
+      const profileJson = this.networkProfiles[uuid].o;
       if (f.isMain()) {
         await rclient.hmsetAsync(key, this.redisfy(profileJson));
       }

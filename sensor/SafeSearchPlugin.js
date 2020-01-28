@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016 - 2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,8 +25,7 @@ const extensionManager = require('./ExtensionManager.js')
 const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
-const dnsConfigFolder = `${userConfigFolder}/dnsmasq`;
-const safeSearchConfigFile = `${dnsConfigFolder}/safeSearch_system.conf`;
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 
 const configKey = "ext.safeSearch.config";
 
@@ -40,8 +39,11 @@ Promise.promisifyAll(fs);
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
+const featureName = "safe_search";
+const policyKeyName = "safeSearch";
 
-const fc = require('../net2/config.js');
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+const TagManager = require('../net2/TagManager.js');
 
 const iptool = require('ip')
 
@@ -51,7 +53,9 @@ class SafeSearchPlugin extends Sensor {
 
     this.systemSwitch = false;
     this.adminSystemSwitch = false;
-    this.enabledMacAddresses = {};
+    this.macAddressSettings = {};
+    this.networkSettings = {};
+    this.tagSettings = {};
 
     this.domainCaches = {};
 
@@ -61,42 +65,17 @@ class SafeSearchPlugin extends Sensor {
       await this.setDefaultSafeSearchConfig();
     }
 
-    extensionManager.registerExtension("safeSearch", this, {
+    extensionManager.registerExtension(policyKeyName, this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
       stop: this.stop
     });
 
-    //await exec(`mkdir -p ${devicemasqConfigFolder}`);
+    this.hookFeature(featureName);
 
-    sem.once('IPTABLES_READY', async () => {
-      if(fc.isFeatureOn("safe_search")) {
-        await this.globalOn();
-      } else {
-        await this.globalOff();
-      }
-
-      fc.onFeature("safe_search", async (feature, status) => {
-        if(feature !== "safe_search") {
-          return;
-        }
-
-        if(status) {
-          await this.globalOn();
-        } else {
-          await this.globalOff();
-        }
-      })
-
-      sem.on('SAFESEARCH_REFRESH', (event) => {
-        this.applySafeSearch();
-      });
-
-      await this.job();
-      this.timer = setInterval(async () => {
-        return this.job();
-      }, this.config.refreshInterval || 3600 * 1000); // one hour by default
-    })
+    sem.on('SAFESEARCH_REFRESH', (event) => {
+      this.applySafeSearch();
+    });
   }
 
   async job() {
@@ -140,7 +119,7 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async applyPolicy(host, ip, policy) {
-    log.info("Applying policy:", ip, policy)
+    log.info("Applying safesearch policy:", ip, policy)
 
     try {
       if(ip === '0.0.0.0') {
@@ -151,20 +130,54 @@ class SafeSearchPlugin extends Sensor {
         }
         return this.applySystemSafeSearch();
       } else {
-        const macAddress = host && host.o && host.o.mac;
-        if(macAddress) {
-          if(policy && policy.state) {
-            this.enabledMacAddresses[macAddress] = 1;
-          } else {
-            delete this.enabledMacAddresses[macAddress];
+        if (!host)
+          return;
+        switch (host.constructor.name) {
+          case "Tag": {
+            const tagUid = host.o && host.o.uid;
+            if (tagUid) {
+              if (policy && policy.state === true)
+                this.tagSettings[tagUid] = 1;
+              if (policy && policy.state === false)
+                this.tagSettings[tagUid] = -1;
+              if (policy && policy.state === null)
+                this.tagSettings[tagUid] = 0;
+              await this.applyTagSafeSearch(tagUid);
+            }
+            break;
           }
-          return this.applyDeviceSafeSearch(macAddress);
+          case "NetworkProfile": {
+            const uuid = host.o && host.o.uuid;
+            if (uuid) {
+              if (policy && policy.state === true)
+                this.networkSettings[uuid] = 1;
+              if (policy && policy.state === false)
+                this.networkSettings[uuid] = -1;
+              if (policy && policy.state === null)
+                this.networkSettings[uuid] = 0;
+              await this.applyNetworkSafeSearch(uuid);
+            }
+            break;
+          }
+          case "Host" : {
+            const macAddress = host && host.o && host.o.mac;
+            if (macAddress) {
+              if (policy && policy.state === true)
+                this.macAddressSettings[macAddress] = 1;
+              if (policy && policy.state === false)
+                this.macAddressSettings[macAddress] = -1;
+              if (policy && policy.state === null)
+                this.macAddressSettings[macAddress] = 0
+              await this.applyDeviceSafeSearch(macAddress);
+            }
+            break;
+          }
+          default:
         }
       }
     } catch(err) {
       log.error("Got error when applying safesearch policy", err);
     }
-
   }
 
   // {
@@ -206,13 +219,8 @@ class SafeSearchPlugin extends Sensor {
     return this.config && this.config.mapping;
   }
 
-  getDNSMasqEntry(macAddress, ipAddress, domainToBeRedirect) {
-    if(macAddress) {
-      return `address=/${domainToBeRedirect}/${ipAddress}%${macAddress.toUpperCase()}`;
-    } else {
-      return `address=/${domainToBeRedirect}/${ipAddress}`;
-    }
-
+  getDNSMasqEntry(ipAddress, domainToBeRedirect) {
+    return `address=/${domainToBeRedirect}/${ipAddress}$${featureName}`;
   }
 
   async loadDomainCache(domain) {
@@ -260,11 +268,11 @@ class SafeSearchPlugin extends Sensor {
   }
 
   // redirect targetDomain to the ip address of safe domain
-  async generateConfig(macAddress, safeDomain, targetDomains) {
+  async generateDomainEntries(safeDomain, targetDomains) {
     const ip = await this.loadDomainCache(safeDomain);
     if(ip) {
       return targetDomains.map((targetDomain) => {
-        return this.getDNSMasqEntry(macAddress, ip, targetDomain);
+        return this.getDNSMasqEntry(ip, targetDomain);
       })
     } else {
       return [];
@@ -272,38 +280,70 @@ class SafeSearchPlugin extends Sensor {
   }
 
   async applySafeSearch() {
-    await this.applySystemSafeSearch();
+    const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
+    if (this.adminSystemSwitch) {
+      const config = await this.getSafeSearchConfig();
+      const entries = await this.generateDnsmasqEntries(config);
+      await fs.writeFileAsync(configFilePath, entries);
+    } else {
+      await fs.unlinkAsync(configFilePath).catch((err) => {});
+    }
 
-    for(const macAddress in this.enabledMacAddresses) {
-      await this.applyDeviceSafeSearch(macAddress)
+    await this.applySystemSafeSearch();
+    for(const macAddress in this.macAddressSettings) {
+      await this.applyDeviceSafeSearch(macAddress);
+    }
+    for (const tagUid in this.tagSettings) {
+      const tag = TagManager.getTagByUid(tagUid);
+      if (!tag)
+        // reset tag if it is already deleted
+        this.tagSettings[tagUid] = 0;
+      await this.applyTagSafeSearch(tagUid);
+      if (!tag)
+        delete this.tagSettings[tagUid];
+    }
+    for (const uuid in this.networkSettings) {
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      if (!networkProfile)
+        delete this.networkSettings[uuid];
+      else
+        await this.applyNetworkSafeSearch(uuid);
     }
   }
 
   async applySystemSafeSearch() {
-    if(this.systemSwitch && this.adminSystemSwitch) {
-      const config = await this.getSafeSearchConfig();
-      return this.systemStart(config);
+    if(this.systemSwitch) {
+      return this.systemStart();
     } else {
       return this.systemStop();
     }
   }
 
-  async applyDeviceSafeSearch(macAddress) {
-    log.info("Applying safe search on device", macAddress);
-
-    try {
-      if(this.enabledMacAddresses[macAddress] && this.adminSystemSwitch) {
-        const config = await this.getSafeSearchConfig();
-        return this.perDeviceStart(macAddress, config)
-      } else {
-        return this.perDeviceStop(macAddress);
-      }
-    } catch(err) {
-      log.error(`Failed to apply safe search on device ${macAddress}, err: ${err}`);
-    }
+  async applyTagSafeSearch(tagUid) {
+    if (this.tagSettings[tagUid] == 1)
+      return this.perTagStart(tagUid);
+    if (this.tagSettings[tagUid] == -1)
+      return this.perTagStop(tagUid);
+    return this.perTagReset(tagUid);
   }
 
-  async generateConfigFile(macAddress, config) {
+  async applyNetworkSafeSearch(uuid) {
+    if (this.networkSettings[uuid] == 1)
+      return this.perNetworkStart(uuid);
+    if (this.networkSettings[uuid] == -1)
+      return this.perNetworkStop(uuid);
+    return this.perNetworkReset(uuid);
+  }
+
+  async applyDeviceSafeSearch(macAddress) {
+    if (this.macAddressSettings[macAddress] == 1)
+      return this.perDeviceStart(macAddress);
+    if (this.macAddressSettings[macAddress] == -1)
+      return this.perDeviceStop(macAddress);
+    return this.perDeviceReset(macAddress);
+  }
+
+  async generateDnsmasqEntries(config) {
     let entries = [];
 
     for(const type in config) {
@@ -318,68 +358,109 @@ class SafeSearchPlugin extends Sensor {
         const safeDomains = Object.keys(result);
         await Promise.all(safeDomains.map(async (safeDomain) => {
           const targetDomains = result[safeDomain];
-          const configs = await this.generateConfig(macAddress, safeDomain, targetDomains);
+          const configs = await this.generateDomainEntries(safeDomain, targetDomains);
           entries.push(...configs);
         }));
       }
     }
 
     entries.push("");
-
-    //await fs.writeFileAsync(destinationFile, entries.join("\n"));
     return entries.join("\n");
   }
 
-  async saveConfigFile(file, content) {
-    return fs.writeFileAsync(file, content);
-  }
-
-  async loadConfigFile(file) {
-    return fs.readFileAsync(file, {encoding: 'utf8'});
-  }
-
-  async deleteConfigFile(destinationFile) {
-    return fs.unlinkAsync(destinationFile).catch(() => undefined);
-  }
-
-  // system level
-
-  getConfigFile(macAddress) {
-    if(macAddress) {
-      return `${dnsConfigFolder}/safeSearch_${macAddress}.conf`;
-    } else {
-      return safeSearchConfigFile;
-    }
-  }
-
-  async systemStart(config) {
-    const configString = await this.generateConfigFile(undefined, config);
-    const existingString = await this.loadConfigFile(this.getConfigFile()).catch(() => null);
-    if(configString !== existingString || existingString === null) {
-      await this.saveConfigFile(this.getConfigFile(), configString);
-      await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
-    }
-    return;
+  async systemStart() {
+    const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
+    const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\n`;
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.restartDnsmasq();
   }
 
   async systemStop() {
-    await this.deleteConfigFile(safeSearchConfigFile);
-    await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
+    const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
+    const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\n`;
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.restartDnsmasq();
   }
 
-  async perDeviceStart(mac, config) {
-    const configString = await this.generateConfigFile(mac, config);
-    const existingString = await this.loadConfigFile(this.getConfigFile(mac)).catch(() => null);
-    if(configString !== existingString || existingString === null) {
-      await this.saveConfigFile(this.getConfigFile(mac), configString);
-      await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
+  async perTagStart(tagUid) {
+    const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
+    const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\n`;
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.restartDnsmasq();
+  }
+
+  async perTagStop(tagUid) {
+    const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
+    const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\n`; // match negative tag
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.restartDnsmasq();
+  }
+
+  async perTagReset(tagUid) {
+    const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
+    await fs.unlinkAsync(configFile).catch((err) => {});
+    await dnsmasq.restartDnsmasq();
+  }
+
+  async perNetworkStart(uuid) {
+    const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
+      if (!iface) {
+        log.warn(`Interface name is not found on ${uuid}`);
+        return;
+      }
+      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+      const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.restartDnsmasq();
+  }
+
+  async perNetworkStop(uuid) {
+    const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+    const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
+    if (!iface) {
+      log.warn(`Interface name is not found on ${uuid}`);
+      return;
     }
+    const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+    // explicit disable family protect
+    const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    dnsmasq.restartDnsmasq();
   }
 
-  async perDeviceStop(mac) {
-    const file = this.getConfigFile(mac);
-    await this.deleteConfigFile(file);
-    await dnsmasq.restartDnsmasq(); // Simply restart service, no need to touch iptables. Don't worry, this function has cool-down protection.
+  async perNetworkReset(uuid) {
+    const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+    const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
+    if (!iface) {
+      log.warn(`Interface name is not found on ${uuid}`);
+      return;
+    }
+    const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+    // remove config file
+    await fs.unlinkAsync(configFile).catch((err) => {});
+    dnsmasq.restartDnsmasq();
+  }
+
+  async perDeviceStart(macAddress) {
+    const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
+    const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\n`;
+    await fs.writeFileAsync(configFile, dnsmasqentry);
+    dnsmasq.restartDnsmasq();
+  }
+
+  async perDeviceStop(macAddress) {
+    const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
+    const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${featureName}\n`;
+    await fs.writeFileAsync(configFile, dnsmasqentry);
+    dnsmasq.restartDnsmasq();
+  }
+
+  async perDeviceReset(macAddress) {
+    const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
+    // remove config file
+    await fs.unlinkAsync(configFile).catch((err) => {});
+    dnsmasq.restartDnsmasq();
   }
 
   // global on/off
