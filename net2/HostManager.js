@@ -802,6 +802,11 @@ module.exports = class HostManager {
     const versionUpdate = await sysManager.getVersionUpdate();
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
+    if (require('fs').existsSync("/home/pi/.firewalla/config/.no_auto_upgrade")) {
+      json.no_auto_upgrade = true;
+    } else {
+      json.no_auto_upgrade = false;
+    }
   }
 
   async getRecentFlows(json) {
