@@ -158,6 +158,7 @@ module.exports = class FlowMonitor {
       "av": "video",
       "games": "game",
       "porn": "porn",
+      "vpn": "vpn",
       "intel": "cyber_security",
       'spam': "cyber_security",
       'phishing': "cyber_security",
