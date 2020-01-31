@@ -42,6 +42,7 @@ async function setupBlockChain() {
     setupCategoryEnv("games"),
     setupCategoryEnv("porn"),
     setupCategoryEnv("social"),
+    setupCategoryEnv("vpn"),
     setupCategoryEnv("shopping"),
     setupCategoryEnv("p2p"),
     setupCategoryEnv("gamble"),

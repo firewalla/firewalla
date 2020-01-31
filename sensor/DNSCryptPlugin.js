@@ -102,6 +102,7 @@ class DNSCryptPlugin extends Sensor {
 
   async applyAll() {
     await dc.prepareConfig({});
+    await dc.restart();
     await this.applyDoH();
     for (const macAddress in this.enabledMacAddresses) {
       await this.applyDeviceDoH(macAddress);

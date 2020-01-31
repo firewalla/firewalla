@@ -52,7 +52,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
         "shopping": 1,
         "av": 1,
         "p2p": 1,
-        "gamble": 1
+        "gamble": 1,
+        "vpn": 1
       };
 
       this.excludedDomains = {

@@ -2347,7 +2347,7 @@ class netBot extends ControllerBot {
 
       case "alarm:ignoreAll":
         (async () => {
-          await am2.ignoreAllAlarm();
+          await am2.ignoreAllAlarmAsync();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to ignoreAll alarm:", err)
@@ -2379,7 +2379,7 @@ class netBot extends ControllerBot {
 
       case "alarm:deleteActiveAll":
         (async () => {
-          await am2.deleteActiveAll();
+          await am2.deleteActiveAllAsync();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to deleteActiveAll alarm:", err)
@@ -2389,7 +2389,7 @@ class netBot extends ControllerBot {
 
       case "alarm:deleteArchivedAll":
         (async () => {
-          await am2.deleteArchivedAll();
+          await am2.deleteArchivedAllAsync();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to deleteArchivedAll alarm:", err)

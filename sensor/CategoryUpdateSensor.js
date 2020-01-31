@@ -38,7 +38,8 @@ const categoryHashsetMapping = {
   "av": "app.video",
   "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
   "gamble": "app.gamble",
-  "p2p": "app.p2p"
+  "p2p": "app.p2p",
+  "vpn": "app.vpn"
 }
 
 const securityHashMapping = {
