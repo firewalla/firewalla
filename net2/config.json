@@ -473,6 +473,10 @@
       "perf": {
         "expires": 86400,
         "count": 10000
+      },
+      "networkConfigHistory": {
+        "expires": -1,
+        "count": 32
       }
     },
     "DeviceOfflineSensor": {

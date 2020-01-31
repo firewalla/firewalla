@@ -425,26 +425,13 @@ class SysManager {
     }
 
     try {
-      const results = await rclient.hgetallAsync("sys:network:settings")
-      this.networkSettings = results;
-      if (this.networkSettings == null)
-        throw new Error('Empty key');
-
-      for (let r in this.networkSettings) {
-        this.networkSettings[r] = JSON.parse(this.networkSettings[r]);
-      }
-    } catch (err) {
-      log.error('Error getting sys:network:settings', err)
-    }
-
-    try {
       this.uuidMap = await rclient.hgetallAsync('sys:network:uuid')
 
       for (const uuid in this.uuidMap) {
         this.uuidMap[uuid] = JSON.parse(this.uuidMap[uuid]);
       }
     } catch (err) {
-      log.error('Error getting sys:network:settings', err)
+      log.error('Error getting sys:network:uuid', err)
     }
   }
 
