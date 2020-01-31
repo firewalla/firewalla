@@ -272,6 +272,11 @@ module.exports = class {
         host.ipv6Addr = entry.ipv6Addr;
       }
       if (host.ipv4Addr || host.ipv6Addr) {
+        const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4Addr);
+        if (!intfInfo || !intfInfo.uuid) {
+          log.error(`Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
+          continue;
+        }
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `Device network activity heartbeat ${host.ipv4Addr || host.ipv6Addr} ${host.mac}`,
@@ -1394,8 +1399,13 @@ module.exports = class {
         log.error("Invalid knownHosts entry:", obj);
         return;
       }
+      const intfInfo = sysManager.getInterfaceViaIP4(ip);
+      if (!intfInfo || !intfInfo.uuid) {
+        log.error(`Unable to find nif uuid, ${ip}`);
+        return;
+      }
 
-      log.info("Found a known host from host:", ip);
+      log.info("Found a known host from host:", ip, intfInfo.name);
 
       l2.getMAC(ip, (err, mac) => {
 
@@ -1414,7 +1424,7 @@ module.exports = class {
 
         sem.emitEvent({
           type: "DeviceUpdate",
-          message: `Found a device via bro known hosts ${host.ip} ${host.mac}`,
+          message: `Found a device via bro known hosts ${host.ipv4} ${host.mac}`,
           host: host
         })
 
