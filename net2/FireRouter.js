@@ -102,14 +102,14 @@ async function generateNetworkInfo() {
   const networkInfos = [];
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
-    const ip4 = new Address4(intf.state.ip4)
+    const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const redisIntf = {
       name:         intfName,
       uuid:         intf.config.meta.uuid,
       mac_address:  intf.state.mac,
-      ip_address:   ip4.addressMinusSuffix,
+      ip_address:   ip4 ? ip4.addressMinusSuffix : null,
       subnet:       intf.state.ip4,
-      netmask:      Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address,
+      netmask:      ip4 ? Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address : null,
       gateway_ip:   (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
       dns:          (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.nameservers : intf.state.dns,
       type:         'Wired', // probably no need to keep this

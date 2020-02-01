@@ -18,7 +18,7 @@
 const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
-const fireRouter = require('./FireRouter.js');
+const sysManager = require('./SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const NetworkProfile = require('./NetworkProfile.js');
@@ -104,6 +104,11 @@ class NetworkProfileManager {
       const redisProfile = await rclient.hgetallAsync(key);
       const o = this.parse(redisProfile);
       const uuid = key.substring(13);
+      if (!uuid) {
+        log.info(`uuid is not defined, ignore this interface`, o);
+        continue;
+      }
+      o.uuid = uuid;
       if (this.networkProfiles[uuid]) {
         const networkProfile = this.networkProfiles[uuid];
         const previousIpv4 = networkProfile.o.ipv4;
@@ -124,29 +129,19 @@ class NetworkProfileManager {
       this.networkProfiles[uuid].active = false;
     }
 
-    const monitoringInterfaces = fireRouter.getMonitoringIntfNames();
-
+    const monitoringInterfaces = sysManager.getMonitoringInterfaces();
     for (let intf of monitoringInterfaces) {
-      const profile = fireRouter.getInterfaceViaName(intf);
-      if (!profile) // FIXME: this is taken on red/blue. Probably support network concept on them later?
-        continue;
-      const meta = profile.config && profile.config.meta;
-      const uuid = meta && meta.uuid;
+      const uuid = intf.uuid;
       if (!uuid) {
         log.info(`uuid is not defined on ${intf}, ignore this interface`);
         continue;
       }
-      const state = profile.state;
-      const config = profile.config;
       const updatedProfile = {
         uuid: uuid,
-        intf: intf,
-        ipv4: state && state.ip4,
-        dns: state && state.dns,
-        gateway: state && state.gateway,
-        intfs: config && config.intf || [intf],
-        enabled: config && config.enabled || false,
-        meta: meta
+        intf: intf.name,
+        ipv4: intf.subnet,
+        dns: intf.dns,
+        gateway: intf.gateway
       };
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
