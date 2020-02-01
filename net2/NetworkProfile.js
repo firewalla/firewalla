@@ -30,22 +30,26 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
+const instances = {};
 
 class NetworkProfile {
   constructor(o) {
-    this.o = o;
-    this._policy = {};
-    const c = require('./MessageBus.js');
-    this.subscriber = new c("info");
-    if (f.isMain()) {
-      if (o && o.uuid) {
-        this.subscriber.subscribeOnce("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, (channel, type, id, obj) => {
-          log.info(`Network policy is changed on ${this.o.intf}, uuid: ${this.o.uuid}`, obj);
-          this.applyPolicy();
-        })
+    if (!instances[o.uuid]) {
+      this.o = o;
+      this._policy = {};
+      const c = require('./MessageBus.js');
+      this.subscriber = new c("info");
+      if (f.isMain()) {
+        if (o && o.uuid) {
+          this.subscriber.subscribeOnce("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, (channel, type, id, obj) => {
+            log.info(`Network policy is changed on ${this.o.intf}, uuid: ${this.o.uuid}`, obj);
+            this.applyPolicy();
+          })
+        }
       }
+      instances[o.uuid] = this;
     }
-    return this;
+    return instances[o.uuid];
   }
 
   update(o) {
