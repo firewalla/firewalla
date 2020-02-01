@@ -23,6 +23,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const sysManager = require('./SysManager.js');
 
+const networkTool = require('./NetworkTool.js')();
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const util = require('util');

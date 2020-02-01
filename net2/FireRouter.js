@@ -47,7 +47,8 @@ const { delay } = require('../util/util.js')
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
-
+const uuid = require('uuid');
+const _ = require('lodash');
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
@@ -240,23 +241,35 @@ class FireRouter {
         // }
       }
 
-      // intfNameMap = {
-      //   eth0: {
-      //     config: {
-      //       enabled: true,
-      //       meta: {
-      //         name: 'eth0',
-      //         uuid: uuid.v4(),
-      //       }
-      //     },
-      //     state: {
-      //       mac: 'a2:c6:b7:a9:4b:f7',
-      //       ip4: '',
-      //       gateway: '',
-      //       dns: null
-      //     }
-      //   }
-      // }
+      const sysinfo = await rclient.hgetallAsync("sys:network:info")
+      const mac = _.get(sysinfo, `${intf}.mac.mac_address`, '').toUpperCase();
+      const ip = _.get(sysinfo, `${intf}.ip_address`, '');
+      const gateway = _.get(sysinfo, `${intf}.gateway`, '');
+      const _dns = _.get(sysinfo, `${intf}.dns`, []); 
+      let v4dns = [];
+      for (let i in _dns) {
+        if (new Address4(_dns[i]).isValid()) {
+          v4dns.push(_dns[i]);
+        }
+      }
+
+      intfNameMap = {
+        eth0: {
+          config: {
+            enabled: true,
+            meta: {
+              name: 'eth0',
+              uuid: uuid.v4(),
+            }
+          },
+          state: {
+            mac: mac,
+            ip4: ip,
+            gateway: gateway,
+            dns: v4dns
+          }
+        }
+      }
 
       monitoringIntfNames = [ 'eth0', 'eth0:0' ]
 
@@ -309,10 +322,18 @@ class FireRouter {
   }
 
   getInterfaceViaName(name) {
+    if (!_.has(intfNameMap, name)) {
+      return null;
+    }
+
     return JSON.parse(JSON.stringify(intfNameMap[name]))
   }
 
   getInterfaceViaUUID(uuid) {
+    if (!_.has(intfUuidMap, uuid)) {
+      return null;
+    }
+
     return JSON.parse(JSON.stringify(intfUuidMap[uuid]))
   }
 
