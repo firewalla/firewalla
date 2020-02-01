@@ -29,6 +29,7 @@ const networkTool = require('./NetworkTool.js')();
 const util = require('util');
 
 const Config = require('./config.js');
+const firerouter = require('./FireRouter.js');
 
 const uuid = require('uuid')
 const _ = require('lodash')
@@ -188,7 +189,14 @@ module.exports = class {
 
   async discoverInterfacesAsync() {
     this.interfaces = {};
-    const list = await networkTool.listInterfaces();
+    let list = [];
+    if (!platform.isFireRouterManaged())
+      list = await networkTool.listInterfaces();
+    else {
+      // firerouter.init should return quickly
+      await firerouter.init();
+      list = await firerouter.getSysNetworkInfo();
+    }
     if (!list.length) {
       log.warn('No interface')
       return

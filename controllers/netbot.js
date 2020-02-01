@@ -1138,6 +1138,11 @@ class netBot extends ControllerBot {
       case "networkConfig": {
         (async () => {
           await FireRouter.setConfig(value.config, value.restart);
+          // successfully set config, save config to history
+          const latestConfig = await FireRouter.getConfig();
+          const mode = require('../net2/Mode.js');
+          const curMode = await mode.getSetupMode();
+          await FireRouter.saveConfigHistory(latestConfig, curMode);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1870,6 +1875,19 @@ class netBot extends ControllerBot {
         (async () => {
           const config = await FireRouter.getConfig();
           this.simpleTxData(msg, config, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "networkConfigHistory": {
+        (async () => {
+          const Mode = require('../net2/Mode.js');
+          const curMode = await Mode.getSetupMode();
+          const mode = value.mode || curMode;
+          const count = value.count || 10;
+          const history = await FireRouter.loadRecentConfigFromHistory(mode, count);
+          this.simpleTxData(msg, {history: history}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
