@@ -1138,6 +1138,11 @@ class netBot extends ControllerBot {
       case "networkConfig": {
         (async () => {
           await FireRouter.setConfig(value.config, value.restart);
+          // successfully set config, save config to history
+          const latestConfig = await FireRouter.getConfig();
+          const mode = require('../net2/Mode.js');
+          const curMode = await mode.getSetupMode();
+          await FireRouter.saveConfigHistory(latestConfig, curMode);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1875,6 +1880,19 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "networkConfigHistory": {
+        (async () => {
+          const Mode = require('../net2/Mode.js');
+          const curMode = await Mode.getSetupMode();
+          const mode = value.mode || curMode;
+          const count = value.count || 10;
+          const history = await FireRouter.loadRecentConfigFromHistory(mode, count);
+          this.simpleTxData(msg, {history: history}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "networkConfigImpact": {
         (async () => {
           const result = FireRouter.checkConfig(value.config);
@@ -2347,7 +2365,7 @@ class netBot extends ControllerBot {
 
       case "alarm:ignoreAll":
         (async () => {
-          await am2.ignoreAllAlarm();
+          await am2.ignoreAllAlarmAsync();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to ignoreAll alarm:", err)
@@ -2379,7 +2397,7 @@ class netBot extends ControllerBot {
 
       case "alarm:deleteActiveAll":
         (async () => {
-          await am2.deleteActiveAll();
+          await am2.deleteActiveAllAsync();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to deleteActiveAll alarm:", err)
@@ -2389,7 +2407,7 @@ class netBot extends ControllerBot {
 
       case "alarm:deleteArchivedAll":
         (async () => {
-          await am2.deleteArchivedAll();
+          await am2.deleteArchivedAllAsync();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           log.error("Failed to deleteArchivedAll alarm:", err)

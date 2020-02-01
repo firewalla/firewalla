@@ -97,7 +97,8 @@ function updateMaps() {
   }
 }
 
-async function generateNetowrkInfo() {
+async function generateNetworkInfo() {
+  const networkInfos = [];
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     const ip4 = new Address4(intf.state.ip4)
@@ -108,14 +109,16 @@ async function generateNetowrkInfo() {
       ip_address:   ip4.addressMinusSuffix,
       subnet:       intf.state.ip4,
       netmask:      Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address,
-      gateway_ip:   intf.config.dhcp ? intf.config.dhcp.gateway : intf.state.gateway,
-      dns:          intf.config.dhcp ? intf.config.dhcp.nameservers : intf.state.dns,
+      gateway_ip:   (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
+      dns:          (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.nameservers : intf.state.dns,
       type:         'Wired', // probably no need to keep this
     }
 
     await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
     await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
+    networkInfos.push(redisIntf);
   }
+  return networkInfos;
 }
 
 let routerInterface = null
@@ -138,6 +141,7 @@ class FireRouter {
     routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
     this.ready = false
+    this.sysNetworkInfo = [];
 
     this.init(true).catch(err => {
       log.error('FireRouter failed to initialize', err)
@@ -161,7 +165,7 @@ class FireRouter {
 
       updateMaps()
 
-      await generateNetowrkInfo()
+      this.sysNetworkInfo = await generateNetworkInfo()
 
       switch(mode) {
         case 'spoof':
@@ -264,6 +268,7 @@ class FireRouter {
       if (!intfList.length) {
         throw new Error('No active ethernet!')
       }
+      this.sysNetworkInfo = intfList;
     }
 
     log.info('FireRouter initialization complete')
@@ -273,15 +278,19 @@ class FireRouter {
       this.platform.isFireRouterManaged() && broControl.interfaceChanged(monitoringIntfNames) ||
       !this.platform.isFireRouterManaged() && first
     )) {
+      this.broReady = false;
       if(this.platform.isFireRouterManaged()) {
         await broControl.writeClusterConfig(monitoringIntfNames)
       }
-      await broControl.restart()
-      await broControl.addCronJobs()
+      // do not await bro restart to finish, it may take some time
+      broControl.restart().then(() => broControl.addCronJobs()).then(() => {
+        log.info('Bro restarted');
+        this.broReady = true;
+      });
+    } else {
+      log.info('Bro restarted');
+      this.broReady = true;
     }
-
-    log.info('Bro restarted')
-    this.broReady = true
   }
 
   isReady() {
@@ -341,7 +350,7 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error("Error getting fireroute config", resp.body);
+      throw new Error("Error setting firerouter config", resp.body);
     }
 
     const impact = this.checkConfig(config)
@@ -354,11 +363,62 @@ class FireRouter {
       sysTool.rebootSystem(5)
     }
 
-    this.init()
+    // this.init should not take a long time
+    await this.init()
 
     return resp.body
   }
 
+  getSysNetworkInfo() {
+    return this.sysNetworkInfo;
+  }
+
+  async saveConfigHistory(config, mode) {
+    if (!config || !mode) {
+      log.error("Cannot save config, config or mode is not specified");
+      return;
+    }
+    const key = `history:networkConfig:${mode}`;
+    const time = Math.floor(Date.now() / 1000);
+    await rclient.zaddAsync(key, time, JSON.stringify(config));
+  }
+
+  async loadLastConfigFromHistory(mode) {
+    if (!mode) {
+      log.error("Cannot load last config, mode is not specified");
+      return null;
+    }
+    const history = await this.loadRecentConfigFromHistory(mode, 1);
+    if (history && history.length > 0)
+      return history[0];
+    else return null;
+  }
+
+  async loadRecentConfigFromHistory(mode, count) {
+    if (!mode) {
+      log.error("Cannot load last config, mode is not specified");
+      return [];
+    }
+    count = count || 10;
+    const key = `history:networkConfig:${mode}`;
+    const recentConfig = await rclient.zrevrangeAsync(key, 0, count, "withscores");
+    const history = [];
+    if (recentConfig && recentConfig.length > 0) {
+      for (let i = 0; i < recentConfig.length; i++) {
+        if (i % 2 === 0) {
+          const configStr = recentConfig[i];
+          try {
+            const config = JSON.parse(configStr);
+            const time = recentConfig[i + 1];
+            history.push({config, time});
+          } catch (err) {
+            log.error(`Failed to parse config ${configStr}`);
+          }
+        }
+      }
+    }
+    return history;
+  }
 }
 
 const instance = new FireRouter();
