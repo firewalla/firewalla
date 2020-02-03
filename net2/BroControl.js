@@ -33,7 +33,7 @@ class BroControl {
     if (this.monitoringInterfaces.length != monitoringInterfaces.length)
       return true;
 
-    return this.monitoringInterfaces.every(intf => monitoringInterfaces.includes(intf))
+    return this.monitoringInterfaces.some(intf => !monitoringInterfaces.includes(intf))
   }
 
   async writeClusterConfig(monitoringInterfaces) {

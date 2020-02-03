@@ -21,8 +21,6 @@ const secondaryInterface = require("./SecondaryInterface.js");
 
 const Mode = require('./Mode.js');
 
-const fireRouter = require('./FireRouter.js')
-
 const sysManager = require('./SysManager.js');
 
 const SpooferManager = require('./SpooferManager.js');
@@ -33,6 +31,7 @@ const d = new Discovery("modeManager", fConfig, "info", false);
 const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
 const firewalla = require('./Firewalla.js')
+const firerouter = require('./FireRouter.js');
 
 const util = require('util');
 const iptool = require('ip');
@@ -79,6 +78,8 @@ async function _enforceSpoofMode() {
     }
 
     let sm = new SpooferManager();
+    // spoof instance creation should be done in each NetworkProfile.spoof
+    /*
     sm.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
     // register v6 spoof instance if v6 gateway is assigned
     if (sysManager.myGateway6() && sysManager.myIp6()) { // empty string also returns false
@@ -96,17 +97,18 @@ async function _enforceSpoofMode() {
         }
       }
     }
+    */
     await sm.startSpoofing()
-    log.info("New Spoof is started");
+    log.info("Spoof instances are started");
   } catch (err) {
     log.error("Failed to start new spoof", err);
   }
 }
 
-function _disableSpoofMode() {
+async function _disableSpoofMode() {
   let sm = new SpooferManager();
-  log.info("Stopping spoofing");
-  return sm.stopSpoofing()
+  await sm.stopSpoofing();
+  log.info("Spoof instances are stopped");
 }
 
 async function _changeToAlternativeIpSubnet() {
@@ -171,9 +173,6 @@ async function _changeToAlternativeIpSubnet() {
     cmd = util.format("sudo /bin/cp -f /etc/resolv.conf %s", savedResolvFile);
     await execAsync(cmd);
   }
-
-  await d.discoverInterfacesAsync();
-  await sysManager.updateAsync();
 }
 
 async function _enableSecondaryInterface() {
@@ -183,9 +182,6 @@ async function _enableSecondaryInterface() {
     let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");
     if (legacyIpSubnet) { // secondary ip is changed
-      await d.discoverInterfacesAsync()
-      await sysManager.updateAsync()
-      // secondary interface ip changed, reload sysManager in all Fire* processes
       try {
         // legacyIpSubnet should be like 192.168.218.0/24
         // dns change is done in dnsmasq.js
@@ -198,23 +194,6 @@ async function _enableSecondaryInterface() {
     }
   } catch (err) {
     log.error("Failed to enable secondary interface, err:", err);
-  }
-}
-
-// this should be implemented in network manager
-async function _enableLanInterfaces() {
-  const lanConfs = await sysManager.getLanConfigurations();
-  if (lanConfs && Array.isArray(lanConfs)) {
-    for (let lanConf of lanConfs) {
-      if (lanConf.enabled === true) {
-        const ip4Prefixes = lanConf.ip4Prefixes;
-        await iptables.dhcpSubnetChangeAsync(ip4Prefixes, true).catch((err) => {
-          log.error("Failed to update nat for lan interface: " + ip4Prefixes, err);
-        });
-      }
-    }
-    await d.discoverInterfacesAsync();
-    await sysManager.updateAsync();
   }
 }
 
@@ -259,19 +238,13 @@ async function apply() {
 
   switch (mode) {
     case Mode.MODE_DHCP:
-      //await _saveSimpleModeNetworkSettings() // no need to do this anymore, primary interface IP is editable now
-      await _changeToAlternativeIpSubnet();
-      await _enableSecondaryInterface();
+      await firerouter.applyLastConfigForMode(mode);
       await _enforceDHCPMode();
-      await pclient.publishAsync("System:IPChange", "");
       break;
     case Mode.MODE_DHCP_SPOOF:
     case Mode.MODE_AUTO_SPOOF:
-      await _changeToAlternativeIpSubnet();
-      await _enableSecondaryInterface(); // secondary interface ip/subnet may be changed
-      //await _restoreSimpleModeNetworkSettings() // no need to do this anymore, primary interface IP is ediatable now
+      await firerouter.applyLastConfigForMode(mode);
       await _enforceSpoofMode();
-      await pclient.publishAsync("System:IPChange", "");
       // reset oper history for each device, so that we can re-apply spoof commands
       hostManager.cleanHostOperationHistory()
 
@@ -291,8 +264,7 @@ async function apply() {
       break;
     }
     case Mode.MODE_ROUTER:
-      // TODO: start dnsmasq
-      await pclient.publishAsync("System:IPChange", "");
+      await firerouter.applyLastConfigForMode(mode);
       break;
     case Mode.MODE_NONE:
       // no thing
@@ -341,7 +313,14 @@ async function reapply() {
   }
 
   await Mode.reloadSetupMode()
-  return apply()
+  return apply().catch((err) => {
+    // if it is caused by network config change failure, the network config for previous mode is already applied
+    log.error(`Failed to apply new mode ${curMode}`, err);
+    log.info(`Rollback to previous mode: ${lastMode}`);
+    Mode.setSetupMode(lastMode).then(() => {
+      publish(lastMode);
+    });
+  })
 }
 
 function mode() {
@@ -363,9 +342,7 @@ function listenOnChange() {
       let sm = new SpooferManager();
       sm.loadManualSpoofs(hostManager)
     } else if (channel === "NetworkInterface:Update") {
-      await _changeToAlternativeIpSubnet()
-      await _enableSecondaryInterface()
-      pclient.publishAsync("System:IPChange", "");
+      await firerouter.applyLastConfigForMode(curMode);
     }
   });
   sclient.subscribe("Mode:Change");
@@ -446,5 +423,6 @@ module.exports = {
   publishManualSpoofUpdate: publishManualSpoofUpdate,
   publishNetworkInterfaceUpdate: publishNetworkInterfaceUpdate,
   enableSecondaryInterface: _enableSecondaryInterface,
+  changeToAlternativeIpSubnet: _changeToAlternativeIpSubnet,
   toggleCompatibleSpoof: toggleCompatibleSpoof
 }

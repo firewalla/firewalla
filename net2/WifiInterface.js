@@ -116,8 +116,6 @@ async function _configureWifi(config) {
           await _enableHostapd(config);
           setTimeout(async () => {
             await discovery.discoverInterfacesAsync();
-            await sysManager.updateAsync();
-            await pclient.publishAsync("System:IPChange", "");
           }, 10000); // awaiting wlan interface being brought up
         }
         // ensure MASQUERADE rule is added to iptables

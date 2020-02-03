@@ -60,11 +60,6 @@ sudo ipset flush no_dns_caching_mac_set
 
 sudo ipset add -! blocked_ip_set $BLUE_HOLE_IP
 
-# This is to remove all customized ip sets, to have a clean start
-for set in `sudo ipset list -name | egrep "^c_"`; do
-  sudo ipset destroy -! $set
-done
-
 # This is to remove all vpn client ip sets
 for set in `sudo ipset list -name | egrep "^vpn_client_"`; do
   sudo ipset destroy -! $set
@@ -554,3 +549,12 @@ fi
 # redirect blue hole ip 80/443 port to localhost
 sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
 sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
+
+# This is to remove all customized ip sets, to have a clean start
+for set in `sudo ipset list -name | egrep "^c_"`; do
+  sudo ipset destroy -! $set
+done
+# do this twice since some ipsets may be referred in other ipsets and cannot be destroyed at the first run
+for set in `sudo ipset list -name | egrep "^c_"`; do
+  sudo ipset destroy -! $set
+done

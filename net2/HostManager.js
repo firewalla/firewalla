@@ -98,6 +98,12 @@ const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
 const Alarm = require('../alarm/Alarm.js');
 
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
+const Bitbridge = require('../extension/bitbridge/bitbridge.js');
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 module.exports = class HostManager {
@@ -1329,16 +1335,29 @@ module.exports = class HostManager {
 
   async spoof(state) {
     log.debug("System:Spoof:", state, this.spoofing);
+    const sm = new SpooferManager();
     if (state == false) {
       await iptables.switchMonitoringAsync(false);
       await ip6tables.switchMonitoringAsync(false);
       // flush all ip addresses
       log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-      await new SpooferManager().emptySpoofSet()
+      await sm.emptySpoofSet();
+      // create dev flag file if it does not exist, and restart bitbridge
+      // bitbridge binary will be replaced with mock file if this flag file exists
+      await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
+        return exec(`touch ${f.getFirewallaHome()}/bin/dev`).then(() => {
+          sm.triggerRestart();
+        });
+      });
     } else {
       await iptables.switchMonitoringAsync(true);
       await ip6tables.switchMonitoringAsync(true);
-      // do nothing if state is true
+      // remove dev flag file if it exists and restart bitbridge
+      await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
+        return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {
+          sm.triggerRestart();
+        });
+      }).catch((err) => {});
     }
   }
 

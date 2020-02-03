@@ -37,6 +37,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool();
 const fc = require('./config.js')
+const Message = require('./Message.js');
 
 const exec = require('child-process-promise').exec
 
@@ -47,12 +48,16 @@ module.exports = class SpooferManager {
     if (!instance) {
       this.spoofStarted = false;
       this.registeredSpoofInstances = {};
+      /*
       (async () => {
         const gatewayIp = sysManager.myGateway();
         this.gatewayMac = await hostTool.getMacByIP(gatewayIp);
       })();
+      */
 
       if (firewalla.isMain()) {
+        // need to find a better way to do this
+        /*
         sem.on("DeviceUpdate", (event) => {
           const ipv6Addr = event.host.ipv6Addr;
           if (sysManager.myGateway6() && sysManager.myIp6() && this.gatewayMac && event.host.mac === this.gatewayMac
@@ -68,12 +73,13 @@ module.exports = class SpooferManager {
             }
           }
         });
+        */
 
-        sclient.subscribe("System:IPChange")
+        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
 
         sclient.on("message", (channel, message) => {
           switch (channel) {
-            case "System:IPChange":
+            case Message.MSG_SYS_NETWORK_INFO_RELOADED:
               if (sysManager.myGateway() && sysManager.myIp()) {
                 this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
               }
@@ -116,7 +122,7 @@ module.exports = class SpooferManager {
   }
 
   registerSpoofInstance(intf, routerIP, selfIP, isV6) {
-    const key = this._getSpoofInstanceKey(intf, routerIP, selfIP, isV6);
+    const key = this._getSpoofInstanceKey(intf, routerIP, isV6);
     if (!key)
       return;
 
@@ -140,7 +146,7 @@ module.exports = class SpooferManager {
   }
 
   deregisterSpoofInstance(intf, routerIP, selfIP, isV6) {
-    const key = this._getSpoofInstanceKey(intf, routerIP, selfIP, isV6);
+    const key = this._getSpoofInstanceKey(intf, routerIP, isV6);
     if (!key)
       return;
 
@@ -153,14 +159,10 @@ module.exports = class SpooferManager {
     }
   }
 
-  _getSpoofInstanceKey(intf, routerIP, selfIP, isV6) {
+  _getSpoofInstanceKey(intf, routerIP, isV6) {
     isV6 = isV6 || false;
     if (!routerIP) {
-      log.error("Cannot create bitbridge instance. Router IP should be specified.");
-      return null;
-    }
-    if (!selfIP && !isV6) {
-      log.error("Cannot create bitbridge instance. Self IP should be specified for ipv4.");
+      log.error("Cannot create spoofer instance. Router IP should be specified.");
       return null;
     }
     intf = intf || "eth0";
@@ -189,7 +191,11 @@ module.exports = class SpooferManager {
     }
   }
 
-  // WORKAROUND VERSION HERE, will move to a better place
+  async triggerRestart() {
+    await exec("pgrep -x bitbridge7 && sudo pkill bitbridge7; true").catch((err) => {});
+    await exec("pgrep -x bitbridge6 && sudo pkill bitbridge6; true").catch((err) => {});
+  }
+
   async startSpoofing() {
 
     if(this.spoofStarted) {

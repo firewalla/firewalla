@@ -23,6 +23,7 @@
  const Discovery = require('../net2/Discovery.js');
  const d = new Discovery();
  const Config = require('../net2/config.js');
+ const PlatformLoader = require('../platform/PlatformLoader.js');
 
  class IPChangeSensor extends Sensor {
    constructor() {
@@ -30,6 +31,8 @@
    }
 
    async job() {
+    if (PlatformLoader.getPlatform().isFireRouterManaged())
+      return;
     const interfaces = await networkTool.listInterfaces();
     const config = Config.getConfig(true);
     for (let i in interfaces) {
@@ -40,19 +43,9 @@
         // const ipv6Addresses = intf.ip6_addresses || [];
         const currentIpv4Addr = sysManager.myIp();
         if (ipv4Address !== currentIpv4Addr) {
-          d.discoverInterfaces((err, list) => {
-            if (!err) {
-              sysManager.update((err) => {
-                if (err) {
-                  log.error("Failed to update IP in sysManager", err);
-                } else {
-                  pclient.publishAsync("System:IPChange", "");
-                }
-              });
-            } else {
-              log.error("Failed to discover interfaces", err);
-            }
-          })
+          await d.discoverInterfacesAsync().catch((err) => {
+            log.error("Failed to discover interfaces", err);
+          });
         } else {
           log.info(`IP address of ${config.monitoringInterface} is not changed: ` + ipv4Address);
         }

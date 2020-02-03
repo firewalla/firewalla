@@ -34,5 +34,9 @@ for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
   fi
 done
 
-wait $PIDS
+if [[ -n $PIDS ]]; then
+  wait $PIDS
+else
+  exit 0
+fi
 

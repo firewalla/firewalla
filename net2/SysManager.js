@@ -41,6 +41,7 @@ const sss = require('../extension/sysinfo/SysInfo.js');
 const Config = require('./config.js');
 
 const fireRouter = require('./FireRouter.js')
+const Message = require('./Message.js');
 
 const { Address4, Address6 } = require('ip-address')
 
@@ -116,7 +117,7 @@ class SysManager {
             });
             break;
           }
-          case "System:IPChange":
+          case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             this.update(null);
             break;
         }
@@ -126,7 +127,7 @@ class SysManager {
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
       sclient.subscribe("System:SSHPasswordChange");
-      sclient.subscribe("System:IPChange");
+      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
       this.delayedActions();
 
@@ -432,6 +433,9 @@ class SysManager {
       }
     } catch (err) {
       log.error('Error getting sys:network:uuid', err)
+    }
+    if (f.isMain()) {
+      await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
     }
   }
 

@@ -30,6 +30,8 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
+const Mode = require('./Mode.js');
+const SpooferManager = require('./SpooferManager.js');
 const instances = {};
 
 class NetworkProfile {
@@ -44,7 +46,7 @@ class NetworkProfile {
           this.subscriber.subscribeOnce("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, (channel, type, id, obj) => {
             log.info(`Network policy is changed on ${this.o.intf}, uuid: ${this.o.uuid}`, obj);
             this.applyPolicy();
-          })
+          });
         }
       }
       instances[o.uuid] = this;
@@ -108,14 +110,34 @@ class NetworkProfile {
 
   // This actually incidates monitoring state. Old glossary used in PolicyManager.js
   async spoof(state) {
+    const spoofModeOn = await Mode.isSpoofModeOn();
+    const sm = new SpooferManager();
     if (state === true) {
       await iptables.switchInterfaceMonitoringAsync(true, this.o.intf);
       await ip6tables.switchInterfaceMonitoringAsync(true, this.o.intf);
+      if (spoofModeOn) {
+        if (this.o.gateway && this.o.ipv4) {
+          await sm.registerSpoofInstance(this.o.name, this.o.gateway, this.o.ipv4, false);
+        }
+        if (this.o.gateway6 && this.o.gateway6.length > 0 && this.o.ipv6 && this.o.ipv6.length > 0) {
+          await sm.registerSpoofInstance(this.o.name, this.o.gateway6, this.o.ipv6[0], true);
+          // TODO: spoof gateway's other ipv6 addresses if it is also dns server
+        }
+      }
     } else {
       await iptables.switchInterfaceMonitoringAsync(false, this.o.intf);
       await ip6tables.switchInterfaceMonitoringAsync(false, this.o.intf);
+      if (spoofModeOn) {
+        if (this.o.gateway) {
+          // deregister actually does not require self IPv4 address
+          await sm.deregisterSpoofInstance(this.o.name, this.o.gateway, null, false);
+        }
+        if (this.o.gateway6 && this.o.gateway6.length > 0) {
+          await sm.deregisterSpoofInstance(this.o.name, this.o.gateway6, null, true);
+          // TODO: unspoof gateway's other ipv6 addresses if it is also dns server
+        }
+      }
     }
-    // TODO: not finished yet. Need to start/stop spoof instance on the interface
   }
 
   async vpnClient(policy) {
@@ -137,18 +159,11 @@ class NetworkProfile {
   }
 
   static getNetIpsetName(uuid) {
-    const networkProfile = require('./NetworkProfileManager.js').getNetworkProfile(uuid);
-    if (networkProfile) {
-      const iface = networkProfile.o.intf;
-      if (!iface || iface.length == 0) {
-        log.error(`Failed to get interface name of network ${uuid}`);
-        return null;
-      }
-      return `c_net_${networkProfile.o.intf}_set`;
-    } else {
-      log.warn(`Network ${uuid} not found`);
+    // TODO: need find a better way to get a unique name from uuid
+    if (uuid) {
+      return `c_net_${uuid.substring(0, 13)}_set`;
+    } else
       return null;
-    }
   }
 
   async createEnv() {
@@ -160,8 +175,8 @@ class NetworkProfile {
       await exec(`sudo ipset create -! ${netIpsetName} hash:net,iface maxelem 1024`).then(() => {
         return exec(`sudo ipset flush -! ${netIpsetName}`);
       }).then(() => {
-        if (this.o && this.o.ipv4 && this.o.ipv4.length != 0)
-          return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4},${this.o.intf}`);
+        if (this.o && this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0)
+          return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${this.o.intf}`);
       }).catch((err) => {
         log.error(`Failed to create network profile ipset ${netIpsetName}`, err.message);
       });
@@ -189,6 +204,17 @@ class NetworkProfile {
       // delete related dnsmasq config files
       if (this.o.intf)
         await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/*`).catch((err) => {});
+    }
+    this.oper = null; // clear oper cache used in PolicyManager.js
+    // disable spoof instances
+    const sm = new SpooferManager();
+    if (this.o.gateway) {
+      // deregister actually does not require self IPv4 address
+      await sm.deregisterSpoofInstance(this.o.name, this.o.gateway, null, false);
+    }
+    if (this.o.gateway6 && this.o.gateway6.length > 0) {
+      await sm.deregisterSpoofInstance(this.o.name, this.o.gateway6, null, true);
+      // TODO: unspoof gateway's other ipv6 addresses if it is also dns server
     }
   }
 
