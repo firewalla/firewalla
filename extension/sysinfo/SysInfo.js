@@ -37,6 +37,8 @@ const platform = platformLoader.getPlatform();
 
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
+const fs = require('fs');
+
 let cpuUsage = 0;
 let realMemUsage = 0;
 let usedMem = 0;
@@ -63,6 +65,8 @@ let intelQueueSize = 0;
 
 let multiProfileSupport = false;
 
+let no_auto_upgrade = false;
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -82,6 +86,7 @@ async function update() {
       .then(getThreadInfo)
       .then(getDiskInfo)
       .then(getMultiProfileSupportFlag)
+      .then(getAutoUpgrade)
   ])
 
   if(updateFlag) {
@@ -135,6 +140,15 @@ function getDiskInfo() {
       diskInfo = disks;
 
       resolve();
+    });
+  })
+}
+
+function getAutoUpgrade() {
+  return new Promise((resolve, reject) => {
+    fs.exists("/home/pi/.firewalla/config/.no_auto_upgrade", function(exists) {
+      no_auto_upgrade = exists;
+      resolve(no_auto_upgrade);
     });
   })
 }
@@ -265,7 +279,8 @@ function getSysInfo() {
     nodeVersion: process.version,
     diskInfo: diskInfo,
     categoryStats: getCategoryStats(),
-    multiProfileSupport: multiProfileSupport
+    multiProfileSupport: multiProfileSupport,
+    no_auto_upgrade: no_auto_upgrade
   }
 
   if(rateLimitInfo) {

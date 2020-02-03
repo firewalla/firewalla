@@ -94,6 +94,8 @@ const ip6tables = require('./Ip6tables.js');
 
 const Alarm = require('../alarm/Alarm.js');
 
+const SysInfo = require('../extension/sysinfo/SysInfo.js');
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 module.exports = class HostManager {
@@ -291,6 +293,8 @@ module.exports = class HostManager {
     if (sysManager.upgradeEvent) {
       json.upgradeEvent = sysManager.upgradeEvent;
     }
+    const sysInfo = SysInfo.getSysInfo();
+    json.no_auto_upgrade = sysInfo.no_auto_upgrade;
   }
 
 
@@ -802,12 +806,7 @@ module.exports = class HostManager {
     const versionUpdate = await sysManager.getVersionUpdate();
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
-    if (require('fs').existsSync("/home/pi/.firewalla/config/.no_auto_upgrade")) {
-      json.no_auto_upgrade = true;
-    } else {
-      json.no_auto_upgrade = false;
-    }
-  }
+}
 
   async getRecentFlows(json) {
     const recentFlows = await flowTool.getGlobalRecentConns();
