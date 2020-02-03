@@ -806,7 +806,7 @@ module.exports = class HostManager {
     const versionUpdate = await sysManager.getVersionUpdate();
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
-}
+  }
 
   async getRecentFlows(json) {
     const recentFlows = await flowTool.getGlobalRecentConns();
