@@ -20,6 +20,7 @@ var instances = {};
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const sysManager = require('./SysManager.js');
 
@@ -33,6 +34,7 @@ const firerouter = require('./FireRouter.js');
 
 const uuid = require('uuid')
 const _ = require('lodash')
+const Message = require('./Message.js');
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -258,7 +260,7 @@ module.exports = class {
     } catch (error) {
       log.error("Discovery::Interfaces:Error", redisobjs, list, error);
     }
-
+    await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_UPDATED, "");
     return list
   }
 

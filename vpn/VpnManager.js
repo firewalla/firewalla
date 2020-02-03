@@ -42,6 +42,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Config = require('../net2/config.js');
 
 const UPNP = require('../extension/upnp/upnp.js');
+const Message = require('../net2/Message.js');
 
 const moment = require('moment');
 
@@ -53,7 +54,7 @@ class VpnManager {
       if (firewalla.isMain()) {
         sclient.on("message", async (channel, message) => {
           switch (channel) {
-            case "System:IPChange":
+            case Message.MSG_SYS_NETWORK_INFO_RELOADED:
               // update SNAT rule in iptables
               try {
                 // sysManager.myIp() only returns latest IP of Firewalla. Should unset old rule with legacy IP before add new rule
@@ -66,7 +67,7 @@ class VpnManager {
           }
         });
 
-        sclient.subscribe("System:IPChange");
+        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
       }
       instance = this;
       this.instanceName = "server"; // defautl value

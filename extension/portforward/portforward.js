@@ -34,6 +34,7 @@ const ShieldManager = require('../../net2/ShieldManager.js');
 let shieldManager = null;
 
 const iptable = require("../../net2/Iptables.js");
+const Message = require('../../net2/Message.js');
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -78,7 +79,7 @@ class PortForward {
   
           sclient.on("message", (channel, message) => {
             switch (channel) {
-              case "System:IPChange":
+              case Message.MSG_SYS_NETWORK_INFO_RELOADED:
                 (async () => {
                   if (sysManager.myIp() !== this._selfIP) {
                     log.info(`Firewalla IP changed from ${this._selfIP} to ${sysManager.myIp()}, refresh all rules...`);
@@ -87,13 +88,13 @@ class PortForward {
                     this._selfIP = sysManager.myIp();
                   }
                 })().catch((err) => {
-                  log.error("Failed to refresh port forward rules for System:IPChange", err);
+                  log.error("Failed to refresh port forward rules", err);
                 })
                 break;
               default:
             }
           });
-          sclient.subscribe("System:IPChange");
+          sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
         }
       })    
       instance = this

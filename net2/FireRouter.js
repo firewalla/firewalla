@@ -43,12 +43,16 @@ const PlatformLoader = require('../platform/PlatformLoader.js')
 const Config = require('./config.js')
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const { delay } = require('../util/util.js')
+const pclient = require('../util/redis_manager.js').getPublishClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('./Message.js');
 
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
 const uuid = require('uuid');
 const _ = require('lodash');
+const Mode = require('./Mode.js');
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
@@ -102,14 +106,14 @@ async function generateNetworkInfo() {
   const networkInfos = [];
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
-    const ip4 = new Address4(intf.state.ip4)
+    const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const redisIntf = {
       name:         intfName,
       uuid:         intf.config.meta.uuid,
       mac_address:  intf.state.mac,
-      ip_address:   ip4.addressMinusSuffix,
+      ip_address:   ip4 ? ip4.addressMinusSuffix : null,
       subnet:       intf.state.ip4,
-      netmask:      Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address,
+      netmask:      ip4 ? Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address : null,
       gateway_ip:   (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
       dns:          (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.nameservers : intf.state.dns,
       type:         'Wired', // probably no need to keep this
@@ -118,6 +122,9 @@ async function generateNetworkInfo() {
     await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
     await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
     networkInfos.push(redisIntf);
+  }
+  if (f.isMain()) {
+    await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_UPDATED, "");
   }
   return networkInfos;
 }
@@ -148,6 +155,19 @@ class FireRouter {
       log.error('FireRouter failed to initialize', err)
       process.exit(1);
     })
+
+    sclient.on("message", (channel, message) => {
+      switch (channel) {
+        case Message.MSG_FR_IP_CHANGE:
+        case Message.MSG_NETWORK_CHANGED: {
+          this.init();
+        }
+        break;
+      }
+    });
+
+    sclient.subscribe(Message.MSG_FR_IP_CHANGE);
+    sclient.subscribe(Message.MSG_NETWORK_CHANGED);
   }
 
   // let it crash
@@ -157,6 +177,11 @@ class FireRouter {
       routerConfig = await getConfig()
 
       const mode = await rclient.getAsync('mode')
+
+      const lastConfig = await this.loadLastConfigFromHistory(mode);
+      if (!lastConfig || ! _.isEqual(lastConfig.config, routerConfig)) {
+        await this.saveConfigHistory(routerConfig, mode);
+      }
 
       // const wans = await getWANInterfaces();
       // const lans = await getLANInterfaces();
@@ -384,8 +409,10 @@ class FireRouter {
       sysTool.rebootSystem(5)
     }
 
-    // this.init should not take a long time
-    await this.init()
+    // do not call this.init in setConfig, make this function pure
+    // await this.init()
+    // init of FireRouter should be triggered by published message
+    await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
 
     return resp.body
   }
@@ -439,6 +466,35 @@ class FireRouter {
       }
     }
     return history;
+  }
+
+  async applyLastConfigForMode(mode) {
+    if (this.platform.isFireRouterManaged()) {
+      switch (mode) {
+        case Mode.MODE_AUTO_SPOOF: 
+        case Mode.MODE_ROUTER: {
+          let lastConfig = await this.loadLastConfigFromHistory(mode);
+          lastConfig = lastConfig && lastConfig.config;
+          if (!lastConfig) {
+            // load default config
+            if (mode === Mode.MODE_AUTO_SPOOF)
+              lastConfig = require('./default_setup_simple.json');
+            if (mode === Mode.MODE_ROUTER)
+              lastConfig = require('./default_setup_router.json');
+          }
+          await this.setConfig(lastConfig);
+          break;
+        }
+        default:
+          log.error("Unsupported mode for Firerouter: ", mode);
+      }
+    } else {
+      // red/blue, always apply network config for primary/secondary network no matter what the mode is
+      const ModeManager = require('./ModeManager.js');
+      await ModeManager.changeToAlternativeIpSubnet();
+      await ModeManager.enableSecondaryInterface();
+      await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+    }
   }
 }
 

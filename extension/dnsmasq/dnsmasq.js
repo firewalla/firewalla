@@ -38,6 +38,7 @@ const platform = PlatformLoader.getPlatform()
 const DNSTool = require('../../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const fireRouter = require('../../net2/FireRouter.js')
+const Message = require('../../net2/Message.js');
 const fc = require('../../net2/config.js')
 const { delay } = require('../../util/util.js');
 
@@ -174,7 +175,7 @@ module.exports = class DNSMASQ {
 
           sclient.on("message", (channel, message) => {
             switch (channel) {
-              case "System:IPChange":
+              case Message.MSG_SYS_NETWORK_INFO_RELOADED:
                 (async () => {
                   const started = await this.checkStatus();
                   if (started)
@@ -193,7 +194,7 @@ module.exports = class DNSMASQ {
             }
           });
 
-          sclient.subscribe("System:IPChange");
+          sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
           sclient.subscribe("System:VPNSubnetChanged");
         }
       })

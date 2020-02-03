@@ -1,0 +1,43 @@
+{
+  "interface": {
+    "phy": {
+      "eth3": {
+        "enabled": true
+      },
+      "eth1": {
+        "enabled": true
+      },
+      "eth2": {
+        "enabled": true
+      },
+      "eth0": {
+        "meta": {
+          "name": "WAN 1",
+          "type": "wan"
+        },
+        "enabled": true,
+        "dhcp": true
+      }
+    }
+  },
+  "routing": {
+    "global": {
+      "default": {
+        "viaIntf": "eth0"
+      }
+    }
+  },
+  "dns": {
+    "default": {
+      "useNameserversFromWAN": true
+    },
+    "eth0": {
+      "useNameserversFromWAN": true
+    }
+  },
+  "sshd": {
+    "eth0": {
+      "enabled": true
+    }
+  }
+}
