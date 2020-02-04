@@ -38,6 +38,7 @@
     "heapdump": "^0.3.14",
     "i18n": "^0.8.3",
     "ip": "^1.1.2",
+    "ip-address": "^6.2.0",
     "jsonfile": "^2.4.0",
     "jsonwebtoken": "^8.3.0",
     "later": "^1.2.0",
