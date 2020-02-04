@@ -92,7 +92,7 @@ async function getInterfaces() {
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
-    intf.config.meta.name = intfName
+    intf.config.meta.intfName = intfName
     intfUuidMap[intf.config.meta.uuid] = intf
   }
   for (const intfName in routerConfig.dhcp) {
@@ -115,6 +115,7 @@ async function generateNetworkInfo() {
       subnet:       intf.state.ip4,
       netmask:      ip4 ? Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address : null,
       gateway_ip:   (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
+      gateway:      (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
       dns:          (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.nameservers : intf.state.dns,
       type:         'Wired', // probably no need to keep this
     }
@@ -132,6 +133,8 @@ async function generateNetworkInfo() {
 let routerInterface = null
 let routerConfig = null
 let monitoringIntfNames = null
+let wanIntfNames = null
+let defaultWanIntfName = null
 let intfNameMap = {}
 let intfUuidMap = {}
 
@@ -193,17 +196,39 @@ class FireRouter {
 
       this.sysNetworkInfo = await generateNetworkInfo()
 
+      // extract WAN interface names
+      wanIntfNames = Object.values(intfNameMap)
+        .filter(intf => intf.config.meta.type == 'wan')
+        .map(intf => intf.config.meta.intfName);
+
+      // extract default route interface name
+      defaultWanIntfName = null;
+      if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
+        const defaultRoutingConfig = routerConfig.routing.global.default;
+        if (defaultRoutingConfig.viaIntf)
+          defaultWanIntfName = defaultRoutingConfig.viaIntf;
+        else {
+          if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
+            // load balance default route, choose the fisrt one as default WAN
+            defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
+          }
+        }
+      }
+      if (!defaultWanIntfName )
+        log.error("Default WAN interface is not defined in router config");
+      
+
       switch(mode) {
         case 'spoof':
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type == 'wan')
-            .map(intf => intf.config.meta.name)
+            .map(intf => intf.config.meta.intfName)
           break;
 
         default: // router mode
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type == 'lan')
-            .map(intf => intf.config.meta.name)
+            .map(intf => intf.config.meta.intfName)
           break
       }
 
@@ -298,6 +323,9 @@ class FireRouter {
 
       monitoringIntfNames = [ 'eth0', 'eth0:0' ]
 
+      wanIntfNames = ['eth0'];
+      defaultWanIntfName = "eth0";
+
       const Discovery = require('./Discovery.js');
       const d = new Discovery("nmap");
 
@@ -368,6 +396,14 @@ class FireRouter {
 
   getMonitoringIntfNames() {
     return JSON.parse(JSON.stringify(monitoringIntfNames))
+  }
+
+  getWanIntfNames() {
+    return JSON.parse(JSON.stringify(wanIntfNames));
+  }
+
+  getDefaultWanIntfName() {
+    return defaultWanIntfName;
   }
 
   getConfig() {

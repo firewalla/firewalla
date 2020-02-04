@@ -115,25 +115,29 @@ class NetworkProfile {
     if (state === true) {
       await iptables.switchInterfaceMonitoringAsync(true, this.o.intf);
       await ip6tables.switchInterfaceMonitoringAsync(true, this.o.intf);
-      if (spoofModeOn && !this.o.name.endsWith(":0")) { // do not spoof on alias interface
-        if (this.o.gateway && this.o.ipv4) {
-          await sm.registerSpoofInstance(this.o.name, this.o.gateway, this.o.ipv4, false);
+      if (spoofModeOn && !this.o.intf.endsWith(":0")) { // do not spoof on alias interface
+        if (this.o.gateway  && this.o.gateway.length > 0 
+          && this.o.ipv4 && this.o.ipv4.length > 0
+          && this.o.gateway !== this.o.ipv4) {
+          await sm.registerSpoofInstance(this.o.intf, this.o.gateway, this.o.ipv4, false);
         }
-        if (this.o.gateway6 && this.o.gateway6.length > 0 && this.o.ipv6 && this.o.ipv6.length > 0) {
-          await sm.registerSpoofInstance(this.o.name, this.o.gateway6, this.o.ipv6[0], true);
+        if (this.o.gateway6 && this.o.gateway6.length > 0 
+          && this.o.ipv6 && this.o.ipv6.length > 0 
+          && !this.o.ipv6.includes(this.o.gateway6)) {
+          await sm.registerSpoofInstance(this.o.intf, this.o.gateway6, this.o.ipv6[0], true);
           // TODO: spoof gateway's other ipv6 addresses if it is also dns server
         }
       }
     } else {
       await iptables.switchInterfaceMonitoringAsync(false, this.o.intf);
       await ip6tables.switchInterfaceMonitoringAsync(false, this.o.intf);
-      if (spoofModeOn && !this.o.name.endsWith(":0")) { // do not spoof on alias interface
+      if (spoofModeOn && !this.o.intf.endsWith(":0")) { // do not spoof on alias interface
         if (this.o.gateway) {
           // deregister actually does not require self IPv4 address
-          await sm.deregisterSpoofInstance(this.o.name, this.o.gateway, null, false);
+          await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway, null, false);
         }
         if (this.o.gateway6 && this.o.gateway6.length > 0) {
-          await sm.deregisterSpoofInstance(this.o.name, this.o.gateway6, null, true);
+          await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway6, null, true);
           // TODO: unspoof gateway's other ipv6 addresses if it is also dns server
         }
       }
@@ -210,10 +214,10 @@ class NetworkProfile {
     const sm = new SpooferManager();
     if (this.o.gateway) {
       // deregister actually does not require self IPv4 address
-      await sm.deregisterSpoofInstance(this.o.name, this.o.gateway, null, false);
+      await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway, null, false);
     }
     if (this.o.gateway6 && this.o.gateway6.length > 0) {
-      await sm.deregisterSpoofInstance(this.o.name, this.o.gateway6, null, true);
+      await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway6, null, true);
       // TODO: unspoof gateway's other ipv6 addresses if it is also dns server
     }
   }

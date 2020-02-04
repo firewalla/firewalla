@@ -18,6 +18,7 @@ const log = require('./logger.js')(__filename);
 var instances = {};
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const exec = require('child-process-promise').exec
 
@@ -102,7 +103,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const Bitbridge = require('../extension/bitbridge/bitbridge.js');
+const Message = require('./Message.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -124,7 +125,7 @@ module.exports = class HostManager {
         if (err == null) {
           log.info("System Manager Updated");
           if(!f.isDocker()) {
-            spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false);
+            spoofer = new Spoofer({}, false);
           } else {
             // for docker
             spoofer = {
@@ -156,6 +157,15 @@ module.exports = class HostManager {
           log.info("Iptables is ready");
           this.iptablesReady = true;
         })
+
+        sclient.on("message", (channel, message) => {
+          if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+            log.info("Rescan hosts due to network info is reloaded");
+            this.getHosts();
+          }
+        });
+
+        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
 
         log.info("Subscribing Scan:Done event...")
         this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
@@ -1247,17 +1257,15 @@ module.exports = class HostManager {
     let allIPv6Addrs = [];
     let allIPv4Addrs = [];
 
-    let myIp = sysManager.myIp();
-
     for (let h in this.hostsdb) {
       let hostbymac = this.hostsdb[h];
       if (hostbymac && h.startsWith("host:mac")) {
         if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
-          if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
+          if (!sysManager.isMyIP(hostbymac.ipv4Addr)) {   // local ipv6 do not count
             allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
           }
         }
-        if (hostbymac.o.ipv4Addr!=null && hostbymac.o.ipv4Addr != myIp) {
+        if (hostbymac.o.ipv4Addr!=null && !sysManager.isMyIP(hostbymac.o.ipv4Addr)) {
           allIPv4Addrs.push(hostbymac.o.ipv4Addr);
         }
       }
@@ -1340,8 +1348,9 @@ module.exports = class HostManager {
       await iptables.switchMonitoringAsync(false);
       await ip6tables.switchMonitoringAsync(false);
       // flush all ip addresses
-      log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-      await sm.emptySpoofSet();
+      // log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
+      // no need to empty spoof set since dev flag file is placed now
+      // await sm.emptySpoofSet();
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
