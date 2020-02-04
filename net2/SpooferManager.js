@@ -73,7 +73,6 @@ module.exports = class SpooferManager {
             }
           }
         });
-        */
 
         sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
 
@@ -90,6 +89,7 @@ module.exports = class SpooferManager {
             default:
           }
         });
+        */
 
         // feature change listener
         (async () => {
@@ -121,8 +121,8 @@ module.exports = class SpooferManager {
     return instance;
   }
 
-  registerSpoofInstance(intf, routerIP, selfIP, isV6) {
-    const key = this._getSpoofInstanceKey(intf, routerIP, isV6);
+  async registerSpoofInstance(intf, routerIP, selfIP, isV6) {
+    const key = this._getSpoofInstanceKey(intf, isV6);
     if (!key)
       return;
 
@@ -136,7 +136,7 @@ module.exports = class SpooferManager {
       const newInstance = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
       if (newInstance !== oldInstance) {
         // need to deregister old instance
-        this.deregisterSpoofInstance(intf, routerIP, selfIP, isV6);
+        await this.deregisterSpoofInstance(intf, routerIP, selfIP, isV6);
         this.registeredSpoofInstances[key] = newInstance;
         if (this.spoofStarted) {
           newInstance.start();
@@ -145,8 +145,8 @@ module.exports = class SpooferManager {
     }
   }
 
-  deregisterSpoofInstance(intf, routerIP, selfIP, isV6) {
-    const key = this._getSpoofInstanceKey(intf, routerIP, isV6);
+  async deregisterSpoofInstance(intf, routerIP, selfIP, isV6) {
+    const key = this._getSpoofInstanceKey(intf, isV6);
     if (!key)
       return;
 
@@ -155,21 +155,18 @@ module.exports = class SpooferManager {
       if (this.spoofStarted) {
         spoofInstance.stop();
       }
+      await this.emptySpoofSet(intf);
       delete this.registeredSpoofInstances[key];
     }
   }
 
-  _getSpoofInstanceKey(intf, routerIP, isV6) {
+  _getSpoofInstanceKey(intf, isV6) {
     isV6 = isV6 || false;
-    if (!routerIP) {
-      log.error("Cannot create spoofer instance. Router IP should be specified.");
-      return null;
-    }
     intf = intf || "eth0";
     if (isV6) {
-      return `${intf}_v6_${routerIP}`;
+      return `${intf}_v6`;
     } else {
-      return `${intf}_v4_${routerIP}`;
+      return `${intf}_v4`;
     }
   }
 
@@ -268,13 +265,23 @@ module.exports = class SpooferManager {
     }
   }
 
-  async emptySpoofSet() {
-    // clean up redis key
-    await rclient.delAsync(monitoredKey)
-    await rclient.delAsync(unmonitoredKey)
-    await rclient.delAsync(unmonitoredKeyAll)
-    await rclient.delAsync(monitoredKey6)
-    await rclient.delAsync(unmonitoredKey6)
+  async emptySpoofSet(intf) {
+    if (intf) {
+      // clean up per-interface redis key
+      const monitoredHostsKey = `monitored_hosts_${intf}`;
+      const unmonitoredHostsKey = `unmonitored_hosts_${intf}`;
+      const monitoredHostsKey6 = `monitored_hosts6_${intf}`;
+      await rclient.delAsync(monitoredHostsKey);
+      await rclient.delAsync(unmonitoredHostsKey);
+      await rclient.delAsync(monitoredHostsKey6);
+    } else {
+      // clean up summarized redis key
+      await rclient.delAsync(monitoredKey)
+      await rclient.delAsync(unmonitoredKey)
+      await rclient.delAsync(unmonitoredKeyAll)
+      await rclient.delAsync(monitoredKey6)
+      await rclient.delAsync(unmonitoredKey6)
+    }
   }
 
   async loadManualSpoof(mac) {

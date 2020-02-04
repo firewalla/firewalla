@@ -458,16 +458,6 @@ class SysManager {
     });
   }
 
-  async getLanConfigurations() {
-    return rclient.hgetAsync("sys:network:settings", "lans").then((value) => {
-      if (value)
-        return JSON.parse(value);
-      else return null;
-    }).catch((err) => {
-      return null;
-    });
-  }
-
   async clearVersionUpdate() {
     return rclient.delAsync("sys:versionUpdate");
   }
@@ -535,6 +525,12 @@ class SysManager {
     }
   }
 
+  myDefaultWanIp() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myIp(wanIntf);
+    return null;
+  }
 
   myIp(intf = this.config.monitoringInterface) {
     return this.getInterface(intf) && this.getInterface(intf).ip_address;
@@ -687,7 +683,7 @@ class SysManager {
 
     let interfaces = this.getMonitoringInterfaces();
     if (intf) {
-      interfaces = interfaces.filter(i => i.name.startsWith(intf + ':'))
+      interfaces = interfaces.filter(i => i.name === intf)
     }
 
     return interfaces

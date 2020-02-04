@@ -167,7 +167,7 @@ class BitBridge {
         BitBridge.scheduleRestartB4(); // legacy issue to use bitbridge4
       } else {
         binary = this.getBinary6()
-        args = [this.intf, '-w 0.18','-q','-k monitored_hosts6','-g '+this.routerIP, `-k monitored_hosts6_${this.intf}`];
+        args = [this.intf, '-w 0.18','-q','-g '+this.routerIP, `-k monitored_hosts6_${this.intf}`];
         
         let cmd = binary+" "+args.join(" ")
         log.info("Launching Bitbridge6", cmd);
