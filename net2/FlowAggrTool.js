@@ -315,6 +315,7 @@ class FlowAggrTool {
     return rclient.zrangeAsync(sumFlowKey, 0, count, 'withscores');
   }
 
+  // return a list of destinations sorted by transfer size desc
   async getTopSumFlowByKeyAndDestination(key, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     const destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
@@ -399,6 +400,7 @@ class FlowAggrTool {
   }
 
   // group by activity, ignore individual devices
+  // return a list of categories sorted by time desc
   async getXYActivitySumFlowByKey(key, xy, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     const appAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
