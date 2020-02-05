@@ -298,6 +298,13 @@ class FlowAggregationSensor extends Sensor {
       setLastSumFlow: true
     }
 
+    await flowAggrTool.addSumFlow("download", options);
+    await flowAggrTool.addSumFlow("upload", options);
+    await flowAggrTool.addSumFlow("app", options);
+    await this.cleanupAppActivity(options); // to filter idle activities
+    await flowAggrTool.addSumFlow("category", options);
+    await this.cleanupCategoryActivity(options);
+
     let macs = hostManager.getActiveMACs();
 
     await Promise.all(macs.map(async mac => {
