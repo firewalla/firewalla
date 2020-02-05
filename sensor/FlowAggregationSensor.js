@@ -245,7 +245,8 @@ class FlowAggregationSensor extends Sensor {
       end: end,
       interval: this.config.interval,
       expireTime: 24 * 3600, // keep for 24 hours
-      skipIfExists: skipIfExists
+      skipIfExists: skipIfExists,
+      max_flow: 200
     }
 
     await flowAggrTool.addSumFlow("download", options);
@@ -296,7 +297,7 @@ class FlowAggregationSensor extends Sensor {
       interval: this.config.interval,
       expireTime: this.config.sumFlowExpireTime,
       setLastSumFlow: true,
-      max_flow: 1000
+      max_flow: 200
     }
 
     await flowAggrTool.addSumFlow("download", options);
