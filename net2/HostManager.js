@@ -60,6 +60,9 @@ const policyManager2 = new PolicyManager2();
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
+const NetBotTool = require('../net2/NetBotTool');
+const netBotTool = new NetBotTool();
+
 const SpooferManager = require('./SpooferManager.js')
 
 const modeManager = require('./ModeManager.js');
@@ -906,7 +909,8 @@ module.exports = class HostManager {
           this.asyncBasicDataForInit(json),
           this.getRecentFlows(json),
           this.getGuessedRouters(json),
-          this.getGuardian(json)
+          this.getGuardian(json),
+          netBotTool.loadSystemStats(json)
         ];
 
         this.basicDataForInit(json, options);
