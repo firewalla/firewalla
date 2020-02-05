@@ -295,7 +295,8 @@ class FlowAggregationSensor extends Sensor {
       end: end,
       interval: this.config.interval,
       expireTime: this.config.sumFlowExpireTime,
-      setLastSumFlow: true
+      setLastSumFlow: true,
+      max_flow: 1000
     }
 
     await flowAggrTool.addSumFlow("download", options);

@@ -190,6 +190,10 @@ class FlowAggrTool {
       max_flow = MAX_FLOW_PER_HOUR
     }
 
+    if(options.max_flow) {
+      max_flow = options.max_flow
+    }
+
     let mac = options.mac; // if mac is undefined, by default it will scan over all machines
 
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
