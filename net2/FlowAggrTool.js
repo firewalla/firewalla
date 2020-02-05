@@ -315,6 +315,60 @@ class FlowAggrTool {
     return rclient.zrangeAsync(sumFlowKey, 0, count, 'withscores');
   }
 
+  async getTopSumFlowByKeyAndDestination(key, count) {
+    // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
+    const destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
+    const results = {};
+    const totalPorts = {};
+
+    for(let i = 0; i < destAndScores.length; i++) {
+      if(i % 2 === 1) {
+        let payload = destAndScores[i-1];
+        let count = destAndScores[i];
+        if(payload !== '_' && count !== 0) {
+          try {
+            const json = JSON.parse(payload);
+            const dest = json.destIP;
+            const ports = json.port;
+            if(!dest) {
+              continue;
+            }  
+            if(results[dest]) {
+              results[dest] += count
+            } else {
+              results[dest] = count
+            }
+
+            if(ports) {
+              if(totalPorts[dest]) {
+                totalPorts[dest].push.apply(totalPorts[dest], ports)
+              } else {
+                totalPorts[dest] = ports
+              }
+            }
+          } catch(err) {
+            log.error("Failed to parse payload: ", payload);
+          }
+        }
+      }
+    }
+
+    const array = [];
+    for(const destIP in results) {
+      let ports = totalPorts[destIP] || [];
+      ports = ports.filter((v, i) => {
+        return ports.indexOf(v) === i;
+      })
+      array.push({ip: destIP, count: results[destIP], ports: ports});
+    }
+
+    array.sort(function(a, b) {
+      return a.count - b.count
+    });
+
+    return results;
+  }
+
   async getTopSumFlowByKey(key, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     let destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
@@ -342,6 +396,47 @@ class FlowAggrTool {
 
   getCategoryActivitySumFlowByKey(key, count) {
     return this.getXActivitySumFlowByKey(key, 'category', count)
+  }
+
+  // group by activity, ignore individual devices
+  async getXYActivitySumFlowByKey(key, xy, count) {
+    // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
+    const appAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
+    const results = {};
+
+    for(let i = 0; i < appAndScores.length; i++) {
+      if(i % 2 === 1) {
+        let payload = appAndScores[i-1];
+        let count = appAndScores[i];
+        if(payload !== '_' && count !== 0) {
+          try {
+            let json = JSON.parse(payload);
+            const key = json[xy];
+            if(!key) {
+              continue;
+            }            
+            if(results[key]) {
+              results[key] += count
+            } else {
+              results[key] = count
+            }
+          } catch(err) {
+            log.error("Failed to parse payload: ", payload);
+          }
+        }
+      }
+    }
+    
+    const array = [];
+    for(const category in results) {
+      array.push({category, count: results[category]});
+    }
+
+    array.sort(function(a, b) {
+      return a.count - b.count
+    });
+
+    return results;
   }
 
   async getXActivitySumFlowByKey(key, x, count) {
