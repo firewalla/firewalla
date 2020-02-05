@@ -396,7 +396,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
-//    await this.regularClean("sumflow", "sumflow:*");
+      await this.regularClean("sumflow", "sumflow:*");
       await this.regularClean("syssumflow", "syssumflow:*");
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
