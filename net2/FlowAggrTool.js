@@ -293,7 +293,14 @@ class FlowAggrTool {
   }
 
   setLastSumFlow(mac, trafficDirection, keyName) {
-    let key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+    let key = "";
+    
+    if(mac) {
+      key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+    } else {
+      key = util.format("lastsumflow:%s", trafficDirection);
+    }
+
     return rclient.setAsync(key, keyName);
   }
 
