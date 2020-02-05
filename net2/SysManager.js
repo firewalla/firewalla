@@ -118,7 +118,11 @@ class SysManager {
             break;
           }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
-            this.update(null);
+            this.update(async () => {
+              if (f.isMain()) {
+                await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
+              }
+            });
             break;
         }
       });
@@ -434,9 +438,6 @@ class SysManager {
     } catch (err) {
       log.error('Error getting sys:network:uuid', err)
     }
-    if (f.isMain()) {
-      await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
-    }
   }
 
   async syncVersionUpdate() {
@@ -491,6 +492,10 @@ class SysManager {
   getInterfaceViaIP4(ip) {
     const ipAddress = new Address4(ip)
     return this.getMonitoringInterfaces().find(i => ipAddress.isInSubnet(i.subnetAddress4))
+  }
+
+  getInterfaceViaIP6(ip6) {
+    return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(ip6, i.name))
   }
 
   // this method is not safe as we'll have interfaces with same mac
@@ -699,7 +704,7 @@ class SysManager {
     else {
       let interfaces = this.getMonitoringInterfaces();
       if (intf) {
-        interfaces = interfaces.filter(i => i.name.startsWith(intf + ':'))
+        interfaces = interfaces.filter(i => i.name === intf)
       }
 
       return interfaces

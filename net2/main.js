@@ -210,10 +210,12 @@ async function run() {
   var HostManager = require('./HostManager.js');
   var hostManager= new HostManager("cli",'server','debug');
 
+  // although they are not used here, it is still needed to create them
   const NetworkProfileManager = require('./NetworkProfileManager.js');
   const TagManager = require('./TagManager.js');
 
-  /* comment out temporarily. Hopefully this will be wrapped in firerouter.init() and is no longer needed eventually
+  /* This is already done in ModeManager.apply().
+     Hopefully this will be wrapped in firerouter.init() and is no longer needed eventually
   if (platform.getDHCPCapacity()) {
     // always create the secondary interface
     await ModeManager.enableSecondaryInterface()

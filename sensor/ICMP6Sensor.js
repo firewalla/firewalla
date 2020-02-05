@@ -27,43 +27,64 @@ const sysManager = require('../net2/SysManager.js');
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
 
 class ICMP6Sensor extends Sensor {
   constructor() {
     super();
-    this.myMac = null;
-    this.interfaces = null;
+    this.intfPidMap = {};
+  }
+
+  async restart() {
+    for (const intf in this.intfPidMap) {
+      const pid = this.intfPidMap[intf];
+      const childPid = await execAsync(`ps -ef| awk '$3 == '${pid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
+      if (childPid)
+        await execAsync(`sudo kill -9 ${childPid}`).catch((err) => {});
+    }
+    this.intfPidMap = {};
+    const interfaces = sysManager.getMonitoringInterfaces();
+
+    for (const intf of interfaces) {
+      if (!intf.name || !intf.mac_address) continue;
+      if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
+      // listen on icmp6 neighbor-advertisement which is not sent from firewalla
+      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-en', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136`]);
+      const pid = tcpdumpSpawn.pid;
+      log.info("TCPDump icmp6 started with PID: ", pid);
+      this.intfPidMap[intf.name] = pid;
+      const reader = readline.createInterface({
+        input: tcpdumpSpawn.stdout
+      });
+      reader.on('line', (line) => {
+        this.processNeighborAdvertisement(line, intf.mac_address);
+      });
+      tcpdumpSpawn.on('close', (code) => {
+        log.info("TCPDump icmp6 exited with code: ", code);
+      });
+    }
+  }
+
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      this.restart().catch((err) => {
+        log.error("Failed to start tcpdump for ICMP6", err);
+      });
+    }, 5000);
   }
 
   run() {
-    (async () => {
-      this.interfaces = sysManager.getMonitoringInterfaces();
-      for (const intf of this.interfaces) {
-        if (!intf.name || !intf.mac_address) continue;
-        // listen on icmp6 neighbor-advertisement which is not sent from firewalla
-        const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-en', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136`]);
-        const pid = tcpdumpSpawn.pid;
-        log.info("TCPDump icmp6 started with PID: ", pid);
-        const reader = readline.createInterface({
-          input: tcpdumpSpawn.stdout
-        });
-        reader.on('line', (line) => {
-          this.processNeighborAdvertisement(line, intf.mac_address);
-        });
-        tcpdumpSpawn.on('close', (code) => {
-          log.info("TCPDump icmp6 exited with code: ", code);
-        })
+    this.scheduleReload();
+    sclient.on("message", (channel, message) => {
+      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+        log.info("Schedule reload ICMP6Sensor since network info is reloaded");
+        this.scheduleReload();
       }
-      if (!this.interfaces) {
-        setTimeout(() => {
-          log.info("Failed to get self MAC address from sysManager, retry in 60 seconds.");
-          this.run();
-        }, 60000);
-        return;
-      }
-    })().catch((err) => {
-      log.error("Failed to run ICMP6Sensor", err);
     });
+    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
   }
 
   processNeighborAdvertisement(line, intf_mac) {

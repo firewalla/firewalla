@@ -117,7 +117,8 @@ async function generateNetworkInfo() {
       gateway_ip:   (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
       gateway:      (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
       dns:          (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.nameservers : intf.state.dns,
-      type:         'Wired', // probably no need to keep this
+      conn_type:    'Wired', // probably no need to keep this,
+      type:         intf.config.meta.type
     }
 
     await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))

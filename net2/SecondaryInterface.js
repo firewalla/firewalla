@@ -28,7 +28,7 @@ function is_interface_valid(netif) {
   return (
     netif.ip_address != null &&
     netif.mac_address != null &&
-    netif.type != null &&
+    netif.conn_type != null &&
     !netif.ip_address.startsWith('169.254.')
   );
 }

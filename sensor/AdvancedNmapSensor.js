@@ -51,10 +51,10 @@ class AdvancedNmapSensor extends Sensor {
 
   getNetworkRanges() {
     const results = sysManager.getMonitoringInterfaces()
-    this.networkRanges =
+    const networkRanges =
       results &&
       results.map(x => networkTool.capSubnet(x.subnet));
-    return this.networkRanges;
+    return networkRanges;
   }
 
   run() {
@@ -94,15 +94,15 @@ class AdvancedNmapSensor extends Sensor {
     try {
       const result = await this.isSensorEnable()
       if (result) {
-        this.getNetworkRanges()
-        await this.runOnce();
+        const ranges = this.getNetworkRanges()
+        await this.runOnce(ranges);
       }
     } catch(err) {
       log.error('Failed to run vulnerability scan', err);
     }
   }
 
-  async runOnce() {
+  async runOnce(networkRanges) {
     if (!scriptConfig) return;
 
     log.info('Scanning network to detect vulnerability...');
@@ -114,10 +114,10 @@ class AdvancedNmapSensor extends Sensor {
 
       if (!ports) continue;
 
-      if (!this.networkRanges)
+      if (!networkRanges)
         throw new Error('Network range is required');
 
-      for (const range of this.networkRanges) {
+      for (const range of networkRanges) {
         let hosts = await this._scan(range, [scriptName], ports)
         log.info('Analyzing scan result...');
 

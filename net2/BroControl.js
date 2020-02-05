@@ -43,6 +43,8 @@ class BroControl {
     let workerCfg = []
     let index = 1
     for (const intf of monitoringInterfaces) {
+      if (intf.endsWith(":0")) // do not listen on interface alias
+        continue;
       workerCfg.push(
         `\n`,
         `[worker-${index++}]\n`,
