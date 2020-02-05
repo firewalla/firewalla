@@ -54,7 +54,7 @@ class NetBotTool {
 
     for(const key of keys) {
       const lastSumKey = `lastsumflow:${key}`;
-      const realSumKey = rclient.getAsync(lastSumKey);
+      const realSumKey = await rclient.getAsync(lastSumKey);
       const elements = realSumKey.split(":")
       if(elements.length !== 4) {
         continue;
@@ -63,7 +63,7 @@ class NetBotTool {
       const begin = elements[2];
       const end = elements[3];
 
-      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(sumFlowKey, 50);
+      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, 50);
 
       const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
         return b.count - a.count;
@@ -81,7 +81,7 @@ class NetBotTool {
     for(const key of actitivityKeys) {
 
       const lastSumKey = `lastsumflow:${key}`;
-      const realSumKey = rclient.getAsync(lastSumKey);
+      const realSumKey = await rclient.getAsync(lastSumKey);
       const elements = realSumKey.split(":")
       if(elements.length !== 4) {
         continue;

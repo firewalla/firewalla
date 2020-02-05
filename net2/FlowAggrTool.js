@@ -324,7 +324,7 @@ class FlowAggrTool {
     for(let i = 0; i < destAndScores.length; i++) {
       if(i % 2 === 1) {
         let payload = destAndScores[i-1];
-        let count = destAndScores[i];
+        let count = Number(destAndScores[i]);
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
@@ -366,7 +366,7 @@ class FlowAggrTool {
       return a.count - b.count
     });
 
-    return results;
+    return array;
   }
 
   async getTopSumFlowByKey(key, count) {
@@ -407,7 +407,7 @@ class FlowAggrTool {
     for(let i = 0; i < appAndScores.length; i++) {
       if(i % 2 === 1) {
         let payload = appAndScores[i-1];
-        let count = appAndScores[i];
+        let count = Number(appAndScores[i]);
         if(payload !== '_' && count !== 0) {
           try {
             let json = JSON.parse(payload);
@@ -427,16 +427,20 @@ class FlowAggrTool {
       }
     }
     
-    const array = [];
+    let array = [];
     for(const category in results) {
-      array.push({category, count: results[category]});
+      const count = Math.floor(results[category]);
+      if(count < 10) {
+          continue;
+      }
+      array.push({category, count});
     }
 
     array.sort(function(a, b) {
       return a.count - b.count
     });
 
-    return results;
+    return array;
   }
 
   async getXActivitySumFlowByKey(key, x, count) {
