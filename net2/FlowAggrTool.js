@@ -248,13 +248,13 @@ class FlowAggrTool {
     if(mac) {
       tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
     } else {
-      // * is a hack code here, in redis, it means matching everything during keys command
-      tickKeys = (await Promise.all(ticks.map((tick) => {
-        let keyPattern = this.getFlowKey('*', trafficDirection, interval, tick);
-        log.debug("Checking key pattern:", keyPattern);
-        return rclient.keysAsync(keyPattern);
-      })))
-        .reduce((a,b) => a.concat(b), []); // reduce version of flatMap
+      // only call keys once to improve performance
+      const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
+      const matchedKeys = await rclient.keysAsync(keyPattern);
+
+      tickKeys = matchedKeys.filter((key) => {
+        return ticks.some((tick) => key.endsWith(`:${tick}`))
+      });
     }
 
     let num = tickKeys.length;
