@@ -51,7 +51,7 @@ class DNSCrypt {
     return `127.0.0.1#${this.config.localPort || 8854}`;
   }
 
-  async prepareConfig(config = {}) {
+  async prepareConfig(config = {}, reCheckConfig = false) {
     this.config = config;
     let content = await fs.readFileAsync(templatePath, {encoding: 'utf8'});
     content = content.replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1");
@@ -59,15 +59,29 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
-    let serverList = await this.getServers();
-
-    content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
-
     const allServers = await this.getAllServers();
 
     content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
 
+    let serverList = await this.getServers();
+    serverList = serverList.filter((serverName) => {
+      if (!serverName) {
+        return false;
+      }
+
+      return (allServers.filter((server) => (server && server.name && server.stamp && server.name === serverName)).length > 0) ? true : false;
+    });
+    content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
+
+    if (reCheckConfig) {
+      if (fs.existsSync(runtimePath)) {
+        const oldContent = await fs.readFileAsync(runtimePath, {encoding: 'utf8'});
+        if (oldContent == content)
+          return false;
+      }
+    }
     await fs.writeFileAsync(runtimePath, content);
+    return true;
   }
 
   allServersToToml(servers) {
@@ -118,18 +132,19 @@ class DNSCrypt {
   }
 
   async getAllServers() {
-    const serversString = await rclient.getAsync(allServerKey);
-    if(!serversString) {
-      return this.getDefaultAllServers();
+    //const serversString = await rclient.getAsync(allServerKey);
+    const serversString = await bone.hashsetAsync("doh");
+    if (serversString) {
+      try {
+        let servers = JSON.parse(serversString);
+        servers = servers.filter((server) => (server && server.name && server.stamp));
+        if (servers.length > 0)
+          return servers;
+      } catch(err) {
+        log.error("Failed to parse servers, err:", err);
+      }
     }
-
-    try {
-      const servers = JSON.parse(serversString);
-      return servers;
-    } catch(err) {
-      log.error("Failed to parse servers, err:", err);
-      return this.getDefaultAllServers();
-    }
+    return this.getDefaultAllServers();
   }
 
   async getAllServerNames() {
@@ -144,7 +159,6 @@ class DNSCrypt {
 
     return rclient.setAsync(serverKey, JSON.stringify(servers));
   }
-
 }
 
 module.exports = new DNSCrypt();
