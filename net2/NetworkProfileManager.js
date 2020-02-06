@@ -32,23 +32,13 @@ class NetworkProfileManager {
     this.iptablesReady = false;
     this.networkProfiles = {};
 
-    this.refreshTask = setTimeout(async () => {
-        await this.refreshNetworkProfiles();
-      if (f.isMain()) {
-        if (this.iptablesReady) {
-        for (let uuid in this.networkProfiles) {
-          const networkProfile = this.networkProfiles[uuid];
-          await networkProfile.applyPolicy();
-        }
-        }
-      }
-    }, 5000);
+    this.scheduleRefresh();
 
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
         this.iptablesReady = true;
         log.info("Iptables is ready, apply network profile policies ...");
-        this.refreshTask.refresh();
+        this.scheduleRefresh();
       });
     }
 
@@ -56,12 +46,28 @@ class NetworkProfileManager {
       switch (channel) {
         case Message.MSG_SYS_NETWORK_INFO_RELOADED: {
           log.info("sys:network:info is reloaded, refreshing network profiles and policies ...");
-          this.refreshTask.refresh();
+          this.scheduleRefresh();
         }
       }
     });
     this.refreshNetworkProfiles();
     return this;
+  }
+
+  scheduleRefresh() {
+    if (this.refreshTask)
+      clearTimeout(this.refreshTask);
+    this.refreshTask = setTimeout(async () => {
+      await this.refreshNetworkProfiles();
+      if (f.isMain()) {
+        if (this.iptablesReady) {
+          for (let uuid in this.networkProfiles) {
+            const networkProfile = this.networkProfiles[uuid];
+            await networkProfile.applyPolicy();
+          }
+        }
+      }
+    }, 5000);
   }
 
   redisfy(obj) {
@@ -161,7 +167,8 @@ class NetworkProfileManager {
         ipv6: intf.ip6_addresses || [],
         dns: intf.dns,
         gateway: intf.gateway_ip,
-        gateway6: intf.gateway6 || ""
+        gateway6: intf.gateway6 || "",
+        type: intf.type || null
       };
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);

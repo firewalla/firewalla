@@ -30,6 +30,9 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 const sysManager = require('../net2/SysManager.js')
 const networkTool = require('../net2/NetworkTool')();
 
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
+
 class NmapSensor extends Sensor {
   constructor() {
     super();
@@ -170,20 +173,34 @@ class NmapSensor extends Sensor {
     })
   }
 
-  run() {
-    this.interfaces = sysManager.getMonitoringInterfaces();
-    process.nextTick(() => {
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
       this.checkAndRunOnce(false);
-    });
+    }, 5000);
+  }
+
+  run() {
+    this.scheduleReload();
     setInterval(() => {
       this.checkAndRunOnce(false);
     }, 1000 * 60 * 120); // every 120 minutes, slow scan
     setInterval(() => {
       this.checkAndRunOnce(true);
     }, 1000 * 60 * 5); // every 5 minutes, fast scan
+
+    sclient.on("message", (channel, message) => {
+      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+        log.info("Schedule reload NmapSensor since network info is reloaded");
+        this.scheduleReload();
+      }
+    });
+    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
   }
 
   checkAndRunOnce(fastMode) {
+    this.interfaces = sysManager.getMonitoringInterfaces();
     if (this.isSensorEnabled()) {
       let range = this.getNetworkRanges()
       return this.runOnce(fastMode, range)

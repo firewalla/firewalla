@@ -66,31 +66,27 @@ class BitBridge {
   // this function should only be invoked in bitbridge.start/stop. Please follow this rule
   // bitbridge services should not be explicitly started elsewhere
   static scheduleRestartB4() {
-    if (!b4RestartTask) {
-      b4RestartTask = setTimeout(() => {
-        // multiple processes belong to bitbridge4 service. Stop can ensure all processes are stopped before start
-        exec(`sudo systemctl stop bitbridge4; sudo systemctl start bitbridge4`).catch((err) => {
-          log.error("Failed to restart bitbridge4", err.message);
-        });
-      }, 5000);
-    } else {
-      b4RestartTask.refresh();
-    }
+    if (b4RestartTask)
+      clearTimeout(b4RestartTask);
+    b4RestartTask = setTimeout(() => {
+      // multiple processes belong to bitbridge4 service. Stop can ensure all processes are stopped before start
+      exec(`sudo systemctl stop bitbridge4; sudo systemctl start bitbridge4`).catch((err) => {
+        log.error("Failed to restart bitbridge4", err.message);
+      });
+    }, 5000);
   }
 
   // this function should only be invoked in bitbridge.start/stop. Please follow this rule
   // bitbridge services should not be explicitly started elsewhere
   static scheduleRestartB6() {
-    if (!b6RestartTask) {
-      b6RestartTask = setTimeout(() => {
-        // multiple processes belong to bitbridge6 service. Stop can ensure all processes are stopped before start
-        exec(`sudo systemctl stop bitbridge6; sudo systemctl start bitbridge6`).catch((err) => {
-          log.error("Failed to restart bitbridge6", err.message);
-        });
-      }, 5000);
-    } else {
-      b6RestartTask.refresh();
-    }
+    if (b6RestartTask)
+      clearTimeout(b6RestartTask); 
+    b6RestartTask = setTimeout(() => {
+      // multiple processes belong to bitbridge6 service. Stop can ensure all processes are stopped before start
+      exec(`sudo systemctl stop bitbridge6; sudo systemctl start bitbridge6`).catch((err) => {
+        log.error("Failed to restart bitbridge6", err.message);
+      });
+    }, 5000);
   }
 
   static async cleanupSpoofInstanceConfigs() {
@@ -182,7 +178,7 @@ class BitBridge {
   }
 
   stop() {
-    log.info(`Stoping BitBridge, interface: ${this.intf}, router: ${this.routerIP}, self: ${this.selfIP}, IPv6: ${this.isV6}`);
+    log.info(`Stopping BitBridge, interface: ${this.intf}, router: ${this.routerIP}, self: ${this.selfIP}, IPv6: ${this.isV6}`);
 
     try {
       if(firewalla.isDocker() || firewalla.isTravis()) {

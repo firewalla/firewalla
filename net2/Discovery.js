@@ -229,12 +229,13 @@ module.exports = class {
         "name":"eth0",
         "ip_address":"192.168.2.225",
         "mac_address":"b8:27:eb:bd:54:da",
-        "type":"Wired",
+        "conn_type":"Wired",
         "gateway":"192.168.2.1",
-        "subnet":"192.168.2.0/24"
+        "subnet":"192.168.2.0/24",
+        "type": "wan"
       }
       */
-      if (intf.type == "Wired" && !intf.name.endsWith(':0')) {
+      if (intf.conn_type == "Wired" && !intf.name.endsWith(':0')) {
         sem.emitEvent({
           type: "DeviceUpdate",
           message: "Firewalla self discovery",

@@ -115,7 +115,7 @@ class NetworkProfile {
     if (state === true) {
       await iptables.switchInterfaceMonitoringAsync(true, this.o.intf);
       await ip6tables.switchInterfaceMonitoringAsync(true, this.o.intf);
-      if (spoofModeOn && !this.o.intf.endsWith(":0")) { // do not spoof on alias interface
+      if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway  && this.o.gateway.length > 0 
           && this.o.ipv4 && this.o.ipv4.length > 0
           && this.o.gateway !== this.o.ipv4) {
@@ -131,7 +131,7 @@ class NetworkProfile {
     } else {
       await iptables.switchInterfaceMonitoringAsync(false, this.o.intf);
       await ip6tables.switchInterfaceMonitoringAsync(false, this.o.intf);
-      if (spoofModeOn && !this.o.intf.endsWith(":0")) { // do not spoof on alias interface
+      if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway) {
           // deregister actually does not require self IPv4 address
           await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway, null, false);
