@@ -99,7 +99,7 @@ class NetBotTool {
       systemFlows[key] = {
         begin,
         end,
-        actitivites: traffic
+        activities: traffic
       }  
     }
 
