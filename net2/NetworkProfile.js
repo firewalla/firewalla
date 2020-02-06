@@ -184,8 +184,12 @@ class NetworkProfile {
       }).catch((err) => {
         log.error(`Failed to create network profile ipset ${netIpsetName}`, err.message);
       });
-      await exec(`sudo ipset create -! ${netIpsetName}6 hash:net,iface family inet6 maxelem 1024`).then(() => {
+      await exec(`sudo ipset create -! ${netIpsetName}6 hash:net,iface family inet6 maxelem 1024`).then(async () => {
         // TODO: add ipv6 prefixes to ipset
+        if (this.o && this.o.ipv6Subnets && this.o.ipv6Subnets.length != 0) {
+          for (const subnet6 of this.o.ipv6Subnets)
+            await exec(`sudo ipset add -! ${netIpsetName}6 ${subnet6},${this.o.intf}`).catch((err) => {});
+        }
       }).catch((err) => {
         log.error(`Failed to create network profile ipset ${netIpsetName}6`, err.message);
       });

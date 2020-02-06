@@ -72,7 +72,7 @@ class NetworkTool {
     return (
       netif.ip_address != null &&
       netif.mac_address != null &&
-      netif.type != null &&
+      netif.conn_type != null &&
       !netif.ip_address.startsWith('169.254.')
     );
   }
@@ -152,14 +152,14 @@ class NetworkTool {
       log.info('Found interface', i.name, i.ip_address);
       // there is another field named "gateway_ip", which is same as "gateway"
       i.gateway = require('netroute').getGateway(i.name) || null;
-      // if there is no default router on this interface, set gateway_ip to ip address of itself
+      // if there is no default router on this interface, set gateway_ip to null
       if (!i.gateway)
-        i.gateway = i.ip_address;
+        i.gateway = null;
       i.subnet = this._getSubnet(i.name, i.ip_address, 'IPv4');
       i.gateway6 = linux.gateway_ip6_sync();
       i.dns = dns.getServers();
       if (i.ip_address) {
-        if (i.gateway === i.ip_address || i.gateway_ip === i.ip_address)
+        if (i.gateway === null)
           i.type = "lan";
         else
           i.type = "wan"; 

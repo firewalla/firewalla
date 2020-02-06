@@ -208,7 +208,13 @@ module.exports = class {
     if (!platform.isFireRouterManaged()) {
       const uuidIntf = await rclient.hgetallAsync('sys:network:uuid');
       for (const intf of list) {
-        let uuidAssigned = _.findKey(uuidIntf, i => i.name == intf.name)
+        let uuidAssigned = _.findKey(uuidIntf, i => {
+          try {
+            const obj = JSON.parse(i);
+            return obj.name == intf.name
+          } catch (err) {}
+          return false;
+        });
         if (!uuidAssigned) {
           uuidAssigned = uuid.v4()
           intf.uuid = uuidAssigned

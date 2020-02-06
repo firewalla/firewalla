@@ -480,9 +480,9 @@ class Host {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
       return;
     }
-    if (sysManager.myIp(iface.name) === sysManager.myGateway(iface.name) || iface.type !== "wan") {
+    if (iface.type !== "wan" || !sysManager.myGateway(iface.name)) {
       // a relative tight condition to check if it is a WAN interface
-      log.info(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr}`);
+      log.info(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr} ${this.o.mac}`);
       return;
     }
     const gateway = sysManager.myGateway(iface.name);
