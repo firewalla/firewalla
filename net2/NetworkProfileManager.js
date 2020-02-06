@@ -72,22 +72,22 @@ class NetworkProfileManager {
 
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    if (obj.dns) {
-      redisObj.dns = JSON.stringify(obj.dns);
-    }
-    if (obj.ipv6) {
-      redisObj.ipv6 = JSON.stringify(obj.ipv6);
+    const convertKeys = ["dns", "ipv6", "ipv6Subnets"];
+    for (const key of convertKeys) {
+      if (obj[key])
+        redisObj[key] = JSON.stringify(obj[key]);
     }
     return redisObj;
   }
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    if (redisObj.dns) {
-      obj.dns = JSON.parse(redisObj.dns);
-    }
-    if (redisObj.ipv6) {
-      obj.dns = JSON.parse(redisObj.ipv6);
+    const convertKeys = ["dns", "ipv6", "ipv6Subnets"];
+    for (const key of convertKeys) {
+      if (redisObj[key])
+        try {
+          obj[key] = JSON.parse(redisObj[key]);
+        } catch (err) {}
     }
     return obj;
   }
@@ -165,6 +165,7 @@ class NetworkProfileManager {
         ipv4Subnet: intf.subnet,
         ipv4: intf.ip_address,
         ipv6: intf.ip6_addresses || [],
+        ipv6Subnets: intf.ip6_subnets || [],
         dns: intf.dns,
         gateway: intf.gateway_ip,
         gateway6: intf.gateway6 || "",

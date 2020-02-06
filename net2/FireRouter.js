@@ -95,11 +95,6 @@ function updateMaps() {
     intf.config.meta.intfName = intfName
     intfUuidMap[intf.config.meta.uuid] = intf
   }
-  for (const intfName in routerConfig.dhcp) {
-    if (intfNameMap[intfName]) {
-      intfNameMap[intfName].config.dhcp = routerConfig.dhcp[intfName]
-    }
-  }
 }
 
 async function generateNetworkInfo() {
@@ -107,6 +102,21 @@ async function generateNetworkInfo() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
+    let gateway = null;
+    let dns = null;
+    switch (intf.config.meta.type) {
+      case "wan": {
+        gateway = intf.config.gateway || intf.state.gateway;
+        dns = intf.config.nameservers || intf.state.dns;
+        break;
+      }
+      case "lan": {
+        // no gateway and dns for lan interface, gateway and dns in dhcp does not 
+        gateway = null;
+        dns = null;
+        break
+      }
+    }
     const redisIntf = {
       name:         intfName,
       uuid:         intf.config.meta.uuid,
@@ -114,9 +124,9 @@ async function generateNetworkInfo() {
       ip_address:   ip4 ? ip4.addressMinusSuffix : null,
       subnet:       intf.state.ip4,
       netmask:      ip4 ? Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address : null,
-      gateway_ip:   (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
-      gateway:      (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
-      dns:          (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.nameservers : intf.state.dns,
+      gateway_ip:   gateway,
+      gateway:      gateway,
+      dns:          dns,
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type
     }
@@ -164,7 +174,8 @@ class FireRouter {
       switch (channel) {
         case Message.MSG_FR_IP_CHANGE:
         case Message.MSG_NETWORK_CHANGED: {
-          this.init();
+          log.info("Network is changed, schedule reload from FireRouter ...");
+          this.scheduleReload();
         }
         break;
       }
@@ -172,6 +183,14 @@ class FireRouter {
 
     sclient.subscribe(Message.MSG_FR_IP_CHANGE);
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
+  }
+
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      this.init();
+    }, 3000);
   }
 
   // let it crash
@@ -330,6 +349,13 @@ class FireRouter {
       const Discovery = require('./Discovery.js');
       const d = new Discovery("nmap");
 
+      // regenerate stub sys:network:uuid
+      await rclient.delAsync("sys:network:uuid");
+      const stubNetworkUUID = {
+        "00000000-0000-0000-0000-000000000000": JSON.stringify({name: "eth0"}),
+        "11111111-1111-1111-1111-111111111111": JSON.stringify({name: "eth0:0"})
+      };
+      await rclient.hmset("sys:network:uuid", stubNetworkUUID);
       // updates sys:network:info
       const intfList = await d.discoverInterfacesAsync()
       if (!intfList.length) {

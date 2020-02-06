@@ -159,8 +159,8 @@ exports.get_network_interfaces_list = async function() {
         exports.interface_type_for(obj.name)
       ])
       if (results[0]) obj.mac_address = results[0];
-      // if there is no default router on this interface, set gateway_ip to ip address of itself
-      if (results[1]) obj.gateway_ip  = results[1]; else obj.gateway_ip = obj.ip_address;
+      // if there is no default router on this interface, set gateway_ip to null
+      if (results[1]) obj.gateway_ip  = results[1]; else obj.gateway_ip = null;
       if (results[2]) obj.netmask     = results[2];
       if (results[3]) obj.conn_type   = results[3];
 

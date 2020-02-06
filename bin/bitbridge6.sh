@@ -9,6 +9,10 @@ if [[ $(uname -m) == "aarch64" ]]; then
 	ln -sfT real.aarch64 real
 fi
 
+if [[ $(uname -m) == "x86_64" ]]; then
+	ln -sfT real.x86_64 real
+fi
+
 #branch=$(cd $FIREWALLA_HOME; git rev-parse --abbrev-ref HEAD)
 # both beta and prod will disable ipv6
 if [[ -e $FIREWALLA_BIN/dev || ! -f /home/pi/.firewalla/config/enablev6 ]]; then

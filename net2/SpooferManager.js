@@ -122,7 +122,7 @@ module.exports = class SpooferManager {
   }
 
   async registerSpoofInstance(intf, routerIP, selfIP, isV6) {
-    const key = this._getSpoofInstanceKey(intf, isV6);
+    const key = this._getSpoofInstanceKey(intf, routerIP, isV6);
     if (!key)
       return;
 
@@ -146,7 +146,7 @@ module.exports = class SpooferManager {
   }
 
   async deregisterSpoofInstance(intf, routerIP, selfIP, isV6) {
-    const key = this._getSpoofInstanceKey(intf, isV6);
+    const key = this._getSpoofInstanceKey(intf, routerIP, isV6);
     if (!key)
       return;
 
@@ -160,12 +160,14 @@ module.exports = class SpooferManager {
     }
   }
 
-  _getSpoofInstanceKey(intf, isV6) {
+  _getSpoofInstanceKey(intf, routerIP, isV6) {
     isV6 = isV6 || false;
     intf = intf || "eth0";
     if (isV6) {
-      return `${intf}_v6`;
+      // allow spoof multiple router IPs on one interface for IPv6
+      return `${intf}_v6_${routerIP}`;
     } else {
+      // allow only one spoof instance on one interface for IPv4
       return `${intf}_v4`;
     }
   }
