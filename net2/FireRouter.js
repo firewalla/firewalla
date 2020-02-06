@@ -111,7 +111,7 @@ async function generateNetworkInfo() {
         break;
       }
       case "lan": {
-        // no gateway and dns for lan interface, gateway and dns in dhcp does not 
+        // no gateway and dns for lan interface, gateway and dns in dhcp does not mean the same thing
         gateway = null;
         dns = null;
         break
