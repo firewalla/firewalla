@@ -1021,6 +1021,8 @@ class PolicyManager2 {
           await dnsmasq.restartDnsmasq()
         }
         else if (scope || intf) {
+          await Block.setupRules(pid, pid, "hash:ip", intf, whitelist);
+          await Block.addMacToSet(scope, Block.getMacSet(pid));
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
