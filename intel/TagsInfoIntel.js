@@ -22,22 +22,23 @@ const tagManager = require('../net2/TagManager.js');
 
 class TagsInfoIntel extends Intel {
     async enrichAlarm(alarm) {
-        if (_.has(alarm, 'p.tags')) {
-            let tags = [];
-            for (let index = 0; index < alarm['p.tags'].length; index++) {
-                const tagUid = alarm['p.tags'][index];
+        if (_.has(alarm, 'p.tag.ids')) {
+            let names = [];
+            for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
+                const tagUid = alarm['p.tag.ids'][index];
                 const tagInfo = tagManager.getTagByUid(tagUid);
-                if (condition) {
-                    tags.push({ uid: tagUid, name: tagInfo.getTagName() });
+                if (tagInfo) {
+                    names.push({ uid: tagUid, name: tagInfo.getTagName() });
                 }
             }
 
-            alarm['p.tags'] = tags;
+            Object.assign(alarm, {
+                'p.tag.names': names
+            });
         }
 
         return alarm;
     }
-
 }
 
 module.exports = IntfInfoIntel

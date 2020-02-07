@@ -74,7 +74,7 @@ function alarmBootstrap(flow) {
     "p.dest.ip": flow.dh,
     "p.dest.port": flow.dp,
     "p.intf.id": flow.intf,
-    "p.tags": flow.tags
+    "p.tag.ids": flow.tags
   }
 }
 
@@ -749,7 +749,7 @@ module.exports = class FlowMonitor {
         "p.local_is_client": direction == 'in' ? "1" : "0", // connection is initiated from local
         "p.flow": JSON.stringify(flow),
         "p.intf.id": flow.intf,
-        "p.tags": flow.tags
+        "p.tag.ids": flow.tags
       });
 
       // ideally each destination should have a unique ID, now just use hostname as a workaround
@@ -965,7 +965,7 @@ module.exports = class FlowMonitor {
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.from": intelObj.from,
       "p.intf.id": flowObj.intf,
-      "p.tags": flowObj.tags
+      "p.tag.ids": flowObj.tags
     };
 
     this.updateURLPart(alarmPayload, flowObj);
@@ -1046,7 +1046,7 @@ module.exports = class FlowMonitor {
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.intf.id": flowObj.intf,
-      "p.tags": flowObj.tags
+      "p.tag.ids": flowObj.tags
     };
 
     this.updateURLPart(alarmPayload, flowObj);

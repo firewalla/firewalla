@@ -242,7 +242,7 @@ class NewDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.intf.id", "p.tags"];
+    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
@@ -256,7 +256,7 @@ class DeviceBackOnlineAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.intf.id", "p.tags"];
+    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
@@ -273,7 +273,7 @@ class DeviceOfflineAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.intf.id", "p.tags"];
+    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
@@ -287,7 +287,7 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", "p.tags"];
+    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
@@ -570,9 +570,9 @@ class IntelAlarm extends Alarm {
   keysToCompareForDedup() {
     const url = this["p.dest.url"];
     if (url) {
-      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port", "p.intf.id", "p.tags"];
+      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port", "p.intf.id", "p.tag.ids"];
     }
-    return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tags"];
+    return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentKey() {
@@ -647,7 +647,7 @@ class OutboundAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.id", "p.intf.id", "p.tags"];
+    return ["p.device.mac", "p.dest.id", "p.intf.id", "p.tag.ids"];
   }
 
   isDup(alarm) {
