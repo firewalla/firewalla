@@ -160,8 +160,10 @@ module.exports = class HostManager {
 
         sclient.on("message", (channel, message) => {
           if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-            log.info("Rescan hosts due to network info is reloaded");
-            this.getHosts();
+            if (this.iptablesReady) {
+              log.info("Rescan hosts due to network info is reloaded");
+              this.getHosts();
+            }
           }
         });
 

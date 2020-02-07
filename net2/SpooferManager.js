@@ -18,12 +18,10 @@ const firewalla = require('./Firewalla.js');
 
 const BitBridge = require('../extension/bitbridge/bitbridge.js')
 
-const sysManager = require("./SysManager.js");
-
 const iptool = require('ip')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const minimatch = require('minimatch');
 
 const log = require("./logger.js")(__filename, 'info');
 
@@ -32,12 +30,10 @@ const unmonitoredKey = "unmonitored_hosts";
 const unmonitoredKeyAll = "unmonitored_hosts_all";
 const monitoredKey6 = "monitored_hosts6";
 const unmonitoredKey6 = "unmonitored_hosts6";
-const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool();
 const fc = require('./config.js')
-const Message = require('./Message.js');
 
 const exec = require('child-process-promise').exec
 
@@ -136,7 +132,7 @@ module.exports = class SpooferManager {
       const newInstance = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
       if (newInstance !== oldInstance) {
         // need to deregister old instance
-        await this.deregisterSpoofInstance(intf, routerIP, selfIP, isV6);
+        await this.deregisterSpoofInstance(intf, routerIP, isV6);
         this.registeredSpoofInstances[key] = newInstance;
         if (this.spoofStarted) {
           newInstance.start();
@@ -145,24 +141,28 @@ module.exports = class SpooferManager {
     }
   }
 
-  async deregisterSpoofInstance(intf, routerIP, selfIP, isV6) {
-    const key = this._getSpoofInstanceKey(intf, routerIP, isV6);
-    if (!key)
+  async deregisterSpoofInstance(intf, routerIP, isV6) {
+    const keyPattern = this._getSpoofInstanceKey(intf, routerIP, isV6);
+    if (!keyPattern)
       return;
 
-    if (this.registeredSpoofInstances[key]) {
-      const spoofInstance = this.registeredSpoofInstances[key];
-      if (this.spoofStarted) {
-        spoofInstance.stop();
+    // deregister accept wildcard, e.g., eth0_v6_*
+    for (let key in this.registeredSpoofInstances) {
+      if (minimatch(key, keyPattern)) {
+        const spoofInstance = this.registeredSpoofInstances[key];
+        if (this.spoofStarted) {
+          spoofInstance.stop();
+        }
+        await this.emptySpoofSet(intf);
+        delete this.registeredSpoofInstances[key];
       }
-      await this.emptySpoofSet(intf);
-      delete this.registeredSpoofInstances[key];
     }
   }
 
   _getSpoofInstanceKey(intf, routerIP, isV6) {
     isV6 = isV6 || false;
-    intf = intf || "eth0";
+    if (!intf || !routerIP)
+      return null;
     if (isV6) {
       // allow spoof multiple router IPs on one interface for IPv6
       return `${intf}_v6_${routerIP}`;

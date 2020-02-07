@@ -92,7 +92,7 @@ module.exports = class {
   }
 
   async discoverMac(mac) {
-    await this.discoverInterfacesAsync();
+    await this.discoverInterfacesAsync(false);
     const list = sysManager.getMonitoringInterfaces();
     log.info("Discovery::DiscoverMAC", list);
     let found = null;
@@ -189,7 +189,7 @@ module.exports = class {
       .catch(err => callback(err))
   }
 
-  async discoverInterfacesAsync() {
+  async discoverInterfacesAsync(publishUpdate = true) {
     this.interfaces = {};
     let list = [];
     if (!platform.isFireRouterManaged())
@@ -267,7 +267,8 @@ module.exports = class {
     } catch (error) {
       log.error("Discovery::Interfaces:Error", redisobjs, list, error);
     }
-    await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_UPDATED, "");
+    if (publishUpdate)
+      await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_UPDATED, "");
     return list
   }
 
