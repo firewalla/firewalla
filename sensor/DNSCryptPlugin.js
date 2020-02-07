@@ -50,6 +50,7 @@ const dc = require('../extension/dnscrypt/dnscrypt');
 
 class DNSCryptPlugin extends Sensor {
   async run() {
+    this.refreshInterval = (this.config.refreshInterval || 24 * 60) * 60 * 1000;
     this.systemSwitch = false;
     this.adminSystemSwitch = false;
     this.enabledMacAddresses = {};
