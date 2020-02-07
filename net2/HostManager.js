@@ -1003,6 +1003,14 @@ module.exports = class HostManager {
     });
   }
 
+  getHostFastByMAC(mac) {
+    if (mac == null) {
+      return null;
+    }
+
+    return this.hostsdb[`host:mac:${mac}`];
+  }
+
   getHostFast(ip) {
     if (ip == null) {
       return null;

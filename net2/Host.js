@@ -1071,6 +1071,20 @@ class Host {
     return true;
   }
 
+  getTags() {
+    return this._tags;
+  }
+
+  getTagsUids() {
+    if (_.isEmpty(this._tags)) {
+      return []; 
+    }
+
+    return this._tags.map((tag) => {
+      return tag.getTagUid();
+    })
+  }
+
   async tags(tags) {
     tags = tags || [];
     this._tags = this._tags || [];

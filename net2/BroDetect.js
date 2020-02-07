@@ -763,6 +763,7 @@ module.exports = class {
       let origMac = obj["orig_l2_addr"];
       let respMac = obj["resp_l2_addr"];
       let localMac = null;
+      let remoteMac = null;
       let intfId = null;
 
       log.debug("ProcessingConection:", obj.uid, host, dst);
@@ -847,6 +848,9 @@ module.exports = class {
       }
 
       localMac = localMac.toUpperCase();
+      otherMac = origMac === localMac ? respMac.toUpperCase() : origMac.toUpperCase();
+      const host = hostManager.getHostFastByMAC(otherMac);
+      const tags = host.getTagsUids();
 
       // Mark all flows that are partially completed.
       // some of these flows may be valid
@@ -921,6 +925,7 @@ module.exports = class {
           lh: lhost, // this is local ip address
           mac: localMac, // mac address of local device
           intf: intfId, // intf id
+          tags,
           du: obj.duration,
           bl: FLOWSTASH_EXPIRES,
           pf: {}, //port flow
@@ -973,6 +978,7 @@ module.exports = class {
         ct: 1, // count
         fd: flowdir, // flow direction
         intf: intfId, // intf id
+        tags,
         lh: lhost, // this is local ip address
         mac: localMac, // mac address of local device
         du: obj.duration,
@@ -1076,10 +1082,22 @@ module.exports = class {
           if (intfId) {
             this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, intfId, true);
           }
+          if (tags.length > 0) {
+            for (let index = 0; index < tags.length; index++) {
+              const tag = tags[index];
+              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, tag, true); 
+            }
+          }
         } else {
           this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, localMac);
           if (intfId) {
             this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, intfId, true);
+          }
+          if (tags.length > 0) {
+            for (let index = 0; index < tags.length; index++) {
+              const tag = tags[index];
+              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, tag, true); 
+            }
           }
         }
 

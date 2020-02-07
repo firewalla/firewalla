@@ -15,6 +15,7 @@
 
 'use strict';
 
+const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
@@ -112,10 +113,21 @@ class TagManager {
     }
     log.warn(`Tag ${name} does not exist, no need to remove it`);
   }
+  
+  async changeTagName(uid, name) {
+    if (_.has(this.tags, uid)) {
+      this.tags[uid].setTagName(name);
+      const key = `tag:uid:${newUid}`;
+      await rclient.hmsetAsync(key, this.tags[uid].o); 
+      return true;
+    }
+    
+    return false;
+  }
 
   getTag(name) {
     for (let uid in this.tags) {
-      if (this.tags[uid].name === name)
+      if (this.tags[uid].getTagName() === name)
         return this.tags[uid];
     }
     return null;

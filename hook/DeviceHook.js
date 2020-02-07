@@ -179,15 +179,31 @@ class DeviceHook extends Hook {
       }
 
       if (mac != null) {
-        this.processDeviceUpdate(event)
+        const hostManager = new HostManager("cli", 'server', 'info');
+        (async ()  =>  {
+          const _host = await hostManager.getHostAsync(mac);
+          if (_host) {
+            const tags = _host.getTagsUids();
+            host.tags = tags;
+          }
+        })().catch((err) => {
+          log.error(`Failed to get tag for mac ${mac}`, err)
+        }).finally(() => {
+          this.processDeviceUpdate(event)
+        });
       } else {
         let ip = host.ipv4 || host.ipv4Addr
         if (ip) {
           // need to get mac address first
           (async () => {
-            let theMac = await l2.getMACAsync(ip)
-            host.mac = theMac
-            this.processDeviceUpdate(event)
+            let theMac = await l2.getMACAsync(ip);
+            host.mac = theMac;
+            const _host = await hostManager.getHostAsync(mac);
+            if (_host) {
+              const tags = _host.getTagsUids();
+              host.tags = tags;
+            }
+            this.processDeviceUpdate(event);
           })().catch((err) => {
             log.error(`Failed to get mac address for ip ${ip}`, err)
           })
@@ -616,7 +632,8 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : ""
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tags": _.isEmpty(host.tags) ? [] : host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -629,7 +646,8 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : ""
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tags": _.isEmpty(host.tags) ? [] : host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -643,7 +661,8 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.device.lastSeen": host.lastActiveTimestamp,
-            "p.intf.id": host.intf ? host.intf : ""
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tags": _.isEmpty(host.tags) ? [] : host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -656,7 +675,8 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : ""
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tags": _.isEmpty(host.tags) ? [] : host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
