@@ -120,8 +120,8 @@ class FlowAggregationSensor extends Sensor {
 
         let t = traffic[app];
 
-        if (typeof t === 'undefined') {
-          traffic[app] = {
+        if (! (app in traffic) ) {
+            traffic[app] = {
             duration: flow.du,
             ts: flow.ts,
             ets: flow.ets || Date.now() / 1000,
