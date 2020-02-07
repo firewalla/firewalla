@@ -104,6 +104,10 @@
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
+    "DeviceServiceScanSensor": {
+      "interval": 1800,
+      "firstScan": 120
+    },
     "BoneSensor": {},
     "APISensor": {},
     "DNSCryptPlugin": {},
@@ -628,7 +632,8 @@
     "network_speed_test": false,
     "vpn_restore": true,
     "vpn_disconnect": true,
-    "local_domain": true
+    "local_domain": true,
+    "device_service_scan": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
