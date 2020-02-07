@@ -43,6 +43,7 @@
         // const ipv6Addresses = intf.ip6_addresses || [];
         const currentIpv4Addr = sysManager.myIp();
         if (ipv4Address !== currentIpv4Addr) {
+          // discoverInterfaces will publish message to trigger network info reload
           await d.discoverInterfacesAsync().catch((err) => {
             log.error("Failed to discover interfaces", err);
           });
