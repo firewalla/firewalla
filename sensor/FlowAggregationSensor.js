@@ -41,6 +41,9 @@ let hostManager = new HostManager('cli', 'server');
 
 const flowUtil = require('../net2/FlowUtil')
 
+const config = require('../net2/config.js').getConfig();
+const excludedCategories = (config.category && config.category.exclude) || [];
+
 const bone = require('../lib/Bone.js');
 
 // This sensor is to aggregate device's flow every 10 minutes
@@ -114,8 +117,8 @@ class FlowAggregationSensor extends Sensor {
       appInfos.forEach((app) => {
 
         // no need to group traffic for these two types in particular, FIXME
-        if (app === "technology" || app === "search-portal") {
-          return
+        if (excludedCategories.includes(app)) {
+          return;
         }
 
         let t = traffic[app];
@@ -455,8 +458,8 @@ class FlowAggregationSensor extends Sensor {
 
       // FIXME
       // ignore technology and search-portal for better performanced
-      if(category === "technology" || category === "search-portal") {
-        continue
+      if(excludedCategories.includes(category)) {
+        continue;
       }
       let object = traffic[category]
       await categoryFlowTool.addCategoryFlowObject(mac, category, object)
@@ -550,8 +553,8 @@ class FlowAggregationSensor extends Sensor {
         flowUtil.hashIntelFlows(allFlows, hashCache)
 
         let data = await bone.flowgraphAsync('summarizeApp', allFlows)
-        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-        await flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, options)
+//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+        await flowAggrTool.setCleanedAppActivity(begin, end, allFlows, options)
       } else {
         await flowAggrTool.setCleanedAppActivity(begin, end, {}, options) // if no data, set an empty {}
       }
@@ -629,9 +632,9 @@ class FlowAggregationSensor extends Sensor {
 
         let data = await bone.flowgraphAsync('summarizeActivity', allFlows)
 
-        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
+//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
 
-        await flowAggrTool.setCleanedCategoryActivity(begin, end, unhashedData, options)
+        await flowAggrTool.setCleanedCategoryActivity(begin, end, allFlows, options)
       } else {
         await flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options) // if no data, set an empty {}
       }
