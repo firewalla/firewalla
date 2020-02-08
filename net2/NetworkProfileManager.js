@@ -166,7 +166,7 @@ class NetworkProfileManager {
         ipv4: intf.ip_address,
         ipv6: intf.ip6_addresses || [],
         ipv6Subnets: intf.ip6_subnets || [],
-        dns: intf.dns,
+        dns: intf.dns || [],
         gateway: intf.gateway_ip || "",
         gateway6: intf.gateway6 || "",
         type: intf.type || ""

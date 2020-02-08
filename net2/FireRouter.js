@@ -162,6 +162,7 @@ class FireRouter {
     const intf = fwConfig.firerouter.interface;
     routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
+    
     this.ready = false
     this.sysNetworkInfo = [];
 
@@ -172,8 +173,9 @@ class FireRouter {
 
     sclient.on("message", (channel, message) => {
       switch (channel) {
-        case Message.MSG_FR_IP_CHANGE:
+        case Message.MSG_FR_CHANGE_APPLIED:
         case Message.MSG_NETWORK_CHANGED: {
+          // these two message types should cover all proactive and reactive network changes
           log.info("Network is changed, schedule reload from FireRouter ...");
           this.scheduleReload();
         }
@@ -181,7 +183,7 @@ class FireRouter {
       }
     });
 
-    sclient.subscribe(Message.MSG_FR_IP_CHANGE);
+    sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
   }
 
