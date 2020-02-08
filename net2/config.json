@@ -587,6 +587,18 @@
     "ss_client:statusCheck": true,
     "familyMode": "v1"
   },
+  "category": {
+    "exclude": [
+      "ad",
+      "search-portal",
+      "technology"
+    ]
+  },
+  "app": {
+    "exclude": [
+
+    ]
+  },
   "userFeatures": {
     "porn": true,
     "video": true,
