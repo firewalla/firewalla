@@ -102,8 +102,9 @@ module.exports = class HostManager {
   // type is 'server' or 'client'
   constructor(name, type, loglevel) {
     loglevel = loglevel || 'info';
-
-    if (instances[name] == null) {
+    // use name and type to uniquely identify HostManager instance
+    const instanceKey = `${name}_${type}`;
+    if (instances[instanceKey] == null) {
 
       this.instanceName = name;
       this.hosts = {}; // all, active, dead, alarm
@@ -188,9 +189,9 @@ module.exports = class HostManager {
         },1000*60*5);
       }
 
-      instances[name] = this;
+      instances[instanceKey] = this;
     }
-    return instances[name];
+    return instances[instanceKey];
   }
 
   keepalive() {
