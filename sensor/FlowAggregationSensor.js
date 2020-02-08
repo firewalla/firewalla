@@ -165,7 +165,7 @@ class FlowAggregationSensor extends Sensor {
 
       let t = traffic[destIP];
 
-      if(typeof t === 'undefined') {
+      if (! (destIP in traffic) ) {
         traffic[destIP] = {upload: 0, download: 0, port:[]};
         t = traffic[destIP];
       }
