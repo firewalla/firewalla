@@ -97,14 +97,17 @@ const ip6tables = require('./Ip6tables.js');
 
 const Alarm = require('../alarm/Alarm.js');
 
+const SysInfo = require('../extension/sysinfo/SysInfo.js');
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 module.exports = class HostManager {
   // type is 'server' or 'client'
   constructor(name, type, loglevel) {
     loglevel = loglevel || 'info';
-
-    if (instances[name] == null) {
+    // use name and type to uniquely identify HostManager instance
+    const instanceKey = `${name}_${type}`;
+    if (instances[instanceKey] == null) {
 
       this.instanceName = name;
       this.hosts = {}; // all, active, dead, alarm
@@ -189,9 +192,9 @@ module.exports = class HostManager {
         },1000*60*5);
       }
 
-      instances[name] = this;
+      instances[instanceKey] = this;
     }
-    return instances[name];
+    return instances[instanceKey];
   }
 
   keepalive() {
@@ -294,6 +297,8 @@ module.exports = class HostManager {
     if (sysManager.upgradeEvent) {
       json.upgradeEvent = sysManager.upgradeEvent;
     }
+    const sysInfo = SysInfo.getSysInfo();
+    json.no_auto_upgrade = sysInfo.no_auto_upgrade;
   }
 
 
