@@ -38,6 +38,7 @@ const rclient = require('../../util/redis_manager.js').getRedisClient();
 const { delay } = require('../../util/util.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
+const LOCAL_FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq_local";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
 const LOCAL_DEVICE_DOMAIN = FILTER_DIR + "/local_device_domain.conf";
 const LOCAL_DEVICE_DOMAIN_KEY = "local:device:domain"
@@ -613,6 +614,7 @@ module.exports = class DNSMASQ {
 
     try {
       await mkdirp(FILTER_DIR);
+      await mkdirp(LOCAL_FILTER_DIR);
     } catch (err) {
       log.error("Error when mkdir:", FILTER_DIR, err);
       return;
