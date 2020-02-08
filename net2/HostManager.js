@@ -140,7 +140,7 @@ module.exports = class HostManager {
       });
 
       let c = require('./MessageBus.js');
-      this.subscriber = new c(loglevel);
+      this.messageBus = new c(loglevel);
       this.iptablesReady = false;
 
       // ONLY register for these events if hostmanager type IS server
@@ -151,7 +151,7 @@ module.exports = class HostManager {
         })
 
         log.info("Subscribing Scan:Done event...")
-        this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
+        this.messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
           if (!this.iptablesReady) {
             log.warn("Iptables is not ready yet");
             return;
@@ -163,7 +163,7 @@ module.exports = class HostManager {
             }
           });
         });
-        this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
+        this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
           if (this.type != "server") {
             return;
           }
@@ -1263,47 +1263,30 @@ module.exports = class HostManager {
     return this.hosts.all;
   }
 
-  setPolicyAsync(name, data) {
-    return util.promisify(this.setPolicy).bind(this)(name, data)
+  setPolicy(name, data, callback) {
+    if (!callback) callback = function() {}
+    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
   }
 
-  setPolicy(name, data, callback) {
-
-    let savePolicyWrapper = (name, policy, callback) => {
-      this.savePolicy((err, data) => {
-        if (err == null) {
-          let obj = {};
-          obj[name] = policy;
-          if (this.subscriber) {
-            setTimeout(() => {
-            this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
-            }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
-          }
-          if (callback) {
-            callback(null, obj);
-          }
-        } else {
-          if (callback) {
-            callback(null, null);
-          }
-        }
-      });
+  async setPolicyAsync(name, data) {
+    await this.loadPolicyAsync()
+    if (this.policy[name] != null && this.policy[name] == data) {
+      log.debug("System:setPolicy:Nochange", name, data);
+      return;
     }
+    this.policy[name] = data;
+    log.debug("System:setPolicy:Changed", name, data);
 
-    this.loadPolicy((err, __data) => {
-      if (this.policy[name] != null && this.policy[name] == data) {
-        log.debug("System:setPolicy:Nochange", name, data);
-        if (callback) {
-          callback(null, null);
-        }
-        return;
-      }
-      this.policy[name] = data;
-      log.debug("System:setPolicy:Changed", name, data);
-
-      savePolicyWrapper(name, data, callback);
-
-    });
+    await this.savePolicy()
+    let obj = {};
+    obj[name] = data;
+    log.info(name, obj)
+    if (this.messageBus) {
+      setTimeout(() => {
+        this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
+      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+    }
+    return obj
   }
 
   async spoof(state) {
@@ -1594,7 +1577,7 @@ module.exports = class HostManager {
     return this.policy;
   }
 
-  savePolicy(callback) {
+  async savePolicy() {
     let key = "policy:system";
     let d = {};
     for (let k in this.policy) {
@@ -1603,14 +1586,7 @@ module.exports = class HostManager {
         d[k] = JSON.stringify(policyValue)
       }
     }
-    rclient.hmset(key, d, (err, data) => {
-      if (err != null) {
-        log.error("Host:Policy:Save:Error", key, err);
-      }
-      if (callback)
-        callback(err, null);
-    });
-
+    await rclient.hmset(key, d)
   }
 
   loadPolicyAsync() {
