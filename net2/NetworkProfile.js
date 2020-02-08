@@ -32,7 +32,9 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const Mode = require('./Mode.js');
 const SpooferManager = require('./SpooferManager.js');
-const instances = {};
+const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
+                      // it is necessary because each object will subscribe NetworkPolicy:Changed message.
+                      // this can guarantee the event handler function is run on the correct and unique object.
 
 class NetworkProfile {
   constructor(o) {
@@ -133,12 +135,10 @@ class NetworkProfile {
       await ip6tables.switchInterfaceMonitoringAsync(false, this.o.intf);
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway) {
-          // deregister actually does not require self IPv4 address
-          await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway, null, false);
+          await sm.deregisterSpoofInstance(this.o.intf, "*", false);
         }
         if (this.o.gateway6 && this.o.gateway6.length > 0) {
-          await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway6, null, true);
-          // TODO: unspoof gateway's other ipv6 addresses if it is also dns server
+          await sm.deregisterSpoofInstance(this.o.intf, "*", true);
         }
       }
     }
@@ -185,7 +185,6 @@ class NetworkProfile {
         log.error(`Failed to create network profile ipset ${netIpsetName}`, err.message);
       });
       await exec(`sudo ipset create -! ${netIpsetName}6 hash:net,iface family inet6 maxelem 1024`).then(async () => {
-        // TODO: add ipv6 prefixes to ipset
         if (this.o && this.o.ipv6Subnets && this.o.ipv6Subnets.length != 0) {
           for (const subnet6 of this.o.ipv6Subnets)
             await exec(`sudo ipset add -! ${netIpsetName}6 ${subnet6},${this.o.intf}`).catch((err) => {});
@@ -216,13 +215,12 @@ class NetworkProfile {
     this.oper = null; // clear oper cache used in PolicyManager.js
     // disable spoof instances
     const sm = new SpooferManager();
+    // use wildcard to deregister all spoof instances on this interface
     if (this.o.gateway) {
-      // deregister actually does not require self IPv4 address
-      await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway, null, false);
+      await sm.deregisterSpoofInstance(this.o.intf, "*", false);
     }
     if (this.o.gateway6 && this.o.gateway6.length > 0) {
-      await sm.deregisterSpoofInstance(this.o.intf, this.o.gateway6, null, true);
-      // TODO: unspoof gateway's other ipv6 addresses if it is also dns server
+      await sm.deregisterSpoofInstance(this.o.intf, "*", true);
     }
   }
 

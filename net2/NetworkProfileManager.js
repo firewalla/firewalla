@@ -156,7 +156,7 @@ class NetworkProfileManager {
     for (let intf of monitoringInterfaces) {
       const uuid = intf.uuid;
       if (!uuid) {
-        log.info(`uuid is not defined on ${intf}, ignore this interface`);
+        log.info(`uuid is not defined, ignore this interface`, intf);
         continue;
       }
       const updatedProfile = {
@@ -167,9 +167,9 @@ class NetworkProfileManager {
         ipv6: intf.ip6_addresses || [],
         ipv6Subnets: intf.ip6_subnets || [],
         dns: intf.dns,
-        gateway: intf.gateway_ip,
+        gateway: intf.gateway_ip || "",
         gateway6: intf.gateway6 || "",
-        type: intf.type || null
+        type: intf.type || ""
       };
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
