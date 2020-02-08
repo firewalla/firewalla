@@ -125,7 +125,7 @@ module.exports = class SpooferManager {
     if (!this.registeredSpoofInstances[key]) {
       this.registeredSpoofInstances[key] = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
       if (this.spoofStarted) {
-        this.registeredSpoofInstances[key].start();
+        await this.registeredSpoofInstances[key].start();
       }
     } else {
       const oldInstance = this.registeredSpoofInstances[key];
@@ -134,9 +134,8 @@ module.exports = class SpooferManager {
         // need to deregister old instance
         await this.deregisterSpoofInstance(intf, routerIP, isV6);
         this.registeredSpoofInstances[key] = newInstance;
-        if (this.spoofStarted) {
-          newInstance.start();
-        }
+        await newInstance.start();
+        this.scheduleReload();
       }
     }
   }
@@ -150,9 +149,8 @@ module.exports = class SpooferManager {
     for (let key in this.registeredSpoofInstances) {
       if (minimatch(key, keyPattern)) {
         const spoofInstance = this.registeredSpoofInstances[key];
-        if (this.spoofStarted) {
-          spoofInstance.stop();
-        }
+        await spoofInstance.stop();
+        this.scheduleReload();
         await this.emptySpoofSet(intf);
         delete this.registeredSpoofInstances[key];
       }
@@ -190,9 +188,22 @@ module.exports = class SpooferManager {
     }
   }
 
-  async triggerRestart() {
-    await exec("pgrep -x bitbridge7 && sudo pkill bitbridge7; true").catch((err) => {});
-    await exec("pgrep -x bitbridge6 && sudo pkill bitbridge6; true").catch((err) => {});
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    // multiple processes belong to bitbridge services. Stop can ensure all processes are stopped before start
+    this.reloadTask = setTimeout(async () => {
+      await exec(`sudo systemctl stop bitbridge4;`).catch((err) => {});
+      await exec(`sudo systemctl stop bitbridge6;`).catch((err) => {});
+      if (this.spoofStarted) {
+        await exec(`sudo systemctl restart bitbridge4`).catch((err) => {
+          log.error("Failed to start bitbridge4", err.message);
+        });
+        await exec(`sudo systemctl restart bitbridge6`).catch((err) => {
+          log.error("Failed to start bitbridge6", err.message);
+        });
+      }
+    }, 3000);
   }
 
   async startSpoofing() {
@@ -209,53 +220,23 @@ module.exports = class SpooferManager {
 
     for (let key in this.registeredSpoofInstances) {
       const spoofInstance = this.registeredSpoofInstances[key];
-      spoofInstance.start();
+      await spoofInstance.start();
     }
-
-    /*
-    let ifName = sysManager.monitoringInterface().name;
-    let routerIP = sysManager.myGateway();
-    let myIP = sysManager.myIp();
-    let gateway6 = sysManager.myGateway6();
-
-    if(!ifName || !myIP || !routerIP) {
-      return Promise.reject("require valid interface name, ip address and gateway ip address");
-    }
-
-    let b7 = new BitBridge(ifName, routerIP, myIP,null,null,gateway6)
-    b7.start()
-    */
 
     this.spoofStarted = true;
+    this.scheduleReload();
   }
 
   async stopSpoofing() {
-    try {
-      this.spoofStarted = false;
+    this.spoofStarted = false;
 
-      for (let key in this.registeredSpoofInstances) {
-        const spoofInstance = this.registeredSpoofInstances[key];
-        await spoofInstance.stop();
-      }
-      /*
-      let ifName = sysManager.monitoringInterface().name;
-      let routerIP = sysManager.myGateway();
-      let myIP = sysManager.myIp();
-
-      if(!ifName || !myIP || !routerIP) {
-        return Promise.reject("require valid interface name, ip address and gateway ip address");
-      }
-
-      let b7 = new BitBridge(ifName, routerIP, myIP)
-      b7.stop()
-        .then(() => {
-          resolve()
-        })
-      */
-    } catch (err) {
-      //catch everything here
-      log.error("Failed to stop spoofing:", err);
+    for (let key in this.registeredSpoofInstances) {
+      const spoofInstance = this.registeredSpoofInstances[key];
+      await spoofInstance.stop().catch((err) => {
+        log.error(`Failed to stop spoof instance ${key}`, err);
+      });
     }
+    this.scheduleReload();
   }
 
   async directSpoof(ip) {

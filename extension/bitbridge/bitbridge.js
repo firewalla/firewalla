@@ -21,21 +21,14 @@ let fs = require('fs')
 
 let spawn = require('child_process').spawn
 let Promise = require('bluebird');
+Promise.promisifyAll(fs);
 
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 const Config = require('../../net2/config.js');
 
 const exec = require('child-process-promise').exec
-let b4RestartTask = null;
-let b6RestartTask = null;
 
 let instances = {};
-
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
 
 
 class BitBridge {
@@ -61,32 +54,6 @@ class BitBridge {
       instances[key] = instance;
     }
     return instances[key];
-  }
-
-  // this function should only be invoked in bitbridge.start/stop. Please follow this rule
-  // bitbridge services should not be explicitly started elsewhere
-  static scheduleRestartB4() {
-    if (b4RestartTask)
-      clearTimeout(b4RestartTask);
-    b4RestartTask = setTimeout(() => {
-      // multiple processes belong to bitbridge4 service. Stop can ensure all processes are stopped before start
-      exec(`sudo systemctl stop bitbridge4; sudo systemctl start bitbridge4`).catch((err) => {
-        log.error("Failed to restart bitbridge4", err.message);
-      });
-    }, 5000);
-  }
-
-  // this function should only be invoked in bitbridge.start/stop. Please follow this rule
-  // bitbridge services should not be explicitly started elsewhere
-  static scheduleRestartB6() {
-    if (b6RestartTask)
-      clearTimeout(b6RestartTask); 
-    b6RestartTask = setTimeout(() => {
-      // multiple processes belong to bitbridge6 service. Stop can ensure all processes are stopped before start
-      exec(`sudo systemctl stop bitbridge6; sudo systemctl start bitbridge6`).catch((err) => {
-        log.error("Failed to restart bitbridge6", err.message);
-      });
-    }, 5000);
   }
 
   static async cleanupSpoofInstanceConfigs() {
@@ -119,12 +86,12 @@ class BitBridge {
     process.on('exit', () => {
       if(this.started) {
         log.info("Terminating bitbridge on exit")
-        this.stop()
+        this.stop();
       }
     });    
   }
 
-  start() {
+  async start() {
     log.info(`Starting BitBridge, interface: ${this.intf}, router: ${this.routerIP}, self: ${this.selfIP}, IPv6: ${this.isV6}`);
     
     let binary = null, args = null;
@@ -132,10 +99,10 @@ class BitBridge {
     if(firewalla.isDocker() || firewalla.isTravis()) {
 
       // always stop before start
-      this.stop()
+      await this.stop();
       
       binary = "sudo";
-      args = [this.getBinary(), this.intf, this.routerIP, this.selfIP,'-m','-q','-n'];
+      args = [this.getBinary(), this.intf, this.routerIP, this.selfIP, '-m', '-q', '-n'];
 
       let logStream = fs.createWriteStream("/dev/null", {flags: 'a'});
 
@@ -151,65 +118,51 @@ class BitBridge {
 
     } else {
       if (!this.isV6) {
-        binary = this.getBinary()
-        args = [this.intf, this.routerIP, this.selfIP, '-m','-n','-q','-l','-d 0', `-k monitored_hosts_${this.intf}`];
+        binary = this.getBinary();
+        args = [this.intf, this.routerIP, this.selfIP, '-m', '-n', '-q', '-l', '-d 0', `-k monitored_hosts_${this.intf}`];
   
-        let cmd = binary+" "+args.join(" ")
-        log.info("Launching Bitbridge4 ", cmd);
+        let cmd = binary + " " + args.join(" ");
+        log.info("Launching Bitbridge4", cmd);
         // crate corresponding rc file
-        const rcFilePath = `${firewalla.getFirewallaHome()}/bin/bitbridge7.${this.intf}_${this.routerIP}.rc`
-        fs.writeFileSync(rcFilePath, `export BINARY_ARGUMENTS='${args.join(" ")}'`);
-        // Beware that restart bitbridge4 service will restart all b7 instances
-        BitBridge.scheduleRestartB4(); // legacy issue to use bitbridge4
+        const rcFilePath = `${firewalla.getFirewallaHome()}/bin/bitbridge7.${this.intf}_${this.routerIP}.rc`;
+        await fs.writeFileAsync(rcFilePath, `export BINARY_ARGUMENTS='${args.join(" ")}'`);
       } else {
-        binary = this.getBinary6()
-        args = [this.intf, '-w 0.18','-q','-g '+this.routerIP, `-k monitored_hosts6_${this.intf}`];
+        binary = this.getBinary6();
+        args = [this.intf, '-w 0.18', '-q', '-g ' + this.routerIP, `-k monitored_hosts6_${this.intf}`];
         
-        let cmd = binary+" "+args.join(" ")
+        let cmd = binary + " " + args.join(" ");
         log.info("Launching Bitbridge6", cmd);
         const rcFilePath = `${firewalla.getFirewallaHome()}/bin/bitbridge6.${this.intf}_${this.routerIP}.rc`;
-        fs.writeFileSync(rcFilePath, `export BINARY_ARGUMENTS='${args.join(" ")}'`);
-        // Beware that restart bitbridge6 service will restart all b6 instances
-        BitBridge.scheduleRestartB6(); // legacy issue to use bitbridge4
-      }              
+        await fs.writeFileAsync(rcFilePath, `export BINARY_ARGUMENTS='${args.join(" ")}'`);
+      }
     }
 
-    this.started = true
+    this.started = true;
   }
 
-  stop() {
+  async stop() {
     log.info(`Stopping BitBridge, interface: ${this.intf}, router: ${this.routerIP}, self: ${this.selfIP}, IPv6: ${this.isV6}`);
 
     try {
       if(firewalla.isDocker() || firewalla.isTravis()) {
-        require('child_process').execSync("sudo pkill bitbridge7")
-        require('child_process').execSync("sudo pkill bitbridge6")
+        await exec("sudo pkill bitbridge7");
+        await exec("sudo pkill bitbridge6");
       } else {
         if (!this.isV6) {
           // remove corresponding rc file
           const rcFilePath = `${firewalla.getFirewallaHome()}/bin/bitbridge7.${this.intf}_${this.routerIP}.rc`;
-          if (fs.existsSync(rcFilePath)) {
-            fs.unlinkSync(rcFilePath);
-          }
-          // restart bitbridge4 service
-          BitBridge.scheduleRestartB4();
+          await fs.unlinkAsync(rcFilePath).catch((err) => {});
         } else {
           // remove corresponding rc file
           const rcFilePath = `${firewalla.getFirewallaHome()}/bin/bitbridge6.${this.intf}_${this.routerIP}.rc`;
-          if (fs.existsSync(rcFilePath)) {
-            fs.unlinkSync(rcFilePath);
-          }
-          // restart bitbirdge6 service
-          BitBridge.scheduleRestartB6();
+          await fs.unlinkAsync(rcFilePath).catch((err) => {});
         }
       }
     } catch(err) {
       // ignore error
     }
 
-    this.started = false    
-    
-    return delay(1000) // delay for 1 second before return to ensure bitbridge is stopped
+    this.started = false        
   }
 
   getBinary() {
