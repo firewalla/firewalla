@@ -372,19 +372,27 @@ class FlowAggregationSensor extends Sensor {
     let cache = {};
 
     let outgoingFlows = await flowTool.queryFlows(macAddress, "in", begin, end); // in => outgoing
-    let outgoingFlowsHavingIntels = outgoingFlows.filter(async f => {
-      return await this._flowHasActivity(f, cache);
-    });
+    const outgoingFlowsHavingIntels = [];
+    for(const flow of outgoingFlows) {
+      const flag = await this._flowHasActivity(flow, cache);
+      if(flag) {
+       flows.push(flow);
+       outgoingFlowsHavingIntels.push(flow);
+      }
+    }
 
-    flows.push.apply(flows, outgoingFlowsHavingIntels);
     recentFlow = this.selectVeryRecentActivity(recentFlow, outgoingFlowsHavingIntels)
 
-
+    const incomingFlowsHavingIntels = [];
     let incomingFlows = await flowTool.queryFlows(macAddress, "out", begin, end); // out => incoming
-    let incomingFlowsHavingIntels = incomingFlows.filter(async f => {
-      return await this._flowHasActivity(f, cache);
-    });
-    flows.push.apply(flows, incomingFlowsHavingIntels);
+    for(const flow of incomingFlows) {
+      const flag = await this._flowHasActivity(flow, cache);
+      if(flag) {
+        flows.push(flow);
+        incomingFlowsHavingIntels.push(flow);
+      }
+    }
+
     recentFlow = this.selectVeryRecentActivity(recentFlow, incomingFlowsHavingIntels)
 
     // now flows array should only contain flows having intels
