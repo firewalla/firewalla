@@ -34,6 +34,7 @@ sudo ipset create whitelist_remote_net_port_set hash:net,port family inet hashsi
 sudo ipset create whitelist_mac_set hash:mac &>/dev/null
 sudo ipset create whitelist_remote_port_set bitmap:port range 0-65535 &>/dev/null
 sudo ipset create no_dns_caching_mac_set hash:mac &>/dev/null
+sudo ipset create no_dns_caching_set list:set &>/dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush blocked_ip_set
@@ -57,6 +58,8 @@ sudo ipset flush whitelist_remote_net_port_set
 sudo ipset flush whitelist_remote_port_set
 sudo ipset flush whitelist_mac_set
 sudo ipset flush no_dns_caching_mac_set
+sudo ipset flush no_dns_caching_set
+sudo ipset add -! no_dns_caching_set no_dns_caching_mac_set
 
 sudo ipset add -! blocked_ip_set $BLUE_HOLE_IP
 
@@ -558,3 +561,5 @@ done
 for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset destroy -! $set
 done
+# create a list of set which stores net set of lan networks
+sudo ipset create -! c_lan_set list:set

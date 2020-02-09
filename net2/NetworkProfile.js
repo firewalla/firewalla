@@ -155,10 +155,29 @@ class NetworkProfile {
   // underscore prefix? follow same function name in Host.js :(
   async _dnsmasq(policy) {
     const dnsCaching = policy.dnsCaching;
+    const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+    if (!netIpsetName) {
+      log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.name}`);
+      return;
+    }
     if (dnsCaching === true) {
-      
+      let cmd =  `sudo ipset del -! no_dns_caching_set ${netIpsetName}`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.name}`, err);
+      });
+      cmd = `sudo ipset del -! no_dns_caching_set ${netIpsetName}6`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.name}`, err);
+      });
     } else {
-
+      let cmd =  `sudo ipset add -! no_dns_caching_set ${netIpsetName}`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.name}`, err);
+      });
+      cmd = `sudo ipset add -! no_dns_caching_set ${netIpsetName}6`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.name}`, err);
+      });
     }
   }
 
@@ -267,7 +286,7 @@ class NetworkProfile {
       }
     }
     this._tags = updatedTags;
-    this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
+    await this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
     await dnsmasq.restartDnsmasq();
   }
 }

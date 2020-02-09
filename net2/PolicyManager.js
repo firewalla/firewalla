@@ -305,7 +305,7 @@ module.exports = class {
 
   dnsmasq(host, config) {
     if(host.constructor.name !== 'HostManager') {
-      // per-device dnsmasq policy
+      // per-device or per-network dnsmasq policy
       host._dnsmasq(config);
       return;
     }

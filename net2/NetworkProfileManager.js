@@ -50,6 +50,8 @@ class NetworkProfileManager {
         }
       }
     });
+    
+    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
     this.refreshNetworkProfiles();
     return this;
   }

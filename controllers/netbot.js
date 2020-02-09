@@ -236,8 +236,8 @@ class netBot extends ControllerBot {
     });
   }
 
-  _dnsmasq(ip, value, callback = () => { }) {
-    if (ip === "0.0.0.0") {
+  _dnsmasq(target, value, callback = () => { }) {
+    if (target === "0.0.0.0") {
       this.hostManager.loadPolicy((err, data) => {
         if (!data) callback(new Error('Error loading policy'))
 
@@ -249,19 +249,35 @@ class netBot extends ControllerBot {
         this.hostManager.setPolicy("dnsmasq", newValue, callback);
       });
     } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy('dnsmasq', value, callback);
-            } else {
-              callback(new Error("Unable to change dnsmasq config of " + ip));
-            }
+      if (target.startsWith("network:")) {
+        const uuid = target.substring(8);
+        const network = this.networkProfileManager.getNetworkProfile(uuid);
+        if (network) {
+          network.loadPolicy().then(() => {
+            network.setPolicy("dnsmasq", value).then(() => {
+              callback(null);
+            });
+          }).catch((err) => {
+            callback(err);
           });
         } else {
-          callback(new Error("Host not found"));
+          callback(new Error(`Network ${uuid} is not found`));
         }
-      });
+      } else {
+        this.hostManager.getHost(target, (err, host) => {
+          if (host != null) {
+            host.loadPolicy((err, data) => {
+              if (err == null) {
+                host.setPolicy('dnsmasq', value, callback);
+              } else {
+                callback(new Error("Unable to change dnsmasq config of " + target));
+              }
+            });
+          } else {
+            callback(new Error("Host not found"));
+          }
+        });
+      }
     }
   }
 
@@ -878,7 +894,7 @@ class netBot extends ControllerBot {
               } else {
                 if (target.startsWith("network:")) {
                   const uuid = target.substring(8);
-                  const network = await this.networkProfileManager.getNetworkProfile(uuid);
+                  const network = this.networkProfileManager.getNetworkProfile(uuid);
                   if (network) {
                     await network.loadPolicy();
                     await network.setPolicy(o, policyData);
