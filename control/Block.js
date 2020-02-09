@@ -15,6 +15,7 @@
 'use strict';
 
 const util = require('util');
+const _ = require('lodash');
 const log = require("../net2/logger.js")(__filename);
 
 const iptool = require("ip");
@@ -28,6 +29,8 @@ const f = require('../net2/Firewalla.js')
 const Ipset = require('../net2/Ipset.js');
 
 const { Rule } = require('../net2/Iptables.js');
+
+const Tag = require('../net2/Tag');
 
 // =============== block @ connection level ==============
 
@@ -277,6 +280,77 @@ async function setupRules(macTag, dstTag, dstType, iif, allow = false, destroy =
 
   } catch(err) {
     log.error('Error when setup blocking env', err);
+  }
+}
+
+async function setupTagRules(tagUid, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
+  if (!dstTag || _.isEmpty(tagUid)) {
+    return;
+  }
+
+  try {
+    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tagUid || "null", dstTag,
+      destroy && destroyDstCache ? "and ipset" : "");
+
+    const macSet = Tag.getTagIpsetName(tagUid);
+    const dstSet = getDstSet(dstTag)
+    // use same port set on both ip4 & ip6 rules
+    const dstSet6 = dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)
+
+    if (!destroy) {
+      // if (macTag) await Ipset.create(macSet, 'hash:mac')
+      await Ipset.create(dstSet, dstType)
+      if (dstType != 'bitmap:port')
+        await Ipset.create(dstSet6, dstType, false)
+    }
+
+    const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
+    const filterDest = allow ? 'RETURN' : 'FW_DROP'
+    const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
+    const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+
+    const outRule     = new Rule().chn(filterChain).mth(dstSet, 'dst').jmp(filterDest)
+    const outRule6    = new Rule().chn(filterChain).mth(dstSet6, 'dst').jmp(filterDest).fam(6)
+    const natOutRule  = new Rule('nat').chn(natChain).mth(dstSet, 'dst').jmp(natDest)
+    const natOutRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'dst').jmp(natDest).fam(6)
+
+    // matching MAC addr won't work in opposite direction
+    // if (macTag) {
+      outRule.mth(macSet, 'src')
+      outRule6.mth(macSet, 'src')
+      natOutRule.mth(macSet, 'src')
+      natOutRule6.mth(macSet, 'src')
+    // }
+
+    // if (iif) {
+    //   outRule.mth(iif, null, "iif");
+    //   outRule6.mth(iif, null, "iif");
+    //   natOutRule.mth(iif, null, "iif");
+    //   natOutRule6.mth(iif, null, "iif");
+    // }
+
+    const op = destroy ? '-D' : '-I'
+    await exec(outRule.toCmd(op))
+    await exec(outRule6.toCmd(op))
+    await exec(natOutRule.toCmd(op))
+    await exec(natOutRule6.toCmd(op))
+
+
+    if (destroy) {
+      // if (macTag) {
+      //   await Ipset.destroy(macSet)
+      // }
+      if (destroyDstCache) {
+        await Ipset.destroy(dstSet)
+        if (dstType != 'bitmap:port')
+          await Ipset.destroy(dstSet6)
+      }
+    }
+
+    log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tagUid || "null", dstTag);
+
+  } catch(err) {
+    log.error('Error when setup tag blocking env', err);
   }
 }
 
