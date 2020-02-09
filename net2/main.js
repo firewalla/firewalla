@@ -179,6 +179,10 @@ async function run() {
     sysManager.syncVersionUpdate();
   }) // update sys config when start
 
+
+  const HostManager = require('./HostManager.js');
+  const hostManager= new HostManager("cli",'server','debug');
+
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();
   hl.run();
@@ -220,11 +224,6 @@ async function run() {
   d.start();
   bd.start();
 
-
-
-  var HostManager = require('./HostManager.js');
-  var hostManager= new HostManager("cli",'server','debug');
-  var os = require('os');
 
   // always create the secondary interface
   await ModeManager.enableSecondaryInterface()
