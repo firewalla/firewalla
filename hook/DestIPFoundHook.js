@@ -132,10 +132,15 @@ class DestIPFoundHook extends Hook {
 
       // if(hashes.filter(x => x === info.ip).length > 0) {
       if(info.apps) {
-        intel.apps = JSON.stringify(info.apps);
-        let keys = Object.keys(info.apps);
-        if(keys && keys[0]) {
-          intel.app = keys[0];
+        intel.apps = info.apps; // json string format
+        try {
+          const apps = JSON.parse(info.apps)
+          const keys = Object.keys(apps);
+          if(keys && keys[0]) {
+            intel.app = keys[0];
+          }
+        } catch(err) {
+          log.error("Failed to parse app json, err:", err);
         }
       }
 

@@ -458,7 +458,7 @@
       },
       "sumflow": {
         "expires": -1,
-        "count": 500
+        "count": 200
       },
       "syssumflow": {
         "expires": -1,
@@ -466,11 +466,11 @@
       },
       "categoryflow": {
         "expires": 86400,
-        "count": 1000
+        "count": 200
       },
       "appflow": {
         "expires": 86400,
-        "count": 1000
+        "count": 200
       },
       "safe_urls": {
         "expires": 604800,
@@ -588,6 +588,18 @@
     "intel:feedback": true,
     "ss_client:statusCheck": true,
     "familyMode": "v1"
+  },
+  "category": {
+    "exclude": [
+      "ad",
+      "search-portal",
+      "technology"
+    ]
+  },
+  "app": {
+    "exclude": [
+
+    ]
   },
   "userFeatures": {
     "porn": true,
