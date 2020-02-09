@@ -102,17 +102,33 @@ async function generateNetworkInfo() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
+    let ip6s = [];
+    let ip6Masks = [];
+    let ip6Subnets = [];
+    if (intf.state.ip6 && _.isArray(intf.state.ip6)) {
+      for (let i of intf.state.ip6) {
+        const ip6Addr = new Address6(i);
+        if (!ip6Addr.isValid())
+          continue;
+        ip6s.push(ip6Addr.correctForm());
+        ip6Masks.push(new Address6(`ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/${ip6Addr.subnetMask}`).startAddress().correctForm());
+        ip6Subnets.push(i);
+      }
+    }
     let gateway = null;
+    let gateway6 = null;
     let dns = null;
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
+        gateway6 = intf.config.gateway6 || intf.state.gateway6;
         dns = intf.config.nameservers || intf.state.dns;
         break;
       }
       case "lan": {
         // no gateway and dns for lan interface, gateway and dns in dhcp does not mean the same thing
         gateway = null;
+        gateway6 = null;
         dns = null;
         break
       }
@@ -126,6 +142,10 @@ async function generateNetworkInfo() {
       netmask:      ip4 ? Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address : null,
       gateway_ip:   gateway,
       gateway:      gateway,
+      ip6_addresses: ip6s.length > 0 ? ip6s : null,
+      ip6_subnets:  ip6Subnets.length > 0 ? ip6Subnets : null,
+      ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
+      gateway6:     gateway6,
       dns:          dns,
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type
