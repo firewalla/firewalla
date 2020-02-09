@@ -292,7 +292,7 @@ module.exports = class {
   }
 
   exceptionExists(exceptionID) {
-    return rclient.keysAsync(exceptionPrefix + exceptionID);
+    return rclient.existsAsync(exceptionPrefix + exceptionID);
   }
 
   async deleteException(exceptionID) {

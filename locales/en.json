@@ -102,5 +102,17 @@
   "NOTIF_TITLE_ALARM_ABNORMAL_BANDWIDTH_USAGE": "Abnormal Bandwidth Usage",
   "NOTIF_ALARM_ABNORMAL_BANDWIDTH_USAGE": "Device {{{p.device.name}}} is using unusual amount of bandwidth: {{{p.totalUsage.humansize}}} in the last {{{p.duration}}} hours ({{{p.percentage}}} of total bandwidth usage).",
   "NOTIF_TITLE_ALARM_OVER_DATA_PLAN_USAGE": "Bandwidth usage alarm",
-  "NOTIF_ALARM_OVER_DATA_PLAN_USAGE": "Your network has used up {{{p.percentage}}} of monthly planned bandwidth. Used {{{p.totalUsage.humansize}}}, Planned {{{p.planUsage.humansize}}}."
+  "NOTIF_ALARM_OVER_DATA_PLAN_USAGE": "Your network has used up {{{p.percentage}}} of monthly planned bandwidth. Used {{{p.totalUsage.humansize}}}, Planned {{{p.planUsage.humansize}}}.",
+  "VPN_SUBTYPE_s2s": "Site to Site VPN",
+  "VPN_SUBTYPE_cs": "Remote Access VPN",
+  "VPN_SUBTYPE_openvpn": "3rd-Party VPN",
+  "NOTIF_TITLE_ALARM_VPN_RESTORE": "VPN Connection Restored",
+  "NOTIF_ALARM_VPN_RESTORE": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is restored at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is resumed.",
+  "INFO_ALARM_VPN_RESTORE": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is restored at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is resumed.",
+  "NOTIF_TITLE_ALARM_VPN_DISCONNECT": "VPN Disconnected",
+  "NOTIF_ALARM_VPN_DISCONNECT": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is disconnected at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) has switched to local ISP.",
+  "INFO_ALARM_VPN_DISCONNECT": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is disconnected at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) has switched to local ISP.",
+  "NOTIF_TITLE_ALARM_VPN_DISCONNECT_KILLSWITCH": "VPN Connection Error",
+  "NOTIF_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is paused until the VPN connection is restored.",
+  "INFO_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is paused until the VPN connection is restored."
 }

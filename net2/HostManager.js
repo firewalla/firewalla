@@ -95,6 +95,8 @@ const vpnClientEnforcer = new VPNClientEnforcer();
 const iptables = require('./Iptables.js');
 const ip6tables = require('./Ip6tables.js');
 
+const Alarm = require('../alarm/Alarm.js');
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 module.exports = class HostManager {
@@ -1333,6 +1335,24 @@ module.exports = class HostManager {
     }
   }
 
+  async getVpnActiveDeviceCount(profileId) {
+    let activeDevices = this.getActiveHumanDevices();
+    let iCount = 0;
+    for (const mac of activeDevices) {
+      const policy = await hostTool.loadDevicePolicyByMAC(mac);
+      if (policy && policy["vpnClient"]) {
+        try {
+          const vpnClientConfig = JSON.parse(policy["vpnClient"]);
+          if (vpnClientConfig.state && vpnClientConfig.profileId == profileId)
+            iCount += 1;
+        } catch (err) {
+          log.error(`Failed to parse policy`, err)
+        }
+      }
+    }
+    return iCount;
+  }
+
   async vpnClient(policy) {
     const type = policy.type;
     const state = policy.state;
@@ -1415,6 +1435,30 @@ module.exports = class HostManager {
                   }
                 }
               }
+
+              const updatedPolicy = this.policy["vpnClient"];
+              if (settings.strictVPN) {
+                if (updatedPolicy && updatedPolicy.waitresume && updatedPolicy.waitresume == 1 && fc.isFeatureOn("vpn_restore")){
+                  const device_cout = await this.getVpnActiveDeviceCount(profileId);
+                  let alarm = new Alarm.VPNRestoreAlarm(
+                    new Date() / 1000,
+                    null,
+                    {
+                      'p.vpn.profileid': profileId,
+                      'p.vpn.subtype': settings && settings.subtype,
+                      'p.vpn.devicecount': device_cout,
+                      'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
+                      'p.vpn.strictvpn': settings && settings.strictVPN || false
+                    }
+                  );
+                  await alarmManager2.enqueueAlarm(alarm);
+                }
+              }
+              if (updatedPolicy) {
+                updatedPolicy.waitresume = 0;
+                updatedPolicy.running = true;
+                await this.setPolicyAsync("vpnClient", updatedPolicy);
+              }
             });
           }
           const result = await ovpnClient.start();
@@ -1427,17 +1471,6 @@ module.exports = class HostManager {
           if (result) {
             if (ovpnClient.listenerCount('link_broken') === 0) {
               ovpnClient.once('link_broken', async () => {
-                sem.sendEventToFireApi({
-                  type: 'FW_NOTIFICATION',
-                  titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
-                  bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
-                  titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                  bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                  bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
-                  payload: {
-                    profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
-                  }
-                });
                 const updatedPolicy = this.policy["vpnClient"];
                 if (!updatedPolicy) return;
                 updatedPolicy.running = false;
@@ -1450,7 +1483,42 @@ module.exports = class HostManager {
                   // increment reconnecting count and trigger reconnection
                   updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
                 }
-                this.setPolicy("vpnClient", updatedPolicy);
+                await this.setPolicyAsync("vpnClient", updatedPolicy);
+                if (fc.isFeatureOn("vpn_disconnect")) {
+                  const broken_time = new Date() / 1000;
+                  setTimeout(async () => {
+                    // sem.sendEventToFireApi({
+                    //   type: 'FW_NOTIFICATION',
+                    //   titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
+                    //   bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
+                    //   titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                    //   bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
+                    //   bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
+                    //   payload: {
+                    //     profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
+                    //   }
+                    // });
+                    const updatedPolicy = this.policy["vpnClient"];
+                    if (!updatedPolicy) return;
+                    if (!updatedPolicy.running) {
+                      const device_cout = await this.getVpnActiveDeviceCount(profileId);
+                      let alarm = new Alarm.VPNDisconnectAlarm(
+                        broken_time,
+                        null,
+                        {
+                          'p.vpn.profileid': profileId,
+                          'p.vpn.subtype': settings && settings.subtype,
+                          'p.vpn.devicecount': device_cout,
+                          'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
+                          'p.vpn.strictvpn': settings && settings.strictVPN || false
+                        }
+                      );
+                      await alarmManager2.enqueueAlarm(alarm);
+                      updatedPolicy.waitresume = (settings.strictVPN) ? 1 : 0;
+                      await this.setPolicyAsync("vpnClient", updatedPolicy);
+                    }
+                  }, 2 * 60 * 1000);
+                }
               });
             }
           }
@@ -1489,6 +1557,11 @@ module.exports = class HostManager {
                 await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
               }
             }
+
+            const updatedPolicy = this.policy["vpnClient"];
+            if (!updatedPolicy) return;
+            updatedPolicy.waitresume = 0;
+            await this.setPolicyAsync("vpnClient", updatedPolicy);
           });
           await ovpnClient.stop();
           // will do no harm to unenforce strict VPN even if strict VPN is not set  

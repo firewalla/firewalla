@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -116,12 +116,12 @@ class SSClientManager {
   }
 
   async startRedirect() {
-    const client = this.getCurrentClient();
-    if(client) {
+    try {
+      const client = this.getCurrentClient();
       log.info(`Using ${client.name} as primary ss client.`);
       await client.redirectTraffic();
-    } else {
-      log.error(`Invalid client index: ${this.curIndex}`);
+    } catch(err) {
+      log.error(`Failed to redirect traffic, client index: ${this.curIndex}`, err);
     }
   }
 
