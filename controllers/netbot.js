@@ -2726,6 +2726,12 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
+          const regex = /^[-a-zA-Z0-9\.\*]+?/;
+          if (!regex.test(domain)) {
+            this.simpleTxData(msg, {}, { code: 400, msg: "Invalid domain." }, callback);
+            return;
+          }
+
           await categoryUpdater.addIncludedDomain(category, domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
