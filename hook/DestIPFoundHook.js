@@ -131,10 +131,10 @@ class DestIPFoundHook extends Hook {
       // batch query
 
       // if(hashes.filter(x => x === info.ip).length > 0) {
-      if(info.apps) {
-        intel.apps = info.apps; // json string format
+      if(info.app) {
+        intel.apps = info.app; // json string format
         try {
-          const apps = JSON.parse(info.apps)
+          const apps = JSON.parse(intel.apps)
           const keys = Object.keys(apps);
           if(keys && keys[0]) {
             intel.app = keys[0];
