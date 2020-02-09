@@ -550,11 +550,12 @@ class FlowAggregationSensor extends Sensor {
       let hashCache = {}
 
       if(Object.keys(allFlows).length > 0) {
-        flowUtil.hashIntelFlows(allFlows, hashCache)
-
-        let data = await bone.flowgraphAsync('summarizeApp', allFlows)
-//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
         await flowAggrTool.setCleanedAppActivity(begin, end, allFlows, options)
+
+        // change after store
+        flowUtil.hashIntelFlows(allFlows, hashCache)
+        await bone.flowgraphAsync('summarizeApp', allFlows)
+//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
       } else {
         await flowAggrTool.setCleanedAppActivity(begin, end, {}, options) // if no data, set an empty {}
       }
@@ -628,13 +629,12 @@ class FlowAggregationSensor extends Sensor {
       let hashCache = {}
 
       if (Object.keys(allFlows).length > 0) {
-        flowUtil.hashIntelFlows(allFlows, hashCache)
-
-        let data = await bone.flowgraphAsync('summarizeActivity', allFlows)
-
-//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-
         await flowAggrTool.setCleanedCategoryActivity(begin, end, allFlows, options)
+
+        // change after store
+        flowUtil.hashIntelFlows(allFlows, hashCache);
+        await bone.flowgraphAsync('summarizeActivity', allFlows);
+//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
       } else {
         await flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options) // if no data, set an empty {}
       }
