@@ -848,9 +848,9 @@ module.exports = class {
       }
 
       localMac = localMac.toUpperCase();
-      otherMac = origMac === localMac ? respMac.toUpperCase() : origMac.toUpperCase();
-      const host = hostManager.getHostFastByMAC(otherMac);
-      const tags = host.getTagsUids();
+      const otherMac = origMac === localMac ? respMac.toUpperCase() : origMac.toUpperCase();
+      const hostInfo = hostManager.getHostFastByMAC(otherMac);
+      const tags = hostInfo.getTagsUids();
 
       // Mark all flows that are partially completed.
       // some of these flows may be valid

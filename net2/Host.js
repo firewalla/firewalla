@@ -58,6 +58,7 @@ Promise.promisifyAll(fs);
 
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
+const _ = require('lodash');
 
 class Host {
   constructor(obj, mgr, callback) {
