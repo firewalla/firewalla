@@ -66,7 +66,6 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 const _ = require('lodash');
-const Tag = require('../net2/Tag');
 
 const delay = require('../util/util.js').delay
 
@@ -1003,11 +1002,8 @@ class PolicyManager2 {
       case "remoteIpPort":
       case "remoteNetPort":
         if (!_.isEmpty(tags)) {
-          for (let index = 0; index < tags.length; index++) {
-            const tagUid = tags[index];
-            await Block.setupTagRules(tagUid, pid, ruleSetTypeMap[type], whitelist);
-            await Block.block(target, Block.getDstSet(pid), whitelist)
-          }
+          await Block.setupTagRules(tags, pid, ruleSetTypeMap[type], whitelist);
+          await Block.block(target, Block.getDstSet(pid), whitelist)
         } else if (scope || intf) {
           await Block.setupRules(pid, pid, ruleSetTypeMap[type], intf, whitelist);
           await Block.addMacToSet(scope, Block.getMacSet(pid));
@@ -1028,15 +1024,13 @@ class PolicyManager2 {
       case "dns":
         // dnsmasq_entry: use dnsmasq instead of iptables
         if (!_.isEmpty(tags)) {
-          for (let index = 0; index < tags.length; index++) {
-            const tagUid = tags[index];
-            await domainBlock.blockDomain(target, {
-              exactMatch: policy.domainExactMatch,
-              blockSet: Tag.getTagIpsetName(tagUid),
-              // scope: scope,
-              // intf: intf
-            })
-          }
+          await Block.setupTagRules(tags, pid, "hash:ip", whitelist);
+          await domainBlock.blockDomain(target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(pid)
+            // scope: scope,
+            // intf: intf
+          })
         } else if (policy.dnsmasq_entry) {
           await dnsmasq.addPolicyFilterEntry([target], {scope, intf}).catch(() => {});
           await dnsmasq.restartDnsmasq()
@@ -1074,10 +1068,7 @@ class PolicyManager2 {
 
       case "category":
         if (!_.isEmpty(tags)) {
-          for (let index = 0; index < tags.length; index++) {
-            const tagUid = tags[index];
-            await Block.setupTagRules(pid, target, "hash:ip", whitelist);
-          }
+          await Block.setupTagRules(tags, target, "hash:ip", whitelist);
         } else if (policy.dnsmasq_entry) {
           await domainBlock.blockCategory(target, {
             scope: scope,
@@ -1098,10 +1089,7 @@ class PolicyManager2 {
       case "country":
         await countryUpdater.activateCountry(target);
         if (!_.isEmpty(tags)) {
-          for (let index = 0; index < tags.length; index++) {
-            const tagUid = tags[index];
-            await Block.setupTagRules(pid, countryUpdater.getCategory(target), "hash:net", whitelist);
-          }
+          await Block.setupTagRules(tags, countryUpdater.getCategory(target), "hash:net", whitelist);
         } else {
           await Block.setupRules((scope || intf) && pid, countryUpdater.getCategory(target), "hash:net", intf, whitelist);
           await Block.addMacToSet(scope, Block.getMacSet(pid));
@@ -1173,10 +1161,7 @@ class PolicyManager2 {
       case "remoteIpPort":
       case "remoteNetPort":
         if (!_.isEmpty(tags)) {
-          for (let index = 0; index < tags.length; index++) {
-            const tagUid = tags[index];
-            await Block.setupTagRules(tagUid, pid, ruleSetTypeMap[type], whitelist, true);
-          }
+          await Block.setupTagRules(tags, pid, ruleSetTypeMap[type], whitelist, true);
         } else if (scope || intf) {
           await Block.setupRules(pid, pid, ruleSetTypeMap[type], intf, whitelist, true);
         } else {
@@ -1194,15 +1179,13 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (!_.isEmpty(tags)) {
-          for (let index = 0; index < tags.length; index++) {
-            const tagUid = tags[index];
-            await domainBlock.unblockDomain(target, {
-              exactMatch: policy.domainExactMatch,
-              blockSet: Tag.getTagIpsetName(tagUid),
-              // scope: scope,
-              // intf: intf
-            })
-          }
+          await domainBlock.unblockDomain(target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(pid)
+            // scope: scope,
+            // intf: intf
+          });
+          await Block.setupTagRules(tags, pid, 'hash:ip', intf, whitelist, true);
         } 
         // dnsmasq_entry: use dnsmasq instead of iptables
         else if (policy.dnsmasq_entry) {
@@ -1241,10 +1224,7 @@ class PolicyManager2 {
 
       case "category":
         if (!_.isEmpty(tags)) {
-          for (let index = 0; index < tags.length; index++) {
-            const tagUid = tags[index];
-            await Block.setupTagRules(pid, target, "hash:ip", whitelist, true, false);
-          }
+          await Block.setupTagRules(tags, target, "hash:ip", whitelist, true, false);
         } else if (policy.dnsmasq_entry) {
           await domainBlock.unblockCategory(target, {
             scope: scope,
@@ -1263,10 +1243,7 @@ class PolicyManager2 {
 
       case "country":
         if (!_.isEmpty(tags)) {
-          for (let index = 0; index < tags.length; index++) {
-            const tagUid = tags[index];
-            await Block.setupTagRules(pid, countryUpdater.getCategory(target), "hash:net", whitelist, true, false);
-          }
+          await Block.setupTagRules(tags, countryUpdater.getCategory(target), "hash:net", whitelist, true, false);
         } else {
           await Block.setupRules((scope || intf) && pid, countryUpdater.getCategory(target), 'hash:net', intf, whitelist, true, false);
         }

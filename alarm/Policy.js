@@ -200,7 +200,6 @@ class Policy {
       !_.isEmpty(this.tag) &&
       _.has(alarm, 'p.tag.ids') &&
       !_.isEmpty(alarm['p.tag.ids'])
-      )
     ) {
       for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
         const tag = alarm['p.tag.ids'][index];

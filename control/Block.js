@@ -30,7 +30,6 @@ const Ipset = require('../net2/Ipset.js');
 
 const { Rule } = require('../net2/Iptables.js');
 
-const Tag = require('../net2/Tag');
 
 // =============== block @ connection level ==============
 
@@ -283,22 +282,20 @@ async function setupRules(macTag, dstTag, dstType, iif, allow = false, destroy =
   }
 }
 
-async function setupTagRules(tagUid, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
-  if (!dstTag || _.isEmpty(tagUid)) {
+async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
+  if (!dstTag || _.isEmpty(tags)) {
     return;
   }
 
   try {
-    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tagUid || "null", dstTag,
+    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tags || "null", dstTag,
       destroy && destroyDstCache ? "and ipset" : "");
 
-    const macSet = Tag.getTagIpsetName(tagUid);
     const dstSet = getDstSet(dstTag)
     // use same port set on both ip4 & ip6 rules
     const dstSet6 = dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)
 
     if (!destroy) {
-      // if (macTag) await Ipset.create(macSet, 'hash:mac')
       await Ipset.create(dstSet, dstType)
       if (dstType != 'bitmap:port')
         await Ipset.create(dstSet6, dstType, false)
@@ -315,19 +312,13 @@ async function setupTagRules(tagUid, dstTag, dstType, allow = false, destroy = f
     const natOutRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'dst').jmp(natDest).fam(6)
 
     // matching MAC addr won't work in opposite direction
-    // if (macTag) {
+    for (let index = 0; index < tags.length; index++) {
+      const macSet = require('../net2/Tag.js').getTagMacIpsetName(tags[index]);
       outRule.mth(macSet, 'src')
       outRule6.mth(macSet, 'src')
       natOutRule.mth(macSet, 'src')
       natOutRule6.mth(macSet, 'src')
-    // }
-
-    // if (iif) {
-    //   outRule.mth(iif, null, "iif");
-    //   outRule6.mth(iif, null, "iif");
-    //   natOutRule.mth(iif, null, "iif");
-    //   natOutRule6.mth(iif, null, "iif");
-    // }
+    }
 
     const op = destroy ? '-D' : '-I'
     await exec(outRule.toCmd(op))
@@ -337,9 +328,6 @@ async function setupTagRules(tagUid, dstTag, dstType, allow = false, destroy = f
 
 
     if (destroy) {
-      // if (macTag) {
-      //   await Ipset.destroy(macSet)
-      // }
       if (destroyDstCache) {
         await Ipset.destroy(dstSet)
         if (dstType != 'bitmap:port')
@@ -347,7 +335,7 @@ async function setupTagRules(tagUid, dstTag, dstType, allow = false, destroy = f
       }
     }
 
-    log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tagUid || "null", dstTag);
+    log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tags || "null", dstTag);
 
   } catch(err) {
     log.error('Error when setup tag blocking env', err);
