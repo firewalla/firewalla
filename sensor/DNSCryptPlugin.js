@@ -104,8 +104,12 @@ class DNSCryptPlugin extends Sensor {
   async applyAll(reCheckConfig = false) {
     log.info("DNSCryptPlugin.applyAll");
     const result = await dc.prepareConfig({}, reCheckConfig);
+    if (result) {
+      await dc.restart();
+    } else {
+      await dc.start();
+    }
     if (!result) return;
-    await dc.restart();
     await this.applyDoH();
     for (const macAddress in this.enabledMacAddresses) {
       await this.applyDeviceDoH(macAddress);
@@ -177,6 +181,10 @@ class DNSCryptPlugin extends Sensor {
     this.adminSystemSwitch = false;
     //await this.applyAll();
     await dc.stop();
+    await this.applyDoH();
+    for (const macAddress in this.enabledMacAddresses) {
+      await this.applyDeviceDoH(macAddress);
+    }
   }
 
   async apiRun() {

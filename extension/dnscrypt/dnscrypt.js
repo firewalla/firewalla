@@ -20,6 +20,8 @@ let instance = null;
 const log = require('../../net2/logger')(__filename);
 
 const fs = require('fs');
+const util = require('util');
+const existsAsync = util.promisify(fs.exists);
 const f = require('../../net2/Firewalla.js');
 
 const Promise = require('bluebird');
@@ -74,7 +76,8 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
 
     if (reCheckConfig) {
-      if (fs.existsSync(runtimePath)) {
+      const fileExists = await existsAsync(runtimePath);
+      if (fileExists) {
         const oldContent = await fs.readFileAsync(runtimePath, {encoding: 'utf8'});
         if (oldContent == content)
           return false;
@@ -89,6 +92,10 @@ class DNSCrypt {
       if(!s) return null;
       return `[static.'${s.name}']\n  stamp = '${s.stamp}'\n`;
     }).filter(Boolean).join("\n");
+  }
+
+  async start() {
+    return exec("sudo systemctl start dnscrypt");
   }
 
   async restart() {
