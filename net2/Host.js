@@ -365,6 +365,9 @@ class Host {
     if (this.activities) {
       this.o.activities= JSON.stringify(this.activities);
     }
+    if (this._tags) {
+      this.o.tags = JSON.stringify(this._tags);
+    }
   }
 
   touch(date) {
@@ -1120,6 +1123,7 @@ class Host {
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     await dnsmasq.restartDnsmasq();
+    this.save("tags", null);
   }
 }
 

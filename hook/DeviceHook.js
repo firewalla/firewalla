@@ -179,34 +179,16 @@ class DeviceHook extends Hook {
       }
 
       if (mac != null) {
-        const hostManager = new HostManager("cli", 'server', 'info');
-        (async ()  =>  {
-          try {
-            const _host = await hostManager.getHostAsync(mac);
-            if (_host) {
-              const tags = _host.getTags();
-              host.tags = tags;
-            }
-          } catch (error) {
-            log.error(`Failed to get tag for mac ${mac}`, error)
-          } finally {
-            this.processDeviceUpdate(event)
-          }
-        })();
+        this.processDeviceUpdate(event);
       } else {
         const hostManager = new HostManager("cli", 'server', 'info');
         let ip = host.ipv4 || host.ipv4Addr
         if (ip) {
           // need to get mac address first
           (async () => {
-            let theMac = await l2.getMACAsync(ip);
-            host.mac = theMac;
-            const _host = await hostManager.getHostAsync(mac);
-            if (_host) {
-              const tags = _host.getTags();
-              host.tags = tags;
-            }
-            this.processDeviceUpdate(event);
+            let theMac = await l2.getMACAsync(ip)
+            host.mac = theMac
+            this.processDeviceUpdate(event)
           })().catch((err) => {
             log.error(`Failed to get mac address for ip ${ip}`, err)
           })
