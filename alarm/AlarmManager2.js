@@ -1629,15 +1629,22 @@ module.exports = class {
     if (userInput && userInput.device && userInput.archiveAlarmByType) {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
+
+    if (!_.isEmpty(userInput.tag)) {
+      e["p.tag.ids"] = [];
+      for (const tagStr of tag) {
+        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
+          let intfUuid = _.trimStart(tagStr, Policy.INTF_PREFIX);
+          e["p.intf.id"] = intfUuid;
+        } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
+          let tagUid = _.trimStart.apply(tagStr, Policy.TAG_PREFIX);
+          e["p.tag.ids"].push(tagUid);
+        }
+      }
+    }
+
     if (userInput && userInput.intf) {
       e["p.intf.id"] = userInput.intf;
-    }
-    if (userInput && userInput.tag) {
-      if (_.isArray(userInput.tag)) {
-        e["p.tag.ids"] = userInput.tag;
-      } else if (_.isString(userInput.tag)) {
-        e["p.tag.ids"] = [userInput.tag];
-      }
     }
     log.info("Exception object:", e);
     return e;

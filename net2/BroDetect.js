@@ -60,7 +60,8 @@ let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
-
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js')
+const _ = require('lodash');
 /*
  *
  *  config.bro.notice.path {
@@ -849,7 +850,13 @@ module.exports = class {
 
       localMac = localMac.toUpperCase();
       const hostInfo = hostManager.getHostFastByMAC(localMac);
-      const tags = hostInfo.getTags();
+      let tags = hostInfo.getTags();
+
+      if (intfId !== '') {
+        const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
+        if (networkProfile)
+          tags = _.concat(tags, networkProfile.getTags());
+      }
 
       // Mark all flows that are partially completed.
       // some of these flows may be valid
@@ -1079,23 +1086,23 @@ module.exports = class {
           // use now instead of the start time of this flow
           this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, localMac);
           if (intfId) {
-            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, intfId, true);
+            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'intf:' + intfId, true);
           }
           if (tags.length > 0) {
             for (let index = 0; index < tags.length; index++) {
               const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, tag, true); 
+              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'tag:' + tag, true); 
             }
           }
         } else {
           this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, localMac);
           if (intfId) {
-            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, intfId, true);
+            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'intf' + intfId, true);
           }
           if (tags.length > 0) {
             for (let index = 0; index < tags.length; index++) {
               const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, tag, true); 
+              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'tag:' + tag, true); 
             }
           }
         }
