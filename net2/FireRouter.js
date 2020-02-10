@@ -262,8 +262,10 @@ class FireRouter {
 
       switch(mode) {
         case 'spoof':
+        case 'none':
+        case 'dhcp':
           monitoringIntfNames = Object.values(intfNameMap)
-            .filter(intf => intf.config.meta.type == 'wan')
+            .filter(intf => ['wan', 'lan'].includes(intf.config.meta.type))
             .map(intf => intf.config.meta.intfName)
           break;
 
