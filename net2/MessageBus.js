@@ -77,7 +77,7 @@ module.exports = class {
           }
           log.debug('Notified ', notified);
         } catch (err) {
-          //              log.error("Error to process message:", message, "err:", err);
+          log.debug("Error to process message:", channel, message, "err:", err);
           // ignore any non-JSON messages
         }
       });
@@ -110,12 +110,10 @@ module.exports = class {
   }
 
   _subscribe(key, callback) {
-    let cbs = this.callbacks[key];
-    if (!cbs) {
+    if (!this.callbacks[key]) {
       this.callbacks[key] = [];
-      cbs = this.callbacks[key];
     }
-    cbs.push(callback);
+    this.callbacks[key].push(callback);
   }
 
   subscribeOnce(channel, type, ip, callback) {
