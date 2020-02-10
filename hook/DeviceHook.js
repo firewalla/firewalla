@@ -184,7 +184,7 @@ class DeviceHook extends Hook {
           try {
             const _host = await hostManager.getHostAsync(mac);
             if (_host) {
-              const tags = _host.getTagsUids();
+              const tags = _host.getTags();
               host.tags = tags;
             }
           } catch (error) {
@@ -203,7 +203,7 @@ class DeviceHook extends Hook {
             host.mac = theMac;
             const _host = await hostManager.getHostAsync(mac);
             if (_host) {
-              const tags = _host.getTagsUids();
+              const tags = _host.getTags();
               host.tags = tags;
             }
             this.processDeviceUpdate(event);

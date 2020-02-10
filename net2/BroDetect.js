@@ -850,7 +850,7 @@ module.exports = class {
       localMac = localMac.toUpperCase();
       const otherMac = origMac === localMac ? respMac.toUpperCase() : origMac.toUpperCase();
       const hostInfo = hostManager.getHostFastByMAC(otherMac);
-      const tags = hostInfo.getTagsUids();
+      const tags = hostInfo.getTags();
 
       // Mark all flows that are partially completed.
       // some of these flows may be valid
@@ -925,7 +925,7 @@ module.exports = class {
           lh: lhost, // this is local ip address
           mac: localMac, // mac address of local device
           intf: intfId, // intf id
-          tags,
+          tags: tags,
           du: obj.duration,
           bl: FLOWSTASH_EXPIRES,
           pf: {}, //port flow
@@ -978,7 +978,7 @@ module.exports = class {
         ct: 1, // count
         fd: flowdir, // flow direction
         intf: intfId, // intf id
-        tags,
+        tags: tags,
         lh: lhost, // this is local ip address
         mac: localMac, // mac address of local device
         du: obj.duration,

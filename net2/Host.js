@@ -1073,17 +1073,11 @@ class Host {
   }
 
   getTags() {
-    return this._tags;
-  }
-
-  getTagsUids() {
     if (_.isEmpty(this._tags)) {
       return []; 
     }
 
-    return this._tags.map((tag) => {
-      return tag.getTagUid();
-    })
+    return this._tags;
   }
 
   async tags(tags) {
