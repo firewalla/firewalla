@@ -157,26 +157,26 @@ class NetworkProfile {
     const dnsCaching = policy.dnsCaching;
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     if (!netIpsetName) {
-      log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.name}`);
+      log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.intf}`);
       return;
     }
     if (dnsCaching === true) {
       let cmd =  `sudo ipset del -! no_dns_caching_set ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.name}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset del -! no_dns_caching_set ${netIpsetName}6`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.name}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
       });
     } else {
       let cmd =  `sudo ipset add -! no_dns_caching_set ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.name}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset add -! no_dns_caching_set ${netIpsetName}6`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.name}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
       });
     }
   }
