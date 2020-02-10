@@ -20,7 +20,7 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const bonjour = require('bonjour')();
+const Bonjour = require('bonjour');
 const Promise = require('bluebird');
 
 const sysManager = require('../net2/SysManager.js')
@@ -29,6 +29,8 @@ const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
 const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
 
 const ipMacCache = {};
 
@@ -41,35 +43,50 @@ class BonjourSensor extends Sensor {
     super();
     this.interfaces = null;
     this.hostCache = {};
-
-    bonjour._server.mdns.on('warning', (err) => log.warn("Warning on mdns server", err))
-    bonjour._server.mdns.on('error', (err) => log.error("Error on mdns server", err))
   }
 
-  run() {
-    log.info("Bonjour Watch Starting");
-    this.interfaces = sysManager.getMonitoringInterfaces();
-    if (this.bonjourBrowserTCP == null) {
-      this.bonjourBrowserTCP = bonjour.find({
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      // remove old bonjour listeners
+      if (this.startTask)
+        clearTimeout(this.startTask);
+      if (this.updateTask)
+        clearInterval(this.updateTask);
+      if (this.bonjourBrowserTCP)
+        this.bonjourBrowserTCP.stop();
+      if (this.bonjourBrowserUDP)
+        this.bonjourBrowserUDP.stop();
+      if (this.bonjourBrowserHTTP)
+        this.bonjourBrowserHTTP.stop();
+      if (this.bonjour)
+        this.bonjour.destroy();
+      // create new bonjour listeners
+      this.bonjour = Bonjour();
+      this.bonjour._server.mdns.on('warning', (err) => log.warn("Warning on mdns server", err));
+      this.bonjour._server.mdns.on('error', (err) => log.error("Error on mdns server", err));
+      this.interfaces = sysManager.getMonitoringInterfaces();
+      this.bonjourBrowserTCP = this.bonjour.find({
         protocol: 'tcp'
       }, (service) => {
         this.bonjourParse(service);
-      })
-      this.bonjourBrowserUDP = bonjour.find({
+      });
+      this.bonjourBrowserUDP = this.bonjour.find({
         protocol: 'udp'
       }, (service) => {
         this.bonjourParse(service);
       });
-
       // why http?? because sometime http service can't be found via { protocol: 'tcp' }
       // maybe it's bonjour lib's bug
-      this.bonjourBrowserHTTP = bonjour.find({
+      this.bonjourBrowserHTTP = this.bonjour.find({
         type: 'http'
       }, (service) => {
         this.bonjourParse(service);
       });
 
-      this.bonjourTimer = setInterval(() => {
+
+      this.updateTask = setInterval(() => {
         log.info("Bonjour Watch Updating");
         // remove all detected servcies in bonjour browser internally, otherwise BonjourBrowser would do dedup based on service name, and ip changes would be ignored
         Object.keys(this.bonjourBrowserTCP._serviceMap).forEach(fqdn => this.bonjourBrowserTCP._removeService(fqdn));
@@ -79,17 +96,26 @@ class BonjourSensor extends Sensor {
         this.bonjourBrowserUDP.update();
         this.bonjourBrowserHTTP.update();
       }, 1000 * 60 * 5);
-    }
+  
+      this.startTask = setTimeout(() => {
+        this.bonjourBrowserTCP.start();
+        this.bonjourBrowserUDP.start();
+        this.bonjourBrowserHTTP.start();
+      }, 1000 * 10);
+    }, 5000);
+  }
 
-    this.bonjourBrowserTCP.stop();
-    this.bonjourBrowserUDP.stop();
-    this.bonjourBrowserHTTP.stop();
+  run() {
+    log.info("Bonjour Watch Starting");
+    this.scheduleReload();
 
-    this.bonjourTimer = setTimeout(() => {
-      this.bonjourBrowserTCP.start();
-      this.bonjourBrowserUDP.start();
-      this.bonjourBrowserHTTP.start();
-    }, 1000 * 10);
+    sclient.on("message", (channel, message) => {
+      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+        log.info("Schedule reload BonjourSensor since network info is reloaded");
+        this.scheduleReload();
+      }
+    });
+    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
   }
 
   // do not process same host in a short time

@@ -110,12 +110,13 @@ exports.gateway_ip6_sync = function() {
     ip6_masks: [ 'ffff:ffff:ffff:ffff::' ],
     gateway_ip: '192.168.10.1',
     netmask: 'Mask:255.255.255.0',
-    type: 'Wired' },
+    conn_type: 'Wired' },
   { name: 'ethx:0',
     ip_address: '192.168.218.1',
     mac_address: '02:81:05:84:b0:5d',
     netmask: 'Mask:255.255.255.0',
-    type: 'Wired' } ]
+    gateway_ip: '192.168.218.1',
+    conn_type: 'Wired' } ]
 */
 exports.get_network_interfaces_list = async function() {
 
@@ -129,7 +130,7 @@ exports.get_network_interfaces_list = async function() {
 
       nics[key].forEach(function(type) {
         if (type.family == 'IPv4') {
-          obj.ip_address = type.address;
+          obj.ip_address = type.address || null;
         }
         if (type.family == 'IPv6') {
           if (obj.ip6_addresses) {
@@ -158,9 +159,10 @@ exports.get_network_interfaces_list = async function() {
         exports.interface_type_for(obj.name)
       ])
       if (results[0]) obj.mac_address = results[0];
-      if (results[1]) obj.gateway_ip  = results[1];
+      // if there is no default router on this interface, set gateway_ip to null
+      if (results[1]) obj.gateway_ip  = results[1]; else obj.gateway_ip = null;
       if (results[2]) obj.netmask     = results[2];
-      if (results[3]) obj.type        = results[3];
+      if (results[3]) obj.conn_type   = results[3];
 
       list.push(obj);
     }

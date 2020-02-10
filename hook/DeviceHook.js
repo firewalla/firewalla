@@ -171,7 +171,7 @@ class DeviceHook extends Hook {
 
         if (intfInfo && intfInfo.uuid) {
           let intf = intfInfo.uuid; // get intf uuid accroding to intf_mac
-          delete host.inft_mac;
+          delete host.intf_mac;
           host.intf = intf;
         } else {
           log.error(`Unable to find nif uuid, ${host.ipv4}`);

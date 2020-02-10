@@ -100,6 +100,10 @@ function noneModeOn() {
   return setSetupMode(MODE_NONE)
 }
 
+function isRouterModeOn() {
+  return isXModeOn(MODE_ROUTER)
+}
+
 function isDHCPModeOn() {
   return isXModeOn(MODE_DHCP)
 }
@@ -142,6 +146,7 @@ module.exports = {
   isManualSpoofModeOn:isManualSpoofModeOn,
   isNoneModeOn:isNoneModeOn,
   isAutoSpoofModeOn:isAutoSpoofModeOn,
+  isRouterModeOn: isRouterModeOn,
 
   getSetupModeSync:getSetupModeSync,
   getSetupMode:getSetupMode,

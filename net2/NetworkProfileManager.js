@@ -32,23 +32,13 @@ class NetworkProfileManager {
     this.iptablesReady = false;
     this.networkProfiles = {};
 
-    this.refreshTask = setTimeout(async () => {
-        await this.refreshNetworkProfiles();
-      if (f.isMain()) {
-        if (this.iptablesReady) {
-        for (let uuid in this.networkProfiles) {
-          const networkProfile = this.networkProfiles[uuid];
-          await networkProfile.applyPolicy();
-        }
-        }
-      }
-    }, 5000);
+    this.scheduleRefresh();
 
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
         this.iptablesReady = true;
         log.info("Iptables is ready, apply network profile policies ...");
-        this.refreshTask.refresh();
+        this.scheduleRefresh();
       });
     }
 
@@ -56,32 +46,50 @@ class NetworkProfileManager {
       switch (channel) {
         case Message.MSG_SYS_NETWORK_INFO_RELOADED: {
           log.info("sys:network:info is reloaded, refreshing network profiles and policies ...");
-          this.refreshTask.refresh();
+          this.scheduleRefresh();
         }
       }
     });
+    
+    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
     this.refreshNetworkProfiles();
     return this;
   }
 
+  scheduleRefresh() {
+    if (this.refreshTask)
+      clearTimeout(this.refreshTask);
+    this.refreshTask = setTimeout(async () => {
+      await this.refreshNetworkProfiles();
+      if (f.isMain()) {
+        if (this.iptablesReady) {
+          for (let uuid in this.networkProfiles) {
+            const networkProfile = this.networkProfiles[uuid];
+            await networkProfile.applyPolicy();
+          }
+        }
+      }
+    }, 5000);
+  }
+
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    if (obj.dns) {
-      redisObj.dns = JSON.stringify(obj.dns);
-    }
-    if (obj.ipv6) {
-      redisObj.ipv6 = JSON.stringify(obj.ipv6);
+    const convertKeys = ["dns", "ipv6", "ipv6Subnets"];
+    for (const key of convertKeys) {
+      if (obj[key])
+        redisObj[key] = JSON.stringify(obj[key]);
     }
     return redisObj;
   }
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    if (redisObj.dns) {
-      obj.dns = JSON.parse(redisObj.dns);
-    }
-    if (redisObj.ipv6) {
-      obj.dns = JSON.parse(redisObj.ipv6);
+    const convertKeys = ["dns", "ipv6", "ipv6Subnets"];
+    for (const key of convertKeys) {
+      if (redisObj[key])
+        try {
+          obj[key] = JSON.parse(redisObj[key]);
+        } catch (err) {}
     }
     return obj;
   }
@@ -150,7 +158,7 @@ class NetworkProfileManager {
     for (let intf of monitoringInterfaces) {
       const uuid = intf.uuid;
       if (!uuid) {
-        log.info(`uuid is not defined on ${intf}, ignore this interface`);
+        log.info(`uuid is not defined, ignore this interface`, intf);
         continue;
       }
       const updatedProfile = {
@@ -159,9 +167,11 @@ class NetworkProfileManager {
         ipv4Subnet: intf.subnet,
         ipv4: intf.ip_address,
         ipv6: intf.ip6_addresses || [],
-        dns: intf.dns,
-        gateway: intf.gateway_ip,
-        gateway6: intf.gateway6 || ""
+        ipv6Subnets: intf.ip6_subnets || [],
+        dns: intf.dns || [],
+        gateway: intf.gateway_ip || "",
+        gateway6: intf.gateway6 || "",
+        type: intf.type || ""
       };
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);

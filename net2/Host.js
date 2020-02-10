@@ -480,9 +480,9 @@ class Host {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
       return;
     }
-    if (sysManager.myIp(iface.name) === sysManager.myGateway(iface.name)) {
-      // TODO: probably find a better way to determine if it is a WAN interface
-      log.info(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr}`);
+    if (iface.type !== "wan" || !sysManager.myGateway(iface.name)) {
+      // a relative tight condition to check if it is a WAN interface
+      log.info(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr} ${this.o.mac}`);
       return;
     }
     const gateway = sysManager.myGateway(iface.name);
@@ -1123,7 +1123,7 @@ class Host {
       }
     }
     this._tags = updatedTags;
-    this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
+    await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     await dnsmasq.restartDnsmasq();
   }
 }

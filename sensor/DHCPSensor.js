@@ -22,17 +22,19 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let Sensor = require('./Sensor.js').Sensor;
 
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
+
 class DHCPSensor extends Sensor {
   constructor() {
     super();
     this.cache = {};
   }
 
-  run() {
-    let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
-    this.dhcpDump = new DhcpDump();
-    this.dhcpDump.install((obj) => {
-      log.info("DHCPDUMP is installed");
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
       this.dhcpDump.start(false, (obj) => {
         if (obj && obj.mac) {
           // dedup
@@ -56,6 +58,23 @@ class DHCPSensor extends Sensor {
           });
         }
       });
+    }, 5000);
+  }
+
+  run() {
+    let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
+    this.dhcpDump = new DhcpDump();
+    this.dhcpDump.install((obj) => {
+      log.info("DHCPDUMP is installed");
+      this.scheduleReload();
+      
+      sclient.on("message", (channel, message) => {
+        if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+          log.info("Schedule reload DHCPSensor since network info is reloaded");
+          this.scheduleReload();
+        }
+      });
+      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
     });
   }
 }

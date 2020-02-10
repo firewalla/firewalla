@@ -714,23 +714,31 @@ module.exports = class DNSMASQ {
     for (const intf of interfaces) {
       const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
         .mth(intf.subnet, null, 'src')
-        .pam('-m set ! --match-set no_dns_caching_mac_set src')
+        .pam('-m set ! --match-set no_dns_caching_set src')
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
       const redirectUDP = redirectTCP.clone().pro('udp')
-      await execAsync(redirectTCP.toCmd('-I'))
-      await execAsync(redirectUDP.toCmd('-I'))
+      await execAsync(redirectTCP.toCmd('-A'))
+      await execAsync(redirectUDP.toCmd('-A'))
     }
   }
 
   async _add_ip6tables_rules() {
-    const ipv6s = sysManager.myIp6();
-
-    for (let index in ipv6s) {
-      const ip6 = ipv6s[index]
-      if (ip6.startsWith("fe80::")) {
-        // use local link ipv6 for port forwarding, both ipv4 and v6 dns traffic should go through dnsmasq
-        await ip6tables.dnsRedirectAsync(ip6, MASQ_PORT, 'local');
+    const interfaces = sysManager.getMonitoringInterfaces();
+    for (const intf of interfaces) {
+      const ip6Subnets = intf.ip6_subnets;
+      const ip6Addrs = intf.ip6_addresses;
+      for (const i in ip6Subnets) {
+        if (ip6Subnets[i] && ip6Addrs[i]) {
+          const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
+            .mth(ip6Subnets[i], null, 'src')
+            .pam('-m set ! --match-set no_dns_caching_set src')
+            .mth(53, null, 'dport')
+            .jmp(`DNAT --to-destination ${ip6Addrs[i]}:${MASQ_PORT}`);
+          const redirectUDP = redirectTCP.clone().pro('udp');
+          await execAsync(redirectTCP.toCmd('-A'));
+          await execAsync(redirectUDP.toCmd('-A'));
+        }
       }
     }
   }

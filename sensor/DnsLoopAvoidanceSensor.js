@@ -40,7 +40,15 @@ class DnsLoopAvoidanceSensor extends Sensor {
 
   async check() {
     const hostManager = new HostManager("cli", 'client', 'info');
-    const dnsServers = sysManager.myDNS() || [];
+    let dnsServers = [];
+    const monitoringInterfaces = sysManager.getMonitoringInterfaces();
+    for (const i of monitoringInterfaces) {
+      const dns = i.name && sysManager.myDNS(i.name) || [];
+      for (let n of dns) {
+        if (!dnsServers.includes(n))
+          dnsServers.push(n);
+      }
+    }
     log.info("Current dns servers: ", dnsServers);
     const macEntries = await hostTool.getAllMACEntries();
     for (let i in macEntries) {

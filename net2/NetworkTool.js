@@ -72,7 +72,7 @@ class NetworkTool {
     return (
       netif.ip_address != null &&
       netif.mac_address != null &&
-      netif.type != null &&
+      netif.conn_type != null &&
       !netif.ip_address.startsWith('169.254.')
     );
   }
@@ -118,22 +118,25 @@ class NetworkTool {
   //     ip6_masks: ['ffff:ffff:ffff:ffff::'],
   //     gateway_ip: '192.168.10.1',
   //     netmask: 'Mask:255.255.255.0',
-  //     type: 'Wired',
+  //     conn_type: 'Wired',
   //     gateway: '192.168.10.1',
   //     subnet: '192.168.10.0/24',
   //     gateway6: '',
   //     dns: ['192.168.10.1'],
+  //     type: 'wan'
   //   },
   //   {
   //     name: 'eth0:0',
   //     ip_address: '192.168.218.1',
   //     mac_address: '02:81:05:84:b0:5d',
   //     netmask: 'Mask:255.255.255.0',
-  //     type: 'Wired',
-  //     gateway: null,
+  //     conn_type: 'Wired',
+  //     gateway: '192.168.218.1',
+  //     gateway_ip: '192.168.218.1',
   //     subnet: '192.168.218.0/24',
   //     gateway6: '',
   //     dns: ['192.168.10.1'],
+  //     type: 'lan'
   //   },
   // ]
   async listInterfaces() {
@@ -147,11 +150,20 @@ class NetworkTool {
 
     list.forEach(i => {
       log.info('Found interface', i.name, i.ip_address);
-
-      i.gateway = require('netroute').getGateway(i.name);
+      // there is another field named "gateway_ip", which is same as "gateway"
+      i.gateway = require('netroute').getGateway(i.name) || null;
+      // if there is no default router on this interface, set gateway_ip to null
+      if (!i.gateway)
+        i.gateway = null;
       i.subnet = this._getSubnet(i.name, i.ip_address, 'IPv4');
       i.gateway6 = linux.gateway_ip6_sync();
       i.dns = dns.getServers();
+      if (i.ip_address) {
+        if (i.gateway === null)
+          i.type = "lan";
+        else
+          i.type = "wan"; 
+      }
     });
 
     return list

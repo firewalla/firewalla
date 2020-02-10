@@ -88,6 +88,7 @@ const Diag = require('../extension/diag/app.js');
 let terminated = false;
 
 (async() => {
+  await fireRouter.waitTillReady();
   await rclient.delAsync("firekick:pairing:message");
   if (!platform.isFireRouterManaged())
     await interfaceDiscoverSensor.run()
@@ -225,7 +226,6 @@ async function postAppLinked() {
 }
 
 async function inviteAdmin(gid) {
-  await fireRouter.waitTillReady()
   await sysManager.updateAsync()
   log.forceInfo("Initializing first admin:", gid);
 

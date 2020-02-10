@@ -95,11 +95,6 @@ function updateMaps() {
     intf.config.meta.intfName = intfName
     intfUuidMap[intf.config.meta.uuid] = intf
   }
-  for (const intfName in routerConfig.dhcp) {
-    if (intfNameMap[intfName]) {
-      intfNameMap[intfName].config.dhcp = routerConfig.dhcp[intfName]
-    }
-  }
 }
 
 async function generateNetworkInfo() {
@@ -107,6 +102,37 @@ async function generateNetworkInfo() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
+    let ip6s = [];
+    let ip6Masks = [];
+    let ip6Subnets = [];
+    if (intf.state.ip6 && _.isArray(intf.state.ip6)) {
+      for (let i of intf.state.ip6) {
+        const ip6Addr = new Address6(i);
+        if (!ip6Addr.isValid())
+          continue;
+        ip6s.push(ip6Addr.correctForm());
+        ip6Masks.push(new Address6(`ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/${ip6Addr.subnetMask}`).startAddress().correctForm());
+        ip6Subnets.push(i);
+      }
+    }
+    let gateway = null;
+    let gateway6 = null;
+    let dns = null;
+    switch (intf.config.meta.type) {
+      case "wan": {
+        gateway = intf.config.gateway || intf.state.gateway;
+        gateway6 = intf.config.gateway6 || intf.state.gateway6;
+        dns = intf.config.nameservers || intf.state.dns;
+        break;
+      }
+      case "lan": {
+        // no gateway and dns for lan interface, gateway and dns in dhcp does not mean the same thing
+        gateway = null;
+        gateway6 = null;
+        dns = null;
+        break
+      }
+    }
     const redisIntf = {
       name:         intfName,
       uuid:         intf.config.meta.uuid,
@@ -114,10 +140,15 @@ async function generateNetworkInfo() {
       ip_address:   ip4 ? ip4.addressMinusSuffix : null,
       subnet:       intf.state.ip4,
       netmask:      ip4 ? Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address : null,
-      gateway_ip:   (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
-      gateway:      (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.gateway : intf.state.gateway,
-      dns:          (intf.config.meta.type === "lan" && intf.config.dhcp) ? intf.config.dhcp.nameservers : intf.state.dns,
-      type:         'Wired', // probably no need to keep this
+      gateway_ip:   gateway,
+      gateway:      gateway,
+      ip6_addresses: ip6s.length > 0 ? ip6s : null,
+      ip6_subnets:  ip6Subnets.length > 0 ? ip6Subnets : null,
+      ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
+      gateway6:     gateway6,
+      dns:          dns,
+      conn_type:    'Wired', // probably no need to keep this,
+      type:         intf.config.meta.type
     }
 
     await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
@@ -151,6 +182,7 @@ class FireRouter {
     const intf = fwConfig.firerouter.interface;
     routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
+    
     this.ready = false
     this.sysNetworkInfo = [];
 
@@ -161,16 +193,26 @@ class FireRouter {
 
     sclient.on("message", (channel, message) => {
       switch (channel) {
-        case Message.MSG_FR_IP_CHANGE:
+        case Message.MSG_FR_CHANGE_APPLIED:
         case Message.MSG_NETWORK_CHANGED: {
-          this.init();
+          // these two message types should cover all proactive and reactive network changes
+          log.info("Network is changed, schedule reload from FireRouter ...");
+          this.scheduleReload();
         }
         break;
       }
     });
 
-    sclient.subscribe(Message.MSG_FR_IP_CHANGE);
+    sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
+  }
+
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      this.init();
+    }, 3000);
   }
 
   // let it crash
@@ -329,6 +371,13 @@ class FireRouter {
       const Discovery = require('./Discovery.js');
       const d = new Discovery("nmap");
 
+      // regenerate stub sys:network:uuid
+      await rclient.delAsync("sys:network:uuid");
+      const stubNetworkUUID = {
+        "00000000-0000-0000-0000-000000000000": JSON.stringify({name: "eth0"}),
+        "11111111-1111-1111-1111-111111111111": JSON.stringify({name: "eth0:0"})
+      };
+      await rclient.hmset("sys:network:uuid", stubNetworkUUID);
       // updates sys:network:info
       const intfList = await d.discoverInterfacesAsync()
       if (!intfList.length) {

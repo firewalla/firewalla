@@ -160,8 +160,10 @@ module.exports = class HostManager {
 
         sclient.on("message", (channel, message) => {
           if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-            log.info("Rescan hosts due to network info is reloaded");
-            this.getHosts();
+            if (this.iptablesReady) {
+              log.info("Rescan hosts due to network info is reloaded");
+              this.getHosts();
+            }
           }
         });
 
@@ -1363,7 +1365,7 @@ module.exports = class HostManager {
       // bitbridge binary will be replaced with mock file if this flag file exists
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
         return exec(`touch ${f.getFirewallaHome()}/bin/dev`).then(() => {
-          sm.triggerRestart();
+          sm.scheduleReload();
         });
       });
     } else {
@@ -1372,7 +1374,7 @@ module.exports = class HostManager {
       // remove dev flag file if it exists and restart bitbridge
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
         return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {
-          sm.triggerRestart();
+          sm.scheduleReload();
         });
       }).catch((err) => {});
     }

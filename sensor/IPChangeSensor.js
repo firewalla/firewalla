@@ -37,12 +37,13 @@
     const config = Config.getConfig(true);
     for (let i in interfaces) {
       const intf = interfaces[i];
-      if (intf.type === "Wired" && intf.name === config.monitoringInterface) {
+      if (intf.conn_type === "Wired" && intf.name === config.monitoringInterface) {
         const ipv4Address = intf.ip_address;
         // TODO: support ipv6 address change detection
         // const ipv6Addresses = intf.ip6_addresses || [];
         const currentIpv4Addr = sysManager.myIp();
         if (ipv4Address !== currentIpv4Addr) {
+          // discoverInterfaces will publish message to trigger network info reload
           await d.discoverInterfacesAsync().catch((err) => {
             log.error("Failed to discover interfaces", err);
           });

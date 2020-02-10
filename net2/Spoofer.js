@@ -66,8 +66,9 @@ module.exports = class {
       await cp.exec(cmd);
       // add membership at the end
       await rclient.saddAsync(monitoredKey, address);
-      await rclient.saddAsync(subMonitoredKey, address);
     }
+    await rclient.saddAsync(subMonitoredKey, address);
+
     await rclient.sremAsync(unmonitoredKeyAll, address);
     await rclient.sremAsync(unmonitoredKey, address);
     await rclient.sremAsync(subUnmonitoredKey, address);
@@ -89,10 +90,10 @@ module.exports = class {
     let isMember = await rclient.sismemberAsync(monitoredKey, address);
     if (isMember) {
       await rclient.sremAsync(monitoredKey, address);
-      await rclient.sremAsync(subMonitoredKey, address);
       const cmd = `sudo ipset del -! monitored_ip_set ${address}`;
       await cp.exec(cmd);
     }
+    await rclient.sremAsync(subMonitoredKey, address);
     isMember = await rclient.sismemberAsync(unmonitoredKeyAll, address);
     if (!isMember) {
       await rclient.saddAsync(unmonitoredKey, address);
@@ -127,8 +128,8 @@ module.exports = class {
       const cmd = `sudo ipset add -! monitored_ip_set6 ${address}`;
       await cp.exec(cmd);
       await rclient.saddAsync(monitoredKey6, address);
-      await rclient.saddAsync(subMonitoredKey6, address);
     }
+    await rclient.saddAsync(subMonitoredKey6, address);
   }
 
   async newUnspoof6(address, iface) {
@@ -145,10 +146,10 @@ module.exports = class {
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
     if (isMember) {
       await rclient.sremAsync(monitoredKey6, address);
-      await rclient.sremAsync(subMonitoredKey6, address);
       const cmd = `sudo ipset del -! monitored_ip_set6 ${address}`;
       await cp.exec(cmd);
     }
+    await rclient.sremAsync(subMonitoredKey6, address);
   }
   
   /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
