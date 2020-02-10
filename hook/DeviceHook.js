@@ -618,7 +618,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": _.isEmpty(host.tags) ? [] : host.tags
+            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -632,7 +632,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": _.isEmpty(host.tags) ? [] : host.tags
+            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -647,7 +647,7 @@ class DeviceHook extends Hook {
             "p.device.vendor": host.macVendor,
             "p.device.lastSeen": host.lastActiveTimestamp,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": _.isEmpty(host.tags) ? [] : host.tags
+            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -661,7 +661,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": _.isEmpty(host.tags) ? [] : host.tags
+            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;

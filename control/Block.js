@@ -313,11 +313,11 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
 
     // matching MAC addr won't work in opposite direction
     for (let index = 0; index < tags.length; index++) {
-      const macSet = require('../net2/Tag.js').getTagMacIpsetName(tags[index]);
-      outRule.mth(macSet, 'src')
-      outRule6.mth(macSet, 'src')
-      natOutRule.mth(macSet, 'src')
-      natOutRule6.mth(macSet, 'src')
+      const macSet = require('../net2/Tag.js').getTagIpsetName(tags[index]);
+      outRule.mth(macSet, 'src,src')
+      outRule6.mth(macSet, 'src,src')
+      natOutRule.mth(macSet, 'src,src')
+      natOutRule6.mth(macSet, 'src,src')
     }
 
     const op = destroy ? '-D' : '-I'
