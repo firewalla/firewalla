@@ -20,7 +20,7 @@ const rclient = require('../../util/redis_manager.js').getRedisClient();
 let instance = null;
 const key = "ratelimit";
 const cleanupInterval = 3600 * 1000;
-const max = 576;
+const max = 100;
 
 const _ = require('lodash');
 

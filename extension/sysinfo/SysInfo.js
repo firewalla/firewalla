@@ -53,7 +53,7 @@ let redisMemory = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 60 * 1000; // every 30 seconds
+let updateInterval = 120 * 1000; // every 2 minutes
 
 let threadInfo = {};
 
