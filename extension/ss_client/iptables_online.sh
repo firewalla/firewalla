@@ -4,7 +4,7 @@ if [[ -z $FW_SS_SERVER || -z $FW_SS_LOCAL_PORT ]]; then
   exit 1;
 fi
 
-CHAIN_NAME=FW_SHADOWSOCKS${FW_NAME}
+CHAIN_NAME=FW_SS${FW_NAME}
 
 
 sudo iptables -w -t nat -C OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_LOCAL_PORT || sudo iptables -w -t nat -A OUTPUT -p tcp --destination $FW_REMOTE_DNS --destination-port $FW_REMOTE_DNS_PORT -j REDIRECT --to-ports $FW_SS_LOCAL_PORT
