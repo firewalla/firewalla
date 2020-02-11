@@ -856,7 +856,8 @@ module.exports = class DNSMASQ {
     }
 
     if (this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
-      this.needRestart = null
+      this.needRestart = null;
+      if (!this.checkConfsChange()) return;
       this.rawRestart((err) => {
         if (err) {
           log.error("Failed to restart dnsmasq")
@@ -1528,5 +1529,69 @@ module.exports = class DNSMASQ {
       await fs.writeFileAsync(filePath, data);
       this.restartDnsmasq()
     }, cooldown)
+  }
+  async checkConfsChange() {
+    log.info("Go to checkConfsChange");
+    const dirs = [FILTER_DIR, LOCAL_FILTER_DIR];
+    const dnsmasqConfKey = "dnsmasq:conf";
+    const checkTime = new Date() / 1000;
+    let changeFlag = true;
+    const promises = dirs.map(async (dir) => {
+      const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch(() => false);
+      if (!dirExists) return;
+      const files = (await fs.readdirAsync(dir)).filter(filename => !filename.includes('tmp'));
+      log.info(`get files from ${dir}`, files);
+      await Promise.all(files.map(async (filename) => {
+        const filePath = `${dir}/${filename}`;
+        try {
+          const fileStat = await fs.statAsync(filePath);
+          const fileContent = (await fs.readFileAsync(filePath, 'utf8')).split('\n').filter(x => !!x);
+          if (fileStat.isFile()) {
+            let fileStatInRedis = await rclient.hgetAsync(dnsmasqConfKey, filePath);
+            fileStatInRedis = fileStatInRedis ? JSON.parse(fileStatInRedis) : {};
+            const newFile = {
+              content: fileContent,
+              size: fileStat.size,
+              updateTs: fileStat.mtimeMs,
+              checkTime: checkTime
+            }
+            log.info(`check file ${filePath}`);
+            log.info("fileStatInRedis", fileStatInRedis);
+            log.info("newFile", newFile);
+            const changed = this.fileChange(newFile, fileStatInRedis);
+            changeFlag = changeFlag && changed;
+            await rclient.hmsetAsync(dnsmasqConfKey, filePath, JSON.stringify(newFile));
+          }
+        } catch (err) {
+          log.info(`File ${filePath} not exist`);
+        }
+      }));
+    })
+    await Promise.all(promises);
+    log.info("check files deleted or not");
+    //some files deleted
+    let filesInRedis = await rclient.hgetallAsync(dnsmasqConfKey);
+    filesInRedis = filesInRedis ? JSON.parse(filesInRedis) : {};
+    for (const filePath in filesInRedis) {
+      if (filesInRedis[filePath].checkTime != checkTime) {
+        changeFlag = true;
+        delete filesInRedis[filePath]
+      }
+    }
+    await rclient.hmset(dnsmasqConfKey, filesInRedis);
+    log.info("changeFlag", changeFlag)
+    return changeFlag;
+  }
+  fileChange(newFile, oldFile) {
+    if (newFile.updateTs == oldFile.updateTs) return false;
+    if (newFile.size != oldFile.size) return true;
+    if (newFile.content && oldFile.content) {
+      if (newFile.content.length != oldFile.content.length) return true;
+      return newFile.content.filter((value) => {
+        return !oldFile.content.includes(value)
+      }).length > 0
+    } else {
+      return true;
+    }
   }
 };
