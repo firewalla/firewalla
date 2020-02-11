@@ -311,6 +311,11 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
     const natOutRule  = new Rule('nat').chn(natChain).mth(dstSet, 'dst').jmp(natDest)
     const natOutRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'dst').jmp(natDest).fam(6)
 
+    const inRule     = new Rule().chn(filterChain).mth(dstSet, 'src').jmp(filterDest)
+    const inRule6    = new Rule().chn(filterChain).mth(dstSet6, 'src').jmp(filterDest).fam(6)
+    const natInRule  = new Rule('nat').chn(natChain).mth(dstSet, 'src').jmp(natDest)
+    const natInRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'src').jmp(natDest).fam(6)
+
     // matching MAC addr won't work in opposite direction
     for (let index = 0; index < tags.length; index++) {
       const ipset = require('../net2/Tag.js').getTagIpsetName(tags[index]);
@@ -319,10 +324,10 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
       natOutRule.mth(ipset, 'src,src')
       natOutRule6.mth(ipset, 'src,src')
 
-      outRule.mth(ipset, 'dst,dst')
-      outRule6.mth(ipset, 'dst,dst')
-      natOutRule.mth(ipset, 'dst,dst')
-      natOutRule6.mth(ipset, 'dst,dst')
+      inRule.mth(ipset, 'dst,dst')
+      inRule6.mth(ipset, 'dst,dst')
+      natInRule.mth(ipset, 'dst,dst')
+      natInRule6.mth(ipset, 'dst,dst')
     }
 
     const op = destroy ? '-D' : '-I'

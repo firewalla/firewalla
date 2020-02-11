@@ -857,6 +857,7 @@ module.exports = class {
         if (networkProfile)
           tags = _.concat(tags, networkProfile.getTags());
       }
+      tags = _.uniq(tags);
 
       // Mark all flows that are partially completed.
       // some of these flows may be valid
