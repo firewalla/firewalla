@@ -39,16 +39,18 @@ class TagManager {
           await tag.applyPolicy();
         }
       });
+    }
 
-      this.subscriber.subscribeOnce("DiscoveryEvent", "Tags:Updated", null, async (channel, type, id, obj) => {
-        log.info(`Tags are updated`);
-        await this.refreshTags();
+    this.subscriber.subscribeOnce("DiscoveryEvent", "Tags:Updated", null, async (channel, type, id, obj) => {
+      log.info(`Tags are updated`);
+      await this.refreshTags();
+      if (f.isMain()) {
         for (let uid in this.tags) {
           const tag = this.tags[uid];
           await tag.applyPolicy();
         }
-      });
-    }
+      }
+    });
     this.refreshTags();
     return this;
   }

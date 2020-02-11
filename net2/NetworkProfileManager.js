@@ -42,6 +42,30 @@ class NetworkProfileManager {
         log.info("Iptables is ready, apply network profile policies ...");
         this.scheduleRefresh();
       });
+
+      sem.on("DeviceUpdate", (event) => {
+        // notify NetworkProfile to discover more gateway's IPv6 addresses
+        if (!this.iptablesReady)
+          return;
+        const host = event.host;
+        const mac = event.mac;
+        if (!mac)
+          return;
+        if (_.isString(host.ipv4)) {
+          const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
+          if (host.ipv4 !== intfInfo.gateway)
+            return;
+          const uuid = intfInfo && intfInfo.uuid
+          if (!uuid)
+            return;
+          const networkProfile = this.getNetworkProfile(uuid);
+          if (!networkProfile)
+            return;
+          setTimeout(() => {
+            networkProfile.rediscoverGateway6();
+          }, 3000);
+        }
+      });
     }
 
     sclient.on("message", async (channel, message) => {
@@ -67,7 +91,7 @@ class NetworkProfileManager {
         if (this.iptablesReady) {
           for (let uuid in this.networkProfiles) {
             const networkProfile = this.networkProfiles[uuid];
-            await networkProfile.applyPolicy();
+            networkProfile.scheduleApplyPolicy();
           }
         }
       }
@@ -134,7 +158,7 @@ class NetworkProfileManager {
       if (_.isArray(now[key]))
         now[key] = now[key].sort();
     }
-    return _.isEqual(then, now);
+    return !_.isEqual(then, now);
   }
 
   async refreshNetworkProfiles() {
