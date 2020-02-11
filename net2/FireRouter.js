@@ -262,6 +262,8 @@ class FireRouter {
 
       switch(mode) {
         case Mode.MODE_AUTO_SPOOF:
+        case Mode.MODE_DHCP:
+        case Mode.MODE_NONE:
           // monitor both wan and lan in simple mode
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')

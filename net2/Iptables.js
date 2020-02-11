@@ -455,7 +455,7 @@ function dhcpSubnetChange(ip, state, callback) {
 
 function prepare() {
   return execAsync(
-    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true)"
+    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true) && (sudo iptables -w -t mangle -N FW_PREROUTING || true)"
   ).catch(err => {
     log.error("IPTABLE:PREPARE:Unable to prepare", err);
   })
@@ -463,9 +463,9 @@ function prepare() {
 
 function flush() {
   return execAsync(
-    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
+    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING",
   ).catch(err => {
-    log.error("IP6TABLE:FLUSH:Unable to flush", err)
+    log.error("IPTABLE:FLUSH:Unable to flush", err)
   });
 }
 

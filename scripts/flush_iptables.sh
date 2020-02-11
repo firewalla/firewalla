@@ -13,26 +13,45 @@ fi
 # Same situation applies to VPN connection
 mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | grep SNAT )
 
-
-sudo iptables -w -C -j FW_FORWARD &>/dev/null && sudo iptables -w -F FW_FORWARD
-sudo iptables -w -C -j FW_FORWARD &>/dev/null || sudo iptables -w -F
-sudo iptables -w -N FW_FORWARD &>/dev/null
-sudo iptables -w -t nat -C PREROUTING -j FW_PREROUTING &>/dev/null && sudo iptables -w -t nat -F FW_PREROUTING
-sudo iptables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null && sudo iptables -w -t nat -F FW_POSTROUTING
-sudo iptables -w -t nat -N FW_PREROUTING &>/dev/null
-sudo iptables -w -t nat -N FW_POSTROUTING &>/dev/null
-sudo iptables -w -F -t raw
-sudo iptables -w -F -t mangle
-sudo ip6tables -w -C -j FW_FORWARD &>/dev/null && sudo iptables -w -F FW_FORWARD
-sudo ip6tables -w -C -j FW_FORWARD &>/dev/null || sudo iptables -w -F
-sudo ip6tables -w -N FW_FORWARD &>/dev/null
-sudo ip6tables -w -t nat -C PREROUTING -j FW_PREROUTING &>/dev/null && sudo ip6tables -w -t nat -F FW_PREROUTING
-sudo ip6tables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null && sudo ip6tables -w -t nat -F FW_POSTROUTING
-sudo ip6tables -w -t nat -N FW_PREROUTING &>/dev/null
-sudo ip6tables -w -t nat -N FW_POSTROUTING &>/dev/null
-sudo ip6tables -w -F -t raw
-sudo ip6tables -w -F -t mangle
-
+if [[ $(uname -m) == "x86_64" ]]; then
+  sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
+  sudo iptables -w -t mangle -F FW_PREROUTING
+  sudo iptables -w -t nat -N FW_PREROUTING &>/dev/null
+  sudo iptables -w -t nat -F FW_PREROUTING
+  sudo iptables -w -t nat -N FW_POSTROUTING &>/dev/null
+  sudo iptables -w -t nat -F FW_POSTROUTING
+  sudo iptables -w -N FW_FORWARD &>/dev/null
+  sudo iptables -w -F FW_FORWARD
+    
+  sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
+  sudo ip6tables -w -t mangle -F FW_PREROUTING
+  sudo ip6tables -w -t nat -N FW_PREROUTING &>/dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING
+  sudo ip6tables -w -t nat -N FW_POSTROUTING &>/dev/null
+  sudo ip6tables -w -t nat -F FW_POSTROUTING
+  sudo ip6tables -w -N FW_FORWARD &>/dev/null
+  sudo ip6tables -w -F FW_FORWARD
+else
+  # TODO: this if-else is a workaround. It should be changed after the first release.
+  #       Then all the platform should use commands in if clause 
+  sudo iptables -w -t raw -F
+  sudo iptables -w -t mangle -F
+  sudo iptables -w -t nat -F
+  sudo iptables -w -t filter -F
+  sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
+  sudo iptables -w -t nat -N FW_PREROUTING &>/dev/null
+  sudo iptables -w -t nat -N FW_POSTROUTING &>/dev/null
+  sudo iptables -w -N FW_FORWARD &>/dev/null
+  
+  sudo ip6tables -w -t raw -F
+  sudo ip6tables -w -t mangle -F
+  sudo ip6tables -w -t nat -F
+  sudo ip6tables -w -t filter -F
+  sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
+  sudo ip6tables -w -t nat -N FW_PREROUTING &>/dev/null
+  sudo ip6tables -w -t nat -N FW_POSTROUTING &>/dev/null
+  sudo ip6tables -w -N FW_FORWARD &>/dev/null
+fi
 
 for RULE in "${VPN_RULES[@]}";
 do
