@@ -335,6 +335,10 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
     await exec(outRule6.toCmd(op))
     await exec(natOutRule.toCmd(op))
     await exec(natOutRule6.toCmd(op))
+    await exec(inRule.toCmd(op))
+    await exec(inRule6.toCmd(op))
+    await exec(natInRule.toCmd(op))
+    await exec(natInRule6.toCmd(op))
 
 
     if (destroy) {
