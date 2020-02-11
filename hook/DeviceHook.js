@@ -170,7 +170,7 @@ class DeviceHook extends Hook {
         const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
 
         if (intfInfo && intfInfo.uuid) {
-          let intf = intfInfo.uuid; // get intf uuid accroding to intf_mac
+          let intf = intfInfo.uuid;
           delete host.intf_mac;
           host.intf = intf;
         } else {
@@ -179,8 +179,9 @@ class DeviceHook extends Hook {
       }
 
       if (mac != null) {
-        this.processDeviceUpdate(event)
+        this.processDeviceUpdate(event);
       } else {
+        const hostManager = new HostManager("cli", 'server', 'info');
         let ip = host.ipv4 || host.ipv4Addr
         if (ip) {
           // need to get mac address first
@@ -616,7 +617,8 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : ""
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -629,7 +631,8 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : ""
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -643,7 +646,8 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.device.lastSeen": host.lastActiveTimestamp,
-            "p.intf.id": host.intf ? host.intf : ""
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -656,7 +660,8 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : ""
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;

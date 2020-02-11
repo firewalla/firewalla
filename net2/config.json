@@ -87,7 +87,8 @@
     "UAIntel",
     "TransferContextIntel",
     "MonkeyIntel",
-    "IntfInfoIntel"
+    "IntfInfoIntel",
+    "TagsInfoIntel"
   ],
   "sensors": {
     "DHCPSensor": {},

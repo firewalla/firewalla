@@ -18,15 +18,15 @@
 
 const log = require("../../net2/logger.js")(__filename);
 
-const cp = require('child_process');
+const _ = require('lodash');
 
 const util = require('util');
 
-const execAsync = util.promisify(cp.exec);
+const exec = require('child-process-promise').exec;
 
 async function createCustomizedRoutingTable(tableName) {
   let cmd = "cat /etc/iproute2/rt_tables | grep -v '#' | awk '{print $1,\"\\011\",$2}'";
-  let result = await execAsync(cmd);
+  let result = await exec(cmd);
   if (result.stderr !== "") {
     log.error("Failed to read rt_tables.", result.stderr);
   }
@@ -58,7 +58,7 @@ async function createCustomizedRoutingTable(tableName) {
     cp /etc/iproute2/rt_tables.new /etc/iproute2/rt_tables; \
     rm /etc/iproute2/rt_tables.new"'`;
   log.info("Append new routing table: ", cmd);
-  result = await execAsync(cmd);
+  result = await exec(cmd);
   if (result.stderr !== "") {
     log.error("Failed to create customized routing table.", result.stderr);
     throw result.stderr;
@@ -66,45 +66,69 @@ async function createCustomizedRoutingTable(tableName) {
   return id;
 }
 
-async function createPolicyRoutingRule(from, iif, tableName) {
+async function createPolicyRoutingRule(from, iif, tableName, priority, fwmark) {
   from = from || "all";
-  let cmd = "ip rule list";
-  let result = await execAsync(cmd);
+  let cmd = "ip rule list"; 
+  let result = await exec(cmd);
   let rule = `from ${from} `;
+  if (fwmark) {
+    if (_.isString(fwmark) && fwmark.includes("/")) {
+      const mark = Number(fwmark.split("/")[0]).toString(16);
+      const mask = Number(fwmark.split("/")[1]).toString(16);
+      rule = `${rule}fwmark 0x${mark}/0x${mask} `;
+    } else {
+      const mark = Number(fwmark).toString(16);
+      rule = `${rule}fwmark 0x${mark} `;
+    }
+  }
   if (iif && iif !== "")
     rule = `${rule}iif ${iif} `;
   rule = `${rule}lookup ${tableName}`;
-  if (result.stdout.includes(rule)) {
+  result = result.stdout.replace(/\[detached\] /g, "");
+  if (result.includes(rule)) {
     log.info("Same policy routing rule already exists: ", rule);
     return;
-  }  
+  }
+  if (priority)
+    rule = `${rule} priority ${priority}`;
   cmd = `sudo ip rule add ${rule}`;
   log.info("Create new policy routing rule: ", cmd);
-  let {stdout, stderr} = await execAsync(cmd);
-  if (stderr !== "") {
-    log.error("Failed to create policy routing rule.", stderr);
-    throw stderr;
+  result = await exec(cmd);
+  if (result.stderr !== "") {
+    log.error("Failed to create policy routing rule.", result.stderr);
+    throw result.stderr;
   }
 }
 
-async function removePolicyRoutingRule(from, iif, tableName) {
+async function removePolicyRoutingRule(from, iif, tableName, fwmark) {
   from = from || "all";
   let cmd = "ip rule list";
-  let result = await execAsync(cmd);
+  let result = await exec(cmd);
+  result = result.stdout.replace(/\[detached\] /g, "");
   let rule = `from ${from} `;
+  if (fwmark) {
+    if (_.isString(fwmark) && fwmark.includes("/")) {
+      const mark = Number(fwmark.split("/")[0]).toString(16);
+      const mask = Number(fwmark.split("/")[1]).toString(16);
+      rule = `${rule}fwmark 0x${mark}/0x${mask} `;
+    } else {
+      const mark = Number(fwmark).toString(16);
+      rule = `${rule}fwmark 0x${mark} `;
+    }
+  }
   if (iif && iif !== "")
     rule = `${rule}iif ${iif} `;
   rule = `${rule}lookup ${tableName}`;
-  if (!result.stdout.includes(rule)) {
+  if (!result.includes(rule)) {
     log.info("Policy routing rule does not exist: ", rule);
     return;
   }
   cmd = `sudo ip rule del ${rule}`;
   log.info("Remove policy routing rule: ", cmd);
-  let {stdout, stderr} = await execAsync(cmd);
-  if (stderr !== "") {
-    log.error("Failed to remove policy routing rule.", stderr);
-    throw stderr;
+  result = await exec(cmd);
+  if (result.stderr !== "") {
+    log.error("Failed to remove policy routing rule.", result.stderr);
+    throw result.stderr;
   }
 }
 
@@ -117,7 +141,7 @@ async function addRouteToTable(dest, gateway, intf, tableName) {
   } else {
     cmd = util.format('sudo ip route add %s dev %s table %s', dest, intf, tableName);
   }
-  let {stdout, stderr} = await execAsync(cmd);
+  let {stdout, stderr} = await exec(cmd);
   if (stderr !== "") {
     log.error("Failed to add route to table.", stderr);
     throw stderr;
@@ -133,7 +157,7 @@ async function removeRouteFromTable(dest, gateway, intf, tableName) {
   } else {
     cmd = util.format('sudo ip route del %s dev %s table %s', dest, intf, tableName);
   }
-  let {stdout, stderr} = await execAsync(cmd);
+  let {stdout, stderr} = await exec(cmd);
   if (stderr !== "") {
     log.error("Failed to remove route from table.", stderr);
     throw stderr;
@@ -142,7 +166,7 @@ async function removeRouteFromTable(dest, gateway, intf, tableName) {
 
 async function flushRoutingTable(tableName) {
   let cmd = util.format('sudo ip route flush table %s', tableName);
-  let {stdout, stderr} = await execAsync(cmd);
+  let {stdout, stderr} = await exec(cmd);
   if (stderr !== "") {
     log.error("Failed to flush routing table.", stderr);
     throw stderr;
@@ -152,7 +176,7 @@ async function flushRoutingTable(tableName) {
 async function testRoute(dstIp, srcIp, srcIntf) {
   try {
     let cmd = util.format('ip route get to %s from %s iif %s', dstIp, srcIp, srcIntf);
-    let {stdout, stderr} = await execAsync(cmd);
+    let {stdout, stderr} = await exec(cmd);
     if (stderr !== "") {
       log.error(util.format("Failed to test route from %s %s to %s", srcIp, srcIntf, dstIp), stderr);
       return null;

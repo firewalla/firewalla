@@ -194,6 +194,26 @@ class Policy {
       return false; // tag not match
     }
 
+    if (
+      this.tag &&
+      _.isArray(this.tag) &&
+      !_.isEmpty(this.tag) &&
+      _.has(alarm, 'p.tag.ids') &&
+      !_.isEmpty(alarm['p.tag.ids'])
+    ) {
+      let found = false;
+      for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
+        const tag = alarm['p.tag.ids'][index];
+        if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
+          found = true;
+        }
+      }
+
+      if (!found) {
+        return false;
+      }
+    }
+
     // for each policy type
     switch (this.type) {
       case "ip":
@@ -295,5 +315,6 @@ class Policy {
 }
 
 Policy.INTF_PREFIX = "intf:";
+Policy.TAG_PREFIX = "tag:";
 
 module.exports = Policy

@@ -22,6 +22,9 @@ const PolicyManager = require('./PolicyManager.js');
 const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const wrapIptables = require('./Iptables').wrapIptables;
 
 class Tag {
   constructor(o) {
@@ -47,6 +50,18 @@ class Tag {
   toJson() {
     const json = Object.assign({}, this.o, {policy: this._policy});
     return json;
+  }
+
+  setTagName(name) {
+    this.o.name = name;
+  }
+
+  getTagName() {
+    return this.o.name;
+  }
+
+  getTagUid() {
+    return this.o.uid;
   }
 
   _getPolicyKey() {
@@ -94,12 +109,19 @@ class Tag {
     }
   }
 
+  // this can be used to match everything on this tag, including device and network
   static getTagIpsetName(uid) {
     return `c_tag_${uid}_set`;
   }
 
+  // this can be used to match device alone on this tag
   static getTagMacIpsetName(uid) {
     return `c_tag_${uid}_m_set`
+  }
+
+  // this can be used to match network alone on this tag
+  static getTagNetIpsetName(uid) {
+    return `c_tag_${uid}_n_set`;
   }
 
   async createEnv() {
@@ -108,10 +130,15 @@ class Tag {
       log.error(`Failed to create tag ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
     });
     await exec(`sudo ipset create -! ${Tag.getTagMacIpsetName(this.o.uid)} hash:mac`).catch((err) => {
-      log.error(`Failed to create tag ipset ${Tag.getTagMacIpsetName(this.o.uid)}`, err.message);
+      log.error(`Failed to create tag mac ipset ${Tag.getTagMacIpsetName(this.o.uid)}`, err.message);
     });
     await exec(`sudo ipset add -! ${Tag.getTagIpsetName(this.o.uid)} ${Tag.getTagMacIpsetName(this.o.uid)}`).catch((err) => {
       log.error(`Failed to add ${Tag.getTagMacIpsetName(this.o.uid)} to ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
+    });
+    // you may think this tag net set is redundant? 
+    // it is needed to apply fine-grained policy on tag level. e.g., customized wan, QoS
+    await exec(`sudo ipset create -! ${Tag.getTagNetIpsetName(this.o.uid)} list:set`).catch((err) => {
+      log.error(`Failed to create tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
     });
   }
 
@@ -121,8 +148,11 @@ class Tag {
       log.error(`Failed to flush tag ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
     });
     await exec(`sudo ipset flush -! ${Tag.getTagMacIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to flush tag ipset ${Tag.getTagMacIpsetName(this.o.uid)}`, err.message);
+      log.error(`Failed to flush tag mac ipset ${Tag.getTagMacIpsetName(this.o.uid)}`, err.message);
     });
+    await exec(`sudo ipset flush -! ${Tag.getTagNetIpsetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
+    })
     // delete related dnsmasq config files
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
@@ -137,7 +167,51 @@ class Tag {
   }
 
   async vpnClient(policy) {
-
+    try {
+      const state = policy.state;
+      const profileId = policy.profileId;
+      if (!profileId) {
+        log.warn(`VPN client profileId is not specified for ${this.o.uid} ${this.o.name}`);
+        return false;
+      }
+      const ovpnClient = new OpenVPNClient({profileId: profileId});
+      const intf = ovpnClient.getInterfaceName();
+      const rtId = await vpnClientEnforcer.getRtId(intf);
+      if (!rtId)
+        return false;
+      const rtIdHex = Number(rtId).toString(16);
+      // remove old mark first
+      await exec(`sudo ipset -! del c_wan_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)}`);
+      if (this._netFwMark) {
+        let cmd = wrapIptables(`sudo iptables -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        await exec(cmd).catch((err) => {});
+        cmd = wrapIptables(`sudo ip6tables -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        await exec(cmd).catch((err) => {});
+      }
+      this._netFwMark = null;
+      if (state === true) {
+        // set skbmark
+        this._netFwMark = rtIdHex;
+      }
+      if (state === false) {
+        // reset skbmark
+        this._netFwMark = "0000";
+      }
+      if (state === null) {
+        // do not change skbmark
+      }
+      if (this._netFwMark) {
+        await exec(`sudo ipset -! add c_wan_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        await exec(cmd).catch((err) => {});
+        cmd = wrapIptables(`sudo ip6tables -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        await exec(cmd).catch((err) => {});
+      }
+      return true;
+    } catch (err) {
+      log.error(`Failed to set VPN client access on tag ${this.o.uid} ${this.o.name}`, err.message);
+      return false;
+    }
   }
 
   async tags(tags) {

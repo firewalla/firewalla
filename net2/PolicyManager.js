@@ -139,10 +139,24 @@ module.exports = class {
     return resp;
   }
 
-  async vpnClient(host, policy) {
-    const result = await host.vpnClient(policy); // result optionally contains value of state and running
-    const updatedPolicy = Object.assign({}, policy, result); // this may trigger an extra system policy apply but the result should be idempotent
-    host.setPolicy("vpnClient", updatedPolicy);
+  async vpnClient(target, policy) {
+    if (!target)
+      return;
+    switch (target.constructor.name) {
+      case "HostManager": {
+        const result = await target.vpnClient(policy); // result optionally contains value of state and running
+        const updatedPolicy = Object.assign({}, policy, result); // this may trigger an extra system policy apply but the result should be idempotent
+        target.setPolicy("vpnClient", updatedPolicy);
+        break;
+      }
+      case "NetworkProfile":
+      case "Tag":
+      case "Host": {
+        await target.vpnClient(policy);
+        break;
+      }
+    }
+    
   }
 
   async ipAllocation(host, policy) {

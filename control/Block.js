@@ -15,6 +15,7 @@
 'use strict';
 
 const util = require('util');
+const _ = require('lodash');
 const log = require("../net2/logger.js")(__filename);
 
 const iptool = require("ip");
@@ -28,6 +29,7 @@ const f = require('../net2/Firewalla.js')
 const Ipset = require('../net2/Ipset.js');
 
 const { Rule } = require('../net2/Iptables.js');
+
 
 // =============== block @ connection level ==============
 
@@ -277,6 +279,87 @@ async function setupRules(macTag, dstTag, dstType, iif, allow = false, destroy =
 
   } catch(err) {
     log.error('Error when setup blocking env', err);
+  }
+}
+
+async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
+  if (!dstTag || _.isEmpty(tags)) {
+    return;
+  }
+
+  try {
+    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tags || "null", dstTag,
+      destroy && destroyDstCache ? "and ipset" : "");
+
+    const dstSet = getDstSet(dstTag)
+    // use same port set on both ip4 & ip6 rules
+    const dstSet6 = dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)
+
+    if (!destroy) {
+      await Ipset.create(dstSet, dstType)
+      if (dstType != 'bitmap:port')
+        await Ipset.create(dstSet6, dstType, false)
+    }
+
+    const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
+    const filterDest = allow ? 'RETURN' : 'FW_DROP'
+    const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
+    const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+
+    const outRule     = new Rule().chn(filterChain).mth(dstSet, 'dst').jmp(filterDest)
+    const outRule6    = new Rule().chn(filterChain).mth(dstSet6, 'dst').jmp(filterDest).fam(6)
+    const natOutRule  = new Rule('nat').chn(natChain).mth(dstSet, 'dst').jmp(natDest)
+    const natOutRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'dst').jmp(natDest).fam(6)
+
+    const inRule     = new Rule().chn(filterChain).mth(dstSet, 'src').jmp(filterDest)
+    const inRule6    = new Rule().chn(filterChain).mth(dstSet6, 'src').jmp(filterDest).fam(6)
+    const natInRule  = new Rule('nat').chn(natChain).mth(dstSet, 'src').jmp(natDest)
+    const natInRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'src').jmp(natDest).fam(6)
+
+    // matching MAC addr won't work in opposite direction
+    let tagInvalid = true;
+    const TagManager = require('../net2/TagManager.js')
+    for (let index = 0; index < tags.length; index++) {
+      if (!TagManager.getTagByUid(tags[index])) {
+        continue;
+      }
+      const ipset = require('../net2/Tag.js').getTagIpsetName(tags[index]);
+      outRule.mth(ipset, 'src,src')
+      outRule6.mth(ipset, 'src,src')
+      natOutRule.mth(ipset, 'src,src')
+      natOutRule6.mth(ipset, 'src,src')
+
+      inRule.mth(ipset, 'dst,dst')
+      inRule6.mth(ipset, 'dst,dst')
+      natInRule.mth(ipset, 'dst,dst')
+      natInRule6.mth(ipset, 'dst,dst')
+      tagInvalid = false;
+    }
+
+    if (!tagInvalid) {
+      const op = destroy ? '-D' : '-I'
+      await exec(outRule.toCmd(op))
+      await exec(outRule6.toCmd(op))
+      await exec(natOutRule.toCmd(op))
+      await exec(natOutRule6.toCmd(op))
+      await exec(inRule.toCmd(op))
+      await exec(inRule6.toCmd(op))
+      await exec(natInRule.toCmd(op))
+      await exec(natInRule6.toCmd(op))
+    }
+
+    if (destroy) {
+      if (destroyDstCache) {
+        await Ipset.destroy(dstSet)
+        if (dstType != 'bitmap:port')
+          await Ipset.destroy(dstSet6)
+      }
+    }
+
+    log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tags || "null", dstTag);
+
+  } catch(err) {
+    log.error('Error when setup tag blocking env', err);
   }
 }
 

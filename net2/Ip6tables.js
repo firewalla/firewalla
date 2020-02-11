@@ -155,7 +155,7 @@ function deleteRule(rule, callback) {
 
 function prepare() {
   return execAsync(
-    "(sudo ip6tables -w -N FW_FORWARD || true) && (sudo ip6tables -w -t nat -N FW_PREROUTING || true) && (sudo ip6tables -w -t nat -N FW_POSTROUTING || true)"
+    "(sudo ip6tables -w -N FW_FORWARD || true) && (sudo ip6tables -w -t nat -N FW_PREROUTING || true) && (sudo ip6tables -w -t nat -N FW_POSTROUTING || true) && (sudo ip6tables -w -t mangle -N FW_PREROUTING || true)"
   ).catch(err => {
     log.error("IP6TABLE:PREPARE:Unable to prepare", err);
   })
@@ -163,7 +163,7 @@ function prepare() {
 
 function flush() {
   return execAsync(
-    "sudo ip6tables -w -F FW_FORWARD && sudo ip6tables -w -t nat -F FW_PREROUTING && sudo ip6tables -w -t nat -F FW_POSTROUTING && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
+    "sudo ip6tables -w -F FW_FORWARD && sudo ip6tables -w -t nat -F FW_PREROUTING && sudo ip6tables -w -t nat -F FW_POSTROUTING && sudo ip6tables -w -t mangle -F FW_PREROUTING",
   ).catch(err => {
     log.error("IP6TABLE:FLUSH:Unable to flush", err)
   });

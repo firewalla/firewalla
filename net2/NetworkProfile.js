@@ -14,6 +14,7 @@
  */
 
 'use strict';
+const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -27,11 +28,16 @@ const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 const fs = require('fs');
 const Promise = require('bluebird');
+const HostTool = require('./HostTool.js');
+const hostTool = new HostTool();
+const _ = require('lodash');
 Promise.promisifyAll(fs);
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const Mode = require('./Mode.js');
 const SpooferManager = require('./SpooferManager.js');
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -47,7 +53,7 @@ class NetworkProfile {
         if (o && o.uuid) {
           this.subscriber.subscribeOnce("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, (channel, type, id, obj) => {
             log.info(`Network policy is changed on ${this.o.intf}, uuid: ${this.o.uuid}`, obj);
-            this.applyPolicy();
+            this.scheduleApplyPolicy();
           });
         }
       }
@@ -63,6 +69,37 @@ class NetworkProfile {
   toJson() {
     const json = Object.assign({}, this.o, {policy: this._policy});
     return json;
+  }
+
+  scheduleApplyPolicy() {
+    if (this.reapplyTask)
+      clearTimeout(this.reapplyTask);
+    this.reapplyTask = setTimeout(() => {
+      this.applyPolicy();
+    }, 3000);
+  }
+
+  // in case gateway has multiple IPv6 addresses
+  async rediscoverGateway6(mac) {
+    const gatewayEntry = await hostTool.getMACEntry(mac).catch((err) => null);
+    if (gatewayEntry)
+      this._discoveredGateway6 = (gatewayEntry.ipv6Addr && JSON.parse(gatewayEntry.ipv6Addr)) || [];
+    else
+      this._discoveredGateway6 = [];
+    if (this.o.gateway6 && !this._discoveredGateway6.includes(this.o.gateway6))
+      this._discoveredGateway6.push(this.o.gateway6);
+
+    this._monitoredGateway6 = this._monitoredGateway6 || [];
+    if (_.isEqual(this._monitoredGateway6.sort(), this._discoveredGateway6.sort()))
+      return;
+    if (!this.o.gateway6 || !_.isArray(this.o.dns) || !this.o.dns.includes(this.o.gateway))
+      // do not bother if ipv6 default route is not set or gateway ipv4 is not DNS server
+      return;
+    if (Mode.isSpoofModeOn()) {
+      // discovered new gateway IPv6 addresses and router also acts as dns, re-apply policy
+      log.info(`New gateway IPv6 addresses are discovered, re-applying policy on ${this.o.uuid} ${this.o.intf}`, this._discoveredGateway6);
+      this.scheduleApplyPolicy();
+    }
   }
 
   async setPolicy(name, data) {
@@ -126,8 +163,24 @@ class NetworkProfile {
         if (this.o.gateway6 && this.o.gateway6.length > 0 
           && this.o.ipv6 && this.o.ipv6.length > 0 
           && !this.o.ipv6.includes(this.o.gateway6)) {
-          await sm.registerSpoofInstance(this.o.intf, this.o.gateway6, this.o.ipv6[0], true);
-          // TODO: spoof gateway's other ipv6 addresses if it is also dns server
+            let updatedGateway6 = [];
+            if (!_.isArray(this.o.dns) || !this.o.dns.includes(this.o.gateway)) {
+              updatedGateway6 = [this.o.gateway6];
+            } else {
+              updatedGateway6 = this._discoveredGateway6 || [this.o.gateway6];
+              log.info(`Router also acts as DNS server, spoof all its IPv6 addresses`, updatedGateway6);
+            }
+            this._monitoredGateway6 = this._monitoredGateway6 || [];
+            const removedGateway6 = this._monitoredGateway6.filter(i => !updatedGateway6.includes(i));
+            for (let gip of removedGateway6) {
+              log.info(`Disable IPv6 spoof instance on ${gip}, ${this.o.uuid} ${this.o.intf}`);
+              await sm.deregisterSpoofInstance(this.o.intf, gip, true);
+            }
+            for (let gip of updatedGateway6) {
+              log.info(`Enable IPv6 spoof instance on ${gip}, ${this.o.uuid} ${this.o.intf}`);
+              await sm.registerSpoofInstance(this.o.intf, gip, this.o.ipv6[0], true);
+            }
+            this._monitoredGateway6 = updatedGateway6;
         }
       }
     } else {
@@ -139,13 +192,45 @@ class NetworkProfile {
         }
         if (this.o.gateway6 && this.o.gateway6.length > 0) {
           await sm.deregisterSpoofInstance(this.o.intf, "*", true);
+          this._monitoredGateway6 = [];
         }
       }
     }
   }
 
   async vpnClient(policy) {
-
+    try {
+      const state = policy.state;
+      const profileId = policy.profileId;
+      if (!profileId) {
+        log.warn(`VPN client profileId is not specified for ${this.o.uuid} ${this.o.intf}`);
+        return false;
+      }
+      const ovpnClient = new OpenVPNClient({profileId: profileId});
+      const intf = ovpnClient.getInterfaceName();
+      const rtId = await vpnClientEnforcer.getRtId(intf);
+      if (!rtId)
+        return false;
+      const rtIdHex = Number(rtId).toString(16);
+      if (state === true) {
+        // set skbmark
+        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! add c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/0xffff`);
+      }
+      if (state === false) {
+        // reset skbmark
+        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! add c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/0xffff`);
+      }
+      if (state === null) {
+        // do not change skbmark
+        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+      }
+      return true;
+    } catch (err) {
+      log.error(`Failed to set VPN client access on network ${this.o.uuid} ${this.o.intf}`);
+      return false;
+    }
   }
 
   async shield(policy) {
@@ -157,26 +242,26 @@ class NetworkProfile {
     const dnsCaching = policy.dnsCaching;
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     if (!netIpsetName) {
-      log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.name}`);
+      log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.intf}`);
       return;
     }
     if (dnsCaching === true) {
       let cmd =  `sudo ipset del -! no_dns_caching_set ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.name}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset del -! no_dns_caching_set ${netIpsetName}6`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.name}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
       });
     } else {
       let cmd =  `sudo ipset add -! no_dns_caching_set ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.name}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset add -! no_dns_caching_set ${netIpsetName}6`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.name}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
       });
     }
   }
@@ -211,6 +296,15 @@ class NetworkProfile {
       }).catch((err) => {
         log.error(`Failed to create network profile ipset ${netIpsetName}6`, err.message);
       });
+      // add to c_lan_set accordingly, some feature has mandatory to be enabled on lan only, e.g., vpn client
+      let op = "del"
+      if (this.o.type === "lan")
+        op = "add"
+      await exec(`sudo ipset ${op} -! c_lan_set ${netIpsetName}`).then(() => {
+        return exec(`sudo ipset ${op} -! c_lan_set ${netIpsetName}6`);
+      }).catch((err) => {
+        log.error(`Failed to ${op} ${netIpsetName}(6) to c_lan_set`, err.message);
+      });
     }
   }
 
@@ -240,7 +334,16 @@ class NetworkProfile {
     }
     if (this.o.gateway6 && this.o.gateway6.length > 0) {
       await sm.deregisterSpoofInstance(this.o.intf, "*", true);
+      this._monitoredGateway6 = [];
     }
+  }
+  
+  getTags() {
+    if (_.isEmpty(this._tags)) {
+      return []; 
+    }
+
+    return this._tags;
   }
 
   async tags(tags) {
@@ -259,7 +362,12 @@ class NetworkProfile {
         await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}`).then(() => {
           return exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}6`);
         }).catch((err) => {
-          log.error(`Failed to delete tag ${removedTag} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
+        });
+        await exec(`sudo ipset del -! ${Tag.getTagNetIpsetName(removedTag)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset del -! ${Tag.getTagNetIpsetName(removedTag)} ${netIpsetName}6`);
+        }).catch((err) => {
+          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
       } else {
@@ -274,7 +382,12 @@ class NetworkProfile {
         await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}`).then(() => {
           return exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}6`);
         }).catch((err) => {
-          log.error(`Failed to add tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagNetIpsetName(uid)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset add -! ${Tag.getTagNetIpsetName(uid)} ${netIpsetName}6`);
+        }).catch((err) => {
+          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {

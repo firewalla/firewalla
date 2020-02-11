@@ -225,6 +225,7 @@ class FlowTool {
     f.fd = flow.fd;
     f.duration = flow.du
     f.intf = flow.intf;
+    f.tags = flow.tags;
 
     if(flow.mac) {
       f.device = flow.mac;
@@ -458,6 +459,18 @@ class FlowTool {
 
     await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
     await rclient.zremrangebyrankAsync(key, 0, limit);
+
+    for (let index = 0; index < flowCopy.tags.length; index++) {
+      const tag = flowCopy.tags[index];
+      const tagKey = `flow:tag:${tag}:recent`;
+      await rclient.zaddAsync(tagKey, now, JSON.stringify(flowCopy));
+      await rclient.zremrangebyrankAsync(key, 0, limit);
+    }
+
+    const intfKey = `flow:intf:${flowCopy.intf}:recent`;
+    await rclient.zaddAsync(intfKey, now, JSON.stringify(flowCopy));
+    await rclient.zremrangebyrankAsync(key, 0, limit);
+
     return;
   }
 

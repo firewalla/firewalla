@@ -25,6 +25,8 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
 
+const _ = require('lodash');
+
 class NetworkProfileManager {
   constructor() {
     const c = require('./MessageBus.js');
@@ -39,6 +41,30 @@ class NetworkProfileManager {
         this.iptablesReady = true;
         log.info("Iptables is ready, apply network profile policies ...");
         this.scheduleRefresh();
+      });
+
+      sem.on("DeviceUpdate", (event) => {
+        // notify NetworkProfile to discover more gateway's IPv6 addresses
+        if (!this.iptablesReady)
+          return;
+        const host = event.host;
+        const mac = event.mac;
+        if (!mac)
+          return;
+        if (_.isString(host.ipv4)) {
+          const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
+          if (host.ipv4 !== intfInfo.gateway)
+            return;
+          const uuid = intfInfo && intfInfo.uuid
+          if (!uuid)
+            return;
+          const networkProfile = this.getNetworkProfile(uuid);
+          if (!networkProfile)
+            return;
+          setTimeout(() => {
+            networkProfile.rediscoverGateway6();
+          }, 3000);
+        }
       });
     }
 
@@ -65,7 +91,7 @@ class NetworkProfileManager {
         if (this.iptablesReady) {
           for (let uuid in this.networkProfiles) {
             const networkProfile = this.networkProfiles[uuid];
-            await networkProfile.applyPolicy();
+            networkProfile.scheduleApplyPolicy();
           }
         }
       }
@@ -123,6 +149,18 @@ class NetworkProfileManager {
     }
   }
 
+  _isNetworkProfileChanged(then, now) {
+    for (let key in then) {
+      if (_.isArray(then[key]))
+        then[key] = then[key].sort();
+    }
+    for (let key in now) {
+      if (_.isArray(now[key]))
+        now[key] = now[key].sort();
+    }
+    return !_.isEqual(then, now);
+  }
+
   async refreshNetworkProfiles() {
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
@@ -136,12 +174,12 @@ class NetworkProfileManager {
       o.uuid = uuid;
       if (this.networkProfiles[uuid]) {
         const networkProfile = this.networkProfiles[uuid];
-        const previousIpv4Subnet = networkProfile.o.ipv4Subnet;
+        const changed = this._isNetworkProfileChanged(networkProfile.o, o);
         networkProfile.update(o);
-        if (o.ipv4Subnet && previousIpv4Subnet !== o.ipv4Subnet) {
-          // network prefix changed, need to reapply createEnv
+        if (changed) {
+          // network profile changed, need to reapply createEnv
           if (f.isMain()) {
-            log.info(`Network prefix of ${uuid} ${networkProfile.o.intf} changed from ${previousIpv4Subnet} to ${o.ipv4Subnet}, updating environment ...`);
+            log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, o);
             await this.scheduleCreateEnv(networkProfile);
           }
         }
@@ -181,12 +219,12 @@ class NetworkProfileManager {
         }
       } else {
         const networkProfile = this.networkProfiles[uuid];
-        const previousIpv4Subnet = networkProfile.o.ipv4Subnet;
+        const changed = this._isNetworkProfileChanged(networkProfile.o, updatedProfile);
         networkProfile.update(updatedProfile);
-        if (updatedProfile.ipv4Subnet && previousIpv4Subnet !== updatedProfile.ipv4Subnet) {
-          // network prefix changed, need to reapply createEnv
+        if (changed) {
+          // network profile changed, need to reapply createEnv
           if (f.isMain()) {
-            log.info(`Network prefix of ${uuid} ${networkProfile.o.intf} changed from ${previousIpv4Subnet} to ${updatedProfile.ipv4Subnet}, updating environment ...`);
+            log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, updatedProfile);
             await this.scheduleCreateEnv(networkProfile);
           }
         }

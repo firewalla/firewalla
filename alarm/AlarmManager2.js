@@ -1149,8 +1149,14 @@ module.exports = class {
             p.scope = [info.device];
           }
 
+          p.tag = [];
           if (info.intf) {
-            p.tag = [Policy.INTF_PREFIX + info.intf]; // or use tag array
+            p.tag.push(Policy.INTF_PREFIX + info.intf); // or use tag array
+          }
+
+          //@TODO need support array?
+          if (info.tag) {
+            p.tag.push(Policy.TAG_PREFIX + info.tag);
           }
 
           if (info.category) {
@@ -1623,8 +1629,22 @@ module.exports = class {
     if (userInput && userInput.device && userInput.archiveAlarmByType) {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
+
+    if (!_.isEmpty(userInput.tag)) {
+      e["p.tag.ids"] = [];
+      for (const tagStr of tag) {
+        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
+          let intfUuid = _.trimStart(tagStr, Policy.INTF_PREFIX);
+          e["p.intf.id"] = intfUuid;
+        } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
+          let tagUid = _.trimStart.apply(tagStr, Policy.TAG_PREFIX);
+          e["p.tag.ids"].push(tagUid);
+        }
+      }
+    }
+
     if (userInput && userInput.intf) {
-      e["intf.id"] = userInput.intf;
+      e["p.intf.id"] = userInput.intf;
     }
     log.info("Exception object:", e);
     return e;

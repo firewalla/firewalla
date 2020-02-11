@@ -86,8 +86,7 @@ const FlowTool = require('./FlowTool.js');
 const flowTool = new FlowTool();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const vpnClientEnforcer = new VPNClientEnforcer();
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const iptables = require('./Iptables.js');
 const ip6tables = require('./Ip6tables.js');
@@ -1005,6 +1004,14 @@ module.exports = class HostManager {
     });
   }
 
+  getHostFastByMAC(mac) {
+    if (mac == null) {
+      return null;
+    }
+
+    return this.hostsdb[`host:mac:${mac}`];
+  }
+
   getHostFast(ip) {
     if (ip == null) {
       return null;
@@ -1409,7 +1416,6 @@ module.exports = class HostManager {
     const type = policy.type;
     const state = policy.state;
     const reconnecting = policy.reconnecting || 0;
-    const appliedInterfaces = policy.appliedInterfaces || [];
     switch (type) {
       case "openvpn": {
         const profileId = policy.openvpn && policy.openvpn.profileId;
@@ -1421,22 +1427,9 @@ module.exports = class HostManager {
         const ovpnClient = new OpenVPNClient({profileId: profileId});
         await ovpnClient.saveSettings(settings);
         settings = await ovpnClient.loadSettings(); // settings is merged with default settings
-        // apply vpn client access to interfaces in appliedInterfaces
-        const supportedInterfaces = {
-          wifi: fConfig.monitoringWifiInterface
-        };
-        try {
-          // set/clear vpn access of all supported interfaces accordingly
-          for (let supportedInterface in supportedInterfaces) {
-            const intfName = supportedInterfaces[supportedInterface];
-            if (appliedInterfaces.includes(supportedInterface)) {
-              await vpnClientEnforcer.enableInterfaceVPNAccess(intfName, ovpnClient.getInterfaceName());
-            } else {
-              await vpnClientEnforcer.disableInterfaceVPNAccess(intfName, ovpnClient.getInterfaceName());
-            }
-          }
-        } catch (err) {
-          log.error("Failed to apply VPN client access to interfaces", err);
+        const rtId = await vpnClientEnforcer.getRtId(ovpnClient.getInterfaceName());
+        if (!rtId) {
+          log.error(`Routing table id is not found for ${profileId}`);
           return {state: false, running: false, reconnecting: 0};
         }
         if (state === true) {
@@ -1469,22 +1462,8 @@ module.exports = class HostManager {
               if (dnsServers.length > 0) {
                 if (settings.routeDNS) {
                   await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-                  // set/clear dns redirection of all supported interfaces accordingly
-                  for (let supportedInterface in supportedInterfaces) {
-                    const intfName = supportedInterfaces[supportedInterface];
-                    if (appliedInterfaces.includes(supportedInterface)) {
-                      await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                    } else {
-                      await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                    }
-                  }
                 } else {
                   await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-                  // clear dns redirect for all supported interfaces
-                  for (let supportedInterface in supportedInterfaces) {
-                    const intfName = supportedInterfaces[supportedInterface];
-                    await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                  }
                 }
               }
 
@@ -1603,11 +1582,6 @@ module.exports = class HostManager {
             if (dnsServers.length > 0) {
               // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
               await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-              // clear dns redirect for all supported interfaces
-              for (let supportedInterface in supportedInterfaces) {
-                const intfName = supportedInterfaces[supportedInterface];
-                await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-              }
             }
 
             const updatedPolicy = this.policy["vpnClient"];

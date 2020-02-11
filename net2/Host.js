@@ -44,8 +44,7 @@ const linux = require('../util/linux.js');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
-const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const vpnClientEnforcer = new VPNClientEnforcer();
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 
@@ -58,6 +57,7 @@ Promise.promisifyAll(fs);
 
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
+const _ = require('lodash');
 
 class Host {
   constructor(obj, mgr, callback) {
@@ -364,6 +364,9 @@ class Host {
     if (this.activities) {
       this.o.activities= JSON.stringify(this.activities);
     }
+    if (this._tags) {
+      this.o.tags = JSON.stringify(this._tags);
+    }
   }
 
   touch(date) {
@@ -400,11 +403,23 @@ class Host {
       }
       const ovpnClient = new OpenVPNClient({profileId: profileId});
       const intf = ovpnClient.getInterfaceName();
+      const rtId = await vpnClientEnforcer.getRtId(intf);
+      if (!rtId)
+        return false;
+      const rtIdHex = Number(rtId).toString(16);
       if (state === true) {
-        const mode = policy.mode || "dhcp";
-        await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode, intf);
-      } else {
-        await vpnClientEnforcer.disableVPNAccess(this.o.mac);
+        // set skbmark
+        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! add c_wan_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
+      }
+      if (state === false) {
+        // clear skbmark
+        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! add c_wan_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
+      }
+      if (state === null) {
+        // do not change skbmark
+        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
       }
       return true;
     } catch (err) {
@@ -1071,6 +1086,14 @@ class Host {
     return true;
   }
 
+  getTags() {
+    if (_.isEmpty(this._tags)) {
+      return []; 
+    }
+
+    return this._tags;
+  }
+
   async tags(tags) {
     tags = tags || [];
     this._tags = this._tags || [];
@@ -1111,6 +1134,7 @@ class Host {
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     await dnsmasq.restartDnsmasq();
+    this.save("tags", null);
   }
 }
 
