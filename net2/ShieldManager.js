@@ -185,8 +185,8 @@ class ShieldManager {
 
       if (this.protected_macs[mac]) {
         const legacyMacEntry = this.protected_macs[mac];
-        const legacyIpv6Addrs = (legacyMacEntry.ipv6Addrs || []).sort();
-        const ipv6Addrs = (macEntry.ipv6Addrs || []).sort();
+        const legacyIpv6Addrs = ((legacyMacEntry.ipv6Addr && JSON.parse(legacyMacEntry.ipv6Addr)) || []).sort();
+        const ipv6Addrs = ((macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr)) || []).sort();
         if (macEntry.ipv4Addr !== legacyMacEntry.ipv4Addr || ipv6Addrs.length !== legacyIpv6Addrs.length || !ipv6Addrs.every((value, index) => {return value === legacyIpv6Addrs[index]})) {
           // ip addresses may be changed
           log.info("IP addresses of " + mac + " have been changed.")

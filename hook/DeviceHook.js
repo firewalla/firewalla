@@ -170,7 +170,7 @@ class DeviceHook extends Hook {
         const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
 
         if (intfInfo && intfInfo.uuid) {
-          let intf = intfInfo.uuid; // get intf uuid accroding to intf_mac
+          let intf = intfInfo.uuid;
           delete host.intf_mac;
           host.intf = intf;
         } else {

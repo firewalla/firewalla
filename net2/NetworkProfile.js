@@ -27,6 +27,9 @@ const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 const fs = require('fs');
 const Promise = require('bluebird');
+const HostTool = require('./HostTool.js');
+const hostTool = new HostTool();
+const _ = require('lodash');
 Promise.promisifyAll(fs);
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
@@ -49,7 +52,7 @@ class NetworkProfile {
         if (o && o.uuid) {
           this.subscriber.subscribeOnce("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, (channel, type, id, obj) => {
             log.info(`Network policy is changed on ${this.o.intf}, uuid: ${this.o.uuid}`, obj);
-            this.applyPolicy();
+            this.scheduleApplyPolicy();
           });
         }
       }
@@ -65,6 +68,37 @@ class NetworkProfile {
   toJson() {
     const json = Object.assign({}, this.o, {policy: this._policy});
     return json;
+  }
+
+  scheduleApplyPolicy() {
+    if (this.reapplyTask)
+      clearTimeout(this.reapplyTask);
+    this.reapplyTask = setTimeout(() => {
+      this.applyPolicy();
+    }, 3000);
+  }
+
+  // in case gateway has multiple IPv6 addresses
+  async rediscoverGateway6(mac) {
+    const gatewayEntry = await hostTool.getMACEntry(mac).catch((err) => null);
+    if (gatewayEntry)
+      this._discoveredGateway6 = (gatewayEntry.ipv6Addr && JSON.parse(gatewayEntry.ipv6Addr)) || [];
+    else
+      this._discoveredGateway6 = [];
+    if (this.o.gateway6 && !this._discoveredGateway6.includes(this.o.gateway6))
+      this._discoveredGateway6.push(this.o.gateway6);
+
+    this._monitoredGateway6 = this._monitoredGateway6 || [];
+    if (_.isEqual(this._monitoredGateway6.sort(), this._discoveredGateway6.sort()))
+      return;
+    if (!this.o.gateway6 || !_.isArray(this.o.dns) || !this.o.dns.includes(this.o.gateway))
+      // do not bother if ipv6 default route is not set or gateway ipv4 is not DNS server
+      return;
+    if (Mode.isSpoofModeOn()) {
+      // discovered new gateway IPv6 addresses and router also acts as dns, re-apply policy
+      log.info(`New gateway IPv6 addresses are discovered, re-applying policy on ${this.o.uuid} ${this.o.intf}`, this._discoveredGateway6);
+      this.scheduleApplyPolicy();
+    }
   }
 
   async setPolicy(name, data) {
@@ -128,8 +162,24 @@ class NetworkProfile {
         if (this.o.gateway6 && this.o.gateway6.length > 0 
           && this.o.ipv6 && this.o.ipv6.length > 0 
           && !this.o.ipv6.includes(this.o.gateway6)) {
-          await sm.registerSpoofInstance(this.o.intf, this.o.gateway6, this.o.ipv6[0], true);
-          // TODO: spoof gateway's other ipv6 addresses if it is also dns server
+            let updatedGateway6 = [];
+            if (!_.isArray(this.o.dns) || !this.o.dns.includes(this.o.gateway)) {
+              updatedGateway6 = [this.o.gateway6];
+            } else {
+              updatedGateway6 = this._discoveredGateway6 || [this.o.gateway6];
+              log.info(`Router also acts as DNS server, spoof all its IPv6 addresses`, updatedGateway6);
+            }
+            this._monitoredGateway6 = this._monitoredGateway6 || [];
+            const removedGateway6 = this._monitoredGateway6.filter(i => !updatedGateway6.includes(i));
+            for (let gip of removedGateway6) {
+              log.info(`Disable IPv6 spoof instance on ${gip}, ${this.o.uuid} ${this.o.intf}`);
+              await sm.deregisterSpoofInstance(this.o.intf, gip, true);
+            }
+            for (let gip of updatedGateway6) {
+              log.info(`Enable IPv6 spoof instance on ${gip}, ${this.o.uuid} ${this.o.intf}`);
+              await sm.registerSpoofInstance(this.o.intf, gip, this.o.ipv6[0], true);
+            }
+            this._monitoredGateway6 = updatedGateway6;
         }
       }
     } else {
@@ -141,6 +191,7 @@ class NetworkProfile {
         }
         if (this.o.gateway6 && this.o.gateway6.length > 0) {
           await sm.deregisterSpoofInstance(this.o.intf, "*", true);
+          this._monitoredGateway6 = [];
         }
       }
     }
@@ -282,6 +333,7 @@ class NetworkProfile {
     }
     if (this.o.gateway6 && this.o.gateway6.length > 0) {
       await sm.deregisterSpoofInstance(this.o.intf, "*", true);
+      this._monitoredGateway6 = [];
     }
   }
 
