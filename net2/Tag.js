@@ -52,6 +52,18 @@ class Tag {
     return json;
   }
 
+  setTagName(name) {
+    this.o.name = name;
+  }
+
+  getTagName() {
+    return this.o.name;
+  }
+
+  getTagUid() {
+    return this.o.uid;
+  }
+
   _getPolicyKey() {
     return `policy:tag:${this.o.uid}`;
   }

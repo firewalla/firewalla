@@ -14,6 +14,7 @@
  */
 
 'use strict';
+const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -335,6 +336,14 @@ class NetworkProfile {
       await sm.deregisterSpoofInstance(this.o.intf, "*", true);
       this._monitoredGateway6 = [];
     }
+  }
+  
+  getTags() {
+    if (_.isEmpty(this._tags)) {
+      return []; 
+    }
+
+    return this._tags;
   }
 
   async tags(tags) {

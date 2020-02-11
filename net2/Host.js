@@ -57,6 +57,7 @@ Promise.promisifyAll(fs);
 
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
+const _ = require('lodash');
 
 class Host {
   constructor(obj, mgr, callback) {
@@ -362,6 +363,9 @@ class Host {
     }
     if (this.activities) {
       this.o.activities= JSON.stringify(this.activities);
+    }
+    if (this._tags) {
+      this.o.tags = JSON.stringify(this._tags);
     }
   }
 
@@ -1082,6 +1086,14 @@ class Host {
     return true;
   }
 
+  getTags() {
+    if (_.isEmpty(this._tags)) {
+      return []; 
+    }
+
+    return this._tags;
+  }
+
   async tags(tags) {
     tags = tags || [];
     this._tags = this._tags || [];
@@ -1122,6 +1134,7 @@ class Host {
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     await dnsmasq.restartDnsmasq();
+    this.save("tags", null);
   }
 }
 

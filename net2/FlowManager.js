@@ -784,14 +784,26 @@ module.exports = class FlowManager {
             // more than 24 hours will still be recorded
             this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
             if (o.intf) {
-              this.recordStats(o.intf, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+              this.recordStats('intf:' + o.intf, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+            }
+            if (o.tags.length > 0) {
+              for (let index = 0; index < o.tags.length; index++) {
+                const tag = o.tags[index];
+                this.recordStats('tag:' + tag, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+              }
             }
           } else {
             totalInBytes += Number(o.ob);
             totalOutBytes += Number(o.rb);
             this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.ob), Number(o.rb), null);
             if (o.intf) {
-              this.recordStats(o.intf, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+              this.recordStats('intf:' + o.intf, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+            }
+            if (o.tags.length > 0) {
+              for (let index = 0; index < o.tags.length; index++) {
+                const tag = o.tags[index];
+                this.recordStats('tag:' + tag, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+              }
             }
           }
         }
