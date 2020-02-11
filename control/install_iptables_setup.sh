@@ -337,7 +337,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset flush whitelist_remote_net_port_set6
 
   sudo ip6tables -w -N FW_FORWARD &>/dev/null
-
+  
   sudo ip6tables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_FORWARD
 
   # multi protocol block chain
@@ -563,3 +563,42 @@ for set in `sudo ipset list -name | egrep "^c_"`; do
 done
 # create a list of set which stores net set of lan networks
 sudo ipset create -! c_lan_set list:set
+sudo ipset flush -! c_lan_set
+# create several list of sets with skbinfo extension which store tag/network/device customized wan and skbmark
+sudo ipset create -! c_wan_n_set list:set skbinfo
+sudo ipset flush -! c_wan_n_set
+sudo ipset create -! c_wan_tag_m_set list:set skbinfo
+sudo ipset flush -! c_wan_tag_m_set
+sudo ipset create -! c_wan_m_set hash:mac skbinfo
+sudo ipset flush -! c_wan_m_set
+
+# the sequence is important, higher priority rule is placed after lower priority rule
+sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
+sudo iptables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -j FW_PREROUTING
+# set mark based on tag on network
+sudo iptables -w -t mangle -N FW_PREROUTING_WAN_TAG_N &>/dev/null
+sudo iptables -w -t mangle -F FW_PREROUTING_WAN_TAG_N
+sudo iptables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j FW_PREROUTING_WAN_TAG_N &>/dev/null || sudo iptables -w -t mangle -I FW_PREROUTING -m set --match-set c_lan_set src,src -j FW_PREROUTING_WAN_TAG_N
+# set mark based on network
+sudo iptables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_n_set src,src --map-mark &>/dev/null || sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_n_set src,src --map-mark
+# set mark based on tag on device
+sudo iptables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_tag_m_set src,src --map-mark &>/dev/null || sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_tag_m_set src,src --map-mark
+# set mark based on device
+sudo iptables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_m_set src --map-mark &>/dev/null || sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_m_set src --map-mark
+
+sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
+sudo ip6tables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -j FW_PREROUTING
+# set mark based on tag on network
+sudo ip6tables -w -t mangle -N FW_PREROUTING_WAN_TAG_N &>/dev/null
+sudo ip6tables -w -t mangle -F FW_PREROUTING_WAN_TAG_N
+sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j FW_PREROUTING_WAN_TAG_N &>/dev/null || sudo ip6tables -w -t mangle -I FW_PREROUTING -m set --match-set c_lan_set src,src -j FW_PREROUTING_WAN_TAG_N
+# set mark based on network
+sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_n_set src,src --map-mark &>/dev/null || sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_n_set src,src --map-mark
+# set mark based on tag on device
+sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_tag_m_set src,src --map-mark &>/dev/null || sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_tag_m_set src,src --map-mark
+# set mark based on device
+sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_m_set src --map-mark &>/dev/null || sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_m_set src --map-mark
+
+
+
+

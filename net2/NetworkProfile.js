@@ -32,6 +32,8 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const Mode = require('./Mode.js');
 const SpooferManager = require('./SpooferManager.js');
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -145,7 +147,38 @@ class NetworkProfile {
   }
 
   async vpnClient(policy) {
-
+    try {
+      const state = policy.state;
+      const profileId = policy.profileId;
+      if (!profileId) {
+        log.warn(`VPN client profileId is not specified for ${this.o.uuid} ${this.o.intf}`);
+        return false;
+      }
+      const ovpnClient = new OpenVPNClient({profileId: profileId});
+      const intf = ovpnClient.getInterfaceName();
+      const rtId = await vpnClientEnforcer.getRtId(intf);
+      if (!rtId)
+        return false;
+      const rtIdHex = Number(rtId).toString(16);
+      if (state === true) {
+        // set skbmark
+        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! add c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/0xffff`);
+      }
+      if (state === false) {
+        // reset skbmark
+        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! add c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/0xffff`);
+      }
+      if (state === null) {
+        // do not change skbmark
+        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+      }
+      return true;
+    } catch (err) {
+      log.error(`Failed to set VPN client access on network ${this.o.uuid} ${this.o.intf}`);
+      return false;
+    }
   }
 
   async shield(policy) {
@@ -157,26 +190,26 @@ class NetworkProfile {
     const dnsCaching = policy.dnsCaching;
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     if (!netIpsetName) {
-      log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.name}`);
+      log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.intf}`);
       return;
     }
     if (dnsCaching === true) {
       let cmd =  `sudo ipset del -! no_dns_caching_set ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.name}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset del -! no_dns_caching_set ${netIpsetName}6`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.name}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
       });
     } else {
       let cmd =  `sudo ipset add -! no_dns_caching_set ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.name}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset add -! no_dns_caching_set ${netIpsetName}6`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.name}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
       });
     }
   }
@@ -210,6 +243,15 @@ class NetworkProfile {
         }
       }).catch((err) => {
         log.error(`Failed to create network profile ipset ${netIpsetName}6`, err.message);
+      });
+      // add to c_lan_set accordingly, some feature has mandatory to be enabled on lan only, e.g., vpn client
+      let op = "del"
+      if (this.o.type === "lan")
+        op = "add"
+      await exec(`sudo ipset ${op} -! c_lan_set ${netIpsetName}`).then(() => {
+        return exec(`sudo ipset ${op} -! c_lan_set ${netIpsetName}6`);
+      }).catch((err) => {
+        log.error(`Failed to ${op} ${netIpsetName}(6) to c_lan_set`, err.message);
       });
     }
   }
@@ -259,7 +301,12 @@ class NetworkProfile {
         await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}`).then(() => {
           return exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}6`);
         }).catch((err) => {
-          log.error(`Failed to delete tag ${removedTag} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
+        });
+        await exec(`sudo ipset del -! ${Tag.getTagNetIpsetName(removedTag)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset del -! ${Tag.getTagNetIpsetName(removedTag)} ${netIpsetName}6`);
+        }).catch((err) => {
+          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
       } else {
@@ -274,7 +321,12 @@ class NetworkProfile {
         await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}`).then(() => {
           return exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}6`);
         }).catch((err) => {
-          log.error(`Failed to add tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagNetIpsetName(uid)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset add -! ${Tag.getTagNetIpsetName(uid)} ${netIpsetName}6`);
+        }).catch((err) => {
+          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
