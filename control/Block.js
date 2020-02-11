@@ -317,7 +317,12 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
     const natInRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'src').jmp(natDest).fam(6)
 
     // matching MAC addr won't work in opposite direction
+    let tagInvalid = true;
+    const TagManager = require('../net2/TagManager.js')
     for (let index = 0; index < tags.length; index++) {
+      if (!TagManager.getTagByUid(tags[index])) {
+        continue;
+      }
       const ipset = require('../net2/Tag.js').getTagIpsetName(tags[index]);
       outRule.mth(ipset, 'src,src')
       outRule6.mth(ipset, 'src,src')
@@ -328,18 +333,20 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
       inRule6.mth(ipset, 'dst,dst')
       natInRule.mth(ipset, 'dst,dst')
       natInRule6.mth(ipset, 'dst,dst')
+      tagInvalid = false;
     }
 
-    const op = destroy ? '-D' : '-I'
-    await exec(outRule.toCmd(op))
-    await exec(outRule6.toCmd(op))
-    await exec(natOutRule.toCmd(op))
-    await exec(natOutRule6.toCmd(op))
-    await exec(inRule.toCmd(op))
-    await exec(inRule6.toCmd(op))
-    await exec(natInRule.toCmd(op))
-    await exec(natInRule6.toCmd(op))
-
+    if (!tagInvalid) {
+      const op = destroy ? '-D' : '-I'
+      await exec(outRule.toCmd(op))
+      await exec(outRule6.toCmd(op))
+      await exec(natOutRule.toCmd(op))
+      await exec(natOutRule6.toCmd(op))
+      await exec(inRule.toCmd(op))
+      await exec(inRule6.toCmd(op))
+      await exec(natInRule.toCmd(op))
+      await exec(natInRule6.toCmd(op))
+    }
 
     if (destroy) {
       if (destroyDstCache) {

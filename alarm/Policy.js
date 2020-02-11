@@ -201,11 +201,16 @@ class Policy {
       _.has(alarm, 'p.tag.ids') &&
       !_.isEmpty(alarm['p.tag.ids'])
     ) {
+      let found = false;
       for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
         const tag = alarm['p.tag.ids'][index];
-        if (!this.tag.includes(Policy.TAG_PREFIX + tag)) {
-          return false;
+        if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
+          found = true;
         }
+      }
+
+      if (!found) {
+        return false;
       }
     }
 
