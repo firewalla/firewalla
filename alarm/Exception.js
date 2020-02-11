@@ -148,7 +148,7 @@ module.exports = class {
 
       if (key === "p.tag.ids") {
         const intersect = _.intersection(val, val2);
-        if (_.difference(intersect, val2).length == 0) {
+        if (intersect.length == val2.length) {
           matched = true;
           continue;
         }
