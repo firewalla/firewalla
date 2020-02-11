@@ -203,7 +203,7 @@ class Policy {
     ) {
       for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
         const tag = alarm['p.tag.ids'][index];
-        if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
+        if (!this.tag.includes(Policy.TAG_PREFIX + tag)) {
           return false;
         }
       }
