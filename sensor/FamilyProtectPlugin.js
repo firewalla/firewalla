@@ -20,6 +20,7 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
 
 const f = require('../net2/Firewalla.js');
@@ -247,7 +248,7 @@ class FamilyProtectPlugin extends Sensor {
         log.warn(`Interface name is not found on ${uuid}`);
         return;
       }
-      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.restartDnsmasq();
@@ -260,7 +261,7 @@ class FamilyProtectPlugin extends Sensor {
         log.warn(`Interface name is not found on ${uuid}`);
         return;
       }
-      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
       // explicit disable family protect
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -274,7 +275,7 @@ class FamilyProtectPlugin extends Sensor {
         log.warn(`Interface name is not found on ${uuid}`);
         return;
       }
-      const configFile = `${dnsmasqConfigFolder}/${iface}/${featureName}_${iface}.conf`;
+      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.restartDnsmasq();
