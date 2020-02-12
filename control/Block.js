@@ -99,12 +99,14 @@ async function setupInterfaceWhitelist(state, uuid) {
     new Rule().chn('FW_WHITELIST_PREROUTE').mth(networkIpsetName, "src,src", "set").jmp('FW_WHITELIST'),
     new Rule().chn('FW_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_WHITELIST'),
     new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "src,src", "set").jmp('FW_NAT_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_NAT_WHITELIST')
+    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_NAT_WHITELIST'),
+    new Rule().chn('FW_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_WHITELIST').fam(6),
+    new Rule().chn('FW_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_WHITELIST').fam(6),
+    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_NAT_WHITELIST').fam(6),
+    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_NAT_WHITELIST').fam(6)
   ];
 
-  const ruleSet6 = ruleSet.map(r => r.clone().fam(6));
-
-  for (const rule of ruleSet.concat(ruleSet6)) {
+  for (const rule of ruleSet) {
     const op = state ? '-A' : '-D';
     await exec(rule.toCmd(op)).catch((err) => {
       log.error(`Failed to execute rule ${rule.toCmd(op)}`, err);
