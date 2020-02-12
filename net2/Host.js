@@ -871,7 +871,8 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
-      intf: this.o.intf ? this.o.intf : 'Unknown'
+      intf: this.o.intf ? this.o.intf : 'Unknown',
+      tags: !_.isEmpty(this.o.tags) : this.o.tags : [] 
     }
 
     if (this.o.ipv4Addr == null) {
