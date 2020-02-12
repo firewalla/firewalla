@@ -477,16 +477,18 @@ module.exports = class DNSMASQ {
   }
 
   async updatePolicyCategoryFilterEntry(domains, options) {
-    log.debug("updatePolicyCategoryFilterEntry", domains, options)
+    log.debug("updatePolicyCategoryFilterEntry", domains, options);
+    options = options || {};
+    const category = options.category;
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    const fileExists = await fs.accessAsync(categoryBlcokMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
+    if (!fileExists) return;
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    options = options || {};
-    const category = options.category;
-    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
     let entry = "";
     for (const domain of domains) {
       entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
@@ -494,8 +496,6 @@ module.exports = class DNSMASQ {
     try {
       await fs.writeFileAsync(categoryBlockDomainsFile, entry);
       //check dnsmasq need restart or not
-      const fileExists = await fs.accessAsync(categoryBlcokMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
-      if (!fileExists) return;
       const data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
       if (data.indexOf(`$${category}_block`) > -1) this.restartDnsmasq();
     } catch (err) {
@@ -1446,6 +1446,7 @@ module.exports = class DNSMASQ {
           }
         }));
       }
+      log.info("clean up cleanUpLeftoverConfig");
       await rclient.delAsync('dnsmasq:conf');
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
@@ -1578,6 +1579,7 @@ module.exports = class DNSMASQ {
           delete filesInRedis[filePath]
         }
       }
+      log.info("filesInRedis", filesInRedis);
       await rclient.hmset(dnsmasqConfKey, filesInRedis);
       log.info("dnsmasq conf changeFlag", changeFlag, new Date() / 1000 - checkTime);
       return changeFlag > 0;
