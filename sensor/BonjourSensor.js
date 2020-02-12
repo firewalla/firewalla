@@ -62,6 +62,10 @@ class BonjourSensor extends Sensor {
         this.bonjourBrowserHTTP.stop();
       if (this.bonjour)
         this.bonjour.destroy();
+      // do not initialize bonjour if there is no interface with IP address
+      // otherwise dgram.addMembership will emit error and crash the process
+      if (sysManager.getMonitoringInterfaces().filter(i => i.ip_address).length == 0)
+        return;
       // create new bonjour listeners
       this.bonjour = Bonjour();
       this.bonjour._server.mdns.on('warning', (err) => log.warn("Warning on mdns server", err));
