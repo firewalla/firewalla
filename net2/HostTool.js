@@ -218,9 +218,18 @@ class HostTool {
 
   async getMacByIP(ip) {
     let host = null
-    if (ip === sysManager.myIp() || ip === sysManager.myIp2() || (sysManager.myIp6() && sysManager.myIp6().includes(ip)))
+    if (sysManager.isMyIP(ip) || sysManager.isMyIP6()) {
       // shortcut for Firewalla's self IP
-      return sysManager.myMAC();
+      if (iptool.isV4Format(ip)) {
+        const iface = sysManager.getInterfaceViaIP4(ip);
+        if (iface && iface.name)
+          return sysManager.myMAC(iface.name);
+      } else if (iptool.isV6Format(ip)) {
+        const iface = sysManager.getInterfaceViaIP6(ip);
+        if (iface && iface.name)
+          return sysManager.myMAC(iface.name);
+      }
+    }
 
     if (iptool.isV4Format(ip)) {
       host = await this.getIPv4Entry(ip);

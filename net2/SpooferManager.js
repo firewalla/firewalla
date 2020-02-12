@@ -52,41 +52,6 @@ module.exports = class SpooferManager {
       */
 
       if (firewalla.isMain()) {
-        // need to find a better way to do this
-        /*
-        sem.on("DeviceUpdate", (event) => {
-          const ipv6Addr = event.host.ipv6Addr;
-          if (sysManager.myGateway6() && sysManager.myIp6() && this.gatewayMac && event.host.mac === this.gatewayMac
-            && ipv6Addr && Array.isArray(ipv6Addr) && sysManager.myDNS().includes(sysManager.myGateway())) {
-            // v4 dns includes gateway ip, very likely gateway's v6 addresses are dns servers, need to spoof these addresses (no matter public or linklocal)
-            try {
-              log.info("Router also acts as dns, spoof all router's v6 addresses: ", ipv6Addr);
-              for (const addr of ipv6Addr) {
-                this.registerSpoofInstance(sysManager.monitoringInterface().name, addr, sysManager.myIp6(), true);
-              }
-            } catch(err) {
-              log.error("Error register new spoofer on device update", err)
-            }
-          }
-        });
-
-        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
-
-        sclient.on("message", (channel, message) => {
-          switch (channel) {
-            case Message.MSG_SYS_NETWORK_INFO_RELOADED:
-              if (sysManager.myGateway() && sysManager.myIp()) {
-                this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway(), sysManager.myIp(), false);
-              }
-              if (sysManager.myGateway6() && sysManager.myIp6() && sysManager.myIp6().length) {
-                this.registerSpoofInstance(sysManager.monitoringInterface().name, sysManager.myGateway6(), sysManager.myIp6()[0], true);
-              }
-              break;
-            default:
-          }
-        });
-        */
-
         // feature change listener
         (async () => {
           let ipv6Default = false;
