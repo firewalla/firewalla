@@ -95,7 +95,7 @@ class AdblockPlugin extends Sensor {
                 const macAddress = host && host.o && host.o.mac;
                 if (macAddress) {
                     if (policy == true) {
-                        this.enabledMacAddresses.push(macAddress);
+                        !this.enabledMacAddresses.includes(macAddress) && this.enabledMacAddresses.push(macAddress);
                     } else {
                         const index = this.enabledMacAddresses.indexOf(macAddress);
                         if (index > -1) {
