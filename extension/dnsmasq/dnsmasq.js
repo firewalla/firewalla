@@ -1539,6 +1539,7 @@ module.exports = class DNSMASQ {
       log.info(`dnsmasq confs md5sum, before: ${md5sumBefore} now: ${stdout}`)
       if (stdout != md5sumBefore) {
         await rclient.setAsync(dnsmasqConfKey, stdout);
+        return true;
       }
       return false;
     } catch (error) {
