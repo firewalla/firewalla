@@ -25,7 +25,7 @@ let FWEvent = class {
   constructor(eid, type) {
     this.eid = eid;
     this.type = type;
-    this.timestamp = new Date() / 1000;
+    this.timestamp = new Date()/1000;
     this.message = "";
   }
 }
@@ -41,7 +41,6 @@ let Sensor = class {
   getName() {
     return this.constructor.name
   }
-
   setConfig(config) {
     require('util')._extend(this.config, config);
   }
