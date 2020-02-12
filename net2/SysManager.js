@@ -537,6 +537,13 @@ class SysManager {
     return null;
   }
 
+  myDefaultGateway() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myGateway(wanIntf);
+    return null;
+  }
+
   myIp(intf = this.config.monitoringInterface) {
     return this.getInterface(intf) && this.getInterface(intf).ip_address;
   }

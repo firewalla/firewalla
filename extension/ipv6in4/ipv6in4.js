@@ -120,7 +120,7 @@ class IPV6In4 {
 
   async enableTunnel() {
     log.info("Enabling tunnel...")
-    let myip = sysManager.myIp()
+    let myip = sysManager.myDefaultWanIp();
     let intf = fConfig.monitoringInterface || "eth0"
 
     try {

@@ -50,7 +50,7 @@ const moment = require('moment');
 class VpnManager {
   constructor() {
     if (instance == null) {
-      this.upnp = new UPNP(sysManager.myGateway());
+      this.upnp = new UPNP(sysManager.myDefaultGateway());
       this.config = Config.getConfig(true);
       if (firewalla.isMain()) {
         sclient.on("message", async (channel, message) => {
@@ -434,10 +434,9 @@ class VpnManager {
       };
     }
 
-    this.upnp.gw = sysManager.myGateway();
-
     if (!this.refreshTask) {
       this.refreshTask = setInterval(async () => {
+        this.upnp.gw = sysManager.myDefaultGateway();
         // extend upnp lease once every 10 minutes in case router flushes it unexpectedly
         this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
           log.error("Failed to set Upnp port mapping", err);

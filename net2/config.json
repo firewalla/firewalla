@@ -484,9 +484,6 @@
       "interval": 60,
       "idle": 2700
     },
-    "FirewallaDiscoverSensor": {
-      "listenPort": 4096
-    },
     "SubnetSensor": {},
     "IPChangeSensor": {},
     "DnsLoopAvoidanceSensor": {},
