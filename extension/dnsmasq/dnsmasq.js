@@ -494,6 +494,8 @@ module.exports = class DNSMASQ {
     try {
       await fs.writeFileAsync(categoryBlockDomainsFile, entry);
       //check dnsmasq need restart or not
+      const fileExists = await fs.accessAsync(categoryBlcokMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
+      if (!fileExists) return;
       const data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
       if (data.indexOf(`$${category}_block`) > -1) this.restartDnsmasq();
     } catch (err) {
