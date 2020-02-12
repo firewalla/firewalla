@@ -30,7 +30,6 @@ const fs = require('fs');
 const Promise = require('bluebird');
 const HostTool = require('./HostTool.js');
 const hostTool = new HostTool();
-const _ = require('lodash');
 Promise.promisifyAll(fs);
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();

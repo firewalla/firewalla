@@ -310,7 +310,7 @@ sudo systemctl stop devicemasq
 sudo systemctl disable devicemasq
 
 # restart brofish if local.bro is changed
-if ! diff /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro > /dev/null ; then
+if [[ $(uname -m) != 'x86_64' ]] && ! diff /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro > /dev/null ; then
     echo "Restarting Brofish due to local.bro is changed ..."
     sudo systemctl restart brofish
 fi
