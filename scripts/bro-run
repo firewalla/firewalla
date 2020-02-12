@@ -41,7 +41,12 @@ sleep 3
 
 sudo cp etc/bro-cron /etc/cron.hourly/.
 
-sudo cp /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro
+TMP_FILE="/home/pi/.firewalla/config/local.bro"
+if [ -f "${TMP_FILE}" ]; then
+    sudo bash -c "cat /home/pi/firewalla/etc/local.bro ${TMP_FILE} > /usr/local/bro/share/bro/site/local.bro"
+else
+    sudo cp /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro
+fi
 sync
 
 before_bro
