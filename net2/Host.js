@@ -871,8 +871,7 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
-      intf: this.o.intf ? this.o.intf : 'Unknown',
-      tags: !_.isEmpty(this.o.tags) : this.o.tags : [] 
+      intf: this.o.intf ? this.o.intf : 'Unknown'
     }
 
     if (this.o.ipv4Addr == null) {
@@ -927,6 +926,14 @@ class Host {
     }
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;
+    }
+
+    if (this.o.tags) {
+      try {
+        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags) : [] 
+      } catch (err) {
+        log.error("Failed to parse tags:", err)
+      }
     }
 
     // json.macVendor = this.name();
