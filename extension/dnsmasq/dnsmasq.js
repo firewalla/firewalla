@@ -470,9 +470,7 @@ module.exports = class DNSMASQ {
       }).join("\n");
       await fs.writeFileAsync(categoryBlcokMacSetFile, newData);
     } catch (err) {
-      if (err.code != "ENOENT") {
-        log.error("Failed to update category mact set entry file:", err);
-      }
+      log.error("Failed to update category mact set entry file:", err);
     } finally {
       this.workingInProgress = false;
     }
@@ -499,9 +497,7 @@ module.exports = class DNSMASQ {
       const data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
       if (data.indexOf(`$${category}_block`) > -1) this.restartDnsmasq();
     } catch (err) {
-      if (err.code != 'ENOENT') {
-        log.error("Failed to update category entry into file:", err);
-      }
+      log.error("Failed to update category entry into file:", err);
     } finally {
       this.workingInProgress = false;
     }

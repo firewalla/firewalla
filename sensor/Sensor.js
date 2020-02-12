@@ -25,7 +25,7 @@ let FWEvent = class {
   constructor(eid, type) {
     this.eid = eid;
     this.type = type;
-    this.timestamp = new Date()/1000;
+    this.timestamp = new Date() / 1000;
     this.message = "";
   }
 }
@@ -41,7 +41,7 @@ let Sensor = class {
   getName() {
     return this.constructor.name
   }
-  
+
   setConfig(config) {
     require('util')._extend(this.config, config);
   }
@@ -90,9 +90,12 @@ let Sensor = class {
       })
 
       await this.job();
-      this.timer = setInterval(async () => {
-        return this.job();
-      }, this.refreshInterval || 3600 * 1000); // one hour by default
+      if (this.refreshInterval) {
+        this.timer = setInterval(async () => {
+          return this.job();
+        }, this.refreshInterval);
+      }
+
     })
   }
 
