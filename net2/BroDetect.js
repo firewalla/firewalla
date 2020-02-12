@@ -238,6 +238,7 @@ module.exports = class {
       this.apparray = [];
       this.connmap = {};
       this.connarray = [];
+      this.outportarray = [];
 
       this.initWatchers();
       instances[name] = this;
@@ -1077,6 +1078,10 @@ module.exports = class {
           suppressEventLogging: true
         });
 
+        if (tmpspec.fd == 'out') {
+          this.recordOutPort(tmpspec);
+        }
+
         rclient.zadd(redisObj, (err, response) => {
           if (err == null) {
 
@@ -1526,5 +1531,31 @@ module.exports = class {
       this.timeSeriesCache[mac].upload += Number(outBytes)
     }
   }
-
+  
+  recordOutPort(tmpspec) {
+    log.debug("recordOutPort: ", tmpspec);
+    const key = tmpspec.mac + ":" + tmpspec.dp;
+    let ats = tmpspec.ts;
+    let oldData = null;
+    let oldIndex = this.outportarray.findIndex((dataspec) => dataspec && dataspec.key == key);
+    if (oldIndex > -1) {
+      oldData = this.outportarray.splice(oldIndex, 1)[0];
+      ats = oldData.ats;
+    }
+    let newData = {key: key, ts: tmpspec.ts, ats: ats};
+    const expireInterval = 10 * 60 // 15 minute;
+    if (!(oldData != null && oldData.ats > newData.ts - expireInterval)) {
+      newData.ats = newData.ts;
+      sem.sendEventToFireMain({
+        type: "NewOutPortConn",
+        flow: tmpspec,
+        suppressEventLogging: true
+      });
+    }
+    this.outportarray.push(newData);
+    let maxsize = 9000;
+    if (this.outportarray.length > maxsize) {
+      this.outportarray.shift();
+    }
+  }
 }

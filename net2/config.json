@@ -108,6 +108,11 @@
       "interval": 1800,
       "firstScan": 120
     },
+    "ExternalScanSensor": {
+      "interval": 1800,
+      "firstScan": 120
+    },
+    "OpenPortByInboundFlowSensor": {},
     "BoneSensor": {},
     "APISensor": {},
     "DNSCryptPlugin": {},
@@ -462,7 +467,7 @@
       },
       "sumflow": {
         "expires": -1,
-        "count": 500
+        "count": 200
       },
       "syssumflow": {
         "expires": -1,
@@ -470,11 +475,11 @@
       },
       "categoryflow": {
         "expires": 86400,
-        "count": 1000
+        "count": 200
       },
       "appflow": {
         "expires": 86400,
-        "count": 1000
+        "count": 200
       },
       "safe_urls": {
         "expires": 604800,
@@ -593,6 +598,18 @@
     "ss_client:statusCheck": true,
     "familyMode": "v1"
   },
+  "category": {
+    "exclude": [
+      "ad",
+      "search-portal",
+      "technology"
+    ]
+  },
+  "app": {
+    "exclude": [
+
+    ]
+  },
   "userFeatures": {
     "porn": true,
     "video": true,
@@ -633,6 +650,8 @@
     "vpn_restore": true,
     "vpn_disconnect": true,
     "local_domain": true,
+    "external_scan": true,
+    "alarm_openport": true,
     "device_service_scan": true
   },
   "hiddenFeatures": [

@@ -57,6 +57,16 @@ function suffixDirection(alarm, category) {
   return category;
 }
 
+function GetOpenPortAlarmCompareValue(alarm) {
+  if (alarm.type == 'ALARM_OPENPORT') {
+    return alarm['p.device.ip'] + alarm['p.open.protocol'] + alarm['p.open.port'];
+  } else if (alarm.type == 'ALARM_UPNP') {
+    return alarm['p.device.ip'] + alarm['p.upnp.protocol'] + alarm['p.upnp.private.port'];
+  }
+
+  return alarm.type
+}
+
 class Alarm {
   constructor(type, timestamp, device, info) {
     this.aid = 0;
@@ -852,6 +862,43 @@ class SubnetAlarm extends Alarm {
   }
 }
 
+class OpenPortAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_OPENPORT', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return ['p.device.ip', 'p.open.protocol', 'p.open.port'];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup()
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.upnp.cooldown') || super.getExpirationTime();
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.device.name"], this["p.open.protocol"], this["p.open.port"], this["p.open.servicename"]];
+  }
+
+  isDup(alarm) {
+    if (alarm.type === this.type) {
+      return super.isDup(alarm);
+    };
+
+    const sameType = ['ALARM_OPENPORT', 'ALARM_UPNP'];
+    if (!(sameType.indexOf(alarm.type) !== -1 && sameType.indexOf(this.type) !== -1))
+      return false;
+
+    let compareValue = GetOpenPortAlarmCompareValue(alarm);
+    let compareValue2 = GetOpenPortAlarmCompareValue(this);
+    return (compareValue == compareValue2);
+  }
+}
+
 class UpnpAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super('ALARM_UPNP', timestamp, device, info);
@@ -882,6 +929,20 @@ class UpnpAlarm extends Alarm {
     this["p.upnp.private.port"],
     this["p.device.name"]];
   }
+  
+  isDup(alarm) {
+    if (alarm.type === this.type) {
+      return super.isDup(alarm);
+    };
+
+    const sameType = ['ALARM_OPENPORT', 'ALARM_UPNP'];
+    if (!(sameType.indexOf(alarm.type) !== -1 && sameType.indexOf(this.type) !== -1))
+      return false;
+
+    let compareValue = GetOpenPortAlarmCompareValue(alarm);
+    let compareValue2 = GetOpenPortAlarmCompareValue(this);
+    return (compareValue == compareValue2);
+  }
 }
 
 let classMapping = {
@@ -903,6 +964,7 @@ let classMapping = {
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
   ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
   ALARM_SUBNET: SubnetAlarm.prototype,
+  ALARM_OPENPORT: OpenPortAlarm.prototype,
   ALARM_UPNP: UpnpAlarm.prototype
 }
 
@@ -927,6 +989,7 @@ module.exports = {
   VulnerabilityAlarm: VulnerabilityAlarm,
   IntelReportAlarm: IntelReportAlarm,
   SubnetAlarm: SubnetAlarm,
+  OpenPortAlarm: OpenPortAlarm,
   UpnpAlarm: UpnpAlarm,
   mapping: classMapping
 }
