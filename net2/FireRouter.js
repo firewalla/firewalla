@@ -164,7 +164,7 @@ async function generateNetworkInfo() {
 
 let routerInterface = null
 let routerConfig = null
-let monitoringIntfNames = null
+let monitoringIntfNames = [];
 let wanIntfNames = null
 let defaultWanIntfName = null
 let intfNameMap = {}

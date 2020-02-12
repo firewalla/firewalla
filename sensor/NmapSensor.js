@@ -223,7 +223,7 @@ class NmapSensor extends Sensor {
       }
 
       let cmd = fastMode
-        ? util.format('sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary)
+        ? util.format('sudo nmap -sn -PO --send-ip --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary)
         : util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
 
       return NmapSensor.scan(cmd)
