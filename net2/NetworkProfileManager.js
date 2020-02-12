@@ -209,6 +209,7 @@ class NetworkProfileManager {
         dns: intf.dns || [],
         gateway: intf.gateway_ip || "",
         gateway6: intf.gateway6 || "",
+        carrier: intf.carrier ? 1 : 0,
         type: intf.type || ""
       };
       if (!this.networkProfiles[uuid]) {

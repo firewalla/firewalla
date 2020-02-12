@@ -147,6 +147,7 @@ async function generateNetworkInfo() {
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
       dns:          dns,
+      carrier:      intf.state && intf.state.carrier == 1,
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type
     }
