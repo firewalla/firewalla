@@ -22,7 +22,7 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
-const cp = require('child_process');
+const execAsync = require('child-process-promise').exec
 
 const Firewalla = require('../net2/Firewalla');
 
@@ -124,33 +124,35 @@ class ExternalScanSensor extends Sensor {
     }
 
     log.info('External scan ports: ', publicIP);
-    let host = await this._scan(publicIP);
+    let host = await this.scan(publicIP);
     //log.info('Analyzing external scan result...', host);
 
-    try {
-      let entries = await rclient.hgetAsync(redisKey, 'scan');
-      let preEntries = JSON.parse(entries) || [];
-      let openPorts = [];
-      let waitedPorts = [];
-      for (let current of host.scan) {
-        if (!preEntries.some(pre => comparePort(pre, current))) {
-          waitedPorts.push(current);
-        } else {
-          openPorts.push(current);
+    if (host.scan) {
+      try {
+        let entries = await rclient.hgetAsync(redisKey, 'scan');
+        let preEntries = JSON.parse(entries) || [];
+        let openPorts = [];
+        let waitedPorts = [];
+        for (let current of host.scan) {
+          if (!preEntries.some(pre => comparePort(pre, current))) {
+            waitedPorts.push(current);
+          } else {
+            openPorts.push(current);
+          }
         }
+
+        let confirmedPorts = await this.cloudScanPorts(host.ip, waitedPorts);
+        openPorts.push.apply(openPorts, confirmedPorts);
+        host.scan = openPorts;
+
+        log.info("External ports is updated,", host.scan.length, "entries");
+        let redisHost = Object.assign({}, host);
+        redisHost.scan = JSON.stringify(host.scan);
+        await rclient.hmsetAsync(redisKey, redisHost);
+        await rclient.expireAsync(redisKey, 86400);
+      } catch(err) {
+        log.error("Failed to scan external ports: " + err);
       }
-
-      let confirmedPorts = await this.cloudScanPorts(host.ip, waitedPorts);
-      openPorts.push.apply(openPorts, confirmedPorts);
-      host.scan = openPorts;
-
-      log.info("External ports is updated,", host.scan.length, "entries");
-      let redisHost = Object.assign({}, host);
-      redisHost.scan = JSON.stringify(host.scan);
-      await rclient.hmsetAsync(redisKey, redisHost);
-      await rclient.expireAsync(redisKey, 86400);
-    } catch(err) {
-      log.error("Failed to scan external ports: " + err);
     }
 
     return host;
@@ -187,38 +189,22 @@ class ExternalScanSensor extends Sensor {
     return confirmedPorts;
   }
 
-  _scan(publicIP) {
+  async scan(publicIP) {
+    let hostResult = {};
     let cmd = util.format('sudo nmap -Pn -F %s -oX - | %s', publicIP, xml2jsonBinary);
 
     log.info("Running command:", cmd);
-    return new Promise((resolve, reject) => {
-      cp.exec(cmd, (err, stdout, stderr) => {
-        if(err || stderr) {
-          reject(err || new Error(stderr));
-          return;
-        }
+    try {
+      const result = await execAsync(cmd);
+      let findings = JSON.parse(result.stdout);
+      if (findings && findings.nmaprun && findings.nmaprun.host) {
+        hostResult = this._parseNmapHostResult(findings.nmaprun.host);
+      }
+    } catch(err) {
+      log.error("Failed to nmap scan:", err);
+    }
 
-        let findings = null;
-        try {
-          findings = JSON.parse(stdout);
-        } catch (err) {
-          reject(err);
-        }
-
-        if(!findings) {
-          reject(new Error("Invalid nmap scan result,", cmd));
-          return;
-        }
-
-        let hostJSON = findings.nmaprun && findings.nmaprun.host;
-        if(!hostJSON) {
-          reject(new Error("Invalid nmap scan result,", cmd));
-          return;
-        }
-
-        resolve(this._parseNmapHostResult(hostJSON));
-      })
-    });
+    return hostResult;
   }
 
   static _handleAddressEntry(address, host) {

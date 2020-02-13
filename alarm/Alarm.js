@@ -889,13 +889,13 @@ class OpenPortAlarm extends Alarm {
       return super.isDup(alarm);
     };
 
-    const sameType = ['ALARM_OPENPORT', 'ALARM_UPNP'];
-    if (!(sameType.indexOf(alarm.type) !== -1 && sameType.indexOf(this.type) !== -1))
-      return false;
+    if (['ALARM_OPENPORT', 'ALARM_UPNP'].includes(alarm.type)) {
+      let compareValue = GetOpenPortAlarmCompareValue(alarm);
+      let compareValue2 = GetOpenPortAlarmCompareValue(this);
+      return (compareValue == compareValue2);
+    };
 
-    let compareValue = GetOpenPortAlarmCompareValue(alarm);
-    let compareValue2 = GetOpenPortAlarmCompareValue(this);
-    return (compareValue == compareValue2);
+    return false;
   }
 }
 
@@ -935,13 +935,13 @@ class UpnpAlarm extends Alarm {
       return super.isDup(alarm);
     };
 
-    const sameType = ['ALARM_OPENPORT', 'ALARM_UPNP'];
-    if (!(sameType.indexOf(alarm.type) !== -1 && sameType.indexOf(this.type) !== -1))
-      return false;
+    if (['ALARM_OPENPORT', 'ALARM_UPNP'].includes(alarm.type)) {
+      let compareValue = GetOpenPortAlarmCompareValue(alarm);
+      let compareValue2 = GetOpenPortAlarmCompareValue(this);
+      return (compareValue == compareValue2);
+    };
 
-    let compareValue = GetOpenPortAlarmCompareValue(alarm);
-    let compareValue2 = GetOpenPortAlarmCompareValue(this);
-    return (compareValue == compareValue2);
+    return false;
   }
 }
 
