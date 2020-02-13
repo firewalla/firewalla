@@ -147,7 +147,7 @@ async function generateNetworkInfo() {
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
       dns:          dns,
-      carrier:      intf.state && intf.state.carrier == 1,
+      // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type
     }
@@ -165,6 +165,7 @@ async function generateNetworkInfo() {
 let routerInterface = null
 let routerConfig = null
 let monitoringIntfNames = [];
+let logicIntfNames = [];
 let wanIntfNames = null
 let defaultWanIntfName = null
 let intfNameMap = {}
@@ -268,19 +269,22 @@ class FireRouter {
           // monitor both wan and lan in simple mode
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
-            .map(intf => intf.config.meta.intfName)
+            .map(intf => intf.config.meta.intfName);
           break;
 
         case Mode.MODE_ROUTER:
           // only monitor lan in router mode
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type === 'lan')
-            .map(intf => intf.config.meta.intfName)
+            .map(intf => intf.config.meta.intfName);
           break;
         default:
           // do nothing for other mode
           monitoringIntfNames = [];
       }
+      logicIntfNames = Object.values(intfNameMap)
+        .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
+        .map(intf => intf.config.meta.intfName);
 
       // Legacy code compatibility
       const updatedConfig = {
@@ -371,7 +375,8 @@ class FireRouter {
         }
       }
 
-      monitoringIntfNames = [ 'eth0', 'eth0:0' ]
+      monitoringIntfNames = [ 'eth0', 'eth0:0' ];
+      logicIntfNames = ['eth0', 'eth0:0'];
 
       wanIntfNames = ['eth0'];
       defaultWanIntfName = "eth0";
@@ -449,6 +454,10 @@ class FireRouter {
 
   getInterfaceAll() {
     return JSON.parse(JSON.stringify(intfNameMap))
+  }
+
+  getLogicIntfNames() {
+    return JSON.parse(JSON.stringify(logicIntfNames));
   }
 
   getMonitoringIntfNames() {

@@ -734,7 +734,7 @@ module.exports = class DNSMASQ {
             .mth(ip6Subnets[i], null, 'src')
             .pam('-m set ! --match-set no_dns_caching_set src')
             .mth(53, null, 'dport')
-            .jmp(`DNAT --to-destination ${ip6Addrs[i]}:${MASQ_PORT}`);
+            .jmp(`DNAT --to-destination [${ip6Addrs[i]}]:${MASQ_PORT}`);
           const redirectUDP = redirectTCP.clone().pro('udp');
           await execAsync(redirectTCP.toCmd('-A'));
           await execAsync(redirectUDP.toCmd('-A'));

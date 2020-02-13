@@ -25,6 +25,7 @@ const ip6tables = require('./Ip6tables.js');
 const exec = require('child-process-promise').exec;
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
+const _ = require('lodash');
 const fs = require('fs');
 const Promise = require('bluebird');
 const HostTool = require('./HostTool.js');
@@ -111,6 +112,10 @@ class NetworkProfile {
   }
 
   async applyPolicy() {
+    if (this.o.monitoring !== true) {
+      log.info(`Network ${this.o.uuid} ${this.o.intf} does not require monitoring, skip apply policy`);
+      return;
+    }
     await this.loadPolicy();
     const policy = JSON.parse(JSON.stringify(this._policy));
     await pm.executeAsync(this, this.o.uuid, policy);
@@ -395,7 +400,7 @@ class NetworkProfile {
         }).catch((err) => {
           log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
+        await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
@@ -416,7 +421,7 @@ class NetworkProfile {
           log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
-        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
+        await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
         })
         updatedTags.push(uid);

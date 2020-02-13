@@ -77,9 +77,21 @@ module.exports = class SpooferManager {
           })
         })()
       }
+      this.subscribeOnProcessExit();
       instance = this;
     }
     return instance;
+  }
+
+  subscribeOnProcessExit() {
+    process.on('exit', () => {
+      if(this.spoofStarted) {
+        log.info("Terminating spoof instances on exit");
+        // need to use sync function here
+        require('child_process').execSync(`sudo systemctl stop bitbridge4`);
+        require('child_process').execSync(`sudo systemctl stop bitbridge6`);
+      }
+    });    
   }
 
   async registerSpoofInstance(intf, routerIP, selfIP, isV6) {
@@ -89,9 +101,8 @@ module.exports = class SpooferManager {
 
     if (!this.registeredSpoofInstances[key]) {
       this.registeredSpoofInstances[key] = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
-      if (this.spoofStarted) {
-        await this.registeredSpoofInstances[key].start();
-      }
+      await this.registeredSpoofInstances[key].start();
+      this.scheduleReload();
     } else {
       const oldInstance = this.registeredSpoofInstances[key];
       const newInstance = BitBridge.createInstance(intf, routerIP, selfIP, isV6);
