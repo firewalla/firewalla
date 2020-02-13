@@ -72,7 +72,7 @@ async function piVersion() {
 }
 
 async function ipAddress() {
-  const ip = sysManager.myIp();
+  const ip = sysManager.myDefaultWanIp();
   return ip;
 }
 

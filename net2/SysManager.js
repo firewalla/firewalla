@@ -491,7 +491,7 @@ class SysManager {
 
   getInterfaceViaIP4(ip) {
     const ipAddress = new Address4(ip)
-    return this.getMonitoringInterfaces().find(i => ipAddress.isInSubnet(i.subnetAddress4))
+    return this.getMonitoringInterfaces().find(i => i.subnetAddress4 && ipAddress.isInSubnet(i.subnetAddress4))
   }
 
   getInterfaceViaIP6(ip6) {
@@ -534,6 +534,13 @@ class SysManager {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     if (wanIntf)
       return this.myIp(wanIntf);
+    return null;
+  }
+
+  myDefaultGateway() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myGateway(wanIntf);
     return null;
   }
 
@@ -692,7 +699,7 @@ class SysManager {
     }
 
     return interfaces
-      .map(i => ip4.isInSubnet(i.subnetAddress4))
+      .map(i => i.subnetAddress4 && ip4.isInSubnet(i.subnetAddress4))
       .some(Boolean)
   }
 

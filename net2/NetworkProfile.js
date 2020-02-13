@@ -14,7 +14,6 @@
  */
 
 'use strict';
-const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -198,6 +197,7 @@ class NetworkProfile {
   }
 
   async vpnClient(policy) {
+    // only support IPv4 now
     try {
       const state = policy.state;
       const profileId = policy.profileId;
@@ -273,27 +273,56 @@ class NetworkProfile {
       return null;
   }
 
+  static getDnsmasqConfigDirectory(uuid) {
+    if (uuid) {
+      return `${f.getUserConfigFolder()}/dnsmasq/${uuid}/`;
+    } else
+      return null;
+  }
+
+  // This function can be called while enforcing rules on network.
+  // In case the network doesn't exist at the time when policy is enforced, but may be restored from config history in future.
+  // Thereby, the rule can still be applied and take effect once the network is restored
+  static async ensureCreateEnforcementEnv(uuid) {
+    const netIpsetName = NetworkProfile.getNetIpsetName(uuid);
+    if (!netIpsetName) {
+      log.error(`Failed to get ipset name for ${uuid}`);
+    } else {
+      await exec(`sudo ipset create -! ${netIpsetName} hash:net,iface maxelem 1024`).catch((err) => {
+        log.error(`Failed to create network profile ipset ${netIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset create -! ${netIpsetName}6 hash:net,iface family inet6 maxelem 1024`).catch((err) => {
+        log.error(`Failed to create network profile ipset ${netIpsetName}6`, err.message);
+      });
+    }
+    // ensure existence of dnsmasq per-network config directory
+    if (uuid) {
+      await exec(`mkdir -p ${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/`).catch((err) => {
+        log.error(`Failed to create dnsmasq config directory for ${uuid}`);
+      });
+    }
+  }
+
   async createEnv() {
-    // create related ipsets
+    // create and populate related ipsets
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     if (!netIpsetName) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      await exec(`sudo ipset create -! ${netIpsetName} hash:net,iface maxelem 1024`).then(() => {
-        return exec(`sudo ipset flush -! ${netIpsetName}`);
-      }).then(() => {
+      await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
+      await exec(`sudo ipset flush -! ${netIpsetName}`).then(() => {
         if (this.o && this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0)
           return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${this.o.intf}`);
       }).catch((err) => {
-        log.error(`Failed to create network profile ipset ${netIpsetName}`, err.message);
+        log.error(`Failed to populate network profile ipset ${netIpsetName}`, err.message);
       });
-      await exec(`sudo ipset create -! ${netIpsetName}6 hash:net,iface family inet6 maxelem 1024`).then(async () => {
+      await exec(`sudo ipset flush -! ${netIpsetName}6`).then(async () => {
         if (this.o && this.o.ipv6Subnets && this.o.ipv6Subnets.length != 0) {
           for (const subnet6 of this.o.ipv6Subnets)
             await exec(`sudo ipset add -! ${netIpsetName}6 ${subnet6},${this.o.intf}`).catch((err) => {});
         }
       }).catch((err) => {
-        log.error(`Failed to create network profile ipset ${netIpsetName}6`, err.message);
+        log.error(`Failed to populate network profile ipset ${netIpsetName}6`, err.message);
       });
       // add to c_lan_set accordingly, some feature has mandatory to be enabled on lan only, e.g., vpn client
       let op = "del"
@@ -320,9 +349,7 @@ class NetworkProfile {
       }).catch((err) => {
         log.error(`Failed to flush network profile ipset ${netIpsetName}6`, err.message);
       });
-      // delete related dnsmasq config files
-      if (this.o.intf)
-        await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/*`).catch((err) => {});
+      // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
     }
     this.oper = null; // clear oper cache used in PolicyManager.js
     // disable spoof instances

@@ -50,7 +50,7 @@ module.exports = class {
       if (gw)
         this.gw = gw;
       else
-        this.gw = sysManager.myGateway();
+        this.gw = sysManager.myDefaultGateway();
 
       instance = this;
       this.refreshTimers = {};
@@ -171,7 +171,7 @@ module.exports = class {
     upnpClient.portMapping({
       type: protocol,
       protocol: protocol,
-      private: { host: sysManager.myIp(), port: localPort },
+      private: { host: sysManager.myDefaultWanIp(), port: localPort },
       public: externalPort,
       ttl: 0, // set ttl to 0 for better compatibility
       description: description
@@ -264,7 +264,7 @@ module.exports = class {
 
     upnpClient.portUnmapping({
       protocol: protocol,
-      private: { host: sysManager.myIp(), port: localPort },
+      private: { host: sysManager.myDefaultWanIp(), port: localPort },
       public: externalPort
     }, (err) => {
       if (err) {
