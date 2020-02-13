@@ -184,6 +184,10 @@ async function run() {
   const firewallaConfig = fc.getConfig();
   sysManager.syncVersionUpdate();
 
+
+  const HostManager = require('./HostManager.js');
+  const hostManager= new HostManager("cli",'server','debug');
+
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();
   hl.run();

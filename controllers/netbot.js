@@ -198,9 +198,7 @@ class netBot extends ControllerBot {
       return;
     }
 
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("shadowsocks", value, callback)
-    });
+    this.hostManager.setPolicy("shadowsocks", value, callback)
   }
 
   _scisurf(ip, value, callback = () => { }) {
@@ -209,9 +207,7 @@ class netBot extends ControllerBot {
       return;
     }
 
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("scisurf", value, callback)
-    });
+    this.hostManager.setPolicy("scisurf", value, callback)
   }
 
   _enhancedSpoof(ip, value, callback = () => { }) {
@@ -220,9 +216,7 @@ class netBot extends ControllerBot {
       return;
     }
 
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("enhancedSpoof", value, callback)
-    })
+    this.hostManager.setPolicy("enhancedSpoof", value, callback)
   }
 
   _vulScan(ip, value, callback = () => { }) {
@@ -231,9 +225,7 @@ class netBot extends ControllerBot {
       return;
     }
 
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("vulScan", value, callback)
-    });
+    this.hostManager.setPolicy("vulScan", value, callback)
   }
 
   _dnsmasq(target, value, callback = () => { }) {
@@ -287,15 +279,11 @@ class netBot extends ControllerBot {
       return;
     }
 
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("externalAccess", value, callback)
-    });
+    this.hostManager.setPolicy("externalAccess", value, callback)
   }
 
   _ssh(ip, value, callback = () => { }) {
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("ssh", value, callback)
-    });
+    this.hostManager.setPolicy("ssh", value, callback)
   }
 
   /*
@@ -306,12 +294,10 @@ class netBot extends ControllerBot {
    *   }
    */
   _notify(ip, value, callback = () => { }) {
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("notify", value, (err, data) => {
-        callback(err)
-        log.info("Notification Set", value, " CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
-        nm.loadConfig();
-      });
+    this.hostManager.setPolicy("notify", value, (err, data) => {
+      callback(err)
+      log.info("Notification Set", value, " CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
+      nm.loadConfig();
     });
   }
 
@@ -349,9 +335,7 @@ class netBot extends ControllerBot {
 
   _setUpstreamDns(ip, value, callback = () => { }) {
     log.info("In _setUpstreamDns with ip:", ip, "value:", value);
-    this.hostManager.loadPolicy((err, data) => {
-      this.hostManager.setPolicy("upstreamDns", value, callback)
-    });
+    this.hostManager.setPolicy("upstreamDns", value, callback)
   }
 
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
@@ -2843,6 +2827,12 @@ class netBot extends ControllerBot {
         (async () => {
           const category = value.category
           const domain = value.domain
+          const regex = /^[-a-zA-Z0-9\.\*]+?/;
+          if (!regex.test(domain)) {
+            this.simpleTxData(msg, {}, { code: 400, msg: "Invalid domain." }, callback);
+            return;
+          }
+
           await categoryUpdater.addIncludedDomain(category, domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",

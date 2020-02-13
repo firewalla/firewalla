@@ -50,6 +50,7 @@ const dc = require('../extension/dnscrypt/dnscrypt');
 
 class DNSCryptPlugin extends Sensor {
   async run() {
+    this.refreshInterval = (this.config.refreshInterval || 24 * 60) * 60 * 1000;
     this.systemSwitch = false;
     this.adminSystemSwitch = false;
     this.enabledMacAddresses = {};
@@ -101,8 +102,10 @@ class DNSCryptPlugin extends Sensor {
   }
 
   async applyAll() {
-    await dc.prepareConfig({});
-    await dc.restart();
+    if(this.adminSystemSwitch) {
+      await dc.prepareConfig({});
+      await dc.restart();
+    }
     await this.applyDoH();
     for (const macAddress in this.enabledMacAddresses) {
       await this.applyDeviceDoH(macAddress);
@@ -172,7 +175,7 @@ class DNSCryptPlugin extends Sensor {
 
   async globalOff() {
     this.adminSystemSwitch = false;
-    //await this.applyAll();
+    await this.applyAll();
     await dc.stop();
   }
 

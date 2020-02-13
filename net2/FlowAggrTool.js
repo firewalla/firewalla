@@ -190,6 +190,10 @@ class FlowAggrTool {
       max_flow = MAX_FLOW_PER_HOUR
     }
 
+    if(options.max_flow) {
+      max_flow = options.max_flow
+    }
+
     let mac = options.mac; // if mac is undefined, by default it will scan over all machines
 
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
@@ -244,13 +248,13 @@ class FlowAggrTool {
     if(mac) {
       tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
     } else {
-      // * is a hack code here, in redis, it means matching everything during keys command
-      tickKeys = (await Promise.all(ticks.map((tick) => {
-        let keyPattern = this.getFlowKey('*', trafficDirection, interval, tick);
-        log.debug("Checking key pattern:", keyPattern);
-        return rclient.keysAsync(keyPattern);
-      })))
-        .reduce((a,b) => a.concat(b), []); // reduce version of flatMap
+      // only call keys once to improve performance
+      const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
+      const matchedKeys = await rclient.keysAsync(keyPattern);
+
+      tickKeys = matchedKeys.filter((key) => {
+        return ticks.some((tick) => key.endsWith(`:${tick}`))
+      });
     }
 
     let num = tickKeys.length;
@@ -289,7 +293,14 @@ class FlowAggrTool {
   }
 
   setLastSumFlow(mac, trafficDirection, keyName) {
-    let key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+    let key = "";
+    
+    if(mac) {
+      key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+    } else {
+      key = util.format("lastsumflow:%s", trafficDirection);
+    }
+
     return rclient.setAsync(key, keyName);
   }
 
@@ -302,6 +313,61 @@ class FlowAggrTool {
     let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
 
     return rclient.zrangeAsync(sumFlowKey, 0, count, 'withscores');
+  }
+
+  // return a list of destinations sorted by transfer size desc
+  async getTopSumFlowByKeyAndDestination(key, count) {
+    // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
+    const destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
+    const results = {};
+    const totalPorts = {};
+
+    for(let i = 0; i < destAndScores.length; i++) {
+      if(i % 2 === 1) {
+        let payload = destAndScores[i-1];
+        let count = Number(destAndScores[i]);
+        if(payload !== '_' && count !== 0) {
+          try {
+            const json = JSON.parse(payload);
+            const dest = json.destIP;
+            const ports = json.port;
+            if(!dest) {
+              continue;
+            }  
+            if(results[dest]) {
+              results[dest] += count
+            } else {
+              results[dest] = count
+            }
+
+            if(ports) {
+              if(totalPorts[dest]) {
+                totalPorts[dest].push.apply(totalPorts[dest], ports)
+              } else {
+                totalPorts[dest] = ports
+              }
+            }
+          } catch(err) {
+            log.error("Failed to parse payload: ", payload);
+          }
+        }
+      }
+    }
+
+    const array = [];
+    for(const destIP in results) {
+      let ports = totalPorts[destIP] || [];
+      ports = ports.filter((v, i) => {
+        return ports.indexOf(v) === i;
+      })
+      array.push({ip: destIP, count: results[destIP], ports: ports});
+    }
+
+    array.sort(function(a, b) {
+      return a.count - b.count
+    });
+
+    return array;
   }
 
   async getTopSumFlowByKey(key, count) {
@@ -331,6 +397,52 @@ class FlowAggrTool {
 
   getCategoryActivitySumFlowByKey(key, count) {
     return this.getXActivitySumFlowByKey(key, 'category', count)
+  }
+
+  // group by activity, ignore individual devices
+  // return a list of categories sorted by time desc
+  async getXYActivitySumFlowByKey(key, xy, count) {
+    // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
+    const appAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
+    const results = {};
+
+    for(let i = 0; i < appAndScores.length; i++) {
+      if(i % 2 === 1) {
+        let payload = appAndScores[i-1];
+        let count = Number(appAndScores[i]);
+        if(payload !== '_' && count !== 0) {
+          try {
+            let json = JSON.parse(payload);
+            const key = json[xy];
+            if(!key) {
+              continue;
+            }            
+            if(results[key]) {
+              results[key] += count
+            } else {
+              results[key] = count
+            }
+          } catch(err) {
+            log.error("Failed to parse payload: ", payload);
+          }
+        }
+      }
+    }
+    
+    let array = [];
+    for(const category in results) {
+      const count = Math.floor(results[category]);
+      if(count < 10) {
+          continue;
+      }
+      array.push({category, count});
+    }
+
+    array.sort(function(a, b) {
+      return a.count - b.count
+    });
+
+    return array;
   }
 
   async getXActivitySumFlowByKey(key, x, count) {
