@@ -1533,12 +1533,16 @@ module.exports = class DNSMASQ {
   async checkConfsChange() {
     try {
       const dnsmasqConfKey = "dnsmasq:conf";
-      let { stdout } = await execAsync(`find ${FILTER_DIR}* -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
-      stdout = stdout ? stdout.split('\n').join('') : '';
+      let md5sumNow = '';
+      for (const confs of [`${FILTER_DIR}*`, resolvFile]) {
+        const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
+        md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
+      }
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);
-      log.info(`dnsmasq confs md5sum, before: ${md5sumBefore} now: ${stdout}`)
-      if (stdout != md5sumBefore) {
-        await rclient.setAsync(dnsmasqConfKey, stdout);
+      log.info(`dnsmasq confs md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
+      if (md5sumNow != md5sumBefore) {
+        await rclient.setAsync(dnsmasqConfKey, md5sumNow);
+        return true;
       }
       return false;
     } catch (error) {
