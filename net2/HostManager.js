@@ -956,13 +956,10 @@ module.exports = class HostManager {
           this.getRecentFlows(json),
           this.getGuessedRouters(json),
           this.getGuardian(json),
-<<<<<<< HEAD
           this.networkConfig(json),
           this.networkProfilesForInit(json),
-          this.tagsForInit(json)
-=======
+          this.tagsForInit(json),
           netBotTool.loadSystemStats(json)
->>>>>>> c9ec9c554c8043d9c85238bc719d1a6ded1ede9b
         ];
 
         this.basicDataForInit(json, options);
