@@ -124,6 +124,10 @@ class GoldPlatform extends Platform {
   isFireRouterManaged() {
     return true;
   }
+
+  getBroTabFile() {
+    return `${f.getFirewallaHome()}/etc/brotab.gold`;
+  }
 }
 
 module.exports = GoldPlatform;

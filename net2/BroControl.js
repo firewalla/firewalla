@@ -19,7 +19,9 @@ const log = require("./logger.js")(__filename);
 const f = require('./Firewalla.js')
 const { delay } = require('../util/util.js')
 
-const { exec } = require('child-process-promise')
+const { exec } = require('child-process-promise');
+
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
 
@@ -59,7 +61,7 @@ class BroControl {
   }
 
   async addCronJobs() {
-    await exec('sudo -u pi crontab -r; sudo -u pi crontab /home/pi/firewalla/etc/brotab')
+    await exec(`sudo -u pi crontab -r; sudo -u pi crontab ${platform.getBroTabFile()}`);
   }
 
   async restart() {

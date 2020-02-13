@@ -69,7 +69,7 @@ sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 logger "Broadcast booting"
 (cd $FIREWALLA_HOME; pkill FWBroadcastBooting &>/dev/null; timeout 30m node scripts/broadcast_booting.js) &
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
-sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/crontab
+sudo -u pi crontab -r ; sudo -u pi crontab $CRONTAB_FILE
 $FIREWALLA_HOME/scripts/fire-time.sh
 logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
 

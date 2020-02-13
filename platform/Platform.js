@@ -17,6 +17,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 const fConfig = require('../net2/config.js').getConfig();
+const f = require('../net2/Firewalla.js');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -92,6 +93,10 @@ class Platform {
   }
 
   isFireRouterManaged() {
+  }
+
+  getBroTabFile() {
+    return `${f.getFirewallaHome()}/etc/brotab`;
   }
 }
 
