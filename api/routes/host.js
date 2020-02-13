@@ -75,12 +75,12 @@ router.get('/:host',
 
                      Promise.all([
                        flowTool.prepareRecentFlows(jsonObj, {mac: h.o.mac}),
-                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareAppActivityFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareCategoryActivityFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareDetailedCategoryFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareDetailedAppFlowsForHost(jsonObj, h.o.mac)
+                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareAppActivityFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareCategoryActivityFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareDetailedCategoryFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareDetailedAppFlowsForHost(jsonObj, h.o.mac, {})
                    ]).then(() => {
                        res.json(jsonObj);
                      });
