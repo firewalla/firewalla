@@ -315,16 +315,19 @@ class NetworkProfile {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
       await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
+      let realIntf = this.o.intf;
+      if (realIntf && realIntf.endsWith(":0"))
+        realIntf = realIntf.substring(0, realIntf.length - 2);
       await exec(`sudo ipset flush -! ${netIpsetName}`).then(() => {
         if (this.o && this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0)
-          return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${this.o.intf}`);
+          return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${realIntf}`);
       }).catch((err) => {
         log.error(`Failed to populate network profile ipset ${netIpsetName}`, err.message);
       });
       await exec(`sudo ipset flush -! ${netIpsetName}6`).then(async () => {
         if (this.o && this.o.ipv6Subnets && this.o.ipv6Subnets.length != 0) {
           for (const subnet6 of this.o.ipv6Subnets)
-            await exec(`sudo ipset add -! ${netIpsetName}6 ${subnet6},${this.o.intf}`).catch((err) => {});
+            await exec(`sudo ipset add -! ${netIpsetName}6 ${subnet6},${realIntf}`).catch((err) => {});
         }
       }).catch((err) => {
         log.error(`Failed to populate network profile ipset ${netIpsetName}6`, err.message);
