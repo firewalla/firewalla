@@ -41,6 +41,9 @@ let hostManager = new HostManager('cli', 'server');
 
 const flowUtil = require('../net2/FlowUtil')
 
+const config = require('../net2/config.js').getConfig();
+const excludedCategories = (config.category && config.category.exclude) || [];
+
 const bone = require('../lib/Bone.js');
 
 // This sensor is to aggregate device's flow every 10 minutes
@@ -63,8 +66,13 @@ class FlowAggregationSensor extends Sensor {
     log.info("Generating summarized flows info...")
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
     await this.aggrAll(ts)
-    await this.sumAll(ts)
-    await this.updateAllHourlySummedFlows(ts)
+
+    // preload apps and categories to improve performance
+    const apps = await appFlowTool.getApps('*'); // all mac addresses
+    const categories = await categoryFlowTool.getCategories('*') // all mac addresses
+
+    await this.sumAll(ts, apps, categories)
+    await this.updateAllHourlySummedFlows(ts, apps, categories)
     this.firstTime = false;
     log.info("Summarized flow generation is complete");
   }
@@ -109,14 +117,14 @@ class FlowAggregationSensor extends Sensor {
       appInfos.forEach((app) => {
 
         // no need to group traffic for these two types in particular, FIXME
-        if (app === "technology" || app === "search-portal") {
-          return
+        if (excludedCategories.includes(app)) {
+          return;
         }
 
         let t = traffic[app];
 
-        if (typeof t === 'undefined') {
-          traffic[app] = {
+        if (! (app in traffic) ) {
+            traffic[app] = {
             duration: flow.du,
             ts: flow.ts,
             ets: flow.ets || Date.now() / 1000,
@@ -160,7 +168,7 @@ class FlowAggregationSensor extends Sensor {
 
       let t = traffic[destIP];
 
-      if(typeof t === 'undefined') {
+      if (! (destIP in traffic) ) {
         traffic[destIP] = {upload: 0, download: 0, port:[]};
         t = traffic[destIP];
       }
@@ -202,7 +210,7 @@ class FlowAggregationSensor extends Sensor {
   // this will be periodically called to update the summed flows in last 24 hours
   // for hours between -24 to -2, if any of these flows are created already, don't update
   // for the last hour, it will periodically update every 10 minutes;
-  async updateAllHourlySummedFlows(ts) {
+  async updateAllHourlySummedFlows(ts, apps, categories) {
     // let now = Math.floor(new Date() / 1000);
     let now = ts; // actually it's NOT now, typically it's 3 mins earlier than NOW;
     let lastHourTick = Math.floor(now / 3600) * 3600;
@@ -214,7 +222,7 @@ class FlowAggregationSensor extends Sensor {
         let ts = lastHourTick - i * 3600;
         await this.hourlySummedFlows(ts, {
           skipIfExists: true
-        })
+        }, apps, categories);
       }
     }
 
@@ -223,13 +231,13 @@ class FlowAggregationSensor extends Sensor {
       let ts = lastHourTick - i * 3600;
       await this.hourlySummedFlows(ts, {
         skipIfExists: false
-      })
+      }, apps, categories);
     }
 
   }
 
   // sum all traffic together, across devices
-  async hourlySummedFlows(ts, opts) {
+  async hourlySummedFlows(ts, opts, apps, categories) {
     // ts is the end timestamp of the hour
     ts = Math.floor(ts / 3600) * 3600
     let end = ts;
@@ -245,16 +253,19 @@ class FlowAggregationSensor extends Sensor {
       end: end,
       interval: this.config.interval,
       expireTime: 24 * 3600, // keep for 24 hours
-      skipIfExists: skipIfExists
+      skipIfExists: skipIfExists,
+      max_flow: 200
     }
 
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
     await flowAggrTool.addSumFlow("app", options);
 
-    await this.cleanupAppActivity(options); // to filter idle activities
+    await this.cleanupAppActivity(options, apps); // to filter idle activities
+
     await flowAggrTool.addSumFlow("category", options);
-    await this.cleanupCategoryActivity(options);
+
+    await this.cleanupCategoryActivity(options, categories);
 
     let macs = hostManager.getActiveMACs();
 
@@ -270,13 +281,13 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow("download", optionsCopy);
       await flowAggrTool.addSumFlow("upload", optionsCopy);
       await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy); // to filter idle activities if updated
+      await this.cleanupAppActivity(optionsCopy, apps); // to filter idle activities if updated
       await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy, categories);
     }));
   }
 
-  async sumAll(ts) {
+  async sumAll(ts, apps, categories) {
     let now = new Date() / 1000;
 
     if(now < ts + 60) {
@@ -295,8 +306,16 @@ class FlowAggregationSensor extends Sensor {
       end: end,
       interval: this.config.interval,
       expireTime: this.config.sumFlowExpireTime,
-      setLastSumFlow: true
+      setLastSumFlow: true,
+      max_flow: 200
     }
+
+    await flowAggrTool.addSumFlow("download", options);
+    await flowAggrTool.addSumFlow("upload", options);
+    await flowAggrTool.addSumFlow("app", options);
+    await this.cleanupAppActivity(options, apps); // to filter idle activities
+    await flowAggrTool.addSumFlow("category", options);
+    await this.cleanupCategoryActivity(options, categories);
 
     let macs = hostManager.getActiveMACs();
 
@@ -308,10 +327,10 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow("upload", optionsCopy);
 
       await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy);
+      await this.cleanupAppActivity(optionsCopy, apps);
 
       await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy, categories);
     }))
   }
 
@@ -356,19 +375,27 @@ class FlowAggregationSensor extends Sensor {
     let cache = {};
 
     let outgoingFlows = await flowTool.queryFlows(macAddress, "in", begin, end); // in => outgoing
-    let outgoingFlowsHavingIntels = outgoingFlows.filter(async f => {
-      return await this._flowHasActivity(f, cache);
-    });
+    const outgoingFlowsHavingIntels = [];
+    for(const flow of outgoingFlows) {
+      const flag = await this._flowHasActivity(flow, cache);
+      if(flag) {
+       flows.push(flow);
+       outgoingFlowsHavingIntels.push(flow);
+      }
+    }
 
-    flows.push.apply(flows, outgoingFlowsHavingIntels);
     recentFlow = this.selectVeryRecentActivity(recentFlow, outgoingFlowsHavingIntels)
 
-
+    const incomingFlowsHavingIntels = [];
     let incomingFlows = await flowTool.queryFlows(macAddress, "out", begin, end); // out => incoming
-    let incomingFlowsHavingIntels = incomingFlows.filter(async f => {
-      return await this._flowHasActivity(f, cache);
-    });
-    flows.push.apply(flows, incomingFlowsHavingIntels);
+    for(const flow of incomingFlows) {
+      const flag = await this._flowHasActivity(flow, cache);
+      if(flag) {
+        flows.push(flow);
+        incomingFlowsHavingIntels.push(flow);
+      }
+    }
+
     recentFlow = this.selectVeryRecentActivity(recentFlow, incomingFlowsHavingIntels)
 
     // now flows array should only contain flows having intels
@@ -431,8 +458,8 @@ class FlowAggregationSensor extends Sensor {
 
       // FIXME
       // ignore technology and search-portal for better performanced
-      if(category === "technology" || category === "search-portal") {
-        continue
+      if(excludedCategories.includes(category)) {
+        continue;
       }
       let object = traffic[category]
       await categoryFlowTool.addCategoryFlowObject(mac, category, object)
@@ -488,7 +515,7 @@ class FlowAggregationSensor extends Sensor {
     return flows
   }
 
-  async cleanupAppActivity(options) {
+  async cleanupAppActivity(options, apps) {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
 
@@ -509,8 +536,6 @@ class FlowAggregationSensor extends Sensor {
         }
       }
 
-      let apps = await appFlowTool.getApps('*') // all mac addresses
-
       let allFlows = {}
 
       for (const app of apps) {
@@ -525,11 +550,12 @@ class FlowAggregationSensor extends Sensor {
       let hashCache = {}
 
       if(Object.keys(allFlows).length > 0) {
-        flowUtil.hashIntelFlows(allFlows, hashCache)
+        await flowAggrTool.setCleanedAppActivity(begin, end, allFlows, options)
 
-        let data = await bone.flowgraphAsync('summarizeApp', allFlows)
-        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-        await flowAggrTool.setCleanedAppActivity(begin, end, unhashedData, options)
+        // change after store
+        flowUtil.hashIntelFlows(allFlows, hashCache)
+        await bone.flowgraphAsync('summarizeApp', allFlows)
+//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
       } else {
         await flowAggrTool.setCleanedAppActivity(begin, end, {}, options) // if no data, set an empty {}
       }
@@ -567,7 +593,7 @@ class FlowAggregationSensor extends Sensor {
   }
 
   // TODO: Why call it cleanup? This looks confusing. It actually summarize different category flows, i.e., categoryflow:(mac:)?
-  async cleanupCategoryActivity(options) {
+  async cleanupCategoryActivity(options, categories) {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
 
@@ -589,8 +615,6 @@ class FlowAggregationSensor extends Sensor {
         }
       }
 
-      let categories = await categoryFlowTool.getCategories('*') // all mac addresses
-
       let allFlows = {}
 
       for (const category of categories) {
@@ -605,13 +629,12 @@ class FlowAggregationSensor extends Sensor {
       let hashCache = {}
 
       if (Object.keys(allFlows).length > 0) {
-        flowUtil.hashIntelFlows(allFlows, hashCache)
+        await flowAggrTool.setCleanedCategoryActivity(begin, end, allFlows, options)
 
-        let data = await bone.flowgraphAsync('summarizeActivity', allFlows)
-
-        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-
-        await flowAggrTool.setCleanedCategoryActivity(begin, end, unhashedData, options)
+        // change after store
+        flowUtil.hashIntelFlows(allFlows, hashCache);
+        await bone.flowgraphAsync('summarizeActivity', allFlows);
+//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
       } else {
         await flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options) // if no data, set an empty {}
       }

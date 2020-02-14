@@ -32,6 +32,8 @@ const flowTool = require('./FlowTool.js')();
 const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
 const categoryFlowTool = new CategoryFlowTool()
 
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
 let instance = null;
 
 function toInt(n){ return Math.floor(Number(n)); };
@@ -43,6 +45,73 @@ class NetBotTool {
       instance = this;
     }
     return instance;
+  }
+
+  async loadSystemStats(json) {
+    const systemFlows = {};
+
+    const keys = ['upload', 'download'];
+
+    for(const key of keys) {
+      const lastSumKey = `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+
+      const elements = realSumKey.split(":")
+      if(elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+
+      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, 50);
+
+      const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        flows: enriched
+      }
+    }
+
+    const actitivityKeys = ['app', 'category'];
+
+    for(const key of actitivityKeys) {
+
+      const lastSumKey = `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+      
+      const elements = realSumKey.split(":")
+      if(elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+  
+      const traffic = await flowAggrTool.getXYActivitySumFlowByKey(realSumKey, key, 50);
+        
+      traffic.sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        activities: traffic
+      }  
+    }
+
+    json.systemFlows = systemFlows;
   }
 
   prepareTopDownloadFlows(json, options) {
