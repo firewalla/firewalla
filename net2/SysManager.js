@@ -548,6 +548,13 @@ class SysManager {
     return null;
   }
 
+  myDefaultDns() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myDNS(wanIntf);
+    return [];
+  }
+
   myIp(intf = this.config.monitoringInterface) {
     return this.getInterface(intf) && this.getInterface(intf).ip_address;
   }

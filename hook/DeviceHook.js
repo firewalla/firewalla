@@ -618,7 +618,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
+            "p.tag.ids": (!host || _.isEmpty(host.getTags())) ? [] : host.getTags()
           });
         am2.enqueueAlarm(alarm);
         break;

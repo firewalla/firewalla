@@ -49,6 +49,7 @@ class ICMP6Sensor extends Sensor {
     for (const intf of interfaces) {
       if (!intf.name || !intf.mac_address) continue;
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
+      if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla
       const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-en', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136`]);
       const pid = tcpdumpSpawn.pid;

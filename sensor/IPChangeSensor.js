@@ -41,7 +41,7 @@
         const ipv4Address = intf.ip_address;
         // TODO: support ipv6 address change detection
         // const ipv6Addresses = intf.ip6_addresses || [];
-        const currentIpv4Addr = sysManager.myIp();
+        const currentIpv4Addr = sysManager.myDefaultWanIp();
         if (ipv4Address !== currentIpv4Addr) {
           // discoverInterfaces will publish message to trigger network info reload
           await d.discoverInterfacesAsync().catch((err) => {
