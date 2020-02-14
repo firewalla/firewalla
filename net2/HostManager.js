@@ -1686,12 +1686,12 @@ module.exports = class HostManager {
   // return: Array<{intf: string, macs: Array<string>}>
   getActiveIntfs() {
     let inftMap = {};
-    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
+    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => (host != null) && host.intf))
     .map(host => {
       if (inftMap[host.intf]) {
-        inftMap[host.intf] = [host.mac];
-      } else {
         inftMap[host.intf].push(host.mac);
+      } else {
+        inftMap[host.intf] = [host.mac];
       }
     });
     
@@ -1702,19 +1702,19 @@ module.exports = class HostManager {
 
   // need active host?
   getIntfMacs(intf) {
-    return this.hosts.all.map(host => host.o).filter(host => host.intf == intf).map(host => host.mac);
+    return this.hosts.all.map(host => host.o).filter(host => host.intf && (host.intf == intf)).map(host => host.mac);
   }
 
   // return: Array<{tag: number, macs: Array<string>}>
   getActiveTags() {
     let tagMap = {};
-    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
+    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => (host != null) && !_.isEmpty(host.tags)))
     .map(host => {
-      for (const tag of host.tags) {
+      for (const tag of JSON.parse(host.tags)) {
         if (tagMap[tag]) {
-          tagMap[tag] = [host.mac];
-        } else {
           tagMap[tag].push(host.mac);
+        } else {
+          tagMap[tag] = [host.mac];
         }
       }
     });
@@ -1726,7 +1726,9 @@ module.exports = class HostManager {
 
   // need active host?
   getTagMacs(tag) {
-    return this.hosts.all.map(host => host.o).filter(host => host.tags.includes(tag)).map(host => host.mac);
+    return this.hosts.all.map(host => host.o)
+    .filter(host => !_.isEmpty(host.tags) && JSON.parse(host.tags).includes(tag))
+    .map(host => host.mac);
   }
 
   getActiveHumanDevices() {

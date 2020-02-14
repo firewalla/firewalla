@@ -267,8 +267,14 @@ class FlowAggregationSensor extends Sensor {
 
     await this.cleanupCategoryActivity(options, categories);
 
+    // init host, hacky way may need init flag
+    if (hostManager.hosts.all.length == 0) {
+      await hostManager.getHostsAsync();
+    }
+    
     // aggregate intf
     let intfs = hostManager.getActiveIntfs();
+    log.info(`hourlySummedFlows intfs:`, intfs);
 
     await Promise.all(intfs.map(async intf => {
       if(!intf) {
@@ -289,6 +295,7 @@ class FlowAggregationSensor extends Sensor {
 
     // aggregate tags
     let tags = hostManager.getActiveTags();
+    log.info(`hourlySummedFlows tags:`, tags);
 
     await Promise.all(tags.map(async tag => {
       if(!tag) {
@@ -603,13 +610,13 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     if (options.intf) {
-      log.info(`Cleaning up app activities between ${beginString} and ${endString} for intf`, options.intf);
+      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for intf`, options.intf);
     } else if (options.tag) {
-      log.info(`Cleaning up app activities between ${beginString} and ${endString} for tag`, options.tag);
+      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for tag`, options.tag);
     } if(options.mac) {
-      log.info(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`);
+      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`);
     } else {
-      log.info(`Cleaning up app activities between ${beginString} and ${endString}`);
+      log.debug(`Cleaning up app activities between ${beginString} and ${endString}`);
     }
 
     try {
@@ -689,9 +696,9 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     if (options.intf) {
-      log.info(`Cleaning up category activities between ${beginString} and ${endString} for intf`, options.intf);
+      log.debug(`Cleaning up category activities between ${beginString} and ${endString} for intf`, options.intf);
     } else if (options.tag) {
-      log.info(`Cleaning up category activities between ${beginString} and ${endString} for tag`, options.tag);
+      log.debug(`Cleaning up category activities between ${beginString} and ${endString} for tag`, options.tag);
     } else if (options.mac) {
       log.debug(`Cleaning up category activities between ${beginString} and ${endString} for device ${options.mac}`)
     } else {

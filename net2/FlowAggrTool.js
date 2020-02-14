@@ -245,9 +245,9 @@ class FlowAggrTool {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     if(target) {
-      log.info(util.format("Summing %s %s flows between %s and %s", target, trafficDirection, beginString, endString));
+      log.debug(util.format("Summing %s %s flows between %s and %s", target, trafficDirection, beginString, endString));
     } else {
-      log.info(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
+      log.debug(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
     }
 
     let ticks = this.getTicks(begin, end, interval);
