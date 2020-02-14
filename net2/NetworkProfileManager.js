@@ -48,7 +48,7 @@ class NetworkProfileManager {
         if (!this.iptablesReady)
           return;
         const host = event.host;
-        const mac = event.mac;
+        const mac = host.mac;
         if (!mac)
           return;
         if (_.isString(host.ipv4)) {
@@ -62,7 +62,7 @@ class NetworkProfileManager {
           if (!networkProfile)
             return;
           setTimeout(() => {
-            networkProfile.rediscoverGateway6();
+            networkProfile.rediscoverGateway6(mac);
           }, 3000);
         }
       });
@@ -100,7 +100,7 @@ class NetworkProfileManager {
 
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets"];
+    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring"];
     for (const key of convertKeys) {
       if (obj[key])
         redisObj[key] = JSON.stringify(obj[key]);
@@ -110,7 +110,7 @@ class NetworkProfileManager {
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets"];
+    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring"];
     for (const key of convertKeys) {
       if (redisObj[key])
         try {
@@ -180,25 +180,33 @@ class NetworkProfileManager {
           // network profile changed, need to reapply createEnv
           if (f.isMain()) {
             log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, o);
-            await this.scheduleCreateEnv(networkProfile);
+            if (networkProfile.o.monitoring)
+              await this.scheduleCreateEnv(networkProfile);
+            else
+              await networkProfile.destroyEnv();
           }
         }
       } else {
         this.networkProfiles[uuid] = new NetworkProfile(o);
         if (f.isMain()) {
-          await this.scheduleCreateEnv(this.networkProfiles[uuid], true);
+          if (this.networkProfiles[uuid].o.monitoring)
+            await this.scheduleCreateEnv(this.networkProfiles[uuid], true);
+          else
+            await this.networkProfiles[uuid].destroyEnv();
         }
       }
       this.networkProfiles[uuid].active = false;
     }
 
-    const monitoringInterfaces = sysManager.getMonitoringInterfaces();
-    for (let intf of monitoringInterfaces) {
+    const monitoringInterfaces = sysManager.getMonitoringInterfaces() || [];
+    const logicInterfaces = sysManager.getLogicInterfaces() || [];
+    for (let intf of logicInterfaces) {
       const uuid = intf.uuid;
       if (!uuid) {
         log.info(`uuid is not defined, ignore this interface`, intf);
         continue;
       }
+      const monitoring = monitoringInterfaces.some(i => i.name === intf.name);
       const updatedProfile = {
         uuid: uuid,
         intf: intf.name,
@@ -209,13 +217,17 @@ class NetworkProfileManager {
         dns: intf.dns || [],
         gateway: intf.gateway_ip || "",
         gateway6: intf.gateway6 || "",
-        carrier: intf.carrier ? 1 : 0,
+        // carrier: intf.carrier ? 1 : 0, need to find a better place to put this
+        monitoring: monitoring,
         type: intf.type || ""
       };
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
         if (f.isMain()) {
-          await this.scheduleCreateEnv(this.networkProfiles[uuid], true);
+          if (monitoring)
+            await this.scheduleCreateEnv(this.networkProfiles[uuid], true);
+          else
+            await this.networkProfiles[uuid].destroyEnv();
         }
       } else {
         const networkProfile = this.networkProfiles[uuid];
@@ -225,7 +237,10 @@ class NetworkProfileManager {
           // network profile changed, need to reapply createEnv
           if (f.isMain()) {
             log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, updatedProfile);
-            await this.scheduleCreateEnv(networkProfile);
+            if (monitoring)
+              await this.scheduleCreateEnv(networkProfile);
+            else
+              await networkProfile.destroyEnv();
           }
         }
       }

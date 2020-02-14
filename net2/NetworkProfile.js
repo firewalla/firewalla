@@ -25,6 +25,7 @@ const ip6tables = require('./Ip6tables.js');
 const exec = require('child-process-promise').exec;
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
+const _ = require('lodash');
 const fs = require('fs');
 const Promise = require('bluebird');
 const HostTool = require('./HostTool.js');
@@ -111,6 +112,10 @@ class NetworkProfile {
   }
 
   async applyPolicy() {
+    if (this.o.monitoring !== true) {
+      log.info(`Network ${this.o.uuid} ${this.o.intf} does not require monitoring, skip apply policy`);
+      return;
+    }
     await this.loadPolicy();
     const policy = JSON.parse(JSON.stringify(this._policy));
     await pm.executeAsync(this, this.o.uuid, policy);
@@ -310,16 +315,19 @@ class NetworkProfile {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
       await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
+      let realIntf = this.o.intf;
+      if (realIntf && realIntf.endsWith(":0"))
+        realIntf = realIntf.substring(0, realIntf.length - 2);
       await exec(`sudo ipset flush -! ${netIpsetName}`).then(() => {
         if (this.o && this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0)
-          return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${this.o.intf}`);
+          return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${realIntf}`);
       }).catch((err) => {
         log.error(`Failed to populate network profile ipset ${netIpsetName}`, err.message);
       });
       await exec(`sudo ipset flush -! ${netIpsetName}6`).then(async () => {
         if (this.o && this.o.ipv6Subnets && this.o.ipv6Subnets.length != 0) {
           for (const subnet6 of this.o.ipv6Subnets)
-            await exec(`sudo ipset add -! ${netIpsetName}6 ${subnet6},${this.o.intf}`).catch((err) => {});
+            await exec(`sudo ipset add -! ${netIpsetName}6 ${subnet6},${realIntf}`).catch((err) => {});
         }
       }).catch((err) => {
         log.error(`Failed to populate network profile ipset ${netIpsetName}6`, err.message);
@@ -395,7 +403,7 @@ class NetworkProfile {
         }).catch((err) => {
           log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
+        await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
@@ -416,7 +424,7 @@ class NetworkProfile {
           log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
-        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${this.o.intf}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
+        await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
         })
         updatedTags.push(uid);

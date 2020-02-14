@@ -474,6 +474,10 @@ class SysManager {
     });
   }
 
+  getLogicInterfaces() {
+    return fireRouter.getLogicIntfNames().map(name => this.sysinfo[name]);
+  }
+
   getMonitoringInterfaces() {
     return fireRouter.getMonitoringIntfNames().map(name => this.sysinfo[name])
   }

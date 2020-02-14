@@ -77,18 +77,7 @@ class BitBridge {
     this.routerIP = routerIP
     this.selfIP = selfIP
     this.spawnProcess = null
-    this.started = false
-    this.subscribeOnProcessExit()
     this.isV6 = isV6
-  }
-
-  subscribeOnProcessExit() {
-    process.on('exit', () => {
-      if(this.started) {
-        log.info("Terminating bitbridge on exit")
-        this.stop();
-      }
-    });    
   }
 
   async start() {
@@ -137,7 +126,6 @@ class BitBridge {
       }
     }
 
-    this.started = true;
   }
 
   async stop() {
@@ -162,7 +150,6 @@ class BitBridge {
       // ignore error
     }
 
-    this.started = false        
   }
 
   getBinary() {

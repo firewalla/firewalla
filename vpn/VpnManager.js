@@ -58,6 +58,8 @@ class VpnManager {
             case Message.MSG_SYS_NETWORK_INFO_RELOADED:
               // update UPnP port mapping
               try {
+                if (!this.started)
+                  return;
                 this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
                   log.error("Failed to set Upnp port mapping", err);
                 });

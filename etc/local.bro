@@ -93,7 +93,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load policy/protocols/ssl/heartbleed
 
 # enable link-layer address information to connection logs
-@load policy/protocols/conn/mac-logging
+#@load policy/protocols/conn/mac-logging
 
 redef restrict_filters += [["not-mdns"] = "not port 5353"];
 
