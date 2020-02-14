@@ -290,7 +290,7 @@ class FlowAggregationSensor extends Sensor {
     // aggregate tags
     let tags = hostManager.getActiveTags();
 
-    await Promise.all(macs.map(async tag => {
+    await Promise.all(tags.map(async tag => {
       if(!tag) {
         return;
       }
@@ -382,20 +382,6 @@ class FlowAggregationSensor extends Sensor {
       const optionsCopy = JSON.parse(JSON.stringify(options));
 
       optionsCopy.tag = tag;
-      await flowAggrTool.addSumFlow("download", optionsCopy);
-      await flowAggrTool.addSumFlow("upload", optionsCopy);
-
-      await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy, apps);
-
-      await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy, categories);
-    }));
-
-    await Promise.all(macs.map(async mac => {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-
-      optionsCopy.mac = mac;
       await flowAggrTool.addSumFlow("download", optionsCopy);
       await flowAggrTool.addSumFlow("upload", optionsCopy);
 
