@@ -267,6 +267,47 @@ class FlowAggregationSensor extends Sensor {
 
     await this.cleanupCategoryActivity(options, categories);
 
+    // aggregate intf
+    let intfs = hostManager.getActiveIntfs();
+
+    await Promise.all(intfs.map(async intf => {
+      if(!intf) {
+        return;
+      }
+
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+
+      optionsCopy.intf = intf;
+      optionsCopy.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.cleanupAppActivity(optionsCopy, apps); // to filter idle activities if updated
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy, categories);
+    }));
+
+    // aggregate tags
+    let tags = hostManager.getActiveTags();
+
+    await Promise.all(macs.map(async tag => {
+      if(!tag) {
+        return;
+      }
+
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+
+      optionsCopy.tag = tag;
+      optionsCopy.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.cleanupAppActivity(optionsCopy, apps); // to filter idle activities if updated
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy, categories);
+    }));
+
+    // aggregate all
     let macs = hostManager.getActiveMACs();
 
     await Promise.all(macs.map(async mac => {
@@ -317,6 +358,55 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addSumFlow("category", options);
     await this.cleanupCategoryActivity(options, categories);
 
+    // aggregate intf
+    let intfs = hostManager.getActiveIntfs();
+
+    await Promise.all(intfs.map(async intf => {
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+
+      optionsCopy.intf = intf;
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
+
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.cleanupAppActivity(optionsCopy, apps);
+
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy, categories);
+    }));
+
+    // aggregate tag
+    let tags = hostManager.getActiveTags();
+
+    await Promise.all(tags.map(async tag => {
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+
+      optionsCopy.tag = tag;
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
+
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.cleanupAppActivity(optionsCopy, apps);
+
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy, categories);
+    }));
+
+    await Promise.all(macs.map(async mac => {
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+
+      optionsCopy.mac = mac;
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
+
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.cleanupAppActivity(optionsCopy, apps);
+
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.cleanupCategoryActivity(optionsCopy, categories);
+    }));
+
+    // aggreate all
     let macs = hostManager.getActiveMACs();
 
     await Promise.all(macs.map(async mac => {
@@ -492,7 +582,11 @@ class FlowAggregationSensor extends Sensor {
 
     let macs = []
 
-    if (options.mac) {
+    if (options.intf) {
+      macs = options.intf.macs;
+    } else if (options.tag) {
+      macs = options.tag.macs;
+    } else if (options.mac) {
       macs = [options.mac]
     } else {
       macs = await appFlowTool.getAppMacAddresses(app)
@@ -522,10 +616,14 @@ class FlowAggregationSensor extends Sensor {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    if(options.mac) {
-      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`)
+    if (options.intf) {
+      log.info(`Cleaning up app activities between ${beginString} and ${endString} for intf`, options.intf);
+    } else if (options.tag) {
+      log.info(`Cleaning up app activities between ${beginString} and ${endString} for tag`, options.tag);
+    } if(options.mac) {
+      log.info(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`);
     } else {
-      log.debug(`Cleaning up app activities between ${beginString} and ${endString}`)
+      log.info(`Cleaning up app activities between ${beginString} and ${endString}`);
     }
 
     try {
@@ -569,7 +667,11 @@ class FlowAggregationSensor extends Sensor {
 
     let macs = []
 
-    if (options.mac) {
+    if (options.intf) {
+      macs = options.intf.macs;
+    } else if (options.tag) {
+      macs = options.tag.macs;
+    } else if (options.mac) {
       macs = [options.mac]
     } else {
       macs = await categoryFlowTool.getCategoryMacAddresses(category)
@@ -600,7 +702,11 @@ class FlowAggregationSensor extends Sensor {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    if (options.mac) {
+    if (options.intf) {
+      log.info(`Cleaning up category activities between ${beginString} and ${endString} for intf`, options.intf);
+    } else if (options.tag) {
+      log.info(`Cleaning up category activities between ${beginString} and ${endString} for tag`, options.tag);
+    } else if (options.mac) {
       log.debug(`Cleaning up category activities between ${beginString} and ${endString} for device ${options.mac}`)
     } else {
       log.debug(`Cleaning up category activities between ${beginString} and ${endString}`)

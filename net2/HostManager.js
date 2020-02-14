@@ -1680,7 +1680,43 @@ module.exports = class HostManager {
 
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
+    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null)).map(host => host.mac);
+  }
+
+  // return: Array<{intf: string, macs: Array<string>}>
+  getActiveIntfs() {
+    let inftMap = {};
+    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
+    .map(host => {
+      if (inftMap[host.intf]) {
+        inftMap[host.intf] = [host.mac];
+      } else {
+        inftMap[host.intf].push(host.mac);
+      }
+    });
+    
+    return _.map(inftMap, (macs, intf) => {
+      return {intf, macs};
+    });
+  }
+
+  // return: Array<{tag: number, macs: Array<string>}>
+  getActiveTags() {
+    let tagMap = {};
+    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
+    .map(host => {
+      for (const tag of host.tags) {
+        if (tagMap[tag]) {
+          tagMap[tag] = [host.mac];
+        } else {
+          tagMap[tag].push(host.mac);
+        }
+      }
+    });
+
+    return _.map(tagMap, (macs, tag) => {
+      return {tag, macs};
+    });;
   }
 
   getActiveHumanDevices() {

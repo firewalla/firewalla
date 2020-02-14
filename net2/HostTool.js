@@ -549,7 +549,7 @@ class HostTool {
       }
     }
 
-    return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)
+    return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
   async generateLocalDomain(mac) {
     const key = this.getMacKey(mac);
