@@ -40,4 +40,6 @@ verb 1
 #status /dev/null
 client-connect /home/pi/firewalla/vpn/client_connected.sh
 client-disconnect /home/pi/firewalla/vpn/client_disconnected.sh
+route-up "/home/pi/firewalla/vpn/server_route_up.sh SERVER_INSTANCE"
+down "/home/pi/firewalla/vpn/server_down.sh SERVER_INSTANCE"
 management localhost 5194

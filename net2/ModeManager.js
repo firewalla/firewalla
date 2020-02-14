@@ -216,14 +216,13 @@ async function apply() {
   let HostManager = require('./HostManager.js')
   let hostManager = new HostManager('cli', 'server', 'info')
 
+  await firerouter.applyNetworkConfig();
   switch (mode) {
     case Mode.MODE_DHCP:
-      await firerouter.applyLastConfigForMode(mode);
       await _enforceDHCPMode();
       break;
     case Mode.MODE_DHCP_SPOOF:
     case Mode.MODE_AUTO_SPOOF:
-      await firerouter.applyLastConfigForMode(mode);
       await _enforceSpoofMode();
       // reset oper history for each device, so that we can re-apply spoof commands
       hostManager.cleanHostOperationHistory()
@@ -244,7 +243,6 @@ async function apply() {
       break;
     }
     case Mode.MODE_ROUTER:
-      await firerouter.applyLastConfigForMode(mode);
       break;
     case Mode.MODE_NONE:
       // no thing
@@ -293,14 +291,7 @@ async function reapply() {
   }
 
   await Mode.reloadSetupMode()
-  return apply().catch((err) => {
-    // if it is caused by network config change failure, the network config for previous mode is already applied
-    log.error(`Failed to apply new mode ${curMode}`, err);
-    log.info(`Rollback to previous mode: ${lastMode}`);
-    Mode.setSetupMode(lastMode).then(() => {
-      publish(lastMode);
-    });
-  })
+  return apply();
 }
 
 function mode() {
@@ -322,7 +313,7 @@ function listenOnChange() {
       let sm = new SpooferManager();
       sm.loadManualSpoofs(hostManager)
     } else if (channel === "NetworkInterface:Update") {
-      await firerouter.applyLastConfigForMode(curMode);
+      await firerouter.applyNetworkConfig();
     }
   });
   sclient.subscribe("Mode:Change");

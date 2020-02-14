@@ -696,7 +696,9 @@ module.exports = class DNSMASQ {
     // then add new iptables rule for new vpn subnet. If newVpnSubnet is null, no new rule is added
     if (newVpnSubnet) {
       // newVpnSubnet is null means to delete previous nat rule. The previous vpn subnet should be kept in case of dnsmasq reloading
-      await iptables.dnsChangeAsync(newVpnSubnet, dns, 'vpn', true);
+      if (!platform.isFireRouterManaged())
+      // vpn network is a monitoring interface on firerouter managed platform
+        await iptables.dnsChangeAsync(newVpnSubnet, dns, 'vpn', true);
       this.vpnSubnet = newVpnSubnet;
     }
   }

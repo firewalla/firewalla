@@ -215,19 +215,6 @@ async function run() {
   const NetworkProfileManager = require('./NetworkProfileManager.js');
   const TagManager = require('./TagManager.js');
 
-  /* This is already done in ModeManager.apply().
-     Hopefully this will be wrapped in firerouter.init() and is no longer needed eventually
-  if (platform.getDHCPCapacity()) {
-    // always create the secondary interface
-    await ModeManager.enableSecondaryInterface()
-    const list = await d.discoverInterfacesAsync()
-    if (list && list.length >= 2) {
-      sysManager.update(null) // if new interface is found, update sysManager
-      await pclient.publishAsync("System:IPChange", "");
-    }
-  }
-  */
-
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});

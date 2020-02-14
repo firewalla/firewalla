@@ -239,8 +239,8 @@ class VpnManager {
       this.instanceName = "server";
       this.needRestart = true;
     }
-    var mydns = sysManager.myDNS()[0];
-    if (mydns == null) {
+    var mydns = sysManager.myDefaultDns()[0];
+    if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
     }
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
@@ -653,11 +653,6 @@ class VpnManager {
       let ip = sysManager.myDDNS();
       if (ip == null) {
         ip = sysManager.publicIp;
-      }
-
-      var mydns = sysManager.myDNS()[0];
-      if (mydns == null) {
-        mydns = "8.8.8.8"; // use google DNS as default
       }
 
       const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
