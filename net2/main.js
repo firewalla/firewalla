@@ -211,9 +211,6 @@ async function run() {
   const bro = new BroDetect("bro_detector", firewallaConfig)
   bro.start()
 
-  var HostManager = require('./HostManager.js');
-  var hostManager= new HostManager("cli",'server','debug');
-
   // although they are not used here, it is still needed to create them
   const NetworkProfileManager = require('./NetworkProfileManager.js');
   const TagManager = require('./TagManager.js');

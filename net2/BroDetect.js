@@ -850,7 +850,7 @@ module.exports = class {
 
       localMac = localMac.toUpperCase();
       const hostInfo = hostManager.getHostFastByMAC(localMac);
-      let tags = hostInfo.getTags();
+      let tags = hostInfo ? hostInfo.getTags() : [];
 
       if (intfId !== '') {
         const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
