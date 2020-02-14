@@ -939,6 +939,14 @@ class Host {
       json.flowsummary = this.flowsummary;
     }
 
+    if (this.o.tags) {
+      try {
+        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags) : [] 
+      } catch (err) {
+        log.error("Failed to parse tags:", err)
+      }
+    }
+
     // json.macVendor = this.name();
 
     return json;
