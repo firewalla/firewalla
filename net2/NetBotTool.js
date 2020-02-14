@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-
+const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
 const util = require('util');
@@ -227,7 +227,26 @@ class NetBotTool {
     let key = 'appDetails'
     json.flows[key] = {}
 
-    let apps = await appFlowTool.getApps('*') // all mac addresses
+    let apps = [];
+    if (options.intf) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager("cli", 'client', 'info');
+      const allMacs = hostManager.getIntfMacs(options.intf);
+      for (const mac of allMacs) {
+        const macApps = await appFlowTool.getApps(mac);
+        apps = _.concat(app, macApps);
+      }
+    } else if (options.tag) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager("cli", 'client', 'info');
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
+      for (const mac of allMacs) {
+        const macApps = await appFlowTool.getApps(mac);
+        apps = _.concat(app, macApps);
+      }
+    } else {
+      apps = await appFlowTool.getApps('*'); // all mac addresses
+    }
 
     let allFlows = {}
 
@@ -297,7 +316,26 @@ class NetBotTool {
     let key = 'categoryDetails'
     json.flows[key] = {}
 
-    let categories = await categoryFlowTool.getCategories('*') // all mac addresses
+    let categories = [];
+    if (options.intf) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager("cli", 'client', 'info');
+      const allMacs = hostManager.getIntfMacs(options.intf);
+      for (const mac of allMacs) {
+        const macCategories = await categoryFlowTool.getCategories(mac);
+        categories = _.concat(app, macCategories);
+      }
+    } else if (options.tag) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager("cli", 'client', 'info');
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
+      for (const mac of allMacs) {
+        const macCategories = await categoryFlowTool.getCategories(mac);
+        categories = _.concat(app, macCategories);
+      }
+    } else {
+      categories = await categoryFlowTool.getCategories('*'); // all mac addresses
+    }
 
     // ignore intel category, intel is only for internal logic
     categories = categories.filter((x) => x.toLowerCase() !== "intel")
@@ -335,8 +373,9 @@ class NetBotTool {
 
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
+    const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || undefined;
 
-    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, trafficDirection, begin, end);
+    let sumFlowKey = flowAggrTool.getSumFlowKey(target, trafficDirection, begin, end);
 
     let traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50);
 

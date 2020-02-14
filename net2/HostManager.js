@@ -333,9 +333,9 @@ module.exports = class HostManager {
     }
     json.hosts = _hosts;
   }
-  async yesterdayStatsForInit(json, mac) {
-    const downloadKey = `download${mac ? ':' + mac : ''}`;
-    const uploadKey = `upload${mac ? ':' + mac : ''}`;
+  async yesterdayStatsForInit(json, target) {
+    const downloadKey = `download${target ? ':' + target : ''}`;
+    const uploadKey = `upload${target ? ':' + target : ''}`;
     const todayHours = new Date().getHours();
     const countHours = todayHours + 24;
     const downloadStats = await getHitsAsync(downloadKey, "1hour", countHours);
@@ -413,8 +413,8 @@ module.exports = class HostManager {
     }
   }
 
-  async last60MinStatsForInit(json, mac) {
-    const subKey = mac ? ':' + mac : ''
+  async last60MinStatsForInit(json, target) {
+    const subKey = target ? ':' + target : ''
 
     let downloadStats = await getHitsAsync("download" + subKey, "1minute", 61)
     if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
@@ -466,8 +466,8 @@ module.exports = class HostManager {
     json.last60top = values
   }
 
-  async last30daysStatsForInit(json, mac) {
-    const subKey = mac ? ':' + mac : ''
+  async last30daysStatsForInit(json, target) {
+    const subKey = target ? ':' + target : ''
     let downloadStats = await getHitsAsync("download" + subKey, "1day", 30)
     let uploadStats = await getHitsAsync("upload" + subKey, "1day", 30)
 
@@ -1696,8 +1696,13 @@ module.exports = class HostManager {
     });
     
     return _.map(inftMap, (macs, intf) => {
-      return {intf, macs};
+      return {intf, macs: _.uniq(macs)};
     });
+  }
+
+  // need active host?
+  getIntfMacs(intf) {
+    return this.hosts.all.map(host => host.o).filter(host => host.intf == intf).map(host => host.mac);
   }
 
   // return: Array<{tag: number, macs: Array<string>}>
@@ -1715,8 +1720,13 @@ module.exports = class HostManager {
     });
 
     return _.map(tagMap, (macs, tag) => {
-      return {tag, macs};
-    });;
+      return {tag, macs: _.uniq(macs)};
+    });
+  }
+
+  // need active host?
+  getTagMacs(tag) {
+    return this.hosts.all.map(host => host.o).filter(host => host.tags.includes(tag)).map(host => host.mac);
   }
 
   getActiveHumanDevices() {

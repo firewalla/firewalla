@@ -604,9 +604,9 @@ class FlowAggrTool {
 
   getCleanedCategoryKey(begin, end, options) {
     if (options.intf) {
-      return `category:intf:${options.intf.intf}:${begin}:${end}`
+      return `category:intf:${_.isString(options.intf) ? options.intf : options.intf.intf}:${begin}:${end}`
     } else if (options.tag) {
-      return `category:tag:${options.tag.tag}:${begin}:${end}`
+      return `category:tag:${_.isString(options.tag) ? options.tag : options.tag.tag}:${begin}:${end}`
     } else if(options.mac) {
       return `category:host:${options.mac}:${begin}:${end}`
     } else {
