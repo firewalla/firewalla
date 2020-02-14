@@ -833,6 +833,17 @@ class PornAlarm extends OutboundAlarm {
   }
 }
 
+class VpnAlarm extends OutboundAlarm {
+  constructor(timestamp, device, pornID, info) {
+    super("ALARM_VPN", timestamp, device, pornID, info);
+    this["p.showMap"] = false;
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.device.name"], this["p.dest.name"]];
+  }
+}
+
 class SubnetAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_SUBNET", timestamp, device, info);
@@ -888,6 +899,7 @@ let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
+  ALARM_VPN: VpnAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_ABNORMAL_BANDWIDTH_USAGE: AbnormalBandwidthUsageAlarm.prototype,
   ALARM_OVER_DATA_PLAN_USAGE: OverDataPlanUsageAlarm.prototype,
@@ -912,6 +924,7 @@ module.exports = {
   VideoAlarm: VideoAlarm,
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm,
+  VpnAlarm: VpnAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   AbnormalBandwidthUsageAlarm: AbnormalBandwidthUsageAlarm,
   OverDataPlanUsageAlarm: OverDataPlanUsageAlarm,

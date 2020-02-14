@@ -343,6 +343,19 @@ module.exports = class FlowMonitor {
 
           alarmManager2.enqueueAlarm(alarm);
         }
+        else if (
+          this.isFlowIntelInClass(flow['intel'], "vpn") &&
+          (
+            (flow.du && Number(flow.du) > 120) && (flow.rb && Number(flow.rb) > 10000) ||
+            this.flowIntelRecordFlow(flow, 3)
+          )
+        ) {
+          let alarm = new Alarm.VpnAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+            alarmBootstrap(flow)
+          );
+
+          alarmManager2.enqueueAlarm(alarm);
+        }
       }
     }
   }
