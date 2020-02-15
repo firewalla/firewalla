@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-
+const _ = require('lodash');
 let log = require('../net2/logger.js')(__filename);
 
 let util = require('util');
@@ -272,7 +272,7 @@ class FlowAggregationSensor extends Sensor {
     log.debug(`hourlySummedFlows intfs:`, intfs);
 
     await Promise.all(intfs.map(async intf => {
-      if(!intf) {
+      if(!intf || _.isEmpty(intf.macs)) {
         return;
       }
 
@@ -290,10 +290,10 @@ class FlowAggregationSensor extends Sensor {
 
     // aggregate tags
     let tags = hostManager.getActiveTags();
-    log.debug(`hourlySummedFlows tags:`, tags);
+    log.info(`hourlySummedFlows tags:`, tags);
 
     await Promise.all(tags.map(async tag => {
-      if(!tag) {
+      if(!tag || _.isEmpty(tag.macs)) {
         return;
       }
 
