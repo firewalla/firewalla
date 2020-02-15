@@ -17,6 +17,7 @@
 'use strict'
 
 process.title = "FireApi";
+const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
@@ -1229,6 +1230,34 @@ class netBot extends ControllerBot {
             })
         }
         break;
+      case "tag": 
+        if (msg.target) {
+          let tag = msg.target;
+          log.info("Loading tag info:", tag);
+          if (msg.data) msg.data.begin = msg.data.begin || msg.data.start;
+          this.tagFlowHandler(msg, tag)
+            .then((json) => {
+              this.simpleTxData(msg, json, null, callback);
+            })
+            .catch((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            })
+        }
+        break;
+      case "intf":
+        if (msg.target) {
+          let intf = msg.target;
+          log.info("Loading intf info:", intf);
+          if (msg.data) msg.data.begin = msg.data.begin || msg.data.start;
+          this.intfFlowHandler(msg, intf)
+            .then((json) => {
+              this.simpleTxData(msg, json, null, callback);
+            })
+            .catch((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            })
+        }
+        break;
       case "flows":
         (async () => {
           // options:
@@ -1236,10 +1265,17 @@ class netBot extends ControllerBot {
           //  ts: timestamp used to query alarms, default to now
           //  asc: return results in ascending order, default to false
           //  begin/end: time range used to query, will be ommitted when ts is set
+          //  type: 'tag' || 'intf' || undefined
 
           let options = Object.assign({}, msg.data);
 
-          if (msg.target && msg.target != '0.0.0.0') {
+          if (msg.type == 'tag') {
+            options.tag = msg.target;
+            await this.hostManager.getHostsAsync();
+          } else if (msg.type == 'intf') {
+            options.intf = msg.target;
+            await this.hostManager.getHostsAsync();
+          } else if (msg.target && msg.target != '0.0.0.0') {
             let host = await this.hostManager.getHostAsync(msg.target);
             if (!host || !host.o.mac) {
               let error = new Error("Invalid Host");
@@ -1959,6 +1995,119 @@ class netBot extends ControllerBot {
     }
   }
 
+  async intfFlowHandler(msg, target) {
+    log.info("Getting info on intf", target);
+
+    let begin = msg.data && msg.data.begin;
+    let end = (msg.data && msg.data.end) || begin + 3600 * 24;
+
+    // A backward compatbiel fix for query host network stats for 'NOW'
+    // extend it to a full hour if not enough
+    if ((end - begin) < 3600 && msg.data.hourblock === 0) {
+      end = begin + 3600;
+    }
+
+    let options = {}
+    if (begin && end) {
+      options.begin = begin
+      options.end = end
+    }
+
+    if (msg.data.hourblock != "1" &&
+      msg.data.hourblock != "0") { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
+      options.queryall = true
+    }
+
+    log.info("intfFlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
+    log.info("intfFlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
+
+    await this.hostManager.getHostsAsync();
+    // load 24 hours download/upload trend
+    await flowManager.getTargetStats(target);
+
+    // target: 'uuid'
+    options.intf = target;
+    let jsonobj = {};
+    await Promise.all([
+      flowTool.prepareRecentFlows(jsonobj, options),
+      netBotTool.prepareTopUploadFlows(jsonobj, options),
+      netBotTool.prepareTopDownloadFlows(jsonobj, options),
+      netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
+      netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options),
+      this.hostManager.yesterdayStatsForInit(jsonobj, 'intf:' + target),
+      this.hostManager.last60MinStatsForInit(jsonobj, 'intf:' + target),
+      this.hostManager.last30daysStatsForInit(jsonobj, 'intf:' + target)
+    ])
+
+    if (!jsonobj.flows['appDetails']) { // fallback to old way
+      await netBotTool.prepareDetailedAppFlows(jsonobj, options)
+      await this.validateFlowAppIntel(jsonobj)
+    }
+
+    if (!jsonobj.flows['categoryDetails']) { // fallback to old model
+      await netBotTool.prepareDetailedCategoryFlows(jsonobj, options)
+      await this.validateFlowCategoryIntel(jsonobj)
+    }
+
+    return jsonobj;
+  }
+
+  async tagFlowHandler(msg, target) {
+    log.info("Getting info on tag", target);
+
+    let begin = msg.data && msg.data.begin;
+    let end = (msg.data && msg.data.end) || begin + 3600 * 24;
+
+    // A backward compatbiel fix for query host network stats for 'NOW'
+    // extend it to a full hour if not enough
+    if ((end - begin) < 3600 && msg.data.hourblock === 0) {
+      end = begin + 3600;
+    }
+
+    let options = {}
+    if (begin && end) {
+      options.begin = begin
+      options.end = end
+    }
+
+    if (msg.data.hourblock != "1" &&
+      msg.data.hourblock != "0") { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
+      options.queryall = true
+    }
+
+    log.info("tagFlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
+    log.info("tagFlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
+
+    await this.hostManager.getHostsAsync();
+    // load 24 hours download/upload trend
+    await flowManager.getTargetStats(target);
+
+    // target: 'uuid'
+    options.tag = target;
+    let jsonobj = {};
+    await Promise.all([
+      flowTool.prepareRecentFlows(jsonobj, options),
+      netBotTool.prepareTopUploadFlows(jsonobj, options),
+      netBotTool.prepareTopDownloadFlows(jsonobj, options),
+      netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
+      netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options),
+      this.hostManager.yesterdayStatsForInit(jsonobj, 'tag:' + target),
+      this.hostManager.last60MinStatsForInit(jsonobj, 'tag:' + target),
+      this.hostManager.last30daysStatsForInit(jsonobj, 'tag:' + target)
+    ])
+
+    if (!jsonobj.flows['appDetails']) { // fallback to old way
+      await netBotTool.prepareDetailedAppFlows(jsonobj, options)
+      await this.validateFlowAppIntel(jsonobj)
+    }
+
+    if (!jsonobj.flows['categoryDetails']) { // fallback to old model
+      await netBotTool.prepareDetailedCategoryFlows(jsonobj, options)
+      await this.validateFlowCategoryIntel(jsonobj)
+    }
+
+    return jsonobj;
+  }
 
   async systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");

@@ -177,11 +177,16 @@ class FlowTool {
     }
 
     let outgoing, incoming;
-    if (options.mac) {
+    if (options.intf) {
+      outgoing = await this.getAllRecentOutgoingConnections(options);
+      incoming = await this.getAllRecentOutgoingConnections(options);
+    } else if (options.tag) {
+      outgoing = await this.getAllRecentOutgoingConnections(options);
+      incoming = await this.getAllRecentOutgoingConnections(options);
+    } else if (options.mac) {
       outgoing = await this.getRecentOutgoingConnections(options.mac, options);
       incoming = await this.getRecentIncomingConnections(options.mac, options);
-    }
-    else {
+    } else {
       outgoing = await this.getAllRecentOutgoingConnections(options)
       incoming = await this.getAllRecentIncomingConnections(options)
     }
@@ -326,7 +331,18 @@ class FlowTool {
   async getAllRecentConnections(direction, options) {
     options = options || {}
 
-    const allMacs = await hostTool.getAllMACs();
+    let allMacs = [];
+    if (options.intf) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager("cli", 'client', 'info');
+      allMacs = hostManager.getIntfMacs(options.intf);
+    } else if (options.tag) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager("cli", 'client', 'info');
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag));
+    } else {
+      allMacs = await hostTool.getAllMACs();
+    }
 
     const allFlows = [];
 

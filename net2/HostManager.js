@@ -333,9 +333,9 @@ module.exports = class HostManager {
     }
     json.hosts = _hosts;
   }
-  async yesterdayStatsForInit(json, mac) {
-    const downloadKey = `download${mac ? ':' + mac : ''}`;
-    const uploadKey = `upload${mac ? ':' + mac : ''}`;
+  async yesterdayStatsForInit(json, target) {
+    const downloadKey = `download${target ? ':' + target : ''}`;
+    const uploadKey = `upload${target ? ':' + target : ''}`;
     const todayHours = new Date().getHours();
     const countHours = todayHours + 24;
     const downloadStats = await getHitsAsync(downloadKey, "1hour", countHours);
@@ -413,8 +413,8 @@ module.exports = class HostManager {
     }
   }
 
-  async last60MinStatsForInit(json, mac) {
-    const subKey = mac ? ':' + mac : ''
+  async last60MinStatsForInit(json, target) {
+    const subKey = target ? ':' + target : ''
 
     let downloadStats = await getHitsAsync("download" + subKey, "1minute", 61)
     if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
@@ -466,8 +466,8 @@ module.exports = class HostManager {
     json.last60top = values
   }
 
-  async last30daysStatsForInit(json, mac) {
-    const subKey = mac ? ':' + mac : ''
+  async last30daysStatsForInit(json, target) {
+    const subKey = target ? ':' + target : ''
     let downloadStats = await getHitsAsync("download" + subKey, "1day", 30)
     let uploadStats = await getHitsAsync("upload" + subKey, "1day", 30)
 
@@ -1680,7 +1680,55 @@ module.exports = class HostManager {
 
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
+    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null)).map(host => host.mac);
+  }
+
+  // return: Array<{intf: string, macs: Array<string>}>
+  getActiveIntfs() {
+    let inftMap = {};
+    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => (host != null) && host.intf))
+    .map(host => {
+      if (inftMap[host.intf]) {
+        inftMap[host.intf].push(host.mac);
+      } else {
+        inftMap[host.intf] = [host.mac];
+      }
+    });
+    
+    return _.map(inftMap, (macs, intf) => {
+      return {intf, macs: _.uniq(macs)};
+    });
+  }
+
+  // need active host?
+  getIntfMacs(intf) {
+    return this.hosts.all.map(host => host.o).filter(host => host.intf && (host.intf == intf)).map(host => host.mac);
+  }
+
+  // return: Array<{tag: number, macs: Array<string>}>
+  getActiveTags() {
+    let tagMap = {};
+    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => (host != null) && !_.isEmpty(host.tags)))
+    .map(host => {
+      for (const tag of JSON.parse(host.tags)) {
+        if (tagMap[tag]) {
+          tagMap[tag].push(host.mac);
+        } else {
+          tagMap[tag] = [host.mac];
+        }
+      }
+    });
+
+    return _.map(tagMap, (macs, tag) => {
+      return {tag, macs: _.uniq(macs)};
+    });
+  }
+
+  // need active host?
+  getTagMacs(tag) {
+    return this.hosts.all.map(host => host.o)
+    .filter(host => !_.isEmpty(host.tags) && JSON.parse(host.tags).includes(tag))
+    .map(host => host.mac);
   }
 
   getActiveHumanDevices() {

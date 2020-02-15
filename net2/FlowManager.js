@@ -416,6 +416,29 @@ module.exports = class FlowManager {
     });
   }
 
+  // use for intf or tag
+  getTargetStats(target) {
+    let flowsummary = {};
+    flowsummary.inbytes = 0;
+    flowsummary.outbytes = 0;
+    flowsummary.type = "hour";
+
+    let tsnow = Math.ceil(Date.now() / 1000);
+    tsnow = tsnow - tsnow % 3600;
+    flowsummary.tophour = tsnow;
+
+    let download = this.getLast24HoursDownloadsStats(target);
+    let upload = this.getLast24HoursUploadsStats(target);
+
+    return Promise.join(download, upload, (d, u) => {
+      flowsummary.flowinbytes = this.flowToLegacyFormat(d);
+      flowsummary.inbytes = this.sumBytes(d);
+      flowsummary.flowoutbytes = this.flowToLegacyFormat(u);
+      flowsummary.outbytes = this.sumBytes(u);
+      return new Promise((resolve) => resolve(flowsummary));
+    }); 
+  }
+
   // no parameters accepted
   getStats2(host) {
     if (!host) {
