@@ -161,19 +161,10 @@ class BonjourSensor extends Sensor {
             resolve(null);
           } else {
             if (!mac) {
-              for (const intf of this.interfaces) {
-                const intfName = intf.name;
-                if (ipAddr === sysManager.myIp(intfName)) {
-                  resolve(sysManager.myMAC(intfName));
-                  return;
-                }
-                if (ipAddr === sysManager.myWifiIp(intfName)) {// DEPRECATING
-                  resolve(sysManager.myWifiMAC(intfName));
-                  return;
-                }
-              }
-              log.error("Not able to find mac address for host:", ipAddr, mac);
-              resolve(null);
+              const myMac = sysManager.myMACViaIP4(ipAddr) || null;
+              if (!myMac)
+                log.error("Not able to find mac address for host:", ipAddr, mac);
+              resolve(myMac);
             } else {
               ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
               resolve(mac);
@@ -187,13 +178,10 @@ class BonjourSensor extends Sensor {
         return null;
       })
       if (!mac) {
-        for (const intf of this.interfaces) {
-          const intfName = intf.name;
-          if (sysManager.myIp6(intfName) && sysManager.myIp6(intfName).includes(ipAddr)) {
-            mac = sysManager.myMAC(intfName);
-            return mac;
-          }
-        }
+        const myMac = sysManager.myMACViaIP6(ipAddr) || null;
+        if (!myMac)
+          log.error("Not able to find mac address for host:", ipAddr, mac);
+        return myMac
       } else {
         ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
         return mac;
