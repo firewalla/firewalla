@@ -44,6 +44,13 @@ function initSingleSensor(sensorName) {
 async function initSensors() {
   await fireRouter.waitTillReady()
 
+  // make sure hostManager init hosts.all
+  const HostManager = require('../net2/HostManager.js');
+  const hostManager = new HostManager('cli', 'server');
+  if (hostManager.hosts.all.length == 0) {
+    await hostManager.getHostsAsync();
+  }
+
   Object.keys(config.sensors).forEach((sensorName) => {
     if (!sensorsHash[sensorName])
       initSingleSensor(sensorName)

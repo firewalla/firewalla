@@ -1274,7 +1274,7 @@ class netBot extends ControllerBot {
           if (msg.type == 'tag') {
             options.tag = msg.target;
           } else if (msg.type == 'intf') {
-            options.intf = msg.intf;
+            options.intf = msg.target;
           } else if (msg.target && msg.target != '0.0.0.0') {
             let host = await this.hostManager.getHostAsync(msg.target);
             if (!host || !host.o.mac) {

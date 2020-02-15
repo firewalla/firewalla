@@ -266,15 +266,10 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addSumFlow("category", options);
 
     await this.cleanupCategoryActivity(options, categories);
-
-    // init host, hacky way may need init flag
-    if (hostManager.hosts.all.length == 0) {
-      await hostManager.getHostsAsync();
-    }
     
     // aggregate intf
     let intfs = hostManager.getActiveIntfs();
-    log.info(`hourlySummedFlows intfs:`, intfs);
+    log.debug(`hourlySummedFlows intfs:`, intfs);
 
     await Promise.all(intfs.map(async intf => {
       if(!intf) {
@@ -295,7 +290,7 @@ class FlowAggregationSensor extends Sensor {
 
     // aggregate tags
     let tags = hostManager.getActiveTags();
-    log.info(`hourlySummedFlows tags:`, tags);
+    log.debug(`hourlySummedFlows tags:`, tags);
 
     await Promise.all(tags.map(async tag => {
       if(!tag) {
