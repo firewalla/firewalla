@@ -222,7 +222,7 @@ class NetBotTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`Getting app detail flows between ${beginString} and ${endString}`)
+    log.info(`Getting app detail flows between ${beginString} and ${endString}, options:${JSON.stringify(options)}`);
 
     let key = 'appDetails'
     json.flows[key] = {}
@@ -235,7 +235,7 @@ class NetBotTool {
       log.info(`prepareDetailedAppFlows intf allMacs:`, allMacs);
       for (const mac of allMacs) {
         const macApps = await appFlowTool.getApps(mac);
-        apps = _.concat(app, macApps);
+        apps = _.concat(apps, macApps);
       }
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
@@ -244,7 +244,7 @@ class NetBotTool {
       log.info(`prepareDetailedAppFlows tag allMacs:`, allMacs);
       for (const mac of allMacs) {
         const macApps = await appFlowTool.getApps(mac);
-        apps = _.concat(app, macApps);
+        apps = _.concat(apps, macApps);
       }
     } else {
       apps = await appFlowTool.getApps('*'); // all mac addresses
@@ -325,7 +325,7 @@ class NetBotTool {
       const allMacs = hostManager.getIntfMacs(options.intf);
       for (const mac of allMacs) {
         const macCategories = await categoryFlowTool.getCategories(mac);
-        categories = _.concat(app, macCategories);
+        categories = _.concat(categories, macCategories);
       }
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
@@ -333,7 +333,7 @@ class NetBotTool {
       const allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
       for (const mac of allMacs) {
         const macCategories = await categoryFlowTool.getCategories(mac);
-        categories = _.concat(app, macCategories);
+        categories = _.concat(categories, macCategories);
       }
     } else {
       categories = await categoryFlowTool.getCategories('*'); // all mac addresses
@@ -377,7 +377,13 @@ class NetBotTool {
     let end = options.end || (begin + 3600);
     const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || undefined;
 
-    let sumFlowKey = flowAggrTool.getSumFlowKey(target, trafficDirection, begin, end);
+    let sumFlowKey = null
+
+    if(options.queryall && target) {
+      sumFlowKey = await flowAggrTool.getLastSumFlow(target, trafficDirection);
+    } else {
+      sumFlowKey = await flowAggrTool.getSumFlowKey(target, trafficDirection, options.begin, options.end);
+    }
 
     let traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50);
 

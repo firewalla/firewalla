@@ -37,13 +37,14 @@ let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();
 
 let HostManager = require('../net2/HostManager.js');
-let hostManager = new HostManager('cli', 'client');
+let hostManager = new HostManager('cli', 'server');
 
 const flowUtil = require('../net2/FlowUtil')
 
 const config = require('../net2/config.js').getConfig();
 const excludedCategories = (config.category && config.category.exclude) || [];
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 const bone = require('../lib/Bone.js');
 
 // This sensor is to aggregate device's flow every 10 minutes
@@ -64,6 +65,7 @@ class FlowAggregationSensor extends Sensor {
 
   async scheduledJob() {
     log.info("Generating summarized flows info...")
+    
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
     await this.aggrAll(ts)
 
@@ -84,18 +86,25 @@ class FlowAggregationSensor extends Sensor {
   }
 
   run() {
-    process.nextTick(() => {
-      this.scheduledJob();
+    sem.once('IPTABLES_READY', async () => {
+      // init host
+      if (hostManager.hosts.all.length == 0) {
+        await hostManager.getHostsAsync();
+      }
+
+      process.nextTick(() => {
+        this.scheduledJob();
+      });
+
+      // TODO: Need to ensure all ticks will be processed and stored in redis
+      setInterval(() => {
+        this.scheduledJob();
+      }, this.config.interval * 1000)
+
+      setInterval(() => {
+        this.cleanupJob()
+      }, this.config.cleanupInterval * 1000)
     });
-
-    // TODO: Need to ensure all ticks will be processed and stored in redis
-    setInterval(() => {
-      this.scheduledJob();
-    }, this.config.interval * 1000)
-
-    setInterval(() => {
-      this.cleanupJob()
-    }, this.config.cleanupInterval * 1000)
   }
 
   async trafficGroupByX(flows, x) {

@@ -1273,8 +1273,10 @@ class netBot extends ControllerBot {
 
           if (msg.type == 'tag') {
             options.tag = msg.target;
+            await this.hostManager.getHostsAsync();
           } else if (msg.type == 'intf') {
             options.intf = msg.target;
+            await this.hostManager.getHostsAsync();
           } else if (msg.target && msg.target != '0.0.0.0') {
             let host = await this.hostManager.getHostAsync(msg.target);
             if (!host || !host.o.mac) {
@@ -2024,6 +2026,7 @@ class netBot extends ControllerBot {
     log.info("intfFlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
     log.info("intfFlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
 
+    await this.hostManager.getHostsAsync();
     // load 24 hours download/upload trend
     await flowManager.getTargetStats(target);
 
@@ -2080,6 +2083,7 @@ class netBot extends ControllerBot {
     log.info("tagFlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
     log.info("tagFlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
 
+    await this.hostManager.getHostsAsync();
     // load 24 hours download/upload trend
     await flowManager.getTargetStats(target);
 
