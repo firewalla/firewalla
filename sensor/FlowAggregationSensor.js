@@ -37,7 +37,7 @@ let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();
 
 let HostManager = require('../net2/HostManager.js');
-let hostManager = new HostManager('cli', 'server');
+let hostManager = new HostManager('cli', 'client');
 
 const flowUtil = require('../net2/FlowUtil')
 
@@ -290,7 +290,7 @@ class FlowAggregationSensor extends Sensor {
 
     // aggregate tags
     let tags = hostManager.getActiveTags();
-    log.info(`hourlySummedFlows tags:`, tags);
+    log.debug(`hourlySummedFlows tags:`, tags);
 
     await Promise.all(tags.map(async tag => {
       if(!tag || _.isEmpty(tag.macs)) {

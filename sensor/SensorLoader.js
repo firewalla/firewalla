@@ -46,7 +46,7 @@ async function initSensors() {
 
   // make sure hostManager init hosts.all
   const HostManager = require('../net2/HostManager.js');
-  const hostManager = new HostManager('cli', 'server');
+  const hostManager = new HostManager('cli', 'client');
   if (hostManager.hosts.all.length == 0) {
     await hostManager.getHostsAsync();
   }
