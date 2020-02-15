@@ -2,15 +2,15 @@
 
 INSTANCE=$1
 
-mkdir -p /home/pi/.firewalla/run/ovpn_server
+mkdir -p /etc/openvpn/ovpn_server
 
-GATEWAY_FILE="/home/pi/.firewalla/run/ovpn_server/$INSTANCE.gateway"
+GATEWAY_FILE="/etc/openvpn/ovpn_server/$INSTANCE.gateway"
 rm -f $GATEWAY_FILE
 
-SUBNET_FILE="/home/pi/.firewalla/run/ovpn_server/$INSTANCE.subnet"
+SUBNET_FILE="/etc/openvpn/ovpn_server/$INSTANCE.subnet"
 rm -f $SUBNET_FILE
 
-LOCAL_FILE="/home/pi/.firewalla/run/ovpn_server/$INSTANCE.local"
+LOCAL_FILE="/etc/openvpn/ovpn_server/$INSTANCE.local"
 rm -f $LOCAL_FILE
 
 # send to firerouter redis db
