@@ -13,5 +13,8 @@ echo "${route_network_1}/${route_netmask_1}" > $SUBNET_FILE
 LOCAL_FILE="/etc/openvpn/ovpn_server/$INSTANCE.local"
 echo "${ifconfig_local}/${route_netmask_1}" > $LOCAL_FILE
 
+# flush IPv6 address
+sudo ip -6 a flush dev $dev || true
+
 # send to firerouter redis db
 redis-cli -n 1 publish "ifup" "$dev" || true
