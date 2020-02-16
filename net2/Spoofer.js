@@ -47,17 +47,17 @@ module.exports = class {
     iface = iface || addrIfaceMap[address];
     if (!iface)
       return;
-    // address changed to a different interface, remove it from previous spoof set
-    if (addrIfaceMap[address] && addrIfaceMap[address] !== iface) {
-      await this.newUnspoof(address, addrIfaceMap[address]);
-    }
-    addrIfaceMap[address] = iface;
-    if (sysManager.myIp(iface) === sysManager.myGateway(iface))
-      return;
-
+    
     let flag = await mode.isSpoofModeOn();
     if (!flag)
       return;
+
+    // address changed to a different interface, remove it from previous spoof set
+    if (addrIfaceMap[address] && addrIfaceMap[address] !== iface) {
+      log.info(`${address} moves to ${iface}, remove it from ${addrIfaceMap[address]}`);
+      await this.newUnspoof(address, addrIfaceMap[address]);
+    }
+    addrIfaceMap[address] = iface;
 
     const subMonitoredKey = `monitored_hosts_${iface}`;
     const subUnmonitoredKey = `unmonitored_hosts_${iface}`;
@@ -114,17 +114,17 @@ module.exports = class {
     iface = iface || addrIfaceMap[address];
     if (!iface)
       return;
-    // address changed to a different interface, remove it from previous spoof set
-    if (addrIfaceMap[address] && addrIfaceMap[address] !== iface) {
-      await this.newUnspoof6(address, addrIfaceMap[address]);
-    }
-    addrIfaceMap[address] = iface;
-    if (sysManager.myIp(iface) === sysManager.myGateway(iface))
-      return;
 
     let flag = await mode.isSpoofModeOn();
     if (!flag)
       return;
+
+    // address changed to a different interface, remove it from previous spoof set
+    if (addrIfaceMap[address] && addrIfaceMap[address] !== iface) {
+      log.info(`${address} moves to ${iface}, remove it from ${addrIfaceMap[address]}`);
+      await this.newUnspoof6(address, addrIfaceMap[address]);
+    }
+    addrIfaceMap[address] = iface;
 
     const subMonitoredKey6 = `monitored_hosts6_${iface}`;
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
