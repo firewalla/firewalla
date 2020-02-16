@@ -47,6 +47,10 @@ module.exports = class {
     iface = iface || addrIfaceMap[address];
     if (!iface)
       return;
+    // address changed to a different interface, remove it from previous spoof set
+    if (addrIfaceMap[address] && addrIfaceMap[address] !== iface) {
+      await this.newUnspoof(address, addrIfaceMap[address]);
+    }
     addrIfaceMap[address] = iface;
     if (sysManager.myIp(iface) === sysManager.myGateway(iface))
       return;
@@ -59,9 +63,6 @@ module.exports = class {
     const subUnmonitoredKey = `unmonitored_hosts_${iface}`;
     const isMember = await rclient.sismemberAsync(monitoredKey, address);
     if (!isMember) {
-      // Spoof redis set is cleared during initialization, see SpooferManager.startSpoofing()
-      // This can ensure that all monitored hosts are added to redis set and ip set at the beginning
-      // It's unnecessary to add ip address to monitored_ip_set that are already in redis set
       const cmd = `sudo ipset add -! monitored_ip_set ${address}`;
       await cp.exec(cmd);
       // add membership at the end
@@ -79,7 +80,6 @@ module.exports = class {
     iface = iface || addrIfaceMap[address];
     if (!iface)
       return;
-    addrIfaceMap[address] = iface;
 
     let flag = await mode.isSpoofModeOn();
     if (!flag)
@@ -114,6 +114,10 @@ module.exports = class {
     iface = iface || addrIfaceMap[address];
     if (!iface)
       return;
+    // address changed to a different interface, remove it from previous spoof set
+    if (addrIfaceMap[address] && addrIfaceMap[address] !== iface) {
+      await this.newUnspoof6(address, addrIfaceMap[address]);
+    }
     addrIfaceMap[address] = iface;
     if (sysManager.myIp(iface) === sysManager.myGateway(iface))
       return;
@@ -136,7 +140,6 @@ module.exports = class {
     iface = iface || addrIfaceMap[address];
     if (!iface)
       return;
-    addrIfaceMap[address] = iface;
 
     let flag = await mode.isSpoofModeOn();
     if (!flag)

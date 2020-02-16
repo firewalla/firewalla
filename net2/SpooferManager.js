@@ -127,7 +127,6 @@ module.exports = class SpooferManager {
         const spoofInstance = this.registeredSpoofInstances[key];
         await spoofInstance.stop();
         this.scheduleReload();
-        await this.emptySpoofSet(intf);
         delete this.registeredSpoofInstances[key];
       }
     }
