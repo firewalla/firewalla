@@ -177,6 +177,9 @@ class BonjourSensor extends Sensor {
         log.error("Not able to find mac address for host:", ipAddr, err);
         return null;
       })
+      if (mac && sysManager.isMyMac(mac))
+      // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
+        mac = null;
       if (!mac) {
         const myMac = sysManager.myMACViaIP6(ipAddr) || null;
         if (!myMac)

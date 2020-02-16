@@ -181,7 +181,6 @@ class DeviceHook extends Hook {
       if (mac != null) {
         this.processDeviceUpdate(event);
       } else {
-        const hostManager = new HostManager("cli", 'server', 'info');
         let ip = host.ipv4 || host.ipv4Addr
         if (ip) {
           // need to get mac address first
