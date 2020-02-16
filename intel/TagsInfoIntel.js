@@ -41,4 +41,4 @@ class TagsInfoIntel extends Intel {
     }
 }
 
-module.exports = IntfInfoIntel
+module.exports = TagsInfoIntel
