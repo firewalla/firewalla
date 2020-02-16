@@ -1047,22 +1047,19 @@ module.exports = class HostManager {
     let mackey = "host:mac:" + host.o.mac;
     await host.identifyDevice(false);
     let data = await rclient.hgetallAsync(mackey)
-    if (!data || !data.ipv6Addr) return;
+    if (!data) return;
 
-    let ipv6array = JSON.parse(data.ipv6Addr);
+    let ipv6array = data.ipv6Addr ? JSON.parse(data.ipv6Addr) : [];
     if (host.ipv6Addr == null) {
       host.ipv6Addr = [];
     }
 
     let needsave = false;
 
-    //log.debug("=======>",host.o.ipv4Addr, host.ipv6Addr, ipv6array);
-    for (let i in ipv6array) {
-      if (host.ipv6Addr.indexOf(ipv6array[i]) == -1) {
-        host.ipv6Addr.push(ipv6array[i]);
-        needsave = true;
-      }
-    }
+    // if updated ipv6 array is not same as the old ipv6 array, need to save the new ipv6 array to redis host:mac:
+    // the number of addresses in new array is usually fewer than the old since Host.cleanV6() cleans up the expired addresses
+    if (ipv6array.some(a => !host.ipv6Addr.includes(a)) || host.ipv6Addr.some(a => !ipv6array.includes(a)))
+      needsave = true;
 
     sysManager.setNeighbor(host.o.ipv4Addr);
 
@@ -1178,15 +1175,21 @@ module.exports = class HostManager {
         }
         this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
-        let ipv6Addrs = hostbymac.ipv6Addr
-        if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-          for(let i in ipv6Addrs) {
-            let ip6 = ipv6Addrs[i]
-            let key = `host:ip6:${ip6}`
-            this.hostsdb[key] = hostbymac
+        if (hostbymac.o.ipv6Addr && Array.isArray(hostbymac.o.ipv6Addr)) {
+          // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
+          for (const oldIpv6 of hostbymac.o.ipv6Addr) {
+            if (!o.ipv6Addr || !Array.isArray(o.ipv6Addr) || !o.ipv6Addr.includes(oldIpv6)) {
+              // the physical host dropped old ipv6 address
+              this.hostsdb['host:ip6:' + oldIpv6] = null;
+            }
           }
         }
-
+        if (o.ipv6Addr && Array.isArray(o.ipv6Addr)) {
+          for (const newIpv6 of o.ipv6Addr) {
+            this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
+          }
+        }
+        
         hostbymac.update(o);
       }
       hostbymac._mark = true;

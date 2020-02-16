@@ -117,7 +117,7 @@ class Host {
 
   keepalive() {
     for (let i in this.ipv6Addr) {
-      log.debug("keep alive ", this.mac,this.ipv6Addr[i]);
+      log.debug("keep alive ", this.o.mac,this.ipv6Addr[i]);
       setTimeout(() => {
         linux.ping6(this.ipv6Addr[i]);
       }, (i + 1) * 2000);
@@ -139,13 +139,12 @@ class Host {
       let ts = (new Date())/1000;
       let lastActive = 0;
       let _ipv6Hosts = {};
-      this._ipv6Hosts = {};
 
       for (let i in this.ipv6Addr) {
         let ip6 = this.ipv6Addr[i];
-        let ip6Host = rclient.hgetallAsync("host:ip6:"+ip6);
+        let ip6Host = await rclient.hgetallAsync("host:ip6:"+ip6);
         log.debug("Host:CleanV6:looking up v6",ip6,ip6Host)
-        if (ip6Host != null) {
+        if (ip6Host != null && ip6Host.mac === this.o.mac) {
           _ipv6Hosts[ip6] = ip6Host;
           if (ip6Host.lastActiveTimestamp > lastActive) {
             lastActive = ip6Host.lastActiveTimestamp;
@@ -157,9 +156,8 @@ class Host {
       for (let ip6 in _ipv6Hosts) {
         let ip6Host = _ipv6Hosts[ip6];
         if (ip6Host.lastActiveTimestamp < lastActive - 60*30 || ip6Host.lastActiveTimestamp < ts-60*40) {
-          log.info("Host:"+this.mac+","+ts+","+ip6Host.lastActiveTimestamp+","+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
+          log.info("Host:"+this.o.mac+","+ts+","+ip6Host.lastActiveTimestamp+","+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
         } else {
-          this._ipv6Hosts[ip6] = ip6Host;
           this.ipv6Addr.push(ip6);
         }
       }
