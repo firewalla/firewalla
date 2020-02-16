@@ -370,6 +370,7 @@ class NetworkProfile {
       await sm.deregisterSpoofInstance(this.o.intf, "*", true);
       this._monitoredGateway6 = [];
     }
+    await sm.emptySpoofSet(this.o.intf);
   }
   
   getTags() {
