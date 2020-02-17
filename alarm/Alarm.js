@@ -834,8 +834,8 @@ class PornAlarm extends OutboundAlarm {
 }
 
 class VpnAlarm extends OutboundAlarm {
-  constructor(timestamp, device, pornID, info) {
-    super("ALARM_VPN", timestamp, device, pornID, info);
+  constructor(timestamp, device, vpnID, info) {
+    super("ALARM_VPN", timestamp, device, vpnID, info);
     this["p.showMap"] = false;
   }
 
