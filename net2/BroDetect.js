@@ -273,7 +273,7 @@ module.exports = class {
         host.ipv6Addr = entry.ipv6Addr;
       }
       if (host.ipv4Addr || host.ipv6Addr) {
-        const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4Addr);
+        const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP4(host.ipv4Addr) : sysManager.getInterfaceViaIP6(host.ipv6Addr);
         if (!intfInfo || !intfInfo.uuid) {
           log.error(`Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
           continue;
