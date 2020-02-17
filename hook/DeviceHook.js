@@ -316,9 +316,9 @@ class DeviceHook extends Hook {
           lastActiveTimestamp: currentTimestamp
         });
 
-        await hostTool.updateIPv4Host(enrichedHost); //v4
+        await hostTool.updateIPv4Host(enrichedHost); // update host:ip4:xxx entries
         if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); //v6
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
 
         log.info("New host entry is created for this old device");
 
@@ -385,7 +385,7 @@ class DeviceHook extends Hook {
 
         await hostTool.updateIPv4Host(enrichedHost);
         if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); //v6
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
 
         if (enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
@@ -448,14 +448,14 @@ class DeviceHook extends Hook {
         let macData = await hostTool.getMACEntry(host.mac);
         let lastActiveTimestamp = macData.lastActiveTimestamp;
 
+        // FIXME: shoud not keep minimal info for host key, not all
+        await hostTool.updateIPv4Host(enrichedHost);   // update host:ip4:xxx entries
+        if (enrichedHost.ipv6Addr)
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
+
         if (enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac);
         }
-
-        // FIXME: shoud not keep minimal info for host key, not all
-        await hostTool.updateIPv4Host(enrichedHost);   // host:ip4:.......
-        if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // host:ip6:.........
 
         log.debug("Host entry is updated for this device");
 
