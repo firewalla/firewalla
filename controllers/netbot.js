@@ -29,7 +29,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const URL = require("url");
 const bone = require("../lib/Bone");
-const dhcp = require("../extension/dhcp/dhcp.js");
+//const dhcp = require("../extension/dhcp/dhcp.js");
+
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
@@ -2030,7 +2031,8 @@ class netBot extends ControllerBot {
         await mode.reloadSetupMode();
         let dhcpModeOn = await mode.isDHCPModeOn();
         if (dhcpModeOn) {
-          const dhcpFound = await dhcp.dhcpDiscover("eth0");
+          //const dhcpFound = await dhcp.dhcpDiscover("eth0");
+          const dhcpFound = await rclient.getAsync("sys:scan:dhcpserver");
           const response = {
             DHCPMode: true,
             DHCPDiscover: dhcpFound

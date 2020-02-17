@@ -26,9 +26,7 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 
 const cp = require('child_process');
 
-const rclient = require('../../util/redis_manager.js').getRedisClient()
-const pclient = require('../../util/redis_manager.js').getPublishClient();
-
+const execAsync = require('child-process-promise').exec;
 
 async function dhcpDiscover(intf) {
   intf = intf || "eth0";
@@ -89,8 +87,32 @@ async function dhcpDiscover(intf) {
   });  
 }
 
+async function dhcpServerStatus(serverIp) {
+  let result = false;
+  let cmd = util.format('sudo nmap -sU -p 67 --script=dhcp-discover %s -oX - | %s', serverIp, xml2jsonBinary);
+  log.info("Running command:", cmd);
+  try {
+    const cmdresult = await execAsync(cmd);
+    let output = JSON.parse(cmdresult.stdout);
+    let kvs = output.nmaprun && output.nmaprun.host
+      && output.nmaprun.host.ports
+      && output.nmaprun.host.ports.port
+      && output.nmaprun.host.ports.port.script
+      && output.nmaprun.host.ports.port.script.elem;
+
+    if (Array.isArray(kvs) && kvs.length > 0) {
+      result = true;
+    }
+  } catch(err) {
+    log.error("Failed to nmap scan:", err);
+  }
+
+  return result
+}
+
 module.exports = {
-  dhcpDiscover: dhcpDiscover
+  dhcpDiscover: dhcpDiscover,
+  dhcpServerStatus: dhcpServerStatus,
 }
 
 /*

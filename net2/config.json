@@ -513,6 +513,10 @@
       "minsize": 150000000,
       "dataPlanMinPercentage": 0.8
     },
+    "DHCPServerSensor": {
+      "interval": 600,
+      "firstScan": 120
+    },
     "LocalDomainSensor": {}
   },
   "hooks": {
