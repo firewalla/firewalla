@@ -1779,14 +1779,15 @@ class netBot extends ControllerBot {
         (async () => {
           const ping = await rclient.hgetallAsync("network:status:ping");
           const dig = await rclient.getAsync("network:status:dig");
-          const { download, upload } = await speedtest();
+          const { download, upload, server } = await speedtest();
           this.simpleTxData(msg, {
             ping: ping,
             dig: JSON.parse(dig),
             gigabit: await platform.getNetworkSpeed() >= 1000,
             speedtest: {
               download: download,
-              upload: upload
+              upload: upload,
+              server: server
             }
           }, null, callback);
         })();
@@ -2903,7 +2904,7 @@ class netBot extends ControllerBot {
           for (let cn in allSettings) {
             // special handling for common name starting with fishboneVPN1
             const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
-            vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp});
+            vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp });
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
         })().catch((err) => {
