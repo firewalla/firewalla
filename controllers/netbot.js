@@ -1787,7 +1787,7 @@ class netBot extends ControllerBot {
             speedtest: {
               download: download,
               upload: upload,
-              server: server
+              server: ne
             }
           }, null, callback);
         })();
@@ -2904,7 +2904,7 @@ class netBot extends ControllerBot {
           for (let cn in allSettings) {
             // special handling for common name starting with fishboneVPN1
             const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
-            vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp });
+            vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp});
           }
           this.simpleTxData(msg, vpnProfiles, null, callback);
         })().catch((err) => {
