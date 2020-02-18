@@ -1787,7 +1787,7 @@ class netBot extends ControllerBot {
             speedtest: {
               download: download,
               upload: upload,
-              server: ne
+              server: server
             }
           }, null, callback);
         })();
