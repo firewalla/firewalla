@@ -1702,7 +1702,8 @@ module.exports = class HostManager {
 
   // need active host?
   getIntfMacs(intf) {
-    return this.hosts.all.map(host => host.o).filter(host => host.intf && (host.intf == intf)).map(host => host.mac);
+    let macs = this.hosts.all.map(host => host.o).filter(host => host.intf && (host.intf == intf)).map(host => host.mac);
+    return _.uniq(macs);
   }
 
   // return: Array<{tag: number, macs: Array<string>}>
@@ -1726,9 +1727,10 @@ module.exports = class HostManager {
 
   // need active host?
   getTagMacs(tag) {
-    return this.hosts.all.map(host => host.o)
+    let macs =  this.hosts.all.map(host => host.o)
     .filter(host => !_.isEmpty(host.tags) && JSON.parse(host.tags).includes(tag))
     .map(host => host.mac);
+    return _.uniq(macs);
   }
 
   getActiveHumanDevices() {

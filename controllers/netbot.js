@@ -1271,10 +1271,10 @@ class netBot extends ControllerBot {
 
           let options = Object.assign({}, msg.data);
 
-          if (msg.type == 'tag') {
+          if (msg.data.type == 'tag') {
             options.tag = msg.target;
             await this.hostManager.getHostsAsync();
-          } else if (msg.type == 'intf') {
+          } else if (msg.data.type == 'intf') {
             options.intf = msg.target;
             await this.hostManager.getHostsAsync();
           } else if (msg.target && msg.target != '0.0.0.0') {

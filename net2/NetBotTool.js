@@ -198,7 +198,7 @@ class NetBotTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`[Cache] Getting app detail flows between ${beginString} and ${endString}`)
+    log.info(`[Cache] Getting app detail flows between ${beginString} and ${endString} options:`, options)
 
     let key = 'appDetails'
     //    json.flows[key] = {}
@@ -222,16 +222,17 @@ class NetBotTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`Getting app detail flows between ${beginString} and ${endString}, options:${JSON.stringify(options)}`);
+    log.info(`Getting app detail flows between ${beginString} and ${endString}, options:${JSON.stringify(options)} options:`, options);
 
     let key = 'appDetails'
     json.flows[key] = {}
 
     let apps = [];
+    let allMacs = [];
     if (options.intf) {
       const HostManager = require("../net2/HostManager.js");
       const hostManager = new HostManager("cli", 'client', 'info');
-      const allMacs = hostManager.getIntfMacs(options.intf);
+      allMacs = hostManager.getIntfMacs(options.intf);
       log.info(`prepareDetailedAppFlows intf allMacs:`, allMacs);
       for (const mac of allMacs) {
         const macApps = await appFlowTool.getApps(mac);
@@ -240,7 +241,7 @@ class NetBotTool {
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
       const hostManager = new HostManager("cli", 'client', 'info');
-      const allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
       log.info(`prepareDetailedAppFlows tag allMacs:`, allMacs);
       for (const mac of allMacs) {
         const macApps = await appFlowTool.getApps(mac);
@@ -255,9 +256,11 @@ class NetBotTool {
     for (const app of apps) {
       allFlows[app] = []
 
-      let macs = await appFlowTool.getAppMacAddresses(app)
-
-      for (const mac of macs) {
+      if (_.isEmpty(allMacs)) {
+        allMacs = await appFlowTool.getAppMacAddresses(app)
+      }
+      
+      for (const mac of allMacs) {
         let appFlows = await appFlowTool.getAppFlow(mac, app, options)
         appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
         appFlows.forEach((f) => {
@@ -319,10 +322,11 @@ class NetBotTool {
     json.flows[key] = {}
 
     let categories = [];
+    let allMacs = [];
     if (options.intf) {
       const HostManager = require("../net2/HostManager.js");
       const hostManager = new HostManager("cli", 'client', 'info');
-      const allMacs = hostManager.getIntfMacs(options.intf);
+      allMacs = hostManager.getIntfMacs(options.intf);
       for (const mac of allMacs) {
         const macCategories = await categoryFlowTool.getCategories(mac);
         categories = _.concat(categories, macCategories);
@@ -330,7 +334,7 @@ class NetBotTool {
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
       const hostManager = new HostManager("cli", 'client', 'info');
-      const allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
       for (const mac of allMacs) {
         const macCategories = await categoryFlowTool.getCategories(mac);
         categories = _.concat(categories, macCategories);
@@ -347,9 +351,11 @@ class NetBotTool {
     for (const category of categories) {
       allFlows[category] = []
 
-      let macs = await categoryFlowTool.getCategoryMacAddresses(category)
-
-      for (const mac of macs) {
+      if (_.isEmpty(allMacs)) {
+        allMacs = await categoryFlowTool.getCategoryMacAddresses(category)
+      }
+      
+      for (const mac of allMacs) {
         let categoryFlows = await categoryFlowTool.getCategoryFlow(mac, category, options)
         categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
         categoryFlows.forEach((f) => {
@@ -514,7 +520,6 @@ class NetBotTool {
     }
   }
 
-  // looks like this is no longer used
   async prepareDetailedCategoryFlowsForHost(json, mac, options) {
     if (!mac) {
       return Promise.reject("Invalid MAC Address");
