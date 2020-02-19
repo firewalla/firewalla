@@ -1269,10 +1269,10 @@ class netBot extends ControllerBot {
 
           let options = Object.assign({}, msg.data);
 
-          if (msg.type == 'tag') {
+          if (msg.data.type == 'tag') {
             options.tag = msg.target;
             await this.hostManager.getHostsAsync();
-          } else if (msg.type == 'intf') {
+          } else if (msg.data.type == 'intf') {
             options.intf = msg.target;
             await this.hostManager.getHostsAsync();
           } else if (msg.target && msg.target != '0.0.0.0') {
@@ -2023,11 +2023,18 @@ class netBot extends ControllerBot {
 
     await this.hostManager.getHostsAsync();
     // load 24 hours download/upload trend
-    await flowManager.getTargetStats(target);
+    let intf = this.networkProfileManager.getNetworkProfile(target);
 
+    if (!intf) {
+      throw new Error("Invalid Network ID");
+    }
+
+    let jsonobj = intf.toJson();
+    // load 24 hours download/upload trend
+    jsonobj.flowsummary = await flowManager.getTargetStats('intf:' + target);
+    
     // target: 'uuid'
     options.intf = target;
-    let jsonobj = {};
     await Promise.all([
       flowTool.prepareRecentFlows(jsonobj, options),
       netBotTool.prepareTopUploadFlows(jsonobj, options),
@@ -2079,12 +2086,18 @@ class netBot extends ControllerBot {
     log.info("tagFlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
 
     await this.hostManager.getHostsAsync();
-    // load 24 hours download/upload trend
-    await flowManager.getTargetStats(target);
+    let tag = this.tagManager.getTagByUid(target);
 
+    if (!tag) {
+      throw new Error("Invalid Tag ID");
+    }
+
+    let jsonobj = tag.toJson();
+    // load 24 hours download/upload trend
+    jsonobj.flowsummary = await flowManager.getTargetStats('tag:' + target);
+    
     // target: 'uuid'
     options.tag = target;
-    let jsonobj = {};
     await Promise.all([
       flowTool.prepareRecentFlows(jsonobj, options),
       netBotTool.prepareTopUploadFlows(jsonobj, options),

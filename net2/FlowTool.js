@@ -179,10 +179,10 @@ class FlowTool {
     let outgoing, incoming;
     if (options.intf) {
       outgoing = await this.getAllRecentOutgoingConnections(options);
-      incoming = await this.getAllRecentOutgoingConnections(options);
+      incoming = await this.getAllRecentIncomingConnections(options);
     } else if (options.tag) {
       outgoing = await this.getAllRecentOutgoingConnections(options);
-      incoming = await this.getAllRecentOutgoingConnections(options);
+      incoming = await this.getAllRecentIncomingConnections(options);
     } else if (options.mac) {
       outgoing = await this.getRecentOutgoingConnections(options.mac, options);
       incoming = await this.getRecentIncomingConnections(options.mac, options);
@@ -480,12 +480,12 @@ class FlowTool {
       const tag = flowCopy.tags[index];
       const tagKey = `flow:tag:${tag}:recent`;
       await rclient.zaddAsync(tagKey, now, JSON.stringify(flowCopy));
-      await rclient.zremrangebyrankAsync(key, 0, limit);
+      await rclient.zremrangebyrankAsync(tagKey, 0, limit);
     }
 
     const intfKey = `flow:intf:${flowCopy.intf}:recent`;
     await rclient.zaddAsync(intfKey, now, JSON.stringify(flowCopy));
-    await rclient.zremrangebyrankAsync(key, 0, limit);
+    await rclient.zremrangebyrankAsync(intfKey, 0, limit);
 
     return;
   }
