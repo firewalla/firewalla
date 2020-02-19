@@ -41,7 +41,7 @@ class ICMP6Sensor extends Sensor {
       const pid = this.intfPidMap[intf];
       const childPid = await execAsync(`ps -ef| awk '$3 == '${pid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
       if (childPid)
-        await execAsync(`sudo kill -9 ${childPid}`).catch((err) => {});
+        await execAsync(`sudo kill -9 ${childPid}`).catch((err) => { });
     }
     this.intfPidMap = {};
     const interfaces = sysManager.getMonitoringInterfaces();
@@ -59,7 +59,7 @@ class ICMP6Sensor extends Sensor {
         input: tcpdumpSpawn.stdout
       });
       reader.on('line', (line) => {
-        this.processNeighborAdvertisement(line, intf.mac_address);
+        this.processNeighborAdvertisement(line, intf);
       });
       tcpdumpSpawn.on('close', (code) => {
         log.info("TCPDump icmp6 exited with code: ", code);
@@ -88,7 +88,7 @@ class ICMP6Sensor extends Sensor {
     sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
   }
 
-  processNeighborAdvertisement(line, intf_mac) {
+  processNeighborAdvertisement(line, intf) {
     // Each line of neighbor advertisement is like:
     // 03:06:30.894621 00:0c:29:96:3c:30 > 02:01:f4:16:26:dc, ethertype IPv6 (0x86dd), length 78: 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb > fe80::1:f4ff:fe16:26dc: ICMP6, neighbor advertisement, tgt is 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb, length 24
     try {
@@ -109,7 +109,8 @@ class ICMP6Sensor extends Sensor {
           host: {
             ipv6Addr: [tgtIp],
             mac: dstMac.toUpperCase(),
-            intf_mac: intf_mac
+            intf_mac: intf.mac_address,
+            intf_uuid: intf.uuid
           }
         });
       }

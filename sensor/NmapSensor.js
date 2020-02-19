@@ -169,7 +169,7 @@ class NmapSensor extends Sensor {
 
   getNetworkRanges() {
     return this.interfaces && this.interfaces.filter(i => i.name && !i.name.includes("vpn")).map((x) => { // do not scan vpn interface
-      return { range: networkTool.capSubnet(x.subnet), intf_mac: x.mac_address }
+      return { range: networkTool.capSubnet(x.subnet), intf_mac: x.mac_address, intf_uuid: x.uuid }
     })
   }
 
@@ -211,7 +211,7 @@ class NmapSensor extends Sensor {
     if (!networkRanges)
       return Promise.reject(new Error("network range is required"));
 
-    return Promise.all(networkRanges.map(({ range, intf_mac }) => {
+    return Promise.all(networkRanges.map(({ range, intf_mac, intf_uuid }) => {
 
       log.info("Scanning network", range, "to detect new devices...");
 
@@ -236,7 +236,7 @@ class NmapSensor extends Sensor {
           }
           hosts.forEach((h) => {
             log.debug("Found device:", h.ipv4Addr);
-            this._processHost(h, intf_mac);
+            this._processHost(h, intf_mac, intf_uuid);
           })
 
         }).catch((err) => {
@@ -260,7 +260,7 @@ class NmapSensor extends Sensor {
     });
   }
 
-  _processHost(host, intf_mac) {
+  _processHost(host, intf_mac, intf_uuid) {
     if (!host.mac) {
       for (const intf of this.interfaces) {
         const intfName = intf.name;
@@ -287,6 +287,7 @@ class NmapSensor extends Sensor {
         mac: host.mac,
         macVendor: host.macVendor,
         intf_mac: intf_mac,
+        intf_uuid: intf_uuid,
         from: "nmap"
       };
 
