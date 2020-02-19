@@ -6,6 +6,7 @@ FIREMON_MAX_MEMORY=120000
 FIREAPI_MAX_MEMORY=100000
 MAX_NUM_OF_PROCESSES=2000
 MAX_NUM_OF_THREADS=10000
+CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 
 function heartbeatLED {
   sudo sh -c 'echo heartbeat > /sys/class/leds/nanopi:blue:status/trigger'
@@ -32,7 +33,7 @@ function get_node_modules_url {
 }
 
 
-CURRENT_DIR=$(dirname $0)
+CURRENT_DIR=$(dirname $BASH_SOURCE)
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"

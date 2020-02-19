@@ -166,12 +166,12 @@ class ShieldManager {
   async activateShield(mac) {
     if (!mac) {
       // enable shield globally
-      let cmd = wrapIptables("sudo iptables -w -A FORWARD -j FW_SHIELD");
+      let cmd = wrapIptables("sudo iptables -w -A FW_FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.error("Failed to activate global shield in iptables", err);
       });
 
-      cmd = wrapIptables("sudo ip6tables -w -A FORWARD -j FW_SHIELD");
+      cmd = wrapIptables("sudo ip6tables -w -A FW_FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.error("Failed to activate global shield in ip6tables", err);
       });
@@ -185,8 +185,8 @@ class ShieldManager {
 
       if (this.protected_macs[mac]) {
         const legacyMacEntry = this.protected_macs[mac];
-        const legacyIpv6Addrs = (legacyMacEntry.ipv6Addrs || []).sort();
-        const ipv6Addrs = (macEntry.ipv6Addrs || []).sort();
+        const legacyIpv6Addrs = ((legacyMacEntry.ipv6Addr && JSON.parse(legacyMacEntry.ipv6Addr)) || []).sort();
+        const ipv6Addrs = ((macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr)) || []).sort();
         if (macEntry.ipv4Addr !== legacyMacEntry.ipv4Addr || ipv6Addrs.length !== legacyIpv6Addrs.length || !ipv6Addrs.every((value, index) => {return value === legacyIpv6Addrs[index]})) {
           // ip addresses may be changed
           log.info("IP addresses of " + mac + " have been changed.")
@@ -227,12 +227,12 @@ class ShieldManager {
   async deactivateShield(mac) {
     if (!mac) {
       // disable shield globally
-      let cmd = wrapIptables("sudo iptables -w -D FORWARD -j FW_SHIELD");
+      let cmd = wrapIptables("sudo iptables -w -D FW_FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.debug("Failed to deactivate global shield in iptables", err);
       });
 
-      cmd = wrapIptables("sudo ip6tables -w -D FORWARD -j FW_SHIELD");
+      cmd = wrapIptables("sudo ip6tables -w -D FW_FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.debug("Failed to deactivate global shield in ip6tables", err);
       });

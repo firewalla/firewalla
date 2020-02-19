@@ -1,4 +1,19 @@
 #!/usr/bin/env node
+/*    Copyright 2016-2020 Firewalla Inc.
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict'
 
 process.title = "FireApi"
@@ -11,6 +26,9 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("API Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
+// init FireRouter ASAP
+const fireRouter = require('../../net2/FireRouter.js')
+
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const bone = require("../../lib/Bone.js");
@@ -18,8 +36,7 @@ const bone = require("../../lib/Bone.js");
 let f = require("../../net2/Firewalla.js");
 
 // api/main/monitor all depends on sysManager configuration
-let SysManager = require('../../net2/SysManager.js');
-let sysManager = new SysManager('info');
+let sysManager = require('../../net2/SysManager.js');
 
 log.info("Waiting for cloud token...");
 
@@ -28,8 +45,9 @@ run0();
 function run0() {
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
-    // this is to ensure sysManager is already initliazed when called in API code
-    sysManager.isConfigInitialized()) {
+      fireRouter.isReady() &&
+      // this is to ensure sysManager is already initliazed when called in API code
+      sysManager.isConfigInitialized()) {
     log.info("Firewalla initialization complete");
     runLocalAPI();
   } else {
@@ -51,7 +69,7 @@ rclient.hget("sys:config", "language", (err, result) => {
   }
 
   log.info("Process is running in language " + language);
-  
+
   i18n.configure({
     directory: __dirname + "/../../locales",
     defaultLocale: language
@@ -74,11 +92,7 @@ let serverForLocalAPI;
 let portForLocalAPI = normalizePort('8834');
 
 function run() {
-
-  const firewallaConfig = require('../../net2/config.js').getConfig();
-  sysManager.setConfig(firewallaConfig) // update sys config when start
-  
-  let app = require('../app');
+  let app = require('../app.js');
   app.set('port', port);
 
   /**

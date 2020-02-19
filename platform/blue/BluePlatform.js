@@ -72,7 +72,7 @@ class BluePlatform extends Platform {
         const brightness = `${path}/brightness`;
         await exec(`sudo bash -c 'echo none > ${trigger}'`);
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      };
+      }
     } catch(err) {
       log.error("Error turning on LED", err)
     }
@@ -121,6 +121,10 @@ class BluePlatform extends Platform {
 
   getPolicyCapacity() {
     return 3000;
+  }
+
+  isFireRouterManaged() {
+    return false;
   }
 }
 

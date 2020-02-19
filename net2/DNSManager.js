@@ -19,8 +19,7 @@ const iptool = require('ip');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const asyncNative = require('../util/asyncNative.js');
 

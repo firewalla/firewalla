@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2020 Firewalla INC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,6 +17,7 @@
 'use strict'
 
 process.title = "FireApi";
+const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
@@ -38,14 +39,14 @@ const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
 const categoryFlowTool = new CategoryFlowTool()
 
 const HostManager = require('../net2/HostManager.js');
-const SysManager = require('../net2/SysManager.js');
+const sysManager = require('../net2/SysManager.js');
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager('info');
-const sysManager = new SysManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 const upgradeManager = require('../net2/UpgradeManager.js');
+const modeManager = require('../net2/ModeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -71,7 +72,6 @@ const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const unlinkAsync = util.promisify(fs.unlink);
 const existsAsync = util.promisify(fs.exists);
-const accessAsync = util.promisify(fs.access);
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -132,7 +132,7 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
 
-const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+const FireRouter = require('../net2/FireRouter.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -229,8 +229,8 @@ class netBot extends ControllerBot {
     this.hostManager.setPolicy("vulScan", value, callback)
   }
 
-  _dnsmasq(ip, value, callback = () => { }) {
-    if (ip === "0.0.0.0") {
+  _dnsmasq(target, value, callback = () => { }) {
+    if (target === "0.0.0.0") {
       this.hostManager.loadPolicy((err, data) => {
         if (!data) callback(new Error('Error loading policy'))
 
@@ -242,19 +242,35 @@ class netBot extends ControllerBot {
         this.hostManager.setPolicy("dnsmasq", newValue, callback);
       });
     } else {
-      this.hostManager.getHost(ip, (err, host) => {
-        if (host != null) {
-          host.loadPolicy((err, data) => {
-            if (err == null) {
-              host.setPolicy('dnsmasq', value, callback);
-            } else {
-              callback(new Error("Unable to change dnsmasq config of " + ip));
-            }
+      if (target.startsWith("network:")) {
+        const uuid = target.substring(8);
+        const network = this.networkProfileManager.getNetworkProfile(uuid);
+        if (network) {
+          network.loadPolicy().then(() => {
+            network.setPolicy("dnsmasq", value).then(() => {
+              callback(null);
+            });
+          }).catch((err) => {
+            callback(err);
           });
         } else {
-          callback(new Error("Host not found"));
+          callback(new Error(`Network ${uuid} is not found`));
         }
-      });
+      } else {
+        this.hostManager.getHost(target, (err, host) => {
+          if (host != null) {
+            host.loadPolicy((err, data) => {
+              if (err == null) {
+                host.setPolicy('dnsmasq', value, callback);
+              } else {
+                callback(new Error("Unable to change dnsmasq config of " + target));
+              }
+            });
+          } else {
+            callback(new Error("Host not found"));
+          }
+        });
+      }
     }
   }
 
@@ -272,7 +288,6 @@ class netBot extends ControllerBot {
   }
 
   /*
-   *
    *   {
    *      state: BOOL;  overall notification
    *      ALARM_XXX: standard alarm definition
@@ -338,7 +353,6 @@ class netBot extends ControllerBot {
 
     this.sensorConfig = config.controller.sensor;
     //flow.summaryhours
-    // sysManager.setConfig(this.sensorConfig);
     sysManager.update((err, data) => {
     });
 
@@ -364,6 +378,9 @@ class netBot extends ControllerBot {
 
     this.hostManager = new HostManager("cli", 'client', 'debug');
     this.hostManager.loadPolicy((err, data) => { });  //load policy
+
+    this.networkProfileManager = require('../net2/NetworkProfileManager.js');
+    this.tagManager = require('../net2/TagManager.js');
 
     // no subscription for api mode
     if (apiMode) {
@@ -802,9 +819,7 @@ class netBot extends ControllerBot {
           }
         });
       }
-      if (callback = () => { })
-        callback(null, null);
-
+      callback(null, null);
     });
 
   }
@@ -862,12 +877,30 @@ class netBot extends ControllerBot {
                 await this.hostManager.loadPolicyAsync()
                 await this.hostManager.setPolicyAsync(o, policyData);
               } else {
-                let host = await this.hostManager.getHostAsync(target)
-                if (host) {
-                  await host.loadPolicyAsync()
-                  await host.setPolicyAsync(o, policyData)
+                if (target.startsWith("network:")) {
+                  const uuid = target.substring(8);
+                  const network = this.networkProfileManager.getNetworkProfile(uuid);
+                  if (network) {
+                    await network.loadPolicy();
+                    await network.setPolicy(o, policyData);
+                  }
                 } else {
-                  throw new Error('Invalid host')
+                  if (target.startsWith("tag:")) {
+                    const tagUid = target.substring(4);
+                    const tag = await this.tagManager.getTagByUid(tagUid);
+                    if (tag) {
+                      await tag.loadPolicy();
+                      await tag.setPolicy(o, policyData)
+                    }
+                  } else {
+                    let host = await this.hostManager.getHostAsync(target)
+                    if (host) {
+                      await host.loadPolicyAsync()
+                      await host.setPolicyAsync(o, policyData)
+                    } else {
+                      throw new Error('Invalid host')
+                    }
+                  }
                 }
               }
             }
@@ -1040,7 +1073,6 @@ class netBot extends ControllerBot {
               return
             }
 
-            let modeManager = require('../net2/ModeManager.js');
             switch (v4.mode) {
               case "spoof":
               case "autoSpoof":
@@ -1054,6 +1086,9 @@ class netBot extends ControllerBot {
                 break;
               case "dhcp":
                 modeManager.setDHCPAndPublish()
+                break;
+              case "router":
+                modeManager.setRouterAndPublish()
                 break;
               case "none":
                 modeManager.setNoneAndPublish()
@@ -1079,7 +1114,7 @@ class netBot extends ControllerBot {
       case "userConfig":
         (async () => {
           const updatedPart = value || {};
-          await fc.updateUserConfig(updatedPart);
+          fc.updateUserConfigSync(updatedPart);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1101,6 +1136,18 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "networkConfig": {
+        (async () => {
+          await FireRouter.setConfig(value.config, value.restart);
+          // successfully set config, save config to history
+          const latestConfig = await FireRouter.getConfig();
+          await FireRouter.saveConfigHistory(latestConfig);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
@@ -1183,6 +1230,34 @@ class netBot extends ControllerBot {
             })
         }
         break;
+      case "tag": 
+        if (msg.target) {
+          let tag = msg.target;
+          log.info("Loading tag info:", tag);
+          if (msg.data) msg.data.begin = msg.data.begin || msg.data.start;
+          this.tagFlowHandler(msg, tag)
+            .then((json) => {
+              this.simpleTxData(msg, json, null, callback);
+            })
+            .catch((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            })
+        }
+        break;
+      case "intf":
+        if (msg.target) {
+          let intf = msg.target;
+          log.info("Loading intf info:", intf);
+          if (msg.data) msg.data.begin = msg.data.begin || msg.data.start;
+          this.intfFlowHandler(msg, intf)
+            .then((json) => {
+              this.simpleTxData(msg, json, null, callback);
+            })
+            .catch((err) => {
+              this.simpleTxData(msg, null, err, callback);
+            })
+        }
+        break;
       case "flows":
         (async () => {
           // options:
@@ -1190,10 +1265,17 @@ class netBot extends ControllerBot {
           //  ts: timestamp used to query alarms, default to now
           //  asc: return results in ascending order, default to false
           //  begin/end: time range used to query, will be ommitted when ts is set
+          //  type: 'tag' || 'intf' || undefined
 
           let options = Object.assign({}, msg.data);
 
-          if (msg.target && msg.target != '0.0.0.0') {
+          if (msg.data.type == 'tag') {
+            options.tag = msg.target;
+            await this.hostManager.getHostsAsync();
+          } else if (msg.data.type == 'intf') {
+            options.intf = msg.target;
+            await this.hostManager.getHostsAsync();
+          } else if (msg.target && msg.target != '0.0.0.0') {
             let host = await this.hostManager.getHostAsync(msg.target);
             if (!host || !host.o.mac) {
               let error = new Error("Invalid Host");
@@ -1824,6 +1906,43 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "networkConfig": {
+        (async () => {
+          const config = await FireRouter.getConfig();
+          this.simpleTxData(msg, config, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "networkConfigHistory": {
+        (async () => {
+          const count = value.count || 10;
+          const history = await FireRouter.loadRecentConfigFromHistory(count);
+          this.simpleTxData(msg, {history: history}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "networkConfigImpact": {
+        (async () => {
+          const result = FireRouter.checkConfig(value.config);
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "networkState": {
+        (async () => {
+          const networks = await FireRouter.getInterfaceAll();
+          this.simpleTxData(msg, networks, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -1877,6 +1996,132 @@ class netBot extends ControllerBot {
     }
   }
 
+  async intfFlowHandler(msg, target) {
+    log.info("Getting info on intf", target);
+
+    let begin = msg.data && msg.data.begin;
+    let end = (msg.data && msg.data.end) || begin + 3600 * 24;
+
+    // A backward compatbiel fix for query host network stats for 'NOW'
+    // extend it to a full hour if not enough
+    if ((end - begin) < 3600 && msg.data.hourblock === 0) {
+      end = begin + 3600;
+    }
+
+    let options = {}
+    if (begin && end) {
+      options.begin = begin
+      options.end = end
+    }
+
+    if (msg.data.hourblock != "1" &&
+      msg.data.hourblock != "0") { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
+      options.queryall = true
+    }
+
+    log.info("intfFlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
+    log.info("intfFlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
+
+    await this.hostManager.getHostsAsync();
+    // load 24 hours download/upload trend
+    let intf = this.networkProfileManager.getNetworkProfile(target);
+
+    if (!intf) {
+      throw new Error("Invalid Network ID");
+    }
+
+    let jsonobj = intf.toJson();
+    // load 24 hours download/upload trend
+    jsonobj.flowsummary = await flowManager.getTargetStats('intf:' + target);
+    
+    // target: 'uuid'
+    options.intf = target;
+    await Promise.all([
+      flowTool.prepareRecentFlows(jsonobj, options),
+      netBotTool.prepareTopUploadFlows(jsonobj, options),
+      netBotTool.prepareTopDownloadFlows(jsonobj, options),
+      netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
+      netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options),
+      this.hostManager.yesterdayStatsForInit(jsonobj, 'intf:' + target),
+      this.hostManager.last60MinStatsForInit(jsonobj, 'intf:' + target),
+      this.hostManager.last30daysStatsForInit(jsonobj, 'intf:' + target)
+    ])
+
+    if (!jsonobj.flows['appDetails']) { // fallback to old way
+      await netBotTool.prepareDetailedAppFlows(jsonobj, options)
+      await this.validateFlowAppIntel(jsonobj)
+    }
+
+    if (!jsonobj.flows['categoryDetails']) { // fallback to old model
+      await netBotTool.prepareDetailedCategoryFlows(jsonobj, options)
+      await this.validateFlowCategoryIntel(jsonobj)
+    }
+
+    return jsonobj;
+  }
+
+  async tagFlowHandler(msg, target) {
+    log.info("Getting info on tag", target);
+
+    let begin = msg.data && msg.data.begin;
+    let end = (msg.data && msg.data.end) || begin + 3600 * 24;
+
+    // A backward compatbiel fix for query host network stats for 'NOW'
+    // extend it to a full hour if not enough
+    if ((end - begin) < 3600 && msg.data.hourblock === 0) {
+      end = begin + 3600;
+    }
+
+    let options = {}
+    if (begin && end) {
+      options.begin = begin
+      options.end = end
+    }
+
+    if (msg.data.hourblock != "1" &&
+      msg.data.hourblock != "0") { // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
+      options.queryall = true
+    }
+
+    log.info("tagFlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
+    log.info("tagFlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
+
+    await this.hostManager.getHostsAsync();
+    let tag = this.tagManager.getTagByUid(target);
+
+    if (!tag) {
+      throw new Error("Invalid Tag ID");
+    }
+
+    let jsonobj = tag.toJson();
+    // load 24 hours download/upload trend
+    jsonobj.flowsummary = await flowManager.getTargetStats('tag:' + target);
+    
+    // target: 'uuid'
+    options.tag = target;
+    await Promise.all([
+      flowTool.prepareRecentFlows(jsonobj, options),
+      netBotTool.prepareTopUploadFlows(jsonobj, options),
+      netBotTool.prepareTopDownloadFlows(jsonobj, options),
+      netBotTool.prepareDetailedAppFlowsFromCache(jsonobj, options),
+      netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options),
+      this.hostManager.yesterdayStatsForInit(jsonobj, 'tag:' + target),
+      this.hostManager.last60MinStatsForInit(jsonobj, 'tag:' + target),
+      this.hostManager.last30daysStatsForInit(jsonobj, 'tag:' + target)
+    ])
+
+    if (!jsonobj.flows['appDetails']) { // fallback to old way
+      await netBotTool.prepareDetailedAppFlows(jsonobj, options)
+      await this.validateFlowAppIntel(jsonobj)
+    }
+
+    if (!jsonobj.flows['categoryDetails']) { // fallback to old model
+      await netBotTool.prepareDetailedCategoryFlows(jsonobj, options)
+      await this.validateFlowCategoryIntel(jsonobj)
+    }
+
+    return jsonobj;
+  }
 
   async systemFlowHandler(msg) {
     log.info("Getting flow info of the entire network");
@@ -2031,7 +2276,8 @@ class netBot extends ControllerBot {
         await mode.reloadSetupMode();
         let dhcpModeOn = await mode.isDHCPModeOn();
         if (dhcpModeOn) {
-          const dhcpFound = await dhcp.dhcpDiscover("eth0");
+          const currentConfig = fc.getConfig(true);
+          const dhcpFound = await dhcp.dhcpDiscover(currentConfig.monitoringInterface);
           const response = {
             DHCPMode: true,
             DHCPDiscover: dhcpFound
@@ -2085,7 +2331,7 @@ class netBot extends ControllerBot {
         break
       case "reboot":
         (async () => {
-          sysTool.rebootServices()
+          sysTool.rebootSystem()
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2179,6 +2425,35 @@ class netBot extends ControllerBot {
           uptime: uptime,
           timestamp: now
         }, null, callback)
+        break;
+      }
+      case "tag:create": {
+        (async () => {
+          if (!value || !value.name)
+            this.simpleTxData(msg, {}, {code: 400, msg: "'name' is not specified."}, callback);
+          else {
+            const name = value.name;
+            const obj = value.obj;
+            const tag = await this.tagManager.createTag(name, obj);
+            this.simpleTxData(msg, tag, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
+      case "tag:remove": {
+        (async () => {
+          if (!value || !value.name)
+            this.simpleTxData(msg, {}, {code: 400, msg: "'name' is not specified"}, callback);
+          else {
+            const name = value.name;
+            await this.tagManager.removeTag(name);
+            this.simpleTxData(msg, {}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
         break;
       }
       case "alarm:block":
@@ -2490,7 +2765,6 @@ class netBot extends ControllerBot {
         break
       case "manualSpoofUpdate":
         (async () => {
-          let modeManager = require('../net2/ModeManager.js');
           await modeManager.publishManualSpoofUpdate()
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
@@ -3258,7 +3532,7 @@ class netBot extends ControllerBot {
           switch (network) {
             case "secondary": {
               const currentSecondaryInterface = currentConfig.secondaryInterface;
-              const updatedConfig = { intf: "eth0:0" };
+              const updatedConfig = { intf: currentConfig.monitoringInterface2 };
               const ipAddress = intf.ipAddress;
               const subnetMask = intf.subnetMask;
               const ipSubnet = iptool.subnet(ipAddress, subnetMask);
@@ -3276,20 +3550,19 @@ class netBot extends ControllerBot {
                 mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
                 mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
               }
-              await fc.updateUserConfig({ secondaryInterface: mergedSecondaryInterface });
+              fc.updateUserConfigSync({ secondaryInterface: mergedSecondaryInterface });
               const dnsmasqPolicy = { secondaryDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
               this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
-                let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
               this.simpleTxData(msg, {}, null, callback);
               break;
             }
             case "alternative": {
-              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on eth0
+              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
               const updatedAltConfig = { gateway: intf.gateway };
               const altIpAddress = intf.ipAddress;
               const altSubnetMask = intf.subnetMask;
@@ -3305,13 +3578,12 @@ class netBot extends ControllerBot {
               }
               updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
               const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
-              await fc.updateUserConfig({ alternativeInterface: mergedAlternativeInterface });
+              fc.updateUserConfigSync({ alternativeInterface: mergedAlternativeInterface });
               const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
               this._dnsmasq("0.0.0.0", dnsmasqPolicy);
               setTimeout(() => {
-                let modeManager = require('../net2/ModeManager.js');
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
               this.simpleTxData(msg, {}, null, callback);
@@ -3330,7 +3602,7 @@ class netBot extends ControllerBot {
               updatedWifiConfig.band = intf.band || "g";
               updatedWifiConfig.channel = intf.channel || "5";
               const mergedWifiInterface = Object.assign({}, currentWifiInterface, updatedWifiConfig); // if ip2 is not defined, it will be inherited from previous settings
-              await fc.updateUserConfig({ wifiInterface: mergedWifiInterface });
+              fc.updateUserConfigSync({ wifiInterface: mergedWifiInterface });
               const dnsmasqPolicy = { wifiDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.wifiDhcpRange = dhcpRange;
@@ -3381,8 +3653,7 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, { code: 400, msg: "network should be specified." }, callback);
           } else {
             const config = fc.getConfig(true);
-            const dnsmasq = new Dnsmasq();
-            let dhcpRange = await dnsmasq.getDefaultDhcpRange(network);
+            let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
             switch (network) {
               case "secondary": {
                 // convert ip/subnet to ip address and subnet mask
@@ -3413,7 +3684,7 @@ class netBot extends ControllerBot {
               }
               case "alternative": {
                 // convert ip/subnet to ip address and subnet mask
-                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on eth0
+                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
                 const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
                 this.hostManager.loadPolicy((err, data) => {
                   let alternativeDnsServers = sysManager.myDNS();

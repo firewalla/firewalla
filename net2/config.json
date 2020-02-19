@@ -1,5 +1,5 @@
 {
-  "version": 1.966,
+  "version": 1.970,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -14,13 +14,6 @@
       "eth0",
       "eth0:0",
       "wlan0"
-    ]
-  },
-  "iptables": {
-    "defaults": [
-      "sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
-      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || true",
-      "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
     ]
   },
   "monitoringInterface": "eth0",
@@ -93,7 +86,9 @@
     "SSLIntel",
     "UAIntel",
     "TransferContextIntel",
-    "MonkeyIntel"
+    "MonkeyIntel",
+    "IntfInfoIntel",
+    "TagsInfoIntel"
   ],
   "sensors": {
     "DHCPSensor": {},
@@ -483,14 +478,15 @@
       "perf": {
         "expires": 86400,
         "count": 10000
+      },
+      "networkConfigHistory": {
+        "expires": -1,
+        "count": 32
       }
     },
     "DeviceOfflineSensor": {
       "interval": 60,
       "idle": 2700
-    },
-    "FirewallaDiscoverSensor": {
-      "listenPort": 4096
     },
     "SubnetSensor": {},
     "IPChangeSensor": {},
@@ -513,6 +509,7 @@
       "minsize": 150000000,
       "dataPlanMinPercentage": 0.8
     },
+    "DnsmasqDhcpSensor": {},
     "LocalDomainSensor": {}
   },
   "hooks": {
@@ -651,5 +648,14 @@
     "naughty_monkey"
   ],
   "pubKeys": [],
-  "allowCustomizedProfiles": 1
+  "allowCustomizedProfiles": 1,
+  "firerouter": {
+    "interface": {
+      "host": "localhost",
+      "port": 8837,
+      "version": "v1"
+    },
+    "homeFolder": "/firerouter",
+    "hiddenFolder": "/.router"
+  }
 }

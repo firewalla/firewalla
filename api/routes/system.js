@@ -20,8 +20,7 @@ let log = require("../../net2/logger.js")(__filename, "info");
 let express = require('express');
 let router = express.Router();
 
-let SysManager = require('../../net2/SysManager.js');
-let sysManager = new SysManager('info');
+let sysManager = require('../../net2/SysManager.js');
 
 let sysInfo = require('../../extension/sysinfo/SysInfo.js');
 

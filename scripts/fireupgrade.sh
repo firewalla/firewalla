@@ -68,18 +68,10 @@ fi
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
-ethernet_ip() {
-    eth_ip=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.') # only check ip assigned to eth0, should not check eth0:0
-    if [[ -n "$eth_ip" ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
 function await_ip_assigned() {
     for i in `seq 1 30`; do
-        if ! ethernet_ip; then
+        gw=$(ip route show | awk '/default/ {print $3; exit; }' | head -n 1)
+        if [[ ! -n $gw ]]; then
             sleep 1
         else
             logger "IP address is assigned"
@@ -95,10 +87,17 @@ set_value() {
     saved_value=$2
     case ${kind} in
         ip)
-            sudo /sbin/ip addr replace ${saved_value} dev eth0
+            # ip is like <ip_address>/<subnet_mask_length>---<intf_name>
+            addr=`echo $saved_value | cut -d"---" -f1`
+            intf=`echo $saved_value | cut -d"---" -f2`
+            /sbin/ip addr flush dev $intf # flush legacy ips
+            /sbin/ip addr replace ${addr} dev $intf
             ;;
         gw)
-            sudo /sbin/route add default gw ${saved_value} eth0
+            # gw is like <ip_address>---<intf_name>
+            addr=`echo $saved_value | cut -d"---" -f1`
+            intf=`echo $saved_value | cut -d"---" -f2`
+            /sbin/ip route replace default via ${addr} dev $intf # override current default route
             ;;
     esac
 }
@@ -240,9 +239,17 @@ sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
 #[ -s /home/pi/firewalla/etc/fireupgrade.service ]  && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
-sudo systemctl reenable firewalla
-sudo systemctl reenable fireupgrade
-sudo systemctl reenable brofish
+
+if [[ $(uname -m) == "x86_64" ]]; then
+    sudo systemctl disable firewalla
+    sudo systemctl disable fireupgrade
+    sudo systemctl disable brofish
+else
+    sudo systemctl reenable firewalla
+    sudo systemctl reenable fireupgrade
+    sudo systemctl reenable brofish
+fi
+
 
 case $mode in
     normal)

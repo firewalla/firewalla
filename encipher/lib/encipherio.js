@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,7 +14,7 @@
  */
 'use strict';
 
-let ursa = require('ursa');
+let ursa = null
 let crypto = require('crypto');
 let fs = require('fs');
 let request = require('requestretry');
@@ -34,6 +34,10 @@ let fConfig = require('../../net2/config.js').getConfig();
 let exec = require('child-process-promise').exec;
 
 const rp = require('request-promise');
+
+const NODE_VERSION_SUPPORTS_RSA = 12
+
+const util = require('util')
 
 let instance = {};
 
@@ -62,9 +66,6 @@ let legoEptCloud = class {
             instance[name] = this;
             this.myPublicKey = null;
             this.myPrivateKey = null;
-            this.privpem = null;
-            this.pubpem = null;
-            this.publicKeyStore = {};
             this.appId = null;
             this.aid = null; // aid is the system wide unique application id (UID of application)
             this.appSecret = null;
@@ -80,6 +81,11 @@ let legoEptCloud = class {
             this.notifySocket = false;
             this.notifyGids = [];
 
+            this.nodeRSASupport =
+              Number.parseFloat(process.versions.node) > NODE_VERSION_SUPPORTS_RSA
+            if (!this.nodeRSASupport) {
+              ursa = require('ursa');
+            }
         }
         // NO LONGER create keypair in sync node during constructor
     }
@@ -87,13 +93,13 @@ let legoEptCloud = class {
     async keyReady() {
       log.info("Checking whether key pair exists already");
 
-
         try {
           await fs.accessAsync(this.getPublicKeyPath())
           await fs.accessAsync(this.getPrivateKeyPath())
         } catch(err) {
           if(err) {
-            return Promise.resolve(null);
+            log.error('Fail on reading key files', err)
+            return null;
           }
         }
 
@@ -102,10 +108,10 @@ let legoEptCloud = class {
         if(pubFile.length < 10 || priFile.length < 10) {
           log.error("ENCIPHER.IO Unable to read keys, keylength error", pubFile.length, priFile.length);
           await this.cleanupKeys()
-          return Promise.resolve(null);
+          return null;
         } else {
           log.info("Key pair exists");
-          return Promise.resolve({pub: pubFile, pri: priFile});
+          return {pub: pubFile, pri: priFile};
         }
 
     }
@@ -145,38 +151,68 @@ let legoEptCloud = class {
       if (this.myPublicKey && this.myPrivateKey) {
         return
       }
-      if (this.myprivkeyfile && this.mypubkeyfile) {
-        this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
-        this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-        return
+
+      if (!this.myprivkeyfile || !this.mypubkeyfile) {
+        const keys = await this.keyReady()
+        if (keys) {
+          this.mypubkeyfile = keys.pub;
+          this.myprivkeyfile = keys.pri;
+        } else {
+          await this.createKeyPair();
+          return
+        }
       }
 
-      let keys = await this.keyReady()
-      if (keys) {
-        this.mypubkeyfile = keys.pub;
-        this.myprivkeyfile = keys.pri;
+      if (this.nodeRSASupport) {
+        this.myPublicKey = crypto.createPublicKey(this.mypubkeyfile);
+        this.myPrivateKey = crypto.createPrivateKey(this.myprivkeyfile);
+      } else {
         this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
         this.myPrivateKey = ursa.createPrivateKey(this.myprivkeyfile);
-        return
+      }
+      return
+    }
+
+
+    async createKeyPair() {
+      if (this.nodeRSASupport) {
+        const generateKeyPair = util.promisify(crypto.generateKeyPair)
+        const { privateKey, publicKey } = await generateKeyPair(
+          'rsa', {modulusLength:2048, publicExponent:65537}
+        );
+        this.myPrivateKey = privateKey
+        this.myPublicKey = publicKey
+        this.myprivkeyfile = privateKey.export({type:'pkcs1', format:'pem'})
+        this.mypubkeyfile = publicKey.export({type:'pkcs1', format:'pem'})
       } else {
-        return this.createKeyPair();
+        const key = ursa.generatePrivateKey(2048, 65537);
+        this.mypubkeyfile = key.toPublicPem();
+        this.myprivkeyfile = key.toPrivatePem();
+        this.myPublicKey = ursa.createPublicKey(this.mypubkeyfile);
+        this.myPrivateKey = key
+      }
+
+      await fs.writeFileSync(this.getPrivateKeyPath(), this.myprivkeyfile, 'ascii')
+      await fs.writeFileSync(this.getPublicKeyPath(), this.mypubkeyfile, 'ascii')
+      await exec("sync")
+    }
+
+    publicEncrypt(key, utf8String) {
+      if (this.nodeRSASupport) {
+        const buffer = Buffer.from(utf8String)
+        return crypto.publicEncrypt(key, buffer).toString('base64')
+      } else {
+        return key.encrypt(utf8String, 'utf8', 'base64');
       }
     }
 
-    async createKeyPair() {
-      let key = ursa.generatePrivateKey(2048, 65537);
-      let privateKeyPem = key.toPrivatePem();
-      let pubKeyPem = key.toPublicPem();
-
-
-      await fs.writeFileSync(this.getPrivateKeyPath(), privateKeyPem, 'ascii')
-      await fs.writeFileSync(this.getPublicKeyPath(), pubKeyPem, 'ascii')
-      await exec("sync")
-
-      this.myPublicKey = ursa.createPublicKey(pubKeyPem);
-      this.myPrivateKey = ursa.createPrivateKey(privateKeyPem);
-      this.mypubkeyfile = pubKeyPem;
-      this.myprivkeyfile = privateKeyPem;
+    privateDecrypt(key, base64String) {
+      if (this.nodeRSASupport) {
+        const buffer = Buffer.from(base64String, 'base64')
+        return crypto.privateDecrypt(key, buffer).toString('utf8')
+      } else {
+        return key.decrypt(base64String, 'base64', 'utf8');
+      }
     }
 
     eptloginAsync(appId, appSecret, eptInfo, tag) {
@@ -201,7 +237,7 @@ let legoEptCloud = class {
         let assertion = {
             'assertion': {
                 'name': this.tag,
-                'publicKey': this.myPublicKey.toPublicPem('utf8'),
+                'publicKey': this.mypubkeyfile.toString('utf8'),
                 'appId': this.appId,
                 'appSecret': this.appSecret,
                 'signature': this.signature,
@@ -308,7 +344,7 @@ let legoEptCloud = class {
     eptcreateGroup(name, info, alias, callback) {
         let symmetricKey = this.keygen();
         let group = {};
-        let encryptedSymmetricKey = this.myPublicKey.encrypt(symmetricKey, 'utf8', 'base64');
+        let encryptedSymmetricKey = this.publicEncrypt(this.myPublicKey, symmetricKey);
 
         if (info) {
             group.info = this.encrypt(info, symmetricKey);
@@ -614,7 +650,6 @@ let legoEptCloud = class {
         }
 
         let sk = null;
-        let kcache = {};
         for (let k in group.symmetricKeys) {
             let skey = group.symmetricKeys[k];
             if (skey.eid === this.eid) {
@@ -625,7 +660,7 @@ let legoEptCloud = class {
         if (sk === null) {
             return null;
         } else {
-            let symmetricKey = this.myPrivateKey.decrypt(sk.key, 'base64', 'utf8');
+            let symmetricKey = this.privateDecrypt(this.myPrivateKey, sk.key);
             this.groupCache[group._id] = {
                 'group': group,
                 'symanttricKey': sk,
@@ -685,7 +720,6 @@ let legoEptCloud = class {
 
             /*
             let sk = null;
-            let kcache = {};
             for (let k in group.symmetricKeys) {
                 let skey = group.symmetricKeys[k];
                 if (skey.eid === self.eid) {
@@ -1243,10 +1277,12 @@ let legoEptCloud = class {
     reKeyForEpt(skey, eid, ept) {
         let publicKey = ept.publicKey;
         log.debug("rekeying with symmetriKey", ept, " and ept ", eid);
-        let symmetricKey = this.myPrivateKey.decrypt(skey.key, 'base64', 'utf8');
+        let symmetricKey = this.privateDecrypt(this.myPrivateKey, skey.key);
         log.info("Creating peer publicKey: ", publicKey);
-        let peerPublicKey = ursa.createPublicKey(publicKey);
-        let encryptedSymmetricKey = peerPublicKey.encrypt(symmetricKey, 'utf8', 'base64');
+        let peerPublicKey = this.nodeRSASupport
+          ? crypto.createPublicKey(publicKey)
+          : ursa.createPublicKey(publicKey);
+        let encryptedSymmetricKey = this.publicEncrypt(peerPublicKey, symmetricKey);
         let keyforept = {
             eid: eid,
             key: encryptedSymmetricKey,
@@ -1353,9 +1389,8 @@ let legoEptCloud = class {
     }
 
 
-    eptGenerateInvite(gid) {
+    eptGenerateInvite() {
         let k = uuid.v4();
-        //return {'r':k,'e':this.myPrivateKey.hashAndSign('sha256',k,'utf8','base64')};
         return {
             'r': k,
             'e': this.eid

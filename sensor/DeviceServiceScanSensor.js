@@ -33,8 +33,7 @@ const fc = require('../net2/config.js');
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager("cli", 'client', 'info');
 
-const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager('info')
+const sysManager = require('../net2/SysManager.js');
 
 class DeviceServiceScanSensor extends Sensor {
   constructor() {
