@@ -50,7 +50,6 @@ class AdblockPlugin extends Sensor {
     async run() {
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
-        this.enabledMacAddresses = [];
         this.macAddressSettings = {};
         this.networkSettings = {};
         this.tagSettings = {};
