@@ -1244,7 +1244,7 @@ module.exports = class HostManager {
             this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
           }
         }
-
+        
         hostbymac.update(o);
       }
       hostbymac._mark = true;
