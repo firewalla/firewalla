@@ -51,6 +51,7 @@ class DHCPSensor extends Sensor {
             type: "NewDeviceWithMacOnly",
             mac: obj.mac,
             intf_mac: obj.intf_mac,
+            intf_uuid: obj.intf_uuid,
             name: obj.name,
             mtype: obj.mtype,
             from: 'dhcp',
@@ -67,7 +68,7 @@ class DHCPSensor extends Sensor {
     this.dhcpDump.install((obj) => {
       log.info("DHCPDUMP is installed");
       this.scheduleReload();
-      
+
       sclient.on("message", (channel, message) => {
         if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
           log.info("Schedule reload DHCPSensor since network info is reloaded");

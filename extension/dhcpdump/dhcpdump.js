@@ -164,7 +164,8 @@ module.exports = class {
 
         this.parseEvents(message).map(e => {
           if (e) {
-            e.intf_mac = intf.mac_address
+            e.intf_mac = intf.mac_address;
+            e.intf_uuid = intf.uuid;
           }
           callback(e)
         })
