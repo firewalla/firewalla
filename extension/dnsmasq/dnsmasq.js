@@ -470,25 +470,25 @@ module.exports = class DNSMASQ {
       }).join("\n");
       await fs.writeFileAsync(categoryBlcokMacSetFile, newData);
     } catch (err) {
-      if (err.code != "ENOENT") {
-        log.error("Failed to update category mact set entry file:", err);
-      }
+      log.error("Failed to update category mact set entry file:", err);
     } finally {
       this.workingInProgress = false;
     }
   }
 
   async updatePolicyCategoryFilterEntry(domains, options) {
-    log.debug("updatePolicyCategoryFilterEntry", domains, options)
+    log.debug("updatePolicyCategoryFilterEntry", domains, options);
+    options = options || {};
+    const category = options.category;
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    const fileExists = await fs.accessAsync(categoryBlcokMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
+    if (!fileExists) return;
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    options = options || {};
-    const category = options.category;
-    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
     let entry = "";
     for (const domain of domains) {
       entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
@@ -499,9 +499,7 @@ module.exports = class DNSMASQ {
       const data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
       if (data.indexOf(`$${category}_block`) > -1) this.restartDnsmasq();
     } catch (err) {
-      if (err.code != 'ENOENT') {
-        log.error("Failed to update category entry into file:", err);
-      }
+      log.error("Failed to update category entry into file:", err);
     } finally {
       this.workingInProgress = false;
     }
@@ -848,7 +846,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  checkIfRestartNeeded() {
+  async checkIfRestartNeeded() {
     const MINI_RESTART_INTERVAL = 10 // 10 seconds
 
     if (this.needRestart) {
@@ -856,7 +854,8 @@ module.exports = class DNSMASQ {
     }
 
     if (this.shouldStart && this.needRestart && (new Date() / 1000 - this.needRestart) > MINI_RESTART_INTERVAL) {
-      this.needRestart = null
+      this.needRestart = null;
+      if (!(await this.checkConfsChange())) return;
       this.rawRestart((err) => {
         if (err) {
           log.error("Failed to restart dnsmasq")
@@ -1447,6 +1446,8 @@ module.exports = class DNSMASQ {
           }
         }));
       }
+      log.info("clean up cleanUpLeftoverConfig");
+      await rclient.delAsync('dnsmasq:conf');
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
     }
@@ -1528,5 +1529,25 @@ module.exports = class DNSMASQ {
       await fs.writeFileAsync(filePath, data);
       this.restartDnsmasq()
     }, cooldown)
+  }
+  async checkConfsChange() {
+    try {
+      const dnsmasqConfKey = "dnsmasq:conf";
+      let md5sumNow = '';
+      for (const confs of [`${FILTER_DIR}*`, resolvFile]) {
+        const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
+        md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
+      }
+      const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);
+      log.info(`dnsmasq confs md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
+      if (md5sumNow != md5sumBefore) {
+        await rclient.setAsync(dnsmasqConfKey, md5sumNow);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      log.info(`Get dnsmasq confs md5summ error`, error)
+      return true;
+    }
   }
 };

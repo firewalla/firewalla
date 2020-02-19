@@ -55,6 +55,10 @@ class NetBotTool {
     for(const key of keys) {
       const lastSumKey = `lastsumflow:${key}`;
       const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+
       const elements = realSumKey.split(":")
       if(elements.length !== 4) {
         continue;
@@ -82,6 +86,10 @@ class NetBotTool {
 
       const lastSumKey = `lastsumflow:${key}`;
       const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+      
       const elements = realSumKey.split(":")
       if(elements.length !== 4) {
         continue;
