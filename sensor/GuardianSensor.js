@@ -153,9 +153,14 @@ class GuardianSensor extends Sensor {
     const region = await this.getRegion();
 
     if(region) {
-      this.socket = io(server, {path: `/${region}/socket.io`});
+      this.socket = io(server, {
+        path: `/${region}/socket.io`,
+        transports: ['websocket']
+      });
     } else {
-      this.socket = io.connect(server);
+      this.socket = io(server, {
+        transports: ['websocket']
+      });
     }
     if(!this.socket) {
       throw new Error("failed to init socket io");
