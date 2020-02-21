@@ -11,6 +11,10 @@
     {
       "name": "cloudflare-ipv6",
       "stamp": "sdns:AgcAAAAAAAAAGVsyNjA2OjQ3MDA6NDcwMDo6MTExMV06NTMAEmRucy5jbG91ZGZsYXJlLmNvbQovZG5zLXF1ZXJ5"
+    },
+    {
+      "name": "quad9",
+      "stamp": "sdns://AgMAAAAAAAAABzkuOS45LjkSZG5zOS5xdWFkOS5uZXQ6NDQzCi9kbnMtcXVlcnk"
     }
   ]
 }

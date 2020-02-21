@@ -914,6 +914,10 @@ module.exports = class HostManager {
     json.tags = await TagManager.toJson();
   }
 
+  async btMacForInit(json) {
+    json.btMac = await rclient.getAsync("sys:bt:mac");
+  }
+
   async networkProfilesForInit(json) {
     await NetworkProfileManager.refreshNetworkProfiles();
     json.networkProfiles = await NetworkProfileManager.toJson();
@@ -959,6 +963,7 @@ module.exports = class HostManager {
           this.networkConfig(json),
           this.networkProfilesForInit(json),
           this.tagsForInit(json),
+          this.btMacForInit(json),
           netBotTool.loadSystemStats(json)
         ];
 

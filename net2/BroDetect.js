@@ -543,33 +543,15 @@ module.exports = class {
       return true               // by default, always consider as valid
     }
 
-    const myip2 = sysManager.myIp2();
-    const myWifiIp = sysManager.myWifiIp();
-
     // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
     if (sysManager.isMyIP(data["id.orig_h"]) ||
       sysManager.isMyIP(data["id.resp_h"])) {
       return false
     }
 
-    if (myip2) {
-      // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
-      if (data["id.orig_h"] === myip2 ||
-        data["id.resp_h"] === myip2) {
-        return false
-      }
-    }
-
     if (sysManager.isMyIP6(data["id.orig_h"]) ||
       sysManager.isMyIP6(data["id.resp_h"])) {
       return false;
-    }
-
-    if (myWifiIp) {
-      if (data["id.orig_h"] === myWifiIp ||
-        data["id.resp_h"] === myWifiIp) {
-        return false
-      }
     }
 
     // ignore any devices' traffic who is set to monitoring off

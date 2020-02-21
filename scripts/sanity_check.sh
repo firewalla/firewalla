@@ -319,6 +319,14 @@ check_sys_config() {
     echo ""
 }
 
+check_speed() {
+    echo "---------------------- Speed ------------------"
+    UNAME=$(uname -m)
+    test $UNAME == "x86_64" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_amd64 -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
+    test $UNAME == "aarch64" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_arm64 -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
+    test $UNAME == "armv7l" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_arm -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
+}
+
 usage() {
     return
 }
@@ -350,5 +358,6 @@ if [ "$FAST" == false ]; then
     check_sys_config
     check_policies
     check_iptables
+    check_speed
 fi
 check_hosts
