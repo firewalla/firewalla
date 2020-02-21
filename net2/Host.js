@@ -21,8 +21,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const exec = require('child-process-promise').exec
 
 const Spoofer = require('./Spoofer.js');
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const ShieldManager = require('./ShieldManager.js');
 
@@ -45,10 +44,20 @@ const linux = require('../util/linux.js');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
-const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const vpnClientEnforcer = new VPNClientEnforcer();
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+
+const TagManager = require('./TagManager.js');
+const Tag = require('./Tag.js');
+
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
+const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new Dnsmasq();
+const _ = require('lodash');
 
 class Host {
   constructor(obj, mgr, callback) {
@@ -71,10 +80,10 @@ class Host {
         this.processNotifications(channel, message);
       });
 
-      if (obj != null) {
-        this.subscribe(this.o.ipv4Addr, "Notice:Detected");
-        this.subscribe(this.o.ipv4Addr, "Intel:Detected");
-        this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
+      if (obj && obj.mac) {
+        this.subscribe(this.o.mac, "Notice:Detected");
+        this.subscribe(this.o.mac, "Intel:Detected");
+        this.subscribe(this.o.mac, "HostPolicy:Changed");
       }
       this.spoofing = false;
 
@@ -93,10 +102,10 @@ class Host {
     }
 
     if(this.mgr.type === 'server') {
-      if (obj != null) {
-        this.subscribe(this.o.ipv4Addr, "Notice:Detected");
-        this.subscribe(this.o.ipv4Addr, "Intel:Detected");
-        this.subscribe(this.o.ipv4Addr, "HostPolicy:Changed");
+      if (obj && obj.mac) {
+        this.subscribe(this.o.mac, "Notice:Detected");
+        this.subscribe(this.o.mac, "Intel:Detected");
+        this.subscribe(this.o.mac, "HostPolicy:Changed");
       }
       this.predictHostNameUsingUserAgent();
       this.loadPolicy(null);
@@ -117,7 +126,7 @@ class Host {
 
   keepalive() {
     for (let i in this.ipv6Addr) {
-      log.debug("keep alive ", this.mac,this.ipv6Addr[i]);
+      log.debug("keep alive ", this.o.mac,this.ipv6Addr[i]);
       setTimeout(() => {
         linux.ping6(this.ipv6Addr[i]);
       }, (i + 1) * 2000);
@@ -139,13 +148,12 @@ class Host {
       let ts = (new Date())/1000;
       let lastActive = 0;
       let _ipv6Hosts = {};
-      this._ipv6Hosts = {};
 
       for (let i in this.ipv6Addr) {
         let ip6 = this.ipv6Addr[i];
-        let ip6Host = rclient.hgetallAsync("host:ip6:"+ip6);
+        let ip6Host = await rclient.hgetallAsync("host:ip6:"+ip6);
         log.debug("Host:CleanV6:looking up v6",ip6,ip6Host)
-        if (ip6Host != null) {
+        if (ip6Host != null && ip6Host.mac === this.o.mac ) {
           _ipv6Hosts[ip6] = ip6Host;
           if (ip6Host.lastActiveTimestamp > lastActive) {
             lastActive = ip6Host.lastActiveTimestamp;
@@ -157,9 +165,8 @@ class Host {
       for (let ip6 in _ipv6Hosts) {
         let ip6Host = _ipv6Hosts[ip6];
         if (ip6Host.lastActiveTimestamp < lastActive - 60*30 || ip6Host.lastActiveTimestamp < ts-60*40) {
-          log.info("Host:"+this.mac+","+ts+","+ip6Host.lastActiveTimestamp+","+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
+          log.info("Host:"+this.o.mac+","+ts+","+ip6Host.lastActiveTimestamp+","+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
         } else {
-          this._ipv6Hosts[ip6] = ip6Host;
           this.ipv6Addr.push(ip6);
         }
       }
@@ -355,6 +362,9 @@ class Host {
     if (this.activities) {
       this.o.activities= JSON.stringify(this.activities);
     }
+    if (this._tags) {
+      this.o.tags = JSON.stringify(this._tags);
+    }
   }
 
   touch(date) {
@@ -391,11 +401,23 @@ class Host {
       }
       const ovpnClient = new OpenVPNClient({profileId: profileId});
       const intf = ovpnClient.getInterfaceName();
+      const rtId = await vpnClientEnforcer.getRtId(intf);
+      if (!rtId)
+        return false;
+      const rtIdHex = Number(rtId).toString(16);
       if (state === true) {
-        const mode = policy.mode || "dhcp";
-        await vpnClientEnforcer.enableVPNAccess(this.o.mac, mode, intf);
-      } else {
-        await vpnClientEnforcer.disableVPNAccess(this.o.mac);
+        // set skbmark
+        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! add c_wan_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
+      }
+      if (state === false) {
+        // clear skbmark
+        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! add c_wan_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
+      }
+      if (state === null) {
+        // do not change skbmark
+        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
       }
       return true;
     } catch (err) {
@@ -420,21 +442,42 @@ class Host {
   }
 
   async ipAllocation(policy) {
-    const type = policy.type;
+    // to ensure policy set by different client won't conflict each other.
+    // delete fields in host:mac for all versions
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
-    if (type === "dynamic") {
-      this.dnsmasq.onDHCPReservationChanged();
+
+    if (policy.allocations) {
+      const intfIp = {}
+      for (const uuid of Object.keys(policy.allocations)) {
+        const allocation = policy.allocations[uuid]
+        if (allocation.type == 'static') {
+          intfIp[uuid] = {
+            ipv4: allocation.ipv4
+          }
+        }
+      }
+      await rclient.hsetAsync("host:mac:" + this.o.mac, "intfIp", JSON.stringify(intfIp));
     }
-    if (type === "static") {
-      const alternativeIp = policy.alternativeIp;
-      const secondaryIp = policy.secondaryIp;
-      if (alternativeIp)
-        await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
-      if (secondaryIp)
-        await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
-      this.dnsmasq.onDHCPReservationChanged();
+    else if (policy.type) {
+      const type = policy.type;
+
+      if (type === "dynamic") {
+        // nothing to do now
+      }
+      else if (type === "static") {
+        // Red/Blue
+        const alternativeIp = policy.alternativeIp;
+        const secondaryIp = policy.secondaryIp;
+        if (alternativeIp)
+          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
+        if (secondaryIp)
+          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
+      }
     }
+
+    this.dnsmasq.onDHCPReservationChanged();
   }
 
 
@@ -444,28 +487,42 @@ class Host {
       log.info("Host:Spoof:NoIP", this.o);
       return;
     }
-    log.info("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
-    let gateway = sysManager.monitoringInterface().gateway;
-    let gateway6 = sysManager.monitoringInterface().gateway6;
-    const dns = sysManager.myDNS();
+    log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac}, current spoof state: ${this.spoofing}, new spoof state: ${this.o.state}`);
+    // set spoofing data in redis and trigger dnsmasq reload hosts
+    if (state === true) {
+      rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
+        .catch(err => log.error("Unable to set spoofing in redis", err))
+        .then(() => this.dnsmasq.onSpoofChanged());
+      this.spoofing = state;
+    } else {
+      rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
+        .catch(err => log.error("Unable to set spoofing in redis", err))
+        .then(() => this.dnsmasq.onSpoofChanged());
+      this.spoofing = false;
+    }
+    
+    const iface = sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
+    if (!iface || !iface.name) {
+      log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
+      return;
+    }
+    if (iface.type !== "wan" || !sysManager.myGateway(iface.name)) {
+      // a relative tight condition to check if it is a WAN interface
+      log.info(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr} ${this.o.mac}`);
+      return;
+    }
+    const gateway = sysManager.myGateway(iface.name);
+    const gateway6 = sysManager.myGateway6(iface.name);
+    
+    const spoofer = new Spoofer({}, false);
 
-    const spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false);
-
-    // new spoof supports spoofing on same device for mutliple times,
-    // so no need to check if it is already spoofing or not
-    if (this.o.ipv4Addr === gateway || this.o.mac == null || this.o.ipv4Addr === sysManager.myIp()) {
+    if (this.o.ipv4Addr === gateway || this.o.mac == null || sysManager.isMyIP(this.o.ipv4Addr)) {
       return;
     }
 
-    /* This is taken care of by DnsLoopAvoidanceSensor
-      if (dns && dns.includes(this.o.ipv4Addr)) {
-        // do not monitor dns server's traffic
-        return;
-      }
-      */
-        if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
-          return;
-        }
+    if (this.o.mac == "00:00:00:00:00:00" || this.o.mac.indexOf("00:00:00:00:00:00")>-1) {
+      return;
+    }
     if (this.o.mac == "FF:FF:FF:FF:FF:FF" || this.o.mac.indexOf("FF:FF:FF:FF:FF:FF")>-1) {
       return;
     }
@@ -480,13 +537,9 @@ class Host {
         exec(cmd).catch((err) => {
           log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
         });
-        spoofer.newSpoof(this.o.ipv4Addr)
+        spoofer.newSpoof(this.o.ipv4Addr, iface.name)
           .then(() => {
-            rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
-              .catch(err => log.error("Unable to set spoofing in redis", err))
-              .then(() => this.dnsmasq.onSpoofChanged());
             log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
-            this.spoofing = true;
           }).catch((err) => {
             log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
           })
@@ -496,13 +549,9 @@ class Host {
       exec(cmd).catch((err) => {
         log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
       });
-      spoofer.newUnspoof(this.o.ipv4Addr)
+      spoofer.newUnspoof(this.o.ipv4Addr, iface.name)
         .then(() => {
-          rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
-            .catch(err => log.error("Unable to set spoofing in redis", err))
-            .then(() => this.dnsmasq.onSpoofChanged());
           log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
-          this.spoofing = false;
         }).catch((err) => {
           log.error("Failed to unspoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
         })
@@ -510,21 +559,17 @@ class Host {
 
     /* put a safety on the spoof */
     log.debug("Spoof For IPv6",this.o.mac, JSON.stringify(this.ipv6Addr),JSON.stringify(this.o.ipv6Addr));
-    let myIp6 = sysManager.myIp6();
     if (this.ipv6Addr && this.ipv6Addr.length>0) {
       for (let i in this.ipv6Addr) {
         if (this.ipv6Addr[i] == gateway6) {
           continue;
         }
-        if (myIp6 && myIp6.indexOf(this.ipv6Addr[i])>-1) {
-          continue;
-        }
-        if (dns && dns.indexOf(this.ipv6Addr[i]) > -1) {
+        if (sysManager.isMyIP6(this.ipv6Addr[i])) {
           continue;
         }
         if (state == true) {
-          spoofer.newSpoof6(this.ipv6Addr[i]).then(()=>{
-            log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
+          spoofer.newSpoof6(this.ipv6Addr[i], iface.name).then(()=>{
+            log.debug("Started v6 spoofing", this.ipv6Addr[i]);
           }).catch((err)=>{
             log.error("Failed to spoof", this.ipv6Addr, err);
           })
@@ -532,19 +577,12 @@ class Host {
             log.error("Failed to Spoof, over ",i, " of ", this.ipv6Addr);
             break;
           }
-          // prototype
-          //   log.debug("Host:Spoof:True", this.o.ipv4Addr, gateway,this.ipv6Addr,gateway6);
-          //   spoofer.spoof(null, null, this.o.mac, this.ipv6Addr,gateway6);
-          //   this.spoofing = true;
         } else {
-          spoofer.newUnspoof6(this.ipv6Addr[i]).then(()=>{
-            log.debug("Starting v6 unspoofing", this.ipv6Addr[i]);
+          spoofer.newUnspoof6(this.ipv6Addr[i], iface.name).then(()=>{
+            log.debug("Stopped v6 spoofing", this.ipv6Addr[i]);
           }).catch((err)=>{
             log.error("Failed to [v6] unspoof", this.ipv6Addr, err);
           })
-          //    log.debug("Host:Spoof:False", this.o.ipv4Addr, gateway, this.ipv6Addr,gateway6);
-          //    spoofer.unspoof(null, null, this.o.mac,this.ipv6Addr, gateway6);
-          //    this.spoofing = false;
         }
       }
     }
@@ -575,19 +613,19 @@ class Host {
     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
     .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
     */
-  subscribe(ip, e) {
-    this.subscriber.subscribeOnce("DiscoveryEvent", e, ip, (channel, type, ip2, obj) => {
-      log.debug("Host:Subscriber", channel, type, ip2, obj);
+  subscribe(mac, e) {
+    this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, (channel, type, ip, obj) => {
+      log.debug("Host:Subscriber", channel, type, ip, obj);
       if (type === "Notice:Detected") {
         if (this.callbacks[e]) {
-          this.callbacks[e](channel, ip2, type, obj);
+          this.callbacks[e](channel, ip, type, obj);
         }
       } else if (type === "Intel:Detected") {
         // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && this.type === "server") {
         this.applyPolicy((err)=>{
         });
-        log.info("HostPolicy:Changed", channel, ip, ip2, type, obj);
+        log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       }
     });
   }
@@ -597,9 +635,11 @@ class Host {
     log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
     let policy = JSON.parse(JSON.stringify(this.policy));
     // check for global
+    /* no need to do this now, if global monitoring is turned off, mock bitbridge will be used
     if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
       policy.monitor = false;
     }
+    */
     let PolicyManager = require('./PolicyManager.js');
     let policyManager = new PolicyManager('info');
 
@@ -844,7 +884,8 @@ class Host {
       nmapName: this.o.nmapName,
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
-      localDomain: this.o.localDomain
+      localDomain: this.o.localDomain,
+      intf: this.o.intf ? this.o.intf : 'Unknown'
     }
 
     if (this.o.ipv4Addr == null) {
@@ -901,6 +942,14 @@ class Host {
       json.flowsummary = this.flowsummary;
     }
 
+    if (this.o.tags) {
+      try {
+        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags) : [] 
+      } catch (err) {
+        log.error("Failed to parse tags:", err)
+      }
+    }
+
     // json.macVendor = this.name();
 
     return json;
@@ -950,99 +999,37 @@ class Host {
     }
   }
 
-  //This is an older function replaced by redisclean
   redisCleanRange(hours) {
     let now = Date.now() / 1000;
-    rclient.zremrangebyrank("flow:conn:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
-    rclient.zremrangebyrank("flow:conn:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
-    rclient.zremrangebyrank("flow:http:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
-    rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, (err) => {});
+    rclient.zremrangebyrank("flow:conn:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
+    rclient.zremrangebyrank("flow:conn:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
+    rclient.zremrangebyrank("flow:http:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
+    rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
   }
 
-  async getHostAsync(ip) {
-    return await this.getHost(ip);
-  }
-
-  async getHost(ip) {
-    let key = "host:ip4:" + ip;
-    log.debug("Discovery:FindHostWithIP", key, ip);
-    let start = "-inf";
-    let end = "+inf";
-    let now = Date.now() / 1000;
-    this.summarygap = Number(24);
-    if (this.summarygap != null) {
-      start = now - this.summarygap * 60 * 60;
-      end = now;
-    }
-    try {
-      const data = await rclient.hgetallAsync(key);
-      if (data != null) {
-        this.o = data;
-
-        if(this.mgr.type === 'server') {
-          this.subscribe(ip, "Notice:Detected");
-          this.subscribe(ip, "Intel:Detected");
-        }
-
-        const {byCount, byTime} = await this.summarizeSoftware(ip, start, end);
-        //      rclient.zrevrangebyscore(["software:ip:"+ip,'+inf','-inf'], (err,result)=> {
-        this.softwareByCount = byCount;
-        this.softwareByRecent = byTime;
-        let result = await rclient.zrevrangebyscoreAsync(["notice:" + ip, end, start]);
-        this.notice = result
-        result = await rclient.zrevrangebyscoreAsync(["flow:http:in:" + ip, end, start, "LIMIT", 0, 10]);
-        this.http = result;
-        return this;
-      } else {
-        return null;
-      }
-    } catch (err) {
-      log.error("Discovery:FindHostWithIP:Error", key, err);
-      return null;
-    }
-  }
-
-  redisclean() {
-    // deprecated, do nothing
-  }
-
-  setPolicyAsync(name, data) {
-    return util.promisify(this.setPolicy).bind(this)(name, data)
+  setPolicy(name, data, callback) {
+    callback = callback || function() {}
+    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
   }
 
   // policy:mac:xxxxx
-  setPolicy(name, data, callback) {
-    callback = callback || function() {}
-
+  async setPolicyAsync(name, data) {
     if (this.policy[name] != null && this.policy[name] == data) {
-      callback(null, null);
       log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
       return;
     }
-    this.policy[name] = data;
     log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
-    this.savePolicy((err, data) => {
-      if (err == null) {
-        let obj = {};
-        obj[name] = data;
-        if (this.subscriber) {
-          setTimeout(() => {
-            this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.ipv4Addr, obj);
-          }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
-        }
-        if (callback) {
-          callback(null, obj);
-        }
-      } else {
-        if (callback) {
-          callback(null, null);
-        }
+    await this.saveSinglePolicy(name, data)
 
-      }
-    });
-
+    const obj = {};
+    obj[name] = data;
+    if (this.subscriber) {
+      setTimeout(() => {
+        this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
+      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+    }
+    return obj
   }
-
 
   policyToString() {
     if (this.policy == null || Object.keys(this.policy).length == 0) {
@@ -1056,24 +1043,19 @@ class Host {
     }
   }
 
-  savePolicy(callback) {
+  async saveSinglePolicy(name, policy) {
+    this.policy[name] = policy
+    let key = "policy:mac:" + this.o.mac;
+    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
+  }
+
+  async savePolicy() {
     let key = "policy:mac:" + this.o.mac;
     let d = {};
     for (let k in this.policy) {
       d[k] = JSON.stringify(this.policy[k]);
     }
-    rclient.hmset(key, d, (err, data) => {
-      if (err != null) {
-        log.error("Host:Policy:Save:Error", key, err);
-      }
-      if (callback)
-        callback(err, null);
-    });
-
-  }
-
-  savePolicyAsync() {
-    return util.promisify(this.savePolicy).bind(this)()
+    await rclient.hmsetAsync(key, d)
   }
 
   loadPolicy(callback) {
@@ -1113,6 +1095,57 @@ class Host {
       return false;
     }
     return true;
+  }
+
+  getTags() {
+    if (_.isEmpty(this._tags)) {
+      return []; 
+    }
+
+    return this._tags;
+  }
+
+  async tags(tags) {
+    tags = tags || [];
+    this._tags = this._tags || [];
+    if (!this.o || !this.o.mac) {
+      log.error(`Mac address is not defined`);
+      return;
+    }
+    // remove old tags that are not in updated tags
+    const removedTags = this._tags.filter(uid => !(tags.includes(Number(uid)) || tags.includes(String(uid))));
+    for (let removedTag of removedTags) {
+      const tag = TagManager.getTagByUid(removedTag);
+      if (tag) {
+        await exec(`sudo ipset del -! ${Tag.getTagMacIpsetName(removedTag)} ${this.o.mac}`).catch((err) => {
+          log.error(`Failed to delete tag ${removedTag} ${tag.o.name} from mac ${this.o.mac}`, err);
+        });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
+      } else {
+        log.warn(`Tag ${removedTag} not found`);
+      }
+    }
+    // filter updated tags in case some tag is already deleted from system
+    const updatedTags = [];
+    for (let uid of tags) {
+      const tag = TagManager.getTagByUid(uid);
+      if (tag) {
+        await exec(`sudo ipset add -! ${Tag.getTagMacIpsetName(uid)} ${this.o.mac}`).catch((err) => {
+          log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+        });
+        const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
+        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
+          log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+        })
+        updatedTags.push(uid);
+      } else {
+        log.warn(`Tag ${uid} not found`);
+      }
+    }
+    this._tags = updatedTags;
+    await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
+    await dnsmasq.restartDnsmasq();
+    this.save("tags", null);
   }
 }
 

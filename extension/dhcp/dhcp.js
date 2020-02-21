@@ -27,9 +27,11 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 const cp = require('child_process');
 
 const execAsync = require('child-process-promise').exec;
+const Config = require('../../net2/config.js');
 
 async function dhcpDiscover(intf) {
-  intf = intf || "eth0";
+  const config = Config.getConfig(true);
+  intf = intf || config.monitoringInterface;
   log.info("Broadcasting DHCP discover on ", intf);
   
   let cmd = util.format('sudo nmap --script broadcast-dhcp-discover -e %s -oX - | %s', intf, xml2jsonBinary);

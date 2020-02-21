@@ -50,7 +50,7 @@ class Policy {
       if (_.isString(raw.scope)) {
         try {
           this.scope = JSON.parse(raw.scope)
-        } catch(e) {
+        } catch (e) {
           log.error("Failed to parse policy scope string:", raw.scope, e)
         }
       } else if (_.isArray(raw.scope)) {
@@ -63,12 +63,29 @@ class Policy {
         delete this.scope;
     }
 
+    if (raw.tag) {
+      if (_.isString(raw.tag)) {
+        try {
+          this.tag = JSON.parse(raw.tag)
+        } catch (e) {
+          log.error("Failed to parse policy tag string:", raw.tag, e)
+        }
+      } else if (_.isArray(raw.tag)) {
+        this.tag = Array.from(raw.tag); // clone array to avoide side effects
+      } else {
+        log.error("Unsupported tag", raw.tag)
+      }
+
+      if (!_.isArray(this.tag) || _.isEmpty(this.tag))
+        delete this.tag;
+    }
+
     if (raw.expire === "") {
       delete this.expire;
     } else if (raw.expire && _.isString(raw.expire)) {
       try {
         this.expire = parseInt(raw.expire)
-      } catch(e) {
+      } catch (e) {
         log.error("Failed to parse policy expire time:", raw.expire, e);
         delete this.expire;
       }
@@ -88,8 +105,8 @@ class Policy {
       delete this['i.target'];
     }
 
-    if(this.target && this.type) {
-      switch(this.type) {
+    if (this.target && this.type) {
+      switch (this.type) {
         case "mac":
           this.target = this.target.toUpperCase(); // always upper case for mac address
           break;
@@ -107,19 +124,19 @@ class Policy {
   }
 
   isEqualToPolicy(policy) {
-    if(!policy) {
+    if (!policy) {
       return false
     }
     if (!policy instanceof Policy)
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
-    
+
     if (
       this.type === policy.type &&
       this.target === policy.target &&
       this.expire === policy.expire &&
       this.cronTime === policy.cronTime
     ) {
-      return arraysEqual(this.scope, policy.scope)
+      return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {
       return false
     }
@@ -153,7 +170,7 @@ class Policy {
 
   match(alarm) {
 
-    if(this.isExpired()) {
+    if (this.isExpired()) {
       return false // always return unmatched if policy is already expired
     }
 
@@ -167,72 +184,102 @@ class Policy {
       return false; // scope not match
     }
 
-    // for each policy type
-    switch(this.type) {
-    case "ip":
-      if(alarm['p.dest.ip']) {
-        return this.target === alarm['p.dest.ip']        
-      } else {
-        return false
-      }
-      break
+    if (
+      this.tag &&
+      _.isArray(this.tag) &&
+      !_.isEmpty(this.tag) &&
+      alarm['p.intf.id'] &&
+      !this.tag.includes(Policy.INTF_PREFIX + alarm['p.intf.id'])
+    ) {
+      return false; // tag not match
+    }
 
-    case "dns":
-    case "domain":
-      if(alarm['p.dest.name']) {
-        return minimatch(alarm['p.dest.name'], `*.${this.target}`) ||
-          alarm['p.dest.name'] === this.target
-      } else {
-        return false
+    if (
+      this.tag &&
+      _.isArray(this.tag) &&
+      !_.isEmpty(this.tag) &&
+      _.has(alarm, 'p.tag.ids') &&
+      !_.isEmpty(alarm['p.tag.ids'])
+    ) {
+      let found = false;
+      for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
+        const tag = alarm['p.tag.ids'][index];
+        if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
+          found = true;
+        }
       }
-      break
 
-    case "mac":
-      if(alarm['p.device.mac']) {
-        return alarm['p.device.mac'] === this.target
-      } else {
-        return false
-      }
-      break
-
-    case "category":
-      if (alarm['p.dest.category']) {
-        return alarm['p.dest.category'] === this.target;
-      } else {
+      if (!found) {
         return false;
       }
-      break
+    }
 
-    case "devicePort":
-      if (!alarm['p.device.mac']) return false;
+    // for each policy type
+    switch (this.type) {
+      case "ip":
+        if (alarm['p.dest.ip']) {
+          return this.target === alarm['p.dest.ip']
+        } else {
+          return false
+        }
+        break
 
-      if (alarm["p.device.port"] &&
+      case "dns":
+      case "domain":
+        if (alarm['p.dest.name']) {
+          return minimatch(alarm['p.dest.name'], `*.${this.target}`) ||
+            alarm['p.dest.name'] === this.target
+        } else {
+          return false
+        }
+        break
+
+      case "mac":
+        if (alarm['p.device.mac']) {
+          return alarm['p.device.mac'] === this.target
+        } else {
+          return false
+        }
+        break
+
+      case "category":
+        if (alarm['p.dest.category']) {
+          return alarm['p.dest.category'] === this.target;
+        } else {
+          return false;
+        }
+        break
+
+      case "devicePort":
+        if (!alarm['p.device.mac']) return false;
+
+        if (alarm["p.device.port"] &&
           alarm["p.protocol"]
-      ) {
-        let alarmTarget = util.format("%s:%s:%s",
-          alarm["p.device.mac"],
-          alarm["p.device.port"],
-          alarm["p.protocol"]
-        )
-        return alarmTarget === this.target;
-      }
+        ) {
+          let alarmTarget = util.format("%s:%s:%s",
+            alarm["p.device.mac"],
+            alarm["p.device.port"],
+            alarm["p.protocol"]
+          )
+          return alarmTarget === this.target;
+        }
 
-      if (alarm["p.upnp.private.port"] &&
+        if (alarm["p.upnp.private.port"] &&
           alarm["p.upnp.protocol"]
-      ) {
-        let alarmTarget = util.format("%s:%s:%s",
-          alarm["p.device.mac"],
-          alarm["p.upnp.private.port"],
-          alarm["p.upnp.protocol"]
-        )
-        return alarmTarget === this.target;
-      } 
+        ) {
+          let alarmTarget = util.format("%s:%s:%s",
+            alarm["p.device.mac"],
+            alarm["p.upnp.private.port"],
+            alarm["p.upnp.protocol"]
+          )
+          return alarmTarget === this.target;
+        }
 
-      return false;
-      break
-    default:
-      return false
-      break
+        return false;
+        break
+      default:
+        return false
+        break
     }
   }
 
@@ -241,11 +288,18 @@ class Policy {
     let p = JSON.parse(JSON.stringify(this))
 
     // convert array to string so that redis can store it as value
-    if(p.scope) {
+    if (p.scope) {
       if (p.scope.length > 0)
         p.scope = JSON.stringify(p.scope);
       else
         delete p.scope;
+    }
+
+    if (p.tag) {
+      if (p.tag.length > 0)
+        p.tag = JSON.stringify(p.tag);
+      else
+        delete p.tag;
     }
 
     if (p.expire === "") {
@@ -259,5 +313,8 @@ class Policy {
     return flat.flatten(p);
   }
 }
+
+Policy.INTF_PREFIX = "intf:";
+Policy.TAG_PREFIX = "tag:";
 
 module.exports = Policy

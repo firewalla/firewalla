@@ -19,8 +19,7 @@ let Promise = require('bluebird')
 
 let log = require('../net2/logger.js')(__filename)
 let Sensor = require('./Sensor.js').Sensor
-let SysManager = require('../net2/SysManager')
-let sysManager = new SysManager()
+let sysManager = require('../net2/SysManager')
 let HostManager = require('../net2/HostManager.js')
 let hostManager = new HostManager('cli', 'server')
 let HostTool = require('../net2/HostTool')

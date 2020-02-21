@@ -1,0 +1,84 @@
+{
+  "interface": {
+    "phy": {
+      "eth3": {
+        "enabled": true
+      },
+      "eth1": {
+        "enabled": true
+      },
+      "eth2": {
+        "enabled": true
+      },
+      "eth0": {
+        "meta": {
+          "name": "WAN",
+          "type": "wan"
+        },
+        "enabled": true,
+        "dhcp": true
+      }
+    },
+    "bridge": {
+      "br0": {
+        "meta": {
+          "name": "LAN",
+          "type": "lan"
+        },
+        "ipv4": "10.10.0.1/24",
+        "intf": [
+          "eth3",
+          "eth1",
+          "eth2"
+        ],
+        "enabled": true
+      }
+    }
+  },
+  "routing": {
+    "global": {
+      "default": {
+        "viaIntf": "eth0"
+      }
+    }
+  },
+  "dns": {
+    "default": {
+      "useNameserversFromWAN": true
+    },
+    "br0": {
+      "useNameserversFromWAN": true
+    }
+  },
+  "nat": {
+    "br0_eth0": {
+      "in": "br0",
+      "out": "eth0"
+    }
+  },
+  "dhcp": {
+    "br0": {
+      "gateway": "10.10.0.1",
+      "subnetMask": "255.255.255.0",
+      "nameservers": [
+        "10.10.0.1"
+      ],
+      "searchDomain": [
+        ".lan"
+      ],
+      "range": {
+        "from": "10.10.0.10",
+        "to": "10.10.0.250"
+      },
+      "lease": 86400
+    }
+  },
+  "sshd": {
+    "eth0": {
+      "enabled": false
+    },
+    "br0": {
+      "enabled": true
+    }
+  }
+}

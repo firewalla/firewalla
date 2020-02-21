@@ -29,8 +29,7 @@ const parseString = require('xml2js').parseString;
 const l2 = require('../util/Layer2.js');
 
 const URL = require('url').URL;
-const SM = require('../net2/SysManager.js');
-const sm = new SM();
+const sm = require('../net2/SysManager.js');
 
 class SSDPSensor extends Sensor {
 

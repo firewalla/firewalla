@@ -28,7 +28,7 @@ const CronJob = require('cron').CronJob;
 
 const cronParser = require('cron-parser');
 const moment = require('moment');
-const SysManager = require('../../net2/SysManager.js');
+const sysManager = require('../../net2/SysManager.js');
 
 let instance = null;
 
@@ -129,7 +129,6 @@ class PolicyScheduler {
 
     try {
       log.info(`Registering policy ${policy.pid} for reoccuring`)
-      const sysManager = new SysManager();
       const tz = await sysManager.getTimezone();
       const job = new CronJob(cronTime, () => {
         this.apply(policy).catch(err => {

@@ -13,6 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+const _ = require('lodash');
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
@@ -41,8 +42,7 @@ const dnsmasq = new DNSMASQ();
 
 const HostManager = require('../net2/HostManager.js');
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const l2 = require('../util/Layer2.js');
 
@@ -166,8 +166,27 @@ class DeviceHook extends Hook {
       let host = event.host
       let mac = host.mac;
 
+      if (_.isString(host.ipv4)) {
+        const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
+
+        if (intfInfo && intfInfo.uuid) {
+          let intf = intfInfo.uuid;
+          delete host.intf_mac;
+          host.intf = intf;
+        } else {
+          log.error(`Unable to find nif uuid, ${host.ipv4}`);
+        }
+      }
+
+      host.tags = [];
+      const hostManager = new HostManager("cli", 'server', 'info');
+      const hostInstance = hostManager.getHostFastByMAC(host.mac);
+      if (hostInstance) {
+        host.tags = hostInstance.getTags();
+      }
+
       if (mac != null) {
-        this.processDeviceUpdate(event)
+        this.processDeviceUpdate(event);
       } else {
         let ip = host.ipv4 || host.ipv4Addr
         if (ip) {
@@ -177,7 +196,7 @@ class DeviceHook extends Hook {
             host.mac = theMac
             this.processDeviceUpdate(event)
           })().catch((err) => {
-            log.error(`Failed to get mac address for ip ${ip}`)
+            log.error(`Failed to get mac address for ip ${ip}`, err)
           })
         }
       }
@@ -242,9 +261,7 @@ class DeviceHook extends Hook {
           log.error("Failed to get vendor info from cloud", err);
         }
 
-        let v = "Unknown";
-        if (vendor)
-          v = vendor;
+        let v = vendor || host.macVendor || "Unknown";
 
         enrichedHost.macVendor = v;
 
@@ -275,7 +292,7 @@ class DeviceHook extends Hook {
           if (err) {
             log.error("Failed to get host after it is detected.");
           }
-          if (host && host.ipv4Addr !== sysManager.myIp() && host.ipv4Addr !== sysManager.myIp2() && host.ipv4Addr !== sysManager.myWifiIp()) {
+          if (!sysManager.isMyIP(host.ipv4Addr) && host.ipv4Addr !== sysManager.myWifiIp()) {
             host.spoof(true);
           }
         });
@@ -306,9 +323,9 @@ class DeviceHook extends Hook {
           lastActiveTimestamp: currentTimestamp
         });
 
-        await hostTool.updateIPv4Host(enrichedHost); //v4
+        await hostTool.updateIPv4Host(enrichedHost); // update host:ip4:xxx entries
         if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); //v6
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
 
         log.info("New host entry is created for this old device");
 
@@ -375,7 +392,7 @@ class DeviceHook extends Hook {
 
         await hostTool.updateIPv4Host(enrichedHost);
         if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); //v6
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
 
         if (enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
@@ -438,14 +455,14 @@ class DeviceHook extends Hook {
         let macData = await hostTool.getMACEntry(host.mac);
         let lastActiveTimestamp = macData.lastActiveTimestamp;
 
+        // FIXME: shoud not keep minimal info for host key, not all
+        await hostTool.updateIPv4Host(enrichedHost);   // update host:ip4:xxx entries
+        if (enrichedHost.ipv6Addr)
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
+
         if (enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac);
         }
-
-        // FIXME: shoud not keep minimal info for host key, not all
-        await hostTool.updateIPv4Host(enrichedHost);   // host:ip4:.......
-        if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // host:ip6:.........
 
         log.debug("Host entry is updated for this device");
 
@@ -605,7 +622,9 @@ class DeviceHook extends Hook {
             "p.device.name": name,
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
-            "p.device.vendor": host.macVendor
+            "p.device.vendor": host.macVendor,
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -617,7 +636,9 @@ class DeviceHook extends Hook {
             "p.device.name": name,
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
-            "p.device.vendor": host.macVendor
+            "p.device.vendor": host.macVendor,
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -630,7 +651,9 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.device.lastSeen": host.lastActiveTimestamp
+            "p.device.lastSeen": host.lastActiveTimestamp,
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -642,7 +665,9 @@ class DeviceHook extends Hook {
             "p.device.name": name,
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
-            "p.device.vendor": host.macVendor
+            "p.device.vendor": host.macVendor,
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": host.tags
           });
         am2.enqueueAlarm(alarm);
         break;

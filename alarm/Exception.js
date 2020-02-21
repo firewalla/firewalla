@@ -146,6 +146,14 @@ module.exports = class {
         }
       }
 
+      if (key === "p.tag.ids") {
+        const intersect = _.intersection(val, val2);
+        if (intersect.length > 0) {
+          matched = true;
+          continue;
+        }
+      }
+
       if(val.startsWith("*.")) {
         // use glob matching
         if(!minimatch(val2, val) && // NOT glob match

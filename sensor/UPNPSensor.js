@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -33,8 +33,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const UPNP = require('../extension/upnp/upnp.js');
@@ -42,9 +40,7 @@ const upnp = new UPNP();
 
 const cfg = require('../net2/config.js');
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
-
+const sysManager = require('../net2/SysManager.js');
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -55,16 +51,17 @@ const ALARM_UPNP = 'alarm_upnp';
 
 function compareUpnp(a, b) {
   return a.public && b.public &&
-         a.private && b.private &&
-         a.public.port  == b.public.port &&
-         a.private.host == b.private.host &&
-         a.private.port == b.private.port &&
-         a.protocol     == b.protocol;
+    a.private && b.private &&
+    a.public.port == b.public.port &&
+    a.private.host == b.private.host &&
+    a.private.port == b.private.port &&
+    a.protocol == b.protocol;
 }
 
 class UPNPSensor extends Sensor {
   constructor() {
     super();
+    this.interfaces = null;
   }
 
   isExpired(mapping) {
@@ -91,6 +88,7 @@ class UPNPSensor extends Sensor {
   }
 
   run() {
+    this.interfaces = sysManager.getMonitoringInterfaces();
     setInterval(() => {
       upnp.getPortMappingsUPNP(async (err, results) => {
         if (err) {
@@ -112,43 +110,43 @@ class UPNPSensor extends Sensor {
 
           if (cfg.isFeatureOn(ALARM_UPNP)) {
             for (let current of mergedResults) {
-              let firewallaRegistered =
-                current.private.host == sysManager.myIp() &&
-                upnp.getRegisteredUpnpMappings().some( m => upnp.mappingCompare(current, m) );
-
-              if (
-                !firewallaRegistered &&
-                !preMappings.some(pre => compareUpnp(current, pre))
-              ) {
-                let alarm = new Alarm.UpnpAlarm(
-                  new Date() / 1000,
-                  current.private.host,
-                  {
-                    'p.source': 'UPNPSensor',
-                    'p.device.ip': current.private.host,
-                    'p.upnp.public.host'  : current.public.host,
-                    'p.upnp.public.port'  : current.public.port.toString(),
-                    'p.upnp.private.host' : current.private.host,
-                    'p.upnp.private.port' : current.private.port.toString(),
-                    'p.upnp.protocol'     : current.protocol,
-                    'p.upnp.enabled'      : current.enabled.toString(),
-                    'p.upnp.description'  : current.description,
-                    'p.upnp.ttl'          : current.ttl.toString(),
-                    'p.upnp.local'        : current.local.toString(),
-                    'p.device.port': current.private.port.toString(),
-                    'p.protocol': current.protocol
-                  }
-                );
-
-                await am2.enqueueAlarm(alarm);
+              let firewallaRegistered = upnp.getRegisteredUpnpMappings().some(m => upnp.mappingCompare(current, m));
+              for (const intf of this.interfaces) {
+                firewallaRegistered && current.private.host == sysManager.myIp(intf.name)
+                if (firewallaRegistered) break;
+                if (
+                  !firewallaRegistered &&
+                  !preMappings.some(pre => compareUpnp(current, pre))
+                ) {
+                  let alarm = new Alarm.UpnpAlarm(
+                    new Date() / 1000,
+                    current.private.host,
+                    {
+                      'p.source': 'UPNPSensor',
+                      'p.device.ip': current.private.host,
+                      'p.upnp.public.host': current.public.host,
+                      'p.upnp.public.port': current.public.port.toString(),
+                      'p.upnp.private.host': current.private.host,
+                      'p.upnp.private.port': current.private.port.toString(),
+                      'p.upnp.protocol': current.protocol,
+                      'p.upnp.enabled': current.enabled.toString(),
+                      'p.upnp.description': current.description,
+                      'p.upnp.ttl': current.ttl.toString(),
+                      'p.upnp.local': current.local.toString(),
+                      'p.device.port': current.private.port.toString(),
+                      'p.protocol': current.protocol
+                    }
+                  );
+                  await am2.enqueueAlarm(alarm);
+                }
               }
             }
           }
 
-          if (await rclient.hmsetAsync(key, {upnp: JSON.stringify(mergedResults)} ))
+          if (await rclient.hmsetAsync(key, { upnp: JSON.stringify(mergedResults) }))
             log.info("UPNP mapping is updated,", mergedResults.length, "entries");
 
-        } catch(err) {
+        } catch (err) {
           log.error("Failed to scan upnp mapping: " + err);
         }
       });

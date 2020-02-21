@@ -27,11 +27,11 @@ const unlinkFileAsync = util.promisify(fs.unlink);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const f = require('../net2/Firewalla.js');
 const generatedConfigFile = `${f.getUserConfigFolder()}/dnsmasq/box_alias.generated`;
+const Message = require('../net2/Message.js');
 
 class BoxAliasSensor extends Sensor {
 
@@ -63,14 +63,14 @@ class BoxAliasSensor extends Sensor {
 
         sclient.on('message', (channel, message) => {
             switch (channel) {
-                case 'System:IPChange':
+                case Message.MSG_SYS_NETWORK_INFO_RELOADED:
                     this.installBoxAliases();
                     break;
                 default:
                     break;
             }
         });
-        sclient.subscribe('System:IPChange');
+        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
     }
 
 }

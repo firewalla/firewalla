@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,6 +43,12 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 
 const log = require("../net2/logger.js")(__filename);
 
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+log.forceInfo("FireKick Starting ");
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+const fireRouter = require('../net2/FireRouter.js')
+
 const fs = require('fs');
 const cp = require('child_process');
 const exec = require('child-process-promise').exec;
@@ -66,9 +72,7 @@ const fConfig = require('../net2/config.js');
 
 const bone = require("../lib/Bone.js");
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
-const firewallaConfig = require('../net2/config.js').getConfig();
+const sysManager = require('../net2/SysManager.js');
 
 const InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
 const interfaceDiscoverSensor = new InterfaceDiscoverSensor();
@@ -83,14 +87,11 @@ const Diag = require('../extension/diag/app.js');
 
 let terminated = false;
 
-log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-log.forceInfo("FireKick Starting ");
-log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-
 (async() => {
+  await fireRouter.waitTillReady();
   await rclient.delAsync("firekick:pairing:message");
-  await sysManager.setConfig(firewallaConfig)
-  await interfaceDiscoverSensor.run()
+  if (!platform.isFireRouterManaged())
+    await interfaceDiscoverSensor.run()
 })();
 
 const license = require('../util/license.js');
@@ -225,6 +226,7 @@ async function postAppLinked() {
 }
 
 async function inviteAdmin(gid) {
+  await sysManager.updateAsync()
   log.forceInfo("Initializing first admin:", gid);
 
   const gidPrefix = gid.substring(0, 8);

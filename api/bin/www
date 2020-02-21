@@ -1,25 +1,44 @@
 #!/usr/bin/env node
+/*    Copyright 2016-2020 Firewalla Inc.
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict'
 
 process.title = "FireApi"
 process.setMaxListeners(0)
 require('events').EventEmitter.prototype._maxListeners = 100;
 
-let log = require("../../net2/logger.js")(__filename);
+const log = require("../../net2/logger.js")(__filename);
 
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 log.info("API Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
+// init FireRouter ASAP
+const fireRouter = require('../../net2/FireRouter.js')
+
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const bone = require("../../lib/Bone.js");
 
-let f = require("../../net2/Firewalla.js");
+const f = require("../../net2/Firewalla.js");
 
 // api/main/monitor all depends on sysManager configuration
-let SysManager = require('../../net2/SysManager.js');
-let sysManager = new SysManager('info');
+const sysManager = require('../../net2/SysManager.js');
+
+const Mode = require('../../net2/Mode.js');
 
 log.info("Waiting for cloud token...");
 
@@ -28,8 +47,9 @@ run0();
 function run0() {
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
-    // this is to ensure sysManager is already initliazed when called in API code
-    sysManager.isConfigInitialized()) {
+      fireRouter.isReady() &&
+      // this is to ensure sysManager is already initliazed when called in API code
+      sysManager.isConfigInitialized()) {
     log.info("Firewalla initialization complete");
     runLocalAPI();
   } else {
@@ -40,7 +60,7 @@ function run0() {
   }
 }
 
-let i18n = require('i18n');
+const i18n = require('i18n');
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 let language = 'en';
@@ -51,7 +71,7 @@ rclient.hget("sys:config", "language", (err, result) => {
   }
 
   log.info("Process is running in language " + language);
-  
+
   i18n.configure({
     directory: __dirname + "/../../locales",
     defaultLocale: language
@@ -64,64 +84,61 @@ rclient.hget("sys:config", "language", (err, result) => {
  * Module dependencies.
  */
 
-let debug = require('debug')('api:server');
-let http = require('http');
-let port = normalizePort(process.env.PORT || '8833');
-
-let server;
-let serverForLocalAPI;
-
-let portForLocalAPI = normalizePort('8834');
+const http = require('http');
+const PORT = normalizePort(process.env.PORT || '8833');
+const PORT_LOCAL_API = normalizePort('8834');
 
 function run() {
-
-  const firewallaConfig = require('../../net2/config.js').getConfig();
-  sysManager.setConfig(firewallaConfig) // update sys config when start
-  
-  let app = require('../app');
-  app.set('port', port);
+  const app = require('../app.js');
+  app.set('port', PORT);
 
   /**
    * Create HTTP server.
    */
 
-  server = http.createServer(app);
+  if (Mode.isRouterModeOn()) {
+    // not listen on WANs for router mode
+    sysManager.getMonitoringInterfaces().forEach(intf => {
+      createServerAndListen(app, intf.ip_address)
+    })
+    createServerAndListen(app, 'localhost')
+  } else {
+    // listen on all interfaces
+    createServerAndListen(app, '0.0.0.0')
+  }
+}
 
-  /**
-   * Listen on provided port, on all network interfaces.
-   */
+function createServerAndListen(app, ip) {
+  const server = http.createServer(app);
 
-  server.listen(port);
+  server.listen(PORT, ip);
   server.on('error', onError);
-  server.on('listening', onListening);
-
 }
 
 run();
 
 
 function runLocalAPI() {
-  let app2 = require('../app-local.js');
-  app2.set('port', portForLocalAPI);
+  const app2 = require('../app-local.js');
+  app2.set('port', PORT_LOCAL_API);
 
   /**
    * Create HTTP server.
    */
 
-  serverForLocalAPI = http.createServer(app2);
+  const serverForLocalAPI = http.createServer(app2);
 
   /**
    * Listen on provided port, on all network interfaces.
    */
 
   if(f.isProductionOrBetaOrAlpha()) {
-    serverForLocalAPI.listen(portForLocalAPI, 'localhost')
+    serverForLocalAPI.listen(PORT_LOCAL_API, 'localhost')
   } else {
-    serverForLocalAPI.listen(portForLocalAPI)
+    serverForLocalAPI.listen(PORT_LOCAL_API)
   }
 
   serverForLocalAPI.on('error', onError);
-  serverForLocalAPI.on('listening', onListening);
 }
 
 /**
@@ -153,9 +170,9 @@ function onError(error) {
     throw error;
   }
 
-  var bind = typeof port === 'string'
-    ? 'Pipe ' + port
-    : 'Port ' + port;
+  var bind = typeof PORT === 'string'
+    ? 'Pipe ' + PORT
+    : 'Port ' + PORT;
 
   // handle specific listen errors with friendly messages
   switch (error.code) {
@@ -170,18 +187,6 @@ function onError(error) {
     default:
       throw error;
   }
-}
-
-/**
- * Event listener for HTTP server "listening" event.
- */
-
-function onListening() {
-  var addr = server.address();
-  var bind = typeof addr === 'string'
-    ? 'pipe ' + addr
-    : 'port ' + addr.port;
-  debug('Listening on ' + bind);
 }
 
 // for non production, just print on console

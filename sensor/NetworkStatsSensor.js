@@ -28,10 +28,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const Ping = require('../extension/ping/Ping.js');
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 
-const util = require('util');
 const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js');
 const speedtest = require('../extension/speedtest/speedtest.js');
@@ -76,8 +74,6 @@ class NetworkStatsSensor extends Sensor {
     this.checkNetworkStatus();
     setInterval(() => {
       this.checkNetworkStatus();
-      if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
-
       this.checkLinkStats();
     }, (this.config.interval || 300) * 1000);
   }
@@ -150,6 +146,8 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async checkLinkStats() {
+    if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
+
     log.info("checking link stats")
     try {
       // "|| true" prevents grep from yielding error when nothing matches
@@ -246,6 +244,7 @@ class NetworkStatsSensor extends Sensor {
     }
     rclient.setAsync("network:status:dig", JSON.stringify(resultGroupByHost));
   }
+
   async runSpeedTest() {
     this.cornJob && this.cornJob.stop();
     this.cornJob = new CronJob("00 30 02 * * *", () => {
