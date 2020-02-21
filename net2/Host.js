@@ -491,13 +491,13 @@ class Host {
     // set spoofing data in redis and trigger dnsmasq reload hosts
     if (state === true) {
       rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
-      .catch(err => log.error("Unable to set spoofing in redis", err))
-      .then(() => this.dnsmasq.onSpoofChanged());
+        .catch(err => log.error("Unable to set spoofing in redis", err))
+        .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = state;
     } else {
       rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
-      .catch(err => log.error("Unable to set spoofing in redis", err))
-      .then(() => this.dnsmasq.onSpoofChanged());
+        .catch(err => log.error("Unable to set spoofing in redis", err))
+        .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = false;
     }
     
