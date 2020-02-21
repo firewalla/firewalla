@@ -178,6 +178,13 @@ class DeviceHook extends Hook {
         }
       }
 
+      host.tags = [];
+      const hostManager = new HostManager("cli", 'server', 'info');
+      const hostInstance = hostManager.getHostFastByMAC(host.mac);
+      if (hostInstance) {
+        host.tags = hostInstance.getTags();
+      }
+
       if (mac != null) {
         this.processDeviceUpdate(event);
       } else {
@@ -617,7 +624,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": (!host || _.isEmpty(host.getTags())) ? [] : host.getTags()
+            "p.tag.ids": host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -631,7 +638,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
+            "p.tag.ids": host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -646,7 +653,7 @@ class DeviceHook extends Hook {
             "p.device.vendor": host.macVendor,
             "p.device.lastSeen": host.lastActiveTimestamp,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
+            "p.tag.ids": host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -660,7 +667,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": _.isEmpty(host.getTags()) ? [] : host.getTags()
+            "p.tag.ids": host.tags
           });
         am2.enqueueAlarm(alarm);
         break;
