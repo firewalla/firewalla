@@ -487,7 +487,20 @@ class Host {
       log.info("Host:Spoof:NoIP", this.o);
       return;
     }
-    log.info("Host:Spoof:", this.o.name, this.o.ipv4Addr, this.o.mac, state, this.spoofing);
+    log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac}, current spoof state: ${this.spoofing}, new spoof state: ${this.o.state}`);
+    // set spoofing data in redis and trigger dnsmasq reload hosts
+    if (state === true) {
+      rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
+      .catch(err => log.error("Unable to set spoofing in redis", err))
+      .then(() => this.dnsmasq.onSpoofChanged());
+      this.spoofing = state;
+    } else {
+      rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
+      .catch(err => log.error("Unable to set spoofing in redis", err))
+      .then(() => this.dnsmasq.onSpoofChanged());
+      this.spoofing = false;
+    }
+    
     const iface = sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
     if (!iface || !iface.name) {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
@@ -526,11 +539,7 @@ class Host {
         });
         spoofer.newSpoof(this.o.ipv4Addr, iface.name)
           .then(() => {
-            rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
-              .catch(err => log.error("Unable to set spoofing in redis", err))
-              .then(() => this.dnsmasq.onSpoofChanged());
             log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
-            this.spoofing = true;
           }).catch((err) => {
             log.error("Failed to spoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
           })
@@ -542,11 +551,7 @@ class Host {
       });
       spoofer.newUnspoof(this.o.ipv4Addr, iface.name)
         .then(() => {
-          rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
-            .catch(err => log.error("Unable to set spoofing in redis", err))
-            .then(() => this.dnsmasq.onSpoofChanged());
           log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
-          this.spoofing = false;
         }).catch((err) => {
           log.error("Failed to unspoof", this.o.ipv4Addr, this.o.mac, this.o.name, err);
         })
@@ -564,7 +569,7 @@ class Host {
         }
         if (state == true) {
           spoofer.newSpoof6(this.ipv6Addr[i], iface.name).then(()=>{
-            log.debug("Starting v6 spoofing", this.ipv6Addr[i]);
+            log.debug("Started v6 spoofing", this.ipv6Addr[i]);
           }).catch((err)=>{
             log.error("Failed to spoof", this.ipv6Addr, err);
           })
@@ -574,7 +579,7 @@ class Host {
           }
         } else {
           spoofer.newUnspoof6(this.ipv6Addr[i], iface.name).then(()=>{
-            log.debug("Starting v6 unspoofing", this.ipv6Addr[i]);
+            log.debug("Stopped v6 spoofing", this.ipv6Addr[i]);
           }).catch((err)=>{
             log.error("Failed to [v6] unspoof", this.ipv6Addr, err);
           })
