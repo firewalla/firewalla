@@ -319,6 +319,11 @@ check_sys_config() {
     echo ""
 }
 
+check_speed() {
+    echo "---------------------- Speed ------------------"
+    curl -L https://github.com/ddo/fast/releases/download/v0.0.4/fast_linux_amd64 -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
+}
+
 usage() {
     return
 }
@@ -350,5 +355,6 @@ if [ "$FAST" == false ]; then
     check_sys_config
     check_policies
     check_iptables
+    check_speed
 fi
 check_hosts
