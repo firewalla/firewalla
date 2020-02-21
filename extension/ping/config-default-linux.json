@@ -1,6 +1,6 @@
 {
   "command": "ping",
-  "args": ["-n", "-O", "-i", "10"],
+  "args": ["-n","-c","5","-i", "5"],
   "events": {
     "ping": {
       "regexp": {
