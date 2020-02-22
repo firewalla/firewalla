@@ -285,7 +285,7 @@ async function setupRules(macTag, dstTag, dstType, iif, allow = false, destroy =
 }
 
 async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
-  if (!dstTag || _.isEmpty(tags)) {
+  if (_.isEmpty(tags)) {
     return;
   }
 
@@ -293,14 +293,16 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
     log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tags || "null", dstTag,
       destroy && destroyDstCache ? "and ipset" : "");
 
-    const dstSet = getDstSet(dstTag)
+    const dstSet = dstTag ? getDstSet(dstTag) : null;
     // use same port set on both ip4 & ip6 rules
-    const dstSet6 = dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)
+    const dstSet6 = dstTag ? (dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)) : null;
 
     if (!destroy) {
       await Ipset.create(dstSet, dstType)
-      if (dstType != 'bitmap:port')
+      if (dstSet && dstSet6) {
+        if (dstType != 'bitmap:port')
         await Ipset.create(dstSet6, dstType, false)
+      }
     }
 
     const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
@@ -308,15 +310,29 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
     const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
     const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
 
-    const outRule     = new Rule().chn(filterChain).mth(dstSet, 'dst').jmp(filterDest)
-    const outRule6    = new Rule().chn(filterChain).mth(dstSet6, 'dst').jmp(filterDest).fam(6)
-    const natOutRule  = new Rule('nat').chn(natChain).mth(dstSet, 'dst').jmp(natDest)
-    const natOutRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'dst').jmp(natDest).fam(6)
+    const outRule     = new Rule().chn(filterChain).jmp(filterDest)
+    const outRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6)
+    const natOutRule  = new Rule('nat').chn(natChain).jmp(natDest)
+    const natOutRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6)
 
-    const inRule     = new Rule().chn(filterChain).mth(dstSet, 'src').jmp(filterDest)
-    const inRule6    = new Rule().chn(filterChain).mth(dstSet6, 'src').jmp(filterDest).fam(6)
-    const natInRule  = new Rule('nat').chn(natChain).mth(dstSet, 'src').jmp(natDest)
-    const natInRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'src').jmp(natDest).fam(6)
+    if (dstSet) {
+      outRule.mth(dstSet, 'dst');
+      outRule6.mth(dstSet6, 'dst');
+      natOutRule.mth(dstSet, 'dst');
+      natOutRule6.mth(dstSet6, 'dst');
+    }
+
+    const inRule     = new Rule().chn(filterChain).jmp(filterDest)
+    const inRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6)
+    const natInRule  = new Rule('nat').chn(natChain).jmp(natDest)
+    const natInRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6)
+
+    if (dstSet) {
+      inRule.mth(dstSet, 'dst');
+      inRule6.mth(dstSet6, 'dst');
+      natInRule.mth(dstSet, 'dst');
+      natInRule6.mth(dstSet6, 'dst');
+    }
 
     // matching MAC addr won't work in opposite direction
     let tagInvalid = true;
@@ -352,9 +368,11 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
 
     if (destroy) {
       if (destroyDstCache) {
-        await Ipset.destroy(dstSet)
-        if (dstType != 'bitmap:port')
-          await Ipset.destroy(dstSet6)
+        if (dstSet) {
+          await Ipset.destroy(dstSet)
+          if (dstType != 'bitmap:port')
+            await Ipset.destroy(dstSet6)
+        }
       }
     }
 
@@ -426,5 +444,6 @@ module.exports = {
   existsBlockingEnv: existsBlockingEnv,
   setupGlobalWhitelist: setupGlobalWhitelist,
   setupInterfaceWhitelist: setupInterfaceWhitelist,
-  setupTagWhitelist: setupTagWhitelist
+  setupTagWhitelist: setupTagWhitelist,
+  setupTagRules: setupTagRules
 }

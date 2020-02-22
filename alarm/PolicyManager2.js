@@ -975,7 +975,7 @@ class PolicyManager2 {
       let invalid = true;
       for (const tagStr of tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-          let intfUuid = _.trimStart(tagStr, Policy.INTF_PREFIX);
+          let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           let intfInfo = sysManager.getInterfaceViaUUID(intfUuid);
           if (intfInfo && intfInfo.name) {
             invalid = false;
@@ -984,7 +984,8 @@ class PolicyManager2 {
             log.info(`There is no Policy intf:${tagStr} interface info.`)
           }
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = _.trimStart(tagStr, Policy.TAG_PREFIX);
+          invalid = false;
+          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
           tags.push(tagUid);
         }
       }
@@ -994,7 +995,7 @@ class PolicyManager2 {
         return;
       }
     }
-
+    
     switch (type) {
       case "ip":
       case "net":
@@ -1015,9 +1016,16 @@ class PolicyManager2 {
         }
         break;
 
+      // FIXME support intf
       case "mac":
-        await Block.addMacToSet([target], null, whitelist)
-        accounting.addBlockedDevice(target);
+        if (!_.isEmpty(tags)) {
+          await Block.setupTagRules(tags, null, null, whitelist);
+        } else if (intf) {
+
+        } else {
+          await Block.addMacToSet([target], null, whitelist)
+          accounting.addBlockedDevice(target);
+        }
         break;
 
       case "domain":
@@ -1054,6 +1062,7 @@ class PolicyManager2 {
         }
         break;
 
+      // FIXME support tag and intf
       case "devicePort": {
         let data = await this.parseDevicePortRule(target);
         if (data) {
@@ -1134,7 +1143,7 @@ class PolicyManager2 {
       let invalid = true;
       for (const tagStr of tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-          let intfUuid = _.trimStart(tagStr, Policy.INTF_PREFIX);
+          let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);;
           let intfInfo = sysManager.getInterfaceViaUUID(intfUuid);
           if (intfInfo && intfInfo.name) {
             invalid = false;
@@ -1143,7 +1152,8 @@ class PolicyManager2 {
             log.info(`There is no Policy intf:${tagStr} interface info.`)
           }
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = _.trimStart(tagStr, Policy.TAG_PREFIX);
+          invalid = false
+          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);;
           tags.push(tagUid);
         }
       }
@@ -1172,8 +1182,14 @@ class PolicyManager2 {
         break;
 
       case "mac":
-        await Block.delMacFromSet([target], null, whitelist)
-        accounting.removeBlockedDevice(target);
+        if (!_.isEmpty(tags)) {
+          await Block.setupTagRules(tags, null, null, whitelist);
+        } else if (intf) {
+
+        } else {
+          await Block.delMacFromSet([target], null, whitelist)
+          accounting.removeBlockedDevice(target);
+        }
         break;
 
       case "domain":
