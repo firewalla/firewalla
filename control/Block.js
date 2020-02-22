@@ -298,8 +298,8 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
     const dstSet6 = dstTag ? (dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)) : null;
 
     if (!destroy) {
-      await Ipset.create(dstSet, dstType)
-      if (dstSet && dstSet6) {
+      if (dstSet) {
+        await Ipset.create(dstSet, dstType);
         if (dstType != 'bitmap:port')
         await Ipset.create(dstSet6, dstType, false)
       }

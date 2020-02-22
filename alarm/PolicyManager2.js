@@ -1183,7 +1183,7 @@ class PolicyManager2 {
 
       case "mac":
         if (!_.isEmpty(tags)) {
-          await Block.setupTagRules(tags, null, null, whitelist);
+          await Block.setupTagRules(tags, null, null, whitelist, true);
         } else if (intf) {
 
         } else {
