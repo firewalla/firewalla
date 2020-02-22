@@ -984,7 +984,7 @@ class PolicyManager2 {
             log.info(`There is no Policy intf:${tagStr} interface info.`)
           }
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = _.trimStart.apply(tagStr, Policy.TAG_PREFIX);
+          let tagUid = _.trimStart(tagStr, Policy.TAG_PREFIX);
           tags.push(tagUid);
         }
       }
@@ -1143,7 +1143,7 @@ class PolicyManager2 {
             log.info(`There is no Policy intf:${tagStr} interface info.`)
           }
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = _.trimStart.apply(tagStr, Policy.TAG_PREFIX);
+          let tagUid = _.trimStart(tagStr, Policy.TAG_PREFIX);
           tags.push(tagUid);
         }
       }
