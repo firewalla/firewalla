@@ -60,11 +60,11 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
     let serverList = await this.getServers();
+    const allServers = await this.getAllServers();
+    const allServerNames = await this.getAllServerNames();
+    serverList = serverList.filter((n) => allServerNames.includes(n));
 
     content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
-
-    const allServers = await this.getAllServers();
-
     content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
 
     await fs.writeFileAsync(runtimePath, content);
