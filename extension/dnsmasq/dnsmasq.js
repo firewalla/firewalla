@@ -1534,7 +1534,7 @@ module.exports = class DNSMASQ {
     try {
       const dnsmasqConfKey = "dnsmasq:conf";
       let md5sumNow = '';
-      for (const confs of [`${FILTER_DIR}*`, resolvFile]) {
+      for (const confs of [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile]) {
         const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
