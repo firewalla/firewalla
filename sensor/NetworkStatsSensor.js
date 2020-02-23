@@ -195,6 +195,7 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async checkNetworkStatus() {
+    if (!fc.isFeatureOn(FEATURE_NETWORK_STATS)) return;
     const internetTestHosts = this.config.internetTestHosts;
     let dnses = sysManager.myDNS();
     const gateway = sysManager.myGateway();
@@ -210,6 +211,9 @@ class NetworkStatsSensor extends Sensor {
       });
       this.checkNetworkPings[server].on('fail', (data) => {
         rclient.hsetAsync("network:status:ping", server, -1); // -1 as unreachable
+      });
+      this.checkNetworkPings[server].on('exit', (data) => {
+        delete this.checkNetworkPings[server];
       });
     }
     for (const pingServer in this.checkNetworkPings) {
