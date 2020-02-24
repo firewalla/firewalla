@@ -216,7 +216,7 @@ async function apply() {
   let HostManager = require('./HostManager.js')
   let hostManager = new HostManager('cli', 'server', 'info')
 
-  await firerouter.applyNetworkConfig();
+  await firerouter.applyModeConfig();
   switch (mode) {
     case Mode.MODE_DHCP:
       await _enforceDHCPMode();
@@ -313,7 +313,7 @@ function listenOnChange() {
       let sm = new SpooferManager();
       sm.loadManualSpoofs(hostManager)
     } else if (channel === "NetworkInterface:Update") {
-      await firerouter.applyNetworkConfig();
+      await firerouter.applyModeConfig();
     }
   });
   sclient.subscribe("Mode:Change");
