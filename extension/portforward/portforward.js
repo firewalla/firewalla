@@ -30,8 +30,6 @@ const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 const ipTool = require('ip');
 
-const ShieldManager = require('../../net2/ShieldManager.js');
-let shieldManager = null;
 
 const iptable = require("../../net2/Iptables.js");
 const Message = require('../../net2/Message.js');
@@ -247,9 +245,6 @@ class PortForward {
       }
       
       log.info("PORTMAP: Add", map);
-      if (!shieldManager)
-        shieldManager = new ShieldManager();
-      await shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport)
       map.state = true;
       const dupMap = JSON.parse(JSON.stringify(map))
       dupMap.destIP = sysManager.myDefaultWanIp()
@@ -268,9 +263,6 @@ class PortForward {
       this.config.maps.splice(old, 1);
 
       log.info("PortForwarder:removePort Found MAP", dupMap);
-      if (!shieldManager)
-        shieldManager = new ShieldManager();
-      await shieldManager.removeIncomingRule(dupMap.protocol, dupMap.toIP, dupMap.dport);
 
       // we call remove anyway ... even there is no entry
       await iptable.portforwardAsync(dupMap);
@@ -295,7 +287,6 @@ class PortForward {
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
     this._selfIP = sysManager.myDefaultWanIp();
-    shieldManager = new ShieldManager();
   
     await this.loadConfig()
     await this.restore()

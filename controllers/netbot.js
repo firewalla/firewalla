@@ -982,6 +982,43 @@ class netBot extends ControllerBot {
 
         break;
       }
+      case "tag": {
+        let data = msg.data;
+        log.info("Setting tag", msg);
+
+        if (!data.value.name) {
+          this.simpleTxData(msg, {}, new Error("tag name required for setting name"), callback);
+          return;
+        }
+
+        (async () => {
+          const name = value.name;
+          const tag = this.tagManager.getTagByUid(msg.target);
+
+          if (!tag) {
+            this.simpleTxData(msg, {}, new Error("invalid tag"), callback);
+            return;
+          }
+
+          if (name == tag.getTagName()) {
+            this.simpleTxData(msg, {}, null, callback);
+            return;
+          }
+
+          const result = await this.tagManager.changeTagName(msg.target, name);
+          log.info("Changing tag name", name);
+          if (!result) {
+            this.simpleTxData(msg, {}, new Error("Can't use already exsit tag name"), callback);
+          } else {
+            this.simpleTxData(msg, data.value, null, callback);
+          }
+
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+
+        break;
+      }
       case "hostDomain": {
         let data = msg.data;
         (async () => {
@@ -1861,7 +1898,8 @@ class netBot extends ControllerBot {
         (async () => {
           const ping = await rclient.hgetallAsync("network:status:ping");
           const dig = await rclient.getAsync("network:status:dig");
-          const { download, upload, server } = await speedtest();
+          const speedtestResult = (await speedtest()) || {};
+          const { download, upload, server } = speedtestResult;
           this.simpleTxData(msg, {
             ping: ping,
             dig: JSON.parse(dig),

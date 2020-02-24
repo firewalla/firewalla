@@ -111,7 +111,7 @@ class IntelLocalCachePlugin extends Sensor {
     } catch (err) {
       await rclient.setAsync(loadCacheErrorKey, "1");
       await rclient.expireAsync(loadCacheErrorKey, 900) // auto expire in 15 minutes
-      log.error(`Failed to load cache data, err: ${err}`);
+      log.error(`Failed to load cache data ${fromCloud ? 'from cloud' : ''}`, err);
       return null;
     }
   }

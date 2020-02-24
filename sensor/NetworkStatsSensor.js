@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -77,6 +77,7 @@ class NetworkStatsSensor extends Sensor {
       this.checkLinkStats();
     }, (this.config.interval || 300) * 1000);
   }
+
   processPingConfigure() {
     if (this.config.pingConfig) {
       Ping.configure(this.config.pingConfig);
@@ -84,6 +85,7 @@ class NetworkStatsSensor extends Sensor {
       Ping.configure();
     }
   }
+
   async turnOn() {
     this.pings = {};
 
@@ -195,10 +197,11 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async checkNetworkStatus() {
+    if (!fc.isFeatureOn(FEATURE_NETWORK_STATS)) return;
     const internetTestHosts = this.config.internetTestHosts;
     let dnses = sysManager.myDNS();
     const gateway = sysManager.myGateway();
-    let servers = (this.config.dnsServers || []).concat(dnses);
+    const servers = (this.config.dnsServers || []).concat(dnses);
     servers.push(gateway);
     if (!this.checkNetworkPings) this.checkNetworkPings = {};
 
@@ -207,9 +210,12 @@ class NetworkStatsSensor extends Sensor {
       this.checkNetworkPings[server] = new Ping(server);
       this.checkNetworkPings[server].on('ping', (data) => {
         rclient.hsetAsync("network:status:ping", server, data.time);
-      });
+      })
       this.checkNetworkPings[server].on('fail', (data) => {
         rclient.hsetAsync("network:status:ping", server, -1); // -1 as unreachable
+      });
+      this.checkNetworkPings[server].on('exit', (data) => {
+        delete this.checkNetworkPings[server];
       });
     }
     for (const pingServer in this.checkNetworkPings) {
@@ -223,8 +229,8 @@ class NetworkStatsSensor extends Sensor {
     const dnsmasqServers = await rclient.hgetAsync("policy:system", "dnsmasq");
     if (dnsmasqServers) {
       const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(dnsmasqServers)
-      secondaryDnsServers && dnses.push(secondaryDnsServers)
-      alternativeDnsServers && dnses.push(alternativeDnsServers)
+      secondaryDnsServers && dnses.push(... secondaryDnsServers)
+      alternativeDnsServers && dnses.push(... alternativeDnsServers)
     }
     let resultGroupByHost = {};
     for (const internetTestHost of internetTestHosts) {

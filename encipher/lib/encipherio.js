@@ -91,8 +91,6 @@ let legoEptCloud = class {
     }
 
     async keyReady() {
-      log.info("Checking whether key pair exists already");
-
         try {
           await fs.accessAsync(this.getPublicKeyPath())
           await fs.accessAsync(this.getPrivateKeyPath())
@@ -113,13 +111,13 @@ let legoEptCloud = class {
           log.info("Key pair exists");
           return {pub: pubFile, pri: priFile};
         }
-
     }
 
     async utilKeyReady() {
+        log.info('Wait until keys ready ...')
         let result = await this.keyReady()
         if (!result) {
-            log.info("Checking if keys are ready...");
+            log.info("Keys not ready, wait ...");
             await delay(3000); // wait for three seconds
             return this.utilKeyReady()
         }
@@ -147,7 +145,7 @@ let legoEptCloud = class {
     }
 
     async loadKeys() {
-      log.info("Loading or creating keys");
+      log.info("Loading keys");
       if (this.myPublicKey && this.myPrivateKey) {
         return
       }
@@ -175,6 +173,7 @@ let legoEptCloud = class {
 
 
     async createKeyPair() {
+      log.info('generating key pairs ...')
       if (this.nodeRSASupport) {
         const generateKeyPair = util.promisify(crypto.generateKeyPair)
         const { privateKey, publicKey } = await generateKeyPair(
@@ -183,7 +182,7 @@ let legoEptCloud = class {
         this.myPrivateKey = privateKey
         this.myPublicKey = publicKey
         this.myprivkeyfile = privateKey.export({type:'pkcs1', format:'pem'})
-        this.mypubkeyfile = publicKey.export({type:'pkcs1', format:'pem'})
+        this.mypubkeyfile = publicKey.export({type:'spki', format:'pem'})
       } else {
         const key = ursa.generatePrivateKey(2048, 65537);
         this.mypubkeyfile = key.toPublicPem();

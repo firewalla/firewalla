@@ -23,8 +23,6 @@ const exec = require('child-process-promise').exec
 const Spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 
-const ShieldManager = require('./ShieldManager.js');
-
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
 const util = require('util')
@@ -589,14 +587,7 @@ class Host {
   }
 
   async shield(policy) {
-    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
-    const state = policy.state;
-    if (state === true) {
-      // Raise shield to block incoming connections
-      await shieldManager.activateShield(this.o.mac);
-    } else {
-      await shieldManager.deactivateShield(this.o.mac);
-    }
+    
   }
 
   // Notice

@@ -510,6 +510,7 @@ exports.Rule = class Rule {
     this.table = table;
     this.match = [];
     this.params = null;
+    this.cmt = null;
   }
 
   fam(v) { this.family = v; return this }
@@ -523,6 +524,7 @@ exports.Rule = class Rule {
   jmp(j) { this.jump = j; return this }
 
   pam(p) { this.params = p; return this }
+  comment(c) { this.cmt = c; return this;}
 
   clone() {
     return Object.assign(Object.create(Rule.prototype), this)
@@ -584,6 +586,7 @@ exports.Rule = class Rule {
     this.params && cmd.push(this.params)
 
     this.jump && cmd.push('-j', this.jump)
+    this.cmt && cmd.push('-m comment --comment', this.cmt)
 
     return cmd.join(' ');
   }

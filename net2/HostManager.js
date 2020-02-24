@@ -43,8 +43,6 @@ const FireRouter = require('./FireRouter.js');
 
 const Host = require('./Host.js');
 
-const ShieldManager = require('./ShieldManager.js');
-
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
 const frp = fm.getSupportFRP()
@@ -1383,14 +1381,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
-    const state = policy.state;
-    if (state === true) {
-      // Raise global shield to block incoming connections
-      await shieldManager.activateShield();
-    } else {
-      await shieldManager.deactivateShield();
-    }
+    
   }
 
   async getVpnActiveDeviceCount(profileId) {

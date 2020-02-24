@@ -250,7 +250,7 @@ module.exports = class {
             uid: intf.ip_address,
             mac: intf.mac_address.toUpperCase(),
             ipv4Addr: intf.ip_address,
-            ipv6Addr: intf.ip6_addresses || JSON.stringify([]),
+            ipv6Addr: intf.ip6_addresses || [],
             macVendor: "Firewalla",
             from: "Discovery"
           },

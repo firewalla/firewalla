@@ -119,8 +119,9 @@ class TagManager {
   async changeTagName(uid, name) {
     if (_.has(this.tags, uid) && this.getTag(name) == null) {
       this.tags[uid].setTagName(name);
-      const key = `tag:uid:${newUid}`;
+      const key = `tag:uid:${uid}`;
       await rclient.hmsetAsync(key, this.tags[uid].o); 
+      this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
       return true;
     }
     
