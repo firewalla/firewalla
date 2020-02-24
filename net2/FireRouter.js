@@ -414,12 +414,13 @@ class FireRouter {
         await broControl.writeClusterConfig(monitoringIntfNames)
       }
       // do not await bro restart to finish, it may take some time
-      broControl.restart().then(() => broControl.addCronJobs()).then(() => {
-        log.info('Bro restarted');
-        this.broReady = true;
-      });
+      broControl.restart()
+        .then(() => broControl.addCronJobs())
+        .then(() => {
+          log.info('Bro restarted');
+          this.broReady = true;
+        });
     } else {
-      log.info('Bro restarted');
       this.broReady = true;
     }
   }
