@@ -510,6 +510,7 @@
       "dataPlanMinPercentage": 0.8
     },
     "DnsmasqDhcpSensor": {},
+    "BlockRuleCheckSensor": {},
     "LocalDomainSensor": {}
   },
   "hooks": {
