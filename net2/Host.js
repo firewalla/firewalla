@@ -23,8 +23,6 @@ const exec = require('child-process-promise').exec
 const Spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 
-const ShieldManager = require('./ShieldManager.js');
-
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
 const util = require('util')
@@ -589,14 +587,7 @@ class Host {
   }
 
   async shield(policy) {
-    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
-    const state = policy.state;
-    if (state === true) {
-      // Raise shield to block incoming connections
-      await shieldManager.activateShield(this.o.mac);
-    } else {
-      await shieldManager.deactivateShield(this.o.mac);
-    }
+    
   }
 
   // Notice
@@ -1133,7 +1124,7 @@ class Host {
         await exec(`sudo ipset add -! ${Tag.getTagMacIpsetName(uid)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         });
-        const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
+        const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}\ngroup-tag=@${uid}$tag_${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         })

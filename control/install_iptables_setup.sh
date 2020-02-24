@@ -35,6 +35,7 @@ sudo ipset create whitelist_mac_set hash:mac &>/dev/null
 sudo ipset create whitelist_remote_port_set bitmap:port range 0-65535 &>/dev/null
 sudo ipset create no_dns_caching_mac_set hash:mac &>/dev/null
 sudo ipset create no_dns_caching_set list:set &>/dev/null
+sudo ipset create monitored_net_set list:set &>/dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush blocked_ip_set
@@ -60,6 +61,7 @@ sudo ipset flush whitelist_mac_set
 sudo ipset flush no_dns_caching_mac_set
 sudo ipset flush no_dns_caching_set
 sudo ipset add -! no_dns_caching_set no_dns_caching_mac_set
+sudo ipset flush monitored_net_set
 
 sudo ipset add -! blocked_ip_set $BLUE_HOLE_IP
 
@@ -138,6 +140,12 @@ sudo iptables -w -F FW_WHITELIST
 
 sudo iptables -w -C FW_FORWARD -j FW_WHITELIST_PREROUTE &>/dev/null || sudo iptables -w -I FW_FORWARD -j FW_WHITELIST_PREROUTE
 
+# initialize inbound firewall chain
+sudo iptables -w -N FW_INBOUND_FIREWALL &> /dev/null
+sudo iptables -w -F FW_INBOUND_FIREWALL
+sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP
+sudo iptables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL || sudo iptables -w -I FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
+
 sudo iptables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo iptables -w -I FW_FORWARD -j FW_BYPASS
 
 # device level whitelist
@@ -166,22 +174,6 @@ sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set src -j RET
 sudo iptables -w -C FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0/0 -j REJECT &>/dev/null || sudo iptables -w -A FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0/0 -j REJECT
 # drop everything
 sudo iptables -w -C FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP &>/dev/null || sudo iptables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP
-
-
-sudo iptables -w -N FW_SHIELD &> /dev/null
-sudo iptables -w -F FW_SHIELD
-
-# drop everything
-sudo iptables -w -C FW_SHIELD --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP &>/dev/null || sudo iptables -w -A FW_SHIELD --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP
-
-# return established and related connections
-sudo iptables -w -C FW_SHIELD -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo iptables -w -I FW_SHIELD -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
-
-# return if source ip is in trusted_ip_set
-sudo iptables -w -C FW_SHIELD -m set --match-set trusted_ip_set src -j RETURN &>/dev/null || sudo iptables -w -I FW_SHIELD -m set --match-set trusted_ip_set src -j RETURN &>/dev/null
-
-# divert to shield chain if dst ip is in protected_ip_set
-sudo iptables -w -C FW_FORWARD -m set --match-set protected_ip_set dst -j FW_SHIELD &>/dev/null || sudo iptables -w -A FW_FORWARD -m set --match-set protected_ip_set dst -j FW_SHIELD
 
 sudo iptables -w -t nat -N FW_PREROUTING &> /dev/null
 
@@ -395,6 +387,12 @@ if [[ -e /sbin/ip6tables ]]; then
 
   sudo ip6tables -w -C FW_FORWARD -j FW_WHITELIST_PREROUTE &>/dev/null || sudo ip6tables -w -I FW_FORWARD -j FW_WHITELIST_PREROUTE
 
+  # initialize inbound firewall chain
+  sudo ip6tables -w -N FW_INBOUND_FIREWALL &> /dev/null
+  sudo ip6tables -w -F FW_INBOUND_FIREWALL
+  sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP
+  sudo ip6tables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL || sudo ip6tables -w -I FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
+
   sudo ip6tables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo ip6tables -w -I FW_FORWARD -j FW_BYPASS
 
   # device level whitelist
@@ -423,22 +421,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -C FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0/0 -j REJECT &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0/0 -j REJECT
   # drop everything
   sudo ip6tables -w -C FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP &>/dev/null || sudo ip6tables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP
-
-
-  sudo ip6tables -w -N FW_SHIELD &> /dev/null
-  sudo ip6tables -w -F FW_SHIELD
-
-  # drop everything
-  sudo ip6tables -w -C FW_SHIELD --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP &>/dev/null || sudo ip6tables -w -A FW_SHIELD --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP
-
-  # return established and related connections
-  sudo ip6tables -w -C FW_SHIELD -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo ip6tables -w -I FW_SHIELD -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
-
-  # return if source mac is in trusted_ip_set6
-  sudo ip6tables -w -C FW_SHIELD -m set -match-set trusted_ip_set6 src -j RETURN &>/dev/null || sudo ip6tables -w -I FW_SHIELD -m set --match-set trusted_ip_set6 src -j RETURN &>/dev/null
-
-  # divert to shield chain if dst ip is in protected_ip_set6
-  sudo ip6tables -w -C FW_FORWARD -m set --match-set protected_ip_set6 dst -j FW_SHIELD &>/dev/null || sudo ip6tables -w -A FW_FORWARD -m set --match-set protected_ip_set6 dst -j FW_SHIELD
 
   sudo ip6tables -w -t nat -N FW_PREROUTING &> /dev/null
 

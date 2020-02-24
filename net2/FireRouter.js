@@ -565,7 +565,7 @@ class FireRouter {
     return history;
   }
 
-  async applyNetworkConfig() {
+  async applyModeConfig() {
     if (this.platform.isFireRouterManaged()) {
       // firewalla do not change network config during mode switch if managed by firerouter
     } else {
