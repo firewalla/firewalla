@@ -296,59 +296,58 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
     return;
   }
 
-  try {
-    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tags || "null", dstTag,
-      destroy && destroyDstCache ? "and ipset" : "");
+  const TagManager = require('../net2/TagManager.js')
+  for (let index = 0; index < tags.length; index++) {
+    if (!TagManager.getTagByUid(tags[index])) {
+      continue;
+    }
 
-    const dstSet = dstTag ? getDstSet(dstTag) : null;
-    // use same port set on both ip4 & ip6 rules
-    const dstSet6 = dstTag ? (dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)) : null;
+    try {
+      log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tags || "null", dstTag,
+        destroy && destroyDstCache ? "and ipset" : "");
 
-    if (!destroy) {
+      const dstSet = dstTag ? getDstSet(dstTag) : null;
+      // use same port set on both ip4 & ip6 rules
+      const dstSet6 = dstTag ? (dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)) : null;
+
+      if (!destroy) {
+        if (dstSet) {
+          await Ipset.create(dstSet, dstType);
+          if (dstType != 'bitmap:port')
+          await Ipset.create(dstSet6, dstType, false)
+        }
+      }
+
+      const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
+      const filterDest = allow ? 'RETURN' : 'FW_DROP'
+      const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
+      const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+
+      const comment = `"Firewalla Policy ${pid}"`
+      const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
+      const outRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
+      const natOutRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
+      const natOutRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
+
       if (dstSet) {
-        await Ipset.create(dstSet, dstType);
-        if (dstType != 'bitmap:port')
-        await Ipset.create(dstSet6, dstType, false)
+        outRule.mth(dstSet, 'dst');
+        outRule6.mth(dstSet6, 'dst');
+        natOutRule.mth(dstSet, 'dst');
+        natOutRule6.mth(dstSet6, 'dst');
       }
-    }
 
-    const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
-    const filterDest = allow ? 'RETURN' : 'FW_DROP'
-    const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
-    const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+      const inRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
+      const inRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
+      const natInRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
+      const natInRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
 
-    const comment = `"Firewalla Policy ${pid}"`
-    const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
-    const outRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
-    const natOutRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
-    const natOutRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
-
-    if (dstSet) {
-      outRule.mth(dstSet, 'dst');
-      outRule6.mth(dstSet6, 'dst');
-      natOutRule.mth(dstSet, 'dst');
-      natOutRule6.mth(dstSet6, 'dst');
-    }
-
-    const inRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
-    const inRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
-    const natInRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
-    const natInRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
-
-    if (dstSet) {
-      inRule.mth(dstSet, 'dst');
-      inRule6.mth(dstSet6, 'dst');
-      natInRule.mth(dstSet, 'dst');
-      natInRule6.mth(dstSet6, 'dst');
-    }
-
-    // matching MAC addr won't work in opposite direction
-    let tagInvalid = true;
-    const TagManager = require('../net2/TagManager.js')
-    for (let index = 0; index < tags.length; index++) {
-      if (!TagManager.getTagByUid(tags[index])) {
-        continue;
+      if (dstSet) {
+        inRule.mth(dstSet, 'dst');
+        inRule6.mth(dstSet6, 'dst');
+        natInRule.mth(dstSet, 'dst');
+        natInRule6.mth(dstSet6, 'dst');
       }
+
       const ipset = require('../net2/Tag.js').getTagIpsetName(tags[index]);
       outRule.mth(ipset, 'src,src')
       outRule6.mth(ipset, 'src,src')
@@ -359,10 +358,7 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
       inRule6.mth(ipset, 'dst,dst')
       natInRule.mth(ipset, 'dst,dst')
       natInRule6.mth(ipset, 'dst,dst')
-      tagInvalid = false;
-    }
 
-    if (!tagInvalid) {
       const op = destroy ? '-D' : '-I'
       await exec(outRule.toCmd(op))
       await exec(outRule6.toCmd(op))
@@ -372,22 +368,22 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
       await exec(inRule6.toCmd(op))
       await exec(natInRule.toCmd(op))
       await exec(natInRule6.toCmd(op))
-    }
 
-    if (destroy) {
-      if (destroyDstCache) {
-        if (dstSet) {
-          await Ipset.destroy(dstSet)
-          if (dstType != 'bitmap:port')
-            await Ipset.destroy(dstSet6)
+      if (destroy) {
+        if (destroyDstCache) {
+          if (dstSet) {
+            await Ipset.destroy(dstSet)
+            if (dstType != 'bitmap:port')
+              await Ipset.destroy(dstSet6)
+          }
         }
       }
+
+      log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tags || "null", dstTag);
+
+    } catch(err) {
+      log.error('Error when setup tag blocking env', err);
     }
-
-    log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tags || "null", dstTag);
-
-  } catch(err) {
-    log.error('Error when setup tag blocking env', err);
   }
 }
 
