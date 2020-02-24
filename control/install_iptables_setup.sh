@@ -20,10 +20,7 @@ sudo ipset create blocked_remote_net_port_set hash:net,port family inet hashsize
 sudo ipset create blocked_remote_port_set bitmap:port range 0-65535 &>/dev/null
 sudo ipset create blocked_mac_set hash:mac &>/dev/null
 sudo ipset create not_monitored_mac_set hash:mac &>/dev/null
-sudo ipset create trusted_ip_set hash:net family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create monitored_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
-sudo ipset create devicedns_mac_set hash:mac &>/dev/null
-sudo ipset create protected_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create device_whitelist_set hash:mac &> /dev/null
 sudo ipset create whitelist_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_domain_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
@@ -46,10 +43,7 @@ sudo ipset flush blocked_remote_ip_port_set
 sudo ipset flush blocked_remote_net_port_set
 sudo ipset flush blocked_remote_port_set
 sudo ipset flush blocked_mac_set
-sudo ipset flush trusted_ip_set
 sudo ipset flush monitored_ip_set
-sudo ipset flush devicedns_mac_set
-sudo ipset flush protected_ip_set
 sudo ipset flush whitelist_ip_set
 sudo ipset flush whitelist_domain_set
 sudo ipset flush whitelist_net_set
@@ -129,7 +123,7 @@ sudo iptables -w -C FW_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j R
 sudo iptables -w -C FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
 
 # skip whitelist for local subnet traffic
-sudo iptables -w -C FW_WHITELIST_PREROUTE -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j RETURN
+sudo iptables -w -C FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
 
 # FIXME: why??
 sudo iptables -w -C FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
@@ -170,10 +164,8 @@ sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_remote_port_set sr
 sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
 sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
 
-# reject tcp
-sudo iptables -w -C FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0/0 -j REJECT &>/dev/null || sudo iptables -w -A FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0/0 -j REJECT
 # drop everything
-sudo iptables -w -C FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP &>/dev/null || sudo iptables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP
+sudo iptables -w -C FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP &>/dev/null || sudo iptables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP
 
 sudo iptables -w -t nat -N FW_PREROUTING &> /dev/null
 
@@ -230,7 +222,7 @@ sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -p tcp -m multiport --ports
 sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
 
 # skip whitelist for local subnet traffic
-sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j RETURN
+sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
 
 # FIXME: why??
 sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
@@ -301,9 +293,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset create blocked_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create blocked_remote_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create blocked_remote_net_port_set6 hash:net,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create trusted_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create monitored_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create protected_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create whitelist_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
   sudo ipset create whitelist_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
   sudo ipset create whitelist_net_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
@@ -318,9 +308,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset flush blocked_ip_port_set6
   sudo ipset flush blocked_remote_ip_port_set6
   sudo ipset flush blocked_remote_net_port_set6
-  sudo ipset flush trusted_ip_set6
   sudo ipset flush monitored_ip_set6
-  sudo ipset flush protected_ip_set6
   sudo ipset flush whitelist_ip_set6
   sudo ipset flush whitelist_domain_set6
   sudo ipset flush whitelist_net_set6
@@ -377,7 +365,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -C FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
 
   # skip whitelist for local subnet traffic
-  sudo ip6tables -w -C FW_WHITELIST_PREROUTE -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j RETURN
+  sudo ip6tables -w -C FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
 
   # FIXME: why??
   sudo ip6tables -w -C FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
@@ -417,10 +405,8 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
   sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
 
-  # reject tcp
-  sudo ip6tables -w -C FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0/0 -j REJECT &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -p tcp --source 0.0.0.0/0 --destination 0.0.0.0/0 -j REJECT
   # drop everything
-  sudo ip6tables -w -C FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP &>/dev/null || sudo ip6tables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j DROP
+  sudo ip6tables -w -C FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP &>/dev/null || sudo ip6tables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP
 
   sudo ip6tables -w -t nat -N FW_PREROUTING &> /dev/null
 
@@ -476,7 +462,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
 
   # skip whitelist for local subnet traffic
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set trusted_ip_set src -m set --match-set trusted_ip_set dst -j RETURN
+  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
 
   # FIXME: why??
   sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
