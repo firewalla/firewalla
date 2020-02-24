@@ -150,15 +150,24 @@ class NetworkProfileManager {
   }
 
   _isNetworkProfileChanged(then, now) {
-    for (let key in then) {
-      if (_.isArray(then[key]))
-        then[key] = then[key].sort();
+    const thenCopy = JSON.parse(JSON.stringify(then));
+    const nowCopy = JSON.parse(JSON.stringify(now));
+    for (let key in thenCopy) {
+      if (_.isArray(thenCopy[key]))
+      thenCopy[key] = thenCopy[key].sort();
     }
-    for (let key in now) {
-      if (_.isArray(now[key]))
-        now[key] = now[key].sort();
+    for (let key in nowCopy) {
+      if (_.isArray(nowCopy[key]))
+      nowCopy[key] = nowCopy[key].sort();
     }
-    return !_.isEqual(then, now);
+    const excludedKeys = ["carrier"];
+    for (const excludedKey of excludedKeys) {
+      if (thenCopy[excludedKey])
+        delete thenCopy[excludedKey];
+      if (nowCopy[excludedKey])
+        delete nowCopy[excludedKey];
+    }
+    return !_.isEqual(thenCopy, nowCopy);
   }
 
   async refreshNetworkProfiles() {

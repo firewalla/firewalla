@@ -226,11 +226,13 @@ class DNSTool {
         subnet = iptool.cidrSubnet(fConfig.wifiInterface.iptool);
     }
 
-    try {
-      // try if network is already a cidr subnet
-      subnet = iptool.cidrSubnet(network);
-    } catch (err) {
-      subnet = null;
+    if(!subnet) {
+      try {
+        // try if network is already a cidr subnet
+        subnet = iptool.cidrSubnet(network);
+      } catch (err) {
+        subnet = null;
+      }  
     }
 
     if (!subnet)
