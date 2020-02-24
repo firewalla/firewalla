@@ -449,7 +449,7 @@ class NetworkProfile {
         }).catch((err) => {
           log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}\ngroup-tag=@${uid}$tag_${uid}`;
+        const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
         await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
         })

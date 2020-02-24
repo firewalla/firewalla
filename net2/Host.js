@@ -1124,7 +1124,7 @@ class Host {
         await exec(`sudo ipset add -! ${Tag.getTagMacIpsetName(uid)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         });
-        const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}\ngroup-tag=@${uid}$tag_${uid}`;
+        const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         })

@@ -25,6 +25,10 @@ const exec = require('child-process-promise').exec;
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const wrapIptables = require('./Iptables').wrapIptables;
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
 
 class Tag {
   constructor(o) {
@@ -139,6 +143,11 @@ class Tag {
     // it is needed to apply fine-grained policy on tag level. e.g., customized wan, QoS
     await exec(`sudo ipset create -! ${Tag.getTagNetIpsetName(this.o.uid)} list:set`).catch((err) => {
       log.error(`Failed to create tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
+    });
+    // tag dnsmasq entry can be referred by domain blocking rules
+    const dnsmasqEntry = `group-tag=@${this.o.uid}$tag_${this.o.uid}`;
+    await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_${this.o.uid}.conf`, dnsmasqEntry).catch((err) => {
+      log.error(`Failed to create dnsmasq entry for tag ${this.o.uid}`, err.message);
     });
   }
 
