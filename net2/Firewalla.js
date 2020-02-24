@@ -118,7 +118,7 @@ function isBeta() {
 
 function isAlpha() {
   let branch = getBranch()
-  if(branch === 'beta_7_0') {
+  if(branch === 'beta_7_0' || branch === 'beta_8_0') {
     return true
   } else {
     return false
