@@ -327,6 +327,15 @@ check_speed() {
     test $UNAME == "armv7l" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_arm -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
 }
 
+check_conntrack() {
+    echo "---------------------- Conntrack Count------------------"
+    
+    cat /proc/sys/net/netfilter/nf_conntrack_count
+
+    echo ""
+    echo ""
+}
+
 usage() {
     return
 }
@@ -358,6 +367,7 @@ if [ "$FAST" == false ]; then
     check_sys_config
     check_policies
     check_iptables
+    check_conntrack
     check_speed
 fi
 check_hosts
