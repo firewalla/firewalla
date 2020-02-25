@@ -763,6 +763,9 @@ class Host {
       obj.deviceClass = "mobile";
     }
     try {
+      obj.flowInCount = await rclient.zcountAsync("flow:conn:in:" + this.o.mac, "-inf", "+inf");
+      obj.flowOutCount = await rclient.zcountAsync("flow:conn:out:" + this.o.mac, "-inf", "+inf");
+
       let neighbors = await util.promisify(this.packageTopNeighbors).bind(this)(60)
       if (neighbors) {
         obj.neighbors = this.hashNeighbors(neighbors);
