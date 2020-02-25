@@ -106,7 +106,9 @@ function isDevelopmentVersion() {
 function isBeta() {
   let branch = getBranch()
   if(branch.match(/^beta_.*/)) {
-    if(branch === 'beta_7_0') {
+    if(branch === 'beta_8_0') {
+      return false;
+    } else if(branch === 'beta_7_0') {
       return false;
     } else {
       return true;
