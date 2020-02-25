@@ -14,6 +14,7 @@
  */
 
 'use strict';
+const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
 const util = require('util');
@@ -499,7 +500,17 @@ class SysManager {
   }
 
   getInterfaceViaIP6(ip6) {
-    return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(ip6, i.name))
+    if (_.isArray(ip6)) {
+      for (let index = 0; index < ip6.length; index++) {
+        const element = ip6[index];
+        const intf = this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(element, i.name));
+        if (intf) {
+          return intf;
+        } 
+      }      
+    } else {
+      return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(ip6, i.name));
+    }
   }
 
   // this method is not safe as we'll have interfaces with same mac
