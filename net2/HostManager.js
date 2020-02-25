@@ -975,7 +975,7 @@ module.exports = class HostManager {
         if (json.mode === "dhcp") {
           await this.dhcpRangeForInit("alternative", json);
           await this.dhcpRangeForInit("secondary", json);
-          json.dhcpserverstatus = await rclient.getAsync("sys:scan:dhcpserver");
+          json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
         }
 
         await this.loadDDNSForInit(json);

@@ -28,6 +28,7 @@ const cp = require('child_process');
 
 const execAsync = require('child-process-promise').exec;
 const Config = require('../../net2/config.js');
+const _ = require('lodash');
 
 async function dhcpDiscover(intf) {
   const config = Config.getConfig(true);
@@ -96,12 +97,7 @@ async function dhcpServerStatus(serverIp) {
   try {
     const cmdresult = await execAsync(cmd);
     let output = JSON.parse(cmdresult.stdout);
-    let kvs = output.nmaprun && output.nmaprun.host
-      && output.nmaprun.host.ports
-      && output.nmaprun.host.ports.port
-      && output.nmaprun.host.ports.port.script
-      && output.nmaprun.host.ports.port.script.elem;
-
+    let kvs = _.get(output, `nmaprun.host.ports.port.script.elem`, []);
     if (Array.isArray(kvs) && kvs.length > 0) {
       result = true;
     }
