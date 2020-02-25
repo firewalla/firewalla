@@ -215,28 +215,26 @@ class DNSTool {
     if (network === "alternative") {
       subnet = iptool.cidrSubnet(sysManager.mySubnet());
     }
-    if (network === "secondary") {
+    else if (network === "secondary") {
       const subnet2 = sysManager.mySubnet2() || "192.168.218.1/24";
       subnet = iptool.cidrSubnet(subnet2);
     }
-    if (network === "wifi") {
+    else if (network === "wifi") {
       const Config = require('./config.js');
       const fConfig = Config.getConfig(true);
       if (fConfig && fConfig.wifiInterface && fConfig.wifiInterface.iptool)
         subnet = iptool.cidrSubnet(fConfig.wifiInterface.iptool);
     }
 
-    if(!subnet) {
+    if (!subnet) {
       try {
         // try if network is already a cidr subnet
         subnet = iptool.cidrSubnet(network);
       } catch (err) {
-        subnet = null;
-      }  
+        return null;
+      }
     }
 
-    if (!subnet)
-      return null;
     const firstAddr = iptool.toLong(subnet.firstAddress);
     const lastAddr = iptool.toLong(subnet.lastAddress);
     const midAddr = firstAddr + (lastAddr - firstAddr) / 5;

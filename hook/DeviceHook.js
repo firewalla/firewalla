@@ -178,13 +178,6 @@ class DeviceHook extends Hook {
         }
       }
 
-      host.tags = [];
-      const hostManager = new HostManager("cli", 'server', 'info');
-      const hostInstance = hostManager.getHostFastByMAC(host.mac);
-      if (hostInstance) {
-        host.tags = hostInstance.getTags();
-      }
-
       if (mac != null) {
         this.processDeviceUpdate(event);
       } else {
@@ -612,6 +605,13 @@ class DeviceHook extends Hook {
     let am2 = new AM2();
 
     let name = this.getPreferredName(host)
+    let tags = [];
+    const hostManager = new HostManager("cli", 'server', 'info');
+    const hostInstance = hostManager.getHostFastByMAC(host.mac);
+    if (hostInstance) {
+      tags = hostInstance.getTags();
+    }
+
     let alarm = null;
     switch (type) {
       case "new_device":
@@ -624,7 +624,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": host.tags
+            "p.tag.ids": tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -638,7 +638,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": host.tags
+            "p.tag.ids": tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -653,7 +653,7 @@ class DeviceHook extends Hook {
             "p.device.vendor": host.macVendor,
             "p.device.lastSeen": host.lastActiveTimestamp,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": host.tags
+            "p.tag.ids": tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -667,7 +667,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": host.tags
+            "p.tag.ids": tags
           });
         am2.enqueueAlarm(alarm);
         break;

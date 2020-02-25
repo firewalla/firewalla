@@ -212,37 +212,42 @@ function setupIpset(target, ipset, whitelist, remove = false) {
   return action(ipset, target)
 }
 
-async function setupRules(macTag, dstTag, dstType, iif, allow = false, destroy = false, destroyDstCache = true) {
-  if (!dstTag) {
-    return;
-  }
-
+async function setupRules(pid, macTag, dstTag, dstType, iif, allow = false, destroy = false, destroyDstCache = true) {
   try {
     log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', macTag || "null", dstTag,
       destroy && destroyDstCache ? "and ipset" : "");
 
     const macSet = macTag ? getMacSet(macTag) : '';
-    const dstSet = getDstSet(dstTag)
+    const dstSet = dstTag ? getDstSet(dstTag) : null;
     // use same port set on both ip4 & ip6 rules
-    const dstSet6 = dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)
+    const dstSet6 = dstSet ? (dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)) : null;
 
     if (!destroy) {
       if (macTag) await Ipset.create(macSet, 'hash:mac')
-      await Ipset.create(dstSet, dstType)
-      if (dstType != 'bitmap:port')
-        await Ipset.create(dstSet6, dstType, false)
+      if (dstTag) {
+        await Ipset.create(dstSet, dstType)
+        if (dstType != 'bitmap:port')
+          await Ipset.create(dstSet6, dstType, false)
+      }
     }
-
 
     const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
     const filterDest = allow ? 'RETURN' : 'FW_DROP'
     const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
     const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
 
-    const outRule     = new Rule().chn(filterChain).mth(dstSet, 'dst').jmp(filterDest)
-    const outRule6    = new Rule().chn(filterChain).mth(dstSet6, 'dst').jmp(filterDest).fam(6)
-    const natOutRule  = new Rule('nat').chn(natChain).mth(dstSet, 'dst').jmp(natDest)
-    const natOutRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'dst').jmp(natDest).fam(6)
+    const comment = `"Firewalla Policy ${pid}"`
+    const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
+    const outRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
+    const natOutRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
+    const natOutRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
+
+    if (dstSet) {
+      outRule.mth(dstSet, 'dst')
+      outRule6.mth(dstSet6, 'dst')
+      natOutRule.mth(dstSet, 'dst')
+      natOutRule6.mth(dstSet6, 'dst')
+    }
 
     // matching MAC addr won't work in opposite direction
     if (macTag) {
@@ -271,9 +276,11 @@ async function setupRules(macTag, dstTag, dstType, iif, allow = false, destroy =
         await Ipset.destroy(macSet)
       }
       if (destroyDstCache) {
-        await Ipset.destroy(dstSet)
-        if (dstType != 'bitmap:port')
-          await Ipset.destroy(dstSet6)
+        if (dstSet) {
+          await Ipset.destroy(dstSet)
+          if (dstType != 'bitmap:port')
+            await Ipset.destroy(dstSet6)
+        }
       }
     }
 
@@ -284,47 +291,63 @@ async function setupRules(macTag, dstTag, dstType, iif, allow = false, destroy =
   }
 }
 
-async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
-  if (!dstTag || _.isEmpty(tags)) {
+async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
+  if (_.isEmpty(tags)) {
     return;
   }
 
-  try {
-    log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tags || "null", dstTag,
-      destroy && destroyDstCache ? "and ipset" : "");
-
-    const dstSet = getDstSet(dstTag)
-    // use same port set on both ip4 & ip6 rules
-    const dstSet6 = dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)
-
-    if (!destroy) {
-      await Ipset.create(dstSet, dstType)
-      if (dstType != 'bitmap:port')
-        await Ipset.create(dstSet6, dstType, false)
+  const TagManager = require('../net2/TagManager.js')
+  for (let index = 0; index < tags.length; index++) {
+    if (!TagManager.getTagByUid(tags[index])) {
+      continue;
     }
 
-    const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
-    const filterDest = allow ? 'RETURN' : 'FW_DROP'
-    const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
-    const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+    try {
+      log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tags || "null", dstTag,
+        destroy && destroyDstCache ? "and ipset" : "");
 
-    const outRule     = new Rule().chn(filterChain).mth(dstSet, 'dst').jmp(filterDest)
-    const outRule6    = new Rule().chn(filterChain).mth(dstSet6, 'dst').jmp(filterDest).fam(6)
-    const natOutRule  = new Rule('nat').chn(natChain).mth(dstSet, 'dst').jmp(natDest)
-    const natOutRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'dst').jmp(natDest).fam(6)
+      const dstSet = dstTag ? getDstSet(dstTag) : null;
+      // use same port set on both ip4 & ip6 rules
+      const dstSet6 = dstTag ? (dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)) : null;
 
-    const inRule     = new Rule().chn(filterChain).mth(dstSet, 'src').jmp(filterDest)
-    const inRule6    = new Rule().chn(filterChain).mth(dstSet6, 'src').jmp(filterDest).fam(6)
-    const natInRule  = new Rule('nat').chn(natChain).mth(dstSet, 'src').jmp(natDest)
-    const natInRule6 = new Rule('nat').chn(natChain).mth(dstSet6, 'src').jmp(natDest).fam(6)
-
-    // matching MAC addr won't work in opposite direction
-    let tagInvalid = true;
-    const TagManager = require('../net2/TagManager.js')
-    for (let index = 0; index < tags.length; index++) {
-      if (!TagManager.getTagByUid(tags[index])) {
-        continue;
+      if (!destroy) {
+        if (dstSet) {
+          await Ipset.create(dstSet, dstType);
+          if (dstType != 'bitmap:port')
+          await Ipset.create(dstSet6, dstType, false)
+        }
       }
+
+      const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
+      const filterDest = allow ? 'RETURN' : 'FW_DROP'
+      const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
+      const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+
+      const comment = `"Firewalla Policy ${pid}"`
+      const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
+      const outRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
+      const natOutRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
+      const natOutRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
+
+      if (dstSet) {
+        outRule.mth(dstSet, 'dst');
+        outRule6.mth(dstSet6, 'dst');
+        natOutRule.mth(dstSet, 'dst');
+        natOutRule6.mth(dstSet6, 'dst');
+      }
+
+      const inRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
+      const inRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
+      const natInRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
+      const natInRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
+
+      if (dstSet) {
+        inRule.mth(dstSet, 'dst');
+        inRule6.mth(dstSet6, 'dst');
+        natInRule.mth(dstSet, 'dst');
+        natInRule6.mth(dstSet6, 'dst');
+      }
+
       const ipset = require('../net2/Tag.js').getTagIpsetName(tags[index]);
       outRule.mth(ipset, 'src,src')
       outRule6.mth(ipset, 'src,src')
@@ -335,10 +358,7 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
       inRule6.mth(ipset, 'dst,dst')
       natInRule.mth(ipset, 'dst,dst')
       natInRule6.mth(ipset, 'dst,dst')
-      tagInvalid = false;
-    }
 
-    if (!tagInvalid) {
       const op = destroy ? '-D' : '-I'
       await exec(outRule.toCmd(op))
       await exec(outRule6.toCmd(op))
@@ -348,20 +368,22 @@ async function setupTagRules(tags, dstTag, dstType, allow = false, destroy = fal
       await exec(inRule6.toCmd(op))
       await exec(natInRule.toCmd(op))
       await exec(natInRule6.toCmd(op))
-    }
 
-    if (destroy) {
-      if (destroyDstCache) {
-        await Ipset.destroy(dstSet)
-        if (dstType != 'bitmap:port')
-          await Ipset.destroy(dstSet6)
+      if (destroy) {
+        if (destroyDstCache) {
+          if (dstSet) {
+            await Ipset.destroy(dstSet)
+            if (dstType != 'bitmap:port')
+              await Ipset.destroy(dstSet6)
+          }
+        }
       }
+
+      log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tags || "null", dstTag);
+
+    } catch(err) {
+      log.error('Error when setup tag blocking env', err);
     }
-
-    log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tags || "null", dstTag);
-
-  } catch(err) {
-    log.error('Error when setup tag blocking env', err);
   }
 }
 
@@ -426,5 +448,6 @@ module.exports = {
   existsBlockingEnv: existsBlockingEnv,
   setupGlobalWhitelist: setupGlobalWhitelist,
   setupInterfaceWhitelist: setupInterfaceWhitelist,
-  setupTagWhitelist: setupTagWhitelist
+  setupTagWhitelist: setupTagWhitelist,
+  setupTagRules: setupTagRules
 }

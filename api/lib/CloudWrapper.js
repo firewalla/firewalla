@@ -59,10 +59,6 @@ module.exports = class {
 
       (async() => {
 
-        log.info("[Boot] Waiting for security keys to be ready");
-        // key ready
-        await eptcloud.utilKeyReady();
-
         log.info("[Boot] Loading security keys");
         await eptcloud.loadKeys();
 

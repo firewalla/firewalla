@@ -341,6 +341,15 @@ class NetworkProfile {
       }).catch((err) => {
         log.error(`Failed to ${op} ${netIpsetName}(6) to c_lan_set`, err.message);
       });
+      // add to monitored_net_set accordingly
+      op = "del";
+      if (this.o.monitoring === true)
+        op = "add";
+      await exec(`sudo ipset ${op} -! monitored_net_set ${netIpsetName}`).then(() => {
+        return exec(`sudo ipset ${op} -! monitored_net_set ${netIpsetName}6`);
+      }).catch((err) => {
+        log.error(`Failed to ${op} ${netIpsetName}(6) to monitored_net_set`, err.message);
+      });
     }
   }
 
@@ -349,14 +358,30 @@ class NetworkProfile {
     if (!netIpsetName) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      await exec(`sudo ipset flush -! ${netIpsetName}`).then(() => {
-      }).catch((err) => {
-        log.error(`Failed to flush network profile ipset ${netIpsetName}`, err.message);
+      await exec(`sudo ipset flush -! ${netIpsetName}`).catch((err) => {
+        log.debug(`Failed to flush network profile ipset ${netIpsetName}`, err.message);
       });
-      await exec(`sudo ipset flush -! ${netIpsetName}6`).then(() => {
-      }).catch((err) => {
-        log.error(`Failed to flush network profile ipset ${netIpsetName}6`, err.message);
+      await exec(`sudo ipset flush -! ${netIpsetName}6`).catch((err) => {
+        log.debug(`Failed to flush network profile ipset ${netIpsetName}6`, err.message);
       });
+      // although net ipset is already flushed, still remove it from c_lan_set anyway to keep consistency
+      if (this.o.type === "lan") {
+        await exec(`sudo ipset del -! c_lan_set ${netIpsetName}`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName} from c_lan_set`, err.message);
+        });
+        await exec(`sudo ipset del -! c_lan_set ${netIpsetName}6`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName}6 from c_lan_set`, err.message);
+        });
+      }
+      // still remove it from monitored_net_set anyway to keep consistency
+      if (this.o.monitoring === true) {
+        await exec(`sudo ipset del -! monitored_net_set ${netIpsetName}`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName} from monitored_net_set`, err.message);
+        });
+        await exec(`sudo ipset del -! monitored_net_set ${netIpsetName}6`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName}6 from monitored_net_set`, err.message);
+        });
+      }
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
     }
     this.oper = null; // clear oper cache used in PolicyManager.js
