@@ -3849,6 +3849,8 @@ class netBot extends ControllerBot {
         break;
       case "alpha":
         targetBranch = "beta_7_0";
+      case "salpha":
+        targetBranch = "beta_8_0";
         break;
       case "beta":
         targetBranch = prodBranch.replace("release_", "beta_")
