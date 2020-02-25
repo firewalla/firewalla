@@ -113,13 +113,13 @@ let legoEptCloud = class {
         }
     }
 
-    async utilKeyReady() {
+    async untilKeyReady() {
         log.info('Wait until keys ready ...')
         let result = await this.keyReady()
         if (!result) {
             log.info("Keys not ready, wait ...");
             await delay(3000); // wait for three seconds
-            return this.utilKeyReady()
+            return this.untilKeyReady()
         }
         return true;
     }

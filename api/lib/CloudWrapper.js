@@ -59,6 +59,10 @@ module.exports = class {
 
       (async() => {
 
+        log.info("[Boot] Waiting for security keys to be ready");
+        // Must wait here for FireKick to generate keys
+        await eptcloud.untilKeyReady();
+
         log.info("[Boot] Loading security keys");
         await eptcloud.loadKeys();
 
