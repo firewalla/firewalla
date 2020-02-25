@@ -1028,7 +1028,7 @@ class PolicyManager2 {
             await Block.setupTagRules(pid, tags, null, null, whitelist);
           } 
           
-          if (!_.isEmpty(intfs)) {{
+          if (!_.isEmpty(intfs)) {
             await Block.setupIntfsRules(pid, intfs, null, null, whitelist);
           }
 
@@ -1146,7 +1146,7 @@ class PolicyManager2 {
           } 
           
           if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, countryUpdater.getCategory(target), "hash:net", whitelist));
+            await Block.setupIntfsRules(pid, intfs, countryUpdater.getCategory(target), "hash:net", whitelist);
           }
 
           if (!_.isEmpty(scope)) {
@@ -1294,7 +1294,7 @@ class PolicyManager2 {
         } else {
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
-            blockSet: Block.getDstSet(pid);
+            blockSet: Block.getDstSet(pid)
           });
           await Block.setupRules(pid, null, pid, 'hash:ip', null, whitelist, true);
         }

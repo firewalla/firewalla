@@ -242,11 +242,12 @@ async function setupRules(pid, macTag, dstTag, dstType, iif, allow = false, dest
     const natOutRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
     const natOutRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
 
+    const spec = dstType != 'hash:ip,port' ? 'dst' : 'dst,dst';
     if (dstSet) {
-      outRule.mth(dstSet, 'dst,dst')
-      outRule6.mth(dstSet6, 'dst,dst')
-      natOutRule.mth(dstSet, 'dst,dst')
-      natOutRule6.mth(dstSet6, 'dst,dst')
+      outRule.mth(dstSet, spec)
+      outRule6.mth(dstSet6, spec)
+      natOutRule.mth(dstSet, spec)
+      natOutRule6.mth(dstSet6, spec)
     }
 
     // matching MAC addr won't work in opposite direction
