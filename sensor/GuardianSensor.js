@@ -90,10 +90,10 @@ class GuardianSensor extends Sensor {
       if(!socketioServer) {
         throw new Error("invalid guardian relay server");
       }
-
+      const forceRestart = !this.socket || (await this.getRegion() != data.region) || (await this.getServer() != socketioServer)
       await this.setServer(socketioServer, data.region);
       
-      await this.start();
+      forceRestart && await this.start();
     });
 
     const adminStatusOn = await this.isAdminStatusOn();
