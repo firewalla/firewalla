@@ -223,7 +223,7 @@ module.exports = class HostManager {
   }
 
   basicDataForInit(json, options) {
-    let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
+    let networkinfo = sysManager.getDefaultWanInterface();
     if(networkinfo.gateway === null) {
       delete networkinfo.gateway;
     }

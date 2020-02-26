@@ -78,7 +78,7 @@ class DeviceServiceScanSensor extends Sensor {
 
     let hosts = [];
     try {
-      results = results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && host.o.ipv4Addr !== sysManager.myIp() && host.o.ipv4Addr !== sysManager.myIp2() && host.o.ipv4Addr !== sysManager.myWifiIp());
+      results = results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr));
       for (const host of results) {
         log.info("Scanning device: ", host.o.ipv4Addr);
         const scanResult = await this._scan(host.o.ipv4Addr);
