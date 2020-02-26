@@ -526,6 +526,52 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
   return Ipset.del(ipset, entry)
 }
 
+async function createMatchingSet(id, type, af = 4) {
+  if (!id || !type)
+    return null;
+  let name = `c_${id}`;
+  await Ipset.create(name, type, af == 4).catch((err) => {
+    log.error(`Failed to create ipset ${name}`, err.message);
+    name = null;
+  });
+  return name;
+}
+
+async function addToMatchingSet(id, value) {
+  if (!id || !value)
+    return;
+  const name = `c_${id}`;
+  await Ipset.add(name, value).catch((err) => {
+    log.error(`Failed to add ${value} to ipset ${name}`, err.message);
+  });
+}
+
+async function destroyMatchingSet(id) {
+  if (!id)
+    return;
+  const name = `c_${id}`;
+  await Ipset.destroy(name).catch((err) => {
+    log.error(`Failed to destroy ipset ${name}`, err.message);
+  });
+}
+
+async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, sport, dstMatchingSet, dstSpec, dport, proto, target, chain, table, af = 4) {
+  // sport and dport can be range string, e.g., 10000-20000
+  const rule = new Rule(table).fam(af).chn(chain);
+  if (srcMatchingSet)
+    rule.mth(srcMatchingSet, srcSpec, "set");
+  if (sport)
+    rule.mth(sport, null, "sport");
+  if (dstMatchingSet)
+    rule.mth(dstMatchingSet, dstSpec, "set");
+  if (dport)
+    rule.mth(dport, null, "dport");
+  if (proto)
+    rule.pro(proto);
+  rule.jmp(target);
+  await exec(rule.toCmd(action));
+}
+
 
 module.exports = {
   setupBlockChain:setupBlockChain,
@@ -545,5 +591,9 @@ module.exports = {
   setupInterfaceWhitelist: setupInterfaceWhitelist,
   setupTagWhitelist: setupTagWhitelist,
   setupTagRules: setupTagRules,
-  setupIntfsRules: setupIntfsRules
+  setupIntfsRules: setupIntfsRules,
+  createMatchingSet: createMatchingSet,
+  addToMatchingSet: addToMatchingSet,
+  destroyMatchingSet: destroyMatchingSet,
+  manipulateFiveTupleRule: manipulateFiveTupleRule
 }

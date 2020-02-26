@@ -134,7 +134,14 @@ class Policy {
       this.type === policy.type &&
       this.target === policy.target &&
       this.expire === policy.expire &&
-      this.cronTime === policy.cronTime
+      this.cronTime === policy.cronTime &&
+      this.remote === policy.remote &&
+      this.remoteType === policy.remoteType &&
+      this.local == policy.local &&
+      this.localType === policy.localType &&
+      this.remotePort === policy.remotePort &&
+      this.localPort === policy.localPort &&
+      this.proto === policy.proto
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {

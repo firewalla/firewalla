@@ -186,7 +186,7 @@ async function run() {
 
 
   const HostManager = require('./HostManager.js');
-  const hostManager= new HostManager("cli",'server','debug');
+  const hostManager= new HostManager();
 
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();

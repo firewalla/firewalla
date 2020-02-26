@@ -501,7 +501,7 @@ class netBot extends ControllerBot {
         sysmanager.update((err, data) => {});
 
 
-        this.hostManager = new HostManager("cli", 'client', 'debug');
+        this.hostManager = new HostManager();
 
         let c = require('../net2/MessageBus.js');
         this.subscriber = new c('debug');

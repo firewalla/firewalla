@@ -165,7 +165,7 @@ class BoneSensor extends Sensor {
     try {
       if (this.lastCheckedIn) {
         let HostManager = require("../net2/HostManager.js");
-        let hostManager = new HostManager("cli", 'server', 'info');
+        let hostManager = new HostManager();
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
       }
     } catch (e) {

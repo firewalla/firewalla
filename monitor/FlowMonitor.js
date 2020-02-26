@@ -33,7 +33,7 @@ const hostTool = new HostTool()
 
 let instance = null;
 const HostManager = require("../net2/HostManager.js");
-const hostManager = new HostManager("cli", 'client', 'info');
+const hostManager = new HostManager();
 
 const default_stddev_limit = 8;
 const default_inbound_min_length = 1000000;

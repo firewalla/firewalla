@@ -32,6 +32,8 @@ const policyActiveKey = "policy_active";
 const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
 const initID = 1;
+const {Address4, Address6} = require('ip-address');
+const Host = require('../net2/Host.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -64,6 +66,10 @@ const accounting = new Accounting();
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
+
+const NetworkProfile = require('../net2/NetworkProfile.js');
+const TagManager = require('../net2/TagManager.js');
+const Tag = require('../net2/Tag.js');
 
 const _ = require('lodash');
 
@@ -800,17 +806,15 @@ class PolicyManager2 {
   isFirewallaOrCloud(policy) {
     const target = policy.target
 
-    return sysManager.isMyServer(target) ||
+    return target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
       sysManager.isMyIP(target) ||
-      sysManager.myIp2() === target ||
       sysManager.isMyMac(target) ||
       // compare mac, ignoring case
-      target.substring(0, 17) // devicePort policies have target like mac:protocol:prot
-        .localeCompare(sysManager.myMAC(), undefined, { sensitivity: 'base' }) === 0 ||
+      sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
       target === "firewalla.encipher.com" ||
       target === "firewalla.com" ||
-      minimatch(target, "*.firewalla.com")
+      minimatch(target, "*.firewalla.com"))
   }
 
   async enforce(policy) {
@@ -1158,6 +1162,134 @@ class PolicyManager2 {
         }
         break;
 
+      case "inbound_allow": {
+        const idPrefix = `ib_${pid}`;
+        // flow desc corresponds to 5-tuple of flow
+        const {remote, remoteType, local, localType, remotePort, localPort, proto} = policy;
+        let remoteSet4 = null;
+        let remoteSet6 = null;
+        let localSet4 = null;
+        let localSet6 = null;
+        let remoteSpec = "src";
+        let localSpec = "dst";
+        switch (remoteType) {
+          case "ip": {
+            remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:ip", 4);
+            remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:ip", 6);
+            if (new Address4(remote).isValid()) {
+              if (remoteSet4)
+                await Block.addToMatchingSet(`${idPrefix}_${remoteType}4`, remote);
+              else {
+                log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
+                return;
+              }
+            } else {
+              if (new Address6(remote).isValid()) {
+                if (remoteSet6)
+                  await Block.addToMatchingSet(`${idPrefix}_${remoteType}6`, remote);
+                else {
+                  log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
+                  return;
+                }
+              }
+            }
+            break;
+          }
+          case "net": {
+            remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:net", 4);
+            remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:net", 6);
+            if (new Address4(remote).isValid()) {
+              if (remoteSet4)
+                await Block.addToMatchingSet(`${idPrefix}_${remoteType}4`, remote);
+              else {
+                log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
+                return;
+              }
+            } else {
+              if (new Address6(remote).isValid()) {
+                if (remoteSet6)
+                  await Block.addToMatchingSet(`${idPrefix}_${remoteType}6`, remote);
+                else {
+                  log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
+                  return;
+                }
+              }
+            }
+            break;
+          }
+          case "domain": {
+            remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:ip", 4);
+            remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:ip", 6);
+            if (remoteSet4)
+              await domainBlock.blockDomain(remote, {
+                exactMatch: policy.domainExactMatch,
+                blockSet: remoteSet4
+              });
+            else {
+              log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
+              return;
+            }
+            break;
+          }
+          case "country": {
+            await countryUpdater.activateCountry(remote);
+            remoteSet4 = countryUpdater.getIPSetName(countryUpdater.getCategory(remote));
+            remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(remote));
+            if (!remoteSet4) {
+              log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
+              return;
+            }
+            break;
+          }
+          default:
+            // remote is not specified, match all remote
+        }
+        switch (localType) {
+          case "mac": {
+            // mac is device mac address
+            await Host.ensureCreateTrackingIpset(local);
+            localSet4 = `${Host.getTrackingIpsetPrefix(local)}4`;
+            localSet6 = `${Host.getTrackingIpsetPrefix(local)}6`;
+            localSpec = "dst";
+            break;
+          }
+          case "network": {
+            // local is network uuid
+            await NetworkProfile.ensureCreateEnforcementEnv(local);
+            localSet4 = NetworkProfile.getNetIpsetName(local);
+            localSet6 = `${localSet4}6`;
+            localSpec = "dst,dst";
+            break;
+          }
+          case "tag": {
+            // local is tag uid
+            const tag = TagManager.getTagByUid(local);
+            if (!tag) {
+              log.warn(`Tag ${local} does not exist, no need to apply `, policy);
+              return;
+            }
+            localSet4 = Tag.getTagIpsetName(local);
+            localSet6 = localSet4;
+            localSpec = "dst,dst";
+            break;
+          }
+          default:
+            // local is not specified, match all local
+        }
+        if (proto !== "tcp" && proto !== "udp" && proto !== "udplite" && proto !== "dccp" && proto !== "sctp") {
+          if (remotePort)
+            log.error("Remote port is not supported if protocol is not in 'tcp, udp, udplite, dccp, sctp'", policy);
+          if (localPort)
+            log.error("Local port is not supported if protocol is not in 'tcp, udp, udplite, dccp, sctp'", policy);
+          if (remotePort || localPort)
+            return;
+        }
+
+        await Block.manipulateFiveTupleRule("-I", remoteSet4, remoteSpec, remotePort, localSet4, localSpec, localPort, proto, "RETURN", "FW_INBOUND_FIREWALL", "filter", 4);
+        await Block.manipulateFiveTupleRule("-I", remoteSet6, remoteSpec, remotePort, localSet6, localSpec, localPort, proto, "RETURN", "FW_INBOUND_FIREWALL", "filter", 6);
+        break;
+      }
+
       default:
         throw new Error("Unsupported policy type");
     }
@@ -1355,6 +1487,100 @@ class PolicyManager2 {
           await Block.setupRules(pid, null, countryUpdater.getCategory(target), 'hash:net', null, whitelist, true, false);
         }
         break;
+
+        case "inbound_allow": {
+          const idPrefix = `ib_${pid}`;
+          // flow desc corresponds to 5-tuple of flow
+          const {remote, remoteType, local, localType, remotePort, localPort, proto} = policy;
+          let remoteSet4 = null;
+          let remoteSet6 = null;
+          let localSet4 = null;
+          let localSet6 = null;
+          let remoteSpec = "src";
+          let localSpec = "dst";
+          switch (remoteType) {
+            case "ip": {
+              remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:ip", 4);
+              remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:ip", 6);
+              break;
+            }
+            case "net": {
+              remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:net", 4);
+              remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:net", 6);
+              break;
+            }
+            case "domain": {
+              remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:ip", 4);
+              remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:ip", 6);
+              if (remoteSet4)
+                await domainBlock.unblockDomain(remote, {
+                  exactMatch: policy.domainExactMatch,
+                  blockSet: remoteSet4
+                });
+              else {
+                log.error(`Failed to find ipset for remote ${remoteType} ${remote}`);
+                return;
+              }
+              break;
+            }
+            case "country": {
+              remoteSet4 = countryUpdater.getIPSetName(countryUpdater.getCategory(remote));
+              remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(remote));
+              break;
+            }
+            default:
+              // remote is not specified, match all remote
+          }
+          switch (localType) {
+            case "mac": {
+              // mac is device mac address
+              await Host.ensureCreateTrackingIpset(local);
+              localSet4 = `${Host.getTrackingIpsetPrefix(local)}4`;
+              localSet6 = `${Host.getTrackingIpsetPrefix(local)}6`;
+              localSpec = "dst";
+              break;
+            }
+            case "network": {
+              // local is network uuid
+              await NetworkProfile.ensureCreateEnforcementEnv(local);
+              localSet4 = NetworkProfile.getNetIpsetName(local);
+              localSet6 = `${localSet4}6`;
+              localSpec = "dst,dst";
+              break;
+            }
+            case "tag": {
+              // local is tag uid
+              const tag = TagManager.getTagByUid(local);
+              if (!tag) {
+                log.warn(`Tag ${local} does not exist, no need to remove `, policy);
+                return;
+              }
+              localSet4 = Tag.getTagIpsetName(local);
+              localSet6 = localSet4;
+              localSpec = "dst,dst";
+              break;
+            }
+            default:
+              // local is not specified, match all local
+          }
+          if (proto !== "tcp" && proto !== "udp" && proto !== "udplite" && proto !== "dccp" && proto !== "sctp") {
+            if (remotePort)
+              log.error("Remote port is not supported if protocol is not in 'tcp, udp, udplite, dccp, sctp'", policy);
+            if (localPort)
+              log.error("Local port is not supported if protocol is not in 'tcp, udp, udplite, dccp, sctp'", policy);
+            if (remotePort || localPort)
+              return;
+          }
+  
+          await Block.manipulateFiveTupleRule("-D", remoteSet4, remoteSpec, remotePort, localSet4, localSpec, localPort, proto, "RETURN", "FW_INBOUND_FIREWALL", "filter", 4);
+          await Block.manipulateFiveTupleRule("-D", remoteSet6, remoteSpec, remotePort, localSet6, localSpec, localPort, proto, "RETURN", "FW_INBOUND_FIREWALL", "filter", 6);
+          if (remoteType !== "country") {
+            // destroy rule specific ip set
+            await Block.destroyMatchingSet(`${idPrefix}_${remoteType}4`);
+            await Block.destroyMatchingSet(`${idPrefix}_${remoteType}6`);
+          }
+          break;
+        }
 
       default:
         throw new Error("Unsupported policy");

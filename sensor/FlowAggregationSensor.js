@@ -37,7 +37,7 @@ let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();
 
 let HostManager = require('../net2/HostManager.js');
-let hostManager = new HostManager('cli', 'server');
+let hostManager = new HostManager();
 
 const flowUtil = require('../net2/FlowUtil')
 

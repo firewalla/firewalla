@@ -33,7 +33,7 @@ const am2 = new AM2();
 const broNotice = require('../extension/bro/BroNotice.js');
 
 const HostManager = require('../net2/HostManager')
-const hostManager = new HostManager('cli', 'server');
+const hostManager = new HostManager();
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()

@@ -231,7 +231,7 @@ class NetBotTool {
     let allMacs = [];
     if (options.intf) {
       const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager("cli", 'client', 'info');
+      const hostManager = new HostManager();
       allMacs = hostManager.getIntfMacs(options.intf);
       log.info(`prepareDetailedAppFlows intf allMacs:`, allMacs);
       for (const mac of allMacs) {
@@ -240,7 +240,7 @@ class NetBotTool {
       }
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager("cli", 'client', 'info');
+      const hostManager = new HostManager();
       allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
       log.info(`prepareDetailedAppFlows tag allMacs:`, allMacs);
       for (const mac of allMacs) {
@@ -325,7 +325,7 @@ class NetBotTool {
     let allMacs = [];
     if (options.intf) {
       const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager("cli", 'client', 'info');
+      const hostManager = new HostManager();
       allMacs = hostManager.getIntfMacs(options.intf);
       for (const mac of allMacs) {
         const macCategories = await categoryFlowTool.getCategories(mac);
@@ -333,7 +333,7 @@ class NetBotTool {
       }
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager("cli", 'client', 'info');
+      const hostManager = new HostManager();
       allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
       for (const mac of allMacs) {
         const macCategories = await categoryFlowTool.getCategories(mac);
