@@ -57,40 +57,54 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 
+const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once. 
+                      // it is necessary because each object will subscribe HostPolicy:Changed message.
+                      // this can guarantee the event handler function is run on the correct and unique object.
+
 class Host {
   constructor(obj, mgr, callback) {
-    this.callbacks = {};
-    this.o = obj;
-    this.mgr = mgr;
-    if (this.o.ipv4) {
-      this.o.ipv4Addr = this.o.ipv4;
-    }
-
-    this._mark = false;
-    this.parse();
-
-    let c = require('./MessageBus.js');
-    this.subscriber = new c('debug');
-
-    if (this.mgr.type === 'server') {
-      this.spoofing = false;
-      sclient.on("message", (channel, message) => {
-        this.processNotifications(channel, message);
-      });
-
-      if (obj && obj.mac) {
-        this.subscribe(this.o.mac, "Notice:Detected");
-        this.subscribe(this.o.mac, "Intel:Detected");
-        this.subscribe(this.o.mac, "HostPolicy:Changed");
+    if (!instances[obj.mac]) {
+      this.callbacks = {};
+      this.o = obj;
+      this.mgr = mgr;
+      if (this.o.ipv4) {
+        this.o.ipv4Addr = this.o.ipv4;
       }
-      this.spoofing = false;
 
-      this.predictHostNameUsingUserAgent();
+      this._mark = false;
+      this.parse();
 
-      this.loadPolicy(callback);
+      let c = require('./MessageBus.js');
+      this.subscriber = new c('debug');
+
+      if (f.isMain()) {
+        this.spoofing = false;
+        sclient.on("message", (channel, message) => {
+          this.processNotifications(channel, message);
+        });
+
+        if (obj && obj.mac) {
+          this.subscribe(this.o.mac, "Notice:Detected");
+          this.subscribe(this.o.mac, "Intel:Detected");
+          this.subscribe(this.o.mac, "HostPolicy:Changed");
+        }
+        this.spoofing = false;
+
+        this.predictHostNameUsingUserAgent();
+
+        this.loadPolicy(callback);
+
+        Host.ensureCreateTrackingIpset(this.o.mac).then(() => {
+          this.subscribe(this.o.mac, "Device:Updated");
+        }).catch((err) => {
+          log.error(`Failed to create tracking ipset for ${this.o.mac}`, err.message);
+        })
+      }
+
+      this.dnsmasq = new DNSMASQ();
+      instances[obj.mac] = this;
     }
-
-    this.dnsmasq = new DNSMASQ();
+    return instances[obj.mac];
   }
 
   update(obj) {
@@ -99,7 +113,7 @@ class Host {
       this.o.ipv4Addr = this.o.ipv4;
     }
 
-    if(this.mgr.type === 'server') {
+    if(f.isMain()) {
       if (obj && obj.mac) {
         this.subscribe(this.o.mac, "Notice:Detected");
         this.subscribe(this.o.mac, "Intel:Detected");
@@ -110,6 +124,15 @@ class Host {
     }
 
     this.parse();
+  }
+
+  static getTrackingIpsetPrefix(mac) {
+    return `c_${mac}_ip`;
+  }
+
+  static async ensureCreateTrackingIpset(mac) {
+    await exec(`sudo ipset create -! ${Host.getTrackingIpsetPrefix(mac)}4 hash:ip family inet maxelem 10 timeout 900`);
+    await exec(`sudo ipset create -! ${Host.getTrackingIpsetPrefix(mac)}6 hash:ip family inet6 maxelem 30 timeout 900`);
   }
 
   /* example of ipv6Host
@@ -605,7 +628,7 @@ class Host {
     .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
     */
   subscribe(mac, e) {
-    this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, (channel, type, ip, obj) => {
+    this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, async (channel, type, ip, obj) => {
       log.debug("Host:Subscriber", channel, type, ip, obj);
       if (type === "Notice:Detected") {
         if (this.callbacks[e]) {
@@ -613,10 +636,30 @@ class Host {
         }
       } else if (type === "Intel:Detected") {
         // no need to handle intel here.
-      } else if (type === "HostPolicy:Changed" && this.type === "server") {
+      } else if (type === "HostPolicy:Changed" && f.isMain()) {
         this.applyPolicy((err)=>{
         });
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
+      } else if (type === "Device:Updated" && f.isMain()) {
+        // update tracking ipset
+        const macEntry = await hostTool.getMACEntry(this.o.mac);
+        const ipv4Addr = macEntry && macEntry.ipv4Addr;
+        if (ipv4Addr) {
+          await exec(`sudo ipset -exist add -! c_${this.o.mac}_ip4 ${ipv4Addr}`).catch((err) => {
+            log.error(`Failed to add ${ipv4Addr} to c_${this.o.mac}_ip4`, err.message);
+          });
+        }
+        let ipv6Addr = null;
+        try {
+          ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+        } catch (err) {}
+        if (Array.isArray(ipv6Addr)) {
+          for (const addr of ipv6Addr) {
+            await exec(`sudo ipset -exist add -! c_${this.o.mac}_ip6 ${addr}`).catch((err) => {
+              log.error(`Failed to add ${addr} to c_${this.o.mac}_ip6`, err.message);
+            });
+          }
+        }
       }
     });
   }
@@ -719,7 +762,7 @@ class Host {
   }
 
   async identifyDevice(force) {
-    if (this.mgr.type != "server") {
+    if (!f.isMain()) {
       return;
     }
     if (!force && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
@@ -1111,9 +1154,9 @@ class Host {
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {
-        await exec(`sudo ipset del -! ${Tag.getTagMacIpsetName(removedTag)} ${this.o.mac}`).catch((err) => {
-          log.error(`Failed to delete tag ${removedTag} ${tag.o.name} from mac ${this.o.mac}`, err);
-        });
+        await exec(`sudo ipset del -! ${Tag.getTagMacIpsetName(removedTag)} ${this.o.mac}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {});
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
@@ -1126,6 +1169,12 @@ class Host {
       if (tag) {
         await exec(`sudo ipset add -! ${Tag.getTagMacIpsetName(uid)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
+          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to tag ipset ${Tag.getTagIpsetName(uid)}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
+          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to tag ipset ${Tag.getTagIpsetName(uid)}`, err.message);
         });
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {

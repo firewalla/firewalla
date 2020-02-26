@@ -545,6 +545,11 @@ class SysManager {
     }
   }
 
+  getDefaultWanInterface() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    return wanIntf && this.getInterface(wanIntf);
+  }
+
   myDefaultWanIp() {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     if (wanIntf)
