@@ -140,8 +140,6 @@ sudo iptables -w -N FW_INBOUND_FIREWALL &> /dev/null
 sudo iptables -w -F FW_INBOUND_FIREWALL
 sudo iptables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL || sudo iptables -w -I FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
 
-sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP
-
 
 sudo iptables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo iptables -w -I FW_FORWARD -j FW_BYPASS
 
@@ -381,8 +379,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_INBOUND_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_INBOUND_FIREWALL
   sudo ip6tables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL || sudo ip6tables -w -I FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
-
-  sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP
 
 
   sudo ip6tables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo ip6tables -w -I FW_FORWARD -j FW_BYPASS
