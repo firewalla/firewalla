@@ -393,11 +393,9 @@ async function setupIntfsRules(pid, intfs, dstTag, dstType, allow = false, destr
     return;
   }
 
-  const NetworkProfileManager = require('../net2/NetworkProfileManager.js')
+  const NetworkProfile = require('../net2/NetworkProfile.js');
   for (let index = 0; index < intfs.length; index++) {
-    if (!NetworkProfileManager.getNetworkProfile(intfs[index])) {
-      continue;
-    }
+    NetworkProfile.ensureCreateEnforcementEnv(intfs[index]);
 
     try {
       log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', pid || "null", dstTag,
