@@ -52,6 +52,7 @@ sudo ipset flush whitelist_remote_ip_port_set
 sudo ipset flush whitelist_remote_net_port_set
 sudo ipset flush whitelist_remote_port_set
 sudo ipset flush whitelist_mac_set
+
 sudo ipset flush no_dns_caching_mac_set
 sudo ipset flush no_dns_caching_set
 sudo ipset add -! no_dns_caching_set no_dns_caching_mac_set
@@ -79,38 +80,38 @@ sudo iptables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo iptables -w -A FOR
 # multi protocol block chain
 sudo iptables -w -N FW_DROP &>/dev/null
 sudo iptables -w -F FW_DROP
-sudo iptables -w -C FW_DROP -p tcp -j REJECT &>/dev/null || sudo iptables -w -A FW_DROP -p tcp -j REJECT
-sudo iptables -w -C FW_DROP -j DROP &>/dev/null || sudo iptables -w -A FW_DROP -j DROP
+sudo iptables -w -A FW_DROP -p tcp -j REJECT
+sudo iptables -w -A FW_DROP -j DROP
 
 sudo iptables -w -N FW_BYPASS &> /dev/null
 sudo iptables -w -F FW_BYPASS
 # directly accept for not monitored devices
-sudo iptables -w -C FW_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT &>/dev/null || sudo iptables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT
-sudo iptables -w -C FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT &>/dev/null || sudo iptables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+sudo iptables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT
+sudo iptables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
 
 #FIXME: ignore if failed or not
 sudo iptables -w -N FW_BLOCK &>/dev/null
 sudo iptables -w -F FW_BLOCK
 
 # return everything
-sudo iptables -w -C FW_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null || sudo iptables -w -A FW_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
+sudo iptables -w -A FW_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
 
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_ip_set dst -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_ip_set dst -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_ip_set src -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_ip_set src -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_domain_set dst -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_domain_set dst -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_domain_set src -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_domain_set src -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_net_set dst -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_net_set dst -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_net_set src -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_net_set src -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_ip_port_set dst,dst -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_ip_port_set dst,dst -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_ip_port_set src,src -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_ip_port_set src,src -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_remote_ip_port_set dst,dst -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_ip_port_set dst,dst -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_remote_ip_port_set src,src -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_ip_port_set src,src -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_remote_net_port_set dst,dst -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set dst,dst -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_remote_net_port_set src,src -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set src,src -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP
-sudo iptables -w -C FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP &>/dev/null || sudo iptables -w -I FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_ip_set dst -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_ip_set src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_domain_set dst -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_domain_set src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_net_set dst -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_net_set src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_ip_port_set dst,dst -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_ip_port_set src,src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_ip_port_set dst,dst -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_ip_port_set src,src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set dst,dst -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set src,src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP
 
 # forward to fw_block
 sudo iptables -w -C FW_FORWARD -j FW_BLOCK &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_BLOCK
@@ -119,14 +120,14 @@ sudo iptables -w -C FW_FORWARD -j FW_BLOCK &>/dev/null || sudo iptables -w -A FW
 sudo iptables -w -N FW_WHITELIST_PREROUTE &> /dev/null
 sudo iptables -w -F FW_WHITELIST_PREROUTE
 
-sudo iptables -w -C FW_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN
-sudo iptables -w -C FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
+sudo iptables -w -A FW_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN
+sudo iptables -w -A FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
 
 # skip whitelist for local subnet traffic
-sudo iptables -w -C FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
+sudo iptables -w -A FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
 
 # FIXME: why??
-sudo iptables -w -C FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+sudo iptables -w -A FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
 
 
 sudo iptables -w -N FW_WHITELIST &> /dev/null
@@ -137,35 +138,37 @@ sudo iptables -w -C FW_FORWARD -j FW_WHITELIST_PREROUTE &>/dev/null || sudo ipta
 # initialize inbound firewall chain
 sudo iptables -w -N FW_INBOUND_FIREWALL &> /dev/null
 sudo iptables -w -F FW_INBOUND_FIREWALL
-sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP
 sudo iptables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL || sudo iptables -w -I FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
+
+sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP
+
 
 sudo iptables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo iptables -w -I FW_FORWARD -j FW_BYPASS
 
 # device level whitelist
-sudo iptables -w -C FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST &>/dev/null || sudo iptables -w -A FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST
+sudo iptables -w -A FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST
 
 
 # return if src/dst is in whitelist
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_ip_set src -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_ip_set src -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_ip_set dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_ip_set dst -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_domain_set src -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_domain_set src -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_domain_set dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_domain_set dst -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_net_set src -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_net_set src -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_net_set dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_net_set dst -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_ip_port_set dst,dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_ip_port_set dst,dst -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_ip_port_set src,src -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_ip_port_set src,src -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set dst,dst -j RETURN &>/dev/null || sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set dst,dst -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set src,src -j RETURN &>/dev/null || sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set src,src -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_remote_net_port_set dst,dst -j RETURN &>/dev/null || sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_net_port_set dst,dst -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_remote_net_port_set src,src -j RETURN &>/dev/null || sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_net_port_set src,src -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN &>/dev/null || sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN &>/dev/null || sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
-sudo iptables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN &>/dev/null || sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_ip_set src -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_ip_set dst -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_domain_set src -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_domain_set dst -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_net_set src -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_net_set dst -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_ip_port_set dst,dst -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_ip_port_set src,src -j RETURN
+sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set dst,dst -j RETURN
+sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set src,src -j RETURN
+sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_net_port_set dst,dst -j RETURN
+sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_net_port_set src,src -j RETURN
+sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN
+sudo iptables -w -I FW_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
+sudo iptables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
 
 # drop everything
-sudo iptables -w -C FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP &>/dev/null || sudo iptables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP
+sudo iptables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP
 
 sudo iptables -w -t nat -N FW_PREROUTING &> /dev/null
 
@@ -178,54 +181,54 @@ sudo iptables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null || sudo ipt
 sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_BYPASS
 # directly return for not monitored devices
-sudo iptables -w -t nat -C FW_NAT_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT || sudo iptables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT
-sudo iptables -w -t nat -C FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT || sudo iptables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+sudo iptables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT
+sudo iptables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
 
 # nat blackhole 8888
 sudo iptables -w -t nat -N FW_NAT_HOLE &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888 &>/dev/null || sudo iptables -w -t nat -A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
-sudo iptables -w -t nat -C FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888 &>/dev/null || sudo iptables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
-sudo iptables -w -t nat -C FW_NAT_HOLE -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_HOLE -j RETURN
+sudo iptables -w -t nat -A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
+sudo iptables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
+sudo iptables -w -t nat -A FW_NAT_HOLE -j RETURN
 
 # Special block chain for NAT table
 sudo iptables -w -t nat -N FW_NAT_BLOCK &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_BLOCK
 
 # Redirect global blocking ip set to port 8888
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_ip_set dst -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set dst -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_ip_set src -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set src -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_domain_set dst -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_domain_set dst -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_domain_set src -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_domain_set src -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_net_set dst -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_net_set dst -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_net_set src -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_net_set src -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_ip_port_set dst,dst -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set dst,dst -j FW_NAT_HOLE &>/dev/null
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_ip_port_set src,src -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set src,src -j FW_NAT_HOLE &>/dev/null
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set dst,dst -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set dst,dst -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set src,src -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set src,src -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set dst,dst -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set dst,dst -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set src,src -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set src,src -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_port_set src -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set src -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_mac_set dst -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set dst -j FW_NAT_HOLE
-sudo iptables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_mac_set src -j FW_NAT_HOLE &>/dev/null || sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set src -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set dst -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set src -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_domain_set dst -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_domain_set src -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_net_set dst -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_net_set src -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set dst,dst -j FW_NAT_HOLE &>/dev/null
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set src,src -j FW_NAT_HOLE &>/dev/null
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set dst,dst -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set src,src -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set dst,dst -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set src,src -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set src -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set dst -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set src -j FW_NAT_HOLE
 
 
-sudo iptables -w -t nat -C FW_NAT_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo iptables -w -t nat -A FW_NAT_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
+sudo iptables -w -t nat -A FW_NAT_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
 
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BLOCK &>/dev/null || sudo iptables -w -t nat -I FW_PREROUTING -j FW_NAT_BLOCK
 
 sudo iptables -w -t nat -N FW_NAT_WHITELIST_PREROUTE &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_WHITELIST_PREROUTE
 
-sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
 
 # skip whitelist for local subnet traffic
-sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
 
 # FIXME: why??
-sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
 
 sudo iptables -w -t nat -N FW_NAT_WHITELIST &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_WHITELIST
@@ -233,30 +236,30 @@ sudo iptables -w -t nat -F FW_NAT_WHITELIST
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_WHITELIST_PREROUTE &>/dev/null || sudo iptables -w -t nat -I FW_PREROUTING -j FW_NAT_WHITELIST_PREROUTE
 
 # device level whitelist
-sudo iptables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST
+sudo iptables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST
 
 
 # return if src/dst is in whitelist
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_ip_set src -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set src -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_ip_set dst -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set dst -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_domain_set src -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_domain_set src -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_domain_set dst -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_domain_set dst -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_net_set src -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_net_set src -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_net_set dst -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_net_set dst -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set dst,dst -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set dst,dst -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set src,src -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set src,src -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set dst,dst -j RETURN &>/dev/null || sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set dst,dst -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set src,src -j RETURN &>/dev/null || sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set src,src -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set dst,dst -j RETURN &>/dev/null || sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set dst,dst -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set src,src -j RETURN &>/dev/null || sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set src,src -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN &>/dev/null || sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN &>/dev/null || sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set src -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set dst -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_domain_set src -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_domain_set dst -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_net_set src -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_net_set dst -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set dst,dst -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set src,src -j RETURN
+sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set dst,dst -j RETURN
+sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set src,src -j RETURN
+sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set dst,dst -j RETURN
+sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set src,src -j RETURN
+sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN
+sudo iptables -w -t nat -I FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
 
 # redirect tcp udp to port 8888 by default
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888 &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888
-sudo iptables -w -t nat -C FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888 &>/dev/null || sudo iptables -w -t nat -A FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888
+sudo iptables -w -t nat -A FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888
 
 
 # create dns redirect chain in PREROUTING
@@ -301,7 +304,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset create whitelist_remote_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create whitelist_remote_net_port_set6 hash:net,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
 
-
   sudo ipset flush blocked_ip_set6
   sudo ipset flush blocked_domain_set6
   sudo ipset flush blocked_net_set6
@@ -329,31 +331,31 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_BYPASS &> /dev/null
   sudo ip6tables -w -F FW_BYPASS
   # directly accept for not monitored devices
-  sudo ip6tables -w -C FW_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT &>/dev/null || sudo ip6tables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT
-  sudo ip6tables -w -C FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT &>/dev/null || sudo ip6tables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+  sudo ip6tables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT
+  sudo ip6tables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
 
   sudo ip6tables -w -N FW_BLOCK &>/dev/null
   sudo ip6tables -w -F FW_BLOCK
 
   # return everything
-  sudo ip6tables -w -C FW_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo ip6tables -w -A FW_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
+  sudo ip6tables -w -A FW_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
 
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_ip_set6 dst -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_ip_set6 dst -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_ip_set6 src -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_ip_set6 src -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_domain_set6 dst -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_domain_set6 dst -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_domain_set6 src -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_domain_set6 src -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_net_set6 dst -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_net_set6 dst -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_net_set6 src -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_net_set6 src -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_ip_port_set6 dst,dst -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_ip_port_set6 dst,dst -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_ip_port_set6 src,src -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_ip_port_set6 src,src -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_remote_ip_port_set6 dst,dst -j FW_DROP &>/dev/null || sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_ip_port_set6 dst,dst -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_remote_ip_port_set6 src,src -j FW_DROP &>/dev/null || sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_ip_port_set6 src,src -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_remote_net_port_set6 dst,dst -j FW_DROP &>/dev/null || sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set6 dst,dst -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_remote_net_port_set6 src,src -j FW_DROP &>/dev/null || sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set6 src,src -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP
-  sudo ip6tables -w -C FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP &>/dev/null ||   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_ip_set6 dst -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_ip_set6 src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_domain_set6 dst -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_domain_set6 src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_net_set6 dst -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_net_set6 src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_ip_port_set6 dst,dst -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_ip_port_set6 src,src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_ip_port_set6 dst,dst -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_ip_port_set6 src,src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set6 dst,dst -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set6 src,src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP
 
   # forward to fw_block
   sudo ip6tables -w -C FW_FORWARD -j FW_BLOCK &>/dev/null ||   sudo ip6tables -w -A FW_FORWARD -j FW_BLOCK
@@ -361,14 +363,14 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_WHITELIST_PREROUTE &> /dev/null
   sudo ip6tables -w -F FW_WHITELIST_PREROUTE
 
-  sudo ip6tables -w -C FW_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
 
   # skip whitelist for local subnet traffic
-  sudo ip6tables -w -C FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
 
   # FIXME: why??
-  sudo ip6tables -w -C FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
 
   sudo ip6tables -w -N FW_WHITELIST &> /dev/null
   sudo ip6tables -w -F FW_WHITELIST
@@ -378,35 +380,37 @@ if [[ -e /sbin/ip6tables ]]; then
   # initialize inbound firewall chain
   sudo ip6tables -w -N FW_INBOUND_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_INBOUND_FIREWALL
-  sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP
   sudo ip6tables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL || sudo ip6tables -w -I FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
+
+  sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP
+
 
   sudo ip6tables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo ip6tables -w -I FW_FORWARD -j FW_BYPASS
 
   # device level whitelist
-  sudo ip6tables -w -C FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST &>/dev/null || sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST
+  sudo ip6tables -w -A FW_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_WHITELIST
 
 
   # return if src/dst is in whitelist
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_ip_set6 src -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_ip_set6 src -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_ip_set6 dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_ip_set6 dst -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_domain_set6 src -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_domain_set6 src -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_domain_set6 dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_domain_set6 dst -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_net_set6 src -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_net_set6 src -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_net_set6 dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_net_set6 dst -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_ip_port_set6 dst,dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_ip_port_set6 dst,dst -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_ip_port_set6 src,src -j RETURN &>/dev/null || sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_ip_port_set6 src,src -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 dst,dst -j RETURN &>/dev/null || sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 dst,dst -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 src,src -j RETURN &>/dev/null || sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 src,src -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_remote_net_port_set6 dst,dst -j RETURN &>/dev/null || sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_net_port_set6 dst,dst -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_remote_net_port_set6 src,src -j RETURN &>/dev/null || sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_net_port_set6 src,src -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN &>/dev/null || sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN &>/dev/null || sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
-  sudo ip6tables -w -C FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN &>/dev/null || sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_ip_set6 src -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_ip_set6 dst -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_domain_set6 src -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_domain_set6 dst -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_net_set6 src -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_net_set6 dst -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_ip_port_set6 dst,dst -j RETURN
+  sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_ip_port_set6 src,src -j RETURN
+  sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 dst,dst -j RETURN
+  sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 src,src -j RETURN
+  sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_net_port_set6 dst,dst -j RETURN
+  sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_net_port_set6 src,src -j RETURN
+  sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN
+  sudo ip6tables -w -I FW_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
+  sudo ip6tables -w -A FW_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
 
   # drop everything
-  sudo ip6tables -w -C FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP &>/dev/null || sudo ip6tables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP
+  sudo ip6tables -w -A FW_WHITELIST --source 0.0.0.0/0 --destination 0.0.0.0/0 -j FW_DROP
 
   sudo ip6tables -w -t nat -N FW_PREROUTING &> /dev/null
 
@@ -419,53 +423,53 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -N FW_NAT_BYPASS &> /dev/null
   sudo ip6tables -w -t nat -F FW_NAT_BYPASS
   # directly return for not monitored devices
-  sudo ip6tables -w -t nat -C FW_NAT_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT || sudo ip6tables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT
-  sudo ip6tables -w -t nat -C FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT || sudo ip6tables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+  sudo ip6tables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set dst -j ACCEPT
+  sudo ip6tables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
 
   # nat blackhole 8888
   sudo ip6tables -w -t nat -N FW_NAT_HOLE &>/dev/null
   sudo ip6tables -w -t nat -F FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888 &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
-  sudo ip6tables -w -t nat -C FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888 &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
-  sudo ip6tables -w -t nat -C FW_NAT_HOLE -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_HOLE -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
+  sudo ip6tables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
+  sudo ip6tables -w -t nat -A FW_NAT_HOLE -j RETURN
 
   # Special block chain for NAT table
   sudo ip6tables -w -t nat -N FW_NAT_BLOCK &>/dev/null
   sudo ip6tables -w -t nat -F FW_NAT_BLOCK
 
   # Redirect global blocking ip set to port 8888
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_ip_set6 dst -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set6 dst -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_ip_set6 src -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set6 src -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_domain_set6 dst -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_domain_set6 dst -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_domain_set6 src -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_domain_set6 src -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_net_set6 dst -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_net_set6 dst -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_net_set6 src -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_net_set6 src -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set6 dst,dst -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set6 dst,dst -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set6 src,src -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set6 src,src -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set6 dst,dst -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set6 dst,dst -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set6 src,src -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set6 src,src -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_remote_port_set src -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set src -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_mac_set dst -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set dst -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_mac_set src -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set src -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_ip_port_set6 dst,dst -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set6 dst,dst -j FW_NAT_HOLE &>/dev/null
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK -m set --match-set blocked_ip_port_set6 src,src -j FW_NAT_HOLE &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set6 src,src -j FW_NAT_HOLE &>/dev/null
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set6 dst -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set6 src -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_domain_set6 dst -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_domain_set6 src -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_net_set6 dst -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_net_set6 src -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set6 dst,dst -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_ip_port_set6 src,src -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set6 dst,dst -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set6 src,src -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set src -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set dst -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set src -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set6 dst,dst -j FW_NAT_HOLE &>/dev/null
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set6 src,src -j FW_NAT_HOLE &>/dev/null
 
-  sudo ip6tables -w -t nat -C FW_NAT_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN &>/dev/null ||   sudo ip6tables -w -t nat -A FW_NAT_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK --source 0.0.0.0/0 --destination 0.0.0.0/0 -j RETURN
 
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_BLOCK &>/dev/null || sudo ip6tables -w -t nat -I FW_PREROUTING -j FW_NAT_BLOCK
 
   sudo ip6tables -w -t nat -N FW_NAT_WHITELIST_PREROUTE &> /dev/null
   sudo ip6tables -w -t nat -F FW_NAT_WHITELIST_PREROUTE
 
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p tcp -m multiport --ports 53,67 -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -p udp -m multiport --ports 53,67 -j RETURN
 
   # skip whitelist for local subnet traffic
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
 
   # FIXME: why??
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
 
 
   sudo ip6tables -w -t nat -N FW_NAT_WHITELIST &>/dev/null
@@ -474,30 +478,30 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_WHITELIST_PREROUTE &>/dev/null || sudo ip6tables -w -t nat -I FW_PREROUTING -j FW_NAT_WHITELIST_PREROUTE
 
   # device level whitelist
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST_PREROUTE -m set --match-set device_whitelist_set src -j FW_NAT_WHITELIST
 
 
   # return if src/dst is in whitelist
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_ip_set6 src -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set6 src -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_ip_set6 dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set6 dst -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_domain_set6 src -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_domain_set6 src -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_domain_set6 dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_domain_set6 dst -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_net_set6 src -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_net_set6 src -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_net_set6 dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_net_set6 dst -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set6 dst,dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set6 dst,dst -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set6 src,src -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set6 src,src -j RETURN &>/dev/null
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 dst,dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 dst,dst -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 src,src -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 src,src -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set6 dst,dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set6 dst,dst -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set6 src,src -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set6 src,src -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set6 src -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set6 dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_domain_set6 src -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_domain_set6 dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_net_set6 src -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_net_set6 dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set6 dst,dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_port_set6 src,src -j RETURN &>/dev/null
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 dst,dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_ip_port_set6 src,src -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set6 dst,dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_net_port_set6 src,src -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_remote_port_set src -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set src -j RETURN
 
   # redirect tcp udp to port 8888 by default
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888 &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888
-  sudo ip6tables -w -t nat -C FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888 &>/dev/null || sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -p tcp -j REDIRECT --to-ports 8888
+  sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -p udp -j REDIRECT --to-ports 8888
 
   # create dns redirect chain in PREROUTING
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null

@@ -121,7 +121,7 @@ sysmanager.update(null);
 
 console.log("Mutlicast Test", sysmanager.isMulticastIP("223.0.0.1"));
 
-var watcher = new HostManager("cli", 'client', 'error');
+var watcher = new HostManager();
 
 let c = require('../net2/MessageBus.js');
 this.subscriber = new c('debug');

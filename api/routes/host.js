@@ -21,7 +21,7 @@ let express = require('express');
 let router = express.Router();
 
 let HostManager = require('../../net2/HostManager.js');
-let hostManager = new HostManager('api', 'client', 'info');
+let hostManager = new HostManager();
 
 let FlowManager = require('../../net2/FlowManager.js');
 let flowManager = new FlowManager();
