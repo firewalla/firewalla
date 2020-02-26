@@ -343,10 +343,10 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
       const natInRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
 
       if (dstSet) {
-        inRule.mth(dstSet, 'dst');
-        inRule6.mth(dstSet6, 'dst');
-        natInRule.mth(dstSet, 'dst');
-        natInRule6.mth(dstSet6, 'dst');
+        inRule.mth(dstSet, 'src');
+        inRule6.mth(dstSet6, 'src');
+        natInRule.mth(dstSet, 'src');
+        natInRule6.mth(dstSet6, 'src');
       }
 
       const ipset = require('../net2/Tag.js').getTagIpsetName(tags[index]);
@@ -437,10 +437,10 @@ async function setupIntfsRules(pid, intfs, dstTag, dstType, allow = false, destr
       const natInRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
 
       if (dstSet) {
-        inRule.mth(dstSet, 'dst');
-        inRule6.mth(dstSet6, 'dst');
-        natInRule.mth(dstSet, 'dst');
-        natInRule6.mth(dstSet6, 'dst');
+        inRule.mth(dstSet, 'src');
+        inRule6.mth(dstSet6, 'src');
+        natInRule.mth(dstSet, 'src');
+        natInRule6.mth(dstSet6, 'src');
       }
 
       const ipset = require('../net2/NetworkProfile.js').getNetIpsetName(intfs[index]);
