@@ -104,6 +104,8 @@ Promise.promisifyAll(fs);
 const Message = require('./Message.js');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
+const wrapIptables = require("./Iptables.js").wrapIptables;
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 let instance = null;
@@ -1372,7 +1374,25 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    
+    if (policy.state === true) {
+      let cmd = wrapIptables(`sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv4 inbound firewall");
+      });
+      cmd = wrapIptables(`sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv6 inbound firewall");
+      });
+    } else {
+      let cmd = wrapIptables(`sudo iptables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv4 inbound firewall");
+      });
+      cmd = wrapIptables(`sudo ip6tables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv6 inbound firewall");
+      });
+    }
   }
 
   async getVpnActiveDeviceCount(profileId) {
