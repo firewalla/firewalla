@@ -38,19 +38,11 @@ sleep 3
 
 sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourly/.
 
-TMP_FILE="/home/pi/.firewalla/config/local.bro"
-if [ -f "${TMP_FILE}" ]; then
-    sudo bash -c "cat /home/pi/firewalla/etc/local.bro ${TMP_FILE} > /usr/local/bro/share/bro/site/local.bro"
-else
-    sudo cp $FIREWALLA_HOME/etc/local.bro /usr/local/bro/share/bro/site/local.bro
-fi
-sync
-
 before_bro
 
 /usr/local/bro/bin/broctl deploy
 logger "FIREWALLA: Deployed BRO using BROCTL"
-sudo cp $FIREWALLA_HOME/etc/sysctl.conf /etc/sysctl.conf
+sudo cp $(get_sysctl_conf_path) /etc/sysctl.conf
 sudo sysctl -p
 
 logger "FIREWALLA: BRO-RUN Finished"
