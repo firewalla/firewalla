@@ -110,17 +110,5 @@ async function dhcpServerStatus(serverIp) {
 
 module.exports = {
   dhcpDiscover: dhcpDiscover,
-  dhcpServerStatus: dhcpServerStatus,
+  dhcpServerStatus: dhcpServerStatus
 }
-
-/*
-dhcpDiscover("eth0").then((found) => {
-  if (found) {
-    console.log("DHCP service is found via eth0.");
-  } else {
-    console.log("DHCP service is not found via eth0.");
-  }
-}).catch((err) => {
-  console.log("Failed to do DHCP discover", err);
-});
-*/
