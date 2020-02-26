@@ -1505,4 +1505,8 @@ module.exports = class DNSMASQ {
       return true;
     }
   }
+
+  async getCounterInfo() {
+    return this.counter;
+  }
 };
