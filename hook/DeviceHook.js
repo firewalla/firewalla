@@ -48,10 +48,12 @@ const l2 = require('../util/Layer2.js');
 
 const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
+const MessageBus = require('../net2/MessageBus.js');
 
 class DeviceHook extends Hook {
   constructor() {
     super();
+    this.messageBus = new MessageBus('info');
   }
 
   async processDeviceUpdate(event) {
@@ -207,6 +209,7 @@ class DeviceHook extends Hook {
           await hostTool.linkMacWithIPv6(v6, host.mac)
             .catch(log.error)
         }
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, host);
       }
     });
 
@@ -279,8 +282,8 @@ class DeviceHook extends Hook {
         } else {
           log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
         }
-        const hostManager = new HostManager("cli", 'server', 'info');
-        hostManager.getHost(host.ipv4Addr, (err, host) => {
+        const hostManager = new HostManager();
+        hostManager.getHost(host.mac, (err, host) => {
           // directly start spoofing
           if (err) {
             log.error("Failed to get host after it is detected.");
@@ -290,6 +293,8 @@ class DeviceHook extends Hook {
           }
         });
         this.setupLocalDeviceDomain(host.mac, 'new_device');
+
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
       })().catch((err) => {
         log.error("Failed to handle NewDeviceFound event:", err);
       });
@@ -349,9 +354,11 @@ class DeviceHook extends Hook {
         log.info("MAC entry is updated with new IP");
 
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-        let hostManager = new HostManager("cli", 'server', 'info')
-        hostManager.getHost(host.ipv4Addr);
+        let hostManager = new HostManager()
+        hostManager.getHost(host.mac);
         this.setupLocalDeviceDomain(host.mac, 'ip_change');
+
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err);
       })
@@ -422,9 +429,11 @@ class DeviceHook extends Hook {
         log.info("MAC entry is updated with new IP");
 
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
-        let hostManager = new HostManager("cli", 'server', 'info');
-        hostManager.getHost(host.ipv4Addr);
+        let hostManager = new HostManager();
+        hostManager.getHost(host.mac);
         this.setupLocalDeviceDomain(host.mac, 'ip_change');
+
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
       })().catch((err) => {
         log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
       })
@@ -477,6 +486,8 @@ class DeviceHook extends Hook {
         }
 
         await hostTool.updateMACKey(enrichedHost); // host:mac:.....
+        // publish device updated event to trigger 
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
 
         // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
         // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
@@ -606,7 +617,7 @@ class DeviceHook extends Hook {
 
     let name = this.getPreferredName(host)
     let tags = [];
-    const hostManager = new HostManager("cli", 'server', 'info');
+    const hostManager = new HostManager();
     const hostInstance = hostManager.getHostFastByMAC(host.mac);
     if (hostInstance) {
       tags = hostInstance.getTags();

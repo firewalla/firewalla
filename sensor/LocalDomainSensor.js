@@ -17,7 +17,7 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const HostManager = require("../net2/HostManager.js");
-const hostManager = new HostManager("cli", 'client', 'info');
+const hostManager = new HostManager();
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const dnsmasq = new DNSMASQ();

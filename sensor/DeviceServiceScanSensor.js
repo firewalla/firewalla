@@ -31,7 +31,7 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 const fc = require('../net2/config.js');
 
 const HostManager = require("../net2/HostManager.js");
-const hostManager = new HostManager("cli", 'client', 'info');
+const hostManager = new HostManager();
 
 const sysManager = require('../net2/SysManager.js');
 

@@ -377,7 +377,7 @@ class netBot extends ControllerBot {
       }, 50 * 1000);
     }, 30 * 1000)
 
-    this.hostManager = new HostManager("cli", 'client', 'debug');
+    this.hostManager = new HostManager();
     this.hostManager.loadPolicy((err, data) => { });  //load policy
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
