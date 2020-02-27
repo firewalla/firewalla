@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,22 +15,22 @@
 'use strict';
 const _ = require('lodash');
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
-let Hook = require('./Hook.js');
+const Hook = require('./Hook.js');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
-let extend = require('../util/util.js').extend;
-let util = require('util');
-let bone = require("../lib/Bone.js");
+const extend = require('../util/util.js').extend;
+const util = require('util');
+const bone = require("../lib/Bone.js");
 
-let flowUtil = require("../net2/FlowUtil.js");
+const flowUtil = require("../net2/FlowUtil.js");
 
 const fc = require('../net2/config.js')
 
@@ -615,6 +615,9 @@ class DeviceHook extends Hook {
     let alarm = null;
     switch (type) {
       case "new_device":
+        // no new device alarm on Firewalla
+        if (sysManager.isMyMac(host.mac)) return
+
         alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
           name,
           {

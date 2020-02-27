@@ -627,6 +627,8 @@ class SysManager {
   }
 
   isMyMac(mac) {
+    if (!mac) return false
+
     let interfaces = this.getMonitoringInterfaces();
     return interfaces.map(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()).some(Boolean);
   }
@@ -918,7 +920,6 @@ class SysManager {
     }
     return false;
   }
-};
+}
 
-let _sysManager = new SysManager();
-module.exports = _sysManager; 
+module.exports = new SysManager(); 
