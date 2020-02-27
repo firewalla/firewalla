@@ -67,6 +67,10 @@ class BoxAliasSensor extends Sensor {
         for (const iface of monitoringInterfaces) {
           const uuid = iface.uuid;
           const dnsmasqConfDir = NetworkProfile.getDnsmasqConfigDirectory(uuid);
+          if (!sysManager.myIp(iface.name)) {
+            log.warn(`IP of ${uuid} is not found`);
+            continue;
+          }
           const dnsmasqEntry = `address=/fire.walla/${sysManager.myIp(iface.name)}`;
           await writeFileAsync(`${dnsmasqConfDir}/box_alias.conf`, dnsmasqEntry).then(() => {
             log.info(`generated ${dnsmasqConfDir}/box_alias.conf`, dnsmasqEntry);
