@@ -382,12 +382,6 @@ class netBot extends ControllerBot {
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
 
-    // no subscription for api mode
-    if (apiMode) {
-      log.info("Skipping event subscription during API mode.");
-      return;
-    }
-
     let c = require('../net2/MessageBus.js');
     this.subscriber = new c('debug');
 

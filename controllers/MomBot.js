@@ -16,16 +16,9 @@
  */
 
 'use strict'
-var fs = require('fs');
-var cloud = require('../encipher');
-var program = require('commander');
-var qrcode = require('qrcode-terminal');
-var publicIp = require('public-ip');
-var builder = require('botbuilder');
-var intercomm = require('../lib/intercomm.js')();
-var Config = require('../lib/Config.js');
-
-var commondialog = require('../lib/commondialog.js');
+const fs = require('fs');
+const cloud = require('../encipher');
+const program = require('commander');
 
 program.version('0.0.2')
     .option('--config [config]', 'configuration')
@@ -87,30 +80,30 @@ console.log("---------------------------------");
 
 var eptcloud = new cloud(eptname, config.eptdir);
 
-eptcloud.eptlogin(config.appId, config.appSecret, null, eptname, function (err, result) {
-    if (err == null) {
-        eptcloud.eptFind(result, function (err, ept) {
-            console.log("Success logged in", result, ept);
-            eptcloud.eptGroupList(eptcloud.eid, function (err, groups) {
-                console.log("Groups found ", err, groups);
-                for (let i in config.controllers) {
-                    let controllerConfigFileName = config.controllers[i].config;
-                    let controllerConfig = JSON.parse(fs.readFileSync(controllerConfigFileName, 'utf8'));
-                    console.log(controllerConfig.main);
-                    if (controllerConfig == null || controllerConfig.main == null) {
-                        console.log("Unable to read configuration from file", controllerConfigFileName, controllerConfig);
-                        process.exit(1);
-                    }
-                    controllerConfig.controller = config.controllers[i];
-                    let controllerClass = require("../controllers/" + controllerConfig.main);
-                    let controller = new controllerClass(controllerConfig, config, eptcloud, groups, gid, true);
-                    if (controller == null) {}
-                }
-            });
-        });
-    } else {
-        console.log("EptCloud Login failed");
-        process.exit(1);
-    }
-});
+(async () => {
+  const result = await eptcloud.eptLogin(config.appId, config.appSecret, null, eptname)
+    .catch(err => {
+      console.log("EptCloud Login failed", err);
+      process.exit(1);
+    })
 
+  const ept = await eptcloud.eptFind(result)
+  console.log("Success logged in", result, ept);
+  const groups = await eptcloud.eptGroupList(eptcloud.eid)
+  console.log("Groups found ", groups);
+
+  for (let i in config.controllers) {
+    let controllerConfigFileName = config.controllers[i].config;
+    let controllerConfig = JSON.parse(fs.readFileSync(controllerConfigFileName, 'utf8'));
+    console.log(controllerConfig.main);
+    if (controllerConfig == null || controllerConfig.main == null) {
+      console.log("Unable to read configuration from file", controllerConfigFileName, controllerConfig);
+      process.exit(1);
+    }
+    controllerConfig.controller = config.controllers[i];
+    let controllerClass = require("../controllers/" + controllerConfig.main);
+    let controller = new controllerClass(controllerConfig, config, eptcloud, groups, gid, true);
+    if (!controller) {}
+  }
+
+})()

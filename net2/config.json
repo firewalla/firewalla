@@ -388,6 +388,7 @@
         "1.1.1.1",
         "8.8.8.8"
       ],
+      "pingFailureThreshold": 2,
       "interval": 300
     },
     "ICMP6Sensor": {},

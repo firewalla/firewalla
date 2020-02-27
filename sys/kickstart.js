@@ -171,12 +171,11 @@ function generateEncryptionKey(license) {
   };
 }
 
-function initializeGroup(callback) {
+async function initializeGroup() {
   let groupId = storage.getItemSync('groupId');
   if (groupId != null) {
     log.info("Found stored group x", groupId);
-    callback(null, groupId);
-    return;
+    return groupId;
   }
 
   log.info("Using identity:", eptcloud.eid);
@@ -186,13 +185,12 @@ function initializeGroup(callback) {
     'member': config.memberType,
     'model': platform.getName()
   });
-  eptcloud.eptcreateGroup(config.service, meta, config.endpoint_name, function (e, r) {
-    log.info(r);
-    if (e == null && r != null) {
-      storage.setItemSync('groupId', r);
-    }
-    callback(e, r);
-  });
+  const result = await eptcloud.eptCreateGroup(config.service, meta, config.endpoint_name)
+  log.info(result);
+  if (result !== null) {
+    storage.setItemSync('groupId', result);
+  }
+  return result
 }
 
 
@@ -200,7 +198,7 @@ async function postAppLinked() {
   await platform.turnOffPowerLED();
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
-  
+
   // only do this in production and always do after 15 seconds ...
   // the 15 seconds wait is for the process to wake up
   return new Promise((resolve, reject) => {
@@ -231,7 +229,7 @@ async function inviteAdmin(gid) {
 
   const gidPrefix = gid.substring(0, 8);
 
-  const group = await eptcloud.groupFindAsync(gid)
+  const group = await eptcloud.groupFind(gid)
 
   if (!group || !group.symmetricKeys) {
     return false;
@@ -349,53 +347,52 @@ async function launchService2(gid) {
   // }
 }
 
-function login() {
+async function login() {
   log.info("Logging in cloud");
-  eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
-    if (err == null) {
-      log.info("Cloud Logged In")
 
-      diag.connected = true
+  try {
+    await eptcloud.eptLogin(config.appId, config.appSecret, null, config.endpoint_name)
+  } catch(err) {
+    log.error("Unable to login", err);
+    process.exit();
+  }
 
-      initializeGroup(async function (err, gid) {
-        if (gid) {
-          // NOTE: This should be the only code to update sys:ept to avoid race condition
-          log.info("Storing Firewalla Cloud Token info to redis");
-          // log.info("EID:", eptcloud.eid);
-          // log.info("GID:", gid);
-          // log.info("TOKEN:", eptcloud.token);
-          rclient.hmset("sys:ept", {
-            eid: eptcloud.eid,
-            token: eptcloud.token,
-            gid: gid
-          }, (err, data) => {
-            log.info("Set sys:ept", err, data, eptcloud.eid, eptcloud.token, gid);
-          });
+  log.info("Cloud Logged In")
 
-          process.on('SIGTERM', exitHandler.bind(null, {
-            terminated: true, cleanup: true, gid: gid, exit: true, event: "SIGTERM"
-          }));
+  diag.connected = true
 
-          await inviteAdmin(gid)
+  const gid = await initializeGroup()
+  if (!gid) {
+    log.error("Invalid gid");
+    process.exit();
+  }
 
-          await exitHandler({terminated: true, cleanup: true, gid: gid, exit: false, event: "NormalEnd"})
+  // NOTE: This should be the only code to update sys:ept to avoid race condition
+  log.info("Storing Firewalla Cloud Token info to redis");
+  // log.info("EID:", eptcloud.eid);
+  // log.info("GID:", gid);
+  // log.info("TOKEN:", eptcloud.token);
+  await rclient.hmsetAsync("sys:ept", {
+    eid: eptcloud.eid,
+    token: eptcloud.token,
+    gid: gid
+  })
+  log.info("Set sys:ept", eptcloud.eid, eptcloud.token, gid);
 
-          process.removeAllListeners('SIGTERM')
+  process.on('SIGTERM', exitHandler.bind(null, {
+    terminated: true, cleanup: true, gid: gid, exit: true, event: "SIGTERM"
+  }));
 
-          exec("sudo systemctl stop firekick").catch(() => {
-            // this command will kill the program itself, catch this error silently
-          })
+  await inviteAdmin(gid)
 
-        } else {
-          log.error("Invalid gid");
-          process.exit();
-        }
-      });
-    } else {
-      log.error("Unable to login", err);
-      process.exit();
-    }
-  });
+  await exitHandler({terminated: true, cleanup: true, gid: gid, exit: false, event: "NormalEnd"})
+
+  process.removeAllListeners('SIGTERM')
+
+  exec("sudo systemctl stop firekick").catch(() => {
+    // this command will kill the program itself, catch this error silently
+  })
+
 }
 
 eptcloud.loadKeys()
