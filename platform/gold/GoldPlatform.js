@@ -128,6 +128,10 @@ class GoldPlatform extends Platform {
   getBroTabFile() {
     return `${f.getFirewallaHome()}/etc/brotab.gold`;
   }
+
+  async updateFakeClock() {
+    
+  }
 }
 
 module.exports = GoldPlatform;

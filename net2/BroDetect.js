@@ -641,10 +641,12 @@ module.exports = class {
         return;
       }
 
+      /* Bro/zeek cannot handle disordered packets properly, and shows missed bytes in such cases. This should not be dropped
       if (obj.missed_bytes > 10000000) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
         log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
         return;
       }
+      */
 
       if (obj.proto && obj.proto == "tcp") {
         if (obj.resp_bytes > 1000000 && obj.orig_bytes == 0 && obj.conn_state == "SF") {
@@ -693,6 +695,7 @@ module.exports = class {
         }
       }
 
+      /* This is unnecessary since resp_bytes can show the correct total number of bytes even if missed bytes is not zero
       if (obj.missed_bytes > 0) {
         let adjusted = false;
         if (obj.orig_bytes - obj.missed_bytes > 0) {
@@ -710,6 +713,7 @@ module.exports = class {
           log.debug("Conn:Adjusted:MissedBytes", obj.conn_state, obj);
         }
       }
+      */
 
       if ((obj.orig_bytes > obj.orig_ip_bytes || obj.resp_bytes > obj.resp_ip_bytes) && obj.proto == "tcp") {
         log.debug("Conn:Burst:Adjust1", obj);

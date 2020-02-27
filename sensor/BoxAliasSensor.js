@@ -27,15 +27,21 @@ const unlinkFileAsync = util.promisify(fs.unlink);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const PlatformLoader = require('../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
+
 const sysManager = require('../net2/SysManager.js');
 
 const f = require('../net2/Firewalla.js');
-const generatedConfigFile = `${f.getUserConfigFolder()}/dnsmasq/box_alias.generated`;
+const generatedConfigFile = `${f.getUserConfigFolder()}/dnsmasq/box_alias.conf`;
 const Message = require('../net2/Message.js');
+const NetworkProfile = require('../net2/NetworkProfile.js');
 
 class BoxAliasSensor extends Sensor {
 
     async installBoxAliases() {
+      if (!platform.isFireRouterManaged()) {
+        // there is only one dnsmasq instance for old platforms
         const aliases = [
             ["fire.walla", sysManager.myIp()],
             ["overlay.fire.walla", sysManager.myIp2()]
@@ -49,13 +55,27 @@ class BoxAliasSensor extends Sensor {
         }
 
         await writeFileAsync(generatedConfigFile, content).then(() => {
-            log.info(`generated ${generatedConfigFile}`);
-            log.info(`added\n${content}`);
-        }).catch((reason) => {
-            log.error(`fail to write ${generatedConfigFile}: ${reason}`);
+            log.info(`generated ${generatedConfigFile}`, content);
+        }).catch((err) => {
+            log.error(`fail to write ${generatedConfigFile}`, err.message);
         });
 
         await dnsmasq.restartDnsmasq();
+      } else {
+        // each network has dedicated dnsmasq interface and its config directory
+        const monitoringInterfaces = sysManager.getMonitoringInterfaces();
+        for (const iface of monitoringInterfaces) {
+          const uuid = iface.uuid;
+          const dnsmasqConfDir = NetworkProfile.getDnsmasqConfigDirectory(uuid);
+          const dnsmasqEntry = `address=/fire.walla/${sysManager.myIp(iface.name)}`;
+          await writeFileAsync(`${dnsmasqConfDir}/box_alias.conf`, dnsmasqEntry).then(() => {
+            log.info(`generated ${dnsmasqConfDir}/box_alias.conf`, dnsmasqEntry);
+          }).catch((err) => {
+            log.error(`Failed to generate box_alias conf file ${dnsmasqConfDir}/box_alias.conf`, err.message);
+          });
+        }
+        await dnsmasq.restartDnsmasq();
+      }
     }
 
     run() {

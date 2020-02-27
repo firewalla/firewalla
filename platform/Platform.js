@@ -98,6 +98,10 @@ class Platform {
   getBroTabFile() {
     return `${f.getFirewallaHome()}/etc/brotab`;
   }
+
+  async updateFakeClock() {
+    await exec('sudo fake-hwclock');
+  }
 }
 
 module.exports = Platform;
