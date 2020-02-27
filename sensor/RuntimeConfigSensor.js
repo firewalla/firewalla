@@ -14,14 +14,17 @@
  */
 'use strict'
 
+const firewalla = require('../net2/Firewalla.js')
 const log = require("../net2/logger.js")(__filename)
 
+const fs = require('fs')
 const exec = require('child-process-promise').exec
-const pl = require('../platform/PlatformLoader.js');
-const platform = pl.getPlatform();
+
+const Promise = require('bluebird');
 
 const Sensor = require('./Sensor.js').Sensor;
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class RuntimeConfigSensor extends Sensor {
   async run() {
@@ -47,10 +50,14 @@ class RuntimeConfigSensor extends Sensor {
 
   async schedule() {
     try {
-      await platform.updateFakeClock();
+      await this.updateFakeClock();
     } catch(err) {
       log.error("Failed to record latest time to fake-hwlock:", err.message);
     }
+  }
+
+  async updateFakeClock() {
+    return exec('sudo fake-hwclock');
   }
 }
 
