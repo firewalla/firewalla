@@ -617,7 +617,7 @@ class DeviceHook extends Hook {
       case "new_device":
         // no new device alarm on Firewalla
         if (sysManager.isMyMac(host.mac)) {
-          log.warn('New device alarm on Firewalla', host)
+          log.info('New device alarm on Firewalla', host)
           return
         }
 

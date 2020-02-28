@@ -118,7 +118,7 @@ let legoEptCloud = class {
     log.info('Wait until keys ready ...')
     let result = await this.keyReady()
     if (!result) {
-      log.info("Checking if keys are ready...");
+      log.info("Keys not ready, wait ...");
       await delay(3000); // wait for three seconds
       return this.untilKeyReady()
     }
@@ -158,12 +158,11 @@ let legoEptCloud = class {
         this.mypubkeyfile = keys.pub;
         this.myprivkeyfile = keys.pri;
       } else {
+        log.info("Keys not exist, creating...");
         await this.createKeyPair();
         return
       }
     }
-
-    log.info("Keys not exist, creating...");
 
     if (this.nodeRSASupport) {
       this.myPublicKey = crypto.createPublicKey(this.mypubkeyfile);
@@ -185,7 +184,7 @@ let legoEptCloud = class {
       this.myPrivateKey = privateKey
       this.myPublicKey = publicKey
       this.myprivkeyfile = privateKey.export({type:'pkcs1', format:'pem'})
-      this.mypubkeyfile = publicKey.export({type:'pkcs1', format:'pem'})
+      this.mypubkeyfile = publicKey.export({type:'spki', format:'pem'})
     } else {
       const key = ursa.generatePrivateKey(2048, 65537);
       this.mypubkeyfile = key.toPublicPem();
@@ -247,7 +246,6 @@ let legoEptCloud = class {
       json: assertion,
       maxAttempts: 5,
       retryDelay: 1000,
-      fullResponse: true
     };
 
     const response = await rrWithErrHandling(options)
