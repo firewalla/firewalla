@@ -218,7 +218,7 @@ async function run() {
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
-  dnsmasq.cleanUpLeftoverConfig()
+  dnsmasq.cleanUpLeftoverConfig();
 
   // Launch PortManager
 
@@ -357,6 +357,11 @@ async function run() {
     }
   })
 
+  process.on('SIGUSR1', () => {
+    log.info('Received SIGUSR1. Trigger check.');
+    const dnsmasqCount = dnsmasq.getCounterInfo();
+    log.warn(dnsmasqCount);
+  });
 }
 
 sem.on("ChangeLogLevel", (event) => {
