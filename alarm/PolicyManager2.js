@@ -365,16 +365,13 @@ class PolicyManager2 {
 
     await rclient.hmsetAsync(policyKey, existing.redisfy());
 
-    if (policy.expire === '') {
-      await rclient.hdelAsync(policyKey, "expire");
+    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto"];
+
+    for (const key of emptyStringCheckKeys) {
+      if (policy[key] === '')
+        await rclient.hdelAsync(policyKey, key);
     }
-    if (policy.cronTime === '') {
-      await rclient.hdelAsync(policyKey, "cronTime");
-      await rclient.hdelAsync(policyKey, "duration");
-    }
-    if (policy.activatedTime === '') {
-      await rclient.hdelAsync(policyKey, "activatedTime");
-    }
+
     if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope)) {
       await rclient.hdelAsync(policyKey, "scope");
     }
