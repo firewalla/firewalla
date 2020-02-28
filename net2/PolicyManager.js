@@ -280,7 +280,7 @@ module.exports = class {
     if (config.state)
       return Block.addMacToSet([host.o.mac], 'device_whitelist_set')
     else
-      return Block.delMacFromSet([host,o.mac], 'device_whitelist_set')
+      return Block.delMacFromSet([host.o.mac], 'device_whitelist_set')
   }
 
   shadowsocks(host, config) {
