@@ -1630,15 +1630,21 @@ module.exports = class {
         break;
       case "ipOrg":
         e["e.dest.ip.org"] = i_target;
-        e["p.device.mac"] = alarm["p.device.mac"];
+        if (alarm["p.device.mac"]) {
+          e["p.device.mac"] = alarm["p.device.mac"];
+        }
         break;
       case "sslO":
         e["e.dest.ssl.O"] = i_target;
-        e["p.device.mac"] = alarm["p.device.mac"];
+        if (alarm["p.device.mac"]) {
+          e["p.device.mac"] = alarm["p.device.mac"];
+        }
         break;
       case "domainRegister":
         e["e.dest.domain.register"] = i_target;
-        e["p.device.mac"] = alarm["p.device.mac"];
+        if (alarm["p.device.mac"]) {
+          e["p.device.mac"] = alarm["p.device.mac"];
+        }
         break;
       default:
         // not supported
