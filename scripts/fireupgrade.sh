@@ -87,17 +87,10 @@ set_value() {
     saved_value=$2
     case ${kind} in
         ip)
-            # ip is like <ip_address>/<subnet_mask_length>---<intf_name>
-            addr=`echo $saved_value | cut -d"---" -f1`
-            intf=`echo $saved_value | cut -d"---" -f2`
-            /sbin/ip addr flush dev $intf # flush legacy ips
-            /sbin/ip addr replace ${addr} dev $intf
+            sudo /sbin/ip addr replace ${saved_value} dev eth0
             ;;
         gw)
-            # gw is like <ip_address>---<intf_name>
-            addr=`echo $saved_value | cut -d"---" -f1`
-            intf=`echo $saved_value | cut -d"---" -f2`
-            /sbin/ip route replace default via ${addr} dev $intf # override current default route
+            sudo /sbin/route add default gw ${saved_value} eth0
             ;;
     esac
 }
