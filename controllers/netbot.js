@@ -127,7 +127,6 @@ const extMgr = require('../sensor/ExtensionManager.js')
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
 
-const proServer = require('../api/bin/pro');
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
@@ -3098,14 +3097,6 @@ class netBot extends ControllerBot {
         break;
       }
 
-      case "startProServer": {
-        proServer.startProServer();
-        break;
-      }
-      case "stopProServer": {
-        proServer.stopProServer();
-        break;
-      }
       case "generateProToken": {
         tokenManager.generateToken(gid);
         break;
