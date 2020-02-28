@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -171,7 +171,7 @@ class FWInvitation {
       this.leftCheckCount--;
       let rinfo = await this.checkLocalInvitation();
       if(rinfo === null) {
-        rinfo = await this.cloud.eptinviteGroupByRidAsync(this.gid, rid);
+        rinfo = await this.cloud.eptinviteGroupByRid(this.gid, rid);
       }
       if(!rinfo || !rinfo.value) {
         throw new Error("Invalid rinfo");
@@ -231,7 +231,7 @@ class FWInvitation {
         
       }
 
-      let inviteResult = await this.cloud.eptinviteGroupAsync(this.gid, eid);
+      let inviteResult = await this.cloud.eptInviteGroup(this.gid, eid);
 
       // Record first binding time
       if(this.recordFirstBinding) {

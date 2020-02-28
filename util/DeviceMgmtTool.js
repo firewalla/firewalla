@@ -40,17 +40,12 @@ class DeviceMgmtTool {
     return Firewalla.getOverlayUpperDirPartition() + "/overlay-workdir";
   }
 
-  deleteGroup(eptcloud, gid) {
+  async deleteGroup(eptcloud, gid) {
     log.info("Delete group " + gid);
-    eptcloud.deleteGroup(gid, (err, body) => {
-      if (err != null) {
-        log.error("Error occurred while deleting group: " + err + ", body: " + body);
-      } else {
-        log.info("Group " + gid + " is deleted.");
-      }
-    });
+    await eptcloud.deleteGroup(gid)
+    log.info("Group " + gid + " is deleted.");
   }
-  
+
   async resetGold() {
     log.info("Resetting Gold...")
     try {

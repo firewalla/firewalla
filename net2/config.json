@@ -393,6 +393,7 @@
         "1.1.1.1",
         "8.8.8.8"
       ],
+      "pingFailureThreshold": 2,
       "interval": 300
     },
     "ICMP6Sensor": {},
@@ -513,6 +514,10 @@
       "topXflows": 10,
       "minsize": 150000000,
       "dataPlanMinPercentage": 0.8
+    },
+    "DHCPServerSensor": {
+      "interval": 600,
+      "firstScan": 120
     },
     "DnsmasqDhcpSensor": {},
     "LocalDomainSensor": {}

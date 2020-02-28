@@ -59,8 +59,6 @@ const sensorLoader = require('../sensor/SensorLoader.js');
 const fc = require('./config.js')
 const cp = require('child_process');
 
-const pclient = require('../util/redis_manager.js').getPublishClient()
-
 let interfaceDetected = false;
 
 if(!bone.isAppConnected()) {
@@ -76,11 +74,18 @@ async function detectInterface() {
   interfaceDetected = true;
 }
 
+// Start recording network status whether cloud is ready or not
+fireRouter.waitTillReady().then(() => {
+  const NetworkStatsSensor = sensorLoader.initSingleSensor('NetworkStatsSensor');
+  NetworkStatsSensor.run()
+})
+
+const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
+
 function run0() {
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
       sysManager.isConfigInitialized()) {
-    const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
     boneSensor.checkIn()
       .then(() => {
         run() // start running after bone checkin successfully
@@ -218,7 +223,7 @@ async function run() {
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
-  dnsmasq.cleanUpLeftoverConfig()
+  dnsmasq.cleanUpLeftoverConfig();
 
   // Launch PortManager
 
@@ -357,6 +362,11 @@ async function run() {
     }
   })
 
+  process.on('SIGUSR1', () => {
+    log.info('Received SIGUSR1. Trigger check.');
+    const dnsmasqCount = dnsmasq.getCounterInfo();
+    log.warn(dnsmasqCount);
+  });
 }
 
 sem.on("ChangeLogLevel", (event) => {
