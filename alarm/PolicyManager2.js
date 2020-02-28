@@ -1282,8 +1282,8 @@ class PolicyManager2 {
             return;
         }
 
-        await Block.manipulateFiveTupleRule("-I", remoteSet4, remoteSpec, remotePort, localSet4, localSpec, localPort, proto, "RETURN", "FW_INBOUND_FIREWALL", "filter", 4);
-        await Block.manipulateFiveTupleRule("-I", remoteSet6, remoteSpec, remotePort, localSet6, localSpec, localPort, proto, "RETURN", "FW_INBOUND_FIREWALL", "filter", 6);
+        await Block.manipulateFiveTupleRule("-I", remoteSet4, remoteSpec, remotePort, localSet4, localSpec, localPort, proto, "FW_ACCEPT", "FW_INBOUND_FIREWALL", "filter", 4);
+        await Block.manipulateFiveTupleRule("-I", remoteSet6, remoteSpec, remotePort, localSet6, localSpec, localPort, proto, "FW_ACCEPT", "FW_INBOUND_FIREWALL", "filter", 6);
         break;
       }
 
@@ -1569,8 +1569,8 @@ class PolicyManager2 {
               return;
           }
   
-          await Block.manipulateFiveTupleRule("-D", remoteSet4, remoteSpec, remotePort, localSet4, localSpec, localPort, proto, "RETURN", "FW_INBOUND_FIREWALL", "filter", 4);
-          await Block.manipulateFiveTupleRule("-D", remoteSet6, remoteSpec, remotePort, localSet6, localSpec, localPort, proto, "RETURN", "FW_INBOUND_FIREWALL", "filter", 6);
+          await Block.manipulateFiveTupleRule("-D", remoteSet4, remoteSpec, remotePort, localSet4, localSpec, localPort, proto, "FW_ACCEPT", "FW_INBOUND_FIREWALL", "filter", 4);
+          await Block.manipulateFiveTupleRule("-D", remoteSet6, remoteSpec, remotePort, localSet6, localSpec, localPort, proto, "FW_ACCEPT", "FW_INBOUND_FIREWALL", "filter", 6);
           if (remoteType !== "country") {
             // destroy rule specific ip set
             await Block.destroyMatchingSet(`${idPrefix}_${remoteType}4`);

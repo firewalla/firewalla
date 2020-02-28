@@ -237,12 +237,12 @@ module.exports = class {
   async whitelist(host, config) {
     if (host.constructor.name == 'HostManager') {
       if (iptablesReady)
-        return Block.setupGlobalWhitelist(config.state);
+        return Block.setupGlobalLockDown(config.state);
       else
         // wait until basic ipables are all set
         return new Promise((resolve, reject) => {
           sem.once('IPTABLES_READY', () => {
-            Block.setupGlobalWhitelist(config.state)
+            Block.setupGlobalLockDown(config.state)
               .then(resolve).catch(reject)
           })
         })
@@ -250,12 +250,12 @@ module.exports = class {
 
     if (host.constructor.name === "Tag") {
       if (iptablesReady)
-        return Block.setupTagWhitelist(config.state, host.o && host.o.uid);
+        return Block.setupTagLockDown(config.state, host.o && host.o.uid);
       else {
         // wait until basic iptables are all set
         return new Promise((resolve, reject) => {
           sem.once('IPTABLES_READY', () => {
-            Block.setupTagWhitelist(config.state, host.o && host.o.uid)
+            Block.setupTagLockDown(config.state, host.o && host.o.uid)
               .then(resolve).catch(reject);
           });
         })
@@ -264,11 +264,11 @@ module.exports = class {
 
     if (host.constructor.name == "NetworkProfile") {
       if (iptablesReady) {
-        return Block.setupInterfaceWhitelist(config.state, host.o && host.o.uuid);
+        return Block.setupNetworkLockDown(config.state, host.o && host.o.uuid);
       } else {
         return new Promise((resolve, reject) => {
           sem.once('IPTABLES_READY', () => {
-            Block.setupInterfaceWhitelist(config.state, host.o && host.o.uuid)
+            Block.setupNetworkLockDown(config.state, host.o && host.o.uuid)
               .then(resolve).catch(reject);
           })
         });
@@ -280,7 +280,7 @@ module.exports = class {
     if (config.state)
       return Block.addMacToSet([host.o.mac], 'device_whitelist_set')
     else
-      return Block.delMacFromSet([host.o.mac], 'device_whitelist_set')
+      return Block.delMacFromSet([host,o.mac], 'device_whitelist_set')
   }
 
   shadowsocks(host, config) {

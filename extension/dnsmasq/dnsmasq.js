@@ -42,7 +42,7 @@ const Message = require('../../net2/Message.js');
 const fc = require('../../net2/config.js')
 const { delay } = require('../../util/util.js');
 
-const { Rule, CHAINS } = require('../../net2/Iptables.js');
+const { Rule } = require('../../net2/Iptables.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq_local";
