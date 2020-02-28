@@ -39,9 +39,12 @@ const redisIpField = "publicIp";
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
+const requestretry = require('requestretry').defaults({ timeout: 30000 });
+const tokenManager = require('../util/FWTokenManager.js');
+const _ = require('lodash');
 
 function comparePort(a, b) {
-  return a.portid == b.portid && a.protocol  == b.protocol;
+  return a.portid == b.portid && a.protocol == b.protocol;
 }
 
 class ExternalScanSensor extends Sensor {
@@ -89,7 +92,7 @@ class ExternalScanSensor extends Sensor {
       }
 
       return await this.runOnce();
-    } catch(err) {
+    } catch (err) {
       log.error('Failed to get external ports: ', err);
     };
 
@@ -102,7 +105,7 @@ class ExternalScanSensor extends Sensor {
       if (result) {
         return await this.runOnce();
       };
-    } catch(err) {
+    } catch (err) {
       log.error('Failed to scan external ports: ', err);
     };
 
@@ -125,8 +128,6 @@ class ExternalScanSensor extends Sensor {
 
     log.info('External scan ports: ', publicIP);
     let host = await this.scan(publicIP);
-    //log.info('Analyzing external scan result...', host);
-
     if (host.scan) {
       try {
         let entries = await rclient.hgetAsync(redisKey, 'scan');
@@ -150,7 +151,7 @@ class ExternalScanSensor extends Sensor {
         redisHost.scan = JSON.stringify(host.scan);
         await rclient.hmsetAsync(redisKey, redisHost);
         await rclient.expireAsync(redisKey, 86400);
-      } catch(err) {
+      } catch (err) {
         log.error("Failed to scan external ports: " + err);
       }
     }
@@ -158,11 +159,65 @@ class ExternalScanSensor extends Sensor {
     return host;
   }
 
-  async cloudScanPorts(publicIP, waitedPorts) {
-    //Cloud confirm whether the port is open
-    const confirmedPorts = waitedPorts;
+  async rrWithErrHandling(options) {
+    const msg = `Http failed ${options.method || 'GET'} ${options.uri} ${JSON.stringify(options.body || options.json)}`
     try {
-      //
+      const response = await requestretry(options)
+
+      if (!response)
+        throw new Error(msg)
+
+      if (response.statusCode < 200 || response.statusCode > 299) {
+        throw new Error(msg + `\n${response.statusCode}: ${JSON.stringify(response.body)}`)
+      }
+
+      if (!response.body) response.body = null
+
+      return response
+    } catch (err) {
+      throw new Error(msg + '\n' + err.message)
+    }
+  }
+
+  async cloudConfirmOpenPort(publicIP, port) {
+    let result = false;
+    try {
+      const token = await tokenManager.getToken();
+      let options = {
+        uri: util.format("http://scan.encipher.io:9999/scan/lzk_cfwSa-DDCWlPURC5Tw/%s/%s/%s", publicIP, publicIP, port),
+        method: 'GET',
+        auth: {
+          bearer: token
+        },
+        retryDelay: 1000,  // (default) wait for 1s before trying again
+        json: true
+      };
+
+      const response = await this.rrWithErrHandling(options);
+      if (response.body) {
+        const state = _.get(response.body, `scan[0].state`, "");
+        if (state == "open") {
+          result = true;
+        }
+      }
+    } catch (err) {
+      log.error(err);
+    };
+
+    return result;
+  }
+
+  async cloudScanPorts(publicIP, waitedPorts) {
+    let confirmedPorts = [];
+    try {
+      //Cloud confirm whether the port is open
+      for (let current of waitedPorts) {
+        let isOpen = await this.cloudConfirmOpenPort(publicIP, current.portid);
+        if (isOpen) {
+          confirmedPorts.push(current);
+        }
+      }
+
       if (fc.isFeatureOn("alarm_openport")) {
         for (let current of confirmedPorts) {
           let alarm = new Alarm.OpenPortAlarm(
@@ -182,7 +237,7 @@ class ExternalScanSensor extends Sensor {
           await am2.enqueueAlarm(alarm);
         }
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to clound confirm ports: " + err);
     }
 
@@ -200,7 +255,7 @@ class ExternalScanSensor extends Sensor {
       if (findings && findings.nmaprun && findings.nmaprun.host) {
         hostResult = this._parseNmapHostResult(findings.nmaprun.host);
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to nmap scan:", err);
     }
 
@@ -209,7 +264,7 @@ class ExternalScanSensor extends Sensor {
 
   static _handleAddressEntry(address, host) {
     if (address) {
-      switch(address.addrtype) {
+      switch (address.addrtype) {
         case "ipv4":
           host.ip = address.addr;
           break;
@@ -224,7 +279,7 @@ class ExternalScanSensor extends Sensor {
   }
 
   static _handlePortEntry(portJson, host) {
-    if(!host.scan)
+    if (!host.scan)
       host.scan = [];
 
     let thisPort = {};
@@ -235,11 +290,11 @@ class ExternalScanSensor extends Sensor {
       thisPort.lastActiveTimestamp = Date.now() / 1000;
       thisPort.hostId = host.ip;
 
-      if(portJson.service) {
+      if (portJson.service) {
         thisPort.serviceName = portJson.service.name;
       }
 
-      if(portJson.state) {
+      if (portJson.state) {
         thisPort.state = portJson.state.state;
       }
       host.scan.push(thisPort);
@@ -251,10 +306,10 @@ class ExternalScanSensor extends Sensor {
     try {
       let address = hostResult.address;
 
-      if(address && address.constructor === Object) {
+      if (address && address.constructor === Object) {
         // one address only
         ExternalScanSensor._handleAddressEntry(address, host);
-      } else if(address && address.constructor === Array) {
+      } else if (address && address.constructor === Array) {
         // multiple addresses
         address.forEach((a) => ExternalScanSensor._handleAddressEntry(a, host));
       }
@@ -265,14 +320,14 @@ class ExternalScanSensor extends Sensor {
 
       let port = hostResult.ports && hostResult.ports.port;
 
-      if(port && port.constructor === Object) {
+      if (port && port.constructor === Object) {
         // one port only
         ExternalScanSensor._handlePortEntry(port, host);
-      } else if(port && port.constructor === Array) {
+      } else if (port && port.constructor === Array) {
         // multiple ports
         port.forEach((p) => ExternalScanSensor._handlePortEntry(p, host));
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to parse nmap host: " + err);
     }
     return host;
