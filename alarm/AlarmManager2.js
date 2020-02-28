@@ -1548,6 +1548,12 @@ module.exports = class {
               i_type = "country";
               i_target = userInput.target;
               break;
+            case "ipOrg":
+            case "sslO":
+            case "domainRegister":
+              i_type = userInput.type;
+              i_target = userInput.target;
+              break;
             default:
               break
           }
@@ -1621,6 +1627,18 @@ module.exports = class {
             e["p.upnp.description"] = description;
           }
         }
+        break;
+      case "ipOrg":
+        e["e.dest.ip.org"] = i_target;
+        e["p.device.mac"] = alarm["p.device.mac"];
+        break;
+      case "sslO":
+        e["e.dest.ssl.O"] = i_target;
+        e["p.device.mac"] = alarm["p.device.mac"];
+        break;
+      case "domainRegister":
+        e["e.dest.domain.register"] = i_target;
+        e["p.device.mac"] = alarm["p.device.mac"];
         break;
       default:
         // not supported
