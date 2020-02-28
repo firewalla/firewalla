@@ -29,6 +29,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const Ping = require('../extension/ping/Ping.js');
 
 const sysManager = require('../net2/SysManager.js');
+const sem = require('./SensorEventManager.js').getInstance();
 
 const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js');
@@ -38,13 +39,22 @@ const CronJob = require('cron').CronJob;
 const _ = require('lodash');
 
 class NetworkStatsSensor extends Sensor {
+
+  constructor() {
+    super()
+
+    this.processPingConfigure()
+    this.pingResults = {}
+    this.checkNetworkPings = {}
+  }
+
   async run() {
-    this.processPingConfigure();
     if (fc.isFeatureOn(FEATURE_NETWORK_STATS)) {
       await this.turnOn();
     } else {
       await this.turnOff();
     }
+
     fc.onFeature(FEATURE_NETWORK_STATS, (feature, status) => {
       if (feature != FEATURE_NETWORK_STATS)
         return
@@ -196,28 +206,60 @@ class NetworkStatsSensor extends Sensor {
     }
   }
 
+  async aggregatePingResults(host) {
+    if (!this.pingResults[host]) {
+      log.error('No result found for host', host)
+      return
+    }
+
+    const results = _.groupBy(this.pingResults[host], r => r > 0)
+
+    const passRate = results[true].length / results.length
+    const avgTime = _.mean(results[true])
+
+    if (results[false].length >= this.config.pingFailureThreshold) {
+      await rclient.hsetAsync("network:status:ping", host, -1);
+    } else {
+      await rclient.hsetAsync("network:status:ping", host, avgTime);
+    }
+
+    if (host == sysManager.myDefaultGateway()) {
+      sem.emitEvent({
+        type: "Network:GatewayUnreachable",
+        message: `Gateway(${host}) ping result, passRate: ${passRate}, avgTime: ${avgTime}`,
+        ping: { passRate, avgTime }
+      });
+    }
+
+    delete this.pingResults[host]
+  }
+
   async checkNetworkStatus() {
     if (!fc.isFeatureOn(FEATURE_NETWORK_STATS)) return;
     const internetTestHosts = this.config.internetTestHosts;
     let dnses = sysManager.myDNS();
-    const gateway = sysManager.myGateway();
+    const gateway = sysManager.myDefaultGateway();
     const servers = (this.config.dnsServers || []).concat(dnses);
     servers.push(gateway);
-    if (!this.checkNetworkPings) this.checkNetworkPings = {};
 
     for (const server of servers) {
       if (this.checkNetworkPings[server]) continue;
+
       this.checkNetworkPings[server] = new Ping(server);
+      this.pingResults[server] = []
       this.checkNetworkPings[server].on('ping', (data) => {
-        rclient.hsetAsync("network:status:ping", server, data.time);
+        this.pingResults.push(data.time)
       })
       this.checkNetworkPings[server].on('fail', (data) => {
-        rclient.hsetAsync("network:status:ping", server, -1); // -1 as unreachable
+        this.pingResults.push(-1)
       });
       this.checkNetworkPings[server].on('exit', (data) => {
+        this.aggregatePingResults(server)
         delete this.checkNetworkPings[server];
       });
     }
+
+    // remove entries in case server list has changed from last run
     for (const pingServer in this.checkNetworkPings) {
       if (servers.indexOf(pingServer) == -1) {
         const p = this.checkNetworkPings[pingServer];
@@ -226,6 +268,7 @@ class NetworkStatsSensor extends Sensor {
         rclient.hdelAsync("network:status:ping", pingServer);
       }
     }
+
     const dnsmasqServers = await rclient.hgetAsync("policy:system", "dnsmasq");
     if (dnsmasqServers) {
       const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(dnsmasqServers)

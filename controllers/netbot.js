@@ -127,7 +127,6 @@ const extMgr = require('../sensor/ExtensionManager.js')
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
 
-const proServer = require('../api/bin/pro');
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
@@ -382,12 +381,6 @@ class netBot extends ControllerBot {
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
-
-    // no subscription for api mode
-    if (apiMode) {
-      log.info("Skipping event subscription during API mode.");
-      return;
-    }
 
     let c = require('../net2/MessageBus.js');
     this.subscriber = new c('debug');
@@ -3134,14 +3127,6 @@ class netBot extends ControllerBot {
         break;
       }
 
-      case "startProServer": {
-        proServer.startProServer();
-        break;
-      }
-      case "stopProServer": {
-        proServer.stopProServer();
-        break;
-      }
       case "generateProToken": {
         tokenManager.generateToken(gid);
         break;

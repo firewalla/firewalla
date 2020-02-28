@@ -627,7 +627,10 @@ class DeviceHook extends Hook {
     switch (type) {
       case "new_device":
         // no new device alarm on Firewalla
-        if (sysManager.isMyMac(host.mac)) return
+        if (sysManager.isMyMac(host.mac)) {
+          log.info('New device alarm on Firewalla', host)
+          return
+        }
 
         alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
           name,
