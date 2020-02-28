@@ -11,7 +11,7 @@
 var fs = require('fs');
 var program = require('commander');
 var HostManager = require('../net2/HostManager.js');
-var SysManager= require('../net2/SysManager.js');
+var sysmanager = require('../net2/SysManager.js');
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
 
@@ -117,7 +117,6 @@ let config = {
     }
 };
 
-var sysmanager = new SysManager('info');
 sysmanager.update(null);
 
 console.log("Mutlicast Test", sysmanager.isMulticastIP("223.0.0.1"));

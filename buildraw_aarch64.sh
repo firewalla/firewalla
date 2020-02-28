@@ -126,7 +126,7 @@ function install_walla() {
 	fi
 	sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
 	sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."
-	crontab $basedir/etc/brotab || perr_and_exit "Failed to install user bro cronjobs."
+	crontab $basedir/etc/crontab || perr_and_exit "Failed to install user bro cronjobs."
 
 	# Enable BBR TCP congestion control
 	grep "tcp_bbr" /etc/modules-load.d/modules.conf >/dev/null 2>&1

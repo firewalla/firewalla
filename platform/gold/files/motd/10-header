@@ -1,0 +1,9 @@
+#!/bin/bash
+
+. /etc/os-release
+
+KERNELID=$(uname -r)
+
+TERM=linux toilet -f ascii9 -F metal "FIREWALLA"
+
+printf '\nWelcome to \e[0;91mFIREWALLA\x1B[0m %s %s %s %s\n' "$VERSION $IMAGE_TYPE $PRETTY_NAME $KERNELID"

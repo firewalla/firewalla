@@ -26,12 +26,12 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 
 const cp = require('child_process');
 
-const rclient = require('../../util/redis_manager.js').getRedisClient()
-const pclient = require('../../util/redis_manager.js').getPublishClient();
+const Config = require('../../net2/config.js');
 
 
 async function dhcpDiscover(intf) {
-  intf = intf || "eth0";
+  const config = Config.getConfig(true);
+  intf = intf || config.monitoringInterface;
   log.info("Broadcasting DHCP discover on ", intf);
   
   let cmd = util.format('sudo nmap --script broadcast-dhcp-discover -e %s -oX - | %s', intf, xml2jsonBinary);
@@ -92,15 +92,3 @@ async function dhcpDiscover(intf) {
 module.exports = {
   dhcpDiscover: dhcpDiscover
 }
-
-/*
-dhcpDiscover("eth0").then((found) => {
-  if (found) {
-    console.log("DHCP service is found via eth0.");
-  } else {
-    console.log("DHCP service is not found via eth0.");
-  }
-}).catch((err) => {
-  console.log("Failed to do DHCP discover", err);
-});
-*/

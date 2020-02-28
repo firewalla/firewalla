@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-
+const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
 const util = require('util');
@@ -32,6 +32,8 @@ const flowTool = require('./FlowTool.js')();
 const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
 const categoryFlowTool = new CategoryFlowTool()
 
+const rclient = require('../util/redis_manager.js').getRedisClient()
+
 let instance = null;
 
 function toInt(n){ return Math.floor(Number(n)); };
@@ -43,6 +45,73 @@ class NetBotTool {
       instance = this;
     }
     return instance;
+  }
+
+  async loadSystemStats(json) {
+    const systemFlows = {};
+
+    const keys = ['upload', 'download'];
+
+    for(const key of keys) {
+      const lastSumKey = `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+
+      const elements = realSumKey.split(":")
+      if(elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+
+      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, 50);
+
+      const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        flows: enriched
+      }
+    }
+
+    const actitivityKeys = ['app', 'category'];
+
+    for(const key of actitivityKeys) {
+
+      const lastSumKey = `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+      
+      const elements = realSumKey.split(":")
+      if(elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+  
+      const traffic = await flowAggrTool.getXYActivitySumFlowByKey(realSumKey, key, 50);
+        
+      traffic.sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        activities: traffic
+      }  
+    }
+
+    json.systemFlows = systemFlows;
   }
 
   prepareTopDownloadFlows(json, options) {
@@ -129,7 +198,7 @@ class NetBotTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`[Cache] Getting app detail flows between ${beginString} and ${endString}`)
+    log.info(`[Cache] Getting app detail flows between ${beginString} and ${endString} options:`, options)
 
     let key = 'appDetails'
     //    json.flows[key] = {}
@@ -153,21 +222,45 @@ class NetBotTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`Getting app detail flows between ${beginString} and ${endString}`)
+    log.info(`Getting app detail flows between ${beginString} and ${endString}, options:${JSON.stringify(options)} options:`, options);
 
     let key = 'appDetails'
     json.flows[key] = {}
 
-    let apps = await appFlowTool.getApps('*') // all mac addresses
+    let apps = [];
+    let allMacs = [];
+    if (options.intf) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager();
+      allMacs = hostManager.getIntfMacs(options.intf);
+      log.info(`prepareDetailedAppFlows intf allMacs:`, allMacs);
+      for (const mac of allMacs) {
+        const macApps = await appFlowTool.getApps(mac);
+        apps = _.concat(apps, macApps);
+      }
+    } else if (options.tag) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager();
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
+      log.info(`prepareDetailedAppFlows tag allMacs:`, allMacs);
+      for (const mac of allMacs) {
+        const macApps = await appFlowTool.getApps(mac);
+        apps = _.concat(apps, macApps);
+      }
+    } else {
+      apps = await appFlowTool.getApps('*'); // all mac addresses
+    }
 
     let allFlows = {}
 
     for (const app of apps) {
       allFlows[app] = []
 
-      let macs = await appFlowTool.getAppMacAddresses(app)
-
-      for (const mac of macs) {
+      if (_.isEmpty(allMacs)) {
+        allMacs = await appFlowTool.getAppMacAddresses(app)
+      }
+      
+      for (const mac of allMacs) {
         let appFlows = await appFlowTool.getAppFlow(mac, app, options)
         appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
         appFlows.forEach((f) => {
@@ -228,7 +321,27 @@ class NetBotTool {
     let key = 'categoryDetails'
     json.flows[key] = {}
 
-    let categories = await categoryFlowTool.getCategories('*') // all mac addresses
+    let categories = [];
+    let allMacs = [];
+    if (options.intf) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager();
+      allMacs = hostManager.getIntfMacs(options.intf);
+      for (const mac of allMacs) {
+        const macCategories = await categoryFlowTool.getCategories(mac);
+        categories = _.concat(categories, macCategories);
+      }
+    } else if (options.tag) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager();
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag)); 
+      for (const mac of allMacs) {
+        const macCategories = await categoryFlowTool.getCategories(mac);
+        categories = _.concat(categories, macCategories);
+      }
+    } else {
+      categories = await categoryFlowTool.getCategories('*'); // all mac addresses
+    }
 
     // ignore intel category, intel is only for internal logic
     categories = categories.filter((x) => x.toLowerCase() !== "intel")
@@ -238,9 +351,11 @@ class NetBotTool {
     for (const category of categories) {
       allFlows[category] = []
 
-      let macs = await categoryFlowTool.getCategoryMacAddresses(category)
-
-      for (const mac of macs) {
+      if (_.isEmpty(allMacs)) {
+        allMacs = await categoryFlowTool.getCategoryMacAddresses(category)
+      }
+      
+      for (const mac of allMacs) {
         let categoryFlows = await categoryFlowTool.getCategoryFlow(mac, category, options)
         categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
         categoryFlows.forEach((f) => {
@@ -266,8 +381,15 @@ class NetBotTool {
 
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
+    const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || undefined;
 
-    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, trafficDirection, begin, end);
+    let sumFlowKey = null
+
+    if(options.queryall && target) {
+      sumFlowKey = await flowAggrTool.getLastSumFlow(target, trafficDirection);
+    } else {
+      sumFlowKey = await flowAggrTool.getSumFlowKey(target, trafficDirection, options.begin, options.end);
+    }
 
     let traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, 50);
 
@@ -398,7 +520,6 @@ class NetBotTool {
     }
   }
 
-  // looks like this is no longer used
   async prepareDetailedCategoryFlowsForHost(json, mac, options) {
     if (!mac) {
       return Promise.reject("Invalid MAC Address");

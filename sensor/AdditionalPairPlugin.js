@@ -40,7 +40,7 @@ class AdditionalPairPlugin extends Sensor {
 
   apiRun() {
     extensionManager.onGet("pairingPayload", async () => {
-      return this.getPayload();      
+      return this.getPayload();
     })
   }
 

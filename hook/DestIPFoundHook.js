@@ -39,8 +39,7 @@ const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
-const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js')
 
 const IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
 
@@ -131,11 +130,16 @@ class DestIPFoundHook extends Hook {
       // batch query
 
       // if(hashes.filter(x => x === info.ip).length > 0) {
-      if(info.apps) {
-        intel.apps = JSON.stringify(info.apps);
-        let keys = Object.keys(info.apps);
-        if(keys && keys[0]) {
-          intel.app = keys[0];
+      if(info.app) {
+        intel.apps = info.app; // json string format
+        try {
+          const apps = JSON.parse(intel.apps)
+          const keys = Object.keys(apps);
+          if(keys && keys[0]) {
+            intel.app = keys[0];
+          }
+        } catch(err) {
+          log.error("Failed to parse app json, err:", err);
         }
       }
 

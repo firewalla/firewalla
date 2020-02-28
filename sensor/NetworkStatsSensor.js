@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,10 +28,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const Ping = require('../extension/ping/Ping.js');
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 
-const util = require('util');
 const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js');
 const speedtest = require('../extension/speedtest/speedtest.js');
@@ -76,11 +74,10 @@ class NetworkStatsSensor extends Sensor {
     this.checkNetworkStatus();
     setInterval(() => {
       this.checkNetworkStatus();
-      if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
-
       this.checkLinkStats();
     }, (this.config.interval || 300) * 1000);
   }
+
   processPingConfigure() {
     if (this.config.pingConfig) {
       Ping.configure(this.config.pingConfig);
@@ -88,6 +85,7 @@ class NetworkStatsSensor extends Sensor {
       Ping.configure();
     }
   }
+
   async turnOn() {
     this.pings = {};
 
@@ -150,6 +148,8 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async checkLinkStats() {
+    if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
+
     log.info("checking link stats")
     try {
       // "|| true" prevents grep from yielding error when nothing matches
@@ -197,10 +197,11 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async checkNetworkStatus() {
+    if (!fc.isFeatureOn(FEATURE_NETWORK_STATS)) return;
     const internetTestHosts = this.config.internetTestHosts;
     let dnses = sysManager.myDNS();
     const gateway = sysManager.myGateway();
-    let servers = (this.config.dnsServers || []).concat(dnses);
+    const servers = (this.config.dnsServers || []).concat(dnses);
     servers.push(gateway);
     if (!this.checkNetworkPings) this.checkNetworkPings = {};
 
@@ -209,9 +210,12 @@ class NetworkStatsSensor extends Sensor {
       this.checkNetworkPings[server] = new Ping(server);
       this.checkNetworkPings[server].on('ping', (data) => {
         rclient.hsetAsync("network:status:ping", server, data.time);
-      });
+      })
       this.checkNetworkPings[server].on('fail', (data) => {
         rclient.hsetAsync("network:status:ping", server, -1); // -1 as unreachable
+      });
+      this.checkNetworkPings[server].on('exit', (data) => {
+        delete this.checkNetworkPings[server];
       });
     }
     for (const pingServer in this.checkNetworkPings) {
@@ -225,8 +229,8 @@ class NetworkStatsSensor extends Sensor {
     const dnsmasqServers = await rclient.hgetAsync("policy:system", "dnsmasq");
     if (dnsmasqServers) {
       const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(dnsmasqServers)
-      secondaryDnsServers && dnses.push(secondaryDnsServers)
-      alternativeDnsServers && dnses.push(alternativeDnsServers)
+      secondaryDnsServers && dnses.push(... secondaryDnsServers)
+      alternativeDnsServers && dnses.push(... alternativeDnsServers)
     }
     let resultGroupByHost = {};
     for (const internetTestHost of internetTestHosts) {
@@ -246,6 +250,7 @@ class NetworkStatsSensor extends Sensor {
     }
     rclient.setAsync("network:status:dig", JSON.stringify(resultGroupByHost));
   }
+
   async runSpeedTest() {
     this.cornJob && this.cornJob.stop();
     this.cornJob = new CronJob("00 30 02 * * *", () => {

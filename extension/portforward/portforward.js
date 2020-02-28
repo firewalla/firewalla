@@ -24,17 +24,15 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
-const SysManager = require('../../net2/SysManager')
-const sysManager = new SysManager()
+const sysManager = require('../../net2/SysManager')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 const ipTool = require('ip');
 
-const ShieldManager = require('../../net2/ShieldManager.js');
-let shieldManager = null;
 
 const iptable = require("../../net2/Iptables.js");
+const Message = require('../../net2/Message.js');
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -79,22 +77,22 @@ class PortForward {
   
           sclient.on("message", (channel, message) => {
             switch (channel) {
-              case "System:IPChange":
+              case Message.MSG_SYS_NETWORK_INFO_RELOADED:
                 (async () => {
-                  if (sysManager.myIp() !== this._selfIP) {
-                    log.info(`Firewalla IP changed from ${this._selfIP} to ${sysManager.myIp()}, refresh all rules...`);
+                  if (sysManager.myDefaultWanIp() !== this._selfIP) {
+                    log.info(`Firewalla default WAN IP changed from ${this._selfIP} to ${sysManager.myDefaultWanIp()}, refresh all rules...`);
                     await iptable.portForwardFlushAsync();
                     await this.restore();
-                    this._selfIP = sysManager.myIp();
+                    this._selfIP = sysManager.myDefaultWanIp();
                   }
                 })().catch((err) => {
-                  log.error("Failed to refresh port forward rules for System:IPChange", err);
+                  log.error("Failed to refresh port forward rules", err);
                 })
                 break;
               default:
             }
           });
-          sclient.subscribe("System:IPChange");
+          sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
         }
       })    
       instance = this
@@ -236,18 +234,20 @@ class PortForward {
         }
       }
 
-      if (!this._isSecondaryInterfaceIP(map.toIP)) {
+      if (!sysManager.myDefaultWanIp()) {
+        log.error("Default WAN IP is not found, skip add port forward", map);
+        return;
+      }
+
+      if (!this._isLANInterfaceIP(map.toIP)) {
         log.warn("IP is not in secondary network, port forward will not be applied: ", map);
         return;
       }
       
       log.info("PORTMAP: Add", map);
-      if (!shieldManager)
-        shieldManager = new ShieldManager();
-      await shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport)
       map.state = true;
       const dupMap = JSON.parse(JSON.stringify(map))
-      dupMap.destIP = sysManager.myIp()
+      dupMap.destIP = sysManager.myDefaultWanIp()
       await iptable.portforwardAsync(dupMap)
     } catch (err) {
       log.error("Failed to add port mapping:", err);
@@ -263,12 +263,8 @@ class PortForward {
       this.config.maps.splice(old, 1);
 
       log.info("PortForwarder:removePort Found MAP", dupMap);
-      if (!shieldManager)
-        shieldManager = new ShieldManager();
-      await shieldManager.removeIncomingRule(dupMap.protocol, dupMap.toIP, dupMap.dport);
 
       // we call remove anyway ... even there is no entry
-      dupMap.destIP = sysManager.myIp()
       await iptable.portforwardAsync(dupMap);
 
       old = this.find(map);
@@ -290,8 +286,7 @@ class PortForward {
 
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
-    this._selfIP = sysManager.myIp();
-    shieldManager = new ShieldManager();
+    this._selfIP = sysManager.myDefaultWanIp();
   
     await this.loadConfig()
     await this.restore()
@@ -309,14 +304,12 @@ class PortForward {
     })
   }
 
-  _isSecondaryInterfaceIP(ip) {
-    const ip2 = sysManager.myIp2();
-    const ipMask2 = sysManager.myIpMask2();
-    
-    if(ip && ip2 && ipMask2) {
-      return ipTool.subnet(ip2, ipMask2).contains(ip);
-    }
-    return false;
+  _isLANInterfaceIP(ip) {
+    const iface = sysManager.getInterfaceViaIP4(ip);
+    if (iface && iface.type === "lan")
+      return true;
+    else
+      return false;
   }
 }
 

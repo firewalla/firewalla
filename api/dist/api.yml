@@ -320,6 +320,19 @@ paths:
       responses:
         200:
           description: Success
+  /encipher/complex:
+    post:
+      summary: A complex API for encipher message
+      tags:
+        - System
+      parameters:
+        - $ref: '#/parameters/command'
+        - $ref: '#/parameters/itemInQuery'
+        - $ref: '#/parameters/target'
+        - $ref: '#/parameters/json'
+      responses:
+        200:
+          description: Success          
   /alarm/list:
     get:
       summary: Get all active alarms

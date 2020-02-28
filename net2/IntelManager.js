@@ -18,8 +18,7 @@ let instance = null;
 
 const log = require('./logger.js')(__filename);
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -29,7 +28,7 @@ const intelTool = new IntelTool();
 const Whois = require('../util/Whois');
 const IpInfo = require('../util/IpInfo');
 
-const A_WEEK = 3600 * 24 * 7;
+const A_DAY = 3600 * 24;
 
 /* malware, botnet, spam, phishing, malicious activity, blacklist, dnsbl */
 const IGNORED_TAGS = ['dnsbl', 'spam'];
@@ -72,7 +71,7 @@ module.exports = class {
 
     try {
       await rclient.setAsync(key, value)
-      await rclient.expireatAsync(key, this.currentTime() + A_WEEK)
+      await rclient.expireatAsync(key, this.currentTime() + A_DAY)
     } catch(err) {
       log.warn(`Error when add ip ${ip} from ${origin} to cache`, err);
     }

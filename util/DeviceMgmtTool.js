@@ -20,6 +20,9 @@ let Firewalla = require('../net2/Firewalla.js');
 let Promise = require('bluebird');
 let cp = require('child_process');
 
+const cpp = require('child-process-promise');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 let instance = null;
 class DeviceMgmtTool {
   constructor() {
@@ -48,8 +51,23 @@ class DeviceMgmtTool {
     });
   }
   
+  async resetGold() {
+    log.info("Resetting Gold...")
+    try {
+      await cpp.exec("sudo pkill -SIGUSR1 firereset");
+      await cpp.exec("sudo pkill -SIGUSR1 firereset");
+      await cpp.exec("sudo pkill -SIGUSR1 firereset");
+    } catch(err) {
+      log.error("Got error when resetting gold, err:", err);
+    }
+  }
+
   resetDevice() {
     log.info("Resetting device to factory defaults...");
+
+    if(platform.getName() === 'gold') {
+      return this.resetGold();
+    }
 
     if(Firewalla.isOverlayFS()) {
       log.info("OverlayFS is enabled");

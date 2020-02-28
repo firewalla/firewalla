@@ -396,13 +396,14 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
-//    await this.regularClean("sumflow", "sumflow:*");
+      await this.regularClean("sumflow", "sumflow:*");
       await this.regularClean("syssumflow", "syssumflow:*");
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
       await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
       await this.regularClean("dns", "rdns:ip:*");
       await this.regularClean("perf", "perf:*");
+      await this.regularClean("networkConfigHistory", "history:networkConfig*")
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);

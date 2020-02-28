@@ -21,7 +21,7 @@ let express = require('express');
 let router = express.Router();
 
 let HostManager = require('../../net2/HostManager.js');
-let hostManager = new HostManager('api', 'client', 'info');
+let hostManager = new HostManager();
 
 let FlowManager = require('../../net2/FlowManager.js');
 let flowManager = new FlowManager();
@@ -75,12 +75,12 @@ router.get('/:host',
 
                      Promise.all([
                        flowTool.prepareRecentFlows(jsonObj, {mac: h.o.mac}),
-                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareAppActivityFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareCategoryActivityFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareDetailedCategoryFlowsForHost(jsonObj, h.o.mac),
-                       netBotTool.prepareDetailedAppFlowsForHost(jsonObj, h.o.mac)
+                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareAppActivityFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareCategoryActivityFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareDetailedCategoryFlowsForHost(jsonObj, h.o.mac, {}),
+                       netBotTool.prepareDetailedAppFlowsForHost(jsonObj, h.o.mac, {})
                    ]).then(() => {
                        res.json(jsonObj);
                      });

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,7 +16,6 @@
 
 const log = require('./logger.js')(__filename);
 
-const ip = require('ip');
 const cp = require('child_process');
 const spawn = cp.spawn;
 const execAsync = require('util').promisify(cp.exec)
@@ -84,12 +83,15 @@ exports.dnsFlush = dnsFlush;
 exports.dnsFlushAsync = util.promisify(dnsFlush);
 exports.portForwardFlush = portForwardFlush;
 exports.portForwardFlushAsync = util.promisify(portForwardFlush);
+exports.prepare = prepare;
 exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
 exports.dhcpSubnetChangeAsync = util.promisify(dhcpSubnetChange);
 exports.switchMonitoring = switchMonitoring;
 exports.switchMonitoringAsync = util.promisify(switchMonitoring);
+exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
+exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
 
 var workqueue = [];
 var running = false;
@@ -130,7 +132,7 @@ function iptables(rule, callback) {
         let _src = " -s " + ip;
         let cmdline = "";
         let getCommand = function(action, src) {
-          return `sudo iptables -w -t nat ${action} POSTROUTING ${src} -j MASQUERADE`;
+          return `sudo iptables -w -t nat ${action} FW_POSTROUTING ${src} -j MASQUERADE`;
         };
 
         switch (action) {
@@ -141,7 +143,7 @@ function iptables(rule, callback) {
             cmdline = `(${getCommand("-C", _src)} && ${getCommand(action, _src)}); true`;
             break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + " POSTROUTING " + _src + " -j MASQUERADE";
+            cmdline = "sudo iptables -w -t nat " + action + " FW_POSTROUTING " + _src + " -j MASQUERADE";
             break;
         }
         log.debug("IPTABLE:DHCP:Running commandline: ", cmdline);
@@ -188,6 +190,42 @@ function iptables(rule, callback) {
         running = false;
         newRule(null, null);
       });
+    } else if (rule.type === "switch_interface_monitoring") {
+      const state = rule.state;
+      const iface = rule.iface;
+      let action = "-D";
+      if (state !== true) {
+        action = "-I";
+      }
+
+      let cmdline = "";
+      const getCommand = function(action, table, chain, direction, iface) {
+        return `sudo iptables -w -t ${table} ${action} ${chain} ${direction === "in" ? "-i" : "-o"} ${iface} -j ACCEPT`;
+      }
+
+      switch (action) {
+        case "-I":
+          // nat table does not support -o option
+          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "in", iface)} || ${getCommand(action, "nat", "FW_NAT_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} || ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) || ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          break;
+        case "-D":
+          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "in", iface)} && ${getCommand(action, "nat", "FW_NAT_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} && ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) && ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          cmdline += ` ; true`;
+          break;
+        default:
+          log.error("Unsupport action for switch_interfce_monitoring: " + action);
+          break;
+      }
+      cp.exec(cmdline, (err, stdout, stderr) => {
+        if (callback)
+          callback(err, null);
+        running = false;
+        newRule(null, null);
+      });
     } else if (rule.type == "dns") {
         let state = rule.state;
         let ip = rule.ip;
@@ -200,16 +238,15 @@ function iptables(rule, callback) {
 
         let _src = " -s " + ip;
         if (ip.includes("0.0.0.0")) {
-            _src = "-i eth0";
+            _src = "";
         }
 
         const chain = _getDNSRedirectChain(srcType);
 
-        let cmd = "iptables";
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
-          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination ${dns}`
+          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_set src --dport 53 -j DNAT --to-destination ${dns}`
         }
 
         switch(action) {
@@ -223,7 +260,7 @@ function iptables(rule, callback) {
             cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + "  PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_mac_set src --dport 53 -j DNAT --to-destination " + dns;
+            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_set src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_set src --dport 53 -j DNAT --to-destination " + dns;
           break;
         }
 
@@ -268,7 +305,7 @@ function iptables(rule, callback) {
         let cmdline = "";
 
         let getCommand = function(action, protocol, destIP, dport, toIP, toPort) {
-          return `sudo iptables -w -t nat ${action} PREROUTING_PORT_FORWARD -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
+          return `sudo iptables -w -t nat ${action} FW_PREROUTING_PORT_FORWARD -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
         }
 
         switch(action) {
@@ -293,7 +330,7 @@ function iptables(rule, callback) {
             newRule(null, null);
         });
     } else if (rule.type === "port_forward_flush") {
-      const cmdline = `sudo iptables -w -t nat -F PREROUTING_PORT_FORWARD`;
+      const cmdline = `sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD`;
       log.debug("IPTABLE:PORT_FORWARD_FLUSH:Running commandline: ", cmdline);
       cp.exec(cmdline, (err, stdout, stderr) => {
         if (err) {
@@ -318,12 +355,12 @@ function iptables(rule, callback) {
 function iptablesArgs(rule) {
     let args = [];
 
-    if (!rule.chain) rule.chain = 'FORWARD';
+    if (!rule.chain) rule.chain = 'FW_FORWARD';
 
     if (rule.chain) args = args.concat([rule.action, rule.chain]);
     if (rule.protocol) args = args.concat(["-p", rule.protocol]);
     if (rule.src && rule.src == "0.0.0.0") {
-        args = args.concat(["-i", "eth0"]);
+
     } else {
         if (rule.src) args = args.concat(["--src", rule.src]);
     }
@@ -370,19 +407,17 @@ function deleteRule(rule, callback) {
 
 function _getDNSRedirectChain(type) {
   type = type || "local";
-  let chain = "PREROUTING_DNS_DEFAULT";
+  let chain;
   switch (type) {
-    case "local":
-      chain = "PREROUTING_DNS_DEFAULT";
-      break;
     case "vpn":
-      chain = "PREROUTING_DNS_VPN";
+      chain = "FW_PREROUTING_DNS_VPN";
       break;
     case "vpnClient":
-      chain = "PREROUTING_DNS_VPN_CLIENT";
+      chain = "FW_PREROUTING_DNS_VPN_CLIENT";
       break;
+    case "local":
     default:
-      chain = "PREROUTING_DNS_DEFAULT";
+      chain = "FW_PREROUTING_DNS_DEFAULT";
   }
   return chain;
 }
@@ -418,11 +453,19 @@ function dhcpSubnetChange(ip, state, callback) {
   }, callback);
 }
 
+function prepare() {
+  return execAsync(
+    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true) && (sudo iptables -w -t mangle -N FW_PREROUTING || true)"
+  ).catch(err => {
+    log.error("IPTABLE:PREPARE:Unable to prepare", err);
+  })
+}
+
 function flush() {
   return execAsync(
-    "sudo iptables -w -F && sudo iptables -w -F -t nat && sudo iptables -w -F -t raw && sudo iptables -w -F -t mangle",
+    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING",
   ).catch(err => {
-    log.error("IP6TABLE:FLUSH:Unable to flush", err)
+    log.error("IPTABLE:FLUSH:Unable to flush", err)
   });
 }
 
@@ -431,7 +474,15 @@ function switchMonitoring(state, callback) {
     type: "switch_monitoring",
     state: state
   }, callback);
-} 
+}
+
+function switchInterfaceMonitoring(state, iface, callback) {
+  newRule({
+    type: "switch_interface_monitoring",
+    iface: iface,
+    state: state
+  }, callback);
+}
 
 async function run(listofcmds) {
   for (const cmd of listofcmds || []) {
@@ -457,8 +508,9 @@ exports.Rule = class Rule {
   constructor(table = 'filter') {
     this.family = 4;
     this.table = table;
-    this.proto = 'all';
     this.match = [];
+    this.params = null;
+    this.cmt = null;
   }
 
   fam(v) { this.family = v; return this }
@@ -470,6 +522,9 @@ exports.Rule = class Rule {
     return this
   }
   jmp(j) { this.jump = j; return this }
+
+  pam(p) { this.params = p; return this }
+  comment(c) { this.cmt = c; return this;}
 
   clone() {
     return Object.assign(Object.create(Rule.prototype), this)
@@ -486,8 +541,9 @@ exports.Rule = class Rule {
       '-t', this.table,
       operation,
       this.chain,
-      '-p', this.proto,
     ]
+
+    this.proto && cmd.push('-p', this.proto)
 
     this.match.forEach((match) => {
       switch(match.type) {
@@ -502,11 +558,35 @@ exports.Rule = class Rule {
         case 'iif':
           cmd.push('-i', match.name);
           break;
+
+        case 'oif':
+          cmd.push('-o', match.name);
+          break;
+
+        case 'src':
+          cmd.push('-s', match.name);
+          break;
+
+        case 'dst':
+          cmd.push('-d', match.name);
+          break;
+
+        case 'sport':
+          cmd.push('--sport', match.name);
+          break;
+
+        case 'dport':
+          cmd.push('--dport', match.name);
+          break;
+
         default:
       }
     })
 
-    cmd.push('-j', this.jump)
+    this.params && cmd.push(this.params)
+
+    this.jump && cmd.push('-j', this.jump)
+    this.cmt && cmd.push('-m comment --comment', this.cmt)
 
     return cmd.join(' ');
   }
@@ -522,6 +602,21 @@ exports.Rule = class Rule {
 
       case '-D':
         return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
+
+      case '-F':
+        return `bash -c '${rule}; true'`;
     }
   }
+}
+
+exports.CHAINS = {
+  PREROUTING: 'FW_PREROUTING',
+  WHITELIST: 'FW_WHITELIST',
+  WHITELIST_PREROUTE: 'FW_WHITELIST_PREROUTE',
+  NAT_PREROUTING: 'FW_NAT_PREROUTING',
+  NAT_WHITELIST: 'FW_NAT_WHITELIST',
+  NAT_WHITELIST_PREROUTE: 'FW_NAT_WHITELIST_PREROUTE',
+  BLOCK: 'FW_BLOCK',
+  DROP: 'FW_DROP',
+  PREROUTING_DNS_DEFAULT: 'FW_PREROUTING_DNS_DEFAULT',
 }

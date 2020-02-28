@@ -15,6 +15,7 @@
 
 'use strict';
 
+const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, 'info');
 const jsonfile = require('jsonfile');
 const util = require('util');
@@ -38,7 +39,7 @@ const moment = require('moment');
 
 function suffixAutoBlock(alarm, category) {
   if (alarm.result === "block" &&
-      alarm.result_method === "auto") {
+    alarm.result_method === "auto") {
     return `${category}_AUTOBLOCK`;
   }
 
@@ -47,7 +48,7 @@ function suffixAutoBlock(alarm, category) {
 
 function suffixDirection(alarm, category) {
   if ("p.local_is_client" in alarm) {
-    if(alarm["p.local_is_client"] === "1") {
+    if (alarm["p.local_is_client"] === "1") {
       return `${category}_OUTBOUND`;
     } else {
       return `${category}_INBOUND`;
@@ -77,7 +78,7 @@ class Alarm {
 
     if (info) Object.assign(this, info);
 
-//    this.validate(type);
+    //    this.validate(type);
 
   }
 
@@ -128,9 +129,9 @@ class Alarm {
 
   cloudAction() {
     const decision = this["p.cloud.decision"];
-    switch(decision) {
+    switch (decision) {
       case "block": {
-        if(!this["p.action.block"]) {
+        if (!this["p.action.block"]) {
           return decision;
         } else {
           return null;
@@ -177,7 +178,7 @@ class Alarm {
   validate(type) {
 
     this.requiredKeys().forEach((v) => {
-      if(!this[v]) {
+      if (!this[v]) {
         log.error("Invalid payload for " + this.type + ", missing " + v);
         throw new Error("Invalid alarm object");
       }
@@ -194,13 +195,13 @@ class Alarm {
     let alarm2 = this;
     let keysToCompare = this.keysToCompareForDedup();
 
-    if(alarm.type !== alarm2.type)
+    if (alarm.type !== alarm2.type)
       return false;
 
-    for(var i in keysToCompare) {
+    for (var i in keysToCompare) {
       let k = keysToCompare[i];
       // using == to compromise numbers comparison
-      if(alarm[k] && alarm2[k] && alarm[k] == alarm2[k]) {
+      if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k])) {
 
       } else {
         return false;
@@ -216,7 +217,7 @@ class Alarm {
 
   isOutbound() {
     if ("p.local_is_client" in this) {
-      if(this["p.local_is_client"] === "1") {
+      if (this["p.local_is_client"] === "1") {
         return true;
       } else {
         return false;
@@ -228,7 +229,7 @@ class Alarm {
 
   isInbound() {
     if ("p.local_is_client" in this) {
-      if(this["p.local_is_client"] === "1") {
+      if (this["p.local_is_client"] === "1") {
         return false;
       } else {
         return true;
@@ -240,7 +241,7 @@ class Alarm {
 
   isAutoBlock() {
     return this.result === "block" &&
-        this.result_method === "auto";
+      this.result_method === "auto";
   }
 }
 
@@ -251,7 +252,7 @@ class NewDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac"];
+    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
@@ -264,12 +265,8 @@ class DeviceBackOnlineAlarm extends Alarm {
     super("ALARM_DEVICE_BACK_ONLINE", timestamp, device, info);
   }
 
-  getManagementType() {
-    return "info";
-  }
-
   keysToCompareForDedup() {
-    return ["p.device.mac"];
+    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
@@ -281,16 +278,12 @@ class DeviceOfflineAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_DEVICE_OFFLINE", timestamp, device, info);
     if (info && info["p.device.lastSeen"]) {
-      this['p.device.lastSeenTimezone'] = moment(info["p.device.lastSeen"]*1000).format('LT')
+      this['p.device.lastSeenTimezone'] = moment(info["p.device.lastSeen"] * 1000).format('LT')
     }
   }
 
-  getManagementType() {
-    return "info";
-  }
-
   keysToCompareForDedup() {
-    return ["p.device.mac"];
+    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
@@ -304,7 +297,7 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.device.name", "p.device.ip"]
+    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
@@ -343,7 +336,7 @@ class VPNRestoreAlarm extends Alarm {
       this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
     }
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).format("LT")
     }
   }
 
@@ -363,7 +356,7 @@ class VPNRestoreAlarm extends Alarm {
     let key = super.localizedNotificationContentKey();
 
     key += "." + this["p.vpn.subtype"];
-    
+
     return key;
   }
 
@@ -380,7 +373,7 @@ class VPNDisconnectAlarm extends Alarm {
       this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
     }
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).format("LT")
     }
   }
 
@@ -457,10 +450,10 @@ class VulnerabilityAlarm extends Alarm {
   }
 
   isDup(alarm) {
-    if(!super.isDup(alarm))
+    if (!super.isDup(alarm))
       return false;
 
-    if(alarm["p.vid"] === this["p.vid"]) {
+    if (alarm["p.vid"] === this["p.vid"]) {
       return true;
     }
 
@@ -495,15 +488,15 @@ class BroNoticeAlarm extends Alarm {
     category = suffixAutoBlock(this, category)
 
     // fallback if localization for this special bro type does not exist
-    if(`NOTIF_${category}` === i18n.__(`NOTIF_${category}`)) {
+    if (`NOTIF_${category}` === i18n.__(`NOTIF_${category}`)) {
       category = this.type;
     }
-    
+
     return category;
   }
 
   localizedNotificationContentKey() {
-    if(this["p.noticeType"]) {
+    if (this["p.noticeType"]) {
       return `notif.content.${this.type}.${this["p.noticeType"]}`;
     } else {
       return super.localizedNotificationContentKey();
@@ -519,11 +512,11 @@ class IntelReportAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_INTEL_REPORT", timestamp, device, info);
   }
-  
+
   getI18NCategory() {
     return "ALARM_INTEL_REPORT";
 
-    if(Number(this["p.attempts"]) === 1) {
+    if (Number(this["p.attempts"]) === 1) {
       return "ALARM_INTEL_REPORT";
     } else {
       return "ALARM_INTEL_REPORT_N";
@@ -547,7 +540,7 @@ class IntelAlarm extends Alarm {
 
     let category = "ALARM_INTEL";
 
-    if("p.dest.url" in this) {
+    if ("p.dest.url" in this) {
       category = "ALARM_URL_INTEL";
     }
 
@@ -556,52 +549,52 @@ class IntelAlarm extends Alarm {
 
     category = suffixDirection(this, category);
     category = suffixAutoBlock(this, category)
-   
+
     return category;
   }
-  
+
   getReadableDestination() {
     const name = this["p.dest.name"];
     const port = this["p.dest.port"];
     const url = this["p.dest.url"];
-    
-    if(url) {
+
+    if (url) {
       return url;
-    } else if( name && port) {
-      if(port == 80) {
+    } else if (name && port) {
+      if (port == 80) {
         return `http://${name}`
-      } else if(port == 443) {
+      } else if (port == 443) {
         return `https://${name}`
       } else {
         return `${name}:${port}`
       }
     } else {
-      if(name) {
+      if (name) {
         return name
       } else {
-        return this["p.dest.id"] 
+        return this["p.dest.id"]
       }
     }
   }
 
   keysToCompareForDedup() {
     const url = this["p.dest.url"];
-    if(url) {
-      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port"];
+    if (url) {
+      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port", "p.intf.id", "p.tag.ids"];
     }
-    return ["p.device.mac", "p.dest.name", "p.dest.port"];
+    return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
-    if(this.isInbound()) {
+    if (this.isInbound()) {
       key += ".INBOUND";
-    } else if(this.isOutbound()) {
+    } else if (this.isOutbound()) {
       key += ".OUTBOUND";
     }
 
-    if(this.isAutoBlock()) {
+    if (this.isAutoBlock()) {
       key += ".AUTOBLOCK";
     }
     return key;
@@ -613,9 +606,9 @@ class IntelAlarm extends Alarm {
     // dest category
     // device port
     // device url
-    return [this["p.device.name"], 
-    this.getReadableDestination(), 
-    this["p.security.primaryReason"],    
+    return [this["p.device.name"],
+    this.getReadableDestination(),
+    this["p.security.primaryReason"],
     this["p.device.port"],
     this["p.device.url"]];
   }
@@ -624,10 +617,10 @@ class IntelAlarm extends Alarm {
 class OutboundAlarm extends Alarm {
 
   constructor(type, timestamp, device, destinationID, info) {
-    super(type, timestamp ,device, info);
+    super(type, timestamp, device, info);
     this["p.dest.id"] = destinationID;
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).format("LT")
     }
   }
 
@@ -664,40 +657,46 @@ class OutboundAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.id"];
+    return ["p.device.mac", "p.dest.id", "p.intf.id", "p.tag.ids"];
   }
 
   isDup(alarm) {
     let alarm2 = this;
-    
-    if(alarm.type !== alarm2.type) {
+
+    if (alarm.type !== alarm2.type) {
       return false;
     }
 
     const macKey = "p.device.mac";
     const destDomainKey = "p.dest.domain";
     const destNameKey = "p.dest.id";
-    
+
     // Mac
-    if(!alarm[macKey] || 
-    !alarm2[macKey] || 
-    alarm[macKey] !== alarm2[macKey]) {
+    if (!alarm[macKey] ||
+      !alarm2[macKey] ||
+      alarm[macKey] !== alarm2[macKey]) {
+      return false;
+    }
+
+    // Interface
+    const intfKey = "p.intf.id";
+    if (!_.has(alarm, intfKey) || !_.has(alarm2, intfKey) || alarm[intfKey] !== alarm2[intfKey]) {
       return false;
     }
 
     // now these two alarms have same device MAC
 
     // Destination
-    if(destDomainKey in alarm && 
+    if (destDomainKey in alarm &&
       destDomainKey in alarm2 &&
       alarm[destDomainKey] === alarm2[destDomainKey]) {
       return true;
     }
 
 
-    if(!alarm[destNameKey] || 
-    !alarm2[destNameKey] || 
-    alarm[destNameKey] !== alarm2[destNameKey]) {
+    if (!alarm[destNameKey] ||
+      !alarm2[destNameKey] ||
+      alarm[destNameKey] !== alarm2[destNameKey]) {
       return false;
     }
 
@@ -708,23 +707,36 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
   }
-  localizedNotificationContentArray(){
-    return [this["p.device.name"], 
-    this["p.totalUsage.humansize"], 
+  localizedNotificationContentArray() {
+    return [this["p.device.name"],
+    this["p.totalUsage.humansize"],
     this["p.duration"],
     this["p.percentage"]
     ];
   }
 }
-class OverDataPlanUsageAlarm extends Alarm{
+class OverDataPlanUsageAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_OVER_DATA_PLAN_USAGE", timestamp, device, info);
   }
-  requiredKeys(){
+  isDup(alarm) {
+    let alarm2 = this;
+    if (alarm.type !== alarm2.type) {
+      return false;
+    }
+    if (alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level']) {
+      return false;
+    }
+    return true;
+  }
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.data_plan.cooldown") || 60 * 60 * 24 * 30
+  }
+  requiredKeys() {
     return [];
   }
-  localizedNotificationContentArray(){
-    return [this["p.percentage"], 
+  localizedNotificationContentArray() {
+    return [this["p.percentage"],
     this["p.totalUsage.humansize"],
     this["p.planUsage.humansize"]
     ];
@@ -746,9 +758,9 @@ class LargeTransferAlarm extends OutboundAlarm {
 
   getNotificationCategory() {
     let category = super.getNotificationCategory()
-    
-    if(this["p.dest.name"] === this["p.dest.ip"]) {
-      if(this["p.dest.country"]) {
+
+    if (this["p.dest.name"] === this["p.dest.ip"]) {
+      if (this["p.dest.country"]) {
         let country = this["p.dest.country"]
         let locale = i18n.getLocale()
         try {
@@ -766,7 +778,7 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   getCountryName() {
-    if(this["p.dest.country"]) {
+    if (this["p.dest.country"]) {
       let country = this["p.dest.country"]
       let locale = i18n.getLocale()
       try {
@@ -792,7 +804,7 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentKey() {
-    if(this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
+    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
       return super.localizedNotificationContentKey() + "_COUNTRY";
     } else {
       return super.localizedNotificationContentKey();
@@ -800,8 +812,8 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], 
-    this["p.transfer.outbound.humansize"], 
+    return [this["p.device.name"],
+    this["p.transfer.outbound.humansize"],
     this["p.dest.name"],
     this["p.timestampTimezone"],
     this.getCountryName()
@@ -843,14 +855,21 @@ class PornAlarm extends OutboundAlarm {
   }
 }
 
+class VpnAlarm extends OutboundAlarm {
+  constructor(timestamp, device, vpnID, info) {
+    super("ALARM_VPN", timestamp, device, vpnID, info);
+    this["p.showMap"] = false;
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.device.name"], this["p.dest.name"]];
+  }
+}
+
 class SubnetAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_SUBNET", timestamp, device, info);
     this["p.showMap"] = false;
-  }
-
-  getManagementType() {
-    return "info";
   }
 
   keysToCompareForDedup() {
@@ -925,7 +944,7 @@ class UpnpAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.upnp.protocol"], 
+    return [this["p.upnp.protocol"],
     this["p.upnp.private.port"],
     this["p.device.name"]];
   }
@@ -949,6 +968,7 @@ let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
+  ALARM_VPN: VpnAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_ABNORMAL_BANDWIDTH_USAGE: AbnormalBandwidthUsageAlarm.prototype,
   ALARM_OVER_DATA_PLAN_USAGE: OverDataPlanUsageAlarm.prototype,
@@ -974,6 +994,7 @@ module.exports = {
   VideoAlarm: VideoAlarm,
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm,
+  VpnAlarm: VpnAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   AbnormalBandwidthUsageAlarm: AbnormalBandwidthUsageAlarm,
   OverDataPlanUsageAlarm: OverDataPlanUsageAlarm,

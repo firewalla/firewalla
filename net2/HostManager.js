@@ -15,9 +15,8 @@
 'use strict';
 const log = require('./logger.js')(__filename);
 
-var instances = {};
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const exec = require('child-process-promise').exec
 
@@ -32,18 +31,15 @@ const platform = platformLoader.getPlatform();
 
 const Spoofer = require('./Spoofer.js');
 var spoofer = null;
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
 const FlowManager = require('./FlowManager.js');
 const flowManager = new FlowManager('debug');
 
+const FireRouter = require('./FireRouter.js');
+
 const Host = require('./Host.js');
-
-const ShieldManager = require('./ShieldManager.js');
-
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
@@ -59,6 +55,9 @@ const policyManager2 = new PolicyManager2();
 
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
+
+const NetBotTool = require('../net2/NetBotTool');
+const netBotTool = new NetBotTool();
 
 const SpooferManager = require('./SpooferManager.js')
 
@@ -86,37 +85,44 @@ const FlowTool = require('./FlowTool.js');
 const flowTool = new FlowTool();
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const VPNClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const vpnClientEnforcer = new VPNClientEnforcer();
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const iptables = require('./Iptables.js');
 const ip6tables = require('./Ip6tables.js');
 
+const DNSTool = require('../net2/DNSTool.js')
+const dnsTool = new DNSTool()
+
+const NetworkProfileManager = require('./NetworkProfileManager.js');
+const TagManager = require('./TagManager.js');
 const Alarm = require('../alarm/Alarm.js');
 
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
+const Message = require('./Message.js');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
+
+const wrapIptables = require("./Iptables.js").wrapIptables;
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
+let instance = null;
+
 module.exports = class HostManager {
-  // type is 'server' or 'client'
-  constructor(name, type, loglevel) {
-    loglevel = loglevel || 'info';
-
-    if (instances[name] == null) {
-
-      this.instanceName = name;
+  constructor() {
+    if (!instance) {
       this.hosts = {}; // all, active, dead, alarm
       this.hostsdb = {};
       this.hosts.all = [];
       this.callbacks = {};
-      this.type = type;
       this.policy = {};
       sysManager.update((err) => {
         if (err == null) {
           log.info("System Manager Updated");
           if(!f.isDocker()) {
-            spoofer = new Spoofer(sysManager.config.monitoringInterface, {}, false);
+            spoofer = new Spoofer({}, false);
           } else {
             // for docker
             spoofer = {
@@ -139,18 +145,29 @@ module.exports = class HostManager {
       });
 
       let c = require('./MessageBus.js');
-      this.subscriber = new c(loglevel);
+      this.messageBus = new c("info");
       this.iptablesReady = false;
 
-      // ONLY register for these events if hostmanager type IS server
-      if(this.type === "server") {
+      // ONLY register for these events in FireMain process
+      if(f.isMain()) {
         sem.once('IPTABLES_READY', () => {
           log.info("Iptables is ready");
           this.iptablesReady = true;
         })
 
+        sclient.on("message", (channel, message) => {
+          if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+            if (this.iptablesReady) {
+              log.info("Rescan hosts due to network info is reloaded");
+              this.getHosts();
+            }
+          }
+        });
+
+        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+
         log.info("Subscribing Scan:Done event...")
-        this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
+        this.messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
           if (!this.iptablesReady) {
             log.warn("Iptables is not ready yet");
             return;
@@ -162,8 +179,8 @@ module.exports = class HostManager {
             }
           });
         });
-        this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
-          if (this.type != "server") {
+        this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
+          if (!f.isMain()) {
             return;
           }
           if (!this.iptablesReady) {
@@ -188,9 +205,9 @@ module.exports = class HostManager {
         },1000*60*5);
       }
 
-      instances[name] = this;
+      instance = this;
     }
-    return instances[name];
+    return instance;
   }
 
   keepalive() {
@@ -208,7 +225,11 @@ module.exports = class HostManager {
   }
 
   basicDataForInit(json, options) {
-    let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
+    let networkinfo = sysManager.getDefaultWanInterface();
+    if(networkinfo.gateway === null) {
+      delete networkinfo.gateway;
+    }
+
     json.network = networkinfo;
 
     sysManager.updateInfo();
@@ -305,9 +326,9 @@ module.exports = class HostManager {
     }
     json.hosts = _hosts;
   }
-  async yesterdayStatsForInit(json, mac) {
-    const downloadKey = `download${mac ? ':' + mac : ''}`;
-    const uploadKey = `upload${mac ? ':' + mac : ''}`;
+  async yesterdayStatsForInit(json, target) {
+    const downloadKey = `download${target ? ':' + target : ''}`;
+    const uploadKey = `upload${target ? ':' + target : ''}`;
     const todayHours = new Date().getHours();
     const countHours = todayHours + 24;
     const downloadStats = await getHitsAsync(downloadKey, "1hour", countHours);
@@ -340,6 +361,7 @@ module.exports = class HostManager {
     let uploadStats = await getHitsAsync("upload", "1minute", 60)
     return { downloadStats, uploadStats }
   }
+
   async monthlyDataStats(mac, date) {
     //default calender month
     const now = new Date();
@@ -384,8 +406,8 @@ module.exports = class HostManager {
     }
   }
 
-  async last60MinStatsForInit(json, mac) {
-    const subKey = mac ? ':' + mac : ''
+  async last60MinStatsForInit(json, target) {
+    const subKey = target ? ':' + target : ''
 
     let downloadStats = await getHitsAsync("download" + subKey, "1minute", 61)
     if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
@@ -437,8 +459,8 @@ module.exports = class HostManager {
     json.last60top = values
   }
 
-  async last30daysStatsForInit(json, mac) {
-    const subKey = mac ? ':' + mac : ''
+  async last30daysStatsForInit(json, target) {
+    const subKey = target ? ':' + target : ''
     let downloadStats = await getHitsAsync("download" + subKey, "1day", 30)
     let uploadStats = await getHitsAsync("upload" + subKey, "1day", 30)
 
@@ -562,15 +584,14 @@ module.exports = class HostManager {
 
     let promises = this.hosts.all.map((host) => flowManager.getStats2(host));
     await Promise.all(promises);
-    await this.hostPolicyRulesForInit();
+    await this.loadHostsPolicyRules();
     await this.hostsInfoForInit(json);
     return json;
   }
 
   async dhcpRangeForInit(network, json) {
     const key = network + "DhcpRange";
-    const dnsmasq = new DNSMASQ();
-    let dhcpRange = dnsmasq.getDefaultDhcpRange(network);
+    let dhcpRange = dnsTool.getDefaultDhcpRange(network);
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
         if (data && data.dnsmasq) {
@@ -703,7 +724,7 @@ module.exports = class HostManager {
     });
   }
 
-  async hostPolicyRulesForInit() {
+  async loadHostsPolicyRules() {
     log.info("Reading individual host policy rules");
 
     await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
@@ -876,6 +897,25 @@ module.exports = class HostManager {
     }
   }
 
+  async networkConfig(json) {
+    const config = await FireRouter.getConfig();
+    json.networkConfig = config;
+  }
+
+  async tagsForInit(json) {
+    await TagManager.refreshTags();
+    json.tags = await TagManager.toJson();
+  }
+
+  async btMacForInit(json) {
+    json.btMac = await rclient.getAsync("sys:bt:mac");
+  }
+
+  async networkProfilesForInit(json) {
+    await NetworkProfileManager.refreshNetworkProfiles();
+    json.networkProfiles = await NetworkProfileManager.toJson();
+  }
+
   toJson(includeHosts, options, callback) {
 
     if(typeof options === 'function') {
@@ -912,7 +952,12 @@ module.exports = class HostManager {
           this.asyncBasicDataForInit(json),
           this.getRecentFlows(json),
           this.getGuessedRouters(json),
-          this.getGuardian(json)
+          this.getGuardian(json),
+          this.networkConfig(json),
+          this.networkProfilesForInit(json),
+          this.tagsForInit(json),
+          this.btMacForInit(json),
+          netBotTool.loadSystemStats(json)
         ];
 
         this.basicDataForInit(json, options);
@@ -963,6 +1008,14 @@ module.exports = class HostManager {
         callback(err);
       }
     });
+  }
+
+  getHostFastByMAC(mac) {
+    if (mac == null) {
+      return null;
+    }
+
+    return this.hostsdb[`host:mac:${mac}`];
   }
 
   getHostFast(ip) {
@@ -1017,7 +1070,6 @@ module.exports = class HostManager {
     if (o == null) return null;
 
     host = new Host(o, this);
-    host.type = this.type;
 
     //this.hostsdb[`host:mac:${o.mac}`] = host
     // do not update host:mac entry in this.hostsdb intentionally,
@@ -1047,22 +1099,19 @@ module.exports = class HostManager {
     let mackey = "host:mac:" + host.o.mac;
     await host.identifyDevice(false);
     let data = await rclient.hgetallAsync(mackey)
-    if (!data || !data.ipv6Addr) return;
+    if (!data) return;
 
-    let ipv6array = JSON.parse(data.ipv6Addr);
+    let ipv6array = data.ipv6Addr ? JSON.parse(data.ipv6Addr) : [];
     if (host.ipv6Addr == null) {
       host.ipv6Addr = [];
     }
 
     let needsave = false;
 
-    //log.debug("=======>",host.o.ipv4Addr, host.ipv6Addr, ipv6array);
-    for (let i in ipv6array) {
-      if (host.ipv6Addr.indexOf(ipv6array[i]) == -1) {
-        host.ipv6Addr.push(ipv6array[i]);
-        needsave = true;
-      }
-    }
+    // if updated ipv6 array is not same as the old ipv6 array, need to save the new ipv6 array to redis host:mac:
+    // the number of addresses in new array is usually fewer than the old since Host.cleanV6() cleans up the expired addresses
+    if (ipv6array.some(a => !host.ipv6Addr.includes(a)) || host.ipv6Addr.some(a => !ipv6array.includes(a)))
+      needsave = true;
 
     sysManager.setNeighbor(host.o.ipv4Addr);
 
@@ -1120,7 +1169,7 @@ module.exports = class HostManager {
     this.getHostsActive = Math.floor(new Date() / 1000);
     // end of mutx check
 
-    if(this.type === "server") {
+    if(f.isMain()) {
       this.safeExecPolicy(true); // do not apply host policy here, since host information may be out of date. Host policy will be applied later after information is refreshed from host:mac:*
     }
     for (let h in this.hostsdb) {
@@ -1156,7 +1205,6 @@ module.exports = class HostManager {
 
       if (hostbymac == null) {
         hostbymac = new Host(o,this);
-        hostbymac.type = this.type;
         this.hosts.all.push(hostbymac);
         this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         this.hostsdb['host:mac:' + o.mac] = hostbymac;
@@ -1178,15 +1226,21 @@ module.exports = class HostManager {
         }
         this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
-        let ipv6Addrs = hostbymac.ipv6Addr
-        if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-          for(let i in ipv6Addrs) {
-            let ip6 = ipv6Addrs[i]
-            let key = `host:ip6:${ip6}`
-            this.hostsdb[key] = hostbymac
+        if (hostbymac.o.ipv6Addr && Array.isArray(hostbymac.o.ipv6Addr)) {
+          // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
+          for (const oldIpv6 of hostbymac.o.ipv6Addr) {
+            if (!o.ipv6Addr || !Array.isArray(o.ipv6Addr) || !o.ipv6Addr.includes(oldIpv6)) {
+              // the physical host dropped old ipv6 address
+              this.hostsdb['host:ip6:' + oldIpv6] = null;
+            }
           }
         }
-
+        if (o.ipv6Addr && Array.isArray(o.ipv6Addr)) {
+          for (const newIpv6 of o.ipv6Addr) {
+            this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
+          }
+        }
+        
         hostbymac.update(o);
       }
       hostbymac._mark = true;
@@ -1201,11 +1255,11 @@ module.exports = class HostManager {
         }
       }
       await hostbymac.cleanV6()
-      if (this.type == "server") {
+      if (f.isMain()) {
         await hostbymac.applyPolicyAsync()
+        // call apply policy before to ensure policy data is loaded before device indentification
+        await this.syncHost(hostbymac, true)
       }
-      // call apply policy before to ensure policy data is loaded before device indentification
-      await this.syncHost(hostbymac, true)
     })
     let removedHosts = [];
     /*
@@ -1219,17 +1273,15 @@ module.exports = class HostManager {
     let allIPv6Addrs = [];
     let allIPv4Addrs = [];
 
-    let myIp = sysManager.myIp();
-
     for (let h in this.hostsdb) {
       let hostbymac = this.hostsdb[h];
       if (hostbymac && h.startsWith("host:mac")) {
         if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
-          if (hostbymac.ipv4Addr != myIp) {   // local ipv6 do not count
+          if (!sysManager.isMyIP(hostbymac.ipv4Addr)) {   // local ipv6 do not count
             allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
           }
         }
-        if (hostbymac.o.ipv4Addr!=null && hostbymac.o.ipv4Addr != myIp) {
+        if (hostbymac.o.ipv4Addr!=null && !sysManager.isMyIP(hostbymac.o.ipv4Addr)) {
           allIPv4Addrs.push(hostbymac.o.ipv4Addr);
         }
       }
@@ -1254,7 +1306,7 @@ module.exports = class HostManager {
       return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
     })
     this.getHostsActive = null;
-    if (this.type === "server") {
+    if (f.isMain()) {
       spoofer.validateV6Spoofs(allIPv6Addrs);
       spoofer.validateV4Spoofs(allIPv4Addrs);
     }
@@ -1262,61 +1314,58 @@ module.exports = class HostManager {
     return this.hosts.all;
   }
 
-  setPolicyAsync(name, data) {
-    return util.promisify(this.setPolicy).bind(this)(name, data)
+  setPolicy(name, data, callback) {
+    if (!callback) callback = function() {}
+    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
   }
 
-  setPolicy(name, data, callback) {
-
-    let savePolicyWrapper = (name, policy, callback) => {
-      this.savePolicy((err, data) => {
-        if (err == null) {
-          let obj = {};
-          obj[name] = policy;
-          if (this.subscriber) {
-            setTimeout(() => {
-            this.subscriber.publish("DiscoveryEvent", "SystemPolicy:Changed", "0", obj);
-            }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
-          }
-          if (callback) {
-            callback(null, obj);
-          }
-        } else {
-          if (callback) {
-            callback(null, null);
-          }
-        }
-      });
+  async setPolicyAsync(name, data) {
+    await this.loadPolicyAsync()
+    if (this.policy[name] != null && this.policy[name] == data) {
+      log.debug("System:setPolicy:Nochange", name, data);
+      return;
     }
+    this.policy[name] = data;
+    log.debug("System:setPolicy:Changed", name, data);
 
-    this.loadPolicy((err, __data) => {
-      if (this.policy[name] != null && this.policy[name] == data) {
-        log.debug("System:setPolicy:Nochange", name, data);
-        if (callback) {
-          callback(null, null);
-        }
-        return;
-      }
-      this.policy[name] = data;
-      log.debug("System:setPolicy:Changed", name, data);
-
-      savePolicyWrapper(name, data, callback);
-
-    });
+    await this.savePolicy()
+    let obj = {};
+    obj[name] = data;
+    log.info(name, obj)
+    if (this.messageBus) {
+      setTimeout(() => {
+        this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
+      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+    }
+    return obj
   }
 
   async spoof(state) {
     log.debug("System:Spoof:", state, this.spoofing);
+    const sm = new SpooferManager();
     if (state == false) {
       await iptables.switchMonitoringAsync(false);
       await ip6tables.switchMonitoringAsync(false);
       // flush all ip addresses
-      log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-      await new SpooferManager().emptySpoofSet()
+      // log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
+      // no need to empty spoof set since dev flag file is placed now
+      // await sm.emptySpoofSet();
+      // create dev flag file if it does not exist, and restart bitbridge
+      // bitbridge binary will be replaced with mock file if this flag file exists
+      await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
+        return exec(`touch ${f.getFirewallaHome()}/bin/dev`).then(() => {
+          sm.scheduleReload();
+        });
+      });
     } else {
       await iptables.switchMonitoringAsync(true);
       await ip6tables.switchMonitoringAsync(true);
-      // do nothing if state is true
+      // remove dev flag file if it exists and restart bitbridge
+      await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
+        return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {
+          sm.scheduleReload();
+        });
+      }).catch((err) => {});
     }
   }
 
@@ -1325,13 +1374,24 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
-    const state = policy.state;
-    if (state === true) {
-      // Raise global shield to block incoming connections
-      await shieldManager.activateShield();
+    if (policy.state === true) {
+      let cmd = wrapIptables(`sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv4 inbound firewall");
+      });
+      cmd = wrapIptables(`sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv6 inbound firewall");
+      });
     } else {
-      await shieldManager.deactivateShield();
+      let cmd = wrapIptables(`sudo iptables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv4 inbound firewall");
+      });
+      cmd = wrapIptables(`sudo ip6tables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv6 inbound firewall");
+      });
     }
   }
 
@@ -1357,7 +1417,6 @@ module.exports = class HostManager {
     const type = policy.type;
     const state = policy.state;
     const reconnecting = policy.reconnecting || 0;
-    const appliedInterfaces = policy.appliedInterfaces || [];
     switch (type) {
       case "openvpn": {
         const profileId = policy.openvpn && policy.openvpn.profileId;
@@ -1369,22 +1428,9 @@ module.exports = class HostManager {
         const ovpnClient = new OpenVPNClient({profileId: profileId});
         await ovpnClient.saveSettings(settings);
         settings = await ovpnClient.loadSettings(); // settings is merged with default settings
-        // apply vpn client access to interfaces in appliedInterfaces
-        const supportedInterfaces = {
-          wifi: fConfig.monitoringWifiInterface
-        };
-        try {
-          // set/clear vpn access of all supported interfaces accordingly
-          for (let supportedInterface in supportedInterfaces) {
-            const intfName = supportedInterfaces[supportedInterface];
-            if (appliedInterfaces.includes(supportedInterface)) {
-              await vpnClientEnforcer.enableInterfaceVPNAccess(intfName, ovpnClient.getInterfaceName());
-            } else {
-              await vpnClientEnforcer.disableInterfaceVPNAccess(intfName, ovpnClient.getInterfaceName());
-            }
-          }
-        } catch (err) {
-          log.error("Failed to apply VPN client access to interfaces", err);
+        const rtId = await vpnClientEnforcer.getRtId(ovpnClient.getInterfaceName());
+        if (!rtId) {
+          log.error(`Routing table id is not found for ${profileId}`);
           return {state: false, running: false, reconnecting: 0};
         }
         if (state === true) {
@@ -1417,22 +1463,8 @@ module.exports = class HostManager {
               if (dnsServers.length > 0) {
                 if (settings.routeDNS) {
                   await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-                  // set/clear dns redirection of all supported interfaces accordingly
-                  for (let supportedInterface in supportedInterfaces) {
-                    const intfName = supportedInterfaces[supportedInterface];
-                    if (appliedInterfaces.includes(supportedInterface)) {
-                      await vpnClientEnforcer.enforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                    } else {
-                      await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                    }
-                  }
                 } else {
                   await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-                  // clear dns redirect for all supported interfaces
-                  for (let supportedInterface in supportedInterfaces) {
-                    const intfName = supportedInterfaces[supportedInterface];
-                    await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-                  }
                 }
               }
 
@@ -1551,11 +1583,6 @@ module.exports = class HostManager {
             if (dnsServers.length > 0) {
               // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
               await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
-              // clear dns redirect for all supported interfaces
-              for (let supportedInterface in supportedInterfaces) {
-                const intfName = supportedInterfaces[supportedInterface];
-                await vpnClientEnforcer.unenforceInterfaceDNSRedirect(intfName, ovpnClient.getInterfaceName(), dnsServers);
-              }
             }
 
             const updatedPolicy = this.policy["vpnClient"];
@@ -1593,7 +1620,7 @@ module.exports = class HostManager {
     return this.policy;
   }
 
-  savePolicy(callback) {
+  async savePolicy() {
     let key = "policy:system";
     let d = {};
     for (let k in this.policy) {
@@ -1602,14 +1629,7 @@ module.exports = class HostManager {
         d[k] = JSON.stringify(policyValue)
       }
     }
-    rclient.hmset(key, d, (err, data) => {
-      if (err != null) {
-        log.error("Host:Policy:Save:Error", key, err);
-      }
-      if (callback)
-        callback(err, null);
-    });
-
+    await rclient.hmset(key, d)
   }
 
   loadPolicyAsync() {
@@ -1652,7 +1672,7 @@ module.exports = class HostManager {
   execPolicy(skipHosts) {
     this.loadPolicy((err, data) => {
       log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
-      if (this.type == "server") {
+      if (f.isMain()) {
         let PolicyManager = require('./PolicyManager.js');
         let policyManager = new PolicyManager('info');
 
@@ -1670,7 +1690,57 @@ module.exports = class HostManager {
 
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null))
+    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null)).map(host => host.mac);
+  }
+
+  // return: Array<{intf: string, macs: Array<string>}>
+  getActiveIntfs() {
+    let inftMap = {};
+    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => (host != null) && host.intf))
+    .map(host => {
+      if (inftMap[host.intf]) {
+        inftMap[host.intf].push(host.mac);
+      } else {
+        inftMap[host.intf] = [host.mac];
+      }
+    });
+    
+    return _.map(inftMap, (macs, intf) => {
+      return {intf, macs: _.uniq(macs)};
+    });
+  }
+
+  // need active host?
+  getIntfMacs(intf) {
+    let macs = this.hosts.all.map(host => host.o).filter(host => host.intf && (host.intf == intf)).map(host => host.mac);
+    return _.uniq(macs);
+  }
+
+  // return: Array<{tag: number, macs: Array<string>}>
+  getActiveTags() {
+    let tagMap = {};
+    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => (host != null) && !_.isEmpty(host.tags)))
+    .map(host => {
+      for (const tag of JSON.parse(host.tags)) {
+        if (tagMap[tag]) {
+          tagMap[tag].push(host.mac);
+        } else {
+          tagMap[tag] = [host.mac];
+        }
+      }
+    });
+
+    return _.map(tagMap, (macs, tag) => {
+      return {tag, macs: _.uniq(macs)};
+    });
+  }
+
+  // need active host?
+  getTagMacs(tag) {
+    let macs =  this.hosts.all.map(host => host.o)
+    .filter(host => !_.isEmpty(host.tags) && JSON.parse(host.tags).includes(tag))
+    .map(host => host.mac);
+    return _.uniq(macs);
   }
 
   getActiveHumanDevices() {

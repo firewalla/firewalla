@@ -17,8 +17,7 @@
 var instance = null;
 const log = require("../../net2/logger.js")(__filename);
 
-const SysManager = require('../../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../../net2/SysManager.js');
 const UPNP = require('../../extension/upnp/upnp');
 const upnp = new UPNP(sysManager.myGateway());
 const firewalla = require('../../net2/Firewalla.js');
