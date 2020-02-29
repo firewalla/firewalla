@@ -1003,23 +1003,23 @@ class PolicyManager2 {
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
           if (!_.isEmpty(tags)) {
             await Block.setupTagRules(pid, tags, pid, ruleSetTypeMap[type], whitelist);
-            await Block.block(target, Block.getDstSet(pid), whitelist);
+            await Block.block(target, Block.getDstSet(pid));
           } 
 
           if (!_.isEmpty(intfs)) {
             await Block.setupIntfsRules(pid, intfs, pid, ruleSetTypeMap[type], whitelist);
-            await Block.block(target, Block.getDstSet(pid), whitelist);
+            await Block.block(target, Block.getDstSet(pid));
           } 
           
           if (!_.isEmpty(scope)) {
             await Block.setupRules(pid, pid, pid, ruleSetTypeMap[type], null, whitelist);
             await Block.addMacToSet(scope, Block.getMacSet(pid));
-            await Block.block(target, Block.getDstSet(pid), whitelist);
+            await Block.block(target, Block.getDstSet(pid));
           }
         } else {
           // All
           const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type];
-          await Block.block(target, set, whitelist);
+          await Block.block(target, set);
         }
         break;
 
@@ -1367,7 +1367,7 @@ class PolicyManager2 {
           }
         } else {
           const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type];
-          await Block.unblock(target, set, whitelist)
+          await Block.unblock(target, set)
         }
         break;
 
