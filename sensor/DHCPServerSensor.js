@@ -24,8 +24,7 @@ const mode = require('../net2/Mode.js')
 
 const dhcp = require("../extension/dhcp/dhcp.js");
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 
 const redisKey = "sys:scan:dhcpserver";
 

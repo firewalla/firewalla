@@ -207,17 +207,17 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async aggregatePingResults(host) {
-    if (!this.pingResults[host]) {
+    if (!this.pingResults[host] || this.pingResults[host].length == 0) {
       log.error('No result found for host', host)
       return
     }
 
     const results = _.groupBy(this.pingResults[host], r => r > 0)
 
-    const passRate = results[true].length / results.length
+    const passRate = ((results[true] && results[true].length) || 0) / this.pingResults[host].length
     const avgTime = _.mean(results[true])
 
-    if (results[false].length >= this.config.pingFailureThreshold) {
+    if (results[false] && results[false].length >= this.config.pingFailureThreshold) {
       await rclient.hsetAsync("network:status:ping", host, -1);
     } else {
       await rclient.hsetAsync("network:status:ping", host, avgTime);
@@ -248,10 +248,10 @@ class NetworkStatsSensor extends Sensor {
       this.checkNetworkPings[server] = new Ping(server);
       this.pingResults[server] = []
       this.checkNetworkPings[server].on('ping', (data) => {
-        this.pingResults.push(data.time)
+        this.pingResults[server].push(Number(data.time))
       })
       this.checkNetworkPings[server].on('fail', (data) => {
-        this.pingResults.push(-1)
+        this.pingResults[server].push(-1)
       });
       this.checkNetworkPings[server].on('exit', (data) => {
         this.aggregatePingResults(server)
