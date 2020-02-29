@@ -30,7 +30,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const URL = require("url");
 const bone = require("../lib/Bone");
-const dhcp = require("../extension/dhcp/dhcp.js");
+
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
@@ -127,7 +127,6 @@ const extMgr = require('../sensor/ExtensionManager.js')
 const PolicyManager = require('../net2/PolicyManager.js');
 const policyManager = new PolicyManager();
 
-const proServer = require('../api/bin/pro');
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
 const migration = require('../migration/migration.js');
@@ -138,6 +137,7 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
+const Alarm = require('../alarm/Alarm.js');
 const FRPSUCCESSCODE = 0
 class netBot extends ControllerBot {
 
@@ -376,17 +376,11 @@ class netBot extends ControllerBot {
       }, 50 * 1000);
     }, 30 * 1000)
 
-    this.hostManager = new HostManager("cli", 'client', 'debug');
+    this.hostManager = new HostManager();
     this.hostManager.loadPolicy((err, data) => { });  //load policy
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
-
-    // no subscription for api mode
-    if (apiMode) {
-      log.info("Skipping event subscription during API mode.");
-      return;
-    }
 
     let c = require('../net2/MessageBus.js');
     this.subscriber = new c('debug');
@@ -978,6 +972,43 @@ class netBot extends ControllerBot {
 
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
+        })
+
+        break;
+      }
+      case "tag": {
+        let data = msg.data;
+        log.info("Setting tag", msg);
+
+        if (!data.value.name) {
+          this.simpleTxData(msg, {}, new Error("tag name required for setting name"), callback);
+          return;
+        }
+
+        (async () => {
+          const name = value.name;
+          const tag = this.tagManager.getTagByUid(msg.target);
+
+          if (!tag) {
+            this.simpleTxData(msg, {}, new Error("invalid tag"), callback);
+            return;
+          }
+
+          if (name == tag.getTagName()) {
+            this.simpleTxData(msg, {}, null, callback);
+            return;
+          }
+
+          const result = await this.tagManager.changeTagName(msg.target, name);
+          log.info("Changing tag name", name);
+          if (!result) {
+            this.simpleTxData(msg, {}, new Error("Can't use already exsit tag name"), callback);
+          } else {
+            this.simpleTxData(msg, data.value, null, callback);
+          }
+
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
         })
 
         break;
@@ -2277,8 +2308,7 @@ class netBot extends ControllerBot {
         await mode.reloadSetupMode();
         let dhcpModeOn = await mode.isDHCPModeOn();
         if (dhcpModeOn) {
-          const currentConfig = fc.getConfig(true);
-          const dhcpFound = await dhcp.dhcpDiscover(currentConfig.monitoringInterface);
+          const dhcpFound = await rclient.getAsync("sys:scan:dhcpserver");
           const response = {
             DHCPMode: true,
             DHCPDiscover: dhcpFound
@@ -2573,7 +2603,37 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
+      case "alarm:largeTransferAlarm": {
+        (async () => {
+          if (!value.ts || !value.shname || !value.dh) {
+            this.simpleTxData(msg, {}, { code: 400, msg: "Invalid flow." }, callback);
+          } else {
+            let alarm = new Alarm.LargeTransferAlarm(value.ts, value.shname, value.dhname || value.dh, {
+              "p.device.id": value.shname,
+              "p.device.name": value.shname,
+              "p.device.ip": value.sh,
+              "p.device.port": value.sp || 0,
+              "p.dest.name": value.dhname || value.dh,
+              "p.dest.ip": value.dh,
+              "p.dest.port": value.dp,
+              "p.protocol": value.pr,
+              "p.transfer.outbound.size": value.ob,
+              "p.transfer.inbound.size": value.rb,
+              "p.transfer.duration": value.du,
+              "p.local_is_client": value.direction == 'in' ? "1" : "0", // connection is initiated from local
+              "p.flow": JSON.stringify(value),
+              "p.intf.id": value.intf,
+              "p.tag.ids": value.tags
+            });
+            await am2.enqueueAlarm(alarm);
 
+            this.simpleTxData(msg, {}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
+      }
       case "policy:create": {
         let policy
         try {
@@ -3067,14 +3127,6 @@ class netBot extends ControllerBot {
         break;
       }
 
-      case "startProServer": {
-        proServer.startProServer();
-        break;
-      }
-      case "stopProServer": {
-        proServer.stopProServer();
-        break;
-      }
       case "generateProToken": {
         tokenManager.generateToken(gid);
         break;
@@ -3781,6 +3833,8 @@ class netBot extends ControllerBot {
         break;
       case "alpha":
         targetBranch = "beta_7_0";
+      case "salpha":
+        targetBranch = "beta_8_0";
         break;
       case "beta":
         targetBranch = prodBranch.replace("release_", "beta_")

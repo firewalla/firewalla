@@ -218,7 +218,7 @@ is_firewalla() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %35s %25s %25s %10s %10s %10s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient"
+    printf "%35s %35s %25s %25s %10s %10s %10s %10s %12s %13s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount"
     NOW=$(date +%s)
     for DEVICE in $DEVICES; do
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
@@ -265,6 +265,9 @@ check_hosts() {
                 DEVICE_VPN="false"
             fi
         fi
+        
+        local DEVICE_FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$DEVICE_MAC -inf +inf)
+        local DEVICE_FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$DEVICE_MAC -inf +inf)
 
         local COLOR=""
         local UNCOLOR="\e[0m"
@@ -273,7 +276,7 @@ check_hosts() {
             COLOR="\e[91m"
           fi
         fi
-        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s %10s $UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN"
+        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s %10s %12s %13s $UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT"
     done
 
     echo ""
@@ -327,6 +330,15 @@ check_speed() {
     test $UNAME == "armv7l" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_arm -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
 }
 
+check_conntrack() {
+    echo "---------------------- Conntrack Count------------------"
+    
+    cat /proc/sys/net/netfilter/nf_conntrack_count
+
+    echo ""
+    echo ""
+}
+
 usage() {
     return
 }
@@ -358,6 +370,7 @@ if [ "$FAST" == false ]; then
     check_sys_config
     check_policies
     check_iptables
+    check_conntrack
     check_speed
 fi
 check_hosts

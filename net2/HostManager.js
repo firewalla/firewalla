@@ -15,8 +15,6 @@
 'use strict';
 const log = require('./logger.js')(__filename);
 
-var instances = {};
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
@@ -42,8 +40,6 @@ const flowManager = new FlowManager('debug');
 const FireRouter = require('./FireRouter.js');
 
 const Host = require('./Host.js');
-
-const ShieldManager = require('./ShieldManager.js');
 
 const FRPManager = require('../extension/frp/FRPManager.js')
 const fm = new FRPManager()
@@ -108,22 +104,19 @@ Promise.promisifyAll(fs);
 const Message = require('./Message.js');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
+const wrapIptables = require("./Iptables.js").wrapIptables;
+
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
-module.exports = class HostManager {
-  // type is 'server' or 'client'
-  constructor(name, type, loglevel) {
-    loglevel = loglevel || 'info';
-    // use name and type to uniquely identify HostManager instance
-    const instanceKey = `${name}_${type}`;
-    if (instances[instanceKey] == null) {
+let instance = null;
 
-      this.instanceName = name;
+module.exports = class HostManager {
+  constructor() {
+    if (!instance) {
       this.hosts = {}; // all, active, dead, alarm
       this.hostsdb = {};
       this.hosts.all = [];
       this.callbacks = {};
-      this.type = type;
       this.policy = {};
       sysManager.update((err) => {
         if (err == null) {
@@ -152,11 +145,11 @@ module.exports = class HostManager {
       });
 
       let c = require('./MessageBus.js');
-      this.messageBus = new c(loglevel);
+      this.messageBus = new c("info");
       this.iptablesReady = false;
 
-      // ONLY register for these events if hostmanager type IS server
-      if(this.type === "server") {
+      // ONLY register for these events in FireMain process
+      if(f.isMain()) {
         sem.once('IPTABLES_READY', () => {
           log.info("Iptables is ready");
           this.iptablesReady = true;
@@ -187,7 +180,7 @@ module.exports = class HostManager {
           });
         });
         this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
-          if (this.type != "server") {
+          if (!f.isMain()) {
             return;
           }
           if (!this.iptablesReady) {
@@ -212,9 +205,9 @@ module.exports = class HostManager {
         },1000*60*5);
       }
 
-      instances[instanceKey] = this;
+      instance = this;
     }
-    return instances[instanceKey];
+    return instance;
   }
 
   keepalive() {
@@ -232,7 +225,7 @@ module.exports = class HostManager {
   }
 
   basicDataForInit(json, options) {
-    let networkinfo = sysManager.sysinfo[sysManager.config.monitoringInterface];
+    let networkinfo = sysManager.getDefaultWanInterface();
     if(networkinfo.gateway === null) {
       delete networkinfo.gateway;
     }
@@ -975,6 +968,7 @@ module.exports = class HostManager {
         if (json.mode === "dhcp") {
           await this.dhcpRangeForInit("alternative", json);
           await this.dhcpRangeForInit("secondary", json);
+          json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
         }
 
         await this.loadDDNSForInit(json);
@@ -1077,7 +1071,6 @@ module.exports = class HostManager {
     if (o == null) return null;
 
     host = new Host(o, this);
-    host.type = this.type;
 
     //this.hostsdb[`host:mac:${o.mac}`] = host
     // do not update host:mac entry in this.hostsdb intentionally,
@@ -1177,7 +1170,7 @@ module.exports = class HostManager {
     this.getHostsActive = Math.floor(new Date() / 1000);
     // end of mutx check
 
-    if(this.type === "server") {
+    if(f.isMain()) {
       this.safeExecPolicy(true); // do not apply host policy here, since host information may be out of date. Host policy will be applied later after information is refreshed from host:mac:*
     }
     for (let h in this.hostsdb) {
@@ -1213,7 +1206,6 @@ module.exports = class HostManager {
 
       if (hostbymac == null) {
         hostbymac = new Host(o,this);
-        hostbymac.type = this.type;
         this.hosts.all.push(hostbymac);
         this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         this.hostsdb['host:mac:' + o.mac] = hostbymac;
@@ -1264,11 +1256,11 @@ module.exports = class HostManager {
         }
       }
       await hostbymac.cleanV6()
-      if (this.type == "server") {
+      if (f.isMain()) {
         await hostbymac.applyPolicyAsync()
+        // call apply policy before to ensure policy data is loaded before device indentification
+        await this.syncHost(hostbymac, true)
       }
-      // call apply policy before to ensure policy data is loaded before device indentification
-      await this.syncHost(hostbymac, true)
     })
     let removedHosts = [];
     /*
@@ -1315,7 +1307,7 @@ module.exports = class HostManager {
       return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
     })
     this.getHostsActive = null;
-    if (this.type === "server") {
+    if (f.isMain()) {
       spoofer.validateV6Spoofs(allIPv6Addrs);
       spoofer.validateV4Spoofs(allIPv4Addrs);
     }
@@ -1383,13 +1375,24 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    const shieldManager = new ShieldManager(); // ShieldManager is a singleton class
-    const state = policy.state;
-    if (state === true) {
-      // Raise global shield to block incoming connections
-      await shieldManager.activateShield();
+    if (policy.state === true) {
+      let cmd = wrapIptables(`sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv4 inbound firewall");
+      });
+      cmd = wrapIptables(`sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv6 inbound firewall");
+      });
     } else {
-      await shieldManager.deactivateShield();
+      let cmd = wrapIptables(`sudo iptables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv4 inbound firewall");
+      });
+      cmd = wrapIptables(`sudo ip6tables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
+      await exec(cmd).catch((err) => {
+        log.error("Failed to enable IPv6 inbound firewall");
+      });
     }
   }
 
@@ -1670,7 +1673,7 @@ module.exports = class HostManager {
   execPolicy(skipHosts) {
     this.loadPolicy((err, data) => {
       log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
-      if (this.type == "server") {
+      if (f.isMain()) {
         let PolicyManager = require('./PolicyManager.js');
         let policyManager = new PolicyManager('info');
 

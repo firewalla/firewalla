@@ -33,14 +33,10 @@ get_value() {
     kind=$1
     case $kind in
         ip)
-            # read ip address of wan interface only
-            wan_intf=`/sbin/ip route show | awk '/default via/ {print $5}' | head -n 1`
-            if [[ -n "$wan_intf" ]]; then
-              /sbin/ip addr show dev $wan_intf | awk '/inet /' | awk '$NF=='"\"$wan_intf\""' {print $2"---"'"\"$wan_intf\""'}' | fgrep -v 169.254. | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255 | head -n 1
-            fi
+            /sbin/ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255 | head -n 1
             ;;
         gw)
-            /sbin/ip route show | awk '/default via/ {print $3"---"$5}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b\-\-\-.*"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255 | head -n 1
+            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
             ;;
     esac
 }
@@ -82,17 +78,11 @@ set_value() {
     saved_value=$2
     case ${kind} in
         ip)
-            # ip is like <ip_address>/<subnet_mask_length>---<intf_name>
-            addr=`echo $saved_value | cut -d"---" -f1`
-            intf=`echo $saved_value | cut -d"---" -f2`
-            /sbin/ip addr flush dev $intf # flush legacy ips
-            /sbin/ip addr replace ${addr} dev $intf
+            /sbin/ip addr flush dev eth0 # flush legacy ips on eth0
+            /sbin/ip addr replace ${saved_value} dev eth0
             ;;
         gw)
-            # gw is like <ip_address>---<intf_name>
-            addr=`echo $saved_value | cut -d"---" -f1`
-            intf=`echo $saved_value | cut -d"---" -f2`
-            /sbin/ip route replace default via ${addr} dev $intf # override current default route
+            /sbin/ip route replace default via ${saved_value} dev eth0 # upsert current default route
             ;;
     esac
 }
@@ -117,8 +107,23 @@ restore_values() {
     return $r
 }
 
+ethernet_connected() {
+    [[ -e /sys/class/net/eth0/carrier ]] || return 1
+    carrier=$(cat /sys/class/net/eth0/carrier)
+    test $carrier -eq 1
+}
+
+ethernet_ip() {
+    eth_ip=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
+    if [[ -n "$eth_ip" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 gateway_pingable() {
-    gw=$(ip route show | awk '/default/ {print $3; exit; }' | head -n 1)
+    gw=$(ip route show dev eth0 | awk '/default/ {print $3; exit; }')
     if [[ -n "$gw" ]]; then
         ping -c1 -w3 $gw >/dev/null
     else
@@ -156,6 +161,38 @@ RESTORED_AND_NEED_START_OVER=1
 RESTORED=2
 
 restored=$NOT_RESTORED
+
+echo -n "checking ethernet connection ... "
+$LOGGER "checking ethernet connection ... "
+tmout=15
+while ! ethernet_connected ; do
+    if [[ $tmout -gt 0 ]]; then
+        (( tmout-- ))
+    else
+        echo "fail - reboot"
+        $LOGGER "FIREWALLA:FIX_NETWORK:REBOOT check ethernet connection"
+        reboot_if_needed
+    fi
+    sleep 1
+done
+echo OK
+
+echo -n "checking ethernet IP ... "
+$LOGGER "checking ethernet IP ... "
+tmout=$(set_timeout 60)
+while ! ethernet_ip ; do
+    if [[ $tmout -gt 0 ]]; then
+        (( tmout-- ))
+    else
+        echo "fail - restore"
+        $LOGGER "FIREWALLA:failed to get IP, restore network configurations"
+        restore_values
+        restored=$RESTORED
+        break
+    fi
+    sleep 1
+done
+echo OK
 
 : ${CHECK_FIX_NETWORK_RETRY:='yes'}
 while [[ -n $CHECK_FIX_NETWORK_RETRY ]]; do

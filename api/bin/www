@@ -85,33 +85,35 @@ rclient.hget("sys:config", "language", (err, result) => {
  */
 
 const http = require('http');
-const PORT = normalizePort(process.env.PORT || '8833');
-const PORT_LOCAL_API = normalizePort('8834');
+const PORT = normalizePort(process.env.PORT) || 8833;
+const PORT_LOCAL_API = 8834;
 
-function run() {
+async function run() {
   const app = require('../app.js');
   app.set('port', PORT);
 
-  /**
-   * Create HTTP server.
-   */
-
-  if (Mode.isRouterModeOn()) {
-    // not listen on WANs for router mode
-    sysManager.getMonitoringInterfaces().forEach(intf => {
-      createServerAndListen(app, intf.ip_address)
-    })
-    createServerAndListen(app, 'localhost')
-  } else {
-    // listen on all interfaces
-    createServerAndListen(app, '0.0.0.0')
+  try {
+    if (await Mode.isRouterModeOn()) {
+      // not listen on WANs for router mode
+      sysManager.getMonitoringInterfaces().forEach(intf => {
+        createServerAndListen(app, intf.ip_address, PORT)
+      })
+      createServerAndListen(app, 'localhost', PORT)
+    } else {
+      // listen on all interfaces
+      createServerAndListen(app, '0.0.0.0', PORT)
+    }
+  } catch(err) {
+    log.error("Error creating FireAPI server", err)
+    process.exit(1)
   }
 }
 
-function createServerAndListen(app, ip) {
+function createServerAndListen(app, ip, port) {
   const server = http.createServer(app);
 
-  server.listen(PORT, ip);
+  log.info(`listen ${app.get('title')} on ${ip}:${port}`)
+  server.listen(port, ip);
   server.on('error', onError);
 }
 
@@ -122,23 +124,11 @@ function runLocalAPI() {
   const app2 = require('../app-local.js');
   app2.set('port', PORT_LOCAL_API);
 
-  /**
-   * Create HTTP server.
-   */
-
-  const serverForLocalAPI = http.createServer(app2);
-
-  /**
-   * Listen on provided port, on all network interfaces.
-   */
-
-  if(f.isProductionOrBetaOrAlpha()) {
-    serverForLocalAPI.listen(PORT_LOCAL_API, 'localhost')
+  if (f.isProductionOrBetaOrAlpha()) {
+    createServerAndListen(app2, 'localhost', PORT_LOCAL_API)
   } else {
-    serverForLocalAPI.listen(PORT_LOCAL_API)
+    createServerAndListen(app2, '0.0.0.0', PORT_LOCAL_API)
   }
-
-  serverForLocalAPI.on('error', onError);
 }
 
 /**

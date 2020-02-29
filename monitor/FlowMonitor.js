@@ -33,7 +33,7 @@ const hostTool = new HostTool()
 
 let instance = null;
 const HostManager = require("../net2/HostManager.js");
-const hostManager = new HostManager("cli", 'client', 'info');
+const hostManager = new HostManager();
 
 const default_stddev_limit = 8;
 const default_inbound_min_length = 1000000;
@@ -339,6 +339,19 @@ module.exports = class FlowMonitor {
           )
         ) {
           let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+            alarmBootstrap(flow)
+          );
+
+          alarmManager2.enqueueAlarm(alarm);
+        }
+        else if (
+          this.isFlowIntelInClass(flow['intel'], "vpn") &&
+          (
+            (flow.du && Number(flow.du) > 120) && (flow.rb && Number(flow.rb) > 10000) ||
+            this.flowIntelRecordFlow(flow, 3)
+          )
+        ) {
+          let alarm = new Alarm.VpnAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
             alarmBootstrap(flow)
           );
 

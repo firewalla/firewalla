@@ -25,6 +25,10 @@ const exec = require('child-process-promise').exec;
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const wrapIptables = require('./Iptables').wrapIptables;
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
 
 class Tag {
   constructor(o) {
@@ -140,6 +144,11 @@ class Tag {
     await exec(`sudo ipset create -! ${Tag.getTagNetIpsetName(this.o.uid)} list:set`).catch((err) => {
       log.error(`Failed to create tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
     });
+    // tag dnsmasq entry can be referred by domain blocking rules
+    const dnsmasqEntry = `group-tag=@${this.o.uid}$tag_${this.o.uid}`;
+    await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_${this.o.uid}.conf`, dnsmasqEntry).catch((err) => {
+      log.error(`Failed to create dnsmasq entry for tag ${this.o.uid}`, err.message);
+    });
   }
 
   async destroyEnv() {
@@ -183,9 +192,9 @@ class Tag {
       // remove old mark first
       await exec(`sudo ipset -! del c_wan_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)}`);
       if (this._netFwMark) {
-        let cmd = wrapIptables(`sudo iptables -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
       }
       this._netFwMark = null;
@@ -202,9 +211,9 @@ class Tag {
       }
       if (this._netFwMark) {
         await exec(`sudo ipset -! add c_wan_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
-        let cmd = wrapIptables(`sudo iptables -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
       }
       return true;

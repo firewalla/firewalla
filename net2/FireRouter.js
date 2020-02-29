@@ -414,12 +414,13 @@ class FireRouter {
         await broControl.writeClusterConfig(monitoringIntfNames)
       }
       // do not await bro restart to finish, it may take some time
-      broControl.restart().then(() => broControl.addCronJobs()).then(() => {
-        log.info('Bro restarted');
-        this.broReady = true;
-      });
+      broControl.restart()
+        .then(() => broControl.addCronJobs())
+        .then(() => {
+          log.info('Bro restarted');
+          this.broReady = true;
+        });
     } else {
-      log.info('Bro restarted');
       this.broReady = true;
     }
   }
@@ -565,7 +566,7 @@ class FireRouter {
     return history;
   }
 
-  async applyNetworkConfig() {
+  async applyModeConfig() {
     if (this.platform.isFireRouterManaged()) {
       // firewalla do not change network config during mode switch if managed by firerouter
     } else {

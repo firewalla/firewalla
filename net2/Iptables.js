@@ -510,6 +510,7 @@ exports.Rule = class Rule {
     this.table = table;
     this.match = [];
     this.params = null;
+    this.cmt = null;
   }
 
   fam(v) { this.family = v; return this }
@@ -523,6 +524,7 @@ exports.Rule = class Rule {
   jmp(j) { this.jump = j; return this }
 
   pam(p) { this.params = p; return this }
+  comment(c) { this.cmt = c; return this;}
 
   clone() {
     return Object.assign(Object.create(Rule.prototype), this)
@@ -584,6 +586,7 @@ exports.Rule = class Rule {
     this.params && cmd.push(this.params)
 
     this.jump && cmd.push('-j', this.jump)
+    this.cmt && cmd.push('-m comment --comment', this.cmt)
 
     return cmd.join(' ');
   }
@@ -604,16 +607,4 @@ exports.Rule = class Rule {
         return `bash -c '${rule}; true'`;
     }
   }
-}
-
-exports.CHAINS = {
-  PREROUTING: 'FW_PREROUTING',
-  WHITELIST: 'FW_WHITELIST',
-  WHITELIST_PREROUTE: 'FW_WHITELIST_PREROUTE',
-  NAT_PREROUTING: 'FW_NAT_PREROUTING',
-  NAT_WHITELIST: 'FW_NAT_WHITELIST',
-  NAT_WHITELIST_PREROUTE: 'FW_NAT_WHITELIST_PREROUTE',
-  BLOCK: 'FW_BLOCK',
-  DROP: 'FW_DROP',
-  PREROUTING_DNS_DEFAULT: 'FW_PREROUTING_DNS_DEFAULT',
 }
