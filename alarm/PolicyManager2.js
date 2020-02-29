@@ -1018,8 +1018,8 @@ class PolicyManager2 {
           }
         } else {
           // All
-          await Block.setupRules(pid, null, pid, simpleRuleSetMap[type], null, whitelist);
-          await Block.block(target, Block.getDstSet(pid), whitelist)
+          const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type];
+          await Block.block(target, set, whitelist);
         }
         break;
 
@@ -1083,11 +1083,15 @@ class PolicyManager2 {
           }
         } else {
           // All 
-          await Block.setupRules(pid, null, pid, "hash:ip", null, whitelist);
-          await domainBlock.blockDomain(target, {
-            exactMatch: policy.domainExactMatch,
-            blockSet: Block.getDstSet(pid)
-          });
+          let options = {
+            exactMatch: policy.domainExactMatch
+          };
+          if (whitelist) {
+            options.blockSet = "whitelist_domain_set";
+          } else {
+            options.blockSet = "blocked_domain_set";
+          }
+          await domainBlock.blockDomain(target, options);
         }
         break;
 
@@ -1362,7 +1366,8 @@ class PolicyManager2 {
             await Block.setupRules(pid, pid, pid, ruleSetTypeMap[type], null, whitelist, true);
           }
         } else {
-          await Block.setupRules(pid, null, pid, simpleRuleSetMap[type], whitelist, true);
+          const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type];
+          await Block.unblock(target, set, whitelist)
         }
         break;
 
@@ -1421,11 +1426,15 @@ class PolicyManager2 {
             await Block.setupRules(pid, pid, pid, 'hash:ip', null, whitelist, true);
           } 
         } else {
-          await domainBlock.unblockDomain(target, {
-            exactMatch: policy.domainExactMatch,
-            blockSet: Block.getDstSet(pid)
-          });
-          await Block.setupRules(pid, null, pid, 'hash:ip', null, whitelist, true);
+          let options = {
+            exactMatch: policy.domainExactMatch
+          };
+          if (whitelist) {
+            options.blockSet = "whitelist_domain_set";
+          } else {
+            options.blockSet = "blocked_domain_set";
+          }
+          await domainBlock.unblockDomain(target, options);
         }
         break;
 
