@@ -67,11 +67,11 @@ function getDstSet6(tag) {
   return `c_bd_${tag}_set6`
 }
 
-async function setupGlobalWhitelist(state) {
+async function setupGlobalLockDown(state) {
   try {
     let ruleSet = [
-      new Rule().chn('FW_WHITELIST_PREROUTE').jmp('FW_WHITELIST'),
-      new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').jmp('FW_NAT_WHITELIST'),
+      new Rule().chn('FW_LOCKDOWN_SELECTOR').jmp('FW_DROP'),
+      new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').jmp('FW_NAT_HOLE'),
     ]
 
     let ruleSet6 = ruleSet.map(r => r.clone().fam(6))
@@ -85,7 +85,7 @@ async function setupGlobalWhitelist(state) {
   }
 }
 
-async function setupInterfaceWhitelist(state, uuid) {
+async function setupInterfaceLockDown(state, uuid) {
   if (!uuid) {
     log.error("network uuid is not defined while setting up whitelist");
     return;
@@ -96,14 +96,14 @@ async function setupInterfaceWhitelist(state, uuid) {
     return;
   }
   const ruleSet = [
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(networkIpsetName, "src,src", "set").jmp('FW_WHITELIST'),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "src,src", "set").jmp('FW_NAT_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_NAT_WHITELIST'),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_WHITELIST').fam(6),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_WHITELIST').fam(6),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_NAT_WHITELIST').fam(6),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_NAT_WHITELIST').fam(6)
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(networkIpsetName, "src,src", "set").jmp('FW_DROP'),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(networkIpsetName, "dst,dst", "set").jmp('FW_DROP'),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(networkIpsetName, "src,src", "set").jmp('FW_NAT_HOLE'),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(networkIpsetName, "dst,dst", "set").jmp('FW_NAT_HOLE'),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_DROP').fam(6),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_DROP').fam(6),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_NAT_HOLE').fam(6),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_NAT_HOLE').fam(6)
   ];
 
   for (const rule of ruleSet) {
@@ -114,17 +114,17 @@ async function setupInterfaceWhitelist(state, uuid) {
   }
 }
 
-async function setupTagWhitelist(state, tagUid) {
+async function setupTagLockDown(state, tagUid) {
   if (!tagUid) {
     log.error("tag uid is not defined while setting up whitelist");
     return;
   }
   const tagSet = require('../net2/Tag.js').getTagIpsetName(tagUid);
   const ruleSet = [
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(tagSet, "src,src", "set").jmp('FW_WHITELIST'),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(tagSet, "dst,dst", "set").jmp('FW_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(tagSet, "src,src", "set").jmp('FW_NAT_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(tagSet, "dst,dst", "set").jmp('FW_NAT_WHITELIST')
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(tagSet, "src,src", "set").jmp('FW_DROP'),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(tagSet, "dst,dst", "set").jmp('FW_DROP'),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(tagSet, "src,src", "set").jmp('FW_NAT_HOLE'),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(tagSet, "dst,dst", "set").jmp('FW_NAT_HOLE')
   ];
 
   const ruleSet6 = ruleSet.map(r => r.clone().fam(6));
@@ -232,9 +232,9 @@ async function setupRules(pid, macTag, dstTag, dstType, iif, allow = false, dest
     }
 
     const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
-    const filterDest = allow ? 'RETURN' : 'FW_DROP'
+    const filterDest = allow ? 'FW_ACCEPT' : 'FW_DROP'
     const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
-    const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+    const natDest = allow ? 'ACCEPT' : 'FW_NAT_HOLE'
 
     const comment = `"Firewalla Policy ${pid}"`
     const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
@@ -320,9 +320,9 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
       }
 
       const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
-      const filterDest = allow ? 'RETURN' : 'FW_DROP'
+      const filterDest = allow ? 'FW_ACCEPT' : 'FW_DROP'
       const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
-      const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+      const natDest = allow ? 'ACCEPT' : 'FW_NAT_HOLE'
 
       const comment = `"Firewalla Policy ${pid}"`
       const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
@@ -414,9 +414,9 @@ async function setupIntfsRules(pid, intfs, dstTag, dstType, allow = false, destr
       }
 
       const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
-      const filterDest = allow ? 'RETURN' : 'FW_DROP'
+      const filterDest = allow ? 'FW_ACCEPT' : 'FW_DROP'
       const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
-      const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+      const natDest = allow ? 'ACCEPT' : 'FW_NAT_HOLE'
 
       const comment = `"Firewalla Policy ${pid}"`
       const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
@@ -587,9 +587,9 @@ module.exports = {
   getDstSet6: getDstSet6,
   getMacSet: getMacSet,
   existsBlockingEnv: existsBlockingEnv,
-  setupGlobalWhitelist: setupGlobalWhitelist,
-  setupInterfaceWhitelist: setupInterfaceWhitelist,
-  setupTagWhitelist: setupTagWhitelist,
+  setupGlobalLockDown: setupGlobalLockDown,
+  setupNetworkLockDown: setupInterfaceLockDown,
+  setupTagLockDown: setupTagLockDown,
   setupTagRules: setupTagRules,
   setupIntfsRules: setupIntfsRules,
   createMatchingSet: createMatchingSet,
