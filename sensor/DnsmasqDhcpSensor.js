@@ -43,7 +43,7 @@ class DnsmasqDhcpSensor extends Sensor {
     }
     processHost(host) {
         const action = host.action;
-        if (action == 'del') return;
+        if (action == 'del' || !!host.request) return;
         let hostInfo = {
             mac: host.mac,
             from: "dnsmasq.dhcp.lease"
