@@ -39,9 +39,12 @@ const redisIpField = "publicIp";
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
-const requestretry = require('requestretry').defaults({ timeout: 30000 });
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
 const tokenManager = require('../util/FWTokenManager.js');
 const _ = require('lodash');
+const EncipherTool = require('../net2/EncipherTool.js')
+const encipherTool = new EncipherTool()
+const delay = require('../util/util.js').delay
 
 function comparePort(a, b) {
   return a.portid == b.portid && a.protocol == b.protocol;
@@ -159,41 +162,24 @@ class ExternalScanSensor extends Sensor {
     return host;
   }
 
-  async rrWithErrHandling(options) {
-    const msg = `Http failed ${options.method || 'GET'} ${options.uri} ${JSON.stringify(options.body || options.json)}`
-    try {
-      const response = await requestretry(options)
-
-      if (!response)
-        throw new Error(msg)
-
-      if (response.statusCode < 200 || response.statusCode > 299) {
-        throw new Error(msg + `\n${response.statusCode}: ${JSON.stringify(response.body)}`)
-      }
-
-      if (!response.body) response.body = null
-
-      return response
-    } catch (err) {
-      throw new Error(msg + '\n' + err.message)
-    }
-  }
-
   async cloudConfirmOpenPort(publicIP, port) {
     let result = false;
     try {
       const token = await tokenManager.getToken();
+      const eid = await encipherTool.getEID();
+      const uri = util.format("http://scan.encipher.io:9999/scan/%s/%s/%s/%s", eid, publicIP, publicIP, port);
+      log.info("Cloud confirm: ", uri);
       let options = {
-        uri: util.format("http://scan.encipher.io:9999/scan/lzk_cfwSa-DDCWlPURC5Tw/%s/%s/%s", publicIP, publicIP, port),
+        uri: uri,
         method: 'GET',
         auth: {
           bearer: token
         },
-        retryDelay: 1000,  // (default) wait for 1s before trying again
+        retryDelay: 3000,  // (default) wait for 1s before trying again
         json: true
       };
 
-      const response = await this.rrWithErrHandling(options);
+      const response = await rrWithErrHandling(options);
       if (response.body) {
         const state = _.get(response.body, `scan[0].state`, "");
         if (state == "open") {
@@ -216,6 +202,7 @@ class ExternalScanSensor extends Sensor {
         if (isOpen) {
           confirmedPorts.push(current);
         }
+        await delay(5000);
       }
 
       if (fc.isFeatureOn("alarm_openport")) {
