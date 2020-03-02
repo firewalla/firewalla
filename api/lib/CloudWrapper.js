@@ -137,7 +137,7 @@ module.exports = class {
       } else if (!offlineMode) {
         // controller already exist, reconnect to cloud
         nbControllers[gid].groups = groups
-        nbControllers[gid].initEptCloud(config, this.eptcloud, groups, gid)
+        nbControllers[gid].initEptCloud()
         return;
       }
     }
