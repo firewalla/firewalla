@@ -65,6 +65,37 @@ function in_subnet {
   return $rval
 }
 
+function print_block_rule {
+  local rule_id rule target ptype scope alarm_id flow_description expire crontime
+  if [[ -n $2 ]]; then
+    rule=$2
+    rule_id=${rule/policy:/""}
+    target=$(redis-cli hget $rule target)
+    ptype=$(redis-cli hget $rule type)
+    scope=$(redis-cli hget $rule scope)
+    alarm_id=$(redis-cli hget $rule aid)
+    flow_description=$(redis-cli hget $rule flowDescription)
+
+    if [[ ! -n $scope ]]; then
+      scope="All Devices"
+    fi
+    expire=$(redis-cli hget $rule expire)
+    if [[ ! -n $expire ]]; then
+      expire="Infinite"
+    fi
+    crontime=$(redis-cli hget $rule cronTime)
+    if [[ ! -n $crontime ]]; then
+      crontime="Always"
+    fi
+    if [[ -n $alarm_id ]]; then
+      rule_id="* $rule_id"
+    elif [[ -n $flow_description ]]; then
+      rule_id="** $rule_id"
+    fi
+  fi
+  printf "%25s %8s %30s %10s %25s %10s %15s\n" "$1" "$rule_id" "$target" "$ptype" "$scope" "$expire" "$crontime"
+}
+
 function check_ip {
   local ip_ret ipsets rule_id policy_ret
 
@@ -73,6 +104,9 @@ function check_ip {
   else
     echo "Start check ip: $1 mac: $2"
   fi
+
+  echo "------------------------------ Blocking Rules ------------------------------"
+  printf "%25s %5s %30s %10s %25s %10s %15s\n" "Ipset" "Rule" "Target" "Type" "Device" "Expire" "Scheduler"
 
   # default
   ip_ret=1
@@ -94,8 +128,7 @@ function check_ip {
           fi
 
           if [[ $policy_ret -eq 0 ]]; then
-            echo "Found $1 in ipset $setName policy:$rule_id"
-            redis-cli hgetall "policy:$rule_id"
+            print_block_rule $setName "policy:$rule_id"
             ip_ret=0
           fi
         fi
@@ -106,8 +139,7 @@ function check_ip {
         fi
       else
         ip_ret=0
-        echo "Found $1 in ipset $setName"
-        sudo ipset list "$setName"
+        print_block_rule $setName
       fi
     fi
   done <<< "$ipsets"
@@ -142,19 +174,16 @@ function check_redis_rule {
     target="$(redis-cli hget $policyKey target)"
     ptype="$(redis-cli hget $policyKey type)"
     if [[ $ptype == "ip" && $target == *$2* && $mac_ret -eq 0 ]]; then
-      echo "Found $2 in ipset $setName $policyKey"
-      redis-cli hgetall "$policyKey"
+      print_block_rule $setName $policyKey
       rule_ret=0
     elif [[ $ptype == "dns" ]]; then
       redis-cli zrange "rdns:domain:$target" 0 -1 | grep $2 &> /dev/null
       if [[ $? -eq 0 && $mac_ret -eq 0 ]]; then
-        echo "Found $2 in ipset $setName $policyKey $target"
-        redis-cli hgetall "$policyKey"
+        print_block_rule $setName $policyKey
         rule_ret=0
       fi
     elif [[ $ptype == "net" && $(in_subnet $target $2) -eq 0 && $mac_ret -eq 0 ]]; then
-      echo "Found $2 in ipset $setName $policyKey $target"
-      redis-cli hgetall "$policyKey"
+      print_block_rule $setName $policyKey
       rule_ret=0
     fi
   done <<< "$REDISRULES"
