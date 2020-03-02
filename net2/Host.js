@@ -508,7 +508,7 @@ class Host {
       log.info("Host:Spoof:NoIP", this.o);
       return;
     }
-    log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac}, current spoof state: ${this.spoofing}, new spoof state: ${this.o.state}`);
+    log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac}, current spoof state: ${this.spoofing}, new spoof state: ${state}`);
     // set spoofing data in redis and trigger dnsmasq reload hosts
     if (state === true) {
       rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
