@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,8 +20,7 @@ const iptable = require("../net2/Iptables");
 const wrapIptables = iptable.wrapIptables;
 const cp = require('child_process');
 const exec = require('child_process').exec
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 const firewalla = require('../net2/Firewalla.js');
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
@@ -41,22 +40,26 @@ const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const UPNP = require('../extension/upnp/upnp.js');
+const Message = require('../net2/Message.js');
+const Mode = require('../net2/Mode.js');
 
 const moment = require('moment');
 
 class VpnManager {
   constructor() {
     if (instance == null) {
-      this.upnp = new UPNP(sysManager.myGateway());
+      this.upnp = new UPNP(sysManager.myDefaultGateway());
       if (firewalla.isMain()) {
         sclient.on("message", async (channel, message) => {
           switch (channel) {
-            case "System:IPChange":
-              // update SNAT rule in iptables
+            case Message.MSG_SYS_NETWORK_INFO_RELOADED:
+              // update UPnP port mapping
               try {
-                // sysManager.myIp() only returns latest IP of Firewalla. Should unset old rule with legacy IP before add new rule
-                await this.unsetIptables();
-                await this.setIptables()
+                if (!this.started)
+                  return;
+                this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
+                  log.error("Failed to set Upnp port mapping", err);
+                });
               } catch(err) {
                 log.error("Failed to set iptables", err);
               }
@@ -64,7 +67,7 @@ class VpnManager {
           }
         });
 
-        sclient.subscribe("System:IPChange");
+        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
       }
       instance = this;
       this.instanceName = "server"; // defautl value
@@ -104,41 +107,47 @@ class VpnManager {
     });
   }
 
+  async installAsync(instance) {
+    return util.promisify(this.install).bind(this)(instance)
+  }
+
   async setIptables() {
     const serverNetwork = this.serverNetwork;
-    const localIp = sysManager.myIp();
-    this._currentLocalIp = localIp;
     if (!serverNetwork) {
       return;
     }
-    log.info("VpnManager:SetIptables", serverNetwork, localIp);
+    log.info("VpnManager:SetIptables", serverNetwork);
 
     const commands =[
       // delete this rule if it exists, logical opertion ensures correct execution
-      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`),
+      wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -j MASQUERADE`),
       // insert back as top rule in table
-      `sudo iptables -w -t nat -I POSTROUTING 1 -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`
+      `sudo iptables -w -t nat -I FW_POSTROUTING 1 -s ${serverNetwork}/24 -j MASQUERADE`
     ];
     await iptable.run(commands);
+    this._currentServerNetwork = serverNetwork;
   }
 
   async unsetIptables() {
-    const serverNetwork = this.serverNetwork;
-    let localIp = sysManager.myIp();
-    if (this._currentLocalIp)
-      localIp = this._currentLocalIp;
+    let serverNetwork = this.serverNetwork;
+    if (this._currentServerNetwork)
+      serverNetwork = this._currentServerNetwork;
     if (!serverNetwork) {
       return;
     }
-    log.info("VpnManager:UnsetIptables", serverNetwork, localIp);
+    log.info("VpnManager:UnsetIptables", serverNetwork);
     const commands = [
-      wrapIptables(`sudo iptables -w -t nat -D POSTROUTING -s ${serverNetwork}/24 -o eth0 -j SNAT --to-source ${localIp}`),
+      wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -j MASQUERADE`),
     ];
-    this._currentLocalIp = null;
     await iptable.run(commands);
+    this._currentServerNetwork = null;
   }
 
   async removeUpnpPortMapping(opts) {
+    if (await Mode.isRouterModeOn()) {
+      log.info("VPN server UPnP port mapping is not used in router mode");
+      return false;
+    }
     log.info("VpnManager:RemoveUpnpPortMapping", opts);
     let timeoutExecuted = false;
     return new Promise((resolve, reject) => {
@@ -160,6 +169,10 @@ class VpnManager {
   }
 
   async addUpnpPortMapping(protocol, localPort, externalPort, description) {
+    if (await Mode.isRouterModeOn()) {
+      log.info("VPN server UPnP port mapping is not used in router mode");
+      return false;
+    }
     log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
     let timeoutExecuted = false;
     return new Promise((resolve, reject) => {
@@ -223,11 +236,12 @@ class VpnManager {
       this.instanceName = "server";
       this.needRestart = true;
     }
-    var mydns = sysManager.myDNS()[0];
-    if (mydns == null) {
+    var mydns = sysManager.myDefaultDns()[0];
+    if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
     }
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
+    // sysManager.myIp() is not used in the below command
     const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./confgen.sh %s %s %s %s %s %s'; sync",
       fHome, confGenLockFile, this.instanceName, sysManager.myIp(), mydns, this.serverNetwork, this.netmask, this.localPort);
     log.info("VPNManager:CONFIGURE:cmd", cmd);
@@ -419,12 +433,11 @@ class VpnManager {
       };
     }
 
-    this.upnp.gw = sysManager.myGateway();
-
     if (!this.refreshTask) {
       this.refreshTask = setInterval(async () => {
+        this.upnp.gw = sysManager.myDefaultGateway();
         // extend upnp lease once every 10 minutes in case router flushes it unexpectedly
-        await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
+        this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
           log.error("Failed to set Upnp port mapping", err);
         });
       }, 600000);
@@ -637,11 +650,6 @@ class VpnManager {
       let ip = sysManager.myDDNS();
       if (ip == null) {
         ip = sysManager.publicIp;
-      }
-
-      var mydns = sysManager.myDNS()[0];
-      if (mydns == null) {
-        mydns = "8.8.8.8"; // use google DNS as default
       }
 
       const vpnLockFile = "/dev/shm/vpn_gen_lock_file";

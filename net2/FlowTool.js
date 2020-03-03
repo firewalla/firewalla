@@ -177,11 +177,16 @@ class FlowTool {
     }
 
     let outgoing, incoming;
-    if (options.mac) {
+    if (options.intf) {
+      outgoing = await this.getAllRecentOutgoingConnections(options);
+      incoming = await this.getAllRecentIncomingConnections(options);
+    } else if (options.tag) {
+      outgoing = await this.getAllRecentOutgoingConnections(options);
+      incoming = await this.getAllRecentIncomingConnections(options);
+    } else if (options.mac) {
       outgoing = await this.getRecentOutgoingConnections(options.mac, options);
       incoming = await this.getRecentIncomingConnections(options.mac, options);
-    }
-    else {
+    } else {
       outgoing = await this.getAllRecentOutgoingConnections(options)
       incoming = await this.getAllRecentIncomingConnections(options)
     }
@@ -224,6 +229,8 @@ class FlowTool {
     f.ts = flow.ts;
     f.fd = flow.fd;
     f.duration = flow.du
+    f.intf = flow.intf;
+    f.tags = flow.tags;
 
     if(flow.mac) {
       f.device = flow.mac;
@@ -324,7 +331,18 @@ class FlowTool {
   async getAllRecentConnections(direction, options) {
     options = options || {}
 
-    const allMacs = await hostTool.getAllMACs();
+    let allMacs = [];
+    if (options.intf) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager();
+      allMacs = hostManager.getIntfMacs(options.intf);
+    } else if (options.tag) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager();
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag));
+    } else {
+      allMacs = await hostTool.getAllMACs();
+    }
 
     const allFlows = [];
 
@@ -457,6 +475,18 @@ class FlowTool {
 
     await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
     await rclient.zremrangebyrankAsync(key, 0, limit);
+
+    for (let index = 0; index < flowCopy.tags.length; index++) {
+      const tag = flowCopy.tags[index];
+      const tagKey = `flow:tag:${tag}:recent`;
+      await rclient.zaddAsync(tagKey, now, JSON.stringify(flowCopy));
+      await rclient.zremrangebyrankAsync(tagKey, 0, limit);
+    }
+
+    const intfKey = `flow:intf:${flowCopy.intf}:recent`;
+    await rclient.zaddAsync(intfKey, now, JSON.stringify(flowCopy));
+    await rclient.zremrangebyrankAsync(intfKey, 0, limit);
+
     return;
   }
 

@@ -9,6 +9,10 @@ if [[ $(uname -m) == "aarch64" ]]; then
 	ln -sfT real.aarch64 real
 fi
 
+if [[ $(uname -m) == "x86_64" ]]; then
+	ln -sfT real.x86_64 real
+fi       
+
 if [[ -e $FIREWALLA_BIN/dev ]]; then
   cp $FIREWALLA_BIN{/mock,}/$BINARY
 else
@@ -30,5 +34,9 @@ for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
   fi
 done
 
-wait $PIDS
+if [[ -n $PIDS ]]; then
+  wait $PIDS
+else
+  exit 0
+fi
 

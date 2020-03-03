@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,6 +17,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 const fConfig = require('../net2/config.js').getConfig();
+const f = require('../net2/Firewalla.js');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -25,8 +26,13 @@ const { exec } = require('child-process-promise');
 
 class Platform {
   async getNetworkSpeed() {
-    const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
-    return output.trim();
+    try {
+      const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
+      return output.trim();
+    } catch(err) {
+      log.debug('Error getting network speed', err)
+      return null
+    }
   }
 
   getLedPaths() {
@@ -40,7 +46,7 @@ class Platform {
         const brightness = `${path}/brightness`;
         await exec(`sudo bash -c 'echo default-on > ${trigger}'`);
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      };
+      }
     } catch(err) {
       log.error("Error turning on LED", err)
     }
@@ -53,7 +59,7 @@ class Platform {
         await exec(`sudo bash -c 'echo none > ${trigger}'`);
         const brightness = `${path}/brightness`;
         await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
-      };
+      }
     } catch(err) {
       log.error("Error turning off LED", err)
     }
@@ -64,10 +70,33 @@ class Platform {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
         await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
-      };
+      }
     } catch(err) {
       log.error("Error blinking LED", err)
     }
+  }
+
+  getName() {}
+
+  getBoardSerial() {}
+
+  getLicenseTypes() {}
+
+  getSubnetCapacity() {}
+
+  getCpuTemperature() {}
+
+  getPolicyCapacity() {}
+
+  getDHCPCapacity() {
+    return true
+  }
+
+  isFireRouterManaged() {
+  }
+
+  getBroTabFile() {
+    return `${f.getFirewallaHome()}/etc/brotab`;
   }
 }
 

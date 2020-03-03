@@ -32,6 +32,7 @@ let MODE_AUTO_SPOOF = "spoof" // use spoof for backward compatibility
 let MODE_MANUAL_SPOOF = "manualSpoof"
 let MODE_DHCP = "dhcp"
 let MODE_DHCP_SPOOF = "dhcpSpoof"
+let MODE_ROUTER = "router"
 
 let DEFAULT_MODE = MODE_NONE
 
@@ -75,6 +76,10 @@ function dhcpModeOn() {
   return setSetupMode(MODE_DHCP)
 }
 
+function routerModeOn() {
+  return setSetupMode(MODE_ROUTER)
+}
+
 function spoofModeOn() {
   return autoSpoofModeOn()
 }
@@ -93,6 +98,10 @@ function manualSpoofModeOn() {
 
 function noneModeOn() {
   return setSetupMode(MODE_NONE)
+}
+
+function isRouterModeOn() {
+  return isXModeOn(MODE_ROUTER)
 }
 
 function isDHCPModeOn() {
@@ -137,6 +146,7 @@ module.exports = {
   isManualSpoofModeOn:isManualSpoofModeOn,
   isNoneModeOn:isNoneModeOn,
   isAutoSpoofModeOn:isAutoSpoofModeOn,
+  isRouterModeOn: isRouterModeOn,
 
   getSetupModeSync:getSetupModeSync,
   getSetupMode:getSetupMode,
@@ -144,6 +154,7 @@ module.exports = {
   setSetupMode:setSetupMode,
   
   dhcpModeOn: dhcpModeOn,
+  routerModeOn: routerModeOn,
   spoofModeOn: spoofModeOn,
   autoSpoofModeOn: autoSpoofModeOn,
   dhcpSpoofModeOn: dhcpSpoofModeOn,
@@ -154,5 +165,6 @@ module.exports = {
   MODE_AUTO_SPOOF: MODE_AUTO_SPOOF,
   MODE_MANUAL_SPOOF: MODE_MANUAL_SPOOF,
   MODE_DHCP: MODE_DHCP,
-  MODE_DHCP_SPOOF: MODE_DHCP_SPOOF
+  MODE_DHCP_SPOOF: MODE_DHCP_SPOOF,
+  MODE_ROUTER: MODE_ROUTER
 };

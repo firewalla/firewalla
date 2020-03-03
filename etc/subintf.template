@@ -1,2 +1,2 @@
 #!/bin/sh
-/sbin/ifconfig eth0:0 IP_ADDRESS up
+/sbin/ifconfig INTF IP_ADDRESS up

@@ -22,6 +22,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let NetworkTool = require('../net2/NetworkTool');
 let networkTool = new NetworkTool();
+const Discovery = require('../net2/Discovery.js');
+const d = new Discovery(process.title);
 
 class InterfaceDiscoverSensor extends Sensor {
   constructor() {
@@ -38,13 +40,7 @@ class InterfaceDiscoverSensor extends Sensor {
   }
 
   async checkAndRunOnce() {
-    let list = await networkTool.listInterfaces();
-    let redisobjs = ['sys:network:info'];
-    list.forEach((intf) => {
-      redisobjs.push(intf.name);
-      redisobjs.push(JSON.stringify(intf));
-    })
-    return rclient.hmsetAsync(redisobjs);
+    await d.discoverInterfacesAsync(false);
   }
 
 }

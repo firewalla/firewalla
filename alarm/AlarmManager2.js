@@ -750,11 +750,11 @@ module.exports = class {
 
     let alarmIDs = await rclient.
       zrevrangebyscoreAsync(alarmArchiveKey,
-      "+inf",
-      "-inf",
-      "limit",
-      offset,
-      limit);
+        "+inf",
+        "-inf",
+        "limit",
+        offset,
+        limit);
 
     let alarms = await this.idsToAlarmsAsync(alarmIDs);
 
@@ -878,8 +878,8 @@ module.exports = class {
     let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
 
     let query = asc ?
-      rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
-      rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
+    rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
+    rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
 
     let ids = await query;
 
@@ -1147,6 +1147,16 @@ module.exports = class {
 
           if (info.device) {
             p.scope = [info.device];
+          }
+
+          p.tag = [];
+          if (info.intf) {
+            p.tag.push(Policy.INTF_PREFIX + info.intf); // or use tag array
+          }
+
+          //@TODO need support array?
+          if (info.tag) {
+            p.tag.push(Policy.TAG_PREFIX + info.tag);
           }
 
           if (info.category) {
@@ -1538,6 +1548,12 @@ module.exports = class {
               i_type = "country";
               i_target = userInput.target;
               break;
+            case "ipOrg":
+            case "sslO":
+            case "domainRegister":
+              i_type = userInput.type;
+              i_target = userInput.target;
+              break;
             default:
               break
           }
@@ -1612,12 +1628,47 @@ module.exports = class {
           }
         }
         break;
+      case "ipOrg":
+        e["e.dest.ip.org"] = i_target;
+        if (alarm["p.device.mac"]) {
+          e["p.device.mac"] = alarm["p.device.mac"];
+        }
+        break;
+      case "sslO":
+        e["e.dest.ssl.O"] = i_target;
+        if (alarm["p.device.mac"]) {
+          e["p.device.mac"] = alarm["p.device.mac"];
+        }
+        break;
+      case "domainRegister":
+        e["e.dest.domain.register"] = i_target;
+        if (alarm["p.device.mac"]) {
+          e["p.device.mac"] = alarm["p.device.mac"];
+        }
+        break;
       default:
         // not supported
         break;
     }
     if (userInput && userInput.device && userInput.archiveAlarmByType) {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
+    }
+
+    if (!_.isEmpty(userInput.tag)) {
+      e["p.tag.ids"] = [];
+      for (const tagStr of tag) {
+        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
+          let intfUuid = _.trimStart(tagStr, Policy.INTF_PREFIX);
+          e["p.intf.id"] = intfUuid;
+        } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
+          let tagUid = _.trimStart.apply(tagStr, Policy.TAG_PREFIX);
+          e["p.tag.ids"].push(tagUid);
+        }
+      }
+    }
+
+    if (userInput && userInput.intf) {
+      e["p.intf.id"] = userInput.intf;
     }
     log.info("Exception object:", e);
     return e;

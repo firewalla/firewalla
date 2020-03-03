@@ -24,3 +24,4 @@ else
     /usr/bin/logger "FIREWALLA:("$DEBUG"): "$MESSAGE
     echo "FIREWALLA:("$DEBUG"): "$MESSAGE >> /home/pi/logs/Trace.log
 fi
+sudo chmod 777 /home/pi/logs/Trace.log

@@ -90,10 +90,10 @@ class GuardianSensor extends Sensor {
       if(!socketioServer) {
         throw new Error("invalid guardian relay server");
       }
-
+      const forceRestart = !this.socket || (await this.getRegion() != data.region) || (await this.getServer() != socketioServer)
       await this.setServer(socketioServer, data.region);
       
-      await this.start();
+      forceRestart && await this.start();
     });
 
     const adminStatusOn = await this.isAdminStatusOn();
@@ -151,12 +151,11 @@ class GuardianSensor extends Sensor {
     const eid = await et.getEID();
 
     const region = await this.getRegion();
-
-    if(region) {
-      this.socket = io(server, {path: `/${region}/socket.io`});
-    } else {
-      this.socket = io.connect(server);
-    }
+    const socketPath = region?`/${region}/socket.io`:'/socket.io'
+    this.socket = io(server, {
+      path: socketPath,
+      transports: ['websocket']
+    });
     if(!this.socket) {
       throw new Error("failed to init socket io");
     }

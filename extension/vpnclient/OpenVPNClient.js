@@ -21,8 +21,7 @@ const cp = require('child_process');
 const Promise = require('bluebird');
 const util = require('util');
 const f = require('../../net2/Firewalla.js');
-const SysManager = require('../../net2/SysManager');
-const sysManager = new SysManager();
+const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const iptables = require('../../net2/Iptables.js');
 
@@ -30,8 +29,7 @@ const instances = {};
 
 const VPNClient = require('./VPNClient.js');
 
-const VPNClientEnforcer = require('./VPNClientEnforcer.js');
-const vpnClientEnforcer = new VPNClientEnforcer();
+const vpnClientEnforcer = require('./VPNClientEnforcer.js');
 
 const readFileAsync = util.promisify(fs.readFile);
 const writeFileAsync = util.promisify(fs.writeFile);
@@ -159,6 +157,10 @@ class OpenVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.gateway`;
   }
 
+  _getSubnetFilePath() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet`;
+  }
+
   _getStatusLogPath() {
     return `/var/log/openvpn_client-status-${this.profileId}.log`;
   }
@@ -271,12 +273,19 @@ class OpenVPNClient extends VPNClient {
       this.emit('link_broken');
       return;
     }
-    // no need to refresh if remote ip and interface are not changed
-    if (newRemoteIP !== this._remoteIP) {
-      log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
-      await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf);
-      this._remoteIP = newRemoteIP;
+    // always refresh routes in case main routing table is changed
+    log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
+    await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf);
+    this._remoteIP = newRemoteIP;
+    
+    const newVPNSubnet = await this.getVPNSubnet();
+    if (newVPNSubnet !== this._vpnSubnet) {
+      if (this._vpnSubnet)
+        await iptables.dhcpSubnetChangeAsync(this._vpnSubnet, false);
+      if (newVPNSubnet)
+        await iptables.dhcpSubnetChangeAsync(newVPNSubnet, true);
     }
+    this._vpnSubnet = newVPNSubnet;
   }
 
   async start() {
@@ -304,10 +313,14 @@ class OpenVPNClient extends VPNClient {
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
             const vpnSubnet = await this.getVPNSubnet();
             if (vpnSubnet && vpnSubnet.length != 0) {
+              this._vpnSubnet = vpnSubnet;
               await iptables.dhcpSubnetChangeAsync(vpnSubnet, true).catch((err) => {
                 log.error("Failed to add SNAT rule for " + vpnSubnet, err);
               });
             }
+            await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+            // loosen reverse path filter
+            await execAsync(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => {});
             await this._processPushOptions("start");
             this._started = true;
             resolve(true);
@@ -342,11 +355,13 @@ class OpenVPNClient extends VPNClient {
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
     this._started = false;
-    const vpnSubnet = await this.getVPNSubnet();
+    const vpnSubnet = this._vpnSubnet;
     if (vpnSubnet && vpnSubnet.length != 0) {
       await iptables.dhcpSubnetChangeAsync(vpnSubnet, false).catch((err) => {});
     }
+    this._vpnSubnet = null;
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
+    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     await this._processPushOptions("stop");
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd);
@@ -413,15 +428,15 @@ class OpenVPNClient extends VPNClient {
   }
 
   async getVPNSubnet() {
-    // extract vpn subnet from 
-    // 10.162.35.0/24 via 10.162.35.21 dev vpn_ff1a_9BE25
-    const cmd = util.format(`ip r | grep -v default | grep ${this.getInterfaceName()} | grep via | awk '{print $1}'`);
-    return execAsync(cmd).then((result) => {
-      return result.stdout.trim();
-    }).catch((err) => {
-      log.error("Failed to get vpn subnet for " + this.profileId, err);
+    const intf = this.getInterfaceName();
+    const cmd = util.format(`ip link show dev ${intf}`);
+    const subnet = await execAsync(cmd).then(() => {
+      const subnetFile = this._getSubnetFilePath();
+      return fs.readFileAsync(subnetFile, "utf8").then((content) => content.trim());
+    }).catch((err) =>{
       return null;
     });
+    return subnet;
   }
 
   async getRemoteIP() {

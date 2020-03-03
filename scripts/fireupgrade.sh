@@ -68,18 +68,10 @@ fi
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
-ethernet_ip() {
-    eth_ip=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.') # only check ip assigned to eth0, should not check eth0:0
-    if [[ -n "$eth_ip" ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
 function await_ip_assigned() {
     for i in `seq 1 30`; do
-        if ! ethernet_ip; then
+        gw=$(ip route show | awk '/default/ {print $3; exit; }' | head -n 1)
+        if [[ ! -n $gw ]]; then
             sleep 1
         else
             logger "IP address is assigned"
@@ -240,9 +232,17 @@ sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
 #[ -s /home/pi/firewalla/etc/fireupgrade.service ]  && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
-sudo systemctl reenable firewalla
-sudo systemctl reenable fireupgrade
-sudo systemctl reenable brofish
+
+if [[ $(uname -m) == "x86_64" ]]; then
+    sudo systemctl disable firewalla
+    sudo systemctl disable fireupgrade
+    sudo systemctl disable brofish
+else
+    sudo systemctl reenable firewalla
+    sudo systemctl reenable fireupgrade
+    sudo systemctl reenable brofish
+fi
+
 
 case $mode in
     normal)

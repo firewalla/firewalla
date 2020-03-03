@@ -27,8 +27,7 @@ const serviceConfigKey = "bone:service:config";
 const syncInterval = 1000 * 3600 * 4; // sync every 4 hours
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const License = require('../util/license');
 
@@ -166,7 +165,7 @@ class BoneSensor extends Sensor {
     try {
       if (this.lastCheckedIn) {
         let HostManager = require("../net2/HostManager.js");
-        let hostManager = new HostManager("cli", 'server', 'info');
+        let hostManager = new HostManager();
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
       }
     } catch (e) {

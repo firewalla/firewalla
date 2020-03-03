@@ -17,21 +17,12 @@
 
 'use strict'
 
-const util = require('util');
-var fs = require('fs');
-var cloud = require('encipher');
-var program = require('commander');
-var qrcode = require('qrcode-terminal');
-var publicIp = require('public-ip');
-var intercomm = require('../lib/intercomm.js')();
-
 var ControllerBot = require('../lib/ControllerBot.js');
 
 var HostManager = require('../net2/HostManager.js');
-var SysManager = require('../net2/SysManager.js');
+var sysmanager = require('../net2/SysManager.js');
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
-var sysmanager = new SysManager();
 
 var builder = require('botbuilder');
 
@@ -507,11 +498,10 @@ class netBot extends ControllerBot {
 
         this.sensorConfig = config.controller.sensor;
         //flow.summaryhours
-        // sysmanager.setConfig(this.sensorConfig);
         sysmanager.update((err, data) => {});
 
 
-        this.hostManager = new HostManager("cli", 'client', 'debug');
+        this.hostManager = new HostManager();
 
         let c = require('../net2/MessageBus.js');
         this.subscriber = new c('debug');

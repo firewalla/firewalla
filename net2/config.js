@@ -15,10 +15,10 @@
 
 'use strict'
 
-let log = require("./logger.js")(__filename, "info");
+const log = require("./logger.js")(__filename);
 
-let fs = require('fs');
-let f = require('./Firewalla.js');
+const fs = require('fs');
+const f = require('./Firewalla.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -42,6 +42,14 @@ async function updateUserConfig(updatedPart) {
   userConfig = Object.assign({}, userConfig, updatedPart);
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
+  getConfig(true);
+}
+
+function updateUserConfigSync(updatedPart) {
+  getConfig(true);
+  userConfig = Object.assign({}, userConfig, updatedPart);
+  let userConfigFile = f.getUserConfigFolder() + "/config.json";
+  fs.writeFileSync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
   getConfig(true);
 }
 
@@ -74,10 +82,13 @@ function getConfig(reload) {
     userConfig = {};
     try {
       if(fs.existsSync(userConfigFile)) {
+        // let fileJson = fs.readFileSync(userConfigFile, 'utf8');
+        // log.info(`getConfig fileJson:${fileJson}` + new Error("").stack);
+        // userConfig = JSON.parse(fileJson);
         userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
       }
     } catch(err) {
-      log.error("Error parsing user config");
+      log.error("Error parsing user config:" + err.message);
     }
 
     let testConfig = {};
@@ -279,6 +290,7 @@ function getSimpleVersion() {
 
 module.exports = {
   updateUserConfig: updateUserConfig,
+  updateUserConfigSync: updateUserConfigSync,
   getConfig: getConfig,
   getSimpleVersion: getSimpleVersion,
   getUserConfig: getUserConfig,

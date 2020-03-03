@@ -61,18 +61,12 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
-    const allServers = await this.getAllServers();
-
+    const allServers = await this.getAllServers(); // get servers from cloud
+    const allServerNames = allServers.map((x) => x.name).filter(Boolean);
     content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
 
     let serverList = await this.getServers();
-    serverList = serverList.filter((serverName) => {
-      if (!serverName) {
-        return false;
-      }
-
-      return (allServers.filter((server) => (server && server.name && server.stamp && server.name === serverName)).length > 0) ? true : false;
-    });
+    serverList = serverList.filter((n) => allServerNames.includes(n)); // valid server name
     content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
 
     if (reCheckConfig) {
