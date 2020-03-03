@@ -39,8 +39,6 @@ const statAsync = util.promisify(fs.stat);
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
-const Config = require('../net2/config.js');
-
 const UPNP = require('../extension/upnp/upnp.js');
 const Message = require('../net2/Message.js');
 const Mode = require('../net2/Mode.js');
@@ -51,7 +49,6 @@ class VpnManager {
   constructor() {
     if (instance == null) {
       this.upnp = new UPNP(sysManager.myDefaultGateway());
-      this.config = Config.getConfig(true);
       if (firewalla.isMain()) {
         sclient.on("message", async (channel, message) => {
           switch (channel) {

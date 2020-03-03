@@ -78,8 +78,8 @@ class VPNClientEnforcer {
     const tableName = this._getRoutingTableName(vpnIntf);
     // ensure customized routing table is created
     const rtId = await routing.createCustomizedRoutingTable(tableName);
-    // add policy based rule, the priority 6001 is consistent with routing framework in firerouter
-    await routing.createPolicyRoutingRule("all", null, tableName, 6001, `${rtId}/0xffff`);
+    // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
+    await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`);
     let cmd = "ip route list";
     if (overrideDefaultRoute)
       // do not copy default route from main routing table
