@@ -51,6 +51,7 @@ function run0() {
       // this is to ensure sysManager is already initliazed when called in API code
       sysManager.isConfigInitialized()) {
     log.info("Firewalla initialization complete");
+    run();
     runLocalAPI();
   } else {
     setTimeout(()=>{
@@ -116,8 +117,6 @@ function createServerAndListen(app, ip, port) {
   server.listen(port, ip);
   server.on('error', onError);
 }
-
-run();
 
 
 function runLocalAPI() {
