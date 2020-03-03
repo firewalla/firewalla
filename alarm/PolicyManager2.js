@@ -73,7 +73,11 @@ const Tag = require('../net2/Tag.js');
 
 const _ = require('lodash');
 
-const delay = require('../util/util.js').delay
+const delay = require('../util/util.js').delay;
+const validator = require('validator');
+const iptool = require('ip');
+const util = require('util');
+const exec = require('child-process-promise').exec
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -1626,6 +1630,156 @@ class PolicyManager2 {
     }
 
     return null
+  }
+
+  async searchPolicy(target) {
+    let result = [];
+    let err = null;
+    if (!target) {
+      err = { code: 400, msg: "invalid target" };
+      return [result, err];
+    }
+
+    let waitSearch = [];
+    const addrPort = target.split(":");
+    if (addrPort.length == 2) {
+      const addr = addrPort[0];
+      const port = addrPort[1];
+      if (!iptool.isV4Format(addr) || Number.isNaN(port) || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 65535) {
+        err = { code: 400, msg: "IP address should be IPv4 format and port should be in [0, 65535]" };
+        return [result, err];
+      }
+      waitSearch = [addr, port + "", addr + "," + port];
+    } else if (iptool.isV4Format(target)) {
+      waitSearch = [target];
+    } else {
+      let isDomain = false;
+      try {
+        isDomain = validator.isFQDN(target);
+      } catch (err) {
+      }
+      if (isDomain) {
+        const key = `rdns:domain:${target}`;
+        waitSearch = await rclient.zrevrangebyscoreAsync(key, '+inf', '-inf');
+      } else {        
+        waitSearch = [target];
+      }
+    }
+    
+    let ipsets = [];
+    let ipsetContent = ""; // for string matching
+    try {
+      let cmdResult = await exec("sudo iptables -S | grep -E 'FW_BLOCK'");
+      let iptableFW = cmdResult.stdout.toString().trim(); // iptables content
+      cmdResult = await exec(`sudo ipset -S`);
+      let cmdResultContent = cmdResult.stdout.toString().trim().split('\n');
+      for (const line of cmdResultContent) {
+        const splitCurrent = line.split(" ");
+        if (splitCurrent[0] == "create") {
+          // ipset name
+          if (iptableFW.indexOf(' ' + splitCurrent[1] + ' ') > -1) {
+            // ipset name in iptables
+            ipsets.push({ipsetName: splitCurrent[1], ipsetType: splitCurrent[2]});
+          }
+        } else {
+          //ipset content
+          if (ipsets.some((current) => current.ipsetName == splitCurrent[1])) {
+            ipsetContent += line + "\n";
+          }
+        }
+      }
+    } catch (err) {
+      log.error(err);
+    }
+
+    const rules = await this.loadActivePoliciesAsync();
+    for (const currentTxt of waitSearch) {
+      if (!currentTxt || currentTxt.trim().length == 0) continue;
+      log.info("Start check target:", currentTxt);
+      for (const ipset of ipsets) {
+        const ipsetName = ipset.ipsetName;
+        if ((ipset.ipsetType == "hash:net" && iptool.isV4Format(currentTxt)) || (["hash:ip,port", "hash:net,port"].includes(ipset.ipsetType) && currentTxt.indexOf(",") > -1)) {
+          // use ipset test command
+          const testCommand = util.format("sudo ipset test %s %s", ipsetName, currentTxt);
+          try {
+            await exec(testCommand);
+          } catch (err) {
+            continue;
+          }
+        } else {
+          // use string matching
+          const testStr = "add " + ipsetName + " " + currentTxt + "\n";
+          if (ipsetContent.indexOf(testStr) == -1) {
+            continue;
+          } 
+        }
+
+        const matches = ipsetName.match(/(.*)_(\d+)_(.*)/); // match rule id
+        if (matches) {
+          let rule = await this.getPolicy(matches[2]);
+          if (rule) {
+            result.push(Object.assign({ipset: ipsetName}, rule));
+          }
+        } else if (ipsetName.indexOf("blocked_") > -1) {
+          for (const rule of rules) {
+            let matchRule = false;
+            if (rule.type == "ip" && rule.target === currentTxt) {
+              matchRule = true;
+            } else if (rule.type == "net" && iptool.isV4Format(currentTxt) && iptool.cidrSubnet(rule.target).contains(currentTxt)) {
+              matchRule = true;
+            } else if (["dns", "domain"].includes(rule.type)) {
+              const key = `rdns:domain:${rule.target}`;
+              let results = await rclient.zrevrangebyscoreAsync(key, '+inf', '-inf');
+              if (results && results.length > 0 && results.some(dnsIp => dnsIp == currentTxt)) {
+                matchRule = true;
+              }
+            } else if (rule.type == "remotePort" && Number.isInteger(Number(currentTxt))) {
+              let splitTarget = rule.target.split("-");  //Example 9901-9908
+              if (splitTarget.length == 2) {
+                let portStart = splitTarget[0];
+                let portEnd = splitTarget[1];
+                if (Number.isInteger(Number(portStart)) && Number.isInteger(Number(portEnd)) && Number(currentTxt) >= Number(portStart) && Number(currentTxt) <= Number(portEnd) ) {
+                  matchRule = true;
+                }
+              } else if (rule.target == currentTxt) {
+                matchRule = true;
+              }
+            } else if (rule.type == "remoteIpPort" && currentTxt.indexOf(",") > -1) {
+              let splitTarget = rule.target.split(":"); //Example 101.89.76.251,tcp:44449
+              let targetIp = splitTarget[0];
+              let targetPort = splitTarget[1];
+              if (targetIp.indexOf(",") > -1) {
+                targetIp = targetIp.split(",")[0];
+              }
+              if (targetIp + "," + targetPort == currentTxt) {
+                matchRule = true;
+              }
+            } else if (rule.type == "remoteNetPort" && currentTxt.indexOf(",") > -1) {
+              let splitTarget = rule.target.split(":"); //Example 10.0.0.0/8,tcp:44449
+              let targetNet = splitTarget[0];
+              let targetPort = splitTarget[1];
+              if (targetNet.indexOf(",") > -1) {
+                targetNet = targetNet.split(",")[0];
+              }
+              let splitTxt = currentTxt.split(",");  //Example 10.0.0.1,44449
+              let currentIp = splitTxt[0];
+              let currentPort = splitTxt[1];
+              if (iptool.isV4Format(currentIp) && iptool.cidrSubnet(targetNet).contains(currentIp) && targetPort == currentPort) {
+                matchRule = true;
+              }
+            }
+
+            if (matchRule) {
+              result.push(Object.assign({ipset: ipsetName}, rule));
+            }
+          }
+        } else {
+          result.push({ipset: ipsetName});
+        }
+      }
+    }
+
+    return [_.uniqWith(result, _.isEqual), err];
   }
 }
 
