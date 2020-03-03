@@ -102,7 +102,6 @@ class DNSCryptPlugin extends Sensor {
   }
 
   async applyAll(reCheckConfig = false) {
-    log.info("DNSCryptPlugin.applyAll");
     const result = await dc.prepareConfig({}, reCheckConfig);
     if (result) {
       await dc.restart();
