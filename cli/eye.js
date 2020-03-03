@@ -12,7 +12,7 @@ var fs = require('fs');
 var program = require('commander');
 
 var HostManager = require("../net2/HostManager.js");
-var hostManager = new HostManager("cli", 'client', 'info');
+var hostManager = new HostManager();
 
 program.version('0.0.2')
     .option('--host [host]', 'configuration')

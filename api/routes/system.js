@@ -52,7 +52,7 @@ router.get('/info',
 router.get('/status',
            (req, res, next) => {
              let HostManager = require('../../net2/HostManager.js');
-             let hm = new HostManager('system_api', 'client', 'info');
+             let hm = new HostManager();
              let compressed = req.query.compressed;
 
              hm.toJson(true, (err, json) => {

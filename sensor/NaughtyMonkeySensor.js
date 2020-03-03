@@ -30,7 +30,7 @@ const Sensor = require('./Sensor.js').Sensor
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const HostManager = require('../net2/HostManager');
-const hostManager = new HostManager('cli', 'server');
+const hostManager = new HostManager();
 
 const sysManager = require('../net2/SysManager.js');
 

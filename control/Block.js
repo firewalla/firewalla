@@ -67,11 +67,11 @@ function getDstSet6(tag) {
   return `c_bd_${tag}_set6`
 }
 
-async function setupGlobalWhitelist(state) {
+async function setupGlobalLockDown(state) {
   try {
     let ruleSet = [
-      new Rule().chn('FW_WHITELIST_PREROUTE').jmp('FW_WHITELIST'),
-      new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').jmp('FW_NAT_WHITELIST'),
+      new Rule().chn('FW_LOCKDOWN_SELECTOR').jmp('FW_DROP'),
+      new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').jmp('FW_NAT_HOLE'),
     ]
 
     let ruleSet6 = ruleSet.map(r => r.clone().fam(6))
@@ -85,7 +85,7 @@ async function setupGlobalWhitelist(state) {
   }
 }
 
-async function setupInterfaceWhitelist(state, uuid) {
+async function setupInterfaceLockDown(state, uuid) {
   if (!uuid) {
     log.error("network uuid is not defined while setting up whitelist");
     return;
@@ -96,14 +96,14 @@ async function setupInterfaceWhitelist(state, uuid) {
     return;
   }
   const ruleSet = [
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(networkIpsetName, "src,src", "set").jmp('FW_WHITELIST'),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "src,src", "set").jmp('FW_NAT_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(networkIpsetName, "dst,dst", "set").jmp('FW_NAT_WHITELIST'),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_WHITELIST').fam(6),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_WHITELIST').fam(6),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_NAT_WHITELIST').fam(6),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_NAT_WHITELIST').fam(6)
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(networkIpsetName, "src,src", "set").jmp('FW_DROP'),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(networkIpsetName, "dst,dst", "set").jmp('FW_DROP'),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(networkIpsetName, "src,src", "set").jmp('FW_NAT_HOLE'),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(networkIpsetName, "dst,dst", "set").jmp('FW_NAT_HOLE'),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_DROP').fam(6),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_DROP').fam(6),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_NAT_HOLE').fam(6),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_NAT_HOLE').fam(6)
   ];
 
   for (const rule of ruleSet) {
@@ -114,17 +114,17 @@ async function setupInterfaceWhitelist(state, uuid) {
   }
 }
 
-async function setupTagWhitelist(state, tagUid) {
+async function setupTagLockDown(state, tagUid) {
   if (!tagUid) {
     log.error("tag uid is not defined while setting up whitelist");
     return;
   }
   const tagSet = require('../net2/Tag.js').getTagIpsetName(tagUid);
   const ruleSet = [
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(tagSet, "src,src", "set").jmp('FW_WHITELIST'),
-    new Rule().chn('FW_WHITELIST_PREROUTE').mth(tagSet, "dst,dst", "set").jmp('FW_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(tagSet, "src,src", "set").jmp('FW_NAT_WHITELIST'),
-    new Rule('nat').chn('FW_NAT_WHITELIST_PREROUTE').mth(tagSet, "dst,dst", "set").jmp('FW_NAT_WHITELIST')
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(tagSet, "src,src", "set").jmp('FW_DROP'),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(tagSet, "dst,dst", "set").jmp('FW_DROP'),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(tagSet, "src,src", "set").jmp('FW_NAT_HOLE'),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(tagSet, "dst,dst", "set").jmp('FW_NAT_HOLE')
   ];
 
   const ruleSet6 = ruleSet.map(r => r.clone().fam(6));
@@ -172,20 +172,20 @@ async function existsBlockingEnv(tag) {
   }
 }
 
-function block(target, ipset, whitelist = false) {
-  return setupIpset(target, ipset, whitelist)
+function block(target, ipset) {
+  return setupIpset(target, ipset)
 }
 
-function unblock(target, ipset, whitelist = false) {
+function unblock(target, ipset) {
   // never unblock black hole ip
   if (f.isReservedBlockingIP(target)) {
     return
   }
 
-  return setupIpset(target, ipset, whitelist, true)
+  return setupIpset(target, ipset, true)
 }
 
-function setupIpset(target, ipset, whitelist, remove = false) {
+function setupIpset(target, ipset, remove = false) {
   const ipSpliterIndex = target.search(/[/,]/)
   const ipAddr = ipSpliterIndex > 0 ? target.substring(0, ipSpliterIndex) : target;
 
@@ -232,9 +232,9 @@ async function setupRules(pid, macTag, dstTag, dstType, iif, allow = false, dest
     }
 
     const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
-    const filterDest = allow ? 'RETURN' : 'FW_DROP'
+    const filterDest = allow ? 'FW_ACCEPT' : 'FW_DROP'
     const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
-    const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+    const natDest = allow ? 'ACCEPT' : 'FW_NAT_HOLE'
 
     const comment = `"Firewalla Policy ${pid}"`
     const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
@@ -242,11 +242,12 @@ async function setupRules(pid, macTag, dstTag, dstType, iif, allow = false, dest
     const natOutRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
     const natOutRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
 
+    const spec = dstType != 'hash:ip,port' ? 'dst' : 'dst,dst';
     if (dstSet) {
-      outRule.mth(dstSet, 'dst')
-      outRule6.mth(dstSet6, 'dst')
-      natOutRule.mth(dstSet, 'dst')
-      natOutRule6.mth(dstSet6, 'dst')
+      outRule.mth(dstSet, spec)
+      outRule6.mth(dstSet6, spec)
+      natOutRule.mth(dstSet, spec)
+      natOutRule6.mth(dstSet6, spec)
     }
 
     // matching MAC addr won't work in opposite direction
@@ -303,7 +304,7 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
     }
 
     try {
-      log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', tags || "null", dstTag,
+      log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', pid || "null", dstTag,
         destroy && destroyDstCache ? "and ipset" : "");
 
       const dstSet = dstTag ? getDstSet(dstTag) : null;
@@ -319,9 +320,9 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
       }
 
       const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
-      const filterDest = allow ? 'RETURN' : 'FW_DROP'
+      const filterDest = allow ? 'FW_ACCEPT' : 'FW_DROP'
       const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
-      const natDest = allow ? 'RETURN' : 'FW_NAT_HOLE'
+      const natDest = allow ? 'ACCEPT' : 'FW_NAT_HOLE'
 
       const comment = `"Firewalla Policy ${pid}"`
       const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
@@ -342,10 +343,10 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
       const natInRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
 
       if (dstSet) {
-        inRule.mth(dstSet, 'dst');
-        inRule6.mth(dstSet6, 'dst');
-        natInRule.mth(dstSet, 'dst');
-        natInRule6.mth(dstSet6, 'dst');
+        inRule.mth(dstSet, 'src');
+        inRule6.mth(dstSet6, 'src');
+        natInRule.mth(dstSet, 'src');
+        natInRule6.mth(dstSet6, 'src');
       }
 
       const ipset = require('../net2/Tag.js').getTagIpsetName(tags[index]);
@@ -379,10 +380,104 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
         }
       }
 
-      log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', tags || "null", dstTag);
+      log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', pid || "null", dstTag);
 
     } catch(err) {
       log.error('Error when setup tag blocking env', err);
+    }
+  }
+}
+
+async function setupIntfsRules(pid, intfs, dstTag, dstType, allow = false, destroy = false, destroyDstCache = true) {
+  if (_.isEmpty(intfs)) {
+    return;
+  }
+
+  const NetworkProfile = require('../net2/NetworkProfile.js');
+  for (let index = 0; index < intfs.length; index++) {
+    await NetworkProfile.ensureCreateEnforcementEnv(intfs[index]);
+
+    try {
+      log.info(destroy ? 'Destroying' : 'Creating', 'block environment for', pid || "null", dstTag,
+        destroy && destroyDstCache ? "and ipset" : "");
+
+      const dstSet = dstTag ? getDstSet(dstTag) : null;
+      // use same port set on both ip4 & ip6 rules
+      const dstSet6 = dstTag ? (dstType == 'bitmap:port' ? dstSet : getDstSet6(dstTag)) : null;
+
+      if (!destroy) {
+        if (dstSet) {
+          await Ipset.create(dstSet, dstType);
+          if (dstType != 'bitmap:port')
+          await Ipset.create(dstSet6, dstType, false)
+        }
+      }
+
+      const filterChain = allow ? 'FW_WHITELIST' : 'FW_BLOCK'
+      const filterDest = allow ? 'FW_ACCEPT' : 'FW_DROP'
+      const natChain = allow ? 'FW_NAT_WHITELIST' : 'FW_NAT_BLOCK'
+      const natDest = allow ? 'ACCEPT' : 'FW_NAT_HOLE'
+
+      const comment = `"Firewalla Policy ${pid}"`
+      const outRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
+      const outRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
+      const natOutRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
+      const natOutRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
+
+      if (dstSet) {
+        outRule.mth(dstSet, 'dst');
+        outRule6.mth(dstSet6, 'dst');
+        natOutRule.mth(dstSet, 'dst');
+        natOutRule6.mth(dstSet6, 'dst');
+      }
+
+      const inRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
+      const inRule6    = new Rule().chn(filterChain).jmp(filterDest).fam(6).comment(comment)
+      const natInRule  = new Rule('nat').chn(natChain).jmp(natDest).comment(comment)
+      const natInRule6 = new Rule('nat').chn(natChain).jmp(natDest).fam(6).comment(comment)
+
+      if (dstSet) {
+        inRule.mth(dstSet, 'src');
+        inRule6.mth(dstSet6, 'src');
+        natInRule.mth(dstSet, 'src');
+        natInRule6.mth(dstSet6, 'src');
+      }
+
+      const ipset = require('../net2/NetworkProfile.js').getNetIpsetName(intfs[index]);
+      outRule.mth(ipset, 'src,src')
+      outRule6.mth(`${ipset}6`, 'src,src')
+      natOutRule.mth(ipset, 'src,src')
+      natOutRule6.mth(`${ipset}6`, 'src,src')
+
+      inRule.mth(ipset, 'dst,dst')
+      inRule6.mth(`${ipset}6`, 'dst,dst')
+      natInRule.mth(ipset, 'dst,dst')
+      natInRule6.mth(`${ipset}6`, 'dst,dst')
+
+      const op = destroy ? '-D' : '-I'
+      await exec(outRule.toCmd(op))
+      await exec(outRule6.toCmd(op))
+      await exec(natOutRule.toCmd(op))
+      await exec(natOutRule6.toCmd(op))
+      await exec(inRule.toCmd(op))
+      await exec(inRule6.toCmd(op))
+      await exec(natInRule.toCmd(op))
+      await exec(natInRule6.toCmd(op))
+
+      if (destroy) {
+        if (destroyDstCache) {
+          if (dstSet) {
+            await Ipset.destroy(dstSet)
+            if (dstType != 'bitmap:port')
+              await Ipset.destroy(dstSet6)
+          }
+        }
+      }
+
+      log.info('Finish', destroy ? 'destroying' : 'creating', 'block environment for', pid || "null", dstTag);
+
+    } catch(err) {
+      log.error('Error when setup intf blocking env', err);
     }
   }
 }
@@ -431,6 +526,52 @@ function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
   return Ipset.del(ipset, entry)
 }
 
+async function createMatchingSet(id, type, af = 4) {
+  if (!id || !type)
+    return null;
+  let name = `c_${id}`;
+  await Ipset.create(name, type, af == 4).catch((err) => {
+    log.error(`Failed to create ipset ${name}`, err.message);
+    name = null;
+  });
+  return name;
+}
+
+async function addToMatchingSet(id, value) {
+  if (!id || !value)
+    return;
+  const name = `c_${id}`;
+  await Ipset.add(name, value).catch((err) => {
+    log.error(`Failed to add ${value} to ipset ${name}`, err.message);
+  });
+}
+
+async function destroyMatchingSet(id) {
+  if (!id)
+    return;
+  const name = `c_${id}`;
+  await Ipset.destroy(name).catch((err) => {
+    log.error(`Failed to destroy ipset ${name}`, err.message);
+  });
+}
+
+async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, sport, dstMatchingSet, dstSpec, dport, proto, target, chain, table, af = 4) {
+  // sport and dport can be range string, e.g., 10000-20000
+  const rule = new Rule(table).fam(af).chn(chain);
+  if (srcMatchingSet)
+    rule.mth(srcMatchingSet, srcSpec, "set");
+  if (sport)
+    rule.mth(sport, null, "sport");
+  if (dstMatchingSet)
+    rule.mth(dstMatchingSet, dstSpec, "set");
+  if (dport)
+    rule.mth(dport, null, "dport");
+  if (proto)
+    rule.pro(proto);
+  rule.jmp(target);
+  await exec(rule.toCmd(action));
+}
+
 
 module.exports = {
   setupBlockChain:setupBlockChain,
@@ -446,8 +587,13 @@ module.exports = {
   getDstSet6: getDstSet6,
   getMacSet: getMacSet,
   existsBlockingEnv: existsBlockingEnv,
-  setupGlobalWhitelist: setupGlobalWhitelist,
-  setupInterfaceWhitelist: setupInterfaceWhitelist,
-  setupTagWhitelist: setupTagWhitelist,
-  setupTagRules: setupTagRules
+  setupGlobalLockDown: setupGlobalLockDown,
+  setupNetworkLockDown: setupInterfaceLockDown,
+  setupTagLockDown: setupTagLockDown,
+  setupTagRules: setupTagRules,
+  setupIntfsRules: setupIntfsRules,
+  createMatchingSet: createMatchingSet,
+  addToMatchingSet: addToMatchingSet,
+  destroyMatchingSet: destroyMatchingSet,
+  manipulateFiveTupleRule: manipulateFiveTupleRule
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2018-2019 Firewalla INC
+/*    Copyright 2018-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,13 +18,12 @@
  */
 'use strict';
 
-var express = require('express');
-var path = require('path');
-var logger = require('morgan');
-var cookieParser = require('cookie-parser');
-var bodyParser = require('body-parser');
-var swagger = require("swagger-node-express");
-const passport = require('passport');
+const f = require('../net2/Firewalla.js');
+const express = require('express');
+const path = require('path');
+const logger = require('morgan');
+const cookieParser = require('cookie-parser');
+const bodyParser = require('body-parser');
 const fs = require('fs');
 
 let log = require('../net2/logger.js')(__filename, 'info')
@@ -34,6 +33,8 @@ let si = require('../extension/sysinfo/SysInfo.js');
 si.startUpdating();
 
 let app = express();
+
+app.set('title', 'FireAPI Pro')
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
@@ -51,8 +52,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let subpath_v1 = express();
 app.use('/v1', subpath_v1);
-subpath_v1.use(passport.initialize());
-subpath_v1.use(passport.session());
 subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 subpath_v1.use(require('./middlewares/auth'));
@@ -77,7 +76,7 @@ async function netbotHandler(gid, mtype, data) {
   return controller.msgHandlerAsync(gid, msg);
 }
 
-fs.readdirSync('./routes/pro').forEach(file => {
+fs.readdirSync(f.getFirewallaHome() + '/api/routes/pro').forEach(file => {
   if (file.endsWith('.js')) {
     require('./routes/pro/' + file)(router, netbotHandler);
   }

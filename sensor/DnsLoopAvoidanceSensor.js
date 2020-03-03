@@ -39,7 +39,7 @@ class DnsLoopAvoidanceSensor extends Sensor {
   }
 
   async check() {
-    const hostManager = new HostManager("cli", 'client', 'info');
+    const hostManager = new HostManager();
     let dnsServers = [];
     const monitoringInterfaces = sysManager.getMonitoringInterfaces();
     for (const i of monitoringInterfaces) {
