@@ -48,7 +48,7 @@ fi
 
 ( cd $FIREWALLA_HOME/$service_subdir
 
-$FIREWALLA_HOME/bin/node \
+UV_THREADPOOL_SIZE=16 $FIREWALLA_HOME/bin/node \
     --expose-gc \
     -max-old-space-size=256 \
     $service_run $extra_opts

@@ -1,3 +1,18 @@
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 
 const log = require('../../net2/logger.js')(__filename);
@@ -26,8 +41,8 @@ let instance = null;
 
 class HttpFlow {
   constructor() {
-    if(instance === null) {
-      instance = this;      
+    if (instance === null) {
+      instance = this;
     }
     return instance;
   }
@@ -35,7 +50,7 @@ class HttpFlow {
   async processUserAgent(mac, flowObject) {
     const agent = useragent.parse(flowObject.user_agent);
 
-    if(agent == null || agent.device == null || agent.device.family == null) {
+    if (agent == null || agent.device == null || agent.device.family == null) {
       return;
     }
 
@@ -56,7 +71,7 @@ class HttpFlow {
 
       await rclient.saddAsync(key, JSON.stringify(content));
       await rclient.expireAsync(key, expireTime);
-    } catch(err) {
+    } catch (err) {
       log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
     }
 
@@ -66,7 +81,7 @@ class HttpFlow {
       const destKey = `user_agent:${srcIP}:${destIP}:${destPort}`;
       await rclient.setAsync(destKey, flowObject.user_agent);
       await rclient.expireAsync(destKey, destExpireTime);
-    } catch(err) {
+    } catch (err) {
       log.error(`Failed to save dest user agent info, err: ${err}`);
     }
   }
@@ -87,23 +102,25 @@ class HttpFlow {
         log.error("HTTP:Drop", obj);
         return;
       }
+      if (obj && obj.status_code != 200) {
+        return;
+      }
 
       const srcIP = obj["id.orig_h"];
       const destIP = obj["id.resp_h"];
-      const destPort = obj["id.resp_p"];
       const host = obj.host;
       const uri = obj.uri;
       let localIP = null;
       let flowDirection = null;
 
-      if (sysManager.isLocalIP(srcIP) && sysManager.isLocalIP(destIP)) {
-        return; // ignore any local http traffic
-      }
-
-      if (sysManager.isLocalIP(srcIP) && sysManager.isLocalIP(destIP) === false) {
-        flowDirection = "outbound";
-        localIP = srcIP;
-      } else if (sysManager.isLocalIP(srcIP) === false && sysManager.isLocalIP(destIP)) {
+      if (sysManager.isLocalIP(srcIP)) {
+        if (sysManager.isLocalIP(destIP)) {
+          return; // ignore any local http traffic
+        } else {
+          flowDirection = "outbound";
+          localIP = srcIP;
+        }
+      } else if (sysManager.isLocalIP(destIP)) {
         flowDirection = "inbound";
         localIP = destIP;
       } else {
@@ -112,7 +129,7 @@ class HttpFlow {
       }
 
       const mac = await hostTool.getMacByIPWithCache(localIP);
-      if(!mac) {
+      if (!mac) {
         log.error(`No mac address found for ip ${localIP}, dropping http flow`);
         return;
       }
@@ -121,14 +138,14 @@ class HttpFlow {
         await this.processUserAgent(mac, obj);
       }
 
-      if(host && uri) {
+      if (host && uri) {
         sem.emitEvent({
           type: 'DestURLFound', // to have DestURLHook to get intel for this url
           url: `${host}${uri}`,
           suppressEventLogging: true
         });
       }
-    
+
       const flowKey = `flow:http:${flowDirection}:${mac}`;
       const strdata = JSON.stringify(obj);
       const redisObj = [flowKey, obj.ts, strdata];
@@ -139,8 +156,8 @@ class HttpFlow {
         await rclient.zaddAsync(redisObj);
         await rclient.expireAsync(flowKey, expireTime);
 
-        flowLink.recordHttp(obj.uid, obj.ts, {mac, flowDirection});
-      } catch(err) {
+        flowLink.recordHttp(obj.uid, obj.ts, { mac, flowDirection });
+      } catch (err) {
         log.error(`Failed to save http flow, err: ${err}`);
       }
 

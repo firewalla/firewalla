@@ -127,7 +127,8 @@ class OpenVPNClient extends VPNClient {
     let defaultSettings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
-      routeDNS: true
+      routeDNS: true,
+      strictVPN: false
     }; // default settings
     const mergedSettings = Object.assign({}, defaultSettings, settings);
     this.settings = mergedSettings;
@@ -139,7 +140,8 @@ class OpenVPNClient extends VPNClient {
     let settings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
-      routeDNS: true
+      routeDNS: true,
+      strictVPN: false
     }; // default settings
     if (await accessAsync(settingsPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const settingsContent = await readFileAsync(settingsPath, 'utf8');
@@ -151,6 +153,10 @@ class OpenVPNClient extends VPNClient {
 
   _getPushOptionsPath() {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.push_options`;
+  }
+
+  _getGatewayFilePath() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.gateway`;
   }
 
   _getStatusLogPath() {
@@ -420,22 +426,14 @@ class OpenVPNClient extends VPNClient {
 
   async getRemoteIP() {
     const intf = this.getInterfaceName();
-    const cmd = util.format("ifconfig | grep '^%s' -A 2 | grep 'P-t-P' | awk '{print $2,$3}'", intf);
-    const result = await execAsync(cmd);
-    const lines = result.stdout.split('\n');
-    for (let i in lines) {
-      const line = lines[i];
-      if (line.length == 0)
-        continue;
-      const addrs = line.split(" ");
-      const local = addrs[0].split(':')[1];
-      const peer = addrs[1].split(':')[1];
-      if (local.split('.')[3] !== "1") {
-        // this is an address belonging to OpenVPN client
-        return peer;
-      }
-    }
-    return null;
+    const cmd = util.format(`ip link show dev ${intf}`);
+    const ip = await execAsync(cmd).then(() => {
+      const gatewayFile = this._getGatewayFilePath();
+      return fs.readFileAsync(gatewayFile, "utf8").then((content) => content.trim());
+    }).catch((err) =>{
+      return null;
+    });
+    return ip;
   }
 
   getInterfaceName() {

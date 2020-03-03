@@ -35,6 +35,7 @@ const asyncNative = require('../util/asyncNative.js');
 const iptool = require('ip');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
+const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
 class HostTool {
   constructor() {
@@ -254,7 +255,7 @@ class HostTool {
 
   async getAllMACs() {
     let keys = await rclient.keysAsync("host:mac:*");
-    return keys.map((key) => key.replace("host:mac:", "")).filter(Boolean);
+    return keys.map(key => key.substring(9)).filter(Boolean);
   }
 
   async getAllMACEntries() {
@@ -277,7 +278,7 @@ class HostTool {
       if (ips) {
         allIPs.push({ips: ips, mac: mac})
       }
-    };
+    }
 
     return allIPs;
   }
@@ -294,7 +295,7 @@ class HostTool {
     return rclient.hsetAsync(key, "recentActivity", string)
   }
 
-  async removeDupIPv4FromMacEntry(mac, ip) {
+  async removeDupIPv4FromMacEntry(mac, ip, newMac) {
     // Keep uid for now as it's used as keys in a lot of places
     // TODO: use mac as uid should be a true fix to this
 
@@ -303,7 +304,7 @@ class HostTool {
       log.error('removeDupIPv4FromMacEntry:', mac, 'not found')
       return Promise.resolve();
     }
-    log.info('removeDupIPv4FromMacEntry:', mac, macEntry);
+    log.info('removeDupIPv4FromMacEntry:', ip, 'old:', mac, 'new:', newMac, macEntry);
 
     let trans = rclient.multi()
 
@@ -414,7 +415,7 @@ class HostTool {
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
     sysManager.setNeighbor(v6addr);
     let ip6Host = await rclient.hgetallAsync(v6key)
-    log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host, err);
+    log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
     if (ip6Host != null) {
       ip6Host.mac = mac;
       ip6Host.lastActiveTimestamp = Date.now() / 1000;
@@ -457,7 +458,7 @@ class HostTool {
     } else {
       macHost = {};
       macHost.mac = mac.toUpperCase();
-      macHost.ipv6Addr = JSON.stringify([v6addr]);;
+      macHost.ipv6Addr = JSON.stringify([v6addr]);
       macHost.lastActiveTimestamp = Date.now() / 1000;
       macHost.firstFoundTimestamp = macHost.lastActiveTimestamp;
       log.info("HostTool:Writing macHost:", mackey, macHost);
@@ -537,6 +538,23 @@ class HostTool {
     }
 
     return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)
+  }
+  async generateLocalDomain(mac) {
+    const key = this.getMacKey(mac);
+    let customizeDomainName = await rclient.hgetAsync(key, "customizeDomainName");
+    let ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
+    let name = await rclient.hgetAsync(key, "name");
+    let bname = await rclient.hgetAsync(key, "bname")
+    if (!ipv4Addr || (!bname && !name && !customizeDomainName)) return;
+    name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
+    bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
+    name = name || bname;
+    customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
+    await this.updateMACKey({
+      localDomain: name ? `${name}.lan` : '',
+      userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
+      mac: mac
+    }, true);
   }
 }
 

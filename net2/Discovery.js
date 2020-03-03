@@ -36,21 +36,21 @@ const util = require('util');
 /*
  *   sys::network::info = {
  *         'eth0': {
-               subnet: 
+               subnet:
                gateway:
             }
  *         "wlan0': {
                subnet:
                gateway:
             }
- *   
+ *
  */
 
 /* Host structure
-    "name": == bonjour name, can be over written by user 
+    "name": == bonjour name, can be over written by user
     "bname": bonjour name
     'addresses': [...]
-    'host': host field in bonjour     
+    'host': host field in bonjour
  1) "ipv4Addr"
  3) "mac"
  5) "uid"
@@ -63,7 +63,7 @@ const util = require('util');
 */
 
 module.exports = class {
-  constructor(name, config, loglevel, noScan) {
+  constructor(name, config, loglevel) {
     if (instances[name] == null) {
 
       if (config == null) {
@@ -87,62 +87,58 @@ module.exports = class {
     return instances[name];
   }
 
-  discoverMac(mac, callback) {
-    callback = callback || function () { }
-
-    this.discoverInterfaces(async (err, list) => {
-      log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces);
-      let found = null;
-      for (const name of this.config.discovery.networkInterfaces) {
-        let intf = this.interfaces[name];
-        if (intf == null) {
-          continue;
-        }
-        if (found) {
-          break;
-        }
-        if (intf != null) {
-          log.debug("Prepare to scan subnet", intf);
-          if (this.nmap == null) {
-            this.nmap = new Nmap(intf.subnet, false);
-          }
-
-          log.info("Start scanning network ", intf.subnet, "to look for mac", mac);
-
-          // intf.subnet is in v4 CIDR notation
-          try {
-            let hosts = await this.nmap.scanAsync(intf.subnet, true)
-
-            this.hosts = [];
-
-            for (let i in hosts) {
-              let host = hosts[i];
-              if (host.mac && host.mac === mac) {
-                found = host;
-                break;
-              }
-            }
-          } catch (err) {
-            log.error("Failed to scan: " + err);
-            continue
-          }
-        }
+  async discoverMac(mac) {
+    await this.discoverInterfacesAsync()
+    log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces);
+    let found = null;
+    for (const name of this.config.discovery.networkInterfaces) {
+      let intf = this.interfaces[name];
+      if (intf == null) {
+        continue;
       }
-      log.info("Discovery::DiscoveryMAC:Found", found);
       if (found) {
-        callback(null, found);
-      } else {
-        this.getAndSaveArpTable((err, arpList, arpTable) => {
-          log.info("discoverMac:miss", mac);
-          if (arpTable[mac]) {
-            log.info("discoverMac:found via ARP", arpTable[mac]);
-            callback(null, arpTable[mac]);
-          } else {
-            callback(null, null);
-          }
-        });
+        break;
       }
-    });
+      if (intf != null) {
+        log.debug("Prepare to scan subnet", intf);
+        if (this.nmap == null) {
+          this.nmap = new Nmap(intf.subnet, false);
+        }
+
+        log.info("Start scanning network ", intf.subnet, "to look for mac", mac);
+
+        // intf.subnet is in v4 CIDR notation
+        try {
+          let hosts = await this.nmap.scanAsync(intf.subnet, true)
+
+          this.hosts = [];
+
+          for (let i in hosts) {
+            let host = hosts[i];
+            if (host.mac && host.mac === mac) {
+              found = host;
+              break;
+            }
+          }
+        } catch (err) {
+          log.error("Failed to scan: " + err);
+          continue
+        }
+      }
+    }
+    log.info("Discovery::DiscoveryMAC:Found", found);
+    if (found) {
+      return found;
+    } else {
+      const arpTable = await util.promisify(this.getAndSaveArpTable).bind(this)();
+      log.info("discoverMac:miss", mac);
+      if (arpTable[mac]) {
+        log.info("discoverMac:found via ARP", arpTable[mac]);
+        return arpTable[mac];
+      } else {
+        return null;
+      }
+    }
   }
 
   getAndSaveArpTable(cb) {
@@ -150,10 +146,9 @@ module.exports = class {
     try {
       fs.readFile('/proc/net/arp', (err, data) => {
         let cols, i, lines;
-        let arpList = [];
         this.arpTable = {};
 
-        if (err) return cb(err, arpList, this.arpTable);
+        if (err) return cb(err, this.arpTable);
         lines = data.toString().split('\n');
         for (i = 0; i < lines.length; i++) {
           if (i === 0) continue;
@@ -163,15 +158,14 @@ module.exports = class {
             let mac = cols[3].toUpperCase();
             let ipv4 = cols[0];
             let arpData = { ipv4Addr: cols[0], mac: mac, uid: ipv4, lastActiveTimestamp: now, firstFoundTimestamp: now };
-            arpList.push(arpData);
             this.arpTable[mac] = arpData;
           }
         }
-        cb(null, arpList, this.arpTable);
+        cb(null, this.arpTable);
       });
     } catch (e) {
       log.error("getAndArpTable Exception: ", e, null);
-      cb(null, [], {});
+      cb(null, {});
     }
   }
 
@@ -191,6 +185,11 @@ module.exports = class {
   discoverInterfaces(callback) {
     this.interfaces = {};
     networkTool.listInterfaces().then(list => {
+      if (!list.length) {
+        log.warn('No interface')
+        return
+      }
+
       let redisobjs = ['sys:network:info'];
       for (let i in list) {
         log.debug(list[i]);
@@ -253,10 +252,10 @@ module.exports = class {
 
   /* host.uid = ip4 adress
      host.mac = mac address
-     host.ipv4Addr 
+     host.ipv4Addr
   */
 
-  // mac ip changed, need to wipe out the old 
+  // mac ip changed, need to wipe out the old
 
   ipChanged(mac, ip, newmac, callback) {
     let key = "host:mac:" + mac.toUpperCase();;
@@ -454,14 +453,14 @@ module.exports = class {
                 data.mac = mac.toUpperCase();
                 data.ipv6 = JSON.stringify(ipv6array);
                 data.ipv6Addr = JSON.stringify(ipv6array);
-                //v6 at times will discver neighbors that not there ... 
+                //v6 at times will discver neighbors that not there ...
                 //so we don't update last active here
                 //data.lastActiveTimestamp = Date.now() / 1000;
               } else {
                 data = {};
                 data.mac = mac.toUpperCase();
-                data.ipv6 = JSON.stringify([v6addr]);;
-                data.ipv6Addr = JSON.stringify([v6addr]);;
+                data.ipv6 = JSON.stringify([v6addr]);
+                data.ipv6Addr = JSON.stringify([v6addr]);
                 data.lastActiveTimestamp = Date.now() / 1000;
                 data.firstFoundTimestamp = data.lastActiveTimestamp;
               }

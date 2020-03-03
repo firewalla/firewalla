@@ -24,6 +24,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
 const SysManager = require('../net2/SysManager.js');
+let sysManager = null;
 const Discovery = require('../net2//Discovery.js');
 
 const cp = require('child_process');
@@ -41,13 +42,13 @@ class ICMP6Sensor extends Sensor {
       try {
         const result = await execAsync("cat /sys/class/net/eth0/address");
         this.myMac = result.stdout.trim().toUpperCase();
+        sysManager = new SysManager();
       } catch (err) {
         log.warn("Failed to get self MAC address from /sys/class/net/eth0/address");
       }
       if (!this.myMac) {
         const d = new Discovery("ICMP6Sensor", fConfig, "info", false);
         await d.discoverInterfacesAsync();
-        const sysManager = new SysManager();
         await sysManager.updateAsync();
         this.myMac = sysManager.myMAC().toUpperCase();
       }
@@ -86,6 +87,11 @@ class ICMP6Sensor extends Sensor {
     try {
       const infos = line.split(',');
       const dstMac = infos[0].split(' ')[1];
+      let dstIp = infos[2].trim().split(' ')[4];
+      dstIp = dstIp.substring(0, dstIp.length - 1); // strip last :
+      if (sysManager.isMulticastIP(dstIp))
+        // do not process ICMP6 packet sent to multicast IP, the source mac not be the real mac
+        return;
       const tgtIp = infos[4].substring(8); // omit ' tgt is '
       log.info("Neighbor advertisement detected: " + dstMac + ", " + tgtIp);
       if (dstMac && ip.isV6Format(tgtIp)) {

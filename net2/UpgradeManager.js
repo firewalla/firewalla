@@ -1,3 +1,18 @@
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 const fs = require("fs");
 
@@ -7,13 +22,13 @@ const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
 
 /*
- * If the system is upgrading ... 
+ * If the system is upgrading ...
  */
 function isUpgrading() {
   return fs.existsSync("/tmp/FWUPGRADING");
 }
 
-/* 
+/*
  * Mark the system finished rebooting after reboot
  */
 function finishUpgrade() {
@@ -28,7 +43,7 @@ async function getUpgradeInfo() {
   let tagBeforeUpgrade = fs.existsSync('/home/pi/.firewalla/run/upgrade-pre-tag')
     ? fs.readFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', 'utf8').trim()
     : 'UnknownVersion';
-  
+
   let result = {
     upgraded: tagBeforeUpgrade != sysInfo.repoTag,
     from:     tagBeforeUpgrade,
@@ -45,7 +60,7 @@ async function updateVersionTag() {
 
 module.exports = {
   isUpgrading:isUpgrading,
-  finishUpgrade: finishUpgrade, 
+  finishUpgrade: finishUpgrade,
   getUpgradeInfo: getUpgradeInfo,
   updateVersionTag: updateVersionTag
 };

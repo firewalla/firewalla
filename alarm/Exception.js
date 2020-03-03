@@ -16,9 +16,6 @@
 'use strict'
 
 let log = require('../net2/logger.js')(__filename, 'info');
-let jsonfile = require('jsonfile');
-let util = require('util');
-let Alarm = require('./Alarm.js')
 let ip = require('ip')
 
 var extend = require('util')._extend
@@ -26,6 +23,8 @@ var extend = require('util')._extend
 const minimatch = require('minimatch')
 
 const _ = require('lodash')
+
+const validator = require('validator');
 
 function arraysEqual(a, b) {
   if (a === b) return true;
@@ -87,13 +86,36 @@ module.exports = class {
     return securityAlarmTypes.includes(alarm.type);
   }
 
+  jsonComparisonMatch(val, val2) {
+    if (!isFinite(val2)) return false;
+    let comparison = JSON.parse(val);
+    if (isFinite(comparison["$gt"])) {
+      if (val2 > comparison["$gt"]) {
+        return true;
+      }
+    } else if (isFinite(comparison["$lt"])) {
+      if (val2 < comparison["$lt"]) {
+        return true;
+      }
+    } else if (isFinite(comparison["$gte"])) {
+      if (val2 > comparison["$gte"] || val2 == comparison["$gte"]) {
+        return true;
+      }
+    } else if (isFinite(comparison["$lte"])) {
+      if (val2 < comparison["$lte"] || val2 == comparison["$lte"]) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
   match(alarm) {
 
     let matched = false;
-    
     // FIXME: exact match only for now, and only supports String
     for (var key in this) {
-      
+
       if(!key.startsWith("p.") && key !== "type") {
         continue;
       }
@@ -105,6 +127,23 @@ module.exports = class {
       if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
         matched = true;
         continue;
+      }
+
+      if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
+        if (this.jsonComparisonMatch(val, val2)) {
+          matched = true;
+          continue;
+        }
+      }
+
+      //special exception
+      if (key === "p.upnp.description") {
+        if (val.endsWith("*")) {
+          if (minimatch(val2, val)) {
+            matched = true;
+            continue;
+          }
+        }
       }
 
       if(val.startsWith("*.")) {
@@ -139,7 +178,7 @@ module.exports = class {
 
       matched = true;
     }
-    
+
     return matched;
   }
 }

@@ -1,4 +1,19 @@
-'use strict'
+/*    Copyright 2019-2020 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+'use strict';
 
 let log = require("../net2/logger.js")(__filename);
 
@@ -11,9 +26,6 @@ let Promise = require('bluebird');
 let jsonfile = require('jsonfile')
 let jsWriteFile = Promise.promisify(jsonfile.writeFile);
 let jsReadFile = Promise.promisify(jsonfile.readFile);
-
-let license = null;
-let signature = null;
 
 async function getLicenseAsync() {
   try {
@@ -50,7 +62,6 @@ function getLegacyLicense() {
   }
   let licenseobj = JSON.parse(license);
   license = licenseobj.DATA;
-  signature = licenseobj.SIGNATURE;
   return licenseobj;
 }
 
@@ -62,8 +73,6 @@ function getLicenseLicense() {
     return null;
   }
 }
-
-function verifyLicense(license) {}
 
 function writeLicense(license) {
   return jsWriteFile(licensePath, license, {
@@ -77,7 +86,6 @@ function writeLicenseAsync(license) {
 
 module.exports = {
   getLicense: getLicense,
-  verifyLicense: verifyLicense,
   writeLicense: writeLicense,
   licensePath: licensePath,
   getLicenseSync: getLicenseSync,

@@ -125,6 +125,9 @@ restore_values() {
 
 await_ip_assigned || restore_values
 
+
+TIME_THRESHOLD="2019-10-14"
+
 function sync_time() {
     time_website=$1
     time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
@@ -132,8 +135,16 @@ function sync_time() {
         logger "ERROR: Failed to load date info from website: $time_website"
         return 1
     else
-        sudo date -s "$time"
-    fi    
+        # compare website time against threshold to prevent it goes bad in some rare cases
+        tsWebsite=$(date -d "$time" +%s)
+        tsThreshold=$(date -d "$TIME_THRESHOLD" +%s)
+        if [ $tsWebsite -ge $tsThreshold ];
+        then
+          sudo date -s "$time";
+        else
+          return 1
+        fi
+    fi
 }
 
 if [[ ! -f /.dockerenv ]]; then
@@ -142,6 +153,7 @@ if [[ ! -f /.dockerenv ]]; then
     ret=$?
     if [[ $ret -ne 0 ]]; then
         sudo systemctl stop ntp
+        sudo date -s "$TIME_THRESHOLD" # set minimal date here to prevent SSL failure on undergoing HTTPS calls
         sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
         sudo systemctl start ntp
     fi

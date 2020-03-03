@@ -1,0 +1,16 @@
+{
+  "servers": [
+    {
+      "name": "cloudflare",
+      "stamp": "sdns:AgcAAAAAAAAABzEuMC4wLjEAEmRucy5jbG91ZGZsYXJlLmNvbQovZG5zLXF1ZXJ5"
+    },
+    {
+      "name": "google",
+      "stamp": "sdns:AgUAAAAAAAAABzguOC44LjigHvYkz_9ea9O63fP92_3qVlRn43cpncfuZnUWbzAMwbkgdoAkR6AZkxo_AEMExT_cbBssN43Evo9zs5_ZyWnftEUKZG5zLmdvb2dsZQovZG5zLXF1ZXJ5"
+    },
+    {
+      "name": "quad9",
+      "stamp": "sdns://AgMAAAAAAAAABzkuOS45LjmAABJkbnM5LnF1YWQ5Lm5ldDo0NDMKL2Rucy1xdWVyeQ"
+    }
+  ]
+}

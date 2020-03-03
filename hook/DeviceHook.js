@@ -35,6 +35,9 @@ const fc = require('../net2/config.js')
 
 const Samba = require('../extension/samba/samba.js');
 const samba = new Samba();
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+
 
 const HostManager = require('../net2/HostManager.js');
 
@@ -163,13 +166,13 @@ class DeviceHook extends Hook {
       let host = event.host
       let mac = host.mac;
 
-      if(mac != null) {
+      if (mac != null) {
         this.processDeviceUpdate(event)
       } else {
         let ip = host.ipv4 || host.ipv4Addr
-        if(ip) {
+        if (ip) {
           // need to get mac address first
-          (async() =>{
+          (async () => {
             let theMac = await l2.getMACAsync(ip)
             host.mac = theMac
             this.processDeviceUpdate(event)
@@ -181,11 +184,11 @@ class DeviceHook extends Hook {
 
     });
 
-    sem.on("IPv6DeviceInfoUpdate", async (event)=>{
+    sem.on("IPv6DeviceInfoUpdate", async (event) => {
       let host = event.host;
 
 
-      if (host.ipv6Addr && host.ipv6Addr.length>0) {
+      if (host.ipv6Addr && host.ipv6Addr.length > 0) {
         log.info(`A new IPv6DeviceInfoUpdate device ${host.ipv6Addr} - ${host.mac} is found!`);
 
         for (const v6 of host.ipv6Addr) {
@@ -206,10 +209,10 @@ class DeviceHook extends Hook {
         lastActiveTimestamp: new Date() / 1000
       });
 
-      (async() => {
+      (async () => {
 
         // v4
-        if(enrichedHost.ipv4Addr) {
+        if (enrichedHost.ipv4Addr) {
           let previousEntry = await hostTool.getIPv4Entry(enrichedHost.ipv4Addr)
           if (previousEntry && enrichedHost.ipv4Addr === sysManager.myGateway()) {
             // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
@@ -220,38 +223,38 @@ class DeviceHook extends Hook {
         }
 
         // v6
-        if(enrichedHost.ipv6Addr)
+        if (enrichedHost.ipv6Addr)
           await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr);
 
         log.info("Host entry is created for this new device:", host);
 
         let mac = enrichedHost.mac;
 
-        if(!mac)
+        if (!mac)
           return; // ignore if mac is undefined
 
         let vendor = null;
 
         try {
           vendor = await this.getVendorInfoAsync(mac);
-        } catch(err) {
+        } catch (err) {
           // do nothing
           log.error("Failed to get vendor info from cloud", err);
         }
 
         let v = "Unknown";
-        if(vendor)
+        if (vendor)
           v = vendor;
 
         enrichedHost.macVendor = v;
 
-        if(!enrichedHost.bname && host.ipv4Addr) {
+        if (!enrichedHost.bname && host.ipv4Addr) {
           let sambaName = await samba.getSambaName(host.ipv4Addr);
-          if(sambaName)
+          if (sambaName)
             enrichedHost.bname = sambaName;
         }
 
-        if(!enrichedHost.bname && enrichedHost.macVendor !== "Unknown") {
+        if (!enrichedHost.bname && enrichedHost.macVendor !== "Unknown") {
           // finally, use macVendor if no name
           // if macVendor is not available, don't set the bname
           enrichedHost.bname = enrichedHost.macVendor;
@@ -261,7 +264,7 @@ class DeviceHook extends Hook {
 
         await hostTool.updateMACKey(enrichedHost);
 
-        if(!event.suppressAlarm) {
+        if (!event.suppressAlarm) {
           this.createAlarm(enrichedHost);
         } else {
           log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
@@ -276,6 +279,7 @@ class DeviceHook extends Hook {
             host.spoof(true);
           }
         });
+        this.setupLocalDeviceDomain(host.mac, 'new_device');
       })().catch((err) => {
         log.error("Failed to handle NewDeviceFound event:", err);
       });
@@ -287,13 +291,13 @@ class DeviceHook extends Hook {
 
       log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
 
-      (async() => {
+      (async () => {
         let macData = await hostTool.getMACEntry(host.mac);
         let currentTimestamp = new Date() / 1000;
 
         let firstFoundTimestamp = macData.firstFoundTimestamp;
         let lastActiveTimestamp = macData.lastActiveTimestamp;
-        if(!firstFoundTimestamp)
+        if (!firstFoundTimestamp)
           firstFoundTimestamp = currentTimestamp;
 
         let enrichedHost = extend({}, host, {
@@ -302,13 +306,13 @@ class DeviceHook extends Hook {
           lastActiveTimestamp: currentTimestamp
         });
 
-        await hostTool.updateIPv4Host(enrichedHost); //v4
+        await hostTool.updateIPv4Host(enrichedHost); // update host:ip4:xxx entries
         if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); //v6
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
 
         log.info("New host entry is created for this old device");
 
-        if(enrichedHost.ipv6Addr) {
+        if (enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
         }
 
@@ -337,6 +341,7 @@ class DeviceHook extends Hook {
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
         let hostManager = new HostManager("cli", 'server', 'info')
         hostManager.getHost(host.ipv4Addr);
+        this.setupLocalDeviceDomain(host.mac, 'ip_change');
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err);
       })
@@ -347,13 +352,13 @@ class DeviceHook extends Hook {
 
       log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
 
-      (async() => {
+      (async () => {
         let macData = await hostTool.getMACEntry(host.mac);
         let currentTimestamp = new Date() / 1000;
 
         let firstFoundTimestamp = macData.firstFoundTimestamp;
         let lastActiveTimestamp = macData.lastActiveTimestamp;
-        if(!firstFoundTimestamp)
+        if (!firstFoundTimestamp)
           firstFoundTimestamp = currentTimestamp;
 
         let enrichedHost = extend({}, host, {
@@ -370,9 +375,9 @@ class DeviceHook extends Hook {
 
         await hostTool.updateIPv4Host(enrichedHost);
         if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); //v6
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
 
-        if(enrichedHost.ipv6Addr) {
+        if (enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, host.mac);
         }
 
@@ -402,13 +407,14 @@ class DeviceHook extends Hook {
         //
         // Another issue in this scenario is that this could mess up flow-device mappings
         // which could only be fix once flow is associated with mac address
-        await hostTool.removeDupIPv4FromMacEntry(event.oldMac, host.ipv4Addr);
+        await hostTool.removeDupIPv4FromMacEntry(event.oldMac, host.ipv4Addr, host.mac);
 
         log.info("MAC entry is updated with new IP");
 
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
         let hostManager = new HostManager("cli", 'server', 'info');
         hostManager.getHost(host.ipv4Addr);
+        this.setupLocalDeviceDomain(host.mac, 'ip_change');
       })().catch((err) => {
         log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
       })
@@ -432,14 +438,14 @@ class DeviceHook extends Hook {
         let macData = await hostTool.getMACEntry(host.mac);
         let lastActiveTimestamp = macData.lastActiveTimestamp;
 
-        if(enrichedHost.ipv6Addr) {
+        // FIXME: shoud not keep minimal info for host key, not all
+        await hostTool.updateIPv4Host(enrichedHost);   // update host:ip4:xxx entries
+        if (enrichedHost.ipv6Addr)
+          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
+
+        if (enrichedHost.ipv6Addr) {
           enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac);
         }
-
-        // FIXME: shoud not keep minimal info for host key, not all
-        await hostTool.updateIPv4Host(enrichedHost);   // host:ip4:.......
-        if (enrichedHost.ipv6Addr)
-          await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // host:ip6:.........
 
         log.debug("Host entry is updated for this device");
 
@@ -493,7 +499,7 @@ class DeviceHook extends Hook {
 
     sem.on("DeviceOffline", (event) => {
       const host = event.host;
-      (async ()=> {
+      (async () => {
         try {
           // device back online and offline both abide by device presence settings
           const enabled = await this.isFeatureEnabled(host.mac, "deviceOffline");
@@ -544,11 +550,11 @@ class DeviceHook extends Hook {
       addrList.push(addr) // found new ip address
       if (addrList.length > max) {
         let removed = addrList.shift()
-//      log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
+        //      log.info("DEVICEHOOK_DEBUG_REMOVEV6",removed);
       }
     })
 
-//  log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
+    //  log.info("DEVICEHOOK",ipv6Addr, linklocalAddrs, globalAddrs);
 
     return linklocalAddrs.concat(globalAddrs);
   }
@@ -580,7 +586,7 @@ class DeviceHook extends Hook {
     type = type || "new_device";
 
     // check if new device alarm is enabled or not
-    if(!fc.isFeatureOn(type)) {
+    if (!fc.isFeatureOn(type)) {
       return
     }
 
@@ -648,7 +654,7 @@ class DeviceHook extends Hook {
   getVendorInfoAsync(mac) {
     return new Promise((resolve, reject) => {
       this.getVendorInfo(mac, (err, vendorInfo) => {
-        if(err) {
+        if (err) {
           reject(err);
         } else {
           resolve(vendorInfo);
@@ -660,25 +666,32 @@ class DeviceHook extends Hook {
   getVendorInfo(mac, callback) {
     mac = mac.toUpperCase();
     let rawData = {
-      ou: mac.slice(0,13), // use 0,13 for better OU compatibility
+      ou: mac.slice(0, 13), // use 0,13 for better OU compatibility
       uuid: flowUtil.hashMac(mac)
     };
     bone.device("identify", rawData, (err, enrichedData) => {
-      if(err) {
+      if (err) {
         log.error("Failed to get vendor info for mac " + mac + ": " + err);
         callback(err);
         return;
       }
 
-      if(enrichedData && enrichedData._vendor) {
+      if (enrichedData && enrichedData._vendor) {
         let v = enrichedData._vendor;
-        if(v.startsWith('"'))
+        if (v.startsWith('"'))
           v = v.slice(1); // workaround for buggy code, vendor has a unless prefix "
         callback(null, v);
       } else {
         callback(null, null);
       }
     });
+  }
+  async setupLocalDeviceDomain(mac, type) {
+    if (!mac) return;
+    if (type == 'new_device') {
+      await hostTool.generateLocalDomain(mac);
+    }
+    await dnsmasq.setupLocalDeviceDomain([mac]);
   }
 
 
