@@ -7,7 +7,7 @@ logger 'FIREWALLA.BROFISH Start '
 mkdir -p /firewalla
 chmod 777 /firewalla
 
-$FIREWALLA_HOME/scripts/firelog -t local -m "FIREWALLA.BRO.DATE.SYNC"
+sudo -u pi $FIREWALLA_HOME/scripts/firelog -t local -m "FIREWALLA.BRO.DATE.SYNC"
 $FIREWALLA_HOME/scripts/fire-time.sh
 logger "FIREWALLA.BRO.DATE.SYNC.DONE"
 
@@ -24,7 +24,7 @@ for i in `seq 1 10`; do
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       break
     fi
-    $FIREWALLA_HOME/scripts/firelog -t debug -m "FIREWALLA.BRO NO Network"
+    sudo -u pi $FIREWALLA_HOME/scripts/firelog -t debug -m "FIREWALLA.BRO NO Network"
     sleep 1
 done
 
