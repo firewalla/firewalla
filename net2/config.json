@@ -522,6 +522,7 @@
       "firstScan": 120
     },
     "DnsmasqDhcpSensor": {},
+    "BlockRuleCheckSensor": {},
     "LocalDomainSensor": {}
   },
   "hooks": {
