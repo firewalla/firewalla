@@ -13,6 +13,7 @@ if [ ! -f /etc/openvpn/easy-rsa/pkitool ]; then
     sudo apt-get  -y install easy-rsa
     sudo rm -r -f /etc/openvpn
     if [[ $(uname -m) == "x86_64" ]]; then
+      sudo rm -rf /home/pi/openvpn/*
       sudo ln -s /home/pi/openvpn /etc/openvpn
     else
       sudo mkdir /etc/openvpn

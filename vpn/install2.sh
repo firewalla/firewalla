@@ -24,6 +24,7 @@ ENCRYPT="1024"
 if [[ ${KEYS_FOLDER} == "keys" ]]; then
   rm -r -f /etc/openvpn
   if [[ $(uname -m) == "x86_64" ]]; then
+    sudo rm -rf /home/pi/openvpn/*
     sudo ln -s /home/pi/openvpn /etc/openvpn
   else
     mkdir /etc/openvpn
