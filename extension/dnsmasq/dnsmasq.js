@@ -42,7 +42,7 @@ const Message = require('../../net2/Message.js');
 const fc = require('../../net2/config.js')
 const { delay } = require('../../util/util.js');
 
-const { Rule, CHAINS } = require('../../net2/Iptables.js');
+const { Rule } = require('../../net2/Iptables.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq_local";
@@ -50,6 +50,8 @@ const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
 const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
 const LOCAL_DOMAIN_KEY = "local:device:domain"
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
+
+const UPSTREAM_SERVER_FILE = FILTER_DIR + "/upstream_server.conf";
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -973,7 +975,15 @@ module.exports = class DNSMASQ {
 
     if (upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
-      cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
+      // put upstream server config file to config directory
+      const dnsmasqEntry = `server=${upstreamDNS}`;
+      await fs.writeFileAsync(UPSTREAM_SERVER_FILE, dnsmasqEntry).catch((err) => {
+        log.error(`Failed to write upstream server file`, dnsmasqEntry, err.message);
+      });
+    } else {
+      log.info("unset upstream server");
+      // remove upstream server config file from config directory anyway
+      await fs.unlinkAsync(UPSTREAM_SERVER_FILE).catch((err) => {});
     }
 
     this.writeStartScript(cmd);
@@ -1468,12 +1478,13 @@ module.exports = class DNSMASQ {
           userLocalDomain && (localDeviceDomain += `address=/${userLocalDomain}/${deviceDomain.ipv4Addr}\n`);
         }
       }
-      (isInit || needUpdate) && this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
+      (isInit || needUpdate) && await this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
     this.updatingLocalDomain = false;
   }
+
   async throttleUpdatingConf(filePath, data) {
     const cooldown = 5 * 1000;
     if (this.throttleTimer[filePath]) {
@@ -1504,5 +1515,9 @@ module.exports = class DNSMASQ {
       log.info(`Get dnsmasq confs md5summ error`, error)
       return true;
     }
+  }
+
+  async getCounterInfo() {
+    return this.counter;
   }
 };

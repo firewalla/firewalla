@@ -32,20 +32,14 @@ const pclient = require('../util/redis_manager.js').getPublishClient();
 var instances = {};
 
 module.exports = class {
-  constructor(loglevel, instanceId, throttle) {
+  constructor(loglevel, instanceId = 'default', throttle = 1) {
     let instance = null;
-    if (instanceId == null) {
-      instanceId = 'default';
-    }
     instance = instances[instanceId];
     if (instance == null) {
       instance = this;
       instances[instanceId] = instance;
       this.callbacks = {};
-      this.throttle = 1;
-      if (throttle) {
-        this.throttle = throttle;
-      }
+      this.throttle = throttle;
       this.sending = false;
       sclient.on('message', (channel, message) => {
         try {

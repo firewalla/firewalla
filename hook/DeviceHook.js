@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,22 +15,22 @@
 'use strict';
 const _ = require('lodash');
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
-let Hook = require('./Hook.js');
+const Hook = require('./Hook.js');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 
-let Promise = require('bluebird');
+const Promise = require('bluebird');
 
-let extend = require('../util/util.js').extend;
-let util = require('util');
-let bone = require("../lib/Bone.js");
+const extend = require('../util/util.js').extend;
+const util = require('util');
+const bone = require("../lib/Bone.js");
 
-let flowUtil = require("../net2/FlowUtil.js");
+const flowUtil = require("../net2/FlowUtil.js");
 
 const fc = require('../net2/config.js')
 
@@ -48,10 +48,12 @@ const l2 = require('../util/Layer2.js');
 
 const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
+const MessageBus = require('../net2/MessageBus.js');
 
 class DeviceHook extends Hook {
   constructor() {
     super();
+    this.messageBus = new MessageBus('info');
   }
 
   async processDeviceUpdate(event) {
@@ -207,6 +209,7 @@ class DeviceHook extends Hook {
           await hostTool.linkMacWithIPv6(v6, host.mac)
             .catch(log.error)
         }
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, host);
       }
     });
 
@@ -279,8 +282,8 @@ class DeviceHook extends Hook {
         } else {
           log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
         }
-        const hostManager = new HostManager("cli", 'server', 'info');
-        hostManager.getHost(host.ipv4Addr, (err, host) => {
+        const hostManager = new HostManager();
+        hostManager.getHost(host.mac, (err, host) => {
           // directly start spoofing
           if (err) {
             log.error("Failed to get host after it is detected.");
@@ -290,6 +293,8 @@ class DeviceHook extends Hook {
           }
         });
         this.setupLocalDeviceDomain(host.mac, 'new_device');
+
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
       })().catch((err) => {
         log.error("Failed to handle NewDeviceFound event:", err);
       });
@@ -349,9 +354,11 @@ class DeviceHook extends Hook {
         log.info("MAC entry is updated with new IP");
 
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-        let hostManager = new HostManager("cli", 'server', 'info')
-        hostManager.getHost(host.ipv4Addr);
+        let hostManager = new HostManager()
+        hostManager.getHost(host.mac);
         this.setupLocalDeviceDomain(host.mac, 'ip_change');
+
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
       })().catch((err) => {
         log.error("Failed to process OldDeviceChangedToNewIP event:", err);
       })
@@ -422,9 +429,11 @@ class DeviceHook extends Hook {
         log.info("MAC entry is updated with new IP");
 
         log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
-        let hostManager = new HostManager("cli", 'server', 'info');
-        hostManager.getHost(host.ipv4Addr);
+        let hostManager = new HostManager();
+        hostManager.getHost(host.mac);
         this.setupLocalDeviceDomain(host.mac, 'ip_change');
+
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
       })().catch((err) => {
         log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
       })
@@ -477,6 +486,8 @@ class DeviceHook extends Hook {
         }
 
         await hostTool.updateMACKey(enrichedHost); // host:mac:.....
+        // publish device updated event to trigger 
+        this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
 
         // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
         // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
@@ -606,7 +617,7 @@ class DeviceHook extends Hook {
 
     let name = this.getPreferredName(host)
     let tags = [];
-    const hostManager = new HostManager("cli", 'server', 'info');
+    const hostManager = new HostManager();
     const hostInstance = hostManager.getHostFastByMAC(host.mac);
     if (hostInstance) {
       tags = hostInstance.getTags();
@@ -615,6 +626,12 @@ class DeviceHook extends Hook {
     let alarm = null;
     switch (type) {
       case "new_device":
+        // no new device alarm on Firewalla
+        if (sysManager.isMyMac(host.mac)) {
+          log.info('New device alarm on Firewalla', host)
+          return
+        }
+
         alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
           name,
           {

@@ -103,9 +103,16 @@
       "interval": 1800,
       "firstScan": 120
     },
+    "ExternalScanSensor": {
+      "interval": 1800,
+      "firstScan": 120
+    },
+    "OpenPortByInboundFlowSensor": {},
     "BoneSensor": {},
     "APISensor": {},
-    "DNSCryptPlugin": {},
+    "DNSCryptPlugin": {
+      "refreshInterval": 1440
+    },
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
@@ -388,6 +395,7 @@
         "1.1.1.1",
         "8.8.8.8"
       ],
+      "pingFailureThreshold": 2,
       "interval": 300
     },
     "ICMP6Sensor": {},
@@ -509,7 +517,12 @@
       "minsize": 150000000,
       "dataPlanMinPercentage": 0.8
     },
+    "DHCPServerSensor": {
+      "interval": 600,
+      "firstScan": 120
+    },
     "DnsmasqDhcpSensor": {},
+    "BlockRuleCheckSensor": {},
     "LocalDomainSensor": {}
   },
   "hooks": {
@@ -643,6 +656,8 @@
     "vpn_restore": true,
     "vpn_disconnect": true,
     "local_domain": true,
+    "external_scan": false,
+    "alarm_openport": true,
     "device_service_scan": true
   },
   "hiddenFeatures": [

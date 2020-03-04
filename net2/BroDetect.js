@@ -33,7 +33,7 @@ const am2 = new AM2();
 const broNotice = require('../extension/bro/BroNotice.js');
 
 const HostManager = require('../net2/HostManager')
-const hostManager = new HostManager('cli', 'server');
+const hostManager = new HostManager();
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
@@ -239,6 +239,7 @@ module.exports = class {
       this.apparray = [];
       this.connmap = {};
       this.connarray = [];
+      this.outportarray = [];
 
       this.initWatchers();
       instances[name] = this;
@@ -1102,6 +1103,10 @@ module.exports = class {
           suppressEventLogging: true
         });
 
+        if (tmpspec.fd == 'out') {
+          this.recordOutPort(tmpspec);
+        }
+
         rclient.zadd(redisObj, (err, response) => {
           if (err == null) {
 
@@ -1557,5 +1562,32 @@ module.exports = class {
       this.timeSeriesCache[mac].upload += Number(outBytes)
     }
   }
-
+  
+  recordOutPort(tmpspec) {
+    log.debug("recordOutPort: ", tmpspec);
+    const key = tmpspec.mac + ":" + tmpspec.dp;
+    let ats = tmpspec.ts;  //last alarm time
+    let oldData = null;
+    let oldIndex = this.outportarray.findIndex((dataspec) => dataspec && dataspec.key == key);
+    if (oldIndex > -1) {
+      oldData = this.outportarray.splice(oldIndex, 1)[0];
+      ats = oldData.ats;
+    }
+    let newData = {key: key, ts: tmpspec.ts, ats: ats};
+    const expireInterval = 15 * 60; // 15 minute;
+    if (oldData == null || (oldData != null && oldData.ats < newData.ts - expireInterval)) {
+      newData.ats = newData.ts;  //set 
+      sem.sendEventToFireMain({
+        type: "NewOutPortConn",
+        flow: tmpspec,
+        suppressEventLogging: true
+      });
+    }
+    //put the latest port flow at the end
+    this.outportarray.push(newData);
+    let maxsize = 9000; //limit size to optimize memory and prevent extremes
+    if (this.outportarray.length > maxsize) {
+      this.outportarray.shift();
+    }
+  }
 }

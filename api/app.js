@@ -23,20 +23,8 @@ const path = require('path');
 const logger = require('morgan');
 const cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
-const passport = require('passport');
-const Strategy = require('passport-http-bearer').Strategy;
-const db = require('./db');
 
 const log = require('../net2/logger.js')(__filename, 'info')
-
-passport.use(new Strategy(
-  function(token, cb) {
-    db.users.findByToken(token, function(err, user) {
-      if (err) { return cb(err); }
-      if (!user) { return cb(null, false); }
-      return cb(null, user);
-    });
-  }));
 
 var encipher = require('./routes/fastencipher2').router;
 
@@ -45,6 +33,8 @@ let si = require('../extension/sysinfo/SysInfo.js');
 si.startUpdating();
 
 var app = express();
+
+app.set('title', 'FireAPI')
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
@@ -62,8 +52,6 @@ app.use("/ss", require('./routes/ss.js'));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
-subpath_v1.use(passport.initialize());
-subpath_v1.use(passport.session());
 subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 

@@ -128,7 +128,7 @@ module.exports = class DNSManager {
     // no need to call Date.now() too many times.
     if (hostManager == null) {
       let HostManager = require("../net2/HostManager.js");
-      hostManager = new HostManager("cli", 'client', 'info');
+      hostManager = new HostManager();
     }
 
     if (list == null || list.length == 0) {

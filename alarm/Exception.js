@@ -50,7 +50,7 @@ module.exports = class {
   getMatchingKeys() {
     let keys = []
     for(let k in this) {
-      if (k === "type" || k.startsWith("p.")) {
+      if (k === "type" || k.startsWith("p.") || k.startsWith("e.")) {
         keys.push(k)
       }
     }
@@ -116,7 +116,7 @@ module.exports = class {
     // FIXME: exact match only for now, and only supports String
     for (var key in this) {
 
-      if(!key.startsWith("p.") && key !== "type") {
+      if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
         continue;
       }
 

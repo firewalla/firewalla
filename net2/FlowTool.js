@@ -334,11 +334,11 @@ class FlowTool {
     let allMacs = [];
     if (options.intf) {
       const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager("cli", 'client', 'info');
+      const hostManager = new HostManager();
       allMacs = hostManager.getIntfMacs(options.intf);
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager("cli", 'client', 'info');
+      const hostManager = new HostManager();
       allMacs = hostManager.getTagMacs(_.toNumber(options.tag));
     } else {
       allMacs = await hostTool.getAllMACs();
