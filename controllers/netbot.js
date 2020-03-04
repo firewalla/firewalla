@@ -626,7 +626,7 @@ class netBot extends ControllerBot {
     });
 
     sclient.on("message", (channel, msg) => {
-      log.info("Msg", channel, msg);
+      log.debug("Msg", channel, msg);
       switch (channel) {
         case "System:Upgrade:Hard":
           if (msg) {
@@ -705,13 +705,8 @@ class netBot extends ControllerBot {
             const jsonMessage = JSON.parse(msg);
 
             if (jsonMessage && jsonMessage.title && jsonMessage.body) {
-              const title = `[${this.getDeviceName()}] ${jsonMessage.title}`;
-              const body = jsonMessage.body;
-
-              const notifyMsg = {
-                title: title,
-                body: body
-              }
+              const { title, body } = jsonMessage
+              const notifyMsg = { title, body }
               const data = {
                 gid: this.primarygid,
               };
