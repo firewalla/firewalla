@@ -175,7 +175,7 @@ class ExternalScanSensor extends Sensor {
         auth: {
           bearer: token
         },
-        retryDelay: 3000,  // (default) wait for 1s before trying again
+        retryDelay: 3000,  // (default) wait for 3s before trying again
         json: true
       };
 
@@ -202,7 +202,7 @@ class ExternalScanSensor extends Sensor {
         if (isOpen) {
           confirmedPorts.push(current);
         }
-        await delay(5000);
+        await delay(5000); // cloud concurrency is limited, so delay processing is required
       }
 
       if (fc.isFeatureOn("alarm_openport")) {
