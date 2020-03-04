@@ -153,7 +153,7 @@ class SSClient {
   }
 
   async prepareOvertureConfig() {
-    const localDNSServers = sysManager.myDNS();
+    const localDNSServers = sysManager.myDefaultDns();
     if(_.isEmpty(localDNSServers)) {
       throw new Error("missing local dns server");
     }

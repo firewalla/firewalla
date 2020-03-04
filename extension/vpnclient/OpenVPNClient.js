@@ -73,8 +73,6 @@ class OpenVPNClient extends VPNClient {
     const settings = await this.loadSettings();
     // check settings
     if (settings.serverSubnets && Array.isArray(settings.serverSubnets)) {
-      const mySubnet = sysManager.mySubnet();
-      const mySubnet2 = sysManager.mySubnet2();
       for (let serverSubnet of settings.serverSubnets) {
         const ipSubnets = serverSubnet.split('/');
         if (ipSubnets.length != 2)
@@ -86,15 +84,12 @@ class OpenVPNClient extends VPNClient {
         if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
           throw `${serverSubnet} is not a valid CIDR subnet`;
         const serverSubnetCidr = ipTool.cidrSubnet(serverSubnet);
-        if (mySubnet) {
-          const mySubnetCidr = ipTool.cidrSubnet(mySubnet);
+        for (const iface of sysManager.getLogicInterfaces()) {
+          const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+          if (!mySubnetCidr)
+            continue;
           if (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress))
-            throw `${serverSubnet} conflicts with Firewalla's primary subnet`;
-        }
-        if (mySubnet2) {
-          const mySubnet2Cidr = ipTool.cidrSubnet(mySubnet2);
-          if (mySubnet2Cidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnet2Cidr.firstAddress))
-            throw `${serverSubnet} conflicts with Firewalla's secondary subnet`;
+            throw `${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`;
         }
       }
     }
