@@ -105,7 +105,9 @@
     },
     "BoneSensor": {},
     "APISensor": {},
-    "DNSCryptPlugin": {},
+    "DNSCryptPlugin": {
+      "refreshInterval": 1440
+    },
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
