@@ -17,6 +17,7 @@
 const moment = require('moment');
 const winston = require('winston');
 const { argumentsToString } = require('./util.js');
+const log = require('../net2/logger.js')(__filename);
 
 function getFileTransport() {
   return new (winston.transports.File)({
@@ -43,5 +44,9 @@ const logger = new (winston.Logger)({
   transports: [getFileTransport()]
 });
 module.exports = function () {
-  logger.log.apply(logger, ["info", argumentsToString(arguments)]);
+  try {
+    logger.log.apply(logger, ["info", argumentsToString(arguments)]);
+  } catch (e) {
+    log.error('Failed to log', e);
+  }
 };
