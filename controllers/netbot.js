@@ -1815,12 +1815,15 @@ class netBot extends ControllerBot {
           } else {
             target = target.toUpperCase();
           }
-          const { downloadStats, uploadStats, totalDownload, totalUpload } = await this.hostManager.monthlyDataStats(target);
+          const { downloadStats, uploadStats, totalDownload, totalUpload, 
+            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
           this.simpleTxData(msg, {
             downloadStats: downloadStats,
             uploadStats: uploadStats,
             totalDownload: totalDownload,
-            totalUpload: totalUpload
+            totalUpload: totalUpload,
+            monthlyBeginTs: monthlyBeginTs,
+            monthlyEndTs: monthlyEndTs 
           }, null, callback)
         })();
         break;
