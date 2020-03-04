@@ -1718,9 +1718,9 @@ class PolicyManager2 {
         if (matches) {
           let rule = await this.getPolicy(matches[2]);
           if (rule) {
-            result.push(Object.assign({ipset: ipsetName}, rule));
+            result.push(rule);
           }
-        } else if (ipsetName.indexOf("blocked_") > -1) {
+        } else if (ipsetName.indexOf("blocked_") > -1 || ipsetName.indexOf("_default_c_") > -1 || ipsetName.indexOf("_country:") > -1) {
           for (const rule of rules) {
             let matchRule = false;
             if (rule.type == "ip" && rule.target === currentTxt) {
@@ -1767,14 +1767,16 @@ class PolicyManager2 {
               if (iptool.isV4Format(currentIp) && iptool.cidrSubnet(targetNet).contains(currentIp) && targetPort == currentPort) {
                 matchRule = true;
               }
+            } else if (rule.type == "category" && ipsetName === Block.getDstSet(rule.target)) {
+              matchRule = true;
+            } else if (rule.type == "country" && ipsetName === Block.getDstSet(countryUpdater.getCategory(rule.target))) {
+              matchRule = true;
             }
 
             if (matchRule) {
-              result.push(Object.assign({ipset: ipsetName}, rule));
+              result.push(rule);
             }
           }
-        } else {
-          result.push({ipset: ipsetName});
         }
       }
     }
