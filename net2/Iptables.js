@@ -161,7 +161,7 @@ function iptables(rule, callback) {
       let state = rule.state;
       let action = "-D";
       if (state !== true) {
-        action = "-I";
+        action = "-A";
       }
 
       let cmdline = "";
@@ -170,7 +170,7 @@ function iptables(rule, callback) {
       }
 
       switch (action) {
-        case "-I":
+        case "-A":
           cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS")} || ${getCommand(action, "nat", "FW_NAT_BYPASS")})`;
           cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS")} || ${getCommand(action, "filter", "FW_BYPASS")})`;
           break;
@@ -192,28 +192,31 @@ function iptables(rule, callback) {
       });
     } else if (rule.type === "switch_interface_monitoring") {
       const state = rule.state;
-      const iface = rule.iface;
+      const uuid = rule.uuid;
+      const ipset = require('./NetworkProfile.js').getNetIpsetName(uuid);
       let action = "-D";
       if (state !== true) {
-        action = "-I";
+        action = "-A";
       }
 
       let cmdline = "";
-      const getCommand = function(action, table, chain, direction, iface) {
-        return `sudo iptables -w -t ${table} ${action} ${chain} ${direction === "in" ? "-i" : "-o"} ${iface} -j ACCEPT`;
+      const getCommand = function(action, table, chain, srcDst, ipset) {
+        return `sudo iptables -w -t ${table} ${action} ${chain} -m set --match-set ${ipset} ${srcDst} -j ACCEPT`;
       }
 
       switch (action) {
-        case "-I":
+        case "-A":
           // nat table does not support -o option
-          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "in", iface)} || ${getCommand(action, "nat", "FW_NAT_BYPASS", "in", iface)})`;
-          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} || ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
-          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) || ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "src", ipset)} || ${getCommand(action, "nat", "FW_NAT_BYPASS", "src", ipset)})`;
+          cmdline += ` ; (${getCommand("-C", "nat", "FW_NAT_BYPASS", "dst", ipset)} || ${getCommand(action, "nat", "FW_NAT_BYPASS", "dst", ipset)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "src", ipset)} || ${getCommand(action, "filter", "FW_BYPASS", "src", ipset)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "dst", ipset)} || ${getCommand(action, "filter", "FW_BYPASS", "dst", ipset)})`;
           break;
         case "-D":
-          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "in", iface)} && ${getCommand(action, "nat", "FW_NAT_BYPASS", "in", iface)})`;
-          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "in", iface)} && ${getCommand(action, "filter", "FW_BYPASS", "in", iface)})`;
-          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "out", iface)}) && ${getCommand(action, "filter", "FW_BYPASS", "out", iface)}`;
+          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS", "src", ipset)} && ${getCommand(action, "nat", "FW_NAT_BYPASS", "src", ipset)})`;
+          cmdline += ` ; (${getCommand("-C", "nat", "FW_NAT_BYPASS", "dst", ipset)} && ${getCommand(action, "nat", "FW_NAT_BYPASS", "dst", ipset)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "src", ipset)} && ${getCommand(action, "filter", "FW_BYPASS", "src", ipset)})`;
+          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS", "dst", ipset)} && ${getCommand(action, "filter", "FW_BYPASS", "dst", ipset)})`;
           cmdline += ` ; true`;
           break;
         default:
@@ -476,10 +479,10 @@ function switchMonitoring(state, callback) {
   }, callback);
 }
 
-function switchInterfaceMonitoring(state, iface, callback) {
+function switchInterfaceMonitoring(state, uuid, callback) {
   newRule({
     type: "switch_interface_monitoring",
-    iface: iface,
+    uuid: uuid,
     state: state
   }, callback);
 }

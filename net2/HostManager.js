@@ -294,8 +294,8 @@ module.exports = class HostManager {
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;
-    json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
-    json.wifiNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringWifiInterface];
+    if (sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2])
+      json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
     json.model = platform.getName();
     json.branch = f.getBranch();
@@ -865,6 +865,24 @@ module.exports = class HostManager {
     }
   }
 
+  async getDataUsagePlan(json) {
+    const enable = fc.isFeatureOn('data_plan');
+    const data = await rclient.getAsync('sys:data:plan');
+    if(!data || !enable) {
+      return;
+    }
+
+    try {
+      const result = JSON.parse(data);
+      if(result) {
+        json.dataUsagePlan = result;
+      }
+    } catch(err) {
+      log.error(`Failed to parse sys:data:plan, err: ${err}`);
+      return;
+    }
+  }
+
   async encipherMembersForInit(json) {
     let members = await rclient.smembersAsync("sys:ept:members")
     if(members && members.length > 0) {
@@ -953,6 +971,7 @@ module.exports = class HostManager {
           this.getRecentFlows(json),
           this.getGuessedRouters(json),
           this.getGuardian(json),
+          this.getDataUsagePlan(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
           this.tagsForInit(json),

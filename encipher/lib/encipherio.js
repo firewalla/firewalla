@@ -71,7 +71,7 @@ let legoEptCloud = class {
       this.signature = "";
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
       this.token = null;
-      this.eid = null;
+      rclient.hgetAsync('sys:ept:me', 'eid').then(eid => this.eid = eid)
       this.groupCache = {};
       this.cryptoalgorithem = 'aes-256-cbc';
       this.name = name;
@@ -371,14 +371,7 @@ let legoEptCloud = class {
 
     const resp = await this.rrWithEptRelogin(options)
 
-    if (resp.body) {
-      let bodyJson = this._parseJsonSafe(resp.body);
-      if (bodyJson != null) {
-        return bodyJson
-      } else {
-        throw new Error("Malformed JSON")
-      }
-    }
+    return resp.body
   }
 
   async eptGroupList(eid) {
@@ -386,6 +379,7 @@ let legoEptCloud = class {
       uri: this.endpoint + '/ept/' + encodeURIComponent(eid) + '/groups',
       family: 4,
       method: 'GET',
+      json: true,
       maxAttempts: 2
     };
 
@@ -393,25 +387,19 @@ let legoEptCloud = class {
 
     const resp = await this.rrWithEptRelogin(options)
 
-    if (resp.body) {
-      let groups = this._parseJsonSafe(resp.body);
-      if (groups == null) {
-        throw new Error("Malformed JSON")
-      }
-      for (let i = 0; i < groups['groups'].length; i++) {
-        let group = groups['groups'][i];
-        group.gid = group._id;
-        if (group["xname"]) {
-          let gg = this.parseGroup(group);
-          if (gg && gg.key) {
-            group['name'] = this.decrypt(group['xname'], gg.key);
-          }
+    if (!resp.body)
+      throw new Error("Malformed JSON")
+
+    for (const group of resp.body.groups) {
+      group.gid = group._id;
+      if (group["xname"]) {
+        let gg = this.parseGroup(group);
+        if (gg && gg.key) {
+          group['name'] = this.decrypt(group['xname'], gg.key);
         }
       }
-      return groups.groups; // "groups":groups
-    } else {
-      return null
     }
+    return resp.body.groups; // "groups":groups
   }
 
 

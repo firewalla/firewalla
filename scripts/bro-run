@@ -7,7 +7,7 @@ logger 'FIREWALLA.BROFISH Start '
 mkdir -p /firewalla
 chmod 777 /firewalla
 
-$FIREWALLA_HOME/scripts/firelog -t local -m "FIREWALLA.BRO.DATE.SYNC"
+sudo -u pi $FIREWALLA_HOME/scripts/firelog -t local -m "FIREWALLA.BRO.DATE.SYNC"
 $FIREWALLA_HOME/scripts/fire-time.sh
 logger "FIREWALLA.BRO.DATE.SYNC.DONE"
 
@@ -24,7 +24,7 @@ for i in `seq 1 10`; do
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       break
     fi
-    $FIREWALLA_HOME/scripts/firelog -t debug -m "FIREWALLA.BRO NO Network"
+    sudo -u pi $FIREWALLA_HOME/scripts/firelog -t debug -m "FIREWALLA.BRO NO Network"
     sleep 1
 done
 
@@ -44,5 +44,12 @@ before_bro
 logger "FIREWALLA: Deployed BRO using BROCTL"
 sudo cp $(get_sysctl_conf_path) /etc/sysctl.conf
 sudo sysctl -p
+
+cd $FIREWALLA_HOME
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $branch = "master" ]]; then
+  # enable core_dump for development branch
+  sudo sysctl -w kernel.core_pattern="/home/pi/core.%e"
+fi
 
 logger "FIREWALLA: BRO-RUN Finished"

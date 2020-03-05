@@ -62,6 +62,7 @@ function iptables(rule, callback) {
 
     switch(rule.action) {
     case "-A":
+    case "-I":
       // check if exits before insertion
       cmd = `${checkCmd} || ${cmd}`
       break
@@ -304,7 +305,7 @@ function switchMonitoringAsync(state) {
 function switchMonitoring(state, cb) {
   let action = "-D";
   if (state !== true)
-    action = "-I";
+    action = "-A";
   let rule = {
     sudo: true,
     chain: "FW_NAT_BYPASS",
@@ -338,38 +339,38 @@ function switchInterfaceMonitoringAsync(state, iface) {
   });
 }
 
-function switchInterfaceMonitoring(state, iface, cb) {
+function switchInterfaceMonitoring(state, uuid, cb) {
   let action = "-D";
   if (state !== true)
-    action = "-I";
+    action = "-A";
+  const ipset = `${require('./NetworkProfile.js').getNetIpsetName(uuid)}6`;
   let rule = {
     sudo: true,
     chain: "FW_NAT_BYPASS",
     action: action,
     table: "nat",
+    extra: `-m set --match-set ${ipset} src`,
     target: "ACCEPT",
-    in: iface,
     checkBeforeAction: true
   };
   
   newRule(rule, (err) => {
-    if (err) {
+    if (err)
       log.error("Failed to apply rule: ", rule);
-      cb(err);
-    } else {
+    rule.extra = `-m set --match-set ${ipset} dst`;
+    newRule(rule, (err) => {
+      if (err)
+        log.error("Failed to apply rule: ", rule);
       rule.chain = "FW_BYPASS";
       rule.table = "filter";
+      rule.extra = `-m set --match-set ${ipset} src`;
       newRule(rule, (err) => {
-        if (err) {
+        if (err)
           log.error("Failed to apply rule: ", rule);
-          cb(err);
-        } else {
-          delete rule["in"];
-          rule.out = iface;
-          newRule(rule, cb);
-        }
+        rule.extra = `-m set --match-set ${ipset} dst`;
+        newRule(rule, cb);
       });
-    }
+    });
   });
 }
 

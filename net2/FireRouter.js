@@ -238,8 +238,6 @@ class FireRouter {
 
       updateMaps()
 
-      this.sysNetworkInfo = await generateNetworkInfo()
-
       // extract WAN interface names
       wanIntfNames = Object.values(intfNameMap)
         .filter(intf => intf.config.meta.type == 'wan')
@@ -297,7 +295,8 @@ class FireRouter {
         monitoringInterface: monitoringIntfNames[0]
       };
       Config.updateUserConfigSync(updatedConfig);
-
+      // update sys:network:info at the end so that all related variables and configs are already changed
+      this.sysNetworkInfo = await generateNetworkInfo();
     } else {
       // make sure there is at least one usable ethernet
       const networkTool = require('./NetworkTool.js')();

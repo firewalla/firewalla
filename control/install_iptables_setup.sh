@@ -93,8 +93,12 @@ sudo iptables -w -N FW_BYPASS &> /dev/null
 sudo iptables -w -F FW_BYPASS
 sudo iptables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_BYPASS
 # directly accept for not monitored devices
-sudo iptables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+sudo iptables -w -A FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
 
+# initialize vpn client kill switch chain
+sudo iptables -w -N FW_VPN_CLIENT &>/dev/null
+sudo iptables -w -F FW_VPN_CLIENT
+sudo iptable -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
 # do not traverse FW_FORWARD if the packet belongs to an accepted connection
 sudo iptables -w -C FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT &>/dev/null || sudo iptables -w -A FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT
@@ -183,7 +187,7 @@ sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_BYPASS
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
 # directly accept for not monitored devices
-sudo iptables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
 
 # DNAT related chain comes first
 # create port forward chain in PREROUTING, this is used in ipv4 only
@@ -251,7 +255,8 @@ sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set src -
 # initialize lockdown selector chain
 sudo iptables -w -t nat -N FW_NAT_LOCKDOWN_SELECTOR &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_LOCKDOWN_SELECTOR
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_LOCKDOWN_SELECTOR &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_LOCKDOWN_SELECTOR
+# only enable NAT lockdown for outbound connections for the same reason as above
+sudo iptables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_LOCKDOWN_SELECTOR &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_LOCKDOWN_SELECTOR
 
 sudo iptables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -p tcp -m multiport --ports 53,67 -j RETURN
 sudo iptables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -p udp -m multiport --ports 53,67 -j RETURN
@@ -319,8 +324,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_BYPASS
   sudo ip6tables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_BYPASS
   # directly accept for not monitored devices
-  sudo ip6tables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set dst -j FW_ACCEPT
-  sudo ip6tables -w -I FW_BYPASS -m set --match-set not_monitored_mac_set src -j FW_ACCEPT
+  sudo ip6tables -w -A FW_BYPASS -m set --match-set not_monitored_mac_set src -j FW_ACCEPT
 
 
   # do not traverse FW_FORWARD if the packet belongs to an accepted connection
@@ -410,7 +414,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -F FW_NAT_BYPASS
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
   # directly accept for not monitored devices
-  sudo ip6tables -w -t nat -I FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+  sudo ip6tables -w -t nat -A FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
 
   # DNAT related chain comes first
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
@@ -451,7 +455,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -N FW_NAT_BLOCK &>/dev/null
   sudo ip6tables -w -t nat -F FW_NAT_BLOCK
   # only enable NAT blacklist for outbound connections for the same reason as above
-  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_BLOCK &>/dev/null || sudo ip6tables -w -t nat -I FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_BLOCK
+  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_BLOCK &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_BLOCK
 
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set6 dst -j FW_NAT_HOLE
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set6 src -j FW_NAT_HOLE
@@ -473,7 +477,8 @@ if [[ -e /sbin/ip6tables ]]; then
   # initialize lockdown selector chain
   sudo ip6tables -w -t nat -N FW_NAT_LOCKDOWN_SELECTOR &> /dev/null
   sudo ip6tables -w -t nat -F FW_NAT_LOCKDOWN_SELECTOR
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_LOCKDOWN_SELECTOR &>/dev/null || sudo ip6tables -w -t nat -I FW_PREROUTING -j FW_NAT_LOCKDOWN_SELECTORs
+  # only enable NAT lockdown for outbound connections for the same reason as above
+  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_LOCKDOWN_SELECTOR &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_LOCKDOWN_SELECTOR
   
   sudo ip6tables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -p tcp -m multiport --ports 53,67 -j RETURN
   sudo ip6tables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -p udp -m multiport --ports 53,67 -j RETURN

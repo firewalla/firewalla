@@ -86,13 +86,19 @@ module.exports = class {
       await this.init();
     } catch (err) {
       log.error('Init failed, retry now...', err.message)
+      log.debug(err.stack)
 
-      // create nbController in offline mode when connection to cloud failed
-      const { gid } = await Bone.checkCloud()
-      if (!nbControllers[gid]) {
-        const name = await rclient.getAsync('groupName')
-        this.createController(gid, name, null, true)
+      try {
+        // create nbController in offline mode when connection to cloud failed
+        const { gid } = await Bone.checkCloud()
+        if (!nbControllers[gid]) {
+          const name = await rclient.getAsync('groupName')
+          this.createController(gid, name, null, true)
+        }
+      } catch(err) {
+        log.error('Error creating controller', err)
       }
+
       await delay(3000);
       return this.tryingInit();
     }
@@ -113,14 +119,14 @@ module.exports = class {
 
     log.info(`Found ${groups.length} groups this device has joined`);
 
-    if(groups.length === 0) {
+    if(!groups.length) {
       log.error("Wating for kickstart process to create group");
       throw new Error("This device belongs to no group")
     }
 
-    groups.forEach((group) => {
+    for (const group of groups) {
       this.createController(group.gid, group.name, groups, false)
-    });
+    }
   }
 
   createController(gid, name, groups, offlineMode) {
@@ -130,6 +136,7 @@ module.exports = class {
         return;
       } else if (!offlineMode) {
         // controller already exist, reconnect to cloud
+        nbControllers[gid].groups = groups
         nbControllers[gid].initEptCloud()
         return;
       }

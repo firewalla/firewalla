@@ -155,8 +155,8 @@ class NetworkProfile {
     const spoofModeOn = await Mode.isSpoofModeOn();
     const sm = new SpooferManager();
     if (state === true) {
-      await iptables.switchInterfaceMonitoringAsync(true, this.o.intf);
-      await ip6tables.switchInterfaceMonitoringAsync(true, this.o.intf);
+      await iptables.switchInterfaceMonitoringAsync(true, this.o.uuid);
+      await ip6tables.switchInterfaceMonitoringAsync(true, this.o.uuid);
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway  && this.o.gateway.length > 0 
           && this.o.ipv4 && this.o.ipv4.length > 0
@@ -187,8 +187,8 @@ class NetworkProfile {
         }
       }
     } else {
-      await iptables.switchInterfaceMonitoringAsync(false, this.o.intf);
-      await ip6tables.switchInterfaceMonitoringAsync(false, this.o.intf);
+      await iptables.switchInterfaceMonitoringAsync(false, this.o.uuid);
+      await ip6tables.switchInterfaceMonitoringAsync(false, this.o.uuid);
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway) {
           await sm.deregisterSpoofInstance(this.o.intf, "*", false);

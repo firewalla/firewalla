@@ -5,7 +5,7 @@
 #
 # Note, do not kill fireapi, it will cut off the user
 
-/home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA STOP"
+sudo -u pi /home/pi/firewalla/scripts/firelog -t cloud -m "FIREWALLA STOP"
 sudo service bitbridge4 stop
 sudo service bitbridge6 stop
 sudo service firemain stop
