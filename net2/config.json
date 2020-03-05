@@ -103,9 +103,16 @@
       "interval": 1800,
       "firstScan": 120
     },
+    "ExternalScanSensor": {
+      "interval": 1800,
+      "firstScan": 120
+    },
+    "OpenPortByInboundFlowSensor": {},
     "BoneSensor": {},
     "APISensor": {},
-    "DNSCryptPlugin": {},
+    "DNSCryptPlugin": {
+      "refreshInterval": 1440
+    },
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
@@ -515,6 +522,7 @@
       "firstScan": 120
     },
     "DnsmasqDhcpSensor": {},
+    "BlockRuleCheckSensor": {},
     "LocalDomainSensor": {}
   },
   "hooks": {
@@ -648,6 +656,8 @@
     "vpn_restore": true,
     "vpn_disconnect": true,
     "local_domain": true,
+    "external_scan": false,
+    "alarm_openport": true,
     "device_service_scan": true
   },
   "hiddenFeatures": [

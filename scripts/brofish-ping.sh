@@ -56,7 +56,7 @@ done
 if [[ $ping_ok -ne 1 ]]; then
   cpu=$(brofish_cpu)
 
-  sudo -u pi /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed, cpu $cpu, restart brofish now"
+  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed, cpu $cpu, restart brofish now"
 
   cd $FIREWALLA_HOME
   $FIREWALLA_HOME/bin/node scripts/diag_log.js \

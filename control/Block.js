@@ -172,20 +172,20 @@ async function existsBlockingEnv(tag) {
   }
 }
 
-function block(target, ipset, whitelist = false) {
-  return setupIpset(target, ipset, whitelist)
+function block(target, ipset) {
+  return setupIpset(target, ipset)
 }
 
-function unblock(target, ipset, whitelist = false) {
+function unblock(target, ipset) {
   // never unblock black hole ip
   if (f.isReservedBlockingIP(target)) {
     return
   }
 
-  return setupIpset(target, ipset, whitelist, true)
+  return setupIpset(target, ipset, true)
 }
 
-function setupIpset(target, ipset, whitelist, remove = false) {
+function setupIpset(target, ipset, remove = false) {
   const ipSpliterIndex = target.search(/[/,]/)
   const ipAddr = ipSpliterIndex > 0 ? target.substring(0, ipSpliterIndex) : target;
 

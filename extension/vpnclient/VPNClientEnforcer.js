@@ -51,7 +51,7 @@ class VPNClientEnforcer {
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
-    const cmd = wrapIptables(`sudo iptables -w -A FW_FORWARD -m mark --mark 0x${rtIdHex}/0xffff -m set ! --match-set monitored_net_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    const cmd = wrapIptables(`sudo iptables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/0xffff -m set ! --match-set monitored_net_set dst ! -o ${vpnIntf} -j FW_DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to enforce strict vpn on ${vpnIntf}`, err);
     });
@@ -65,7 +65,7 @@ class VPNClientEnforcer {
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
-    const cmd = wrapIptables(`sudo iptables -w -D FW_FORWARD -m mark --mark 0x${rtIdHex}/0xffff -m set ! --match-set monitored_net_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    const cmd = wrapIptables(`sudo iptables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/0xffff -m set ! --match-set monitored_net_set dst ! -o ${vpnIntf} -j FW_DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to unenforce strict vpn on ${vpnIntf}`, err);
       throw err;
@@ -78,8 +78,8 @@ class VPNClientEnforcer {
     const tableName = this._getRoutingTableName(vpnIntf);
     // ensure customized routing table is created
     const rtId = await routing.createCustomizedRoutingTable(tableName);
-    // add policy based rule, the priority 6001 is consistent with routing framework in firerouter
-    await routing.createPolicyRoutingRule("all", null, tableName, 6001, `${rtId}/0xffff`);
+    // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
+    await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`);
     let cmd = "ip route list";
     if (overrideDefaultRoute)
       // do not copy default route from main routing table
