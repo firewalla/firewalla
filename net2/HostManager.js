@@ -294,8 +294,8 @@ module.exports = class HostManager {
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
     json.ddns = sysManager.ddns;
-    json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
-    json.wifiNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringWifiInterface];
+    if (sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2])
+      json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
     json.model = platform.getName();
     json.branch = f.getBranch();
