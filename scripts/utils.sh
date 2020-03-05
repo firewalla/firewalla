@@ -8,6 +8,7 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run
     mkdir -p ~/.forever
     mkdir -p ~/logs
+    sudo chown -R pi ~/logs/
     # this is mainly for x86_64, /etc/openvpn will link to this directory
     if [[ $(uname -m) == "x86_64" ]]; then
       mkdir -p /home/pi/openvpn
