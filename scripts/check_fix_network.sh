@@ -22,7 +22,7 @@ LOGGER=/usr/bin/logger
 err() {
     msg="$@"
     echo "ERROR: $msg" >&2
-    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
+    sudo -u pi /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
 get_value() {
