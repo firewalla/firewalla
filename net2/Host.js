@@ -502,7 +502,7 @@ class Host {
   }
 
 
-  spoof(state) {
+  async spoof(state) {
     log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
     if (this.o.ipv4Addr == null) {
       log.info("Host:Spoof:NoIP", this.o);
@@ -511,15 +511,23 @@ class Host {
     log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac}, current spoof state: ${this.spoofing}, new spoof state: ${state}`);
     // set spoofing data in redis and trigger dnsmasq reload hosts
     if (state === true) {
-      rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
+      await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = state;
+      const cmd = `sudo ipset del -! not_monitored_mac_set ${this.o.mac}`;
+      await exec(cmd).catch((err) => {
+        log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
+      });
     } else {
-      rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
+      await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = false;
+      const cmd = `sudo ipset add -! not_monitored_mac_set ${this.o.mac}`;
+      await exec(cmd).catch((err) => {
+        log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
+      });
     }
     
     const iface = sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
@@ -554,10 +562,6 @@ class Host {
           log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
           return;
         }
-        const cmd = `sudo ipset del -! not_monitored_mac_set ${this.o.mac}`;
-        exec(cmd).catch((err) => {
-          log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
-        });
         spoofer.newSpoof(this.o.ipv4Addr, iface.name)
           .then(() => {
             log.debug("Started spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
@@ -566,10 +570,6 @@ class Host {
           })
       })
     } else {
-      const cmd = `sudo ipset add -! not_monitored_mac_set ${this.o.mac}`;
-      exec(cmd).catch((err) => {
-        log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
-      });
       spoofer.newUnspoof(this.o.ipv4Addr, iface.name)
         .then(() => {
           log.debug("Stopped spoofing", this.o.ipv4Addr, this.o.mac, this.o.name);
