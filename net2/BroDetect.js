@@ -529,7 +529,7 @@ module.exports = class {
     if (!iptool.isV4Format(ip) && iptool.isV6Format(ip))
       hostObject = hostManager.getHostFast6(ip);
 
-    if (hostObject && hostObject.o && (!hostObject.o.spoofing || hostObject.o.spoofing === "false")) {
+    if (hostObject && !hostObject.isMonitoring()) {
       return false;
     } else {
       return true;
