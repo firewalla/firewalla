@@ -73,7 +73,13 @@ const Tag = require('../net2/Tag.js');
 
 const _ = require('lodash');
 
-const delay = require('../util/util.js').delay
+const delay = require('../util/util.js').delay;
+const validator = require('validator');
+const iptool = require('ip');
+const util = require('util');
+const exec = require('child-process-promise').exec;
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -1626,6 +1632,201 @@ class PolicyManager2 {
     }
 
     return null
+  }
+
+  isPort(port) {
+    return (!Number.isNaN(port) && Number.isInteger(Number(port)) && Number(port) > 0 && Number(port) <= 65535)
+  }
+
+  async searchPolicy(target) {
+    let result = [];
+    let err = null;
+    if (!target) {
+      err = { code: 400, msg: "invalid target" };
+      return [result, err];
+    }
+
+    let waitSearch = [];
+    const addrPort = target.split(":");
+    let isDomain = false;
+    const addr = addrPort[0];
+    if (!iptool.isV4Format(addr) && !this.isPort(addr)) {
+      try {
+        isDomain = validator.isFQDN(addr);
+      } catch (err) {
+      }
+      if (!isDomain) {
+        err = { code: 400, msg: "Invalid value" };
+        return [result, err];
+      }
+    }
+    if (addrPort.length == 2 && (!this.isPort(addrPort[1]) || (this.isPort(addr) && this.isPort(addrPort[1])))) {
+      err = { code: 400, msg: "Invalid value" };
+      return [result, err];
+    }
+    if (isDomain) {
+      const addresses = await dnsTool.getIPsByDomain(addr);
+      waitSearch.push.apply(waitSearch, addresses);
+      if (addrPort.length == 2){
+        waitSearch.push(addrPort[1]);
+        for (const address of addresses) {
+          waitSearch.push(address + "," + addrPort[1]); // for ipset test command
+        }
+      }
+    } else {
+      waitSearch.push(addr);
+      if (addrPort.length == 2){
+        waitSearch.push(addrPort[1]);
+        waitSearch.push(addr + "," + addrPort[1]); // for ipset test command
+      }
+    }
+    
+    let ipsets = [];
+    let ipsetContent = ""; // for string matching
+    try {
+      let cmdResult = await exec("sudo iptables -S | grep -E 'FW_BLOCK'");
+      let iptableFW = cmdResult.stdout.toString().trim(); // iptables content
+      cmdResult = await exec(`sudo ipset -S`);
+      let cmdResultContent = cmdResult.stdout.toString().trim().split('\n');
+      for (const line of cmdResultContent) {
+        const splitCurrent = line.split(" ");
+        if (splitCurrent[0] == "create") {
+          // ipset name
+          if (iptableFW.indexOf(' ' + splitCurrent[1] + ' ') > -1) {
+            // ipset name in iptables
+            ipsets.push({ipsetName: splitCurrent[1], ipsetType: splitCurrent[2]});
+          }
+        } else {
+          //ipset content
+          if (ipsets.some((current) => current.ipsetName == splitCurrent[1])) {
+            ipsetContent += line + "\n";
+          }
+        }
+      }
+    } catch (err) {
+      log.error(err);
+    }
+
+    const rules = await this.loadActivePoliciesAsync();
+    for (const currentTxt of waitSearch) {
+      if (!currentTxt || currentTxt.trim().length == 0) continue;
+      log.info("Start check target:", currentTxt);
+      for (const ipset of ipsets) {
+        const ipsetName = ipset.ipsetName;
+        if ((ipset.ipsetType == "hash:net" && iptool.isV4Format(currentTxt)) || (["hash:ip,port", "hash:net,port"].includes(ipset.ipsetType) && currentTxt.indexOf(",") > -1)) {
+          // use ipset test command
+          const testCommand = util.format("sudo ipset test %s %s", ipsetName, currentTxt);
+          try {
+            await exec(testCommand);
+          } catch (err) {
+            continue;
+          }
+        } else {
+          // use string matching
+          const testStr = "add " + ipsetName + " " + currentTxt + "\n";
+          if (ipsetContent.indexOf(testStr) == -1) {
+            continue;
+          } 
+        }
+
+        const matches = ipsetName.match(/(.*)_(\d+)_(.*)/); // match rule id
+        let matchedRules = [];
+        if (matches) {
+          let rule = await this.getPolicy(matches[2]);
+          if (rule) {
+            matchedRules.push(rule);
+          }
+        } else if (ipsetName == "blocked_ip_set" && iptool.isV4Format(currentTxt)) {
+          matchedRules = rules.filter(rule => rule.type == "ip" && rule.target === currentTxt);
+        } else if (ipsetName == "blocked_net_set" && iptool.isV4Format(currentTxt)) {
+          matchedRules = rules.filter(rule => rule.type == "net" && iptool.cidrSubnet(rule.target).contains(currentTxt));
+        } else if (ipsetName == "blocked_domain_set" && iptool.isV4Format(currentTxt)) {
+          const filterRules = rules.filter(rule => ["dns", "domain"].includes(rule.type));
+          if (isDomain) {
+            const domains = await dnsTool.getAllDns(currentTxt); // 54.169.195.247 => ["api.github.com", "github.com"]
+            if (domains && domains.length > 0) {
+              for (const rule of filterRules) {
+                if (domains.some(domain => (domain == rule.target || domain.indexOf(rule.target) > -1))) {
+                  matchedRules.push(rule);
+                }
+              }
+            }
+          } else {
+            for (const rule of filterRules) {
+              const dnsAddresses = await dnsTool.getIPsByDomain(rule.target);
+              if (dnsAddresses && dnsAddresses.length > 0 && dnsAddresses.some(dnsIp => dnsIp == currentTxt)) {
+                matchedRules.push(rule);
+              }
+            }
+          }
+        } else if (ipsetName == "blocked_remote_port_set" && Number.isInteger(Number(currentTxt))) {
+          const filterRules = rules.filter(rule => rule.type == "remotePort");
+          for (const rule of filterRules) {
+            let matchFlag = false;
+            let splitTarget = rule.target.split("-");  //Example 9901-9908
+            if (splitTarget.length == 2) {
+              let portStart = splitTarget[0];
+              let portEnd = splitTarget[1];
+              if (Number.isInteger(Number(portStart)) && Number.isInteger(Number(portEnd)) && Number(currentTxt) >= Number(portStart) && Number(currentTxt) <= Number(portEnd) ) {
+                matchFlag = true;
+              }
+            } else if (rule.target == currentTxt) {
+              matchFlag = true;
+            }
+            if (matchFlag) {
+              matchedRules.push(rule);
+            }
+          }
+        } else if (ipsetName == "blocked_remote_ip_port_set" && currentTxt.indexOf(",") > -1) {
+          const filterRules = rules.filter(rule => rule.type == "remoteIpPort");
+          for (const rule of filterRules) {
+            let matchFlag = false;
+            let splitTarget = rule.target.split(":"); //Example 101.89.76.251,tcp:44449
+            let targetIp = splitTarget[0];
+            let targetPort = splitTarget[1];
+            if (targetIp.indexOf(",") > -1) {
+              targetIp = targetIp.split(",")[0];
+            }
+            if (targetIp + "," + targetPort == currentTxt) {
+              matchFlag = true;
+            }
+            if (matchFlag) {
+              matchedRules.push(rule);
+            }
+          }
+        } else if (ipsetName == "blocked_remote_net_port_set" && currentTxt.indexOf(",") > -1) {
+          const filterRules = rules.filter(rule => rule.type == "remoteNetPort");
+          let splitTxt = currentTxt.split(",");  //Example 10.0.0.1,44449
+          let currentIp = splitTxt[0];
+          let currentPort = splitTxt[1];
+          for (const rule of filterRules) {
+            let matchFlag = false;
+            let splitTarget = rule.target.split(":"); //Example 10.0.0.0/8,tcp:44449
+            let targetNet = splitTarget[0];
+            let targetPort = splitTarget[1];
+            if (targetNet.indexOf(",") > -1) {
+              targetNet = targetNet.split(",")[0];
+            }
+            if (iptool.isV4Format(currentIp) && iptool.cidrSubnet(targetNet).contains(currentIp) && targetPort == currentPort) {
+              matchFlag = true;
+            }
+            if (matchFlag) {
+              matchedRules.push(rule);
+            }
+          }
+        } else if (ipsetName.indexOf("_default_c_") > -1) {
+          matchedRules = rules.filter(rule => rule.type == "category" && ipsetName === Block.getDstSet(rule.target));
+        } else if (ipsetName.indexOf("_country:") > -1) {
+          matchedRules = rules.filter(rule => rule.type == "country" && ipsetName === Block.getDstSet(countryUpdater.getCategory(rule.target)));
+        }
+
+        if (matchedRules.length > 0) {
+          result.push.apply(result, matchedRules.map((rule) => rule.pid));
+        }
+      }
+    }
+
+    return [_.uniqWith(result, _.isEqual), err];
   }
 }
 

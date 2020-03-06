@@ -2727,6 +2727,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback)
         })
         break;
+      case "policy:search": {
+        (async () => {
+          const result = await pm2.searchPolicy(value.target);
+          this.simpleTxData(msg, result[0], result[1], callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
+      }
       case "intel:finger":
         (async () => {
           const target = value.target;
