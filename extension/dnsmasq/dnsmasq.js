@@ -51,6 +51,8 @@ const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
 const LOCAL_DOMAIN_KEY = "local:device:domain"
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
+const UPSTREAM_SERVER_FILE = FILTER_DIR + "/upstream_server.conf";
+
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
   adblockTmp: FILTER_DIR + "/adblock_filter.conf.tmp",
@@ -973,7 +975,15 @@ module.exports = class DNSMASQ {
 
     if (upstreamDNS) {
       log.info("upstream server", upstreamDNS, "is specified");
-      cmd = util.format("%s --server=%s --no-resolv", cmd, upstreamDNS);
+      // put upstream server config file to config directory
+      const dnsmasqEntry = `server=${upstreamDNS}`;
+      await fs.writeFileAsync(UPSTREAM_SERVER_FILE, dnsmasqEntry).catch((err) => {
+        log.error(`Failed to write upstream server file`, dnsmasqEntry, err.message);
+      });
+    } else {
+      log.info("unset upstream server");
+      // remove upstream server config file from config directory anyway
+      await fs.unlinkAsync(UPSTREAM_SERVER_FILE).catch((err) => {});
     }
 
     this.writeStartScript(cmd);
@@ -1291,39 +1301,40 @@ module.exports = class DNSMASQ {
   }
 
   async verifyDNSConnectivity() {
-    for (let i in VERIFICATION_DOMAINS) {
-      const domain = VERIFICATION_DOMAINS[i];
-      const STATUS_CHECK_INTERFACE = platform.isFireRouterManaged() && sysManager.getMonitoringInterfaces().length > 0 ?
-          sysManager.getMonitoringInterfaces()[0].ip_address :
-          'localhost';
-      let cmd = `dig -4 +short +time=5 -p ${MASQ_PORT} @${STATUS_CHECK_INTERFACE} ${domain}`;
-      log.debug(`Verifying DNS connectivity via ${domain}...`)
-
-      try {
-        let { stdout, stderr } = await execAsync(cmd);
-        if (stderr !== "" || stdout === "") {
-          let error = new Error(`Error verifying dns connectivity to ${domain}`);
-          Object.assign(error, { stdout, stderr });
-          throw error;
-        } else {
-          log.debug("DNS connectivity looks good")
-          return true
+    for (const monitoringInterface of sysManager.getMonitoringInterfaces()) {
+      if (!monitoringInterface || !monitoringInterface.ip_address)
+        continue;
+      const STATUS_CHECK_INTERFACE = monitoringInterface.ip_address;
+      let resolved = false;
+      for (const domain of VERIFICATION_DOMAINS) {
+        // if there are 3 verification domains and each takes at most 6 seconds to fail the test, it will take 18 seconds to fail the test on one network interface
+        let cmd = `dig -4 +short +time=3 +tries=2 -p ${MASQ_PORT} @${STATUS_CHECK_INTERFACE} ${domain}`;
+        log.debug(`Verifying DNS resolution to ${domain} on ${STATUS_CHECK_INTERFACE} ...`);
+        try {
+          let { stdout, stderr } = await execAsync(cmd);
+          if (stderr !== "" || stdout === "") {
+            log.error(`Error verifying dns resolution to ${domain} on ${STATUS_CHECK_INTERFACE}`, stderr, stdout);
+          } else {
+            log.debug(`DNS resolution succeeds to ${domain} on ${STATUS_CHECK_INTERFACE}`);
+            resolved = true;
+            break;
+          }
+        } catch (err) {
+          // usually fall into catch clause if dns resolution is failed
+          log.error(`Failed to resolve ${domain} on ${STATUS_CHECK_INTERFACE}`, err.stdout, err.stderr);
         }
-      } catch (err) {
-        log.error(`Got error when verifying dns connectivity to ${domain}:`, err.stdout, err.stderr);
       }
+      if (resolved)
+        continue;
+      log.error(`Failed to resolve all domains on ${STATUS_CHECK_INTERFACE}.`);
+      return false;
     }
-
-    log.error("DNS connectivity check fails to resolve all domains.");
-    return false;
+    return true;
   }
 
   async statusCheck() {
     log.debug("Keep-alive checking dnsmasq status")
-    let checkResult = await this.verifyDNSConnectivity() ||
-      await this.verifyDNSConnectivity() ||
-      await this.verifyDNSConnectivity() ||
-      await this.verifyDNSConnectivity();
+    let checkResult = await this.verifyDNSConnectivity();
 
     if (checkResult) {
       this.failCount = 0 // reset
@@ -1337,9 +1348,9 @@ module.exports = class DNSMASQ {
       if (!f.isProductionOrBeta()) {
         pclient.publishAsync("DNS:DOWN", this.failCount);
       }
-      if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
+      if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF || this.mode === Mode.MODE_ROUTER) {
         // dnsmasq is needed for dhcp service, still need to erase dns related rules in iptables
-        log.warn("Dnsmasq keeps running under DHCP mode, remove all dns related rules from iptables...");
+        log.warn("Dnsmasq keeps running under DHCP/router mode, remove all dns related rules from iptables...");
         await this._remove_all_iptables_rules();
       } else {
         await this.stop(); // make sure iptables rules are also stopped..
@@ -1468,12 +1479,13 @@ module.exports = class DNSMASQ {
           userLocalDomain && (localDeviceDomain += `address=/${userLocalDomain}/${deviceDomain.ipv4Addr}\n`);
         }
       }
-      (isInit || needUpdate) && this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
+      (isInit || needUpdate) && await this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
     this.updatingLocalDomain = false;
   }
+
   async throttleUpdatingConf(filePath, data) {
     const cooldown = 5 * 1000;
     if (this.throttleTimer[filePath]) {

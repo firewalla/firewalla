@@ -202,7 +202,7 @@ async function postAppLinked() {
   // only do this in production and always do after 15 seconds ...
   // the 15 seconds wait is for the process to wake up
   return new Promise((resolve, reject) => {
-    if (f.isProductionOrBeta() &&
+    if (f.isProductionOrBetaOrAlpha() &&
       // resetPassword by default unless resetPassword flag is explictly set to false
       (typeof fConfig.resetPassword === 'undefined' ||
         fConfig.resetPassword === true)) {

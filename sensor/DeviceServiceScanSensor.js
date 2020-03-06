@@ -94,7 +94,7 @@ class DeviceServiceScanSensor extends Sensor {
   }
 
   _scan(ipAddr, callback) {
-    let cmd = util.format('sudo nmap -Pn -F %s -oX - | %s', ipAddr, xml2jsonBinary);
+    let cmd = util.format('sudo nmap -Pn %s -oX - | %s', ipAddr, xml2jsonBinary);
 
     log.info("Running command:", cmd);
     return new Promise((resolve, reject) => {
