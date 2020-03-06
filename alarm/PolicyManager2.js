@@ -601,6 +601,12 @@ class PolicyManager2 {
     let policyKeys = [];
 
     for (let rule of rules) {
+      if (rule.type == 'mac' && rule.target == mac) {
+        policyIds.push(rule.pid);
+        policyKeys.push('policy:' + rule.pid);
+        this.tryPolicyEnforcement(rule, 'unenforce');
+      }
+
       if (_.isEmpty(rule.scope)) continue;
 
       if (rule.scope.some(m => m == mac)) {
