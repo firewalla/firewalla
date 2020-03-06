@@ -657,7 +657,7 @@
     "vpn_disconnect": true,
     "local_domain": true,
     "external_scan": false,
-    "alarm_openport": true,
+    "alarm_openport": false,
     "device_service_scan": true
   },
   "hiddenFeatures": [
