@@ -110,6 +110,22 @@ class TagManager {
         await rclient.delAsync(key);
         this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
         await this.refreshTags();
+
+        const PM2 = require('../alarm/PolicyManager2.js');
+        const pm2 = new PM2();
+        await pm2.deleteTagRelatedPolicies(uid);
+        const EM = require('../alarm/ExceptionManager.js');
+        const em = new EM();
+        await em.deleteTagRelatedExceptions(uid);
+
+        const FlowAggrTool = require('../net2/FlowAggrTool');
+        const flowAggrTool = new FlowAggrTool();
+        const FlowManager = require('../net2/FlowManager.js');
+        const flowManager = new FlowManager('info');
+
+        await flowAggrTool.removeAggrFlowsAllTag(uid);
+        await flowManager.removeFlowTag(uid);
+
         return;
       }
     }

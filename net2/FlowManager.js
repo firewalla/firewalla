@@ -1143,6 +1143,19 @@ module.exports = class FlowManager {
     return sorted;
   }
 
+  removeFlowTag(tag) {
+    let keys = [
+      // 'flow:conn:in:' + tag,
+      // 'flow:conn:out:' + tag,
+      'stats:hour:in:tag:' + tag,
+      'stats:hour:out:tag:' + tag,
+      'stats:last24:tag:' + tag + ':upload',
+      'stats:last24:tag:' + tag + ':download',
+    ];
+
+    return rclient.delAsync(keys);
+  }
+
   removeFlowsAll(mac) {
     // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated
 
