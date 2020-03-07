@@ -1143,7 +1143,7 @@ module.exports = class FlowManager {
     return sorted;
   }
 
-  removeFlowTag(tag) {
+  async removeFlowTag(tag) {
     let keys = [
       // 'flow:conn:in:' + tag,
       // 'flow:conn:out:' + tag,
@@ -1153,10 +1153,11 @@ module.exports = class FlowManager {
       'stats:last24:tag:' + tag + ':download',
     ];
 
-    return rclient.delAsync(keys);
+    await rclient.delAsync(keys);
+    return;
   }
 
-  removeFlowsAll(mac) {
+  async removeFlowsAll(mac) {
     // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated
 
     let keys = [
@@ -1168,6 +1169,7 @@ module.exports = class FlowManager {
       'stats:last24:' + mac + ':download',
     ];
 
-    return rclient.delAsync(keys);
+    await rclient.delAsync(keys);
+    return;
   }
 }

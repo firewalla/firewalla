@@ -639,7 +639,7 @@ class PolicyManager2 {
 
   async deleteTagRelatedPolicies(tag) {
     // device specified policy
-    await rclient.delAsync('policy:tag:' + mac);
+    await rclient.delAsync('policy:tag:' + tag);
 
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
@@ -662,7 +662,7 @@ class PolicyManager2 {
 
           this.tryPolicyEnforcement(newRule, 'reenforce', rule);
 
-          log.info('remove scope from policy:' + rule.pid, mac);
+          log.info('remove scope from policy:' + rule.pid, tag);
         }
       }
     }
@@ -671,7 +671,7 @@ class PolicyManager2 {
       await rclient.delAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
     }
-    log.info('Deleted', mac, 'related policies:', policyKeys);
+    log.info('Deleted', tag, 'related policies:', policyKeys);
   }
 
   idsToPolicies(ids, callback) {
