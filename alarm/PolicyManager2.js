@@ -1857,9 +1857,9 @@ class PolicyManager2 {
               matchedRules.push(rule);
             }
           }
-        } else if (ipsetName.indexOf("_default_c_") > -1) {
+        } else if (ipsetName.search(/c_bd_([a-zA-Z_]+)_set/) > -1 && iptool.isV4Format(currentTxt)) {
           matchedRules = rules.filter(rule => rule.type == "category" && ipsetName === Block.getDstSet(rule.target));
-        } else if (ipsetName.indexOf("_country:") > -1) {
+        } else if (ipsetName.indexOf("_country:") > -1 && iptool.isV4Format(currentTxt)) {
           matchedRules = rules.filter(rule => rule.type == "country" && ipsetName === Block.getDstSet(countryUpdater.getCategory(rule.target)));
         }
 
