@@ -88,7 +88,6 @@ class Host {
           this.subscribe(this.o.mac, "Intel:Detected");
           this.subscribe(this.o.mac, "HostPolicy:Changed");
         }
-        this.spoofing = false;
 
         this.predictHostNameUsingUserAgent();
 
@@ -499,6 +498,11 @@ class Host {
     }
 
     this.dnsmasq.onDHCPReservationChanged();
+  }
+
+  isMonitoring() {
+    // this.spoofing should be changed immediately when spoof state is changed
+    return this.spoofing;
   }
 
 
