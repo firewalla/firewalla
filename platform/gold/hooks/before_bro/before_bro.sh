@@ -5,7 +5,7 @@ CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 [[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/broctl.cfg
 
 if [[ -e /log/blog ]]; then
-  sudo ln -s /log/blog/current /blog/current
+  sudo ln -sfT /log/blog/current /blog/current
 fi
 
 TMP_FILE="/home/pi/.firewalla/config/local.bro"
