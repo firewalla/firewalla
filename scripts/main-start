@@ -242,8 +242,10 @@ function check_upgrade {
     fi
 }
 
-sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
-sudo setcap cap_net_raw+eip $(eval readlink -f `which node`)
+if [[ $CPU_PLATFORM != "x86_64" ]]; then
+  sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+  sudo setcap cap_net_raw+eip $(eval readlink -f `which node`)
+fi
 
 # Take care of upgrade differently
 
