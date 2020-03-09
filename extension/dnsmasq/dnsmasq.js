@@ -37,7 +37,6 @@ const PlatformLoader = require('../../platform/PlatformLoader.js')
 const platform = PlatformLoader.getPlatform()
 const DNSTool = require('../../net2/DNSTool.js')
 const dnsTool = new DNSTool()
-const fireRouter = require('../../net2/FireRouter.js')
 const Message = require('../../net2/Message.js');
 const fc = require('../../net2/config.js')
 const { delay } = require('../../util/util.js');
@@ -714,10 +713,22 @@ module.exports = class DNSMASQ {
   }
 
   async _add_iptables_rules() {
-    const interfaces = sysManager.getMonitoringInterfaces()
+    const interfaces = sysManager.getMonitoringInterfaces();
+    const NetworkProfile = require('../../net2/NetworkProfile.js');
     for (const intf of interfaces) {
+      const uuid = intf.uuid;
+      if (!uuid) {
+        log.error(`uuid is not defined for ${intf.name}`);
+        continue;
+      }
+      if (!intf.ip_address) {
+        log.error(`No ipv4 address is found on ${intf.name}`);
+        continue;
+      }
+      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+      const ipset = NetworkProfile.getNetIpsetName(uuid);
       const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(intf.subnet, null, 'src')
+        .mth(ipset, "src,src", "set")
         .pam('-m set ! --match-set no_dns_caching_set src')
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
@@ -729,21 +740,29 @@ module.exports = class DNSMASQ {
 
   async _add_ip6tables_rules() {
     const interfaces = sysManager.getMonitoringInterfaces();
+    const NetworkProfile = require('../../net2/NetworkProfile.js');
     for (const intf of interfaces) {
-      const ip6Subnets = intf.ip6_subnets;
-      const ip6Addrs = intf.ip6_addresses;
-      for (const i in ip6Subnets) {
-        if (ip6Subnets[i] && ip6Addrs[i]) {
-          const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-            .mth(ip6Subnets[i], null, 'src')
-            .pam('-m set ! --match-set no_dns_caching_set src')
-            .mth(53, null, 'dport')
-            .jmp(`DNAT --to-destination [${ip6Addrs[i]}]:${MASQ_PORT}`);
-          const redirectUDP = redirectTCP.clone().pro('udp');
-          await execAsync(redirectTCP.toCmd('-A'));
-          await execAsync(redirectUDP.toCmd('-A'));
-        }
+      const uuid = intf.uuid;
+      if (!uuid) {
+        log.error(`uuid is not defined for ${intf.name}`);
+        continue;
       }
+      const ip6Addrs = intf.ip6_addresses;
+      if (!ip6Addrs || ip6Addrs.length == 0) {
+        log.info(`No ipv6 address is found on ${intf.name}`);
+        continue;
+      }
+      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+      const ipset = NetworkProfile.getNetIpsetName(uuid) + "6";
+      const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
+      const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
+        .mth(ipset, "src,src", "set")
+        .pam('-m set ! --match-set no_dns_caching_set src')
+        .mth(53, null, 'dport')
+        .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
+      const redirectUDP = redirectTCP.clone().pro('udp');
+      await execAsync(redirectTCP.toCmd('-A'));
+      await execAsync(redirectUDP.toCmd('-A'));
     }
   }
 

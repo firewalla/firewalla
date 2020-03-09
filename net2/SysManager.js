@@ -85,7 +85,7 @@ class SysManager {
       this.ts = Date.now() / 1000;
       log.info("Init", this.ts);
       sclient.on("message", (channel, message) => {
-        log.info("Msg", this.ts, channel, message);
+        log.debug("Msg", this.ts, channel, message);
         switch (channel) {
           case "System:Upgrade:Hard":
             this.upgradeEvent = message;
