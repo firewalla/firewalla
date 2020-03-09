@@ -32,12 +32,14 @@ const fConfig = require('../../net2/config.js').getConfig();
 const { delay } = require('../../util/util.js')
 const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 const rclient = require('../../util/redis_manager.js').getRedisClient()
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const exec = require('child-process-promise').exec;
 
 const rp = require('request-promise');
 
 const NODE_VERSION_SUPPORTS_RSA = 12
+const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown']
 
 const util = require('util')
 
@@ -841,28 +843,28 @@ let legoEptCloud = class {
     });
   }
 
-
   // This will pull messags from now ...
   //
   // if 0 is passed in intervalInSeconds, pulling will stop
 
-  pullMsgFromGroup(gid, intervalInSeconds, callback,boneCallback) {
+  pullMsgFromGroup(gid, intervalInSeconds, callback, boneCallback) {
     let self = this;
     let inactivityTimeout = 5 * 60; //5 min
     this.getKey(gid, (err, key) => {
-      const cacheGroup = self.groupCache[gid]
+      const group = this.groupCache[gid]
       if (this.socket == null) {
         this.notifyGids.push(gid);
         this.socket = io2('https://firewalla.encipher.io',{path: '/socket',transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
           this.notifySocket = false;
+          log.error('Cloud disconnected')
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
         });
         this.socket.on("newMsg",(data)=>{
-          self.getMsgFromGroup(gid, data.ts, 100, (err, messages) => {
-            cacheGroup.lastfetch = Date.now() / 1000;
+          this.getMsgFromGroup(gid, data.ts, 100, (err, messages) => {
+            group.lastfetch = Date.now() / 1000;
             callback(err,messages);
           });
         });
@@ -872,15 +874,30 @@ let legoEptCloud = class {
             boneCallback(null,data);
           }
         });
+        this.socket.on('reconnect', ()=>{
+          log.info('--== Cloud reconnected ==--')
+          if (Date.now() / 1000 - this.lastReconnection > NOTIF_ONLINE_INTERVAL) {
+            this.lastReconnection = Date.now() / 1000
+            sem.sendEventToFireApi({
+              type: 'FW_NOTIFICATION',
+              titleKey: 'NOTIF_BOX_ONLINE_TITLE',
+              bodyKey: 'NOTIF_BOX_ONLINE_BODY',
+              titleLocalKey: 'BOX_ONLINE',
+              bodyLocalKey: 'BOX_ONLINE',
+              payload: {}
+            });
+          }
+        })
         this.socket.on('connect', ()=>{
           this.notifySocket = true;
-          log.info("[Web Socket] Connecting to Firewalla Cloud: ",cacheGroup.group.name);
+          this.lastReconnection = this.lastReconnection || Date.now() / 1000
+          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name);
           if (this.notifyGids.length>0) {
-            this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':cacheGroup.group.name});
+            this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':group.group.name});
           }
         });
-        cacheGroup.lastfetch = Date.now() / 1000;
-        cacheGroup.lastMsgs = {};
+        group.lastfetch = Date.now() / 1000;
+        group.lastMsgs = {};
         return;
       } else {
         this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token});
@@ -890,68 +907,68 @@ let legoEptCloud = class {
         return;
       } else {
         if (intervalInSeconds === 0) {
-          if (cacheGroup.timer) {
-            clearInterval(cacheGroup.timer);
-            cacheGroup.timer = null;
-            cacheGroup.lastfetch = 0;
+          if (group.timer) {
+            clearInterval(group.timer);
+            group.timer = null;
+            group.lastfetch = 0;
           }
           return;
         }
-        if (cacheGroup.pullIntervalInSeconds > 0) {
-          cacheGroup.pullIntervalInSeconds = intervalInSeconds;
-          cacheGroup.configuredPullIntervalInSeconds = intervalInSeconds;
-          if (cacheGroup.timer) {
-            clearInterval(cacheGroup.timer);
+        if (group.pullIntervalInSeconds > 0) {
+          group.pullIntervalInSeconds = intervalInSeconds;
+          group.configuredPullIntervalInSeconds = intervalInSeconds;
+          if (group.timer) {
+            clearInterval(group.timer);
           }
-          cacheGroup.timer = setInterval(cacheGroup.func, cacheGroup.pullIntervalInSeconds * 1000);
+          group.timer = setInterval(group.func, group.pullIntervalInSeconds * 1000);
           callback(200, null);
           return;
         }
-        cacheGroup.pullIntervalInSeconds = intervalInSeconds;
-        cacheGroup.configuredPullIntervalInSeconds = intervalInSeconds;
-        cacheGroup.lastfetch = Date.now() / 1000;
-        cacheGroup.lastMsgs = {};
-        cacheGroup.lastMsgReceivedTime = 0;
+        group.pullIntervalInSeconds = intervalInSeconds;
+        group.configuredPullIntervalInSeconds = intervalInSeconds;
+        group.lastfetch = Date.now() / 1000;
+        group.lastMsgs = {};
+        group.lastMsgReceivedTime = 0;
         // attention is used to indicate the bot is interacting with something ... and need pull faster
-        cacheGroup.attention = false;
-        cacheGroup.func = function () {
-          //log("pulling gid ",gid," time ", cacheGroup.lastfetch, " interval ",cacheGroup.pullIntervalInSeconds);
-          self.getMsgFromGroup(gid, cacheGroup.lastfetch, 100, (err, messages) => {
+        group.attention = false;
+        group.func = function () {
+          //log("pulling gid ",gid," time ", group.lastfetch, " interval ",group.pullIntervalInSeconds);
+          self.getMsgFromGroup(gid, group.lastfetch, 100, (err, messages) => {
             //log("received messages ", messages.length);
-            cacheGroup.lastfetch = Date.now() / 1000 - intervalInSeconds / 2; // put a 10 second buffer
+            group.lastfetch = Date.now() / 1000 - intervalInSeconds / 2; // put a 10 second buffer
             let msgs = [];
             let msgcount = 0;
             if (err == null) {
               for (let i = 0; i < messages.length; i++) {
-                if (cacheGroup.lastMsgs[messages[i].id] != null) {} else {
-                  if (cacheGroup.attention == false) {
-                    clearInterval(cacheGroup.timer);
-                    cacheGroup.timer = setInterval(cacheGroup.func, 1 * 1000);
-                    cacheGroup.attention = true;
-                    cacheGroup.lastMsgReceivedTime = Date.now() / 1000;
+                if (group.lastMsgs[messages[i].id] != null) {} else {
+                  if (group.attention == false) {
+                    clearInterval(group.timer);
+                    group.timer = setInterval(group.func, 1 * 1000);
+                    group.attention = true;
+                    group.lastMsgReceivedTime = Date.now() / 1000;
                   }
                   if (messages[i].mtype == 'attn') { // no need do anything, the msg itself will trigger attention
                     continue;
                   }
-                  if (messages[i].mtype == 'relax' && cacheGroup.attention == true) {
-                    clearInterval(cacheGroup.timer);
-                    cacheGroup.timer = setInterval(cacheGroup.func, cacheGroup.configuredPullIntervalInSeconds * 1000);
-                    cacheGroup.attention = false;
+                  if (messages[i].mtype == 'relax' && group.attention == true) {
+                    clearInterval(group.timer);
+                    group.timer = setInterval(group.func, group.configuredPullIntervalInSeconds * 1000);
+                    group.attention = false;
                     continue;
                   }
                   msgcount = msgcount + 1;
                   msgs.push(messages[i]);
-                  cacheGroup.lastMsgs[messages[i].id] = messages[i];
+                  group.lastMsgs[messages[i].id] = messages[i];
                 }
               }
               if (messages.length == 0) {
-                cacheGroup.lastMsgs = {};
+                group.lastMsgs = {};
               }
-              if (msgcount == 0 && cacheGroup.attention == true) {
-                if ((Date.now() / 1000 - cacheGroup.lastMsgReceivedTime) > inactivityTimeout) {
-                  clearInterval(cacheGroup.timer);
-                  cacheGroup.timer = setInterval(cacheGroup.func, cacheGroup.configuredPullIntervalInSeconds * 1000);
-                  cacheGroup.attention = false;
+              if (msgcount == 0 && group.attention == true) {
+                if ((Date.now() / 1000 - group.lastMsgReceivedTime) > inactivityTimeout) {
+                  clearInterval(group.timer);
+                  group.timer = setInterval(group.func, group.configuredPullIntervalInSeconds * 1000);
+                  group.attention = false;
                 }
               }
             }
@@ -959,7 +976,7 @@ let legoEptCloud = class {
             callback(err, msgs);
           });
         };
-        cacheGroup.timer = setInterval(cacheGroup.func, cacheGroup.pullIntervalInSeconds * 1000);
+        group.timer = setInterval(group.func, group.pullIntervalInSeconds * 1000);
 
       }
     });
