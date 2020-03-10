@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -88,10 +88,10 @@ class DestInfoIntel extends Intel {
     }
 
     // location
-    if (intel && intel.country) {
+    if (intel && intel.country && intel.latitude && intel.longitude) {
       alarm["p.dest.country"] = intel.country; // FIXME: need complete location info
-      intel.latitude && (alarm["p.dest.latitude"] = parseFloat(intel.latitude))
-      intel.longitude && (alarm["p.dest.longitude"] = parseFloat(intel.longitude))
+      alarm["p.dest.latitude"] = parseFloat(intel.latitude)
+      alarm["p.dest.longitude"] = parseFloat(intel.longitude)
     } else {
       const loc = await intelManager.ipinfo(destIP)
       if (loc && loc.loc) {
