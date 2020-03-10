@@ -513,6 +513,10 @@ class SysManager {
     }
   }
 
+  mySignatureMac() {
+    return fireRouter.getSignatureMac();
+  }
+
   // this method is not safe as we'll have interfaces with same mac
   // getInterfaceViaMac(mac) {
   //   return this.macMap && this.macMap[mac.toLowerCase()]
@@ -826,7 +830,7 @@ class SysManager {
     stat.sysmemory(null, (err, data) => {
       callback(null, {
         ip: this.myIp(),
-        mac: this.myMAC(),
+        mac: this.mySignatureMac(),
         serial: this.serial,
         repoBranch: this.repo.branch,
         repoHead: this.repo.head,
