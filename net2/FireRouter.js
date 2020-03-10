@@ -46,6 +46,7 @@ const { delay } = require('../util/util.js')
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
+const exec = require('child-process-promise').exec;
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -162,6 +163,15 @@ async function generateNetworkInfo() {
   return networkInfos;
 }
 
+async function readSignatureMac() {
+  // do not read signature mac repeatedly once it is already loaded
+  if (signatureMac)
+    return;
+  // use mac address of "eth0" for red/blue/gold
+  const result = await exec("cat /sys/class/net/eth0/address").catch((err) => {return null});
+  signatureMac = result && result.stdout && result.stdout.trim().toUpperCase();
+}
+
 let routerInterface = null
 let routerConfig = null
 let monitoringIntfNames = [];
@@ -170,6 +180,7 @@ let wanIntfNames = null
 let defaultWanIntfName = null
 let intfNameMap = {}
 let intfUuidMap = {}
+let signatureMac = null;
 
 
 class FireRouter {
@@ -219,6 +230,7 @@ class FireRouter {
 
   // let it crash
   async init(first = false) {
+    await readSignatureMac();
     if (this.platform.isFireRouterManaged()) {
       // fireroute
       routerConfig = await getConfig()
@@ -437,6 +449,10 @@ class FireRouter {
 
     await delay(1)
     return this.waitTillReady()
+  }
+
+  getSignatureMac() {
+    return signatureMac;
   }
 
   getInterfaceViaName(name) {
