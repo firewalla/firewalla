@@ -1459,7 +1459,7 @@ module.exports = class {
       // TODO: on DHCP mode, notice could be generated on ethx or ethx:0 first
       // and the other one will be suppressed. And we'll lost either device/dest info
       if (obj.src != null && sysManager.isMyIP(obj.src) ||
-        obj.dst != null && sysManager.isMyIP(obj.des)) {
+        obj.dst != null && sysManager.isMyIP(obj.dst)) {
         return;
       }
       log.debug("Notice:Processing", obj);
