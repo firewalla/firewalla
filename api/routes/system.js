@@ -39,11 +39,11 @@ router.get('/info',
 //    passport.authenticate('bearer', { session: false }),
            function(req, res, next) {
              res.json({
-               ip_address: sysManager.myIp(),
-               mac_address: sysManager.myMAC(),
-               gateway: sysManager.myGateway(),
-               subnet: sysManager.mySubnet(),
-               dns: sysManager.myDNS(),
+               ip_address: sysManager.myDefaultWanIp(),
+               mac_address: sysManager.mySignatureMac(),
+               gateway: sysManager.myDefaultGateway(),
+               subnet: sysManager.getDefaultWanInterface() && sysManager.mySubnet(sysManager.getDefaultWanInterface().name),
+               dns: sysManager.myDefaultDns(),
                ddns: sysManager.myDDNS(),
                info: sysInfo.getSysInfo()
              });
