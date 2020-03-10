@@ -499,9 +499,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
         await domainBlock.resolveDomain(domainSuffix)
       }
 
-      this.addUpdateIPSetByDomainTask(category, domain, {useTemp: true});
+      // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
+      await this.updateIPSetByDomain(category, domain, {useTemp: true});
 
-      this.addFilterIPSetByDomainTask(category, {useTemp: true});
+      await this.filterIPSetByDomain(category, domain, {useTemp: true});
     }
 
     await this.swapIpset(category);
