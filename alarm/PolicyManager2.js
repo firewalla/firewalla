@@ -1665,6 +1665,7 @@ class PolicyManager2 {
       return [result, err];
     }
     if (isDomain) {
+      await domainBlock.resolveDomain(addr);
       const addresses = await dnsTool.getIPsByDomain(addr);
       waitSearch.push.apply(waitSearch, addresses);
       if (addrPort.length == 2){
