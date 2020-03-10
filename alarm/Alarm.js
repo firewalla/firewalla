@@ -201,7 +201,13 @@ class Alarm {
     for (var i in keysToCompare) {
       let k = keysToCompare[i];
       // using == to compromise numbers comparison
-      if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k])) {
+      if (alarm[k] && alarm2[k] && typeof alarm[k] != typeof alarm2[k]) {
+        const idsA = _.isString(alarm[k]) ? JSON.parse(alarm[k]) : alarm[k];
+        const idsB = _.isString(alarm2[k]) ? JSON.parse(alarm2[k]) : alarm2[k];
+        if (!_.isEqual(idsA, idsB)) {
+          return false; 
+        }
+      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k])) {
 
       } else {
         return false;
@@ -252,7 +258,7 @@ class NewDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
+    return ["p.device.mac"];
   }
 
   localizedNotificationContentArray() {
@@ -266,7 +272,7 @@ class DeviceBackOnlineAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
+    return ["p.device.mac"];
   }
 
   localizedNotificationContentArray() {
@@ -283,7 +289,7 @@ class DeviceOfflineAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.intf.id", "p.tag.ids"];
+    return ["p.device.mac"];
   }
 
   localizedNotificationContentArray() {

@@ -601,6 +601,12 @@ class PolicyManager2 {
     let policyKeys = [];
 
     for (let rule of rules) {
+      if (rule.type == 'mac' && rule.target == mac) {
+        policyIds.push(rule.pid);
+        policyKeys.push('policy:' + rule.pid);
+        this.tryPolicyEnforcement(rule, 'unenforce');
+      }
+
       if (_.isEmpty(rule.scope)) continue;
 
       if (rule.scope.some(m => m == mac)) {
@@ -629,6 +635,43 @@ class PolicyManager2 {
       await rclient.zremAsync(policyActiveKey, policyIds);
     }
     log.info('Deleted', mac, 'related policies:', policyKeys);
+  }
+
+  async deleteTagRelatedPolicies(tag) {
+    // device specified policy
+    await rclient.delAsync('policy:tag:' + tag);
+
+    let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
+    let policyIds = [];
+    let policyKeys = [];
+
+    for (let rule of rules) {
+      if (_.isEmpty(rule.tag)) continue;
+
+      const tagUid = Policy.TAG_PREFIX + tag;
+      if (rule.tag.some(m => m == tagUid)) {
+        if (rule.tag.length <= 1) {
+          policyIds.push(rule.pid);
+          policyKeys.push('policy:' + rule.pid);
+
+          this.tryPolicyEnforcement(rule, 'unenforce');
+        } else {
+          let reducedTag = _.without(rule.tag, tagUid);
+          await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
+          const newRule = await this.getPolicy(rule.pid)
+
+          this.tryPolicyEnforcement(newRule, 'reenforce', rule);
+
+          log.info('remove scope from policy:' + rule.pid, tag);
+        }
+      }
+    }
+
+    if (policyIds.length) { 
+      await rclient.delAsync(policyKeys);
+      await rclient.zremAsync(policyActiveKey, policyIds);
+    }
+    log.info('Deleted', tag, 'related policies:', policyKeys);
   }
 
   idsToPolicies(ids, callback) {

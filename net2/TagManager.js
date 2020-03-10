@@ -110,6 +110,7 @@ class TagManager {
         await rclient.delAsync(key);
         this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
         await this.refreshTags();
+
         return;
       }
     }
