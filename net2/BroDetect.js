@@ -799,7 +799,7 @@ module.exports = class {
 
       if (localMac && sysManager.isMyMac(localMac)) {
         // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
-        if (!sysManager.isMyIP(lhost) && lhost !== sysManager.myIp2() && !(sysManager.isMyIP6(lhost))) {
+        if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
           log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
           localMac = null; // discard local mac from bro log since it is not correct
         }
@@ -1459,9 +1459,7 @@ module.exports = class {
       // TODO: on DHCP mode, notice could be generated on ethx or ethx:0 first
       // and the other one will be suppressed. And we'll lost either device/dest info
       if (obj.src != null && sysManager.isMyIP(obj.src) ||
-        obj.src != null && obj.src == sysManager.myIp2() ||
-        obj.dst != null && sysManager.isMyIP(obj.des) ||
-        obj.dst != null && obj.dst == sysManager.myIp2()) {
+        obj.dst != null && sysManager.isMyIP(obj.dst)) {
         return;
       }
       log.debug("Notice:Processing", obj);
