@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,20 +14,22 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let bone = require('../lib/Bone.js');
+const bone = require('../lib/Bone.js');
 
-let util = require('util');
+const util = require('util');
 
-let flowUtil = require('../net2/FlowUtil.js');
+const flowUtil = require('../net2/FlowUtil.js');
 
 const firewalla = require('../net2/Firewalla.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
+
+const country = require('../extension/country/country.js');
 
 let instance = null;
 
@@ -344,6 +346,11 @@ class IntelTool {
 
   async getDNS(ip) {
     return dnsTool.getDns(ip);
+  }
+
+  async getCountry(ip) {
+    const intel = await this.getIntel(ip)
+    return intel && intel.country || country.getCountry(ip);
   }
 }
 
