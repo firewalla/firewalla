@@ -53,7 +53,6 @@ class DHCPServerSensor extends Sensor {
     }
     await rclient.setAsync(redisKey, serverStatus);
     await rclient.expireAsync(redisKey, 86400);
-    return serverStatus;
   }
 }
 
