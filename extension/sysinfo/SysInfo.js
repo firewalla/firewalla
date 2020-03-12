@@ -67,6 +67,8 @@ let multiProfileSupport = false;
 
 let no_auto_upgrade = false;
 
+let uptimeInfo = {};
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -87,6 +89,7 @@ async function update() {
       .then(getDiskInfo)
       .then(getMultiProfileSupportFlag)
       .then(getAutoUpgrade)
+      .then(getUptimeInfo)
   ])
 
   if(updateFlag) {
@@ -117,6 +120,29 @@ async function getThreadInfo() {
     threadInfo.monitorCount = monitorCount.stdout.replace("\n", "");
   } catch(err) {
     log.error("Failed to get thread info", err);
+  }
+}
+
+async function getUptimeInfo() {
+  try {
+    const dnscrypt = await exec("ps -eo etimes,pid,cmd | grep dnsc[r]ypt.toml | awk '{print $1}'", {encoding: 'utf8'});
+    const dnsmasq = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep dnsmasq)$\" | tail -1 | awk '{print $1}'", {encoding: 'utf8'});
+    const bitbridge6 = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep bitbridge6)$\" | awk '{print $1}'", {encoding: 'utf8'});
+    const bitbridge7 = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep bitbridge7)$\" | awk '{print $1}'", {encoding: 'utf8'});
+    const openvpn = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep openvpn)$\" | awk '{print $1}'", {encoding: 'utf8'});
+    const fireMain = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep -x FireMain)$\" | awk '{print $1}'", {encoding: 'utf8'});
+    const fireApi = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep -x FireApi)$\" | awk '{print $1}'", {encoding: 'utf8'});
+    const fireMon = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep -x FireMon)$\" | awk '{print $1}'", {encoding: 'utf8'});
+    uptimeInfo.dnscrypt = Number(dnscrypt.stdout.replace("\n", ""));
+    uptimeInfo.dnsmasq = Number(dnsmasq.stdout.replace("\n", ""));
+    uptimeInfo.bitbridge6 = Number(bitbridge6.stdout.replace("\n", ""));
+    uptimeInfo.bitbridge7 = Number(bitbridge7.stdout.replace("\n", ""));
+    uptimeInfo.openvpn = Number(openvpn.stdout.replace("\n", ""));
+    uptimeInfo.fireMain = Number(fireMain.stdout.replace("\n", ""));
+    uptimeInfo.fireApi = Number(fireApi.stdout.replace("\n", ""));
+    uptimeInfo.fireMon = Number(fireMon.stdout.replace("\n", ""));
+  } catch(err) {
+    log.error("Failed to get uptime info", err);
   }
 }
 
@@ -280,6 +306,7 @@ function getSysInfo() {
     diskInfo: diskInfo,
     categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
+    uptimeInfo: uptimeInfo,
     no_auto_upgrade: no_auto_upgrade
   }
 
