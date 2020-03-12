@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,6 @@ const destIPFoundHook = new DestIPFoundHook();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
-
-const country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
@@ -161,9 +159,9 @@ class FlowTool {
     let lh = flow.lh;
 
     if (sh === lh) {
-      flow.country = country.getCountry(dh)
+      flow.country = intelTool.getCountry(dh)
     } else {
-      flow.country = country.getCountry(sh)
+      flow.country = intelTool.getCountry(sh)
     }
   }
 
