@@ -27,7 +27,7 @@ const dhcp = require("../extension/dhcp/dhcp.js");
 const sysManager = require('../net2/SysManager.js');
 
 const redisKey = "sys:scan:dhcpserver";
-
+const extensionManager = require('./ExtensionManager.js');
 class DHCPServerSensor extends Sensor {
   constructor() {
     super();
@@ -43,20 +43,21 @@ class DHCPServerSensor extends Sensor {
     setInterval(() => {
       this.checkAndRunOnce();
     }, interval);
+    extensionManager.onGet("dhcpCheck", async (msg) => {
+      return this.checkAndRunOnce();
+    });
   }
 
   async checkAndRunOnce() {
     let serverStatus = false;
     await mode.reloadSetupMode();
-    let dhcpModeOn = await mode.isDHCPModeOn();
-    if (dhcpModeOn) {
-      let routerIP = sysManager.myGateway();
-      if (routerIP) {
-        serverStatus = await dhcp.dhcpServerStatus(routerIP);
-      }
+    let routerIP = sysManager.myGateway();
+    if (routerIP) {
+      serverStatus = await dhcp.dhcpServerStatus(routerIP);
     }
     await rclient.setAsync(redisKey, serverStatus);
     await rclient.expireAsync(redisKey, 86400);
+    return serverStatus;
   }
 }
 

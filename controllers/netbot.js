@@ -2305,16 +2305,14 @@ class netBot extends ControllerBot {
         let mode = require('../net2/Mode.js');
         await mode.reloadSetupMode();
         let dhcpModeOn = await mode.isDHCPModeOn();
-        if (dhcpModeOn) {
-          const dhcpFound = await rclient.getAsync("sys:scan:dhcpserver");
-          const response = {
-            DHCPMode: true,
-            DHCPDiscover: dhcpFound
-          };
-          this.simpleTxData(msg, response, null, callback);
-        } else {
-          this.simpleTxData(msg, { DHCPMode: false }, null, callback);
+        let DHCPDiscover = false;
+        if (extMgr.hasGet(msg.data.item)) {
+          DHCPDiscover = await extMgr.get(msg.data.item);
         }
+        this.simpleTxData(msg, {
+          DHCPMode: dhcpModeOn,
+          DHCPDiscover: DHCPDiscover
+        }, null, callback)
       })().catch((err) => {
         log.error("Failed to do DHCP discover", err);
         this.simpleTxData(msg, null, err, callback);
