@@ -1109,42 +1109,6 @@ module.exports = class DNSMASQ {
     const leaseTime = fConfig.dhcp && fConfig.dhcp.leaseTime || "24h";
     const monitoringInterface = fConfig.monitoringInterface || "eth0";
 
-    if (fConfig.wifiInterface) {
-      const wifiIntf = fConfig.wifiInterface;
-      const mode = wifiIntf.mode || "router";
-      const intf = wifiIntf.intf || "wlan0";
-
-      switch (mode) {
-        case "router": {
-          // need to setup dhcp service on wifi interface for router mode
-          if (!wifiIntf.ip)
-            break;
-          const cidr = ip.cidrSubnet(wifiIntf.ip);
-          const wifiRouterIp = wifiIntf.ip.split('/')[0];
-          const wifiNetmask = cidr.subnetMask;
-          const wifiRange = this.getDhcpRange("wifi");
-          if (!wifiRouterIp || !wifiNetmask || !wifiRange)
-            break;
-          cmd = util.format("%s --dhcp-range=tag:%s,%s,%s,%s,%s",
-            cmd,
-            intf,
-            wifiRange.begin,
-            wifiRange.end,
-            wifiNetmask,
-            leaseTime
-          );
-          // wifi interface ip as router
-          cmd = util.format("%s --dhcp-option=tag:%s,3,%s", cmd, intf, wifiRouterIp);
-          // same dns servers as secondary interface
-          cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, intf, wifiDnsServers);
-          break;
-        }
-        case "bridge":
-          break;
-        default:
-      }
-    }
-
     if (this.mode === Mode.MODE_DHCP) {
       log.info("DHCP feature is enabled");
       // allocate secondary interface ip to monitored hosts and new hosts
@@ -1196,7 +1160,7 @@ module.exports = class DNSMASQ {
       );
 
       // Firewalla's ip as router for monitored hosts and new hosts. In case Firewalla's ip is changed, a thorough restart is required
-      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, sysManager.myIp());
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, sysManager.myDefaultWanIp());
 
       // gateway ip as router for unmonitored hosts
       cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,3,%s", cmd, monitoringInterface, alternativeRouterIp);

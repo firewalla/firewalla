@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,6 @@ const destIPFoundHook = new DestIPFoundHook();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
-
-const country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
@@ -161,9 +159,9 @@ class FlowTool {
     let lh = flow.lh;
 
     if (sh === lh) {
-      flow.country = country.getCountry(dh)
+      flow.country = intelTool.getCountry(dh)
     } else {
-      flow.country = country.getCountry(sh)
+      flow.country = intelTool.getCountry(sh)
     }
   }
 
@@ -175,25 +173,30 @@ class FlowTool {
     if (!("flows" in json)) {
       json.flows = {};
     }
-
-    let outgoing, incoming;
-    if (options.intf) {
-      outgoing = await this.getAllRecentOutgoingConnections(options);
-      incoming = await this.getAllRecentIncomingConnections(options);
-    } else if (options.tag) {
-      outgoing = await this.getAllRecentOutgoingConnections(options);
-      incoming = await this.getAllRecentIncomingConnections(options);
-    } else if (options.mac) {
-      outgoing = await this.getRecentOutgoingConnections(options.mac, options);
-      incoming = await this.getRecentIncomingConnections(options.mac, options);
+    let recentFlows = [];
+    if (options.direction) {
+      recentFlows = options.direction == 'in' ?
+        (options.mac ? await this.getRecentIncomingConnections(options.mac, options) : await this.getAllRecentIncomingConnections(options))
+        : (options.mac ? await this.getRecentOutgoingConnections(options.mac, options) : await this.getAllRecentOutgoingConnections(options))
     } else {
-      outgoing = await this.getAllRecentOutgoingConnections(options)
-      incoming = await this.getAllRecentIncomingConnections(options)
+      let outgoing, incoming;
+      if (options.intf) {
+        outgoing = await this.getAllRecentOutgoingConnections(options);
+        incoming = await this.getAllRecentIncomingConnections(options);
+      } else if (options.tag) {
+        outgoing = await this.getAllRecentOutgoingConnections(options);
+        incoming = await this.getAllRecentIncomingConnections(options);
+      } else if (options.mac) {
+        outgoing = await this.getRecentOutgoingConnections(options.mac, options);
+        incoming = await this.getRecentIncomingConnections(options.mac, options);
+      } else {
+        outgoing = await this.getAllRecentOutgoingConnections(options)
+        incoming = await this.getAllRecentIncomingConnections(options)
+      }
+      recentFlows = _.orderBy(outgoing.concat(incoming), 'ts', options.asc ? 'asc' : 'desc')
+        .slice(0, options.count);
     }
-
-    let recentFlows = _.orderBy(outgoing.concat(incoming), 'ts', options.asc ? 'asc' : 'desc')
-      .slice(0, options.count);
-
+    
     json.flows.recent = recentFlows;
 
     return recentFlows

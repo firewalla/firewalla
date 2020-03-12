@@ -290,43 +290,6 @@ function dnsUnredirect(server, port, type, cb) {
   })
 }
 
-function switchMonitoringAsync(state) {
-  return new Promise((resolve, reject) => {
-    switchMonitoring(state, (err) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve();
-      }
-    })
-  });
-}
-
-function switchMonitoring(state, cb) {
-  let action = "-D";
-  if (state !== true)
-    action = "-A";
-  let rule = {
-    sudo: true,
-    chain: "FW_NAT_BYPASS",
-    action: action,
-    table: "nat",
-    target: "ACCEPT",
-    checkBeforeAction: true
-  }
-
-  newRule(rule, (err) => {
-    if (err) {
-      log.error("Failed to apply rule: ", rule);
-      cb(err);
-    } else {
-      rule.chain = "FW_BYPASS";
-      rule.table = "filter";
-      newRule(rule, cb);
-    }
-  });
-}
-
 function switchInterfaceMonitoringAsync(state, iface) {
   return new Promise((resolve, reject) => {
     switchInterfaceMonitoring(state, iface, (err) => {
@@ -376,7 +339,6 @@ function switchInterfaceMonitoring(state, uuid, cb) {
 
 exports.dnsRedirectAsync = dnsRedirectAsync
 exports.dnsUnredirectAsync = dnsUnredirectAsync
-exports.switchMonitoringAsync = switchMonitoringAsync
 exports.switchInterfaceMonitoringAsync = switchInterfaceMonitoringAsync
 exports.dnsFlushAsync = dnsFlushAsync
 exports.prepare = prepare

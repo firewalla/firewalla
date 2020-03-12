@@ -22,7 +22,7 @@ const execAsync = require('util').promisify(cp.exec)
 
 const util = require('util');
 
-exports.wrapIptables = function(rule) {
+function wrapIptables(rule) {
   const res = rule.match(/ -[AID] /);
 
   if (!res) return rule;
@@ -39,6 +39,7 @@ exports.wrapIptables = function(rule) {
       return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
   }
 }
+exports.wrapIptables = wrapIptables
 
 exports.allow = function (rule, callback) {
     rule.target = 'ACCEPT';
@@ -88,8 +89,8 @@ exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
 exports.dhcpSubnetChangeAsync = util.promisify(dhcpSubnetChange);
-exports.switchMonitoring = switchMonitoring;
-exports.switchMonitoringAsync = util.promisify(switchMonitoring);
+exports.switchMonitoring = util.callbackify(switchMonitoringAsync);
+exports.switchMonitoringAsync = switchMonitoringAsync;
 exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
 exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
 
@@ -157,39 +158,6 @@ function iptables(rule, callback) {
             running = false;
             newRule(null, null);
         });
-    } else if (rule.type === "switch_monitoring") {
-      let state = rule.state;
-      let action = "-D";
-      if (state !== true) {
-        action = "-A";
-      }
-
-      let cmdline = "";
-      let getCommand = function(action, table, chain) {
-        return `sudo iptables -w -t ${table} ${action} ${chain} -j ACCEPT`;
-      }
-
-      switch (action) {
-        case "-A":
-          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS")} || ${getCommand(action, "nat", "FW_NAT_BYPASS")})`;
-          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS")} || ${getCommand(action, "filter", "FW_BYPASS")})`;
-          break;
-        case "-D":
-          cmdline += `(${getCommand("-C", "nat", "FW_NAT_BYPASS")} && ${getCommand(action, "nat", "FW_NAT_BYPASS")})`;
-          cmdline += ` ; (${getCommand("-C", "filter", "FW_BYPASS")} && ${getCommand(action, "filter", "FW_BYPASS")})`;
-          cmdline += ` ; true`;
-          break;
-        default:
-          log.error("Unsupported action for switch_monitoring: " + action);
-          break;
-      }
-
-      cp.exec(cmdline, (err, stdout, stderr) => {
-        if (callback)
-          callback(err, null);
-        running = false;
-        newRule(null, null);
-      });
     } else if (rule.type === "switch_interface_monitoring") {
       const state = rule.state;
       const uuid = rule.uuid;
@@ -472,11 +440,14 @@ function flush() {
   });
 }
 
-function switchMonitoring(state, callback) {
-  newRule({
-    type: "switch_monitoring",
-    state: state
-  }, callback);
+async function switchMonitoringAsync(state, family = 4) {
+  const op = state ? '-D' : '-A'
+
+  const byPass = new Rule().chn('FW_BYPASS').jmp('ACCEPT').fam(family)
+  const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS').jmp('ACCEPT').fam(family)
+
+  await execAsync(byPass.toCmd(op))
+  await execAsync(byPassNat.toCmd(op))
 }
 
 function switchInterfaceMonitoring(state, uuid, callback) {
@@ -507,7 +478,7 @@ async function run(listofcmds) {
 //   jump: "FW_DROP"
 // }
 
-exports.Rule = class Rule {
+class Rule {
   constructor(table = 'filter') {
     this.family = 4;
     this.table = table;
@@ -611,3 +582,4 @@ exports.Rule = class Rule {
     }
   }
 }
+exports.Rule = Rule

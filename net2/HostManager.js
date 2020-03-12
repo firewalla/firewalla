@@ -1365,7 +1365,7 @@ module.exports = class HostManager {
     const sm = new SpooferManager();
     if (state == false) {
       await iptables.switchMonitoringAsync(false);
-      await ip6tables.switchMonitoringAsync(false);
+      await iptables.switchMonitoringAsync(false, 6);
       // flush all ip addresses
       // log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
       // no need to empty spoof set since dev flag file is placed now
@@ -1379,7 +1379,7 @@ module.exports = class HostManager {
       });
     } else {
       await iptables.switchMonitoringAsync(true);
-      await ip6tables.switchMonitoringAsync(true);
+      await iptables.switchMonitoringAsync(true, 6);
       // remove dev flag file if it exists and restart bitbridge
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
         return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {
