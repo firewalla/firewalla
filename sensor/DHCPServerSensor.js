@@ -44,7 +44,7 @@ class DHCPServerSensor extends Sensor {
       this.checkAndRunOnce();
     }, interval);
     extensionManager.onGet("dhcpCheck", async (msg) => {
-      return this.checkAndRunOnce();
+      return await this.checkAndRunOnce();
     });
   }
 
