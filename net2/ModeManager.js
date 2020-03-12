@@ -15,7 +15,6 @@
 'use strict';
 const log = require("./logger.js")(__filename);
 const Config = require('./config.js');
-let fConfig = Config.getConfig();
 
 const secondaryInterface = require("./SecondaryInterface.js");
 
@@ -25,9 +24,6 @@ const sysManager = require('./SysManager.js');
 
 const SpooferManager = require('./SpooferManager.js');
 
-const Discovery = require('./Discovery.js');
-const d = new Discovery("modeManager", fConfig, "info", false);
-
 const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
 const firewalla = require('./Firewalla.js')
@@ -36,15 +32,12 @@ const firerouter = require('./FireRouter.js');
 const util = require('util');
 const iptool = require('ip');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let curMode = null;
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
-
-const HostTool = require('./HostTool.js');
-const hostTool = new HostTool();
 
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
@@ -92,7 +85,7 @@ async function _disableSpoofMode() {
 }
 
 async function _changeToAlternativeIpSubnet() {
-  fConfig = Config.getConfig(true);
+  const fConfig = Config.getConfig(true);
   // backward compatibility if alternativeInterface is not set
   if (!fConfig.alternativeInterface)
     return;
@@ -105,7 +98,7 @@ async function _changeToAlternativeIpSubnet() {
   const altIp = iptool.cidrSubnet(altIpSubnet);
   if (!currIpSubnet.contains(altIp.networkAddress)
     || currIpSubnet.subnetMaskLength !== altIp.subnetMaskLength
-    || !currIpSubnet.contains(altGateway)) {
+    || !altGateway || !currIpSubnet.contains(altGateway)) {
     log.info("Alternative ip or gateway is not in current subnet, change ignore")
     return;
   }
@@ -157,7 +150,7 @@ async function _changeToAlternativeIpSubnet() {
 
 async function _enableSecondaryInterface() {
   try {
-    fConfig = Config.getConfig(true);
+    const fConfig = Config.getConfig(true);
 
     let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");

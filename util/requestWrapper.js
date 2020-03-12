@@ -19,32 +19,30 @@ const rr = require('requestretry').defaults({ timeout: 30000 });
 async function rrWithErrHandling(options) {
   const msg = `HTTP failed after ${options.maxAttempts || 5} attempt(s) ${options.method || 'GET'} ${options.uri}`
 
-  try {
-    options.fullResponse = true
+  options.fullResponse = true
 
-    const response = await rr(options)
-
-    if (response.statusCode < 200 || response.statusCode > 299) {
-      const respSummary = response.statusCode + ': ' + JSON.stringify(response.body)
-      const error = new Error(msg + `\n` + respSummary)
-      error.statusCode = response.statusCode
-      error.body = response.body
-
-      log.debug(msg)
-      log.debug(JSON.stringify(options.body || options.json))
-      log.debug(respSummary)
-
-      throw error
-    }
-
-    if (!response.body) response.body = null
-
-    return response
-  } catch(err) {
+  const response = await rr(options).catch(err => {
     err.message = msg + '\n' + err.message
     err.stack = msg + '\n' + err.stack
     throw err
+  })
+
+  if (response.statusCode < 200 || response.statusCode > 299) {
+    const respSummary = response.statusCode + ': ' + JSON.stringify(response.body)
+    const error = new Error(msg + `\n` + respSummary)
+    error.statusCode = response.statusCode
+    error.body = response.body
+
+    log.debug(msg)
+    log.debug(JSON.stringify(options.body || options.json))
+    log.debug(respSummary)
+
+    throw error
   }
+
+  if (!response.body) response.body = null
+
+  return response
 }
 
 

@@ -119,9 +119,9 @@ class SysManager {
             break;
           }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
-            this.update(async () => {
+            this.update(() => {
               if (f.isMain()) {
-                await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
+                pclient.publish(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
               }
             });
             break;
@@ -367,6 +367,12 @@ class SysManager {
 
   update(callback) {
     if (!callback) callback = () => { }
+
+    if (!fireRouter.isReady()) {
+      callback()
+      return
+    }
+
     return util.callbackify(this.updateAsync).bind(this)(callback)
   }
 
