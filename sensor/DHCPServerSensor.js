@@ -27,7 +27,6 @@ const dhcp = require("../extension/dhcp/dhcp.js");
 const sysManager = require('../net2/SysManager.js');
 
 const redisKey = "sys:scan:dhcpserver";
-const extensionManager = require('./ExtensionManager.js');
 class DHCPServerSensor extends Sensor {
   constructor() {
     super();
@@ -43,9 +42,6 @@ class DHCPServerSensor extends Sensor {
     setInterval(() => {
       this.checkAndRunOnce();
     }, interval);
-    extensionManager.onGet("dhcpCheck", async (msg) => {
-      return await this.checkAndRunOnce();
-    });
   }
 
   async checkAndRunOnce() {

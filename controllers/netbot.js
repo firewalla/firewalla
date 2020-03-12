@@ -2302,15 +2302,16 @@ class netBot extends ControllerBot {
 
     if (msg.data.item === "dhcpCheck") {
       (async () => {
-        let mode = require('../net2/Mode.js');
+        const mode = require('../net2/Mode.js');
+        const dhcp = require("../extension/dhcp/dhcp.js");
         await mode.reloadSetupMode();
-        let dhcpModeOn = await mode.isDHCPModeOn();
+        const routerIP = sysManager.myGateway();
         let DHCPDiscover = false;
-        if (extMgr.hasGet(msg.data.item)) {
-          DHCPDiscover = await extMgr.get(msg.data.item);
+        if (routerIP) {
+          DHCPDiscover = await dhcp.dhcpServerStatus(routerIP);
         }
         this.simpleTxData(msg, {
-          DHCPMode: dhcpModeOn,
+          DHCPMode: await mode.isDHCPModeOn(),
           DHCPDiscover: DHCPDiscover
         }, null, callback)
       })().catch((err) => {
