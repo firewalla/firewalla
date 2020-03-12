@@ -31,7 +31,7 @@ const policyActiveKey = "policy_active";
 
 const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
-const policyDisableAllKey = "policy:disable_all";
+const policyDisableAllKey = "policy:disable:all";
 const initID = 1;
 const {Address4, Address6} = require('ip-address');
 const Host = require('../net2/Host.js');
