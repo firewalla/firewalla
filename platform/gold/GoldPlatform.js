@@ -40,9 +40,10 @@ class GoldPlatform extends Platform {
     const nics = ["eth0", "eth1", "eth2", "eth3"];
     const result = {};
     for (const nic of nics) {
+      const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch((err) => "");
       const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
       const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
-      result[nic] = {speed, carrier};
+      result[nic] = {address, speed, carrier};
     }
     return result;
   }
