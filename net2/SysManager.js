@@ -520,7 +520,7 @@ class SysManager {
   }
 
   mySignatureMac() {
-    return fireRouter.getSignatureMac();
+    return platform.getSignatureMac();
   }
 
   // this method is not safe as we'll have interfaces with same mac

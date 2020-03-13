@@ -823,7 +823,9 @@ module.exports = class HostManager {
 
   async asyncBasicDataForInit(json) {
     const speed = await platform.getNetworkSpeed();
+    const nicStates = await platform.getNicStates();
     json.nicSpeed = speed;
+    json.nicStates = nicStates;
     const versionUpdate = await sysManager.getVersionUpdate();
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
