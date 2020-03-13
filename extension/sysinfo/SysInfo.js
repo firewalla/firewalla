@@ -55,7 +55,7 @@ let redisMemory = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 120 * 1000; // every 2 minutes
+let updateInterval = 600 * 1000; // every 10 minutes
 
 let threadInfo = {};
 
