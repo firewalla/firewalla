@@ -125,22 +125,39 @@ async function getThreadInfo() {
 
 async function getUptimeInfo() {
   try {
-    const dnscrypt = await exec("ps -eo etimes,pid,cmd | grep dnsc[r]ypt.toml | awk '{print $1}'", {encoding: 'utf8'});
-    const dnsmasq = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep dnsmasq)$\" | tail -1 | awk '{print $1}'", {encoding: 'utf8'});
-    const bitbridge6 = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep bitbridge6)$\" | awk '{print $1}'", {encoding: 'utf8'});
-    const bitbridge7 = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep bitbridge7)$\" | awk '{print $1}'", {encoding: 'utf8'});
-    const openvpn = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep openvpn)$\" | awk '{print $1}'", {encoding: 'utf8'});
-    const fireMain = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep -x FireMain)$\" | awk '{print $1}'", {encoding: 'utf8'});
-    const fireApi = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep -x FireApi)$\" | awk '{print $1}'", {encoding: 'utf8'});
-    const fireMon = await exec("ps -eo etimes,pid | egrep -w \"$(pgrep -x FireMon)$\" | awk '{print $1}'", {encoding: 'utf8'});
-    uptimeInfo.dnscrypt = Number(dnscrypt.stdout.replace("\n", ""));
-    uptimeInfo.dnsmasq = Number(dnsmasq.stdout.replace("\n", ""));
-    uptimeInfo.bitbridge6 = Number(bitbridge6.stdout.replace("\n", ""));
-    uptimeInfo.bitbridge7 = Number(bitbridge7.stdout.replace("\n", ""));
-    uptimeInfo.openvpn = Number(openvpn.stdout.replace("\n", ""));
-    uptimeInfo.fireMain = Number(fireMain.stdout.replace("\n", ""));
-    uptimeInfo.fireApi = Number(fireApi.stdout.replace("\n", ""));
-    uptimeInfo.fireMon = Number(fireMon.stdout.replace("\n", ""));
+    uptimeInfo.fireMain = 0;
+    uptimeInfo.FireApi = 0;
+    uptimeInfo.FireMon = 0;
+    uptimeInfo.bitbridge6 = 0;
+    uptimeInfo.bitbridge7 = 0;
+    uptimeInfo.dnscrypt = 0;
+    uptimeInfo.dnsmasq = 0;
+    uptimeInfo.openvpn = 0;
+    
+    const cmdResult = await exec("ps -eo etimes,cmd | awk '{print $1, $2}'", {encoding: 'utf8'});
+    let lines = cmdResult.stdout.split("\n");
+    lines.shift();
+    lines.pop();
+    for (const line of lines) {
+      let contents = line.split(' ');
+      if (contents[1] == "FireMain") {
+        uptimeInfo.fireMain = Number(contents[0])
+      } else if (contents[1] == "FireApi") {
+        uptimeInfo.FireApi = Number(contents[0])
+      } else if (contents[1] == "FireMon") {
+        uptimeInfo.FireMon = Number(contents[0])
+      } else if (contents[1].indexOf("bitbridge6") > -1) {
+        uptimeInfo.bitbridge6 = Number(contents[0])
+      } else if (contents[1].indexOf("bitbridge7") > -1) {
+        uptimeInfo.bitbridge7 = Number(contents[0])
+      } else if (contents[1].indexOf("dnscrypt") > -1) {
+        uptimeInfo.dnscrypt = Number(contents[0])
+      } else if (contents[1].indexOf("dnsmasq") > -1) {
+        uptimeInfo.dnsmasq = Number(contents[0])
+      } else if (contents[1].indexOf("openvpn") > -1) {
+        uptimeInfo.openvpn = Number(contents[0])
+      }
+    }
   } catch(err) {
     log.error("Failed to get uptime info", err);
   }
