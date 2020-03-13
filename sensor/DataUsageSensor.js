@@ -200,7 +200,9 @@ class DataUsageSensor extends Sensor {
         if (!dataPlan) return;
         dataPlan = JSON.parse(dataPlan);
         const { date, total } = dataPlan;
-        const { totalDownload, totalUpload, monthlyBeginTs, monthlyEndTs } = await hostManager.monthlyDataStats(null, date);
+        const { totalDownload, totalUpload, monthlyBeginTs, 
+                monthlyEndTs, downloadStats, uploadStats
+            } = await hostManager.monthlyDataStats(null, date);
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
             //gen over data plan alarm
@@ -211,10 +213,15 @@ class DataUsageSensor extends Sensor {
             percentage = percentage * 100;
             let alarm = new Alarm.OverDataPlanUsageAlarm(new Date() / 1000, null, {
                 "p.monthly.endts": monthlyEndTs,
+                "p.monthly.startts": monthlyBeginTs,
                 "p.percentage": percentage.toFixed(2) + '%',
                 "p.totalUsage": totalDownload + totalUpload,
                 "p.planUsage": total,
-                "p.alarm.level": level
+                "p.alarm.level": level,
+                "e.transfers": {
+                    download: downloadStats,
+                    upload: uploadStats
+                }
             });
             await alarmManager2.enqueueAlarm(alarm);
         }

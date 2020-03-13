@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,8 +14,8 @@
  */
 
 const log = require("../net2/logger.js")(__filename);
-const rr = require('requestretry').defaults({timeout: 10000});
 //const bone = require("../lib/Bone.js");
+const { rrWithErrHandling } = require('./requestWrapper.js')
 
 class IpInfo {
 
@@ -31,14 +31,14 @@ class IpInfo {
 
     try {
       log.info("Request ipinfo for ip:", ip);
-      const result = await rr(options);
-      log.debug("ipInfo from ipinfo is:", result);
-      return result;
+      const resp = await rrWithErrHandling(options);
+      log.debug("ipInfo from ipinfo is:", resp.body);
+      return resp.body;
     } catch (err) {
-      log.error("Error while requesting", options.uri, err.code, err.message, err.stack);
+      log.error(err.msg);
+      log.debug(err.stack)
       return null
     }
-
   }
 
   /*
