@@ -17,8 +17,10 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
-const fConfig = require('../../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
 const log = require('../../net2/logger.js')(__filename);
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
@@ -33,15 +35,21 @@ class GoldPlatform extends Platform {
     return ["b1"];
   }
 
+  async getNicStates() {
+    // get all nics on gold
+    const nics = ["eth0", "eth1", "eth2", "eth3"];
+    const result = {};
+    for (const nic of nics) {
+      const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
+      const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
+      result[nic] = {speed, carrier};
+    }
+    return result;
+  }
+
   getBoardSerial() {
     // use mac address as unique serial number
-    if(fConfig.monitoringInterface) {
-      const interfaces = require('os').networkInterfaces();
-      if(interfaces && interfaces[fConfig.monitoringInterface] && interfaces[fConfig.monitoringInterface].length > 0) {
-        return interfaces[fConfig.monitoringInterface][0].mac;
-      }
-    }
-    return new Date() / 1;
+    return this.getSignatureMac();
   }
 
   getB4Binary() {
