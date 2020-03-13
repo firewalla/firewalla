@@ -57,11 +57,26 @@ class DeviceMgmtTool {
     }
   }
 
-  resetDevice() {
+  async resetGoldAndShutdown() {
+    log.info("Resetting Gold and Shutdown...")
+    try {
+      await cpp.exec("sudo pkill -SIGUSR2 firereset");
+      await cpp.exec("sudo pkill -SIGUSR2 firereset");
+      await cpp.exec("sudo pkill -SIGUSR2 firereset");
+    } catch(err) {
+      log.error("Got error when resetting gold and shutdown, err:", err);
+    }
+  }
+
+  resetDevice(config) {
     log.info("Resetting device to factory defaults...");
 
     if(platform.getName() === 'gold') {
-      return this.resetGold();
+      if(config && config.shutdown) {
+        return this.resetGoldAndShutdown();
+      } else {
+        return this.resetGold();
+      }
     }
 
     if(Firewalla.isOverlayFS()) {
