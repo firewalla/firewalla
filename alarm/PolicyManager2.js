@@ -1116,7 +1116,7 @@ class PolicyManager2 {
         // FIXME support tags and intfs for dnsmasq
         // dnsmasq_entry: use dnsmasq instead of iptables
         if (policy.dnsmasq_entry) {
-          await dnsmasq.addPolicyFilterEntry([target], {scope, intf}).catch(() => {});
+          await dnsmasq.addPolicyFilterEntry([target], {scope, intfs, tags}).catch(() => {});
           await dnsmasq.restartDnsmasq()
         } else if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs)) {
           if (!_.isEmpty(tags)) {
@@ -1181,7 +1181,8 @@ class PolicyManager2 {
           await domainBlock.blockCategory(target, {
             scope: scope,
             category: target,
-            intf: intf
+            intfs,
+            tags
           });
         } else if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
           if (!_.isEmpty(tags)) {
@@ -1460,7 +1461,7 @@ class PolicyManager2 {
       case "dns":
         // dnsmasq_entry: use dnsmasq instead of iptables
         if (policy.dnsmasq_entry) {
-          await dnsmasq.removePolicyFilterEntry([target], {scope, intf}).catch(() => {});
+          await dnsmasq.removePolicyFilterEntry([target], {scope, intfs, tags}).catch(() => {});
           await dnsmasq.restartDnsmasq()
         } else if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs)) {
           if (!_.isEmpty(tags)) {
@@ -1515,7 +1516,8 @@ class PolicyManager2 {
           await domainBlock.unblockCategory(target, {
             scope: scope,
             category: target,
-            intf: intf
+            intfs,
+            tags
           });
         } else if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
           if (!_.isEmpty(tags)) {

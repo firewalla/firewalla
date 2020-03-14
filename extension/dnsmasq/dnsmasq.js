@@ -18,6 +18,7 @@
 let instance = null;
 let log = null;
 
+const _ = require('lodash');
 const util = require('util');
 const spawn = require('child_process').spawn
 const f = require('../../net2/Firewalla.js');
@@ -395,19 +396,33 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-
-    let entry = "";
-    for (const domain of domains) {
-      if (options.scope && options.scope.length > 0) {
-        for (const mac of options.scope) {
-          entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
-        }
-      } else {
-        entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
-      }
-    }
     try {
-      await fs.appendFileAsync(policyFilterFile, entry);
+      let entry = "";
+      for (const domain of domains) {
+        if (options.scope && options.scope.length > 0) {
+          for (const mac of options.scope) {
+            entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
+          }
+        } else if (!_.isEmpty(options.intfs)) {
+          let intfsEntry = `address=/${domain}/${BLACK_HOLE_IP}\n`;
+          for (const intf in options.intfs) {
+            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_filter.conf`; 
+            await fs.appendFileAsync(intfPolicyFilterFile, intfsEntry);
+          }
+        } else if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            let tagsEntry = `address=/${domain}/${BLACK_HOLE_IP}$tag_${tag}\n`;
+            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_filter.conf`; 
+            await fs.appendFileAsync(tagPolicyFilterFile, tagsEntry);
+          }
+        } else {
+          entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
+        }
+      }
+    
+      if (!_.isEmpty(entry)) {
+        await fs.appendFileAsync(policyFilterFile, entry);
+      }
     } catch (err) {
       log.error("Failed to add policy filter entry into file:", err);
     } finally {
@@ -435,11 +450,25 @@ module.exports = class DNSMASQ {
         for (const mac of options.scope) {
           macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
         }
+      } else if (!_.isEmpty(options.intfs)) {
+        let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}\n`;
+        for (const intf in options.intfs) {
+          const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_filter.conf`; 
+          await fs.appendFileAsync(intfPolicyFilterFile, intfsEntry);
+        }
+      } else if (!_.isEmpty(options.tags)) {
+        for (const tag of options.tags) {
+          let tagsEntry = `address=/${domain}/${BLACK_HOLE_IP}$tag_${tag}\n`;
+          const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_filter.conf`; 
+          await fs.appendFileAsync(tagPolicyFilterFile, tagsEntry);
+        }
       } else {
         macSetEntry = `mac-address-tag=%${systemLevelMac}$${category}_block\n`;
       }
       await fs.writeFileAsync(categoryBlockDomainsFile, entry);
-      await fs.appendFileAsync(categoryBlcokMacSetFile, macSetEntry);
+      if (!_.isEmpty(macSetEntry)) {
+        await fs.appendFileAsync(categoryBlcokMacSetFile, macSetEntry);
+      }
     } catch (err) {
       log.error("Failed to add category mact set entry into file:", err);
     } finally {
