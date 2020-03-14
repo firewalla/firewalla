@@ -1656,7 +1656,7 @@ module.exports = class {
 
     if (!_.isEmpty(userInput.tag)) {
       e["p.tag.ids"] = [];
-      for (const tagStr of tag) {
+      for (const tagStr of userInput.tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
