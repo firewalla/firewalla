@@ -20,11 +20,33 @@ const fConfig = require('../net2/config.js').getConfig();
 const f = require('../net2/Firewalla.js');
 const fs = require('fs');
 const Promise = require('bluebird');
+const cp = require('child_process');
 Promise.promisifyAll(fs);
 
 const { exec } = require('child-process-promise');
 
 class Platform {
+  async getNicStates() {
+    // for red/blue, there is only one nic
+    const nic = fConfig.monitoringInterface;
+    const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch((err) => "");
+    const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
+    const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
+    const result = {}
+    result[nic] = {address, speed, carrier};
+    return result;
+  }
+
+  getSignatureMac() {
+    if (!this.signatureMac) {
+      try {
+        const mac = cp.execSync("cat /sys/class/net/eth0/address", {encoding: 'utf8'});
+        this.signatureMac = mac && mac.trim().toUpperCase();
+      } catch (err) {}
+    }
+    return this.signatureMac;
+  }
+
   async getNetworkSpeed() {
     try {
       const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});

@@ -666,6 +666,28 @@ class FlowAggrTool {
     let key = util.format("lastcategory:host:%s", mac);
     return rclient.getAsync(key);
   }
+  
+  async removeAggrFlowsAllTag(tag) {
+    let keys = [];
+
+    let search = await Promise.all([
+      rclient.keysAsync('lastsumflow:tag:' + tag + ':*'),
+      rclient.keysAsync('category:tag:' + tag + ':*'),
+      rclient.keysAsync('app:tag:' + tag + ':*'),
+    ]);
+
+    keys.push(
+      ... _.flatten(search),
+      // 'lastcategory:tag:' + tag,
+      // 'lastapp:tag:' + tag
+    );
+
+    return Promise.all([
+      rclient.delAsync(keys),
+      // this.removeAllFlowKeys(tag),
+      this.removeAllSumFlows('tag:' + tag),
+    ]);
+  }
 
   async removeAggrFlowsAll(mac) {
     let keys = [];

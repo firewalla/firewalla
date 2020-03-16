@@ -347,6 +347,23 @@ module.exports = class {
     await this.deleteExceptions(relatedEx);
   }
 
+  async deleteTagRelatedExceptions(tag) {
+    // remove exceptions
+    let exceptions = await this.loadExceptionsAsync();
+    for (let index = 0; index < exceptions.length; index++) {
+      const exception = exceptions[index];
+      if (!_.isEmpty(exception['p.tag.ids']) && exception['p.tag.ids'].inclues(tag)) {
+        if (exception['p.tag.ids'].length <= 1) {
+          await this.deleteException(exception); 
+        } else {
+          let reducedTag = _.without(exception['p.tag.ids'], tag);
+          exception['p.tag.ids'] = reducedTag;
+          await this.updateException(exception);
+        }
+      }
+    }
+  }
+
   async createException(json) {
     if(!json) {
       return Promise.reject(new Error("Invalid Exception"));

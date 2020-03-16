@@ -2324,7 +2324,7 @@ class netBot extends ControllerBot {
     if (msg.data.item === "reset") {
       log.info("System Reset");
       DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-      DeviceMgmtTool.resetDevice()
+      DeviceMgmtTool.resetDevice(msg.data.value)
 
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
@@ -2726,6 +2726,15 @@ class netBot extends ControllerBot {
         (async () => {
           const result = await pm2.searchPolicy(value.target);
           this.simpleTxData(msg, result[0], result[1], callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
+      }
+      case "policy:setDisableAll": {
+        (async () => {
+          await pm2.setDisableAll(value.flag, value.expireMinute);
+          this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })

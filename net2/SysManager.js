@@ -119,9 +119,9 @@ class SysManager {
             break;
           }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
-            this.update(async () => {
+            this.update(() => {
               if (f.isMain()) {
-                await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
+                pclient.publish(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
               }
             });
             break;
@@ -367,6 +367,12 @@ class SysManager {
 
   update(callback) {
     if (!callback) callback = () => { }
+
+    if (!fireRouter.isReady()) {
+      callback()
+      return
+    }
+
     return util.callbackify(this.updateAsync).bind(this)(callback)
   }
 
@@ -511,6 +517,10 @@ class SysManager {
     } else {
       return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(ip6, i.name));
     }
+  }
+
+  mySignatureMac() {
+    return platform.getSignatureMac();
   }
 
   // this method is not safe as we'll have interfaces with same mac
@@ -826,7 +836,7 @@ class SysManager {
     stat.sysmemory(null, (err, data) => {
       callback(null, {
         ip: this.myIp(),
-        mac: this.myMAC(),
+        mac: this.mySignatureMac(),
         serial: this.serial,
         repoBranch: this.repo.branch,
         repoHead: this.repo.head,

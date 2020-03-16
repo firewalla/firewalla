@@ -273,24 +273,19 @@ module.exports = class {
 
     let cached = await this.cacheLookup(ip, "ipinfo");
 
-    if (cached === "none") {
-      return null;
-    }
-
-    let ipinfo;
-    if (cached && cached !== 'null') {
+    if (cached) {
       try {
-        ipinfo = JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.country) {
+          log.debug("Cached ip info:", ip);
+          return parsed;
+        }
       } catch (err) {
         log.error("Error when parse cache:", cached, err);
       }
-      if (ipinfo) {
-        log.debug("Cached ip info:", ip);
-        return ipinfo;
-      }
     }
 
-    ipinfo = await IpInfo.get(ip);
+    const ipinfo = await IpInfo.get(ip);
 
     if (ipinfo) {
       this.cacheAdd(ip, "ipinfo", JSON.stringify(ipinfo));

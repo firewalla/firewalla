@@ -1656,12 +1656,12 @@ module.exports = class {
 
     if (!_.isEmpty(userInput.tag)) {
       e["p.tag.ids"] = [];
-      for (const tagStr of tag) {
+      for (const tagStr of userInput.tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-          let intfUuid = _.trimStart(tagStr, Policy.INTF_PREFIX);
+          let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = _.trimStart.apply(tagStr, Policy.TAG_PREFIX);
+          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length)
           e["p.tag.ids"].push(tagUid);
         }
       }

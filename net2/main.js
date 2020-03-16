@@ -303,7 +303,8 @@ async function run() {
 
     try {
       await pm2.cleanupPolicyData()
-      await pm2.enforceAllPolicies()
+      //await pm2.enforceAllPolicies()
+      await pm2.checkRunPolicies(true)
       log.info("========= All existing policy rules are applied =========");
     } catch (err) {
       log.error("Failed to apply some policy rules: ", err);

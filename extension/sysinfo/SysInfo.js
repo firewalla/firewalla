@@ -55,7 +55,7 @@ let redisMemory = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 120 * 1000; // every 2 minutes
+let updateInterval = 600 * 1000; // every 10 minutes
 
 let threadInfo = {};
 
@@ -66,6 +66,9 @@ let intelQueueSize = 0;
 let multiProfileSupport = false;
 
 let no_auto_upgrade = false;
+
+let uptimeInfo = {};
+let updateTime = null;
 
 getMultiProfileSupportFlag();
 
@@ -87,6 +90,7 @@ async function update() {
       .then(getDiskInfo)
       .then(getMultiProfileSupportFlag)
       .then(getAutoUpgrade)
+      .then(getUptimeInfo)
   ])
 
   if(updateFlag) {
@@ -117,6 +121,47 @@ async function getThreadInfo() {
     threadInfo.monitorCount = monitorCount.stdout.replace("\n", "");
   } catch(err) {
     log.error("Failed to get thread info", err);
+  }
+}
+
+async function getUptimeInfo() {
+  try {
+    uptimeInfo.fireMain = 0;
+    uptimeInfo.FireApi = 0;
+    uptimeInfo.FireMon = 0;
+    uptimeInfo.bitbridge6 = 0;
+    uptimeInfo.bitbridge7 = 0;
+    uptimeInfo.dnscrypt = 0;
+    uptimeInfo.dnsmasq = 0;
+    uptimeInfo.openvpn = 0;
+    
+    const cmdResult = await exec("ps -eo etimes,cmd | awk '{print $1, $2}'", {encoding: 'utf8'});
+    let lines = cmdResult.stdout.split("\n");
+    lines.shift();
+    lines.pop();
+    updateTime = Date.now() / 1000;
+    for (const line of lines) {
+      let contents = line.split(' ');
+      if (contents[1] == "FireMain") {
+        uptimeInfo.fireMain = Number(contents[0])
+      } else if (contents[1] == "FireApi") {
+        uptimeInfo.FireApi = Number(contents[0])
+      } else if (contents[1] == "FireMon") {
+        uptimeInfo.FireMon = Number(contents[0])
+      } else if (contents[1].indexOf("bitbridge6") > -1) {
+        uptimeInfo.bitbridge6 = Number(contents[0])
+      } else if (contents[1].indexOf("bitbridge7") > -1) {
+        uptimeInfo.bitbridge7 = Number(contents[0])
+      } else if (contents[1].indexOf("dnscrypt") > -1) {
+        uptimeInfo.dnscrypt = Number(contents[0])
+      } else if (contents[1].indexOf("dnsmasq") > -1) {
+        uptimeInfo.dnsmasq = Number(contents[0])
+      } else if (contents[1].indexOf("openvpn") > -1) {
+        uptimeInfo.openvpn = Number(contents[0])
+      }
+    }
+  } catch(err) {
+    log.error("Failed to get uptime info", err);
   }
 }
 
@@ -278,10 +323,20 @@ function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     diskInfo: diskInfo,
-    categoryStats: getCategoryStats(),
+    //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade
   }
+
+  let newUptimeInfo = {};
+  Object.keys(uptimeInfo).forEach((uptimeName) => {
+    if (uptimeInfo[uptimeName] > 0 ) {
+      newUptimeInfo[uptimeName] = uptimeInfo[uptimeName] + Date.now() / 1000 - updateTime; // add time difference between update and getSysInfo()
+    } else {
+      newUptimeInfo[uptimeName] = 0;
+    }
+  });
+  sysinfo.uptimeInfo = newUptimeInfo;
 
   if(rateLimitInfo) {
     sysinfo.rateLimitInfo = rateLimitInfo;
