@@ -399,21 +399,27 @@ module.exports = class DNSMASQ {
     try {
       let entry = "";
       for (const domain of domains) {
-        if (options.scope && options.scope.length > 0) {
-          for (const mac of options.scope) {
-            entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
-          }
-        } else if (!_.isEmpty(options.intfs)) {
-          let intfsEntry = `address=/${domain}/${BLACK_HOLE_IP}\n`;
-          for (const intf in options.intfs) {
-            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-            await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
-          }
-        } else if (!_.isEmpty(options.tags)) {
-          for (const tag of options.tags) {
-            let tagsEntry = `group-tag=@${tag}$policy_${options.pid}\naddress=/${domain}/$policy_${options.pid}\n`;
-            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-            await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+          if (!_.isEmpty(options.scope)) {
+            for (const mac of options.scope) {
+              entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
+            }
+          } 
+          
+          if (!_.isEmpty(options.intfs)) {
+            let intfsEntry = `address=/${domain}/${BLACK_HOLE_IP}\n`;
+            for (const intf in options.intfs) {
+              const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
+              await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
+            }
+          } 
+          
+          if (!_.isEmpty(options.tags)) {
+            for (const tag of options.tags) {
+              let tagsEntry = `group-tag=@${tag}$policy_${options.pid}\naddress=/${domain}/$policy_${options.pid}\n`;
+              const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
+              await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+            }
           }
         } else {
           entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
@@ -446,21 +452,28 @@ module.exports = class DNSMASQ {
       for (const domain of domains) {
         entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
       }
-      if (options.scope && options.scope.length > 0) {
-        for (const mac of options.scope) {
-          macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
-        }
-      } else if (!_.isEmpty(options.intfs)) {
-        let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}\n`;
-        for (const intf in options.intfs) {
-          const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-          await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
-        }
-      } else if (!_.isEmpty(options.tags)) {
-        for (const tag of options.tags) {
-          let tagsEntry = `group-tag=@${tag}_$${category}\n`;
-          const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-          await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+        if (options.scope && options.scope.length > 0) {
+          for (const mac of options.scope) {
+            macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
+          }
+        } 
+        
+        if (!_.isEmpty(options.intfs)) {
+          let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}\n`;
+          for (const intf in options.intfs) {
+            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
+            await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
+          }
+        } 
+        
+        if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            let tagsEntry = `group-tag=@${tag}_$${category}\n`;
+            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
+            await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+          }
         }
       } else {
         macSetEntry = `mac-address-tag=%${systemLevelMac}$${category}_block\n`;
@@ -488,27 +501,34 @@ module.exports = class DNSMASQ {
       const category = options.category;
       const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
       let macSetEntry = [];
-      if (options.scope && options.scope.length > 0) {
-        for (const mac of options.scope) {
-          macSetEntry.push(`mac-address-tag=%${mac.toUpperCase()}$${category}_block`)
+    
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+        if (options.scope && options.scope.length > 0) {
+          for (const mac of options.scope) {
+            macSetEntry.push(`mac-address-tag=%${mac.toUpperCase()}$${category}_block`)
+          }
+        } 
+        
+        if (!_.isEmpty(options.intfs)) {
+          // let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}\n`;
+          for (const intf in options.intfs) {
+            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
+            try {
+              await fs.unlinkAsync(intfPolicyFilterFile);
+            } catch (error) { }
+          }
+        } 
+        
+        if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            // let tagsEntry = `group-tag=@${tag}_$${category}\n`;
+            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
+            try {
+              await fs.unlinkAsync(tagPolicyFilterFile);
+            } catch (error) { }
+          }
         }
-      } else if (!_.isEmpty(options.intfs)) {
-        // let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}\n`;
-        for (const intf in options.intfs) {
-          const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-          try {
-            await fs.unlinkAsync(intfPolicyFilterFile);
-          } catch (error) { }
-        }
-      } else if (!_.isEmpty(options.tags)) {
-        for (const tag of options.tags) {
-          // let tagsEntry = `group-tag=@${tag}_$${category}\n`;
-          const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-          try {
-            await fs.unlinkAsync(tagPolicyFilterFile);
-          } catch (error) { }
-        }
-      }  else {
+      } else {
         macSetEntry.push(`mac-address-tag=%${systemLevelMac}$${category}_block`)
       }
     
@@ -566,25 +586,31 @@ module.exports = class DNSMASQ {
     try {
       let entry = [];
       for (const domain of domains) {
-        if (options.scope && options.scope.length > 0) {
-          for (const mac of options.scope) {
-            entry.push(`address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}`)
-          }
-        } else if (!_.isEmpty(options.tags)) {
-          for (const tag of options.tags) {
-            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-            try {
-              await fs.unlinkAsync(tagPolicyFilterFile);
-            } catch (error) {}
-          }
-        } else if (!_.isEmpty(options.intfs)) {
-          // let intfsEntry = `address=/${domain}/0.0.0.0\n`;
-          for (const intf in options.intfs) {
-            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-            try {
-              await fs.unlinkAsync(intfPolicyFilterFile);
-            } catch (error) {}
+        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+          if (!_.isEmpty(options.scope)) {
+            for (const mac of options.scope) {
+              entry.push(`address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}`)
+            }
           } 
+          
+          if (!_.isEmpty(options.tags)) {
+            for (const tag of options.tags) {
+              const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
+              try {
+                await fs.unlinkAsync(tagPolicyFilterFile);
+              } catch (error) {}
+            }
+          } 
+          
+          if (!_.isEmpty(options.intfs)) {
+            // let intfsEntry = `address=/${domain}/0.0.0.0\n`;
+            for (const intf in options.intfs) {
+              const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
+              try {
+                await fs.unlinkAsync(intfPolicyFilterFile);
+              } catch (error) {}
+            } 
+          }
         } else {
           entry.push(`address=/${domain}/${BLACK_HOLE_IP}`);
         }
