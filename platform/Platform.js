@@ -88,6 +88,8 @@ class Platform {
 
   getPolicyCapacity() {}
 
+  allowCustomizedProfiles(){}
+
   getDHCPCapacity() {
     return true
   }

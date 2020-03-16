@@ -126,6 +126,9 @@ class BluePlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
+  allowCustomizedProfiles(){
+    return 1;
+  }
 }
 
 module.exports = BluePlatform;
