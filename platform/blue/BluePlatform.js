@@ -126,7 +126,7 @@ class BluePlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
-  allowCustomizedProfiles(){
+  getAllowCustomizedProfiles(){
     return 1;
   }
 }
