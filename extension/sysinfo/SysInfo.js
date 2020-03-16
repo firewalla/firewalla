@@ -68,6 +68,7 @@ let multiProfileSupport = false;
 let no_auto_upgrade = false;
 
 let uptimeInfo = {};
+let updateTime = null;
 
 getMultiProfileSupportFlag();
 
@@ -138,6 +139,7 @@ async function getUptimeInfo() {
     let lines = cmdResult.stdout.split("\n");
     lines.shift();
     lines.pop();
+    updateTime = Date.now() / 1000;
     for (const line of lines) {
       let contents = line.split(' ');
       if (contents[1] == "FireMain") {
@@ -321,11 +323,20 @@ function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     diskInfo: diskInfo,
-    categoryStats: getCategoryStats(),
+    //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
-    uptimeInfo: uptimeInfo,
     no_auto_upgrade: no_auto_upgrade
   }
+
+  let newUptimeInfo = {};
+  Object.keys(uptimeInfo).forEach((uptimeName) => {
+    if (uptimeInfo[uptimeName] > 0 ) {
+      newUptimeInfo[uptimeName] = uptimeInfo[uptimeName] + Date.now() / 1000 - updateTime; // add time difference between update and getSysInfo()
+    } else {
+      newUptimeInfo[uptimeName] = 0;
+    }
+  });
+  sysinfo.uptimeInfo = newUptimeInfo;
 
   if(rateLimitInfo) {
     sysinfo.rateLimitInfo = rateLimitInfo;
