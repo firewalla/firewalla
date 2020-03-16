@@ -446,7 +446,7 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
     try {
       let entry = "", macSetEntry = "";
       for (const domain of domains) {
@@ -461,7 +461,7 @@ module.exports = class DNSMASQ {
         } 
         
         if (!_.isEmpty(options.intfs)) {
-          let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}\n`;
+          let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}_block\n`;
           for (const intf in options.intfs) {
             const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
             await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
@@ -470,7 +470,7 @@ module.exports = class DNSMASQ {
         
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
-            let tagsEntry = `group-tag=@${tag}_$${category}\n`;
+            let tagsEntry = `group-tag=@${tag}$${category}_block\n`;
             const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
             await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
           }
@@ -480,7 +480,7 @@ module.exports = class DNSMASQ {
       }
       await fs.writeFileAsync(categoryBlockDomainsFile, entry);
       if (!_.isEmpty(macSetEntry)) {
-        await fs.appendFileAsync(categoryBlcokMacSetFile, macSetEntry);
+        await fs.appendFileAsync(categoryBlockMacSetFile, macSetEntry);
       }
     } catch (err) {
       log.error("Failed to add category mact set entry into file:", err);
@@ -499,7 +499,7 @@ module.exports = class DNSMASQ {
     try {
       options = options || {};
       const category = options.category;
-      const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+      const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
       let macSetEntry = [];
     
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
@@ -510,7 +510,7 @@ module.exports = class DNSMASQ {
         } 
         
         if (!_.isEmpty(options.intfs)) {
-          // let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}\n`;
+          // let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}_block\n`;
           for (const intf in options.intfs) {
             const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
             try {
@@ -521,7 +521,7 @@ module.exports = class DNSMASQ {
         
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
-            // let tagsEntry = `group-tag=@${tag}_$${category}\n`;
+            // let tagsEntry = `group-tag=@${tag}$${category}_block\n`;
             const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
             try {
               await fs.unlinkAsync(tagPolicyFilterFile);
@@ -533,11 +533,11 @@ module.exports = class DNSMASQ {
       }
     
       if (!_.isEmpty(macSetEntry)) {
-        let data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
+        let data = await fs.readFileAsync(categoryBlockMacSetFile, 'utf8');
         let newData = data.split("\n").filter((line) => {
           return macSetEntry.indexOf(line) == -1
         }).join("\n");
-        await fs.writeFileAsync(categoryBlcokMacSetFile, newData);
+        await fs.writeFileAsync(categoryBlockMacSetFile, newData);
       }
     } catch (err) {
       log.error("Failed to update category mact set entry file:", err);
@@ -551,8 +551,8 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
-    const fileExists = await fs.accessAsync(categoryBlcokMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
+    const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    const fileExists = await fs.accessAsync(categoryBlockMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
     if (!fileExists) return;
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
@@ -566,7 +566,7 @@ module.exports = class DNSMASQ {
     try {
       await fs.writeFileAsync(categoryBlockDomainsFile, entry);
       //check dnsmasq need restart or not
-      const data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
+      const data = await fs.readFileAsync(categoryBlockMacSetFile, 'utf8');
       if (data.indexOf(`$${category}_block`) > -1) this.restartDnsmasq();
     } catch (err) {
       log.error("Failed to update category entry into file:", err);
