@@ -50,8 +50,15 @@ const featureName = "ss2";
 
 const ss2 = require('../extension/ss2/ss2.js');
 
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 class SS2Plugin extends Sensor {
   async run() {
+    if(platform.getName() !== 'gold') {
+      return;
+    }
+    
     this.systemSwitch = false;
     this.adminSystemSwitch = false;
     this.enabledMacAddresses = {};
@@ -184,6 +191,10 @@ class SS2Plugin extends Sensor {
   }
 
   async apiRun() {
+    if(platform.getName() !== 'gold') {
+      return;
+    }
+    
     extensionManager.onSet("ss2Config", async (msg, data) => {
       if(data) {
         await ss2.setConfig(data);
