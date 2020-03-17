@@ -3832,6 +3832,27 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "saveDNSProfile": {
+        (async () => {
+          let content = value.content;
+          if (!content) {
+            content = "";
+          } else {
+            content += "\n";
+          }
+          const tmpfile = "/tmp/customDNS";
+          await writeFileAsync(tmpfile, content, 'utf8');
+          const profilePath = "/etc/resolvconf/resolv.conf.d/head";
+          let cmd = `sudo bash -c 'cat ${tmpfile} > ${profilePath}'`;
+          await exec(cmd);
+          cmd = `sudo systemctl restart resolvconf`;
+          await exec(cmd);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);
