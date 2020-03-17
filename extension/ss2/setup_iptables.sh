@@ -3,7 +3,7 @@
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 
 # setup iptables chain
-FW_SS_CHAIN="FW_SS2_${NAME}"
+FW_SS_CHAIN="${NAME}"
 
 sudo iptables -w -t nat -F $FW_SS_CHAIN
 sudo iptables -w -t nat -X $FW_SS_CHAIN

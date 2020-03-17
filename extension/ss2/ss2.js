@@ -23,6 +23,8 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../../util/redis_manager').getRedisClient();
 
+const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
+
 const _ = require('lodash');
 
 const exec = require('child-process-promise').exec;
@@ -63,8 +65,8 @@ class SS2 {
     }
 
     config.environment = config.environment.map((env) => {
-      if(env === 'LOCAL_DNS=1.1.1.1' && sourceConfig.dns) {
-        return `LOCAL_DNS=${sourceConfig.dns}`;
+      if(env === 'LOCAL_DNS=1.1.1.1' && dns) {
+        return `LOCAL_DNS=${dns}`;
       } else {
         return env;
       }
@@ -86,9 +88,7 @@ class SS2 {
   async preStart(config = {}) {
     this.ready = false;
     try {
-      await fs.mkdirAsync(ss2DockerPath);
-      const config = this.getConfig();
-      log.info(config);
+      await fs.mkdirAsync(ss2DockerPath, {recursive: true});
       const template = await fs.readFileAsync(templateConfigFile);
       if (template) {
         const doc = yaml.safeLoad(template);
@@ -112,13 +112,14 @@ class SS2 {
       await exec(`FW_SS_SERVER=${config.server} FW_SS_REDIR_PORT=9954 NAME=${this.getChainName(config)} ${__dirname}/setup_iptables.sh`);
 
       this.ready = true;
-    } catch (e) {
+    } catch (err) {
       log.error("Got error when reading preparing config, err:", err);
       return;
     }
   }
 
   async start(dnsConfig = {}) {
+    log.info("Starting SS2..");
     try {
       const redisConfig = this.getConfig();
       if(!redisConfig) {
@@ -180,10 +181,36 @@ class SS2 {
   }
 
   getChainName(config = {}) {
-    return `FW_SS_${config.name || "default"}`;
+    return `FW_SS2_${config.name || "default"}`;
+  }
+
+  // this needs to be done before rerouting traffic to docker
+  async allowDockerBridgeToAccessWan() {
+    const dockerNetworkConfig = await exec("sudo docker network inspect ss2_default");
+    const stdout = dockerNetworkConfig.stdout;
+    if(!stdout) {
+      throw new Error("invalid docker network inspect output");
+    }
+
+    try {
+      const config = JSON.parse(stdout);
+      if(!_.isEmpty(config)) {
+        const network1 = config[0];
+        const bridgeName = `br-${network1.Id && network1.Id.substring(0, 10)}`;
+        const subnet = network1.IPAM && network1.IPAM.Config && network1.IPAM.Config[0] && network1.IPAM.Config[0].Subnet;
+        if(bridgeName && subnet) {
+          await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`);
+        } else {
+          throw new Error("invalid docker network");
+        }
+      }
+    } catch(err) {
+      log.error("Failed to setup docker bridge access, err:", err);
+    }
   }
 
   async redirectTraffic(config = {}) {
+    await this.allowDockerBridgeToAccessWan();
     await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -p tcp -j ${this.getChainName(config)}`));
   }
 

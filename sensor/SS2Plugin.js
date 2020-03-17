@@ -25,7 +25,7 @@ const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
-const systemConfigFile = `${dnsmasqConfigFolder}/doh_system.conf`;
+const systemConfigFile = `${dnsmasqConfigFolder}/ss2_system.conf`;
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -63,19 +63,22 @@ class SS2Plugin extends Sensor {
     this.adminSystemSwitch = false;
     this.enabledMacAddresses = {};
 
-    extensionManager.registerExtension(featureName, this, {
-      applyPolicy: this.applyPolicy,
-      start: this.start,
-      stop: this.stop
-    });
-    
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
 
-    this.hookFeature(featureName);
-
-    sem.on('SS2_REFRESH', (event) => {
-      this.applyAll();
+    sem.once('IPTABLES_READY', async () => {
+      extensionManager.registerExtension(featureName, this, {
+        applyPolicy: this.applyPolicy,
+        start: this.start,
+        stop: this.stop
+      });
+        
+      this.hookFeature(featureName);
+  
+      sem.on('SS2_REFRESH', (event) => {
+        this.applyAll();
+      });
     });
+    
   }
 
   async job() {
@@ -153,7 +156,7 @@ class SS2Plugin extends Sensor {
 
   async perDeviceStart(macAddress) {
     log.info(`Starting ss2 on device ${macAddress}...`);
-    const configFile = `${dnsmasqConfigFolder}/doh_${macAddress}.conf`;
+    const configFile = `${dnsmasqConfigFolder}/ss2_${macAddress}.conf`;
     const dnsmasqentry = `server=${ss2.getLocalServer()}%${macAddress.toUpperCase()}\n`;
     await fs.writeFileAsync(configFile, dnsmasqentry);
     dnsmasq.restartDnsmasq();
@@ -161,7 +164,7 @@ class SS2Plugin extends Sensor {
 
   async perDeviceStop(macAddress) {
     log.info(`Stopping ss2 on device ${macAddress}...`);
-    const configFile = `${dnsmasqConfigFolder}/doh_${macAddress}.conf`;
+    const configFile = `${dnsmasqConfigFolder}/ss2_${macAddress}.conf`;
     try {
       await fs.unlinkAsync(configFile);
     } catch (err) {
@@ -194,7 +197,7 @@ class SS2Plugin extends Sensor {
     if(platform.getName() !== 'gold') {
       return;
     }
-    
+
     extensionManager.onSet("ss2Config", async (msg, data) => {
       if(data) {
         await ss2.setConfig(data);
