@@ -53,6 +53,7 @@ class SS2 {
   constructor() {
     if(instance === null) {
       instance = this;
+      this.config = {};
       this.ready = false;
     }
     return instance;
@@ -86,6 +87,7 @@ class SS2 {
   }
 
   async preStart(config = {}) {
+    log.info("Preparing environment for SS2...");
     this.ready = false;
     try {
       await fs.mkdirAsync(ss2DockerPath, {recursive: true});
@@ -95,21 +97,22 @@ class SS2 {
         if(doc && doc.services) {
 
           if(doc.services.overture) {
-            this.updateOverture(doc.services.overture, config);
+            this.updateOverture(doc.services.overture, this.config);
           }
           if(doc.services.trojan) {
-            this.updateProxy(doc.services.trojan, config);
+            this.updateProxy(doc.services.trojan, this.config);
           }
           if(doc.services.trojan_socks) {
-            this.updateProxy(doc.services.trojan_socks, config);
+            this.updateProxy(doc.services.trojan_socks, this.config);
           }
+
         }
         
         const output = yaml.safeDump(doc);
         await fs.writeFileAsync(runtimeConfigFile, output);
       }      
 
-      await exec(`FW_SS_SERVER=${config.server} FW_SS_REDIR_PORT=9954 NAME=${this.getChainName(config)} ${__dirname}/setup_iptables.sh`);
+      await exec(`FW_SS_SERVER=${config.server} FW_SS_REDIR_PORT=9954 NAME=${this.getChainName()} ${__dirname}/setup_iptables.sh`);
 
       this.ready = true;
     } catch (err) {
@@ -118,19 +121,12 @@ class SS2 {
     }
   }
 
-  async start(dnsConfig = {}) {
+  async start() {
     log.info("Starting SS2..");
     try {
-      const redisConfig = this.getConfig();
-      if(!redisConfig) {
-        return;
-      }
-
-      const totalConfig = Object.assign({}, redisConfig, dnsConfig);
-
-      await this.preStart(totalConfig);
+      await this.preStart();
       await this.rawStart()
-      await this.postStart(totalConfig);
+      await this.postStart();
     } catch (err) {
       log.info("Failed to parse config, err:", err);
     }
@@ -142,6 +138,8 @@ class SS2 {
   }
 
   async rawStart() {
+    log.info("Starting SS2 docker service...");
+
     if(!this.ready) {
       log.error("Config file is not ready yet");
     }
@@ -162,26 +160,12 @@ class SS2 {
 
   }
 
-  async getConfig() {
-    const redisConfig = await rclient.getAsync(configKey);
-    if (!redisConfig) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(redisConfig);
-    } catch(err) {
-      log.error("Failed to load config from redis, err:", err);
-      return null;
-    }
+  getName() {
+    return (this.config && this.config.name) || "default";
   }
 
-  async setConfig(config) {
-    return rclient.setAsync(configKey, JSON.stringify(config));
-  }
-
-  getChainName(config = {}) {
-    return `FW_SS2_${config.name || "default"}`;
+  getChainName() {
+    return `FW_SS2_${this.getName()}`;
   }
 
   // this needs to be done before rerouting traffic to docker

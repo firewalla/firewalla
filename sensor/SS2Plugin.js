@@ -31,9 +31,6 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const dnsTag = "$doh";
-const systemLevelMac = "FF:FF:FF:FF:FF:FF";
-
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
@@ -42,9 +39,6 @@ const exec = require('child-process-promise').exec;
 const sysManager = require('../net2/SysManager.js');
 
 const fc = require('../net2/config.js');
-
-const spt = require('../net2/SystemPolicyTool')();
-const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const featureName = "ss2";
 
@@ -65,18 +59,16 @@ class SS2Plugin extends Sensor {
 
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
 
-    sem.once('IPTABLES_READY', async () => {
-      extensionManager.registerExtension(featureName, this, {
-        applyPolicy: this.applyPolicy,
-        start: this.start,
-        stop: this.stop
-      });
-        
-      this.hookFeature(featureName);
-  
-      sem.on('SS2_REFRESH', (event) => {
-        this.applyAll();
-      });
+    extensionManager.registerExtension(featureName, this, {
+      applyPolicy: this.applyPolicy,
+      start: this.start,
+      stop: this.stop
+    });
+      
+    this.hookFeature(featureName);
+
+    sem.on('SS2_REFRESH', (event) => {
+      this.applyAll();
     });
     
   }
@@ -113,7 +105,8 @@ class SS2Plugin extends Sensor {
   }
 
   async applyAll() {
-    await ss2.start({dns: sysManager.myDefaultDns()});
+    const config = await this.getFeatureConfig();
+    await ss2.start(Object.assign({}, config, {dns: sysManager.myDefaultDns()}));
     await this.applySS2();
     for (const macAddress in this.enabledMacAddresses) {
       await this.applyDeviceSS2(macAddress);
