@@ -3832,21 +3832,26 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "getDNSProfile": {
+        (async () => {
+          const content = await rclient.getAsync('sys:dns:custom');
+          this.simpleTxData(msg, {content: content}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       case "saveDNSProfile": {
         (async () => {
           let content = value.content;
           if (!content) {
             content = "";
-          } else {
-            content += "\n";
           }
-          const tmpfile = "/tmp/customDNS";
-          await writeFileAsync(tmpfile, content, 'utf8');
-          const profilePath = "/etc/resolvconf/resolv.conf.d/head";
-          let cmd = `sudo bash -c 'cat ${tmpfile} > ${profilePath}'`;
-          await exec(cmd);
-          cmd = `sudo systemctl restart resolvconf`;
-          await exec(cmd);
+          await rclient.setAsync("sys:dns:custom", content);
+          sem.sendEventToFireMain({
+            type: 'SystemDNSUpdate',
+            message: "",
+          });
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);

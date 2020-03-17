@@ -524,6 +524,7 @@
     },
     "DnsmasqDhcpSensor": {},
     "BlockRuleCheckSensor": {},
+    "SystemDNSSensor": {},
     "LocalDomainSensor": {}
   },
   "hooks": {
