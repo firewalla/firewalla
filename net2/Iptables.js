@@ -249,7 +249,7 @@ function iptables(rule, callback) {
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
-          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_set src --dport 53 -j DNAT --to-destination ${dns}`
+          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination ${dns}`
         }
 
         switch(action) {
@@ -263,7 +263,7 @@ function iptables(rule, callback) {
             cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_set src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_set src --dport 53 -j DNAT --to-destination " + dns;
+            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination " + dns;
           break;
         }
 
