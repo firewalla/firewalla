@@ -32,6 +32,8 @@ const exec = require('child-process-promise').exec;
 const DNSMASQ = require('../dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const { delay } = require('../../util/util.js');
+
 const f = require('../../net2/Firewalla.js');
 const yaml = require('../../api/dist/lib/js-yaml.min.js');
 
@@ -126,6 +128,24 @@ class SS2 {
     try {
       await this.preStart();
       await this.rawStart()
+      
+      let up = false;
+      for(let i = 0; i < 30; i++) {
+        log.info("Checking if ss2 services are listening...");
+        const listening = await this.isListening();
+        if(listening) {
+          log.info("Services are up.");
+          up = true;
+          break;
+        }
+        await delay(5000);
+      }
+
+      if(!up) {
+        log.info("Failed to bring up ss2, quitting...");
+        return;
+      }
+
       await this.postStart();
     } catch (err) {
       log.info("Failed to parse config, err:", err);
@@ -157,7 +177,16 @@ class SS2 {
   }
 
   async isListening() {
+    try {
+      const result = exec("netstat -an | fgrep ':::*' | egrep '(:9953|:9954|:9955)'");
+      if(result && result.stdout) {
+        return result.stdout == 3;
+      }
+    } catch(err) {
+      log.error("Failed to check if docker ss2 is listening..., err:", err);
+    }
 
+    return false;
   }
 
   getName() {
@@ -180,7 +209,7 @@ class SS2 {
       const config = JSON.parse(stdout);
       if(!_.isEmpty(config)) {
         const network1 = config[0];
-        const bridgeName = `br-${network1.Id && network1.Id.substring(0, 10)}`;
+        const bridgeName = `br-${network1.Id && network1.Id.substring(0, 12)}`;
         const subnet = network1.IPAM && network1.IPAM.Config && network1.IPAM.Config[0] && network1.IPAM.Config[0].Subnet;
         if(bridgeName && subnet) {
           await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`);
@@ -193,13 +222,13 @@ class SS2 {
     }
   }
 
-  async redirectTraffic(config = {}) {
+  async redirectTraffic() {
     await this.allowDockerBridgeToAccessWan();
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -p tcp -j ${this.getChainName(config)}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -p tcp -j ${this.getChainName()}`));
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -p tcp -j ${this.getChainName(config)}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -p tcp -j ${this.getChainName()}`));
   }
 
   getDNSPort() {

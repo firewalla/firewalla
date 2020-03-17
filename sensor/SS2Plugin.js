@@ -106,7 +106,8 @@ class SS2Plugin extends Sensor {
 
   async applyAll() {
     const config = await this.getFeatureConfig();
-    await ss2.start(Object.assign({}, config, {dns: sysManager.myDefaultDns()}));
+    ss2.config = Object.assign({}, config,  {dns: sysManager.myDefaultDns()});
+    await ss2.start();
     await this.applySS2();
     for (const macAddress in this.enabledMacAddresses) {
       await this.applyDeviceSS2(macAddress);
@@ -138,8 +139,7 @@ class SS2Plugin extends Sensor {
     await fs.writeFileAsync(systemConfigFile, entry);
     await dnsmasq.restartDnsmasq();
 
-    const config = await ss2.getConfig();
-    await ss2.redirectTraffic(config);
+    await ss2.redirectTraffic();
   }
 
   async systemStop() {
@@ -190,19 +190,6 @@ class SS2Plugin extends Sensor {
     if(platform.getName() !== 'gold') {
       return;
     }
-
-    extensionManager.onSet("ss2Config", async (msg, data) => {
-      if(data) {
-        await ss2.setConfig(data);
-        sem.sendEventToFireMain({
-          type: 'SS2_REFRESH'
-        });
-      }
-    });
-
-    extensionManager.onGet("ss2Config", async (msg, data) => {
-      return ss2.getConfig();
-    });
   }
 }
 
