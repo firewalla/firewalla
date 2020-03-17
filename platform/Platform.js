@@ -26,14 +26,20 @@ Promise.promisifyAll(fs);
 const { exec } = require('child-process-promise');
 
 class Platform {
+  getAllNicNames() {
+    // for red/blue, there is only one NIC
+    return ["eth0"];
+  }
+
   async getNicStates() {
-    // for red/blue, there is only one nic
-    const nic = fConfig.monitoringInterface;
-    const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch((err) => "");
-    const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
-    const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
-    const result = {}
-    result[nic] = {address, speed, carrier};
+    const nics = this.getAllNicNames();
+    const result = {};
+    for (const nic of nics) {
+      const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch((err) => "");
+      const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
+      const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
+      result[nic] = {address, speed, carrier};
+    }
     return result;
   }
 
