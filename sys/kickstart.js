@@ -320,7 +320,8 @@ async function inviteAdmin(gid) {
 
 async function launchService2(gid) {
   await writeFileAsync('/home/pi/.firewalla/ui.conf', JSON.stringify({gid:gid}), 'utf8');
-
+  
+  /* bro is taken care of in FireMain now
   // don't start bro until app is linked
   await exec("sudo systemctl is-active brofish").catch(() => {
     // need to restart brofish
@@ -334,6 +335,7 @@ async function launchService2(gid) {
       log.error("Failed to enable brofish", err);
     });
   })
+  */
 
   // // start fire api
   // if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
