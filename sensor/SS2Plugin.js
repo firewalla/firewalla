@@ -79,6 +79,11 @@ class SS2Plugin extends Sensor {
 
   // global policy apply
   async applyPolicy(host, ip, policy) {
+    if(!this.ready) {
+      log.info("Service ss2 is not ready.");
+      return;
+    }
+
     log.info("Applying ss2 policy:", ip, policy);
     try {
       if (ip === '0.0.0.0') {
@@ -108,9 +113,11 @@ class SS2Plugin extends Sensor {
     const config = await this.getFeatureConfig();
     ss2.config = Object.assign({}, config,  {dns: sysManager.myDefaultDns()});
     await ss2.start();
-    if(options.booting) { // no need to apply when booting, it will be taken care of by system:policy or device policy  
-      return;
-    }
+    this.ready = true;
+    
+    // if(options.booting) { // no need to apply when booting, it will be taken care of by system:policy or device policy  
+    //   return;
+    // }
 
     await this.applySS2();
     for (const macAddress in this.enabledMacAddresses) {
