@@ -3832,32 +3832,6 @@ class netBot extends ControllerBot {
         })
         break;
       }
-      case "getDNSProfile": {
-        (async () => {
-          const content = await rclient.getAsync('sys:dns:custom');
-          this.simpleTxData(msg, {content: content}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
-      }
-      case "saveDNSProfile": {
-        (async () => {
-          let content = value.content;
-          if (!content) {
-            content = "";
-          }
-          await rclient.setAsync("sys:dns:custom", content);
-          sem.sendEventToFireMain({
-            type: 'SystemDNSUpdate',
-            message: "",
-          });
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
-      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);

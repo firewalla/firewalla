@@ -21,6 +21,8 @@ const fs = require('fs');
 const util = require('util');
 const exec = require('child-process-promise').exec
 const writeFileAsync = util.promisify(fs.writeFile);
+const extensionManager = require('./ExtensionManager.js')
+const systemDNSKey = 'sys:dns:custom';
 
 class SystemDNSSensor extends Sensor {
   constructor() {
@@ -29,10 +31,8 @@ class SystemDNSSensor extends Sensor {
 
   async run() {
     sem.on('SystemDNSUpdate', async (event) => {
-      let content = await rclient.getAsync('sys:dns:custom');
-      if (!content) {
-        content = "";
-      } else {
+      let content = await this.getSystemDNS();
+      if (content != "") {
         content += "\n";
       }
       const tmpfile = "/tmp/customDNS";
@@ -43,6 +43,31 @@ class SystemDNSSensor extends Sensor {
       cmd = `sudo systemctl restart resolvconf`;
       await exec(cmd);
     });
+  }
+
+  async apiRun() {
+    extensionManager.onSet("systemDNS", async (msg, data) => {
+      await this.setSystemDNS(data.content);
+      sem.sendEventToFireMain({
+        type: 'SystemDNSUpdate'
+      });
+    });
+
+    extensionManager.onGet("systemDNS", async (msg, data) => {
+      return this.getSystemDNS();
+    });
+  }
+
+  async setSystemDNS(content) {
+    if (!content) {
+      content = "";
+    }
+    await rclient.setAsync(systemDNSKey, content);
+  }
+
+  async getSystemDNS() {
+    const value = await rclient.getAsync(systemDNSKey);
+    return value || "";
   }
 }
 
