@@ -21,6 +21,8 @@ const fs = require('fs');
 const util = require('util');
 const exec = require('child-process-promise').exec
 const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+const existsAsync = util.promisify(fs.exists);
 const extensionManager = require('./ExtensionManager.js')
 const systemDNSKey = 'sys:dns:custom';
 
@@ -31,18 +33,32 @@ class SystemDNSSensor extends Sensor {
 
   async run() {
     sem.on('SystemDNSUpdate', async (event) => {
-      let content = await this.getSystemDNS();
-      if (content != "") {
-        content += "\n";
-      }
-      const tmpfile = "/tmp/customDNS";
-      await writeFileAsync(tmpfile, content, 'utf8');
-      const profilePath = "/etc/resolvconf/resolv.conf.d/head";
-      let cmd = `sudo bash -c 'cat ${tmpfile} > ${profilePath}'`;
-      await exec(cmd);
-      cmd = `sudo systemctl restart resolvconf`;
-      await exec(cmd);
+      this.updateSystemDNS();
     });
+
+    this.updateSystemDNS();
+  }
+
+  async updateSystemDNS() {
+    let oldContent = "";
+    let content = await this.getSystemDNS(); // get redis
+    const profilePath = "/etc/resolvconf/resolv.conf.d/head";
+    const fileExists = await existsAsync(profilePath);
+    if (fileExists) {
+      oldContent = await readFileAsync(profilePath, {encoding: 'utf8'});
+    }
+    if (oldContent.trim() == content)
+      return;
+
+    if (content != "") {
+      content += "\n";
+    }
+    const tmpfile = "/tmp/customDNS";
+    await writeFileAsync(tmpfile, content, 'utf8');
+    let cmd = `sudo bash -c 'cat ${tmpfile} > ${profilePath}'`;
+    await exec(cmd);
+    cmd = `sudo systemctl restart resolvconf`;
+    await exec(cmd);
   }
 
   async apiRun() {
