@@ -104,10 +104,14 @@ class SS2Plugin extends Sensor {
     }
   }
 
-  async applyAll() {
+  async applyAll(options = {}) {
     const config = await this.getFeatureConfig();
     ss2.config = Object.assign({}, config,  {dns: sysManager.myDefaultDns()});
     await ss2.start();
+    if(options.booting) { // no need to apply when booting, it will be taken care of by system:policy or device policy  
+      return;
+    }
+
     await this.applySS2();
     for (const macAddress in this.enabledMacAddresses) {
       await this.applyDeviceSS2(macAddress);
@@ -145,6 +149,8 @@ class SS2Plugin extends Sensor {
   async systemStop() {
     await fs.unlinkAsync(systemConfigFile).catch(() => undefined);
     await dnsmasq.restartDnsmasq();
+
+    await ss2.stop();
   }
 
   async perDeviceStart(macAddress) {
@@ -171,9 +177,9 @@ class SS2Plugin extends Sensor {
   }
 
   // global on/off
-  async globalOn() {
+  async globalOn(options) {
     this.adminSystemSwitch = true;
-    await this.applyAll();
+    await this.applyAll(options);
   }
 
   async globalOff() {

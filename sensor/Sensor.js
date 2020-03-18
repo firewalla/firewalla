@@ -75,7 +75,7 @@ let Sensor = class {
     
     sem.once('IPTABLES_READY', async () => {
       if (fc.isFeatureOn(featureName)) {
-        await this.globalOn();
+        await this.globalOn({booting: true});
       } else {
         await this.globalOff();
       }

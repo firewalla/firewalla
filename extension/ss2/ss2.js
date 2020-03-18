@@ -178,15 +178,11 @@ class SS2 {
 
   async isListening() {
     try {
-      const result = await exec("netstat -an  | egrep '(:9953|:9954|:9955)' | grep -v 'ESTABLISHED' -w | wc -l");
-      if(result && result.stdout) {
-        return result.stdout == 3;
-      }
+      await exec("nc -z localhost 9954 && nc -z localhost 9955 && netstat -an  | egrep -q ':::9953'");
+      return true;
     } catch(err) {
-      log.error("Failed to check if docker ss2 is listening..., err:", err);
+      return false;
     }
-
-    return false;
   }
 
   getName() {
