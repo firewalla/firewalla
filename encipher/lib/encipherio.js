@@ -39,7 +39,7 @@ const exec = require('child-process-promise').exec;
 const rp = require('request-promise');
 
 const NODE_VERSION_SUPPORTS_RSA = 12
-const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown']
+const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
 
 const util = require('util')
 
