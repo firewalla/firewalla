@@ -178,7 +178,7 @@ class SS2 {
 
   async isListening() {
     try {
-      const result = exec("netstat -an  | egrep '(:9953|:9954|:9955)' | grep -v 'ESTABLISHED' -w | wc -l");
+      const result = await exec("netstat -an  | egrep '(:9953|:9954|:9955)' | grep -v 'ESTABLISHED' -w | wc -l");
       if(result && result.stdout) {
         return result.stdout == 3;
       }
