@@ -114,7 +114,7 @@ class SS2 {
         await fs.writeFileAsync(runtimeConfigFile, output);
       }      
 
-      await exec(`FW_SS_SERVER=${config.server} FW_SS_REDIR_PORT=9954 NAME=${this.getChainName()} ${__dirname}/setup_iptables.sh`);
+      await exec(`FW_SS_SERVER=${this.config.server} FW_SS_REDIR_PORT=9954 NAME=${this.getChainName()} ${__dirname}/setup_iptables.sh`);
 
       this.ready = true;
     } catch (err) {
@@ -178,7 +178,7 @@ class SS2 {
 
   async isListening() {
     try {
-      const result = exec("netstat -an | fgrep ':::*' | egrep '(:9953|:9954|:9955)'");
+      const result = exec("netstat -an  | egrep '(:9953|:9954|:9955)' | grep -v 'ESTABLISHED' -w | wc -l");
       if(result && result.stdout) {
         return result.stdout == 3;
       }

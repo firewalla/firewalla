@@ -9,6 +9,7 @@ services:
     ports:
       - "9953:9953/udp"
   trojan:
+    network_mode: host
     image: 'docker.io/firewalla/trojan:latest'
     environment:
       - TROJAN_SERVER=server
