@@ -14,6 +14,7 @@
  */
 'use strict';
 
+const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -25,6 +26,8 @@ const readFileAsync = util.promisify(fs.readFile);
 const existsAsync = util.promisify(fs.exists);
 const extensionManager = require('./ExtensionManager.js')
 const systemDNSKey = 'sys:dns:custom';
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 class SystemDNSSensor extends Sensor {
   constructor() {
@@ -40,6 +43,10 @@ class SystemDNSSensor extends Sensor {
   }
 
   async updateSystemDNS() {
+    if (platform.getName() !== 'blue' && platform.getName() !== 'red') {
+      return;
+    }
+
     let oldContent = "";
     let content = await this.getSystemDNS(); // get redis
     const profilePath = "/etc/resolvconf/resolv.conf.d/head";
