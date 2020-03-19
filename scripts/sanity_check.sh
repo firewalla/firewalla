@@ -82,6 +82,7 @@ check_systemctl_services() {
     check_each_system_service fireapi "running"
     check_each_system_service firemain "running"
     check_each_system_service firemon "running"
+    check_each_system_service firemasq "running"
     check_each_system_service firekick "dead"
     check_each_system_service redis-server "running"
     check_each_system_service openvpn@server "running"
