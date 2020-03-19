@@ -74,7 +74,6 @@ class SS2Plugin extends Sensor {
   }
 
   async job() {
-    fc.isFeatureOn(featureName) && (await this.applyAll(true));
   }
 
   // global policy apply
@@ -105,12 +104,15 @@ class SS2Plugin extends Sensor {
   }
 
   async applyAll(options = {}) {
+    log.info("Applying...");
     const config = await this.getFeatureConfig();
     ss2.config = Object.assign({}, config,  {dns: sysManager.myDefaultDns()});
     await ss2.start();
-    if(options.booting) { // no need to apply when booting, it will be taken care of by system:policy or device policy  
-      return;
-    }
+    this.ready = true;
+
+    // if(options.booting) { // no need to apply when booting, it will be taken care of by system:policy or device policy  
+    //   return;
+    // }
 
     await this.applySS2();
     for (const macAddress in this.enabledMacAddresses) {
@@ -119,6 +121,11 @@ class SS2Plugin extends Sensor {
   }
 
   async applySS2() {
+    if (!this.ready) {
+      log.info("Service ss2 is not ready.");
+      return;
+    }
+
     if (this.systemSwitch && this.adminSystemSwitch) {
       return this.systemStart();
     } else {
@@ -139,6 +146,7 @@ class SS2Plugin extends Sensor {
   }
 
   async systemStart() {
+    log.info("Starting SS2 at global level...");
     const entry = `server=${ss2.getLocalServer()}\n`;
     await fs.writeFileAsync(systemConfigFile, entry);
     await dnsmasq.restartDnsmasq();
@@ -147,6 +155,7 @@ class SS2Plugin extends Sensor {
   }
 
   async systemStop() {
+    log.info("Stopping SS2 at global level...");
     await fs.unlinkAsync(systemConfigFile).catch(() => undefined);
     await dnsmasq.restartDnsmasq();
 

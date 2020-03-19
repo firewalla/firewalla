@@ -542,4 +542,9 @@ sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,sr
 
 
 
-
+if [[ $(uname -m) == "x86_64" ]]; then
+  sudo iptables -w -N DOCKER-USER &>/dev/null
+  sudo iptables -w -F DOCKER-USER
+  sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+  sudo iptables -w -A DOCKER-USER -j RETURN
+fi
