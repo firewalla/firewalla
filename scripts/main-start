@@ -299,6 +299,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/dnscrypt/dnscrypt.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/docker-compose@.service /etc/systemd/system/
     sudo cp /home/pi/firewalla/extension/ss_client/ss_client@.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/devicemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firehttpd.service /etc/systemd/system/.

@@ -548,15 +548,12 @@ class VpnManager {
       if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
         throw `${clientSubnet} is not a valid CIDR subnet`;
       const clientSubnetCidr = ip.cidrSubnet(clientSubnet);
-      if (mySubnet) {
-        const mySubnetCidr = ip.cidrSubnet(mySubnet);
+      for (const iface of sysManager.getLogicInterfaces()) {
+        const mySubnetCidr = iface.subnet && ip.cidrSubnet(iface.subnet);
+        if (!mySubnetCidr)
+          continue;
         if (mySubnetCidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnetCidr.firstAddress))
-          throw `${clientSubnet} conflicts with Firewalla's primary subnet`;
-      }
-      if (mySubnet2) {
-        const mySubnet2Cidr = ip.cidrSubnet(mySubnet2);
-        if (mySubnet2Cidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnet2Cidr.firstAddress))
-          throw `${clientSubnet} conflicts with Firewalla's secondary subnet`;
+          throw `${clientSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`;
       }
     }
     // save settings to files
