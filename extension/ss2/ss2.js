@@ -229,7 +229,7 @@ class SS2 {
     (async() => {
       const code = "CN";
       await countryUpdater.activateCountry(code);
-      await exec(wrapIptables(`sudo iptables -w -t nat -I ${chain} -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
+      await exec(wrapIptables(`sudo iptables -w -t nat -I ${this.getChainName()} -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
     })()
   }
 
