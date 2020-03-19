@@ -76,6 +76,7 @@
     "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
+    "SystemDNSSensor": {},
     "RemoteNotificationSensor": {}
   },
   "intels": [
@@ -524,7 +525,9 @@
     },
     "DnsmasqDhcpSensor": {},
     "BlockRuleCheckSensor": {},
-    "LocalDomainSensor": {}
+    "SystemDNSSensor": {},
+    "LocalDomainSensor": {},
+    "SS2Plugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -650,6 +653,7 @@
     "cpu_monitor": true,
     "speed_test": false,
     "doh": false,
+    "ss2": false,
     "safe_search": false,
     "network_stats": false,
     "link_stats": true,

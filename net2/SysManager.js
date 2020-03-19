@@ -495,9 +495,11 @@ class SysManager {
 
   getInterfaceViaUUID(uuid) {
     const intf = this.uuidMap && this.uuidMap[uuid]
-    return Object.assign({}, intf, {
-      active: this.getMonitoringInterfaces().some(i => i.uuid == uuid)
-    })
+
+    return _.isEmpty(intf) ? null :
+      Object.assign({}, intf, {
+        active: this.getMonitoringInterfaces().some(i => i.uuid == uuid)
+      })
   }
 
   getInterfaceViaIP4(ip) {
@@ -512,8 +514,8 @@ class SysManager {
         const intf = this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(element, i.name));
         if (intf) {
           return intf;
-        } 
-      }      
+        }
+      }
     } else {
       return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(ip6, i.name));
     }
@@ -528,25 +530,6 @@ class SysManager {
   //   return this.macMap && this.macMap[mac.toLowerCase()]
   // }
 
-
-  // DEPRECATING
-  monitoringInterface() {
-    if (this.config) {
-      //log.info(require('util').inspect(this.sysinfo, {depth: null}));
-      return this.sysinfo && this.sysinfo[this.config.monitoringInterface];
-    } else {
-      return undefined;
-    }
-  }
-
-  // DEPRECATING
-  monitoringInterface2() {
-    if (this.config) {
-      return this.sysinfo && this.sysinfo[this.config.monitoringInterface2];
-    } else {
-      return undefined;
-    }
-  }
 
   // DEPRECATING
   monitoringWifiInterface() {
@@ -948,4 +931,4 @@ class SysManager {
   }
 }
 
-module.exports = new SysManager(); 
+module.exports = new SysManager();

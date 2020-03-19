@@ -18,6 +18,8 @@ var instance = null;
 const log = require("./logger.js")("PolicyManager");
 const sysManager = require('./SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
+const Message = require('./Message.js');
 const fc = require('../net2/config.js');
 
 const iptable = require('./Iptables.js');
@@ -156,7 +158,7 @@ module.exports = class {
         break;
       }
     }
-    
+
   }
 
   async ipAllocation(host, policy) {
@@ -400,6 +402,15 @@ module.exports = class {
     }
   }
 
+  async apiInterface(host, config) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("apiInterface doesn't support per device policy", host);
+      return;
+    }
+
+    await pclient.publishAsync(Message.MSG_SYS_API_INTERFACE_CHANGED, JSON.stringify(config))
+  }
+
   tags(target, config) {
     if (!target)
       return;
@@ -470,6 +481,8 @@ module.exports = class {
         this.enhancedSpoof(target, policy[p]);
       } else if (p === "externalAccess") {
         this.externalAccess(target, policy[p]);
+      } else if (p === "apiInterface") {
+        this.apiInterface(target, policy[p]);
       } else if (p === "ipAllocation") {
         this.ipAllocation(target, policy[p]);
       } else if (p === "dnsmasq") {

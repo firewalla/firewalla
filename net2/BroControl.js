@@ -20,31 +20,34 @@ const f = require('./Firewalla.js')
 const { delay } = require('../util/util.js')
 
 const { exec } = require('child-process-promise');
+const Promise = require('bluebird');
+const fs = require('fs');
+Promise.promisifyAll(fs);
+const _ = require('lodash');
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
+const PATH_ADDITIONAL_OPTIONS = `${f.getUserConfigFolder()}/additional_options.bro`;
 
 class BroControl {
 
   constructor() {
-    this.monitoringInterfaces = []
+    this.options = {};
   }
 
-  interfaceChanged(monitoringInterfaces) {
-    if (this.monitoringInterfaces.length != monitoringInterfaces.length)
-      return true;
-
-    return this.monitoringInterfaces.some(intf => !monitoringInterfaces.includes(intf))
+  optionsChanged(options) {
+    return !_.isEqual(options, this.options);
   }
 
-  async writeClusterConfig(monitoringInterfaces) {
+  async writeClusterConfig(options) {
     // rewrite cluster node.cfg
     await exec(`sudo cp -f ${f.getFirewallaHome()}/etc/node.cluster.cfg ${PATH_NODE_CFG}`)
 
+    const listenInterfaces = options.listenInterfaces || [];
     let workerCfg = []
     let index = 1
-    for (const intf of monitoringInterfaces) {
+    for (const intf of listenInterfaces) {
       if (intf.endsWith(":0")) // do not listen on interface alias
         continue;
       workerCfg.push(
@@ -57,7 +60,19 @@ class BroControl {
     }
     await exec(`echo "${workerCfg.join('')}" | sudo tee -a ${PATH_NODE_CFG}`)
 
-    this.monitoringInterfaces = monitoringInterfaces
+    const restrictFilters = options.restrictFilters || {};
+    const filterEntries = [];
+    for (const key in restrictFilters) {
+      const filter = restrictFilters[key];
+      filterEntries.push(`["${key}"] = "${filter}"`);
+    }
+    if (filterEntries.length > 0) {
+      const content = `redef restrict_filters += [${filterEntries.join(",")}];\n`;
+      await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, content, {encoding: 'utf8'});
+    } else {
+      await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, "", {encoding: 'utf8'});
+    }
+    this.options = options;
   }
 
   async addCronJobs() {
