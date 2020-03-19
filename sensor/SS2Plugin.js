@@ -79,11 +79,6 @@ class SS2Plugin extends Sensor {
 
   // global policy apply
   async applyPolicy(host, ip, policy) {
-    if(!this.ready) {
-      log.info("Service ss2 is not ready.");
-      return;
-    }
-
     log.info("Applying ss2 policy:", ip, policy);
     try {
       if (ip === '0.0.0.0') {
@@ -114,7 +109,7 @@ class SS2Plugin extends Sensor {
     ss2.config = Object.assign({}, config,  {dns: sysManager.myDefaultDns()});
     await ss2.start();
     this.ready = true;
-    
+
     // if(options.booting) { // no need to apply when booting, it will be taken care of by system:policy or device policy  
     //   return;
     // }
@@ -126,6 +121,11 @@ class SS2Plugin extends Sensor {
   }
 
   async applySS2() {
+    if (!this.ready) {
+      log.info("Service ss2 is not ready.");
+      return;
+    }
+
     if (this.systemSwitch && this.adminSystemSwitch) {
       return this.systemStart();
     } else {
@@ -146,6 +146,7 @@ class SS2Plugin extends Sensor {
   }
 
   async systemStart() {
+    log.info("Starting SS2 at global level...");
     const entry = `server=${ss2.getLocalServer()}\n`;
     await fs.writeFileAsync(systemConfigFile, entry);
     await dnsmasq.restartDnsmasq();
@@ -154,6 +155,7 @@ class SS2Plugin extends Sensor {
   }
 
   async systemStop() {
+    log.info("Stopping SS2 at global level...");
     await fs.unlinkAsync(systemConfigFile).catch(() => undefined);
     await dnsmasq.restartDnsmasq();
 
