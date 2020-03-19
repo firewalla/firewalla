@@ -335,10 +335,15 @@ class SysManager {
     return tz;
   }
 
-  setTimezone(timezone, callback) {
+  async setTimezone(timezone, callback) {
     callback = callback || function () { }
-
+    const tz = await this.getTimezone();
     this.timezone = timezone;
+    if (tz == timezone) {
+      callback(null);
+      return;
+    }
+
     rclient.hset("sys:config", "timezone", timezone, (err) => {
       if (err) {
         log.error("Failed to set timezone " + timezone + ", err: " + err);
@@ -355,7 +360,7 @@ class SysManager {
           // but the impact is low since calling this settimezone function is very rare
           let cronRestartCmd = "sudo systemctl restart cron.service"
           await exec(cronRestartCmd)
-
+          await exec('sudo systemctl restart firemain');
           callback(null)
         } catch (err) {
           log.error("Failed to set timezone:", err);
