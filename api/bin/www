@@ -115,7 +115,7 @@ async function refreshListeningInterfaces(app) {
   const userInterfaces = await getUserInterfaces()
 
   const listeningInterfaces = userInterfaces ?
-    userInterfaces.map(intf => sysManager.getInterface(intf)).filter(Boolean) :
+    userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf)).filter(Boolean) :
     sysManager.getMonitoringInterfaces()
 
   // always listen to localhost
@@ -138,8 +138,10 @@ async function refreshListeningInterfaces(app) {
 async function getUserInterfaces() {
   try {
     const policyString = await rclient.hgetAsync('policy:system', 'apiInterface')
+    if (!policyString) return null
+
     const policy = JSON.parse(policyString)
-    return policy.state ? policy.interfaces : null
+    return policy && policy.state ? policy.interfaces : null
   } catch(err) {
     log.error('Error reading policy:system => apiInterface', err)
     return null
