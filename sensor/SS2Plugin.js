@@ -74,7 +74,6 @@ class SS2Plugin extends Sensor {
   }
 
   async job() {
-    fc.isFeatureOn(featureName) && (await this.applyAll(true));
   }
 
   // global policy apply
@@ -105,6 +104,7 @@ class SS2Plugin extends Sensor {
   }
 
   async applyAll(options = {}) {
+    log.info("Applying...");
     const config = await this.getFeatureConfig();
     ss2.config = Object.assign({}, config,  {dns: sysManager.myDefaultDns()});
     await ss2.start();
