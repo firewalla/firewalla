@@ -18,6 +18,7 @@
 let instance = null;
 let log = null;
 
+const _ = require('lodash');
 const util = require('util');
 const spawn = require('child_process').spawn
 const f = require('../../net2/Firewalla.js');
@@ -395,19 +396,39 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-
-    let entry = "";
-    for (const domain of domains) {
-      if (options.scope && options.scope.length > 0) {
-        for (const mac of options.scope) {
-          entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
-        }
-      } else {
-        entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
-      }
-    }
     try {
-      await fs.appendFileAsync(policyFilterFile, entry);
+      let entry = "";
+      for (const domain of domains) {
+        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+          if (!_.isEmpty(options.scope)) {
+            for (const mac of options.scope) {
+              entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
+            }
+          } 
+          
+          if (!_.isEmpty(options.intfs)) {
+            let intfsEntry = `address=/${domain}/${BLACK_HOLE_IP}\n`;
+            for (const intf in options.intfs) {
+              const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
+              await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
+            }
+          } 
+          
+          if (!_.isEmpty(options.tags)) {
+            for (const tag of options.tags) {
+              let tagsEntry = `group-tag=@${tag}$policy_${options.pid}\naddress=/${domain}/$policy_${options.pid}\n`;
+              const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
+              await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+            }
+          }
+        } else {
+          entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
+        }
+      }
+    
+      if (!_.isEmpty(entry)) {
+        await fs.appendFileAsync(policyFilterFile, entry);
+      }
     } catch (err) {
       log.error("Failed to add policy filter entry into file:", err);
     } finally {
@@ -425,21 +446,42 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
     try {
       let entry = "", macSetEntry = "";
       for (const domain of domains) {
         entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
       }
-      if (options.scope && options.scope.length > 0) {
-        for (const mac of options.scope) {
-          macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
+
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+        if (options.scope && options.scope.length > 0) {
+          for (const mac of options.scope) {
+            macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
+          }
+        } 
+        
+        if (!_.isEmpty(options.intfs)) {
+          let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}_block\n`;
+          for (const intf in options.intfs) {
+            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
+            await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
+          }
+        } 
+        
+        if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            let tagsEntry = `group-tag=@${tag}$${category}_block\n`;
+            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
+            await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+          }
         }
       } else {
         macSetEntry = `mac-address-tag=%${systemLevelMac}$${category}_block\n`;
       }
       await fs.writeFileAsync(categoryBlockDomainsFile, entry);
-      await fs.appendFileAsync(categoryBlcokMacSetFile, macSetEntry);
+      if (!_.isEmpty(macSetEntry)) {
+        await fs.appendFileAsync(categoryBlockMacSetFile, macSetEntry);
+      }
     } catch (err) {
       log.error("Failed to add category mact set entry into file:", err);
     } finally {
@@ -454,23 +496,49 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    options = options || {};
-    const category = options.category;
-    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
-    let macSetEntry = [];
-    if (options.scope && options.scope.length > 0) {
-      for (const mac of options.scope) {
-        macSetEntry.push(`mac-address-tag=%${mac.toUpperCase()}$${category}_block`)
-      }
-    } else {
-      macSetEntry.push(`mac-address-tag=%${systemLevelMac}$${category}_block`)
-    }
     try {
-      let data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
-      let newData = data.split("\n").filter((line) => {
-        return macSetEntry.indexOf(line) == -1
-      }).join("\n");
-      await fs.writeFileAsync(categoryBlcokMacSetFile, newData);
+      options = options || {};
+      const category = options.category;
+      const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+      let macSetEntry = [];
+    
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+        if (options.scope && options.scope.length > 0) {
+          for (const mac of options.scope) {
+            macSetEntry.push(`mac-address-tag=%${mac.toUpperCase()}$${category}_block`)
+          }
+        } 
+        
+        if (!_.isEmpty(options.intfs)) {
+          // let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}_block\n`;
+          for (const intf in options.intfs) {
+            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
+            try {
+              await fs.unlinkAsync(intfPolicyFilterFile);
+            } catch (error) { }
+          }
+        } 
+        
+        if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            // let tagsEntry = `group-tag=@${tag}$${category}_block\n`;
+            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
+            try {
+              await fs.unlinkAsync(tagPolicyFilterFile);
+            } catch (error) { }
+          }
+        }
+      } else {
+        macSetEntry.push(`mac-address-tag=%${systemLevelMac}$${category}_block`)
+      }
+    
+      if (!_.isEmpty(macSetEntry)) {
+        let data = await fs.readFileAsync(categoryBlockMacSetFile, 'utf8');
+        let newData = data.split("\n").filter((line) => {
+          return macSetEntry.indexOf(line) == -1
+        }).join("\n");
+        await fs.writeFileAsync(categoryBlockMacSetFile, newData);
+      }
     } catch (err) {
       log.error("Failed to update category mact set entry file:", err);
     } finally {
@@ -483,8 +551,8 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlcokMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
-    const fileExists = await fs.accessAsync(categoryBlcokMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
+    const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    const fileExists = await fs.accessAsync(categoryBlockMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
     if (!fileExists) return;
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
@@ -498,7 +566,7 @@ module.exports = class DNSMASQ {
     try {
       await fs.writeFileAsync(categoryBlockDomainsFile, entry);
       //check dnsmasq need restart or not
-      const data = await fs.readFileAsync(categoryBlcokMacSetFile, 'utf8');
+      const data = await fs.readFileAsync(categoryBlockMacSetFile, 'utf8');
       if (data.indexOf(`$${category}_block`) > -1) this.restartDnsmasq();
     } catch (err) {
       log.error("Failed to update category entry into file:", err);
@@ -515,22 +583,46 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    let entry = [];
-    for (const domain of domains) {
-      if (options.scope && options.scope.length > 0) {
-        for (const mac of options.scope) {
-          entry.push(`address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}`)
-        }
-      } else {
-        entry.push(`address=/${domain}/${BLACK_HOLE_IP}`);
-      }
-    }
     try {
-      let data = await fs.readFileAsync(policyFilterFile, 'utf8');
-      let newData = data.split("\n").filter((line) => {
-        return entry.indexOf(line) == -1
-      }).join("\n");
-      await fs.writeFileAsync(policyFilterFile, newData);
+      let entry = [];
+      for (const domain of domains) {
+        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+          if (!_.isEmpty(options.scope)) {
+            for (const mac of options.scope) {
+              entry.push(`address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}`)
+            }
+          } 
+          
+          if (!_.isEmpty(options.tags)) {
+            for (const tag of options.tags) {
+              const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
+              try {
+                await fs.unlinkAsync(tagPolicyFilterFile);
+              } catch (error) {}
+            }
+          } 
+          
+          if (!_.isEmpty(options.intfs)) {
+            // let intfsEntry = `address=/${domain}/0.0.0.0\n`;
+            for (const intf in options.intfs) {
+              const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
+              try {
+                await fs.unlinkAsync(intfPolicyFilterFile);
+              } catch (error) {}
+            } 
+          }
+        } else {
+          entry.push(`address=/${domain}/${BLACK_HOLE_IP}`);
+        }
+      }
+    
+      if (!_.isEmpty(entry)) {
+        let data = await fs.readFileAsync(policyFilterFile, 'utf8');
+        let newData = data.split("\n").filter((line) => {
+          return entry.indexOf(line) == -1
+        }).join("\n");
+        await fs.writeFileAsync(policyFilterFile, newData);
+      }
     } catch (err) {
       log.error("Failed to write policy data file:", err);
     } finally {
@@ -729,7 +821,7 @@ module.exports = class DNSMASQ {
       const ipset = NetworkProfile.getNetIpsetName(uuid);
       const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
         .mth(ipset, "src,src", "set")
-        .pam('-m set ! --match-set no_dns_caching_set src')
+        .pam('-m set ! --match-set no_dns_caching_set src,src')
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
       const redirectUDP = redirectTCP.clone().pro('udp')
@@ -757,7 +849,7 @@ module.exports = class DNSMASQ {
       const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
       const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
         .mth(ipset, "src,src", "set")
-        .pam('-m set ! --match-set no_dns_caching_set src')
+        .pam('-m set ! --match-set no_dns_caching_set src,src')
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
       const redirectUDP = redirectTCP.clone().pro('udp');
@@ -1109,42 +1201,6 @@ module.exports = class DNSMASQ {
     const leaseTime = fConfig.dhcp && fConfig.dhcp.leaseTime || "24h";
     const monitoringInterface = fConfig.monitoringInterface || "eth0";
 
-    if (fConfig.wifiInterface) {
-      const wifiIntf = fConfig.wifiInterface;
-      const mode = wifiIntf.mode || "router";
-      const intf = wifiIntf.intf || "wlan0";
-
-      switch (mode) {
-        case "router": {
-          // need to setup dhcp service on wifi interface for router mode
-          if (!wifiIntf.ip)
-            break;
-          const cidr = ip.cidrSubnet(wifiIntf.ip);
-          const wifiRouterIp = wifiIntf.ip.split('/')[0];
-          const wifiNetmask = cidr.subnetMask;
-          const wifiRange = this.getDhcpRange("wifi");
-          if (!wifiRouterIp || !wifiNetmask || !wifiRange)
-            break;
-          cmd = util.format("%s --dhcp-range=tag:%s,%s,%s,%s,%s",
-            cmd,
-            intf,
-            wifiRange.begin,
-            wifiRange.end,
-            wifiNetmask,
-            leaseTime
-          );
-          // wifi interface ip as router
-          cmd = util.format("%s --dhcp-option=tag:%s,3,%s", cmd, intf, wifiRouterIp);
-          // same dns servers as secondary interface
-          cmd = util.format("%s --dhcp-option=tag:%s,6,%s", cmd, intf, wifiDnsServers);
-          break;
-        }
-        case "bridge":
-          break;
-        default:
-      }
-    }
-
     if (this.mode === Mode.MODE_DHCP) {
       log.info("DHCP feature is enabled");
       // allocate secondary interface ip to monitored hosts and new hosts
@@ -1196,7 +1252,7 @@ module.exports = class DNSMASQ {
       );
 
       // Firewalla's ip as router for monitored hosts and new hosts. In case Firewalla's ip is changed, a thorough restart is required
-      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, sysManager.myIp());
+      cmd = util.format("%s --dhcp-option=tag:%s,tag:!unmonitor,3,%s", cmd, monitoringInterface, sysManager.myDefaultWanIp());
 
       // gateway ip as router for unmonitored hosts
       cmd = util.format("%s --dhcp-option=tag:%s,tag:unmonitor,3,%s", cmd, monitoringInterface, alternativeRouterIp);

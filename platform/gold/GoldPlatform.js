@@ -17,8 +17,10 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
-const fConfig = require('../../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
 const log = require('../../net2/logger.js')(__filename);
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
@@ -33,15 +35,14 @@ class GoldPlatform extends Platform {
     return ["b1"];
   }
 
+  getAllNicNames() {
+    // there are for NICs on gold
+    return ["eth0", "eth1", "eth2", "eth3"];
+  }
+
   getBoardSerial() {
     // use mac address as unique serial number
-    if(fConfig.monitoringInterface) {
-      const interfaces = require('os').networkInterfaces();
-      if(interfaces && interfaces[fConfig.monitoringInterface] && interfaces[fConfig.monitoringInterface].length > 0) {
-        return interfaces[fConfig.monitoringInterface][0].mac;
-      }
-    }
-    return new Date() / 1;
+    return this.getSignatureMac();
   }
 
   getB4Binary() {

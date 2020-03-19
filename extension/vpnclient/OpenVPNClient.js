@@ -271,16 +271,7 @@ class OpenVPNClient extends VPNClient {
     // always refresh routes in case main routing table is changed
     log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
     await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf);
-    this._remoteIP = newRemoteIP;
-    
-    const newVPNSubnet = await this.getVPNSubnet();
-    if (newVPNSubnet !== this._vpnSubnet) {
-      if (this._vpnSubnet)
-        await iptables.dhcpSubnetChangeAsync(this._vpnSubnet, false);
-      if (newVPNSubnet)
-        await iptables.dhcpSubnetChangeAsync(newVPNSubnet, true);
-    }
-    this._vpnSubnet = newVPNSubnet;
+    this._remoteIP = newRemoteIP;    
   }
 
   async start() {
@@ -306,13 +297,6 @@ class OpenVPNClient extends VPNClient {
             // add vpn client specific routes
             const settings = await this.loadSettings();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
-            const vpnSubnet = await this.getVPNSubnet();
-            if (vpnSubnet && vpnSubnet.length != 0) {
-              this._vpnSubnet = vpnSubnet;
-              await iptables.dhcpSubnetChangeAsync(vpnSubnet, true).catch((err) => {
-                log.error("Failed to add SNAT rule for " + vpnSubnet, err);
-              });
-            }
             await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
             // loosen reverse path filter
             await execAsync(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => {});
@@ -350,11 +334,6 @@ class OpenVPNClient extends VPNClient {
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
     this._started = false;
-    const vpnSubnet = this._vpnSubnet;
-    if (vpnSubnet && vpnSubnet.length != 0) {
-      await iptables.dhcpSubnetChangeAsync(vpnSubnet, false).catch((err) => {});
-    }
-    this._vpnSubnet = null;
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     await this._processPushOptions("stop");

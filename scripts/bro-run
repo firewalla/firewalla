@@ -7,10 +7,6 @@ logger 'FIREWALLA.BROFISH Start '
 mkdir -p /firewalla
 chmod 777 /firewalla
 
-sudo -u pi $FIREWALLA_HOME/scripts/firelog -t local -m "FIREWALLA.BRO.DATE.SYNC"
-$FIREWALLA_HOME/scripts/fire-time.sh
-logger "FIREWALLA.BRO.DATE.SYNC.DONE"
-
 if [ -f  /bspool/tmp/post-term* ]; then
     echo "bro crashed, reboot"
     logger 'FIREWALLA: restart due to bro crashed'
@@ -18,16 +14,6 @@ if [ -f  /bspool/tmp/post-term* ]; then
     sync
     $FIREWALLA_HOME/scripts/fire-reboot
 fi
-GITHUB_STATUS_API=https://status.github.com/api.json
-for i in `seq 1 10`; do
-    HTTP_STATUS_CODE=`curl -L -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
-    if [[ $HTTP_STATUS_CODE == "200" ]]; then
-      break
-    fi
-    sudo -u pi $FIREWALLA_HOME/scripts/firelog -t debug -m "FIREWALLA.BRO NO Network"
-    sleep 1
-done
-
 
 rm -r -f /blog/*
 rm -r -f /bspool/*

@@ -76,6 +76,7 @@
     "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
+    "SystemDNSSensor": {},
     "RemoteNotificationSensor": {}
   },
   "intels": [
@@ -524,6 +525,7 @@
     },
     "DnsmasqDhcpSensor": {},
     "BlockRuleCheckSensor": {},
+    "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "SS2Plugin": {}
   },

@@ -2731,6 +2731,15 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "policy:setDisableAll": {
+        (async () => {
+          await pm2.setDisableAll(value.flag, value.expireMinute);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
+      }
       case "intel:finger":
         (async () => {
           const target = value.target;
