@@ -220,11 +220,11 @@ class SS2 {
 
   async redirectTraffic() {
     await this.allowDockerBridgeToAccessWan();
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -p tcp -j ${this.getChainName()}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -p tcp -j ${this.getChainName()}`));
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -p tcp -j ${this.getChainName()}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set monitored_net_set src,src -p tcp -j ${this.getChainName()}`));
   }
 
   getDNSPort() {
