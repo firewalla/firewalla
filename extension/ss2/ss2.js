@@ -39,6 +39,9 @@ const yaml = require('../../api/dist/lib/js-yaml.min.js');
 
 const configKey = "ext.ss2.config";
 
+const CountryUpdater = require('../../control/CountryUpdater.js');
+const countryUpdater = new CountryUpdater();
+
 const fs = require('fs');
 
 const Promise = require('bluebird');
@@ -218,9 +221,23 @@ class SS2 {
     }
   }
 
+  // prepare the chnroute files
+  async prepareCHNRoute() {
+    log.info("Preparing CHNRoute...");
+
+    // intended non-blocking execution
+    (async() => {
+      const code = "CN";
+      await countryUpdater.activateCountry(code);
+      await exec(wrapIptables(`sudo iptables -w -t nat -I ${chain} -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
+    })()
+  }
+
   async redirectTraffic() {
     await this.allowDockerBridgeToAccessWan();
+    await this.prepareCHNRoute();
     await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -p tcp -j ${this.getChainName()}`));
+    
   }
 
   async unRedirectTraffic() {
