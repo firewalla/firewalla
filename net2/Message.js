@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc
+/*    Copyright 2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,7 @@ const MSG_SYS_NETWORK_INFO_UPDATED = "System:network_info_updated";
 const MSG_SYS_NETWORK_INFO_RELOADED = "System:network_info_reloaded";
 const MSG_FR_CHANGE_APPLIED = "firerouter.change_applied";
 const MSG_SYS_API_INTERFACE_CHANGED = "System:api:interface_changed";
+const MSG_SYS_FR_RELOADED = "System:firerouter:reloaded";
 
 module.exports = {
   MSG_NETWORK_CHANGED,
@@ -27,4 +28,5 @@ module.exports = {
   MSG_SYS_NETWORK_INFO_RELOADED,
   MSG_FR_CHANGE_APPLIED,
   MSG_SYS_API_INTERFACE_CHANGED,
+  MSG_SYS_FR_RELOADED,
 }
