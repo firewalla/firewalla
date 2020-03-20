@@ -96,8 +96,9 @@ sudo iptables -w -A FW_ACCEPT -j ACCEPT
 sudo iptables -w -N FW_BYPASS &> /dev/null
 sudo iptables -w -F FW_BYPASS
 sudo iptables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_BYPASS
-# directly accept for not monitored devices
+# directly accept for monitoring off devices/networks
 sudo iptables -w -A FW_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
+sudo iptables -w -A FW_BYPASS -m set --match-set monitoring_off_set dst,dst -j ACCEPT
 
 # initialize vpn client kill switch chain
 sudo iptables -w -N FW_VPN_CLIENT &>/dev/null
@@ -190,7 +191,7 @@ sudo iptables -w -t nat -A FW_NAT_HOLE -j RETURN
 sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_BYPASS
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
-# directly accept for not monitored devices
+# directly accept for monitoring off devices/networks
 sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
 
 # DNAT related chain comes first
@@ -329,6 +330,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_BYPASS
   # directly accept for not monitored devices
   sudo ip6tables -w -A FW_BYPASS -m set --match-set monitoring_off_set src,src -j FW_ACCEPT
+  sudo ip6tables -w -A FW_BYPASS -m set --match-set monitoring_off_set dst,dst -j FW_ACCEPT
 
 
   # do not traverse FW_FORWARD if the packet belongs to an accepted connection
