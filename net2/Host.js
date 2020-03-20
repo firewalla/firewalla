@@ -519,18 +519,18 @@ class Host {
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = state;
-      const cmd = `sudo ipset del -! not_monitored_mac_set ${this.o.mac}`;
+      const cmd = `sudo ipset del -! monitoring_off_mac_set ${this.o.mac}`;
       await exec(cmd).catch((err) => {
-        log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
+        log.error("Failed to delete from monitoring_off_mac_set " + this.o.mac, err);
       });
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = false;
-      const cmd = `sudo ipset add -! not_monitored_mac_set ${this.o.mac}`;
+      const cmd = `sudo ipset add -! monitoring_off_mac_set ${this.o.mac}`;
       await exec(cmd).catch((err) => {
-        log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
+        log.error("Failed to add to monitoring_off_mac_set " + this.o.mac, err);
       });
     }
     
@@ -649,8 +649,8 @@ class Host {
         const macEntry = await hostTool.getMACEntry(this.o.mac);
         const ipv4Addr = macEntry && macEntry.ipv4Addr;
         if (ipv4Addr) {
-          await exec(`sudo ipset -exist add -! c_${this.o.mac}_ip4 ${ipv4Addr}`).catch((err) => {
-            log.error(`Failed to add ${ipv4Addr} to c_${this.o.mac}_ip4`, err.message);
+          await exec(`sudo ipset -exist add -! ${Host.getTrackingIpsetPrefix(this.o.mac)}4 ${ipv4Addr}`).catch((err) => {
+            log.error(`Failed to add ${ipv4Addr} to ${Host.getTrackingIpsetPrefix(this.o.mac)}4`, err.message);
           });
         }
         let ipv6Addr = null;
@@ -659,8 +659,8 @@ class Host {
         } catch (err) {}
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
-            await exec(`sudo ipset -exist add -! c_${this.o.mac}_ip6 ${addr}`).catch((err) => {
-              log.error(`Failed to add ${addr} to c_${this.o.mac}_ip6`, err.message);
+            await exec(`sudo ipset -exist add -! ${Host.getTrackingIpsetPrefix(this.o.mac)}6 ${addr}`).catch((err) => {
+              log.error(`Failed to add ${addr} to ${Host.getTrackingIpsetPrefix(this.o.mac)}6`, err.message);
             });
           }
         }

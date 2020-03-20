@@ -51,7 +51,7 @@ class VPNClientEnforcer {
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
-    const cmd = wrapIptables(`sudo iptables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/0xffff -m set ! --match-set monitored_net_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    const cmd = wrapIptables(`sudo iptables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/0xffff -m set ! --match-set monitored_net_set dst,dst ! -o ${vpnIntf} -j FW_DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to enforce strict vpn on ${vpnIntf}`, err);
     });
@@ -65,7 +65,7 @@ class VPNClientEnforcer {
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
-    const cmd = wrapIptables(`sudo iptables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/0xffff -m set ! --match-set monitored_net_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    const cmd = wrapIptables(`sudo iptables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/0xffff -m set ! --match-set monitored_net_set dst,dst ! -o ${vpnIntf} -j FW_DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to unenforce strict vpn on ${vpnIntf}`, err);
       throw err;

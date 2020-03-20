@@ -19,12 +19,13 @@ sudo ipset create blocked_remote_ip_port_set hash:ip,port family inet hashsize 1
 sudo ipset create blocked_remote_net_port_set hash:net,port family inet hashsize 128 maxelem 65536 &>/dev/null
 sudo ipset create blocked_remote_port_set bitmap:port range 0-65535 &>/dev/null
 sudo ipset create blocked_mac_set hash:mac &>/dev/null
-sudo ipset create not_monitored_mac_set hash:mac &>/dev/null
+sudo ipset create monitoring_off_mac_set hash:mac &>/dev/null
+sudo ipset create monitoring_off_set list:set &>/dev/null
 sudo ipset create monitored_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create device_whitelist_set hash:mac &> /dev/null
 sudo ipset create whitelist_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_domain_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
-sudo ipset create whitelist_net_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
+sudo ipset create whitelist_net_set hash:net family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create whitelist_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65535 &>/dev/null
 sudo ipset create whitelist_remote_ip_port_set hash:ip,port family inet hashsize 128 maxelem 65536 &>/dev/null
 sudo ipset create whitelist_remote_net_port_set hash:net,port family inet hashsize 128 maxelem 65536 &>/dev/null
@@ -43,6 +44,9 @@ sudo ipset flush blocked_remote_ip_port_set
 sudo ipset flush blocked_remote_net_port_set
 sudo ipset flush blocked_remote_port_set
 sudo ipset flush blocked_mac_set
+sudo ipset flush monitoring_off_mac_set
+sudo ipset flush monitoring_off_set
+sudo ipset add -! monitoring_off_set monitoring_off_mac_set
 sudo ipset flush monitored_ip_set
 sudo ipset flush whitelist_ip_set
 sudo ipset flush whitelist_domain_set
@@ -93,7 +97,7 @@ sudo iptables -w -N FW_BYPASS &> /dev/null
 sudo iptables -w -F FW_BYPASS
 sudo iptables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_BYPASS
 # directly accept for not monitored devices
-sudo iptables -w -A FW_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+sudo iptables -w -A FW_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
 
 # initialize vpn client kill switch chain
 sudo iptables -w -N FW_VPN_CLIENT &>/dev/null
@@ -106,7 +110,7 @@ sudo iptables -w -C FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT &>/dev/null 
 # initialize inbound firewall chain
 sudo iptables -w -N FW_INBOUND_FIREWALL &> /dev/null
 sudo iptables -w -F FW_INBOUND_FIREWALL
-sudo iptables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL &> /dev/null || sudo iptables -w -A FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
+sudo iptables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL &> /dev/null || sudo iptables -w -A FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
 
 # initialize whitelist chain
 sudo iptables -w -N FW_WHITELIST &> /dev/null
@@ -160,7 +164,7 @@ sudo iptables -w -C FW_FORWARD -j FW_LOCKDOWN_SELECTOR &>/dev/null || sudo iptab
 sudo iptables -w -A FW_LOCKDOWN_SELECTOR -p tcp -m multiport --ports 53,67 -j RETURN
 sudo iptables -w -A FW_LOCKDOWN_SELECTOR -p udp -m multiport --ports 53,67 -j RETURN
 # skip lockdown for local subnet traffic
-sudo iptables -w -A FW_LOCKDOWN_SELECTOR -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
+sudo iptables -w -A FW_LOCKDOWN_SELECTOR -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j RETURN
 # FIXME: why??
 sudo iptables -w -A FW_LOCKDOWN_SELECTOR -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
 # device level lockdown
@@ -187,7 +191,7 @@ sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_BYPASS
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
 # directly accept for not monitored devices
-sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
 
 # DNAT related chain comes first
 # create port forward chain in PREROUTING, this is used in ipv4 only
@@ -210,7 +214,7 @@ sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT || sudo ip
 # 2. inbound connection should be blocked/allowed in INBOUND_FIREWALL in forward table
 sudo iptables -w -t nat -N FW_NAT_WHITELIST &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_WHITELIST
-sudo iptables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_WHITELIST &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_WHITELIST
+sudo iptables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_WHITELIST &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_WHITELIST
 # whitelist supersedes blacklist, thus directly accept
 sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set src -j ACCEPT
 sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set dst -j ACCEPT
@@ -233,7 +237,7 @@ sudo iptables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_mac_set
 sudo iptables -w -t nat -N FW_NAT_BLOCK &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_BLOCK
 # only enable NAT blacklist for outbound connections for the same reason as above
-sudo iptables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_BLOCK &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_BLOCK
+sudo iptables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_BLOCK &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_BLOCK
 
 sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set dst -j FW_NAT_HOLE
 sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set src -j FW_NAT_HOLE
@@ -256,12 +260,12 @@ sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set src -
 sudo iptables -w -t nat -N FW_NAT_LOCKDOWN_SELECTOR &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_LOCKDOWN_SELECTOR
 # only enable NAT lockdown for outbound connections for the same reason as above
-sudo iptables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_LOCKDOWN_SELECTOR &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_LOCKDOWN_SELECTOR
+sudo iptables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_LOCKDOWN_SELECTOR &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_LOCKDOWN_SELECTOR
 
 sudo iptables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -p tcp -m multiport --ports 53,67 -j RETURN
 sudo iptables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -p udp -m multiport --ports 53,67 -j RETURN
 # skip whitelist for local subnet traffic
-sudo iptables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
+sudo iptables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j RETURN
 # FIXME: why??
 sudo iptables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
 # device level whitelist
@@ -285,7 +289,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset create monitored_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create whitelist_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
   sudo ipset create whitelist_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
-  sudo ipset create whitelist_net_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &> /dev/null
+  sudo ipset create whitelist_net_set6 hash:net family inet6 hashsize 128 maxelem 65536 &> /dev/null
   sudo ipset create whitelist_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create whitelist_remote_ip_port_set6 hash:ip,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
   sudo ipset create whitelist_remote_net_port_set6 hash:net,port family inet6 hashsize 128 maxelem 65536 &>/dev/null
@@ -324,7 +328,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_BYPASS
   sudo ip6tables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_BYPASS
   # directly accept for not monitored devices
-  sudo ip6tables -w -A FW_BYPASS -m set --match-set not_monitored_mac_set src -j FW_ACCEPT
+  sudo ip6tables -w -A FW_BYPASS -m set --match-set monitoring_off_set src,src -j FW_ACCEPT
 
 
   # do not traverse FW_FORWARD if the packet belongs to an accepted connection
@@ -333,7 +337,7 @@ if [[ -e /sbin/ip6tables ]]; then
    # initialize inbound firewall chain
   sudo ip6tables -w -N FW_INBOUND_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_INBOUND_FIREWALL
-  sudo ip6tables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL &> /dev/null || sudo ip6tables -w -A FW_FORWARD -m set ! --match-set monitored_net_set src -m set --match-set monitored_net_set dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
+  sudo ip6tables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL &> /dev/null || sudo ip6tables -w -A FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
 
   # initialize whitelist chain
   sudo ip6tables -w -N FW_WHITELIST &> /dev/null
@@ -387,7 +391,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_LOCKDOWN_SELECTOR -p tcp -m multiport --ports 53,67 -j RETURN
   sudo ip6tables -w -A FW_LOCKDOWN_SELECTOR -p udp -m multiport --ports 53,67 -j RETURN
   # skip lockdown for local subnet traffic
-  sudo ip6tables -w -A FW_LOCKDOWN_SELECTOR -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
+  sudo ip6tables -w -A FW_LOCKDOWN_SELECTOR -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j RETURN
   # FIXME: why??
   sudo ip6tables -w -A FW_LOCKDOWN_SELECTOR -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
   # device level whitelist
@@ -414,7 +418,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -F FW_NAT_BYPASS
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
   # directly accept for not monitored devices
-  sudo ip6tables -w -t nat -A FW_NAT_BYPASS -m set --match-set not_monitored_mac_set src -j ACCEPT
+  sudo ip6tables -w -t nat -A FW_NAT_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
 
   # DNAT related chain comes first
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
@@ -432,7 +436,7 @@ if [[ -e /sbin/ip6tables ]]; then
   # 2. inbound connection should be blocked/allowed in INBOUND_FIREWALL in forward table
   sudo ip6tables -w -t nat -N FW_NAT_WHITELIST &>/dev/null
   sudo ip6tables -w -t nat -F FW_NAT_WHITELIST
-  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_WHITELIST &> /dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_WHITELIST
+  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_WHITELIST &> /dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_WHITELIST
   # whitelist supersedes blacklist, thus directly accept
   sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set6 src -j ACCEPT
   sudo ip6tables -w -t nat -A FW_NAT_WHITELIST -m set --match-set whitelist_ip_set6 dst -j ACCEPT
@@ -455,7 +459,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -N FW_NAT_BLOCK &>/dev/null
   sudo ip6tables -w -t nat -F FW_NAT_BLOCK
   # only enable NAT blacklist for outbound connections for the same reason as above
-  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_BLOCK &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_BLOCK
+  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_BLOCK &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_BLOCK
 
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set6 dst -j FW_NAT_HOLE
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_set6 src -j FW_NAT_HOLE
@@ -478,12 +482,12 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -N FW_NAT_LOCKDOWN_SELECTOR &> /dev/null
   sudo ip6tables -w -t nat -F FW_NAT_LOCKDOWN_SELECTOR
   # only enable NAT lockdown for outbound connections for the same reason as above
-  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_LOCKDOWN_SELECTOR &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src -m set ! --match-set monitored_net_set dst -j FW_NAT_LOCKDOWN_SELECTOR
+  sudo ip6tables -w -t nat -C FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_LOCKDOWN_SELECTOR &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j FW_NAT_LOCKDOWN_SELECTOR
   
   sudo ip6tables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -p tcp -m multiport --ports 53,67 -j RETURN
   sudo ip6tables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -p udp -m multiport --ports 53,67 -j RETURN
   # skip whitelist for local subnet traffic
-  sudo ip6tables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -m set --match-set monitored_net_set src -m set --match-set monitored_net_set dst -j RETURN
+  sudo ip6tables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j RETURN
   # FIXME: why??
   sudo ip6tables -w -t nat -A FW_NAT_LOCKDOWN_SELECTOR -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
   # device level whitelist

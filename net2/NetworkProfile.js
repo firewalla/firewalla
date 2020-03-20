@@ -155,8 +155,13 @@ class NetworkProfile {
     const spoofModeOn = await Mode.isSpoofModeOn();
     const sm = new SpooferManager();
     if (state === true) {
-      await iptables.switchInterfaceMonitoringAsync(true, this.o.uuid);
-      await ip6tables.switchInterfaceMonitoringAsync(true, this.o.uuid);
+      const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+      await exec(`sudo ipset del -! monitoring_off_set ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName} from monitoring_off_set`, err.message);
+      });
+      await exec(`sudo ipset del -! monitoring_off_set ${netIpsetName}6`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName}6 from monitoring_off_set`, err.message);
+      });
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway  && this.o.gateway.length > 0 
           && this.o.ipv4 && this.o.ipv4.length > 0
@@ -187,8 +192,13 @@ class NetworkProfile {
         }
       }
     } else {
-      await iptables.switchInterfaceMonitoringAsync(false, this.o.uuid);
-      await ip6tables.switchInterfaceMonitoringAsync(false, this.o.uuid);
+      const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+      await exec(`sudo ipset add -! monitoring_off_set ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName} to monitoring_off_set`, err.message);
+      });
+      await exec(`sudo ipset add -! monitoring_off_set ${netIpsetName}6`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName}6 to monitoring_off_set`, err.message);
+      });
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway) {
           await sm.deregisterSpoofInstance(this.o.intf, "*", false);
