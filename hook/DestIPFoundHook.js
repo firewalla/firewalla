@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,8 +20,6 @@ const Hook = require('./Hook.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const country = require('../extension/country/country.js');
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const f = require("../net2/Firewalla.js")
@@ -31,14 +29,12 @@ const Promise = require('bluebird');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
-const IntelManager = require('../net2/IntelManager.js');
-const intelManager = new IntelManager();
-
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
+const country = require('../extension/country/country.js');
 const SysManager = require('../net2/SysManager.js')
 const sysManager = new SysManager('info');
 
@@ -212,11 +208,6 @@ class DestIPFoundHook extends Hook {
     return domains;
   }
 
-  async enrichCountry(ip) {
-    const ipinfo = await intelManager.ipinfo(ip);
-    return ipinfo && ipinfo.country || country.getCountry(ip);
-  }
-
   async updateCategoryDomain(intel) {
     if(intel.host && intel.category && intel.t > TRUST_THRESHOLD) {
       if(intel.originIP) {
@@ -321,7 +312,7 @@ class DestIPFoundHook extends Hook {
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
-      aggrIntelInfo.country = aggrIntelInfo.country || await this.enrichCountry(ip) || ""; // empty string for unidentified country
+      aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip) || ""; // empty string for unidentified country
 
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
