@@ -79,7 +79,7 @@ class RedPlatform extends Platform {
     return false;
   }
   getAllowCustomizedProfiles(){
-    return 1;
+    return 0;
   }
 }
 

@@ -347,7 +347,9 @@ class SysManager {
 
       await exec(`sudo timedatectl set-timezone ${timezone}`);
       await exec('sudo systemctl restart cron.service');
-      await exec('sudo systemctl restart firemain');
+
+      //don't restart when initialize timezone
+      tz && (await exec('sudo systemctl restart firemain'));
       return null;
     } catch (err) {
       log.error("Failed to set timezone:", err);
