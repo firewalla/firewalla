@@ -9,11 +9,13 @@ LOCAL_IP=$2
 DNS=$3
 : ${DNS:="8.8.8.8"}
 SERVER_NETWORK=$4
-: ${SERVER_NETWORK="10.8.0.0"}
+: ${SERVER_NETWORK:="10.8.0.0"}
 NETMASK=$5
-: ${NETMASK="255.255.255.0"}
+: ${NETMASK:="255.255.255.0"}
 LOCAL_PORT=$6
-: ${LOCAL_PORT="1194"}
+: ${LOCAL_PORT:="1194"}
+PROTO=$7
+: ${PROTO:="udp"}
 
 chmod 777 -R /etc/openvpn
 
@@ -74,6 +76,8 @@ sed -i "s=NETMASK=$NETMASK=" /etc/openvpn/$INSTANCE_NAME.conf
 sed -i "s=LOCAL_PORT=$LOCAL_PORT=" /etc/openvpn/$INSTANCE_NAME.conf
 # Set server instance
 sed -i "s/SERVER_INSTANCE/$INSTANCE_NAME/" /etc/openvpn/$INSTANCE_NAME.conf
+# Set protocol
+sed -i "s/PROTO/$PROTO/" /etc/openvpn/$INSTANCE_NAME.conf
 
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/$INSTANCE_NAME.conf
