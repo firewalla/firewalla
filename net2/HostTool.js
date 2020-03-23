@@ -546,7 +546,7 @@ class HostTool {
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
   async generateLocalDomain(mac) {
-    if( macAddress=='0.0.0.0' ) {
+    if( mac=='0.0.0.0' ) {
       return;
     }
     const suffix = (await rclient.getAsync('local:domain:suffix')) || '.lan';
