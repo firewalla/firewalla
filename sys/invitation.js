@@ -228,7 +228,7 @@ class FWInvitation {
             status: "pending"
           }
         }
-        
+
       }
 
       let inviteResult = await this.cloud.eptInviteGroup(this.gid, eid);
@@ -253,7 +253,7 @@ class FWInvitation {
       };
 
     } catch(err) {
-      if(err != "404") {
+      if(err.statusCode != "404") {
         log.error(err);
       }
 
@@ -300,9 +300,9 @@ class FWInvitation {
     if(myIp) {
       icOptions.interface = myIp;
     }
-    
+
     this.intercomm = require('../lib/intercomm.js')(icOptions);
-    
+
     if (this.intercomm.bcapable()==false) {
       txtfield.verifymode = "qr";
     } else {
@@ -378,8 +378,8 @@ class FWInvitation {
       this.service && this.intercomm.stop(this.service);
       this.intercomm.bcapable() && this.intercomm.bstop();
       this.intercomm.bye();
-      this.unsetBonjourMessage();      
-    }    
+      this.unsetBonjourMessage();
+    }
   }
 }
 

@@ -84,15 +84,9 @@ const fwDiag = require('../extension/install/diag.js');
 const FWInvitation = require('./invitation.js');
 
 const Diag = require('../extension/diag/app.js');
+const diag = new Diag()
 
 let terminated = false;
-
-(async() => {
-  await fireRouter.waitTillReady();
-  await rclient.delAsync("firekick:pairing:message");
-  if (!platform.isFireRouterManaged())
-    await interfaceDiscoverSensor.run()
-})();
 
 const license = require('../util/license.js');
 
@@ -128,6 +122,8 @@ if (config.endpoint_name != null) {
 } else if (program.endpoint_name != null) {
   eptname = program.endpoint_name;
 }
+const eptcloud = new cloud(eptname, null);
+
 
 function getUserHome() {
   return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
@@ -145,16 +141,24 @@ if (!fs.existsSync(dbPath)) {
 
 let symmetrickey = generateEncryptionKey(_license);
 
-// start a diagnostic page for people to access during first binding process
-const diag = new Diag()
-diag.start()
-diag.iptablesRedirection()
-
-let eptcloud = new cloud(eptname, null);
-
 storage.initSync({
   'dir': dbPath
 });
+
+(async() => {
+  await fireRouter.waitTillReady();
+  await rclient.delAsync("firekick:pairing:message");
+  if (!platform.isFireRouterManaged()) {
+    await interfaceDiscoverSensor.run()
+  }
+
+  // start a diagnostic page for people to access during first binding process
+  diag.start()
+  diag.iptablesRedirection()
+
+  await eptcloud.loadKeys()
+  await login()
+})();
 
 function generateEncryptionKey(license) {
   // when there is no local license file, use default one
@@ -396,9 +400,6 @@ async function login() {
   })
 
 }
-
-eptcloud.loadKeys()
-  .then(login)
 
 process.stdin.resume();
 

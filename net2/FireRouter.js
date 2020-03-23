@@ -225,7 +225,7 @@ class FireRouter {
     const intf = fwConfig.firerouter.interface;
     routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
-    
+
     this.ready = false
     this.sysNetworkInfo = [];
 
@@ -303,7 +303,7 @@ class FireRouter {
       }
       if (!defaultWanIntfName )
         log.error("Default WAN interface is not defined in router config");
-      
+
 
       switch(mode) {
         case Mode.MODE_AUTO_SPOOF:
@@ -400,7 +400,7 @@ class FireRouter {
       const mac = _.get(sysinfo, `${intf}.mac.mac_address`, '').toUpperCase();
       const ip = _.get(sysinfo, `${intf}.ip_address`, '');
       const gateway = _.get(sysinfo, `${intf}.gateway`, '');
-      const _dns = _.get(sysinfo, `${intf}.dns`, []); 
+      const _dns = _.get(sysinfo, `${intf}.dns`, []);
       let v4dns = [];
       for (let i in _dns) {
         if (new Address4(_dns[i]).isValid()) {
@@ -456,7 +456,6 @@ class FireRouter {
 
     log.info('FireRouter initialization complete')
     this.ready = true
-    await pclient.publishAsync(Message.MSG_SYS_FR_RELOADED, "")
 
     if (f.isMain() && (
       // zeek used to be bro

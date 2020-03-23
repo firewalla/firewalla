@@ -29,6 +29,7 @@ const fs = require('fs')
 Promise.promisifyAll(fs)
 
 const Config = require('../../net2/config.js');
+const sysManager = require('../../net2/SysManager.js');
 
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
@@ -36,6 +37,8 @@ const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 const { wrapIptables } = require('../../net2/Iptables.js')
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
+
+const Mode = require('../../net2/Mode.js');
 
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
@@ -380,14 +383,17 @@ class App {
   }
 
   async iptablesRedirection(create = true) {
-    const config = Config.getConfig(true);
-    const findInf = await exec(`ip addr show dev ${config.monitoringInterface} | awk '/inet / {print $2}'|cut -f1 -d/`);
-    const ips = findInf.stdout.split('\n')
-	  log.info("XXXX", ips);
+    let interfaces = sysManager.getLogicInterfaces()
+    if (Mode.isRouterModeOn()) {
+      interfaces = interfaces.filter(intf => intf.type != 'wan')
+    }
+    const IPv4List = interfaces.map(intf => intf.ip_address)
+
+    log.info("", IPv4List);
 
     const action = create ? '-A' : '-D';
 
-    for (const ip of ips) {
+    for (const ip of IPv4List) {
       if (!ip) continue;
 
       log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${port} on ${ip}`);
