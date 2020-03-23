@@ -9,10 +9,11 @@ if [[ -e /log/blog ]]; then
 fi
 
 TMP_FILE="/home/pi/.firewalla/config/local.bro"
+ADDITIONAL_FILE="/home/pi/.firewalla/config/additional_options.bro"
 if [ -f "${TMP_FILE}" ]; then
-  [[ -e $CUR_DIR/local.bro ]] && sudo bash -c "cat $CUR_DIR/local.bro ${TMP_FILE} > /usr/local/bro/share/bro/site/local.bro"
+  [[ -e $CUR_DIR/local.bro ]] && sudo bash -c "cat $CUR_DIR/local.bro ${ADDITIONAL_FILE} ${TMP_FILE} > /usr/local/bro/share/bro/site/local.bro"
 else
-  [[ -e $CUR_DIR/local.bro ]] && sudo cp $CUR_DIR/local.bro /usr/local/bro/share/bro/site/local.bro
+  [[ -e $CUR_DIR/local.bro ]] && sudo bash -c "cat $CUR_DIR/local.bro ${ADDITIONAL_FILE} > /usr/local/bro/share/bro/site/local.bro"
 fi
 
 sync

@@ -823,7 +823,9 @@ module.exports = class HostManager {
 
   async asyncBasicDataForInit(json) {
     const speed = await platform.getNetworkSpeed();
+    const nicStates = await platform.getNicStates();
     json.nicSpeed = speed;
+    json.nicStates = nicStates;
     const versionUpdate = await sysManager.getVersionUpdate();
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
@@ -1348,7 +1350,7 @@ module.exports = class HostManager {
     this.policy[name] = data;
     log.debug("System:setPolicy:Changed", name, data);
 
-    await this.savePolicy()
+    await this.saveSinglePolicy(name)
     let obj = {};
     obj[name] = data;
     log.info(name, obj)
@@ -1650,6 +1652,10 @@ module.exports = class HostManager {
       }
     }
     await rclient.hmset(key, d)
+  }
+
+  async saveSinglePolicy(name) {
+    await rclient.hmset('policy:system', name, JSON.stringify(this.policy[name]))
   }
 
   loadPolicyAsync() {

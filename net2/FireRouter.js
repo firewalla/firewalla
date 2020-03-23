@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc.
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -46,7 +46,6 @@ const { delay } = require('../util/util.js')
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
-const exec = require('child-process-promise').exec;
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -96,6 +95,46 @@ function updateMaps() {
     intf.config.meta.intfName = intfName
     intfUuidMap[intf.config.meta.uuid] = intf
   }
+}
+
+async function calculateZeekOptions(monitoringInterfaces) {
+  const parentInterfaces = {};
+  for (const intfName in intfNameMap) {
+    if (!monitoringInterfaces.includes(intfName))
+      continue;
+    const intf = intfNameMap[intfName];
+    const subIntfs = intf.intf;
+    if (!subIntfs) {
+      parentInterfaces[intfName] = 1;
+    } else {
+      if (Array.isArray(subIntfs)) {
+        // bridge interface can have multiple sub interfaces
+        for (const subIntf of subIntfs) {
+          const rawIntf = subIntf.split('.')[0]; // strip vlan tag if present
+          parentInterfaces[rawIntf] = 1;
+        }
+      }
+      if (typeof subIntfs === 'string') {
+        const rawIntf = subIntf.split('.')[0];
+        parentInterfaces[rawIntf] = 1;
+      }
+    }
+  }
+  if (monitoringInterfaces.length <= Object.keys(parentInterfaces).length)
+    return {
+      listenInterfaces: monitoringInterfaces.sort(),
+      restrictFilters: {}
+    };
+  else
+    return {
+      listenInterfaces: Object.keys(parentInterfaces).sort(),
+      restrictFilters: {}
+    };
+}
+
+function safeCheckMonitoringInterfaces(monitoringInterfaces) {
+  // filter pppoe interfaces
+  return monitoringInterfaces.filter(i => !i.startsWith("ppp"));
 }
 
 async function generateNetworkInfo() {
@@ -163,15 +202,7 @@ async function generateNetworkInfo() {
   return networkInfos;
 }
 
-async function readSignatureMac() {
-  // do not read signature mac repeatedly once it is already loaded
-  if (signatureMac)
-    return;
-  // use mac address of "eth0" for red/blue/gold
-  const result = await exec("cat /sys/class/net/eth0/address").catch((err) => {return null});
-  signatureMac = result && result.stdout && result.stdout.trim().toUpperCase();
-}
-
+// internal properties
 let routerInterface = null
 let routerConfig = null
 let monitoringIntfNames = [];
@@ -180,7 +211,6 @@ let wanIntfNames = null
 let defaultWanIntfName = null
 let intfNameMap = {}
 let intfUuidMap = {}
-let signatureMac = null;
 
 
 class FireRouter {
@@ -230,7 +260,10 @@ class FireRouter {
 
   // let it crash
   async init(first = false) {
-    await readSignatureMac();
+    let zeekOptions = {
+      listenInterfaces: [],
+      restrictFilters: {}
+    };
     if (this.platform.isFireRouterManaged()) {
       // fireroute
       routerConfig = await getConfig()
@@ -294,6 +327,8 @@ class FireRouter {
           // do nothing for other mode
           monitoringIntfNames = [];
       }
+      monitoringIntfNames = safeCheckMonitoringInterfaces(monitoringIntfNames);
+
       logicIntfNames = Object.values(intfNameMap)
         .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
         .filter(intf => intf.state && intf.state.ip4)
@@ -309,6 +344,8 @@ class FireRouter {
       Config.updateUserConfigSync(updatedConfig);
       // update sys:network:info at the end so that all related variables and configs are already changed
       this.sysNetworkInfo = await generateNetworkInfo();
+      // calculate minimal listen interfaces based on monitoring interfaces
+      zeekOptions = await calculateZeekOptions(monitoringIntfNames);
     } else {
       // make sure there is at least one usable ethernet
       const networkTool = require('./NetworkTool.js')();
@@ -391,6 +428,10 @@ class FireRouter {
 
       monitoringIntfNames = [ 'eth0', 'eth0:0' ];
       logicIntfNames = ['eth0', 'eth0:0'];
+      zeekOptions = {
+        listenInterfaces: ["eth0"],
+        restrictFilters: {}
+      };
 
       wanIntfNames = ['eth0'];
       defaultWanIntfName = "eth0";
@@ -415,14 +456,16 @@ class FireRouter {
 
     log.info('FireRouter initialization complete')
     this.ready = true
+    await pclient.publishAsync(Message.MSG_SYS_FR_RELOADED, "")
 
     if (f.isMain() && (
-      this.platform.isFireRouterManaged() && broControl.interfaceChanged(monitoringIntfNames) ||
+      // zeek used to be bro
+      this.platform.isFireRouterManaged() && broControl.optionsChanged(zeekOptions) ||
       !this.platform.isFireRouterManaged() && first
     )) {
       this.broReady = false;
       if(this.platform.isFireRouterManaged()) {
-        await broControl.writeClusterConfig(monitoringIntfNames)
+        await broControl.writeClusterConfig(zeekOptions);
       }
       // do not await bro restart to finish, it may take some time
       broControl.restart()
@@ -449,10 +492,6 @@ class FireRouter {
 
     await delay(1)
     return this.waitTillReady()
-  }
-
-  getSignatureMac() {
-    return signatureMac;
   }
 
   getInterfaceViaName(name) {

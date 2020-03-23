@@ -43,6 +43,10 @@ class BlockRuleCheckSensor extends Sensor {
 
   async checkBlockRules() {
     log.info("Start check block rule");
+    if (await pm2.isDisableAll()) {
+      return; // temporarily by DisableAll flag
+    }
+
     let policies = await pm2.loadActivePoliciesAsync({ includingDisabled: 1 });
     for (const policy of policies) {
       const needCheckActive = await this.needCheckActive(policy);

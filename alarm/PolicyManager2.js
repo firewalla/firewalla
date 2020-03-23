@@ -31,6 +31,7 @@ const policyActiveKey = "policy_active";
 
 const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
+const policyDisableAllKey = "policy:disable:all";
 const initID = 1;
 const {Address4, Address6} = require('ip-address');
 const Host = require('../net2/Host.js');
@@ -110,7 +111,7 @@ class PolicyManager2 {
       }
 
       this.enabledTimers = {}
-
+      this.disableAllTimer = null;
     }
     return instance;
   }
@@ -266,6 +267,10 @@ class PolicyManager2 {
           job.timeout(60 * 1000).save(function () { })
         }
       }
+    })
+
+    sem.on("PolicySetDisableAll", async (event) => {
+      await this.checkRunPolicies(false);
     })
   }
 
@@ -520,6 +525,11 @@ class PolicyManager2 {
       return policy // do nothing, since it's already enabled
     }
     await this._enablePolicy(policy)
+
+    if (await this.isDisableAll()) {
+      return policy;  // temporarily by DisableAll flag
+    }
+
     this.tryPolicyEnforcement(policy, "enforce")
     Bone.submitIntelFeedback('enable', policy, 'policy')
     return policy
@@ -864,6 +874,10 @@ class PolicyManager2 {
   }
 
   async enforce(policy) {
+    if (await this.isDisableAll()) {
+      return policy; // temporarily by DisableAll flag
+    }
+
     if (policy.disabled == 1) {
       return // ignore disabled policy rules
     }
@@ -1102,7 +1116,7 @@ class PolicyManager2 {
         // FIXME support tags and intfs for dnsmasq
         // dnsmasq_entry: use dnsmasq instead of iptables
         if (policy.dnsmasq_entry) {
-          await dnsmasq.addPolicyFilterEntry([target], {scope, intf}).catch(() => {});
+          await dnsmasq.addPolicyFilterEntry([target], {pid, scope, intfs, tags}).catch(() => {});
           await dnsmasq.restartDnsmasq()
         } else if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs)) {
           if (!_.isEmpty(tags)) {
@@ -1165,9 +1179,11 @@ class PolicyManager2 {
         // FIXME support tags and intfs for dnsmasq
         if (policy.dnsmasq_entry) {
           await domainBlock.blockCategory(target, {
+            pid,
             scope: scope,
             category: target,
-            intf: intf
+            intfs,
+            tags
           });
         } else if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
           if (!_.isEmpty(tags)) {
@@ -1446,7 +1462,7 @@ class PolicyManager2 {
       case "dns":
         // dnsmasq_entry: use dnsmasq instead of iptables
         if (policy.dnsmasq_entry) {
-          await dnsmasq.removePolicyFilterEntry([target], {scope, intf}).catch(() => {});
+          await dnsmasq.removePolicyFilterEntry([target], {pid, scope, intfs, tags}).catch(() => {});
           await dnsmasq.restartDnsmasq()
         } else if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs)) {
           if (!_.isEmpty(tags)) {
@@ -1499,9 +1515,11 @@ class PolicyManager2 {
       case "category":
         if (policy.dnsmasq_entry) {
           await domainBlock.unblockCategory(target, {
+            pid,
             scope: scope,
             category: target,
-            intf: intf
+            intfs,
+            tags
           });
         } else if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
           if (!_.isEmpty(tags)) {
@@ -1871,6 +1889,110 @@ class PolicyManager2 {
     }
 
     return [_.uniqWith(result, _.isEqual), err];
+  }
+
+  async checkRunPolicies(initialFlag) {
+    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
+    if (this.disableAllTimer) {
+      clearTimeout(this.disableAllTimer);
+    }
+
+    if (disableAllFlag == "on") {
+      // just firemain started, not need unenforce all
+      if (!initialFlag) {
+        this.unenforceAllPolicies(); 
+      }
+      const startTime = await rclient.hgetAsync(policyDisableAllKey, "startTime");
+      let expireMinute = await rclient.hgetAsync(policyDisableAllKey, "expire");
+      if (expireMinute) {
+        expireMinute = parseFloat(expireMinute);
+      } else {
+        expireMinute = 0;
+      }
+
+      if (startTime && expireMinute > 0) {
+        const expiredTime = parseFloat(startTime) + expireMinute * 60;
+        const timeoutSecond = expiredTime - new Date() / 1000;
+        if (timeoutSecond > 60) {
+          this.disableAllTimer = setTimeout(async () => { // set timeout(when disableAll flag expires, it will enforce all policy)
+            await this.enforceAllPolicies();
+            await rclient.hsetAsync(policyDisableAllKey, "flag", "off"); // set flag = off
+          }, timeoutSecond * 1000);
+        } else {
+          // disableAll flag expired or expire soon
+          await this.enforceAllPolicies();
+          await rclient.hsetAsync(policyDisableAllKey, "flag", "off"); // set flag = off
+        }
+      }
+    } else {
+      this.enforceAllPolicies();
+    }
+  }
+
+  async setDisableAll(flag, expireMinute) {
+    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
+    const expire = await rclient.hgetAsync(policyDisableAllKey, "expire");
+    await rclient.hmsetAsync(policyDisableAllKey, {
+      flag: flag,
+      expire: expireMinute || 0,
+      startTime: Date.now() / 1000
+    });
+    if (disableAllFlag !== flag || expire !== expireMinute || (flag == "on" && expireMinute)) {
+      sem.emitEvent({
+        type: 'PolicySetDisableAll',
+        toProcess: 'FireMain',
+        message: 'Policy SetDisableAll: ' + flag
+      })
+    }
+  }
+
+  async unenforceAllPolicies() {
+    const rules = await this.loadActivePoliciesAsync();
+
+    const unEnforcement = rules.map((rule) => {
+      return new Promise((resolve, reject) => {
+        try {
+          if (this.queue) {
+            const job = this.queue.createJob({
+              policy: rule,
+              action: "unenforce",
+              booting: true
+            })
+            job.timeout(60000).save();
+            job.on('succeeded', resolve);
+            job.on('failed', resolve);
+          }
+        } catch (err) {
+          log.error(`Failed to queue policy ${rule.pid}`, err)
+          resolve(err)
+        }
+      })
+    })
+
+    await Promise.all(unEnforcement);
+    log.info("All policy rules are unenforced");
+  }
+
+  async isDisableAll() {
+    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
+    if (disableAllFlag == "on") {
+      const startTime = await rclient.hgetAsync(policyDisableAllKey, "startTime");
+      let expireMinute = await rclient.hgetAsync(policyDisableAllKey, "expire");
+      if (expireMinute) {
+        expireMinute = parseFloat(expireMinute);
+      } else {
+        expireMinute = 0;
+      }
+
+      if (startTime && expireMinute > 0 && parseFloat(startTime) + expireMinute * 60 < new Date() / 1000) { // expired
+        return false;
+      }
+      return true;
+    } else if (disableAllFlag == "off") {
+      return false
+    }
+
+    return false;
   }
 }
 
