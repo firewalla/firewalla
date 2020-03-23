@@ -21,6 +21,10 @@ EXTERNAL_PORT=$4
 : ${EXTERNAL_PORT:="1194"}
 sed -i "s/EXTERNAL_PORT/$EXTERNAL_PORT/" /etc/openvpn/easy-rsa/keys/Default.txt
 
+PROTO=$5
+: ${PROTO:="udp"}
+sed -i "s/PROTO/$PROTO/" /etc/openvpn/easy-rsa/keys/Default.txt
+
  
 # Default Variable Declarations 
 DEFAULT="Default.txt" 
