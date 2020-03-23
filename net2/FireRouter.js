@@ -103,7 +103,7 @@ async function calculateZeekOptions(monitoringInterfaces) {
     if (!monitoringInterfaces.includes(intfName))
       continue;
     const intf = intfNameMap[intfName];
-    const subIntfs = intf.intf;
+    const subIntfs = intf.config && intf.config.intf;
     if (!subIntfs) {
       parentInterfaces[intfName] = 1;
     } else {
@@ -115,7 +115,7 @@ async function calculateZeekOptions(monitoringInterfaces) {
         }
       }
       if (typeof subIntfs === 'string') {
-        const rawIntf = subIntf.split('.')[0];
+        const rawIntf = subIntfs.split('.')[0];
         parentInterfaces[rawIntf] = 1;
       }
     }
