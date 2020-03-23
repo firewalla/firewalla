@@ -1011,14 +1011,19 @@ class netBot extends ControllerBot {
       case "hostDomain": {
         let data = msg.data;
         (async () => {
-          if (hostTool.isMacAddress(msg.target)) {
+          if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
             const macAddress = msg.target
-            const { customizeDomainName } = data.value
-            let macObject = {
-              mac: macAddress,
-              customizeDomainName: customizeDomainName ? customizeDomainName : ''
+            const { customizeDomainName, suffix } = data.value;
+            if (customizeDomainName && macAddress != '0.0.0.0') {
+              let macObject = {
+                mac: macAddress,
+                customizeDomainName: customizeDomainName ? customizeDomainName : ''
+              }
+              await hostTool.updateMACKey(macObject, true);
             }
-            await hostTool.updateMACKey(macObject, true);
+            if (suffix && macAddress == '0.0.0.0') {
+              await rclient.setAsync('local:domain:suffix', suffix);
+            }
             await hostTool.generateLocalDomain(macAddress);
             sem.emitEvent({
               type: "LocalDomainUpdate",

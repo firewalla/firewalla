@@ -46,6 +46,10 @@ class LocalDomainSensor extends Sensor {
         this.hookFeature(featureName);
         sem.on('LocalDomainUpdate', async (event) => {
             const macArr = event.macArr;
+            if (macArr.includes('0.0.0.0')) {
+                await this.localDomainSuffixUpdate();
+                return;
+            }
             await dnsmasq.setupLocalDeviceDomain(macArr, true);
         });
     }
@@ -76,6 +80,20 @@ class LocalDomainSensor extends Sensor {
                 log.warn(`Dnsmasq: Error when remove ${LOCAL_DOMAIN_FILE}`, err);
             }
         }
+    }
+    async localDomainSuffixUpdate() {
+        const hosts = await hostManager.getHostsAsync();
+        let macArr = [];
+        for (const host of hosts) {
+            if (host && host.o && host.o.mac) {
+                macArr.push(host.o.mac)
+            }
+        }
+        const promises = macArr.map(async (mac) => {
+            await hostTool.generateLocalDomain(mac);
+        })
+        await Promise.all(promises);
+        await dnsmasq.setupLocalDeviceDomain(macArr, true);
     }
 }
 
