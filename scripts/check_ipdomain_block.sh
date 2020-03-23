@@ -97,7 +97,7 @@ function print_block_rule {
 }
 
 function check_ip {
-  local ip_ret ipsets rule_id rule_category policy_ret
+  local ip_ret ipsets rule_id rule_category rule_country policy_ret
 
   if [[ -z $2 ]]; then
     echo "Start check ip: $1 "
