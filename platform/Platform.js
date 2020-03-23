@@ -104,6 +104,10 @@ class Platform {
     }
   }
 
+  getVPNServerDefaultProtocol() {
+    return "udp";
+  }
+
   getName() {}
 
   getBoardSerial() {}

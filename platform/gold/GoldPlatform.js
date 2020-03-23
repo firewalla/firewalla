@@ -40,6 +40,10 @@ class GoldPlatform extends Platform {
     return ["eth0", "eth1", "eth2", "eth3"];
   }
 
+  getVPNServerDefaultProtocol() {
+    return "tcp";
+  }
+
   getBoardSerial() {
     // use mac address as unique serial number
     return this.getSignatureMac();
