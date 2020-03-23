@@ -384,7 +384,7 @@ class App {
 
   async iptablesRedirection(create = true) {
     let interfaces = sysManager.getLogicInterfaces()
-    if (Mode.isRouterModeOn()) {
+    if (await Mode.isRouterModeOn()) {
       interfaces = interfaces.filter(intf => intf.type != 'wan')
     }
     const IPv4List = interfaces.map(intf => intf.ip_address)
