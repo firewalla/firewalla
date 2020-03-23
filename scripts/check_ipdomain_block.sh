@@ -97,7 +97,7 @@ function print_block_rule {
 }
 
 function check_ip {
-  local ip_ret ipsets rule_id policy_ret
+  local ip_ret ipsets rule_id rule_category rule_country policy_ret
 
   if [[ -z $2 ]]; then
     echo "Start check ip: $1 "
@@ -118,6 +118,8 @@ function check_ip {
     sudo ipset test $setName $1 &>/dev/null;
     if [[ $? -eq 0 ]]; then
       rule_id=$(echo $setName | sed 's/.*_\([0-9]\+\)_.*/\1/')
+      rule_category=$(echo $setName | sed 's/c_bd_\([a-zA-Z_]\+\)_set/\1/')
+      rule_country=$(echo $setName | sed 's/c_bd_country:\([a-zA-Z]\+\)_set/\1/')
       if [[ $rule_id != $setName ]]; then
         if echo $REDISRULES | grep "policy:$rule_id" &>/dev/null; then
           policy_ret=1
@@ -134,6 +136,16 @@ function check_ip {
         fi
       elif [[ "$setName" == "blocked_ip_set" || "$setName" == "blocked_domain_set" || "$setName" == "blocked_net_set" ]]; then
         check_redis_rule $setName $1 $2
+        if [[ $? -eq 0 ]]; then
+          ip_ret=0
+        fi
+      elif [[ $rule_category != $setName ]]; then
+        check_redis_rule $setName $rule_category $2
+        if [[ $? -eq 0 ]]; then
+          ip_ret=0
+        fi
+      elif [[ $rule_country != $setName ]]; then
+        check_redis_rule $setName $rule_country $2
         if [[ $? -eq 0 ]]; then
           ip_ret=0
         fi
@@ -183,6 +195,12 @@ function check_redis_rule {
         rule_ret=0
       fi
     elif [[ $ptype == "net" && $(in_subnet $target $2) -eq 0 && $mac_ret -eq 0 ]]; then
+      print_block_rule $setName $policyKey
+      rule_ret=0
+    elif [[ $ptype == "category" && $target == *$2* && $mac_ret -eq 0 ]]; then
+      print_block_rule $setName $policyKey
+      rule_ret=0
+    elif [[ $ptype == "country" && $target == *$2* && $mac_ret -eq 0 ]]; then
       print_block_rule $setName $policyKey
       rule_ret=0
     fi
