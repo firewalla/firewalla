@@ -78,6 +78,9 @@ class RedPlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
+  getAllowCustomizedProfiles(){
+    return 0;
+  }
 }
 
 module.exports = RedPlatform;

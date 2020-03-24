@@ -108,10 +108,15 @@ sudo iptable -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w 
 # do not traverse FW_FORWARD if the packet belongs to an accepted connection
 sudo iptables -w -C FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT &>/dev/null || sudo iptables -w -A FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT
 
+# initialize firewall selector chain
+sudo iptables -w -N FW_FIREWALL_SELECTOR &> /dev/null
+sudo iptables -w -F FW_FIREWALL_SELECTOR
+sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_SELECTOR || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_SELECTOR
+
 # initialize inbound firewall chain
 sudo iptables -w -N FW_INBOUND_FIREWALL &> /dev/null
 sudo iptables -w -F FW_INBOUND_FIREWALL
-sudo iptables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL &> /dev/null || sudo iptables -w -A FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
+sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP
 
 # initialize whitelist chain
 sudo iptables -w -N FW_WHITELIST &> /dev/null
@@ -336,10 +341,15 @@ if [[ -e /sbin/ip6tables ]]; then
   # do not traverse FW_FORWARD if the packet belongs to an accepted connection
   sudo ip6tables -w -C FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT &>/dev/null || sudo ip6tables -w -A FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT
 
+  # initialize firewall selector chain
+  sudo ip6tables -w -N FW_FIREWALL_SELECTOR &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_SELECTOR
+  sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_SELECTOR || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_SELECTOR
+
    # initialize inbound firewall chain
   sudo ip6tables -w -N FW_INBOUND_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_INBOUND_FIREWALL
-  sudo ip6tables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL &> /dev/null || sudo ip6tables -w -A FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
+  sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP
 
   # initialize whitelist chain
   sudo ip6tables -w -N FW_WHITELIST &> /dev/null
