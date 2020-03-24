@@ -491,8 +491,8 @@ class Rule {
   tab(t) { this.tables = t; return this }
   pro(p) { this.proto = p; return this }
   chn(c) { this.chain = c; return this }
-  mth(name, spec, type = "set") {
-    this.match.push({ name, spec, type })
+  mth(name, spec, type = "set", positive = true) {
+    this.match.push({ name, spec, type, positive })
     return this
   }
   jmp(j) { this.jump = j; return this }
@@ -522,7 +522,10 @@ class Rule {
     this.match.forEach((match) => {
       switch(match.type) {
         case 'set':
-          cmd.push('-m set --match-set', match.name)
+          cmd.push('-m set');
+          if (!match.positive)
+            cmd.push('!');
+          cmd.push('--match-set', match.name)
           if (match.spec === 'both')
             cmd.push('src,dst')
           else
@@ -530,26 +533,38 @@ class Rule {
           break;
 
         case 'iif':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-i', match.name);
           break;
 
         case 'oif':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-o', match.name);
           break;
 
         case 'src':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-s', match.name);
           break;
 
         case 'dst':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-d', match.name);
           break;
 
         case 'sport':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('--sport', match.name);
           break;
 
         case 'dport':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('--dport', match.name);
           break;
 

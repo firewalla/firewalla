@@ -24,7 +24,7 @@ const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const wrapIptables = require('./Iptables').wrapIptables;
+const {Rule, wrapIptables} = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -188,6 +188,26 @@ class Tag {
 
   async _dnsmasq(config) {
     // do nothing for dnsmasq on tag
+  }
+
+  async shield(policy) {
+    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(Tag.getTagIpsetName(this.o.uid), "dst,dst", "set", true).mth(Tag.getTagIpsetName(this.o.uid), "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
+    const rule6 = rule.clone().fam(6);
+    if (policy.state === true) {
+      await exec(rule.toCmd('-A')).catch((err) => {
+        log.error(`Failed to enable IPv4 inbound firewall on tag ${this.o.name}`, err.message);
+      });
+      await exec(rule6.toCmd('-A')).catch((err) => {
+        log.error(`Failed to enable IPv6 inbound firewall on tag ${this.o.name}`, err.message);
+      });
+    } else {
+      await exec(rule.toCmd('-D')).catch((err) => {
+        log.error(`Failed to disable IPv4 inbound firewall on tag ${this.o.name}`, err.message);
+      });
+      await exec(rule6.toCmd('-D')).catch((err) => {
+        log.error(`Failed to disable IPv6 inbound firewall on tag ${this.o.name}`, err.message);
+      });
+    }
   }
 
   async vpnClient(policy) {

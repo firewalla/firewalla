@@ -821,7 +821,7 @@ module.exports = class DNSMASQ {
       const ipset = NetworkProfile.getNetIpsetName(uuid);
       const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
         .mth(ipset, "src,src", "set")
-        .pam('-m set ! --match-set no_dns_caching_set src,src')
+        .mth("no_dns_caching_set", "src,src", "set", false)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
       const redirectUDP = redirectTCP.clone().pro('udp')
@@ -849,7 +849,7 @@ module.exports = class DNSMASQ {
       const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
       const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
         .mth(ipset, "src,src", "set")
-        .pam('-m set ! --match-set no_dns_caching_set src,src')
+        .mth("no_dns_caching_set", "src,src", "set", false)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
       const redirectUDP = redirectTCP.clone().pro('udp');

@@ -88,7 +88,6 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const iptables = require('./Iptables.js');
-const ip6tables = require('./Ip6tables.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -104,7 +103,7 @@ Promise.promisifyAll(fs);
 const Message = require('./Message.js');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
-const wrapIptables = require("./Iptables.js").wrapIptables;
+const {Rule} = require("./Iptables.js");
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -1396,23 +1395,24 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
+    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth("monitored_net_set", "dst,dst", "set", true).mth("monitored_net_set", "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
     if (policy.state === true) {
-      let cmd = wrapIptables(`sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
+      let cmd = rule.toCmd('-A');
       await exec(cmd).catch((err) => {
-        log.error("Failed to enable IPv4 inbound firewall");
+        log.error("Failed to enable global IPv4 inbound firewall", err.message);
       });
-      cmd = wrapIptables(`sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
+      cmd = rule.clone().fam(6).toCmd('-A');
       await exec(cmd).catch((err) => {
-        log.error("Failed to enable IPv6 inbound firewall");
+        log.error("Failed to enable global IPv6 inbound firewall", err.message);
       });
     } else {
-      let cmd = wrapIptables(`sudo iptables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
+      let cmd = rule.toCmd('-D');
       await exec(cmd).catch((err) => {
-        log.error("Failed to enable IPv4 inbound firewall");
+        log.error("Failed to disable global IPv4 inbound firewall", err.message);
       });
-      cmd = wrapIptables(`sudo ip6tables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
+      cmd = rule.clone().fam(6).toCmd('-D');
       await exec(cmd).catch((err) => {
-        log.error("Failed to enable IPv6 inbound firewall");
+        log.error("Failed to disable global IPv6 inbound firewall", err.message);
       });
     }
   }
