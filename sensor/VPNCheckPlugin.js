@@ -28,7 +28,8 @@ const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const api = config.firewallaVPNCheckURL || "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping";
-
+const pl = require('../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 class VPNCheckPlugin extends Sensor {
 
   async apiRun() {
@@ -73,7 +74,8 @@ class VPNCheckPlugin extends Sensor {
       method: "POST",
       uri: api,
       json: {
-        tls_auth: taKey
+        tls_auth: taKey,
+        protocol: platform.getVPNServerDefaultProtocol()
       },
       auth: {
         bearer: token
