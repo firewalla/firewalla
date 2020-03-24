@@ -138,7 +138,9 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
 const Alarm = require('../alarm/Alarm.js');
-const FRPSUCCESSCODE = 0
+const FRPSUCCESSCODE = 0;
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -2724,8 +2726,19 @@ class netBot extends ControllerBot {
         break;
       case "policy:search": {
         (async () => {
-          const result = await pm2.searchPolicy(value.target);
-          this.simpleTxData(msg, result[0], result[1], callback);
+          const resultCheck = await pm2.checkSearchTarget(value.target);
+          if (resultCheck.err != null) {
+            this.simpleTxData(msg, null, resultCheck.err, callback)
+            return;
+          }
+
+          let data = {};
+          data.polices = await pm2.searchPolicy(resultCheck.waitSearch, resultCheck.isDomain);
+          data.exceptions = await em.searchException(value.target);
+          if (resultCheck.isDomain) {
+            data.dnsmasqs = await dnsmasq.searchDnsmasq(value.target);
+          }
+          this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })

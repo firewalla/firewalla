@@ -110,6 +110,7 @@ const HOSTFILE_PATH = platform.isFireRouterManaged() ?
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 
 let statusCheckTimer = null;
+const flowUtil = require('../../net2/FlowUtil.js');
 
 module.exports = class DNSMASQ {
   constructor() {
@@ -1595,5 +1596,73 @@ module.exports = class DNSMASQ {
 
   async getCounterInfo() {
     return this.counter;
+  }
+
+  async searchDnsmasq(target) {
+    let matchedDnsmasqs = [];
+    const addrPort = target.split(":");
+    const domain = addrPort[0];
+    let waitSearch = [];
+    const splited = domain.split(".");
+    for (const currentTxt of splited) {
+      waitSearch.push(splited.join("."));
+      splited.shift();
+    }
+    waitSearch.push(splited.join("."));
+    const hashedDomains = flowUtil.hashHost(target, {keepOriginal: true});
+
+    const dirs = [FILTER_DIR, LOCAL_FILTER_DIR];
+    for (let dir of dirs) {
+      const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch(() => false);
+      if (!dirExists)
+        continue;
+
+      const files = await fs.readdirAsync(dir);
+      await Promise.all(files.map(async (filename) => {
+        try {
+          const filePath = `${dir}/${filename}`;
+          const fileStat = await fs.statAsync(filePath);
+          if (fileStat.isFile()) {
+            let match = false;
+            let content = await fs.readFileAsync(filePath, {encoding: 'utf8'});
+            if (content.indexOf("hash-address=/") > -1) {
+              for (const hdn of hashedDomains) {
+                if (content.indexOf("hash-address=/" + hdn[2] + "/") > -1) {
+                  match = true;
+                  break;
+                }
+              }
+            } else {
+              for (const currentTxt of waitSearch) {
+                if (content.indexOf("address=/" + currentTxt + "/") > -1) {
+                  match = true;
+                  break;
+                }
+              }
+            }
+            
+            if (match) {
+              let featureName = filename;
+              if (filename.startsWith("adblock_")) {
+                featureName = 'adblock';
+              } else if (filename.startsWith("safe_search")) {
+                featureName = 'safe_search';
+              } else if (filename.startsWith("box_alias")) {
+                featureName = 'box_alias';
+              } else if (filename.startsWith("policy_")) {
+                featureName = 'policy';
+              } else if (filename.indexOf("_block.conf") > -1) {
+                featureName = 'policy';
+              }
+              matchedDnsmasqs.push(featureName);
+            }
+          }
+        } catch (err) {
+          log.info(`File ${filePath} not exist`);
+        }
+      }));
+    }
+
+    return _.uniqWith(matchedDnsmasqs, _.isEqual);
   }
 };

@@ -1699,15 +1699,14 @@ class PolicyManager2 {
     return (!Number.isNaN(port) && Number.isInteger(Number(port)) && Number(port) > 0 && Number(port) <= 65535)
   }
 
-  async searchPolicy(target) {
-    let result = [];
-    let err = null;
+  async checkSearchTarget(target) {
+    let result = {};
+    let waitSearch = [];
     if (!target) {
-      err = { code: 400, msg: "invalid target" };
-      return [result, err];
+      result.err = { code: 400, msg: "invalid target" };
+      return result;
     }
 
-    let waitSearch = [];
     const addrPort = target.split(":");
     let isDomain = false;
     const addr = addrPort[0];
@@ -1717,13 +1716,13 @@ class PolicyManager2 {
       } catch (err) {
       }
       if (!isDomain) {
-        err = { code: 400, msg: "Invalid value" };
-        return [result, err];
+        result.err = { code: 400, msg: "Invalid value" };
+        return result;
       }
     }
     if (addrPort.length == 2 && (!this.isPort(addrPort[1]) || (this.isPort(addr) && this.isPort(addrPort[1])))) {
-      err = { code: 400, msg: "Invalid value" };
-      return [result, err];
+      result.err = { code: 400, msg: "Invalid value" };
+      return result;
     }
     if (isDomain) {
       await domainBlock.resolveDomain(addr);
@@ -1742,7 +1741,15 @@ class PolicyManager2 {
         waitSearch.push(addr + "," + addrPort[1]); // for ipset test command
       }
     }
-    
+
+    result.err = null;
+    result.waitSearch = waitSearch;
+    result.isDomain = waitSearch;
+    return result;
+  }
+
+  async searchPolicy(waitSearch, isDomain) {
+    let result = [];
     let ipsets = [];
     let ipsetContent = ""; // for string matching
     try {
@@ -1888,7 +1895,7 @@ class PolicyManager2 {
       }
     }
 
-    return [_.uniqWith(result, _.isEqual), err];
+    return _.uniqWith(result, _.isEqual);
   }
 
   async checkRunPolicies(initialFlag) {
