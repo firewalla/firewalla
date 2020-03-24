@@ -37,7 +37,9 @@ for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
 done
 
 if [[ -n $PIDS ]]; then
-  wait $PIDS
+  wait -n
+  # considered as failure if any child process exits
+  exit 1
 else
   exit 0
 fi

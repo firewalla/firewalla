@@ -93,7 +93,7 @@ async function run() {
 
   sclient.on("message", (channel, message) => {
     switch (channel) {
-      case Message.MSG_SYS_FR_RELOADED:
+      case Message.MSG_SYS_NETWORK_INFO_UPDATED:
       case Message.MSG_SYS_API_INTERFACE_CHANGED:
         log.info('Message received', channel)
         refreshListeningInterfaces(app)
@@ -101,7 +101,7 @@ async function run() {
     }
   });
 
-  sclient.subscribe(Message.MSG_SYS_FR_RELOADED)
+  sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED)
   sclient.subscribe(Message.MSG_SYS_API_INTERFACE_CHANGED)
 }
 

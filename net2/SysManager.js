@@ -368,11 +368,6 @@ class SysManager {
   update(callback) {
     if (!callback) callback = () => { }
 
-    if (!fireRouter.isReady()) {
-      callback()
-      return
-    }
-
     return util.callbackify(this.updateAsync).bind(this)(callback)
   }
 
