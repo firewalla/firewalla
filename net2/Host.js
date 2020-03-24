@@ -49,6 +49,8 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 
+const {Rule} = require('./Iptables.js');
+
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -624,7 +626,23 @@ class Host {
   }
 
   async shield(policy) {
-    
+    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}4`, "dst,dst", "set", true).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
+    const rule6 = new Rule().fam(6).chn('FW_FIREWALL_SELECTOR').mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}6`, "dst,dst", "set", true).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
+    if (policy.state === true) {
+      await exec(rule.toCmd('-A')).catch((err) => {
+        log.error(`Failed to enable device IPv4 inbound firewall for ${this.o.mac}`, err.message);
+      });
+      await exec(rule6.toCmd('-A')).catch((err) => {
+        log.error(`Failed to enable device IPv6 inbound firewall for ${this.o.mac}`, err.message);
+      });
+    } else {
+      await exec(rule.toCmd('-D')).catch((err) => {
+        log.error(`Failed to disable device IPv4 inbound firewall for ${this.o.mac}`, err.message);
+      });
+      await exec(rule6.toCmd('-D')).catch((err) => {
+        log.error(`Failed to disable device IPv6 inbound firewall for ${this.o.mac}`, err.message);
+      });
+    }
   }
 
   // Notice
