@@ -1051,9 +1051,12 @@ class netBot extends ControllerBot {
       }
       case "timezone":
         if (value.timezone) {
-          sysManager.setTimezone(value.timezone, (err) => {
+          (async () => {
+            const err = await sysManager.setTimezone(value.timezone);
             this.simpleTxData(msg, {}, err, callback);
-          });
+          })();
+        }else{
+          this.simpleTxData(msg, {}, new Error("Invalid timezone"), callback);
         }
         break;
       case "includeNameInNotification": {
@@ -2302,19 +2305,18 @@ class netBot extends ControllerBot {
 
     if (msg.data.item === "dhcpCheck") {
       (async () => {
-        let mode = require('../net2/Mode.js');
+        const mode = require('../net2/Mode.js');
+        const dhcp = require("../extension/dhcp/dhcp.js");
         await mode.reloadSetupMode();
-        let dhcpModeOn = await mode.isDHCPModeOn();
-        if (dhcpModeOn) {
-          const dhcpFound = await rclient.getAsync("sys:scan:dhcpserver");
-          const response = {
-            DHCPMode: true,
-            DHCPDiscover: dhcpFound
-          };
-          this.simpleTxData(msg, response, null, callback);
-        } else {
-          this.simpleTxData(msg, { DHCPMode: false }, null, callback);
+        const routerIP = sysManager.myGateway();
+        let DHCPDiscover = false;
+        if (routerIP) {
+          DHCPDiscover = await dhcp.dhcpServerStatus(routerIP);
         }
+        this.simpleTxData(msg, {
+          DHCPMode: await mode.isDHCPModeOn(),
+          DHCPDiscover: DHCPDiscover
+        }, null, callback)
       })().catch((err) => {
         log.error("Failed to do DHCP discover", err);
         this.simpleTxData(msg, null, err, callback);
@@ -3165,7 +3167,7 @@ class netBot extends ControllerBot {
         }
         const settings = value.settings || {};
         (async () => {
-          const allowCustomizedProfiles = fc.getConfig().allowCustomizedProfiles || 1;
+          const allowCustomizedProfiles = platform.getAllowCustomizedProfiles() || 1;
           const allSettings = await VpnManager.getAllSettings();
           if (Object.keys(allSettings).filter((name) => {
             return name !== "fishboneVPN1" && name !== cn;

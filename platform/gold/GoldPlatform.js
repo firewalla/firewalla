@@ -133,6 +133,9 @@ class GoldPlatform extends Platform {
   getBroTabFile() {
     return `${f.getFirewallaHome()}/etc/brotab.gold`;
   }
+  getAllowCustomizedProfiles(){
+    return 10;
+  }
 }
 
 module.exports = GoldPlatform;
