@@ -478,7 +478,6 @@ module.exports = class {
       }
 
       var val = exception[key];
-      log.info(exception["eid"], val);
       if ((exception["json." + key] == true || exception["json." + key] == "true") && val && validator.isJSON(val)) {
         if (exception.jsonComparisonMatch(val, val2)) {
           return true;
