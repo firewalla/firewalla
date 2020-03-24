@@ -335,48 +335,30 @@ class SysManager {
     return tz;
   }
 
-  async setTimezone(timezone, callback) {
-    callback = callback || function () { }
+  async setTimezone(timezone) {
     const tz = await this.getTimezone();
     this.timezone = timezone;
     if (tz == timezone) {
-      callback(null);
-      return;
+      return null;
     }
-
-    rclient.hset("sys:config", "timezone", timezone, (err) => {
-      if (err) {
-        log.error("Failed to set timezone " + timezone + ", err: " + err);
-      }
+    try {
+      await rclient.hsetAsync("sys:config", "timezone", timezone);
       pclient.publish("System:TimezoneChange", timezone);
 
-      // TODO: each running process may not be set to the target timezone until restart
-      (async () => {
-        try {
-          let cmd = `sudo timedatectl set-timezone ${timezone}`
-          await exec(cmd)
+      await exec(`sudo timedatectl set-timezone ${timezone}`);
+      await exec('sudo systemctl restart cron.service');
 
-          // TODO: we can improve in the future that only restart if new timezone is different from old one
-          // but the impact is low since calling this settimezone function is very rare
-          let cronRestartCmd = "sudo systemctl restart cron.service"
-          await exec(cronRestartCmd)
-          await exec('sudo systemctl restart firemain');
-          callback(null)
-        } catch (err) {
-          log.error("Failed to set timezone:", err);
-          callback(err)
-        }
-      })()
-    });
+      //don't restart when initializing timezone
+      tz && (await exec('sudo systemctl restart firemain'));
+      return null;
+    } catch (err) {
+      log.error("Failed to set timezone:", err);
+      return err;
+    }
   }
 
   update(callback) {
     if (!callback) callback = () => { }
-
-    if (!fireRouter.isReady()) {
-      callback()
-      return
-    }
 
     return util.callbackify(this.updateAsync).bind(this)(callback)
   }

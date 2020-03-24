@@ -1056,9 +1056,12 @@ class netBot extends ControllerBot {
       }
       case "timezone":
         if (value.timezone) {
-          sysManager.setTimezone(value.timezone, (err) => {
+          (async () => {
+            const err = await sysManager.setTimezone(value.timezone);
             this.simpleTxData(msg, {}, err, callback);
-          });
+          })();
+        }else{
+          this.simpleTxData(msg, {}, new Error("Invalid timezone"), callback);
         }
         break;
       case "includeNameInNotification": {

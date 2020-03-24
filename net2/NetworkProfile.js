@@ -20,8 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const PolicyManager = require('./PolicyManager.js');
 const pm = new PolicyManager();
 const f = require('./Firewalla.js');
-const iptables = require('./Iptables.js');
-const ip6tables = require('./Ip6tables.js');
+const {Rule} = require('./Iptables.js');
 const exec = require('child-process-promise').exec;
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
@@ -248,7 +247,23 @@ class NetworkProfile {
   }
 
   async shield(policy) {
-
+    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(NetworkProfile.getNetIpsetName(this.o.uuid), "dst,dst", "set", true).mth(NetworkProfile.getNetIpsetName(this.o.uuid), "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
+    const rule6 = new Rule().fam(6).chn('FW_FIREWALL_SELECTOR').mth(`${NetworkProfile.getNetIpsetName(this.o.uuid)}6`, "dst,dst", "set", true).mth(`${NetworkProfile.getNetIpsetName(this.o.uuid)}6`, "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
+    if (policy.state === true) {
+      await exec(rule.toCmd('-A')).catch((err) => {
+        log.error(`Failed to enable IPv4 inbound firewall for ${this.o.intf}`, err.message);
+      });
+      await exec(rule6.toCmd('-A')).catch((err) => {
+        log.error(`Failed to enable IPv6 inbound firewall for ${this.o.intf}`, err.message);
+      });
+    } else {
+      await exec(rule.toCmd('-D')).catch((err) => {
+        log.error(`Failed to disable IPv4 inbound firewall for ${this.o.intf}`, err.message);
+      });
+      await exec(rule6.toCmd('-D')).catch((err) => {
+        log.error(`Failed to disable IPv6 inbound firewall for ${this.o.intf}`, err.message);
+      });
+    }
   }
 
   // underscore prefix? follow same function name in Host.js :(
