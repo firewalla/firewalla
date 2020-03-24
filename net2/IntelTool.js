@@ -181,18 +181,18 @@ class IntelTool {
 
     if (this.debugMode) {
       list.push({
-        _alist:hashList,
-        alist:urlList.map(item => item[0]),
-        flow:{ fd }
+        _alist: hashList,
+        alist: urlList.map(item => item[0]),
+        flow: { fd }
       });
     } else {
       list.push({
-        _alist:hashList,
-        flow:{ fd }
+        _alist: hashList,
+        flow: { fd }
       });
     }
 
-    let data = {flowlist:list, hashed:1};
+    let data = { flowlist: list, hashed: 1 };
 
     try {
       const result = await bone.intelAsync("*", "check", data);
@@ -203,75 +203,61 @@ class IntelTool {
     }
   }
 
-  async checkIntelFromCloud(ipList, domainList, fd) {
-    log.debug("Checking intel for",fd, ipList, domainList);
+  async checkIntelFromCloud(ip, domain, fd) {
+    log.debug("Checking intel for", fd, ip, domain);
     if (fd == null) {
       fd = 'in';
     }
 
-    let flowList = [];
-    let _ipList = [];
-    let _aList = [];
-    let _hList = [];
+    const _ipList = flowUtil.hashHost(ip) || [];
 
-    ipList.forEach((ip)=>{
-      _ipList = _ipList.concat(flowUtil.hashHost(ip));
-    });
+    const hashCache = {}
 
-    let hashCache = {}
+    const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
+    hds.forEach((hash) => {
+      this.updateHashMapping(hashCache, hash)
+    })
 
-    domainList.forEach((d) => {
-      let hds = flowUtil.hashHost(d, {keepOriginal: true});
-      hds.forEach((hash) => {
-        this.updateHashMapping(hashCache, hash)
-      })
-
-      hds = hds.map((x) => x.slice(1, 3)) // remove the origin domains
-
-      _hList = _hList.concat(hds);
-
-      let ads = flowUtil.hashApp(d);
-      _aList = _aList.concat(ads);
-    });
+    const _hList = hds.map((x) => x.slice(1, 3)) // remove the origin domains
 
     _ipList.push.apply(_ipList, _hList);
 
-    if(this.debugMode) {
-      flowList.push({
-        iplist:ipList,
-        hlist:domainList,
-        alist:domainList,
-        _iplist:_ipList,
-        _hlist:_hList,
-        _alist:_aList,
-        flow:{fd:fd}});
-    } else {
-      flowList.push({
-        _iplist:_ipList,
-        _hlist:_hList,
-        _alist:_aList,
-        flow:{fd:fd}});
+    const _aList = flowUtil.hashApp(domain);
+
+    const flowList = [{
+      _iplist: _ipList,
+      _hlist: _hList,
+      _alist: _aList,
+      flow: { fd }
+    }]
+
+    if (this.debugMode) {
+      Object.assign(flowList[0], {
+        iplist: [ip],
+        hlist: [domain],
+        alist: [domain]
+      })
     }
 
-    let data = {flowlist:flowList, hashed:1};
+    const data = { flowlist: flowList, hashed: 1 };
 
-    //    log.info(require('util').inspect(data, {depth: null}));
+    log.debug(require('util').inspect(data, { depth: null }));
 
     try {
       const results = await bone.intelAsync('*', 'check', data)
-      if(Array.isArray(results)) {
+      if (Array.isArray(results)) {
         results.forEach((result) => {
           const ip = result.ip
-          if(hashCache[ip]) {
+          if (hashCache[ip]) {
             result.originIP = hashCache[ip]
           }
         })
       }
-      log.debug("IntelCheck Result:",ipList, domainList, data);
+      log.debug("IntelCheck Result:", ip, domain, results);
 
       return results
-    } catch(err) {
-      log.error("IntelCheck Result FAIL:", ipList, data, err);
+    } catch (err) {
+      log.error("IntelCheck Result FAIL:", ip, data, err);
       throw err;
     }
   }
