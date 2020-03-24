@@ -117,7 +117,6 @@ sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_SELECTOR || sudo iptables -w -A FW
 sudo iptables -w -N FW_INBOUND_FIREWALL &> /dev/null
 sudo iptables -w -F FW_INBOUND_FIREWALL
 sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP
-#sudo iptables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL &> /dev/null || sudo iptables -w -A FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
 
 # initialize whitelist chain
 sudo iptables -w -N FW_WHITELIST &> /dev/null
@@ -351,7 +350,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_INBOUND_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_INBOUND_FIREWALL
   sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP
-  #sudo ip6tables -w -C FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL &> /dev/null || sudo ip6tables -w -A FW_FORWARD -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctstate NEW -j FW_INBOUND_FIREWALL
 
   # initialize whitelist chain
   sudo ip6tables -w -N FW_WHITELIST &> /dev/null
