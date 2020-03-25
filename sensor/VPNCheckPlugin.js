@@ -73,11 +73,9 @@ class VPNCheckPlugin extends Sensor {
     let vpnConfig = await rclient.hgetAsync("policy:system","vpn");
     try{
       vpnConfig = JSON.parse(vpnConfig) || {};
-      log.info("jack test",vpnConfig)
       protocol = vpnConfig.protocol
     }catch(e){}
     protocol = protocol? protocol : platform.getVPNServerDefaultProtocol();
-    log.info("jack test",protocol)
     const option = {
       method: "POST",
       uri: api,
