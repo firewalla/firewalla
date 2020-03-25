@@ -122,7 +122,7 @@ TIME_THRESHOLD="2019-10-14"
 
 function sync_time() {
     time_website=$1
-    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
+    time=$(curl -m10 -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
     if [[ "x$time" == "x" ]]; then
         logger "ERROR: Failed to load date info from website: $time_website"
         return 1
@@ -157,8 +157,8 @@ GITHUB_STATUS_API=https://api.github.com
 
 logger `date`
 rc=1
-for i in `seq 1 10`; do
-    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
+for i in `seq 1 5`; do
+    HTTP_STATUS_CODE=`curl -m10 -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       rc=0
       break

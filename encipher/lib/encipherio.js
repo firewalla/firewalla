@@ -98,7 +98,7 @@ let legoEptCloud = class {
       await fs.accessAsync(this.getPrivateKeyPath())
     } catch(err) {
       if(err) {
-        log.error('Fail on reading key files', err)
+        log.warn('Fail on reading key files', err)
         return null;
       }
     }
