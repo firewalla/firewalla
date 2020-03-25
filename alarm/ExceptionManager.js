@@ -35,7 +35,7 @@ const exceptionPrefix = "exception:";
 const flat = require('flat');
 
 const _ = require('lodash');
-const validator = require('validator');
+const Alarm = require('../alarm/Alarm.js');
 
 module.exports = class {
   constructor() {
@@ -471,61 +471,28 @@ module.exports = class {
     }
   }
 
-  searchExceptionValue(exception, val2) {
-    for (var key in exception) {
-      if(!key.startsWith("p.") && !key.startsWith("e.")) {
-        continue;
-      }
-
-      var val = exception[key];
-      if ((exception["json." + key] == true || exception["json." + key] == "true") && val && validator.isJSON(val)) {
-        if (exception.jsonComparisonMatch(val, val2)) {
-          return true;
-        }
-      }
-
-      if (key === "p.tag.ids") {
-        const intersect = _.intersection(val, val2);
-        if (intersect.length > 0) {
-          return true;
-        }
-      }
-
-      let valArray = null;
-      if (_.isString(val) && validator.isJSON(val)) {
-        valArray = JSON.parse(val);
-      }
-      if (_.isArray(valArray)) {
-        let matchInArray = false;
-        for (const valCurrent of valArray) {
-          if (exception.valueMatch(valCurrent + "", val2)) {
-            matchInArray = true;
-            break;
-          }
-        }
-
-        if (matchInArray) {
-          return true;
-        }
-      } else {
-        if (exception.valueMatch(val, val2)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
   async searchException(target) {
     let matchedExceptions = [];
     const addrPort = target.split(":");
     const val2 = addrPort[0];
     const exceptions = await this.loadExceptionsAsync();
     for (const exception of exceptions) {
-      if (this.searchExceptionValue(exception, val2)) {
+      let match = false;
+      for (var key in exception) {
+        if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+          continue;
+        }
+
+        let payload = Object.assign({}, exception);
+        payload[key] = val2;
+        let alarm = new Alarm.Alarm("", Date.now(), "", payload);
+        if (exception.match(alarm)) {
+          match = true;
+          break;
+        }
+      }
+      if (match) {
         matchedExceptions.push(exception);
-        continue;
       }
     }
 
