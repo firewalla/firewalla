@@ -19,6 +19,7 @@ const log = require('./logger.js')(__filename);
 const cp = require('child_process');
 const spawn = cp.spawn;
 const execAsync = require('util').promisify(cp.exec)
+const ipset = require('./Ipset.js');
 
 const util = require('util');
 
@@ -217,7 +218,7 @@ function iptables(rule, callback) {
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
-          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination ${dns}`
+          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ${dns}`
         }
 
         switch(action) {
@@ -231,7 +232,7 @@ function iptables(rule, callback) {
             cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination " + dns;
+            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + ` -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ` + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + ` -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ` + dns;
           break;
         }
 

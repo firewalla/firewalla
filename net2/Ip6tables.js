@@ -17,6 +17,7 @@ const cp = require('child_process');
 const execAsync = require('util').promisify(cp.exec)
 
 const log = require('./logger.js')(__filename);
+const ipset = require('./Ipset.js');
 
 var running = false;
 var workqueue = [];
@@ -233,7 +234,7 @@ function dnsRedirect(server, port, type, cb) {
     action: '-A',
     table: 'nat',
     protocol: 'udp',
-    extra: '-m set ! --match-set no_dns_caching_set src,src',
+    extra: `-m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`,
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
@@ -272,7 +273,7 @@ function dnsUnredirect(server, port, type, cb) {
     action: '-D',
     table: 'nat',
     protocol: 'udp',
-    extra: '-m set ! --match-set no_dns_caching_set src,src',
+    extra: `-m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`,
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,

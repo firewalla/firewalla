@@ -43,6 +43,7 @@ const fc = require('../../net2/config.js')
 const { delay } = require('../../util/util.js');
 
 const { Rule } = require('../../net2/Iptables.js');
+const ipset = require('../../net2/Ipset.js');
 
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq_local";
@@ -818,10 +819,10 @@ module.exports = class DNSMASQ {
         continue;
       }
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const ipset = NetworkProfile.getNetIpsetName(uuid);
+      const netSet = NetworkProfile.getNetIpsetName(uuid);
       const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(ipset, "src,src", "set")
-        .mth("no_dns_caching_set", "src,src", "set", false)
+        .mth(netSet, "src,src", "set")
+        .mth(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, "src,src", "set", false)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
       const redirectUDP = redirectTCP.clone().pro('udp')
@@ -845,11 +846,11 @@ module.exports = class DNSMASQ {
         continue;
       }
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const ipset = NetworkProfile.getNetIpsetName(uuid) + "6";
+      const netSet = NetworkProfile.getNetIpsetName(uuid) + "6";
       const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
       const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(ipset, "src,src", "set")
-        .mth("no_dns_caching_set", "src,src", "set", false)
+        .mth(netSet, "src,src", "set")
+        .mth(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, "src,src", "set", false)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
       const redirectUDP = redirectTCP.clone().pro('udp');
