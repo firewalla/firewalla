@@ -88,6 +88,7 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const iptables = require('./Iptables.js');
+const ipset = require('./Ipset.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -1395,7 +1396,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth("monitored_net_set", "dst,dst", "set", true).mth("monitored_net_set", "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
+    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", true).mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
     if (policy.state === true) {
       let cmd = rule.toCmd('-A');
       await exec(cmd).catch((err) => {

@@ -159,8 +159,7 @@ sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set dst,
 sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set src,src -j FW_DROP
 sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_DROP
 sudo iptables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP
-sudo iptables -w -I FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP
-sudo iptables -w -I FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP
+sudo iptables -w -I FW_BLOCK -m set ! --match-set monitored_net_set dst,dst -m set --match-set blocked_mac_set src -j FW_DROP
 
 # initialize lockdown selector chain
 sudo iptables -w -N FW_LOCKDOWN_SELECTOR &> /dev/null
@@ -259,8 +258,7 @@ sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_po
 sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set src,src -j FW_NAT_HOLE
 sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_NAT_HOLE
 sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set src -j FW_NAT_HOLE
-sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set dst -j FW_NAT_HOLE
-sudo iptables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set src -j FW_NAT_HOLE
+sudo iptables -w -t nat -A FW_NAT_BLOCK -m set ! --match-set monitored_net_set dst,dst -m set --match-set blocked_mac_set src -j FW_NAT_HOLE
 
 # initialize lockdown selector chain
 sudo iptables -w -t nat -N FW_NAT_LOCKDOWN_SELECTOR &> /dev/null
@@ -392,8 +390,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_net_port_set6 src,src -j FW_DROP
   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_DROP
   sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_remote_port_set src -j FW_DROP
-  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_mac_set dst -j FW_DROP
-  sudo ip6tables -w -I FW_BLOCK -m set --match-set blocked_mac_set src -j FW_DROP
+  sudo ip6tables -w -I FW_BLOCK -m set ! --match-set monitored_net_set dst,dst -m set --match-set blocked_mac_set src -j FW_DROP
 
   # initialize lockdown selector chain
   sudo ip6tables -w -N FW_LOCKDOWN_SELECTOR &> /dev/null
@@ -485,8 +482,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_net_port_set6 src,src -j FW_NAT_HOLE
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set dst -j FW_NAT_HOLE
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_remote_port_set src -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set dst -j FW_NAT_HOLE
-  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_mac_set src -j FW_NAT_HOLE
+  sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set ! --match-set monitored_net_set dst,dst -m set --match-set blocked_mac_set src -j FW_NAT_HOLE
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set6 dst,dst -j FW_NAT_HOLE &>/dev/null
   sudo ip6tables -w -t nat -A FW_NAT_BLOCK -m set --match-set blocked_ip_port_set6 src,src -j FW_NAT_HOLE &>/dev/null
 

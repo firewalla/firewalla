@@ -50,6 +50,7 @@ const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 
 const {Rule} = require('./Iptables.js');
+const ipset = require('./Ipset.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -452,10 +453,10 @@ class Host {
     try {
       const dnsCaching = policy.dnsCaching;
       if (dnsCaching === true) {
-        const cmd = `sudo ipset del -! no_dns_caching_mac_set ${this.o.mac}`;
+        const cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC} ${this.o.mac}`;
         await exec(cmd);
       } else {
-        const cmd = `sudo ipset add -! no_dns_caching_mac_set ${this.o.mac}`;
+        const cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC} ${this.o.mac}`;
         await exec(cmd);
       }
     } catch (err) {
@@ -524,28 +525,28 @@ class Host {
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = state;
-      await exec(`sudo ipset del -! monitoring_off_mac_set ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to remove ${this.o.mac} from monitoring_off_mac_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC}`, err.message);
       });
-      await exec(`sudo ipset del -! monitoring_off_set ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}4 from monitoring_off_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
+        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}4 from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset del -! monitoring_off_set ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}6 from monitoring_off_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
+        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}6 from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = false;
-      await exec(`sudo ipset add -! monitoring_off_mac_set ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to add ${this.o.mac} to monitoring_off_mac_set`, err);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC}`, err);
       });
-      await exec(`sudo ipset add -! monitoring_off_set ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to monitoring_off_set`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
+        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset add -! monitoring_off_set ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to monitoring_off_set`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
+        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
     }
 
