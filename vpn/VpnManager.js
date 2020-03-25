@@ -43,7 +43,6 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const UPNP = require('../extension/upnp/upnp.js');
 const Message = require('../net2/Message.js');
-const Mode = require('../net2/Mode.js');
 
 const moment = require('moment');
 
@@ -146,8 +145,8 @@ class VpnManager {
   }
 
   async removeUpnpPortMapping(opts) {
-    if (await Mode.isRouterModeOn()) {
-      log.info("VPN server UPnP port mapping is not used in router mode");
+    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+      log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to remove upnp port mapping`);
       return false;
     }
     log.info("VpnManager:RemoveUpnpPortMapping", opts);
@@ -171,8 +170,8 @@ class VpnManager {
   }
 
   async addUpnpPortMapping(protocol, localPort, externalPort, description) {
-    if (await Mode.isRouterModeOn()) {
-      log.info("VPN server UPnP port mapping is not used in router mode");
+    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+      log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to add upnp port mapping`);
       return false;
     }
     log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
