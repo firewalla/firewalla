@@ -69,13 +69,21 @@ class VPNCheckPlugin extends Sensor {
     if(!token) {
       return null;
     }
-
+    let protocol;
+    let vpnConfig = await rclient.hgetAsync("policy:system","vpn");
+    try{
+      vpnConfig = JSON.parse(vpnConfig) || {};
+      log.info("jack test",vpnConfig)
+      protocol = vpnConfig.protocol
+    }catch(e){}
+    protocol = protocol? protocol : platform.getVPNServerDefaultProtocol();
+    log.info("jack test",protocol)
     const option = {
       method: "POST",
       uri: api,
       json: {
         tls_auth: taKey,
-        protocol: platform.getVPNServerDefaultProtocol()
+        protocol: protocol
       },
       auth: {
         bearer: token
