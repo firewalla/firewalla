@@ -1307,12 +1307,40 @@ class PolicyManager2 {
             }
             break;
           }
+          case "mac": {
+            // remote is device mac address
+            await Host.ensureCreateTrackingIpset(remote);
+            remoteSet4 = `${Host.getTrackingIpsetPrefix(remote)}4`;
+            remoteSet6 = `${Host.getTrackingIpsetPrefix(remote)}6`;
+            remoteSpec = "src";
+            break;
+          }
+          case "network": {
+            // remote is network uuid
+            await NetworkProfile.ensureCreateEnforcementEnv(remote);
+            remoteSet4 = NetworkProfile.getNetIpsetName(remote);
+            remoteSet6 = `${remoteSet4}6`;
+            remoteSpec = "src,src";
+            break;
+          }
+          case "tag": {
+            // remote is tag uid
+            const tag = TagManager.getTagByUid(remote);
+            if (!tag) {
+              log.warn(`Tag ${remote} does not exist, no need to apply `, policy);
+              return;
+            }
+            remoteSet4 = Tag.getTagIpsetName(remote);
+            remoteSet6 = remoteSet4;
+            remoteSpec = "src,src";
+            break;
+          }
           default:
             // remote is not specified, match all remote
         }
         switch (localType) {
           case "mac": {
-            // mac is device mac address
+            // local is device mac address
             await Host.ensureCreateTrackingIpset(local);
             localSet4 = `${Host.getTrackingIpsetPrefix(local)}4`;
             localSet6 = `${Host.getTrackingIpsetPrefix(local)}6`;
@@ -1601,12 +1629,40 @@ class PolicyManager2 {
               remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(remote));
               break;
             }
+            case "mac": {
+              // remote is device mac address
+              await Host.ensureCreateTrackingIpset(remote);
+              remoteSet4 = `${Host.getTrackingIpsetPrefix(remote)}4`;
+              remoteSet6 = `${Host.getTrackingIpsetPrefix(remote)}6`;
+              remoteSpec = "src";
+              break;
+            }
+            case "network": {
+              // remote is network uuid
+              await NetworkProfile.ensureCreateEnforcementEnv(remote);
+              remoteSet4 = NetworkProfile.getNetIpsetName(remote);
+              remoteSet6 = `${remoteSet4}6`;
+              remoteSpec = "src,src";
+              break;
+            }
+            case "tag": {
+              // remote is tag uid
+              const tag = TagManager.getTagByUid(remote);
+              if (!tag) {
+                log.warn(`Tag ${remote} does not exist, no need to remove `, policy);
+                return;
+              }
+              remoteSet4 = Tag.getTagIpsetName(remote);
+              remoteSet6 = remoteSet4;
+              remoteSpec = "src,src";
+              break;
+            }
             default:
               // remote is not specified, match all remote
           }
           switch (localType) {
             case "mac": {
-              // mac is device mac address
+              // local is device mac address
               await Host.ensureCreateTrackingIpset(local);
               localSet4 = `${Host.getTrackingIpsetPrefix(local)}4`;
               localSet6 = `${Host.getTrackingIpsetPrefix(local)}6`;
