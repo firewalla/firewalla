@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC / Firewalla LLC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,8 +16,6 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const util = require('util');
-const ip = require('ip');
 const readline = require('readline');
 const Config = require('../net2/config.js');
 
@@ -36,13 +34,13 @@ const hardTimeout = 30;
 async function getDestToCheck() {
   for (let i in availableTestDomains) {
     const testDomain = availableTestDomains[i];
-    let cmd = `dig -4 +short ${testDomain}`;
+    let cmd = `dig -4 +short +time=3 +tries=2 ${testDomain}`;
     try {
       const result = await cp.exec(cmd);
       const ips = result.stdout.split('\n').filter(ip => ip.length !== 0);
       for (let j in ips) {
         const ip = ips[j];
-        cmd = `nc -z ${ip} 443`;
+        cmd = `nc -w 5 -z ${ip} 443`;
         await cp.exec(cmd);
         // connection attempt succeeded, return this ip as dst ip
         return {

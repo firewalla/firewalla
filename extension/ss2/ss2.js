@@ -182,7 +182,7 @@ class SS2 {
 
   async isListening() {
     try {
-      await exec("nc -z localhost 9954 && nc -z localhost 9955 && netstat -an  | egrep -q ':::9953'");
+      await exec("nc -w 5 -z localhost 9954 && nc -w 5 -z localhost 9955 && netstat -an  | egrep -q ':::9953'");
       return true;
     } catch(err) {
       return false;
