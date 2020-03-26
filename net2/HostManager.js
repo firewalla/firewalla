@@ -278,7 +278,6 @@ module.exports = class HostManager {
       json.isBeta = false
     }
 
-    json.cpuid = platform.getBoardSerial();
     json.updateTime = Date.now();
     if (sysManager.sshPassword && f.isApi()) {
       json.ssh = sysManager.sshPassword;
