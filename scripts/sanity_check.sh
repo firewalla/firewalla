@@ -126,8 +126,12 @@ check_each_system_config() {
     local VALUE=$2
     if [[ $VALUE == "" ]]; then
         VALUE="false"
+    elif [[ $VALUE == "1" ]]; then
+        VALUE="true"
+    elif [[ $VALUE == "0" ]]; then
+        VALUE="false"
     fi
-    printf "%15s %20s\n" "$1" "$VALUE"
+    printf "%30s %20s\n" "$1" "$VALUE"
 }
 
 get_redis_key_with_no_ttl() {
@@ -299,11 +303,45 @@ check_iptables() {
 
 check_sys_features() {
     echo "---------------------- System Features ------------------"
+    dpkg -s jq &> /dev/null
+    if [[ $? -ne 0 ]]; then
+        echo "jq not found, installing... "
+        sudo apt-get update
+        sudo apt-get install -y jq
+    fi
+
+    declare -A FEATURES
+    local FILE="$FIREWALLA_HOME/net2/config.json"
+    if [[ -f "$FILE" ]]; then
+        local CONFIG=$(jq -r ".userFeatures" $FILE)
+        if [[ "$CONFIG" != "null" ]]; then
+            local JSON=$(jq -r "to_entries|map(\"\(.key)=\(.value|tostring)\")|.[]" <<< "$CONFIG")
+            while IFS="=" read -r key value
+            do
+                FEATURES["$key"]="$value"
+            done <<< "$JSON"
+        fi
+    fi
+
+    FILE="$HOME/.firewalla/config/config.json"
+    if [[ -f "$FILE" ]]; then
+        local CONFIG=$(jq -r ".userFeatures" $FILE)
+        if [[ "$CONFIG" != "null" ]]; then
+            local JSON=$(jq -r "to_entries|map(\"\(.key)=\(.value|tostring)\")|.[]" <<< "$CONFIG")
+            while IFS="=" read -r key value
+            do
+                FEATURES["$key"]="$value"
+            done <<< "$JSON"
+        fi
+    fi
 
     local HKEYS=$(redis-cli hkeys sys:features)
-
     for hkey in $HKEYS; do
-      check_each_system_config $hkey $(redis-cli hget sys:features $hkey)
+        FEATURES["$hkey"]=$(redis-cli hget sys:features $hkey)
+    done
+
+    for key in ${!FEATURES[*]}; do
+        check_each_system_config $key ${FEATURES[$key]}
     done
 
     echo ""
