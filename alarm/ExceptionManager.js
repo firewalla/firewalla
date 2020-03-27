@@ -35,6 +35,7 @@ const exceptionPrefix = "exception:";
 const flat = require('flat');
 
 const _ = require('lodash');
+const Alarm = require('../alarm/Alarm.js');
 
 module.exports = class {
   constructor() {
@@ -470,4 +471,31 @@ module.exports = class {
     }
   }
 
+  async searchException(target) {
+    let matchedExceptions = [];
+    const addrPort = target.split(":");
+    const val2 = addrPort[0];
+    const exceptions = await this.loadExceptionsAsync();
+    for (const exception of exceptions) {
+      let match = false;
+      for (var key in exception) {
+        if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+          continue;
+        }
+
+        let payload = Object.assign({}, exception);
+        payload[key] = val2;
+        let alarm = new Alarm.Alarm("", Date.now(), "", payload);
+        if (exception.match(alarm)) {
+          match = true;
+          break;
+        }
+      }
+      if (match) {
+        matchedExceptions.push(exception);
+      }
+    }
+
+    return _.uniqWith(matchedExceptions.map((exception) => exception.eid), _.isEqual);
+  }
 };

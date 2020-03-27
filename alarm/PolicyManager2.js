@@ -1307,12 +1307,40 @@ class PolicyManager2 {
             }
             break;
           }
+          case "mac": {
+            // remote is device mac address
+            await Host.ensureCreateTrackingIpset(remote);
+            remoteSet4 = `${Host.getTrackingIpsetPrefix(remote)}4`;
+            remoteSet6 = `${Host.getTrackingIpsetPrefix(remote)}6`;
+            remoteSpec = "src";
+            break;
+          }
+          case "network": {
+            // remote is network uuid
+            await NetworkProfile.ensureCreateEnforcementEnv(remote);
+            remoteSet4 = NetworkProfile.getNetIpsetName(remote);
+            remoteSet6 = `${remoteSet4}6`;
+            remoteSpec = "src,src";
+            break;
+          }
+          case "tag": {
+            // remote is tag uid
+            const tag = TagManager.getTagByUid(remote);
+            if (!tag) {
+              log.warn(`Tag ${remote} does not exist, no need to apply `, policy);
+              return;
+            }
+            remoteSet4 = Tag.getTagIpsetName(remote);
+            remoteSet6 = remoteSet4;
+            remoteSpec = "src,src";
+            break;
+          }
           default:
             // remote is not specified, match all remote
         }
         switch (localType) {
           case "mac": {
-            // mac is device mac address
+            // local is device mac address
             await Host.ensureCreateTrackingIpset(local);
             localSet4 = `${Host.getTrackingIpsetPrefix(local)}4`;
             localSet6 = `${Host.getTrackingIpsetPrefix(local)}6`;
@@ -1601,12 +1629,40 @@ class PolicyManager2 {
               remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(remote));
               break;
             }
+            case "mac": {
+              // remote is device mac address
+              await Host.ensureCreateTrackingIpset(remote);
+              remoteSet4 = `${Host.getTrackingIpsetPrefix(remote)}4`;
+              remoteSet6 = `${Host.getTrackingIpsetPrefix(remote)}6`;
+              remoteSpec = "src";
+              break;
+            }
+            case "network": {
+              // remote is network uuid
+              await NetworkProfile.ensureCreateEnforcementEnv(remote);
+              remoteSet4 = NetworkProfile.getNetIpsetName(remote);
+              remoteSet6 = `${remoteSet4}6`;
+              remoteSpec = "src,src";
+              break;
+            }
+            case "tag": {
+              // remote is tag uid
+              const tag = TagManager.getTagByUid(remote);
+              if (!tag) {
+                log.warn(`Tag ${remote} does not exist, no need to remove `, policy);
+                return;
+              }
+              remoteSet4 = Tag.getTagIpsetName(remote);
+              remoteSet6 = remoteSet4;
+              remoteSpec = "src,src";
+              break;
+            }
             default:
               // remote is not specified, match all remote
           }
           switch (localType) {
             case "mac": {
-              // mac is device mac address
+              // local is device mac address
               await Host.ensureCreateTrackingIpset(local);
               localSet4 = `${Host.getTrackingIpsetPrefix(local)}4`;
               localSet6 = `${Host.getTrackingIpsetPrefix(local)}6`;
@@ -1699,15 +1755,14 @@ class PolicyManager2 {
     return (!Number.isNaN(port) && Number.isInteger(Number(port)) && Number(port) > 0 && Number(port) <= 65535)
   }
 
-  async searchPolicy(target) {
-    let result = [];
-    let err = null;
+  async checkSearchTarget(target) {
+    let result = {};
+    let waitSearch = [];
     if (!target) {
-      err = { code: 400, msg: "invalid target" };
-      return [result, err];
+      result.err = { code: 400, msg: "invalid target" };
+      return result;
     }
 
-    let waitSearch = [];
     const addrPort = target.split(":");
     let isDomain = false;
     const addr = addrPort[0];
@@ -1717,13 +1772,13 @@ class PolicyManager2 {
       } catch (err) {
       }
       if (!isDomain) {
-        err = { code: 400, msg: "Invalid value" };
-        return [result, err];
+        result.err = { code: 400, msg: "Invalid value" };
+        return result;
       }
     }
     if (addrPort.length == 2 && (!this.isPort(addrPort[1]) || (this.isPort(addr) && this.isPort(addrPort[1])))) {
-      err = { code: 400, msg: "Invalid value" };
-      return [result, err];
+      result.err = { code: 400, msg: "Invalid value" };
+      return result;
     }
     if (isDomain) {
       await domainBlock.resolveDomain(addr);
@@ -1742,7 +1797,15 @@ class PolicyManager2 {
         waitSearch.push(addr + "," + addrPort[1]); // for ipset test command
       }
     }
-    
+
+    result.err = null;
+    result.waitSearch = waitSearch;
+    result.isDomain = waitSearch;
+    return result;
+  }
+
+  async searchPolicy(waitSearch, isDomain) {
+    let result = [];
     let ipsets = [];
     let ipsetContent = ""; // for string matching
     try {
@@ -1888,7 +1951,7 @@ class PolicyManager2 {
       }
     }
 
-    return [_.uniqWith(result, _.isEqual), err];
+    return _.uniqWith(result, _.isEqual);
   }
 
   async checkRunPolicies(initialFlag) {

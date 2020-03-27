@@ -248,6 +248,12 @@ async function setupRules(pid, macTag, dstTag, dstType, iif, allow = false, dest
       outRule6.mth(dstSet6, spec)
       natOutRule.mth(dstSet, spec)
       natOutRule6.mth(dstSet6, spec)
+    } else {
+      // only match internet traffic
+      outRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+      outRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+      natOutRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+      natOutRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
     }
 
     // matching MAC addr won't work in opposite direction
@@ -335,6 +341,12 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
         outRule6.mth(dstSet6, 'dst');
         natOutRule.mth(dstSet, 'dst');
         natOutRule6.mth(dstSet6, 'dst');
+      } else {
+        // only match internet traffic
+        outRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+        outRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+        natOutRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+        natOutRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
       }
 
       const inRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
@@ -347,6 +359,12 @@ async function setupTagRules(pid, tags, dstTag, dstType, allow = false, destroy 
         inRule6.mth(dstSet6, 'src');
         natInRule.mth(dstSet, 'src');
         natInRule6.mth(dstSet6, 'src');
+      } else {
+        // only match internet traffic
+        inRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false);
+        inRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false);
+        natInRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false);
+        natInRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false);
       }
 
       const ipset = require('../net2/Tag.js').getTagIpsetName(tags[index]);
@@ -429,6 +447,12 @@ async function setupIntfsRules(pid, intfs, dstTag, dstType, allow = false, destr
         outRule6.mth(dstSet6, 'dst');
         natOutRule.mth(dstSet, 'dst');
         natOutRule6.mth(dstSet6, 'dst');
+      } else {
+        // only match internet traffic
+        outRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+        outRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+        natOutRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
+        natOutRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", false);
       }
 
       const inRule     = new Rule().chn(filterChain).jmp(filterDest).comment(comment)
@@ -441,6 +465,12 @@ async function setupIntfsRules(pid, intfs, dstTag, dstType, allow = false, destr
         inRule6.mth(dstSet6, 'src');
         natInRule.mth(dstSet, 'src');
         natInRule6.mth(dstSet6, 'src');
+      } else {
+        // only match internet traffic
+        inRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false);
+        inRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false);
+        natInRule.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false);
+        natInRule6.mth(Ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false);
       }
 
       const ipset = require('../net2/NetworkProfile.js').getNetIpsetName(intfs[index]);

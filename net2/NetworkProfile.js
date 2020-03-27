@@ -21,6 +21,7 @@ const PolicyManager = require('./PolicyManager.js');
 const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const {Rule} = require('./Iptables.js');
+const ipset = require('./Ipset.js');
 const exec = require('child-process-promise').exec;
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
@@ -155,11 +156,11 @@ class NetworkProfile {
     const sm = new SpooferManager();
     if (state === true) {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-      await exec(`sudo ipset del -! monitoring_off_set ${netIpsetName}`).catch((err) => {
-        log.error(`Failed to remove ${netIpsetName} from monitoring_off_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset del -! monitoring_off_set ${netIpsetName}6`).catch((err) => {
-        log.error(`Failed to remove ${netIpsetName}6 from monitoring_off_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName}6`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName}6 from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway  && this.o.gateway.length > 0 
@@ -192,11 +193,11 @@ class NetworkProfile {
       }
     } else {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-      await exec(`sudo ipset add -! monitoring_off_set ${netIpsetName}`).catch((err) => {
-        log.error(`Failed to add ${netIpsetName} to monitoring_off_set`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset add -! monitoring_off_set ${netIpsetName}6`).catch((err) => {
-        log.error(`Failed to add ${netIpsetName}6 to monitoring_off_set`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName}6`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName}6 to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway) {
@@ -275,20 +276,20 @@ class NetworkProfile {
       return;
     }
     if (dnsCaching === true) {
-      let cmd =  `sudo ipset del -! no_dns_caching_set ${netIpsetName}`;
+      let cmd =  `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}`;
       await exec(cmd).catch((err) => {
         log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
-      cmd = `sudo ipset del -! no_dns_caching_set ${netIpsetName}6`;
+      cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}6`;
       await exec(cmd).catch((err) => {
         log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
       });
     } else {
-      let cmd =  `sudo ipset add -! no_dns_caching_set ${netIpsetName}`;
+      let cmd =  `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}`;
       await exec(cmd).catch((err) => {
         log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
-      cmd = `sudo ipset add -! no_dns_caching_set ${netIpsetName}6`;
+      cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}6`;
       await exec(cmd).catch((err) => {
         log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
       });
@@ -366,14 +367,14 @@ class NetworkProfile {
       }).catch((err) => {
         log.error(`Failed to ${op} ${netIpsetName}(6) to c_lan_set`, err.message);
       });
-      // add to monitored_net_set accordingly
+      // add to monitored net ipset accordingly
       op = "del";
       if (this.o.monitoring === true)
         op = "add";
-      await exec(`sudo ipset ${op} -! monitored_net_set ${netIpsetName}`).then(() => {
-        return exec(`sudo ipset ${op} -! monitored_net_set ${netIpsetName}6`);
+      await exec(`sudo ipset ${op} -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}`).then(() => {
+        return exec(`sudo ipset ${op} -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}6`);
       }).catch((err) => {
-        log.error(`Failed to ${op} ${netIpsetName}(6) to monitored_net_set`, err.message);
+        log.error(`Failed to ${op} ${netIpsetName}(6) to ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
       });
     }
   }
@@ -398,13 +399,13 @@ class NetworkProfile {
           log.debug(`Failed to remove ${netIpsetName}6 from c_lan_set`, err.message);
         });
       }
-      // still remove it from monitored_net_set anyway to keep consistency
+      // still remove it from monitored net set anyway to keep consistency
       if (this.o.monitoring === true) {
-        await exec(`sudo ipset del -! monitored_net_set ${netIpsetName}`).catch((err) => {
-          log.debug(`Failed to remove ${netIpsetName} from monitored_net_set`, err.message);
+        await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
         });
-        await exec(`sudo ipset del -! monitored_net_set ${netIpsetName}6`).catch((err) => {
-          log.debug(`Failed to remove ${netIpsetName}6 from monitored_net_set`, err.message);
+        await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}6`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName}6 from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
         });
       }
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules

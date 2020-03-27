@@ -97,7 +97,7 @@ function print_block_rule {
 }
 
 function check_ip {
-  local ip_ret ipsets rule_id rule_category rule_country policy_ret
+  local ip_ret ipsets rule_id rule_category rule_country policy_ret ipset_content set_type set_compare set_exists
 
   if [[ -z $2 ]]; then
     echo "Start check ip: $1 "
@@ -110,13 +110,24 @@ function check_ip {
 
   # default
   ip_ret=1
-  ipsets=`sudo ipset -S | grep create | cut -d ' ' -f 2`
-  while read setName; do
-    if [[ -z $setName ]]; then
+  ipsets=`sudo ipset -S | grep create | awk '{print $2, $3}'`
+  ipset_content=`sudo ipset -S | grep add`
+  while read set_line; do
+    if [[ -z $set_line ]]; then
       continue
     fi
-    sudo ipset test $setName $1 &>/dev/null;
-    if [[ $? -eq 0 ]]; then
+    read setName set_type <<< "${set_line}"
+    set_compare="add $setName $1"
+    set_exists=1
+    if [[ "$set_type" == "hash:net" ]]; then
+      sudo ipset test $setName $1 &>/dev/null;
+      if [[ $? -eq 0 ]]; then
+        set_exists=0
+      fi
+    elif [[ $ipset_content == *$set_compare* ]]; then
+      set_exists=0
+    fi
+    if [[ $set_exists -eq 0 ]]; then
       rule_id=$(echo $setName | sed 's/.*_\([0-9]\+\)_.*/\1/')
       rule_category=$(echo $setName | sed 's/c_bd_\([a-zA-Z_]\+\)_set/\1/')
       rule_country=$(echo $setName | sed 's/c_bd_country:\([a-zA-Z]\+\)_set/\1/')

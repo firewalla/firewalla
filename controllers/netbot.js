@@ -138,7 +138,9 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
 const Alarm = require('../alarm/Alarm.js');
-const FRPSUCCESSCODE = 0
+const FRPSUCCESSCODE = 0;
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -1051,9 +1053,12 @@ class netBot extends ControllerBot {
       }
       case "timezone":
         if (value.timezone) {
-          sysManager.setTimezone(value.timezone, (err) => {
+          (async () => {
+            const err = await sysManager.setTimezone(value.timezone);
             this.simpleTxData(msg, {}, err, callback);
-          });
+          })();
+        }else{
+          this.simpleTxData(msg, {}, new Error("Invalid timezone"), callback);
         }
         break;
       case "includeNameInNotification": {
@@ -2302,19 +2307,18 @@ class netBot extends ControllerBot {
 
     if (msg.data.item === "dhcpCheck") {
       (async () => {
-        let mode = require('../net2/Mode.js');
+        const mode = require('../net2/Mode.js');
+        const dhcp = require("../extension/dhcp/dhcp.js");
         await mode.reloadSetupMode();
-        let dhcpModeOn = await mode.isDHCPModeOn();
-        if (dhcpModeOn) {
-          const dhcpFound = await rclient.getAsync("sys:scan:dhcpserver");
-          const response = {
-            DHCPMode: true,
-            DHCPDiscover: dhcpFound
-          };
-          this.simpleTxData(msg, response, null, callback);
-        } else {
-          this.simpleTxData(msg, { DHCPMode: false }, null, callback);
+        const routerIP = sysManager.myGateway();
+        let DHCPDiscover = false;
+        if (routerIP) {
+          DHCPDiscover = await dhcp.dhcpServerStatus(routerIP);
         }
+        this.simpleTxData(msg, {
+          DHCPMode: await mode.isDHCPModeOn(),
+          DHCPDiscover: DHCPDiscover
+        }, null, callback)
       })().catch((err) => {
         log.error("Failed to do DHCP discover", err);
         this.simpleTxData(msg, null, err, callback);
@@ -2724,8 +2728,19 @@ class netBot extends ControllerBot {
         break;
       case "policy:search": {
         (async () => {
-          const result = await pm2.searchPolicy(value.target);
-          this.simpleTxData(msg, result[0], result[1], callback);
+          const resultCheck = await pm2.checkSearchTarget(value.target);
+          if (resultCheck.err != null) {
+            this.simpleTxData(msg, null, resultCheck.err, callback)
+            return;
+          }
+
+          let data = {};
+          data.polices = await pm2.searchPolicy(resultCheck.waitSearch, resultCheck.isDomain);
+          data.exceptions = await em.searchException(value.target);
+          if (resultCheck.isDomain) {
+            data.dnsmasqs = await dnsmasq.searchDnsmasq(value.target);
+          }
+          this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })
@@ -3165,7 +3180,7 @@ class netBot extends ControllerBot {
         }
         const settings = value.settings || {};
         (async () => {
-          const allowCustomizedProfiles = fc.getConfig().allowCustomizedProfiles || 1;
+          const allowCustomizedProfiles = platform.getAllowCustomizedProfiles() || 1;
           const allSettings = await VpnManager.getAllSettings();
           if (Object.keys(allSettings).filter((name) => {
             return name !== "fishboneVPN1" && name !== cn;

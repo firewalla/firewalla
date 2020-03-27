@@ -49,6 +49,9 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 
+const {Rule} = require('./Iptables.js');
+const ipset = require('./Ipset.js');
+
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -57,7 +60,7 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 
-const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once. 
+const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
 
@@ -450,10 +453,10 @@ class Host {
     try {
       const dnsCaching = policy.dnsCaching;
       if (dnsCaching === true) {
-        const cmd = `sudo ipset del -! no_dns_caching_mac_set ${this.o.mac}`;
+        const cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC} ${this.o.mac}`;
         await exec(cmd);
       } else {
-        const cmd = `sudo ipset add -! no_dns_caching_mac_set ${this.o.mac}`;
+        const cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC} ${this.o.mac}`;
         await exec(cmd);
       }
     } catch (err) {
@@ -512,38 +515,41 @@ class Host {
       log.info("Host:Spoof:NoIP", this.o);
       return;
     }
-    log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac}, current spoof state: ${this.spoofing}, new spoof state: ${state}`);
+    if (this.spoofing != state) {
+      log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac},`
+        + ` current spoof state: ${this.spoofing}, new spoof state: ${state}`)
+    }
     // set spoofing data in redis and trigger dnsmasq reload hosts
     if (state === true) {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = state;
-      await exec(`sudo ipset del -! monitoring_off_mac_set ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to remove ${this.o.mac} from monitoring_off_mac_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC}`, err.message);
       });
-      await exec(`sudo ipset del -! monitoring_off_set ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}4 from monitoring_off_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
+        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}4 from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset del -! monitoring_off_set ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}6 from monitoring_off_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
+        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}6 from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = false;
-      await exec(`sudo ipset add -! monitoring_off_mac_set ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to add ${this.o.mac} to monitoring_off_mac_set`, err);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC}`, err);
       });
-      await exec(`sudo ipset add -! monitoring_off_set ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to monitoring_off_set`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
+        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset add -! monitoring_off_set ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to monitoring_off_set`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
+        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
     }
-    
+
     const iface = sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
     if (!iface || !iface.name) {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
@@ -551,12 +557,12 @@ class Host {
     }
     if (iface.type !== "wan" || !sysManager.myGateway(iface.name)) {
       // a relative tight condition to check if it is a WAN interface
-      log.info(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr} ${this.o.mac}`);
+      log.debug(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr} ${this.o.mac}`);
       return;
     }
     const gateway = sysManager.myGateway(iface.name);
     const gateway6 = sysManager.myGateway6(iface.name);
-    
+
     const spoofer = new Spoofer({}, false);
 
     if (this.o.ipv4Addr === gateway || this.o.mac == null || sysManager.isMyIP(this.o.ipv4Addr)) {
@@ -624,7 +630,23 @@ class Host {
   }
 
   async shield(policy) {
-    
+    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}4`, "dst,dst", "set", true).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
+    const rule6 = new Rule().fam(6).chn('FW_FIREWALL_SELECTOR').mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}6`, "dst,dst", "set", true).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
+    if (policy.state === true) {
+      await exec(rule.toCmd('-A')).catch((err) => {
+        log.error(`Failed to enable device IPv4 inbound firewall for ${this.o.mac}`, err.message);
+      });
+      await exec(rule6.toCmd('-A')).catch((err) => {
+        log.error(`Failed to enable device IPv6 inbound firewall for ${this.o.mac}`, err.message);
+      });
+    } else {
+      await exec(rule.toCmd('-D')).catch((err) => {
+        log.error(`Failed to disable device IPv4 inbound firewall for ${this.o.mac}`, err.message);
+      });
+      await exec(rule6.toCmd('-D')).catch((err) => {
+        log.error(`Failed to disable device IPv6 inbound firewall for ${this.o.mac}`, err.message);
+      });
+    }
   }
 
   // Notice
@@ -995,7 +1017,7 @@ class Host {
 
     if (this.o.tags) {
       try {
-        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags) : [] 
+        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags) : []
       } catch (err) {
         log.error("Failed to parse tags:", err)
       }
@@ -1140,7 +1162,7 @@ class Host {
     return util.promisify(this.loadPolicy).bind(this)()
   }
 
-  // this only gets updated when 
+  // this only gets updated when
   isInternetAllowed() {
     if (this.policy && this.policy.blockin == true) {
       return false;
@@ -1150,7 +1172,7 @@ class Host {
 
   getTags() {
     if (_.isEmpty(this._tags)) {
-      return []; 
+      return [];
     }
 
     return this._tags;

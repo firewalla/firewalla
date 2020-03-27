@@ -120,6 +120,8 @@ class Platform {
 
   getPolicyCapacity() {}
 
+  getAllowCustomizedProfiles(){}
+
   getDHCPCapacity() {
     return true
   }

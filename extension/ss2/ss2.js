@@ -41,6 +41,7 @@ const configKey = "ext.ss2.config";
 
 const CountryUpdater = require('../../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
+const ipset = require('../../net2/Ipset.js');
 
 const fs = require('fs');
 
@@ -181,7 +182,7 @@ class SS2 {
 
   async isListening() {
     try {
-      await exec("nc -z localhost 9954 && nc -z localhost 9955 && netstat -an  | egrep -q ':::9953'");
+      await exec("nc -w 5 -z localhost 9954 && nc -w 5 -z localhost 9955 && netstat -an  | egrep -q ':::9953'");
       return true;
     } catch(err) {
       return false;
@@ -236,12 +237,12 @@ class SS2 {
   async redirectTraffic() {
     await this.allowDockerBridgeToAccessWan();
     await this.prepareCHNRoute();
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -p tcp -j ${this.getChainName()}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j ${this.getChainName()}`));
     
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set monitored_net_set src,src -p tcp -j ${this.getChainName()}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j ${this.getChainName()}`));
   }
 
   getDNSPort() {

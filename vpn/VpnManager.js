@@ -43,7 +43,6 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const UPNP = require('../extension/upnp/upnp.js');
 const Message = require('../net2/Message.js');
-const Mode = require('../net2/Mode.js');
 
 const moment = require('moment');
 
@@ -146,8 +145,8 @@ class VpnManager {
   }
 
   async removeUpnpPortMapping(opts) {
-    if (await Mode.isRouterModeOn()) {
-      log.info("VPN server UPnP port mapping is not used in router mode");
+    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+      log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to remove upnp port mapping`);
       return false;
     }
     log.info("VpnManager:RemoveUpnpPortMapping", opts);
@@ -171,8 +170,8 @@ class VpnManager {
   }
 
   async addUpnpPortMapping(protocol, localPort, externalPort, description) {
-    if (await Mode.isRouterModeOn()) {
-      log.info("VPN server UPnP port mapping is not used in router mode");
+    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+      log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to add upnp port mapping`);
       return false;
     }
     log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
@@ -271,7 +270,7 @@ class VpnManager {
 
   async killClient(addr) {
     if (!addr) return;
-    const cmd = `echo "kill ${addr}" | nc -q 2 localhost 5194`;
+    const cmd = `echo "kill ${addr}" | nc -w 5 -q 2 localhost 5194`;
     await execAsync(cmd).catch((err) => {
       log.warn(`Failed to kill client with address ${addr}`, err);
     });
@@ -281,7 +280,7 @@ class VpnManager {
     // statistics include client lists and rx/tx bytes
     let cmd = `systemctl is-active openvpn@${this.instanceName}`;
     return await execAsync(cmd).then(async () => {
-      cmd = `echo "status" | nc -q 2 localhost 5194 | tail -n +2`;
+      cmd = `echo "status" | nc -w 5 -q 2 localhost 5194 | tail -n +2`;
       /*
       OpenVPN CLIENT LIST
       Updated,Fri Aug  9 12:08:18 2019
@@ -305,6 +304,7 @@ class VpnManager {
           switch (line) {
             case "OpenVPN CLIENT LIST":
               i += 1; // skip one line, which is something like "Updated,Thu Aug  8 18:24:32 2019"
+              // falls through
             case "ROUTING TABLE":
               currentSection = line;
               i += 1;
