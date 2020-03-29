@@ -143,6 +143,13 @@ class WireGuard {
     await exec(`sudo ip link set up dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo iptables -t nat -A POSTROUTING -o ${firerouter.getDefaultWanIntfName()} -j MASQUERADE`).catch(() => undefined);
     await exec(`sudo ip rule add from all iif ${config.intf} lookup wan_routable`).catch(() => undefined);
+
+    // FIXME: should support in FireRouter
+    const ipsetName = `c_net_vpn-${config.intf}_set`;
+    await exec(`sudo ipset create -! ${ipsetName} hash:net,iface maxelem 1024`).catch((err) => undefined);
+    await exec(`sudo ipset add -! ${ipsetName} 10.1.0.0/24,wg0`)
+    await exec(`sudo ipset add -! monitored_net_set ${ipsetName}`);
+
     await this.addPeers().catch(() => undefined);
     log.info(`Wireguard ${config.intf} is started successfully.`);
   }
