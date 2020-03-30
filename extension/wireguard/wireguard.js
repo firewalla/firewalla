@@ -138,10 +138,10 @@ class WireGuard {
     const privateKeyLocation = `/etc/wireguard/${config.intf}.privateKey`;
     await exec(`echo ${config.privateKey} | sudo bash -c 'cat > ${privateKeyLocation}'`);
     await exec(`sudo wg set ${config.intf} private-key ${privateKeyLocation}`);
-    //await exec(`sudo wg setconfig ${config.intf} ${runtimeConfigFile}`).catch(() => undefined);
     await exec(`sudo ip addr add ${config.localAddressCIDR} dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo ip link set up dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo iptables -t nat -A POSTROUTING -o ${firerouter.getDefaultWanIntfName()} -j MASQUERADE`).catch(() => undefined);
+    await exec(`sudo ip rule del from all iif ${config.intf} lookup wan_routable`).catch(() => undefined);
     await exec(`sudo ip rule add from all iif ${config.intf} lookup wan_routable`).catch(() => undefined);
 
     // FIXME: should support in FireRouter
@@ -153,7 +153,7 @@ class WireGuard {
     await this.addPeers().catch(() => undefined);
     log.info(`Wireguard ${config.intf} is started successfully.`);
   }
-
+  
   async addPeers() {
     const config = await this.getConfig();
     const peers = await rclient.smembersAsync(sharedPeerConfigKey);
