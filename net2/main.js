@@ -87,6 +87,7 @@ async function run0() {
 
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
+      isModeConfigured &&
       sysManager.isConfigInitialized()) {
     await boneSensor.checkIn().catch((err) => {
       log.error("Got error when checkin, err", err);
