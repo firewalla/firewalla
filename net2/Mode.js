@@ -139,6 +139,11 @@ function isXModeOn(x) {
     });
 }
 
+async function isModeConfigured() {
+  const type = await rclient.typeAsync("mode");
+  return type != "none"; // if the mode key doesn't exist, the type should be none
+}
+
 module.exports = {
   isSpoofModeOn:isSpoofModeOn,
   isDHCPModeOn:isDHCPModeOn,
@@ -166,5 +171,7 @@ module.exports = {
   MODE_MANUAL_SPOOF: MODE_MANUAL_SPOOF,
   MODE_DHCP: MODE_DHCP,
   MODE_DHCP_SPOOF: MODE_DHCP_SPOOF,
-  MODE_ROUTER: MODE_ROUTER
+  MODE_ROUTER: MODE_ROUTER,
+
+  isModeConfigured: isModeConfigured
 };
