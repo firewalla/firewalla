@@ -303,31 +303,21 @@ check_iptables() {
 
 check_sys_features() {
     echo "---------------------- System Features ------------------"
-    dpkg -s jq &> /dev/null
-    if [[ $? -ne 0 ]]; then
-        echo "jq not found, installing... "
-        sudo apt-get update
-        sudo apt-get install -y jq
-    fi
-
     declare -A FEATURES
     local FILE="$FIREWALLA_HOME/net2/config.json"
     if [[ -f "$FILE" ]]; then
-        local CONFIG=$(jq -r ".userFeatures" $FILE)
-        if [[ "$CONFIG" != "null" ]]; then
-            local JSON=$(jq -r "to_entries|map(\"\(.key)=\(.value|tostring)\")|.[]" <<< "$CONFIG")
-            while IFS="=" read -r key value
-            do
-                FEATURES["$key"]="$value"
-            done <<< "$JSON"
-        fi
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
+        while IFS="=" read -r key value
+        do
+            FEATURES["$key"]="$value"
+        done <<< "$JSON"
     fi
 
     FILE="$HOME/.firewalla/config/config.json"
     if [[ -f "$FILE" ]]; then
-        local CONFIG=$(jq -r ".userFeatures" $FILE)
-        if [[ "$CONFIG" != "null" ]]; then
-            local JSON=$(jq -r "to_entries|map(\"\(.key)=\(.value|tostring)\")|.[]" <<< "$CONFIG")
+        local HASKEY=$(python -c "import json; obj=json.load(open('$FILE')); print obj.has_key('userFeatures');")
+        if [[ "$HASKEY" == "True" ]]; then
+            local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
             while IFS="=" read -r key value
             do
                 FEATURES["$key"]="$value"
