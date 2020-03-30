@@ -315,9 +315,8 @@ check_sys_features() {
 
     FILE="$HOME/.firewalla/config/config.json"
     if [[ -f "$FILE" ]]; then
-        local HASKEY=$(python -c "import json; obj=json.load(open('$FILE')); print obj.has_key('userFeatures');")
-        if [[ "$HASKEY" == "True" ]]; then
-            local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
+        if [[ "$JSON" != "" ]]; then
             while IFS="=" read -r key value
             do
                 FEATURES["$key"]="$value"
@@ -402,4 +401,5 @@ if [ "$FAST" == false ]; then
     check_conntrack
     check_speed
 fi
-check_hosts
+#check_hosts
+check_sys_features
