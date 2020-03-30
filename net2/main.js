@@ -104,6 +104,8 @@ async function run0() {
       log.forceInfo("Waiting for first app to connect...");
     } else if(!sysManager.isConfigInitialized()) {
       log.info("Waiting for configuration setup...");
+    } else if(!isModeConfigured) {
+      log.info("Waiting for mode setup...");
     }
 
     setTimeout(()=>{
