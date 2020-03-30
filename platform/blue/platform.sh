@@ -8,6 +8,10 @@ MAX_NUM_OF_PROCESSES=4000
 MAX_NUM_OF_THREADS=20000
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 
+function get_openssl_cnf_file {
+  echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
+}
+
 function heartbeatLED {
   sudo sh -c 'echo none > /sys/devices/platform/leds/leds/nanopi:green:status/trigger' # intentionally not use green light as it is hard to be seen
   sudo sh -c 'echo heartbeat > /sys/devices/platform/leds/leds/nanopi:red:pwr/trigger'
