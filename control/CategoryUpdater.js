@@ -34,7 +34,7 @@ const _ = require('lodash');
 
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 48 // one hour
+const EXPIRE_TIME = 60 * 60 * 48 // two days...
 
 class CategoryUpdater extends CategoryUpdaterBase {
 
