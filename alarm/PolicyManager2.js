@@ -1319,7 +1319,7 @@ class PolicyManager2 {
             // remote is network uuid
             await NetworkProfile.ensureCreateEnforcementEnv(remote);
             remoteSet4 = NetworkProfile.getNetIpsetName(remote);
-            remoteSet6 = `${remoteSet4}6`;
+            remoteSet6 = NetworkProfile.getNetIpsetName(remote, 6);
             remoteSpec = "src,src";
             break;
           }
@@ -1351,7 +1351,7 @@ class PolicyManager2 {
             // local is network uuid
             await NetworkProfile.ensureCreateEnforcementEnv(local);
             localSet4 = NetworkProfile.getNetIpsetName(local);
-            localSet6 = `${localSet4}6`;
+            localSet6 = NetworkProfile.getNetIpsetName(local, 6);
             localSpec = "dst,dst";
             break;
           }
@@ -1641,7 +1641,7 @@ class PolicyManager2 {
               // remote is network uuid
               await NetworkProfile.ensureCreateEnforcementEnv(remote);
               remoteSet4 = NetworkProfile.getNetIpsetName(remote);
-              remoteSet6 = `${remoteSet4}6`;
+              remoteSet6 = NetworkProfile.getNetIpsetName(remote, 6);
               remoteSpec = "src,src";
               break;
             }
@@ -1673,7 +1673,7 @@ class PolicyManager2 {
               // local is network uuid
               await NetworkProfile.ensureCreateEnforcementEnv(local);
               localSet4 = NetworkProfile.getNetIpsetName(local);
-              localSet6 = `${localSet4}6`;
+              localSet6 = NetworkProfile.getNetIpsetName(local, 6);
               localSpec = "dst,dst";
               break;
             }
