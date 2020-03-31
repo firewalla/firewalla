@@ -98,7 +98,7 @@ check_systemctl_services() {
 check_rejection() {
     echo "----------------------- Node Rejections ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec grep "Possibly Unhandled Rejection" -A 10 {} \;
+    find /home/pi/logs/ -type f -mtime -2 -exec grep -a "Possibly Unhandled Rejection" -A 10 {} \;
 
     echo ""
     echo ""
@@ -107,7 +107,7 @@ check_rejection() {
 check_exception() {
     echo "----------------------- Node Exceptions ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec egrep -H -i '##### CRASH #####' -A 20 {} \;
+    find /home/pi/logs/ -type f -mtime -2 -exec egrep -a -H -i '##### CRASH #####' -A 20 {} \;
 
     echo ""
     echo ""
@@ -116,7 +116,7 @@ check_exception() {
 check_reboot() {
     echo "----------------------- Reboot Record ------------------------------"
 
-    sudo grep REBOOT /var/log/syslog
+    sudo grep -a REBOOT /var/log/syslog
 
     echo ""
     echo ""
@@ -270,7 +270,7 @@ check_hosts() {
                 DEVICE_VPN="false"
             fi
         fi
-        
+
         local DEVICE_FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$DEVICE_MAC -inf +inf)
         local DEVICE_FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$DEVICE_MAC -inf +inf)
 
@@ -360,7 +360,7 @@ check_speed() {
 
 check_conntrack() {
     echo "---------------------- Conntrack Count------------------"
-    
+
     cat /proc/sys/net/netfilter/nf_conntrack_count
 
     echo ""
@@ -401,5 +401,5 @@ if [ "$FAST" == false ]; then
     check_conntrack
     check_speed
 fi
-#check_hosts
+check_hosts
 check_sys_features
