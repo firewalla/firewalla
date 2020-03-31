@@ -228,17 +228,17 @@ class NetworkProfile {
       const rtIdHex = Number(rtId).toString(16);
       if (state === true) {
         // set skbmark
-        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
-        await exec(`sudo ipset -! add c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/0xffff`);
+        await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/0xffff`);
       }
       if (state === false) {
         // reset skbmark
-        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
-        await exec(`sudo ipset -! add c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/0xffff`);
+        await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/0xffff`);
       }
       if (state === null) {
         // do not change skbmark
-        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
       }
       return true;
     } catch (err) {

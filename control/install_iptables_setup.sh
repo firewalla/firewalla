@@ -518,39 +518,131 @@ done
 sudo ipset create -! c_lan_set list:set
 sudo ipset flush -! c_lan_set
 # create several list of sets with skbinfo extension which store tag/network/device customized wan and skbmark
-sudo ipset create -! c_wan_n_set list:set skbinfo
-sudo ipset flush -! c_wan_n_set
-sudo ipset create -! c_wan_tag_m_set list:set skbinfo
-sudo ipset flush -! c_wan_tag_m_set
-sudo ipset create -! c_wan_m_set hash:mac skbinfo
-sudo ipset flush -! c_wan_m_set
+sudo ipset create -! c_vpn_client_n_set list:set skbinfo
+sudo ipset flush -! c_vpn_client_n_set
+sudo ipset create -! c_vpn_client_tag_m_set list:set skbinfo
+sudo ipset flush -! c_vpn_client_tag_m_set
+sudo ipset create -! c_vpn_client_m_set hash:mac skbinfo
+sudo ipset flush -! c_vpn_client_m_set
 
 # the sequence is important, higher priority rule is placed after lower priority rule
 sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
+sudo iptables -w -t mangle -F FW_PREROUTING
 sudo iptables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -j FW_PREROUTING
-# set mark based on tag on network
-sudo iptables -w -t mangle -N FW_PREROUTING_WAN_TAG_N &>/dev/null
-sudo iptables -w -t mangle -F FW_PREROUTING_WAN_TAG_N
-sudo iptables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j FW_PREROUTING_WAN_TAG_N &>/dev/null || sudo iptables -w -t mangle -I FW_PREROUTING -m set --match-set c_lan_set src,src -j FW_PREROUTING_WAN_TAG_N
-# set mark based on network
-sudo iptables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_n_set src,src --map-mark &>/dev/null || sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_n_set src,src --map-mark
-# set mark based on tag on device
-sudo iptables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_tag_m_set src,src --map-mark &>/dev/null || sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_tag_m_set src,src --map-mark
-# set mark based on device
-sudo iptables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_m_set src --map-mark &>/dev/null || sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_m_set src --map-mark
+
+# vpn client chain
+sudo iptables -w -t mangle -N FW_RT_VC &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_VC
+# only for outbound traffic marking
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_VC
+# global vpn client chain
+sudo iptables -w -t mangle -N FW_RT_VC_GLOBAL &>/dev/null
+sudo iptables -w -t mangle -F FW_RT_VC_GLOBAL
+sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_GLOBAL
+# network group vpn client chain
+sudo iptables -w -t mangle -N FW_RT_VC_TAG_NETWORK &>/dev/null
+sudo iptables -w -t mangle -F FW_RT_VC_TAG_NETWORK
+sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_NETWORK
+# network vpn client chain
+sudo iptables -w -t mangle -N FW_RT_VC_NETWORK &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_VC_NETWORK
+sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_NETWORK
+sudo iptables -w -t mangle -A FW_RT_VC_NETWORK -j SET --map-set c_vpn_client_n_set src,src --map-mark
+# device group vpn client chain
+sudo iptables -w -t mangle -N FW_RT_VC_TAG_DEVICE &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_VC_TAG_DEVICE
+sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_DEVICE
+sudo iptables -w -t mangle -A FW_RT_VC_TAG_DEVICE -j SET --map-set c_vpn_client_tag_m_set src --map-mark
+# device vpn client chain
+sudo iptables -w -t mangle -N FW_RT_VC_DEVICE &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_VC_DEVICE
+sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_DEVICE
+sudo iptables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_set src --map-mark
+
+# regular route chain
+sudo iptables -w -t mangle -N FW_RT_REG &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_REG
+# only for outbound traffic and not being marked by previous vpn client chain
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000 -j FW_RT_REG
+# global regular route chain
+sudo iptables -w -t mangle -N FW_RT_REG_GLOBAL &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_REG_GLOBAL
+sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_GLOBAL
+# network group regular route chain
+sudo iptables -w -t mangle -N FW_RT_REG_TAG_NETWORK &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_REG_TAG_NETWORK
+sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_NETWORK
+# network regular route chain
+sudo iptables -w -t mangle -N FW_RT_REG_NETWORK &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_REG_NETWORK
+sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_NETWORK
+# device group regular route chain
+sudo iptables -w -t mangle -N FW_RT_REG_TAG_DEVICE &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_REG_TAG_DEVICE
+sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_DEVICE
+# device regular route chain
+sudo iptables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_REG_DEVICE
+sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
 sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
+sudo ip6tables -w -t mangle -F FW_PREROUTING
 sudo ip6tables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -j FW_PREROUTING
-# set mark based on tag on network
-sudo ip6tables -w -t mangle -N FW_PREROUTING_WAN_TAG_N &>/dev/null
-sudo ip6tables -w -t mangle -F FW_PREROUTING_WAN_TAG_N
-sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j FW_PREROUTING_WAN_TAG_N &>/dev/null || sudo ip6tables -w -t mangle -I FW_PREROUTING -m set --match-set c_lan_set src,src -j FW_PREROUTING_WAN_TAG_N
-# set mark based on network
-sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_n_set src,src --map-mark &>/dev/null || sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_n_set src,src --map-mark
-# set mark based on tag on device
-sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_tag_m_set src,src --map-mark &>/dev/null || sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_tag_m_set src,src --map-mark
-# set mark based on device
-sudo ip6tables -w -t mangle -C FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_m_set src --map-mark &>/dev/null || sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -j SET --map-set c_wan_m_set src --map-mark
+
+# vpn client chain
+sudo ip6tables -w -t mangle -N FW_RT_VC &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_VC
+# only for outbound traffic marking
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_VC
+# global vpn client chain
+sudo ip6tables -w -t mangle -N FW_RT_VC_GLOBAL &>/dev/null
+sudo ip6tables -w -t mangle -F FW_RT_VC_GLOBAL
+sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_GLOBAL
+# network group vpn client chain
+sudo ip6tables -w -t mangle -N FW_RT_VC_TAG_NETWORK &>/dev/null
+sudo ip6tables -w -t mangle -F FW_RT_VC_TAG_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_NETWORK
+# network vpn client chain
+sudo ip6tables -w -t mangle -N FW_RT_VC_NETWORK &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_VC_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT_VC_NETWORK -j SET --map-set c_vpn_client_n_set src,src --map-mark
+# device group vpn client chain
+sudo ip6tables -w -t mangle -N FW_RT_VC_TAG_DEVICE &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_VC_TAG_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT_VC_TAG_DEVICE -j SET --map-set c_vpn_client_tag_m_set src --map-mark
+# device vpn client chain
+sudo ip6tables -w -t mangle -N FW_RT_VC_DEVICE &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_VC_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_set src --map-mark
+
+# regular route chain
+sudo ip6tables -w -t mangle -N FW_RT_REG &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_REG
+# only for outbound traffic and not being marked by previous vpn client chain
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000 -j FW_RT_REG
+# global regular route chain
+sudo ip6tables -w -t mangle -N FW_RT_REG_GLOBAL &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_REG_GLOBAL
+sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_GLOBAL
+# network group regular route chain
+sudo ip6tables -w -t mangle -N FW_RT_REG_TAG_NETWORK &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_REG_TAG_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_NETWORK
+# network regular route chain
+sudo ip6tables -w -t mangle -N FW_RT_REG_NETWORK &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_REG_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_NETWORK
+# device group regular route chain
+sudo ip6tables -w -t mangle -N FW_RT_REG_TAG_DEVICE &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_REG_TAG_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_DEVICE
+# device regular route chain
+sudo ip6tables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_REG_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
 
 

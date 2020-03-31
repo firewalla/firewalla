@@ -402,4 +402,3 @@ if [ "$FAST" == false ]; then
     check_speed
 fi
 check_hosts
-check_sys_features
