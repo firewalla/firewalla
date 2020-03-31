@@ -1017,11 +1017,12 @@ class netBot extends ControllerBot {
             if (customizeDomainName && macAddress != '0.0.0.0') {
               let macObject = {
                 mac: macAddress,
-                customizeDomainName: customizeDomainName ? customizeDomainName : ''
+                customizeDomainName: customizeDomainName
               }
               await hostTool.updateMACKey(macObject, true);
             }
             if (suffix && macAddress == '0.0.0.0') {
+              suffix = suffix.startsWith('.') ? suffix : `.${suffix}`;
               await rclient.setAsync('local:domain:suffix', suffix);
             }
             await hostTool.generateLocalDomain(macAddress);
