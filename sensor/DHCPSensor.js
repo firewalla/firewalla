@@ -45,6 +45,7 @@ class DHCPSensor extends Sensor {
   }
   runDhcpDump() {
     this.dhcpDump.start(false, (obj) => {
+      log.info("jack test dhcp dump result",obj);
       if (obj && obj.mac) {
         // dedup
         if (this.cache[obj.mac])
