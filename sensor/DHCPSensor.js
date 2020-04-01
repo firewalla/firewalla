@@ -35,8 +35,8 @@ class DHCPSensor extends Sensor {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
-      if (this.updateTask)
-        clearInterval(this.updateTask);
+      if (this.scheduleTask)
+        clearInterval(this.scheduleTask);
       this.runDhcpDump();
       this.scheduleTask = setInterval(() => {
         this.runDhcpDump();

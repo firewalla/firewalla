@@ -42,7 +42,7 @@ class RefreshMacBackupNameHook extends Hook {
             return;
 
           hostTool.updateBackupName(mac, name)
-            .then(() => {
+            .then(async () => {
               await hostTool.generateLocalDomain(mac);
               await dnsmasq.setupLocalDeviceDomain([mac]);
             })
