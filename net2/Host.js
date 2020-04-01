@@ -819,6 +819,7 @@ class Host {
       uuid: flowUtil.hashMac(this.o.mac),
       _ipv4: flowUtil.hashIp(this.o.ipv4),
       ipv4: this.o.ipv4,
+      ipv6Addr: this.ipv6Addr,
       firstFoundTimestamp: this.o.firstFoundTimestamp,
       lastActiveTimestamp: this.o.lastActiveTimestamp,
       bonjourName: this.o.bonjourName,
