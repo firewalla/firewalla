@@ -852,8 +852,9 @@ class Host {
       let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr)
 
       if (!results) return obj;
-
-      obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
+      if (this.ipv6Addr) {
+        obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
+      }
       obj.agents = results;
       let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
