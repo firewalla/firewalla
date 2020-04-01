@@ -35,31 +35,39 @@ class DHCPSensor extends Sensor {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
-      this.dhcpDump.start(false, (obj) => {
-        if (obj && obj.mac) {
-          // dedup
-          if (this.cache[obj.mac])
-            return;
-
-          this.cache[obj.mac] = 1;
-          setTimeout(() => {
-            delete this.cache[obj.mac];
-          }, 60 * 1000); // cache for one minute
-
-          log.info(util.format("New Device Found: %s (%s)", obj.name, obj.mac));
-          sem.emitEvent({
-            type: "NewDeviceWithMacOnly",
-            mac: obj.mac,
-            intf_mac: obj.intf_mac,
-            intf_uuid: obj.intf_uuid,
-            name: obj.name,
-            mtype: obj.mtype,
-            from: 'dhcp',
-            message: "may found a new device by dhcp"
-          });
-        }
-      });
+      if (this.updateTask)
+        clearInterval(this.updateTask);
+      this.runDhcpDump();
+      this.scheduleTask = setInterval(() => {
+        this.runDhcpDump();
+      }, 5 * 60 * 1000);
     }, 5000);
+  }
+  runDhcpDump() {
+    this.dhcpDump.start(false, (obj) => {
+      if (obj && obj.mac) {
+        // dedup
+        if (this.cache[obj.mac])
+          return;
+
+        this.cache[obj.mac] = 1;
+        setTimeout(() => {
+          delete this.cache[obj.mac];
+        }, 60 * 1000); // cache for one minute
+
+        log.info(util.format("New Device Found: %s (%s)", obj.name, obj.mac));
+        sem.emitEvent({
+          type: "NewDeviceWithMacOnly",
+          mac: obj.mac,
+          intf_mac: obj.intf_mac,
+          intf_uuid: obj.intf_uuid,
+          name: obj.name,
+          mtype: obj.mtype,
+          from: 'dhcp',
+          message: "may found a new device by dhcp"
+        });
+      }
+    });
   }
 
   run() {
