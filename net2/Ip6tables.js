@@ -307,7 +307,7 @@ function switchInterfaceMonitoring(state, uuid, cb) {
   let action = "-D";
   if (state !== true)
     action = "-A";
-  const ipset = `${require('./NetworkProfile.js').getNetIpsetName(uuid)}6`;
+  const ipset = require('./NetworkProfile.js').getNetIpsetName(uuid, 6);
   let rule = {
     sudo: true,
     chain: "FW_NAT_BYPASS",
