@@ -14,16 +14,14 @@
  */
 'use strict';
 
-const log = require('../net2/logger.js')(__filename, 'info');
+let log = require('../net2/logger.js')(__filename, 'info');
 
-const Hook = require('./Hook.js');
+let Hook = require('./Hook.js');
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
+let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-const dnsmasq = new DNSMASQ();
+let HostTool = require('../net2/HostTool.js');
+let hostTool = new HostTool();
 
 class RefreshMacBackupNameHook extends Hook {
 
@@ -42,10 +40,7 @@ class RefreshMacBackupNameHook extends Hook {
             return;
 
           hostTool.updateBackupName(mac, name)
-            .then(async () => {
-              await hostTool.generateLocalDomain(mac);
-              await dnsmasq.setupLocalDeviceDomain([mac]);
-            })
+            .then(() => {})
             .catch((err) => {
             log.error("Failed to update backup name: ", err);
           })

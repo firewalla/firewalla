@@ -22,6 +22,11 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let util = require('util');
 
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+
 class NewDeviceHook extends Hook {
 
   constructor() {
@@ -104,15 +109,16 @@ class NewDeviceHook extends Hook {
         if(!name) {
           return // hostname is not provided by dhcp request, can't update name
         }
-
-        log.info("MAC Address", mac, " already exists, updating backup name");
-        sem.emitEvent({
-          type: "RefreshMacBackupName",
-          message: "Update device backup name via MAC Address",
-          suppressEventLogging: true,
-          mac:mac,
-          name: name
-        });
+        
+        log.info("MAC Address", mac, ` already exists, updating backup ${from}Name`);
+        let hostObj = {
+          mac: mac
+        }
+        const skey = `${from}Name`;
+        hostObj[skey] = name;
+        await hostTool.updateMACKey(hostObj, true);
+        await hostTool.generateLocalDomain(macAddress);
+        await dnsmasq.setupLocalDeviceDomain([mac]);
         return;
       }
 
