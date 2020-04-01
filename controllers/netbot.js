@@ -3873,6 +3873,7 @@ class netBot extends ControllerBot {
         break;
       case "alpha":
         targetBranch = "beta_7_0";
+        break;
       case "salpha":
         targetBranch = "beta_8_0";
         break;
@@ -3907,7 +3908,7 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
-      log.error("Got error before simpleTxData:", err, err.stack);
+      log.error("Got error before simpleTxData:", err);
       code = 500;
       if (err && err.code) {
         code = err.code;

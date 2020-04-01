@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,11 +24,12 @@ const logFolder = f.getLogFolder();
 
 const config = require("../../net2/config.js").getConfig();
 
-const df = require('node-df');
+const df = util.promisify(require('node-df'))
 
 const os = require('../../vendor_lib/osutils.js');
 
 const exec = require('child-process-promise').exec;
+const { execSync } = require('child_process')
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
@@ -134,7 +135,7 @@ async function getUptimeInfo() {
     uptimeInfo.dnscrypt = 0;
     uptimeInfo.dnsmasq = 0;
     uptimeInfo.openvpn = 0;
-    
+
     const cmdResult = await exec("ps -eo etimes,cmd | awk '{print $1, $2}'", {encoding: 'utf8'});
     let lines = cmdResult.stdout.split("\n");
     lines.shift();
@@ -169,24 +170,17 @@ async function getRateLimitInfo() {
   rateLimitInfo = await rateLimit.getLastTS();
 }
 
-function getDiskInfo() {
-  return new Promise((resolve, reject) => {
-    df((err, response) => {
-      if (err || !response) {
-        log.error("Failed to get disk info", err);
-        resolve();
-        return
-      }
+async function getDiskInfo() {
+  try {
+    const response = await df()
+    const disks = response.filter(entry => {
+      return entry.filesystem.startsWith("/dev/mmc");
+    })
 
-      const disks = response.filter((entry) => {
-        return entry.filesystem.startsWith("/dev/mmc");
-      })
-
-      diskInfo = disks;
-
-      resolve();
-    });
-  })
+    diskInfo = disks;
+  } catch(err) {
+    log.error("Failed to get disk info", err);
+  }
 }
 
 function getAutoUpgrade() {
@@ -284,7 +278,7 @@ async function getRedisMemoryUsage() {
 
 function getCategoryStats() {
   try {
-    const output = require('child_process').execSync(`${f.getFirewallaHome()}/scripts/category_blocking_stats.sh`, {encoding: 'utf8'})
+    const output = execSync(`${f.getFirewallaHome()}/scripts/category_blocking_stats.sh`, {encoding: 'utf8'})
     const lines = output.split("\n");
 
     let stats = {};
@@ -307,6 +301,7 @@ function getSysInfo() {
     cpu: cpuUsage,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
+    totalMem: os.totalmem(),
     load1: os.loadavg(1),
     load5: os.loadavg(5),
     load15: os.loadavg(15),
@@ -364,7 +359,7 @@ async function getRecentLogs() {
 }
 
 function getTopStats() {
-  return require('child_process').execSync("top -b -n 1 -o %MEM | head -n 20").toString('utf-8').split("\n");
+  return execSync("top -b -n 1 -o %MEM | head -n 20").toString('utf-8').split("\n");
 }
 
 async function getTop5Flows() {
@@ -374,7 +369,7 @@ async function getTop5Flows() {
     let count = await rclient.zcountAsync(flow, "-inf", "+inf")
     return {name: flow, count: count};
   }))
-    
+
   return stats.sort((a, b) => b.count - a.count).slice(0, 5);
 }
 

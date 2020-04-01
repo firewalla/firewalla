@@ -111,7 +111,6 @@
     },
     "OpenPortByInboundFlowSensor": {},
     "BoneSensor": {},
-    "APISensor": {},
     "DNSCryptPlugin": {
       "refreshInterval": 1440
     },
@@ -528,7 +527,8 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "RouterChangeSensor": {},
-    "SS2Plugin": {}
+    "SS2Plugin": {},
+    "WireGuardPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -664,7 +664,8 @@
     "local_domain": true,
     "external_scan": false,
     "alarm_openport": false,
-    "device_service_scan": true
+    "device_service_scan": true,
+    "wireguard": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

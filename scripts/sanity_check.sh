@@ -126,8 +126,12 @@ check_each_system_config() {
     local VALUE=$2
     if [[ $VALUE == "" ]]; then
         VALUE="false"
+    elif [[ $VALUE == "1" ]]; then
+        VALUE="true"
+    elif [[ $VALUE == "0" ]]; then
+        VALUE="false"
     fi
-    printf "%15s %20s\n" "$1" "$VALUE"
+    printf "%30s %20s\n" "$1" "$VALUE"
 }
 
 get_redis_key_with_no_ttl() {
@@ -299,11 +303,34 @@ check_iptables() {
 
 check_sys_features() {
     echo "---------------------- System Features ------------------"
+    declare -A FEATURES
+    local FILE="$FIREWALLA_HOME/net2/config.json"
+    if [[ -f "$FILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
+        while IFS="=" read -r key value
+        do
+            FEATURES["$key"]="$value"
+        done <<< "$JSON"
+    fi
+
+    FILE="$HOME/.firewalla/config/config.json"
+    if [[ -f "$FILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
+        if [[ "$JSON" != "" ]]; then
+            while IFS="=" read -r key value
+            do
+                FEATURES["$key"]="$value"
+            done <<< "$JSON"
+        fi
+    fi
 
     local HKEYS=$(redis-cli hkeys sys:features)
-
     for hkey in $HKEYS; do
-      check_each_system_config $hkey $(redis-cli hget sys:features $hkey)
+        FEATURES["$hkey"]=$(redis-cli hget sys:features $hkey)
+    done
+
+    for key in ${!FEATURES[*]}; do
+        check_each_system_config $key ${FEATURES[$key]}
     done
 
     echo ""

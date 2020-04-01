@@ -91,7 +91,8 @@ async function setupInterfaceLockDown(state, uuid) {
     return;
   }
   const networkIpsetName = require('../net2/NetworkProfile.js').getNetIpsetName(uuid);
-  if (!networkIpsetName) {
+  const networkIpsetName6 = require('../net2/NetworkProfile.js').getNetIpsetName(uuid, 6);
+  if (!networkIpsetName || !networkIpsetName6) {
     log.error(`Failed to get ipset name for network ${uuid}`);
     return;
   }
@@ -100,10 +101,10 @@ async function setupInterfaceLockDown(state, uuid) {
     new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(networkIpsetName, "dst,dst", "set").jmp('FW_DROP'),
     new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(networkIpsetName, "src,src", "set").jmp('FW_NAT_HOLE'),
     new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(networkIpsetName, "dst,dst", "set").jmp('FW_NAT_HOLE'),
-    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_DROP').fam(6),
-    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_DROP').fam(6),
-    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "src,src", "set").jmp('FW_NAT_HOLE').fam(6),
-    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(`${networkIpsetName}6`, "dst,dst", "set").jmp('FW_NAT_HOLE').fam(6)
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(networkIpsetName6, "src,src", "set").jmp('FW_DROP').fam(6),
+    new Rule().chn('FW_LOCKDOWN_SELECTOR').mth(networkIpsetName6, "dst,dst", "set").jmp('FW_DROP').fam(6),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(networkIpsetName6, "src,src", "set").jmp('FW_NAT_HOLE').fam(6),
+    new Rule('nat').chn('FW_NAT_LOCKDOWN_SELECTOR').mth(networkIpsetName6, "dst,dst", "set").jmp('FW_NAT_HOLE').fam(6)
   ];
 
   for (const rule of ruleSet) {
@@ -474,15 +475,16 @@ async function setupIntfsRules(pid, intfs, dstTag, dstType, allow = false, destr
       }
 
       const ipset = require('../net2/NetworkProfile.js').getNetIpsetName(intfs[index]);
+      const ipset6 = require('../net2/NetworkProfile.js').getNetIpsetName(intfs[index], 6);
       outRule.mth(ipset, 'src,src')
-      outRule6.mth(`${ipset}6`, 'src,src')
+      outRule6.mth(ipset6, 'src,src')
       natOutRule.mth(ipset, 'src,src')
-      natOutRule6.mth(`${ipset}6`, 'src,src')
+      natOutRule6.mth(ipset6, 'src,src')
 
       inRule.mth(ipset, 'dst,dst')
-      inRule6.mth(`${ipset}6`, 'dst,dst')
+      inRule6.mth(ipset6, 'dst,dst')
       natInRule.mth(ipset, 'dst,dst')
-      natInRule6.mth(`${ipset}6`, 'dst,dst')
+      natInRule6.mth(ipset6, 'dst,dst')
 
       const op = destroy ? '-D' : '-I'
       await exec(outRule.toCmd(op))
