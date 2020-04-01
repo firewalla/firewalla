@@ -487,7 +487,7 @@ class DeviceHook extends Hook {
           await hostTool.updateMACKey(enrichedHost); // host:mac:.....
           // publish device updated event to trigger 
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
-  
+          this.setupLocalDeviceDomain(host.mac, 'info_change');
           // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
           // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
           //         return;
@@ -729,7 +729,7 @@ class DeviceHook extends Hook {
   }
   async setupLocalDeviceDomain(mac, type) {
     if (!mac) return;
-    if (type == 'new_device') {
+    if (type == 'new_device' || type == 'info_change') {
       await hostTool.generateLocalDomain(mac);
     }
     await dnsmasq.setupLocalDeviceDomain([mac]);
