@@ -110,7 +110,7 @@ class NewDeviceHook extends Hook {
           return // hostname is not provided by dhcp request, can't update name
         }
         
-        log.info("MAC Address", mac, ` already exists, updating backup ${from}Name`);
+        log.info("MAC Address", mac, ` already exists, updating ${from}Name`);
         let hostObj = {
           mac: mac
         }
