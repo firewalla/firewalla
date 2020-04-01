@@ -819,7 +819,6 @@ class Host {
       uuid: flowUtil.hashMac(this.o.mac),
       _ipv4: flowUtil.hashIp(this.o.ipv4),
       ipv4: this.o.ipv4,
-      ipv6Addr: this.ipv6Addr,
       firstFoundTimestamp: this.o.firstFoundTimestamp,
       lastActiveTimestamp: this.o.lastActiveTimestamp,
       bonjourName: this.o.bonjourName,
@@ -854,6 +853,7 @@ class Host {
 
       if (!results) return obj;
 
+      obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
       obj.agents = results;
       let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
