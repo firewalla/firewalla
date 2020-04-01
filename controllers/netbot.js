@@ -3847,6 +3847,15 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "resetRouterChangeFlag": {
+        (async () => {
+          await rclient.delAsync("sys:router:change");
+          this.simpleTxData(msg, {}, null, callback)
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);

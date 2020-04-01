@@ -1009,6 +1009,9 @@ module.exports = class HostManager {
         if(firstBinding) {
           json.firstBinding = firstBinding
         }
+        if (json.mode === "spoof" || json.mode === "none") {
+          json.routerChangeFlag = await rclient.getAsync("sys:router:change");
+        }
 
         json.bootingComplete = await f.isBootingComplete()
 

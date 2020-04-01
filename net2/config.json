@@ -527,6 +527,7 @@
     "BlockRuleCheckSensor": {},
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
+    "RouterChangeSensor": {},
     "SS2Plugin": {}
   },
   "hooks": {
