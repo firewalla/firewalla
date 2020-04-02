@@ -876,7 +876,7 @@ class SysManager {
     }
 
     if (new Address4(ip).isValid()) {
-      if (this.isMulticastIP4(ip)) {
+      if (this.isMulticastIP4(ip) || ip == '127.0.0.1') {
         return true;
       }
       return this.inMySubnets4(ip, intf)
