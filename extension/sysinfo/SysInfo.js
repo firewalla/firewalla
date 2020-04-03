@@ -226,6 +226,7 @@ async function getRealMemoryUsage() {
 async function getTemp() {
   try {
     curTemp = await platform.getCpuTemperature();
+    if (Array.isArray(curTemp)) curTemp = curTemp[0]
     log.debug("Current Temp: ", curTemp);
     peakTemp = peakTemp > curTemp ? peakTemp : curTemp;
   } catch(err) {
