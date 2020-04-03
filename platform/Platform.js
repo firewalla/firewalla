@@ -116,7 +116,7 @@ class Platform {
 
   getSubnetCapacity() {}
 
-  getCpuTemperature() {}
+  async getCpuTemperature() {}
 
   getPolicyCapacity() {}
 
