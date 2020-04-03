@@ -22,8 +22,6 @@ let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let util = require('util');
 
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
@@ -117,7 +115,7 @@ class NewDeviceHook extends Hook {
         const skey = `${from}Name`;
         hostObj[skey] = name;
         await hostTool.updateMACKey(hostObj, true);
-        await hostTool.generateLocalDomain(macAddress);
+        await hostTool.generateLocalDomain(mac);
         await dnsmasq.setupLocalDeviceDomain([mac]);
         return;
       }
