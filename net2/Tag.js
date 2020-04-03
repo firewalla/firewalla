@@ -225,11 +225,11 @@ class Tag {
         return false;
       const rtIdHex = Number(rtId).toString(16);
       // remove old mark first
-      await exec(`sudo ipset -! del c_wan_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)}`);
+      await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)}`);
       if (this._netFwMark) {
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
       }
       this._netFwMark = null;
@@ -245,10 +245,11 @@ class Tag {
         // do not change skbmark
       }
       if (this._netFwMark) {
-        await exec(`sudo ipset -! add c_wan_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
+        // add to the beginning of the chain so that it has the lowest priority and can be overriden by the subsequent rules 
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
       }
       return true;

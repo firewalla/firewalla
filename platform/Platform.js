@@ -104,6 +104,14 @@ class Platform {
     }
   }
 
+  getDNSServiceName() {
+    return "firemasq";
+  }
+
+  getDHCPServiceName() {
+    return "firemasq";
+  }
+
   getVPNServerDefaultProtocol() {
     return "udp";
   }

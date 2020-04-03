@@ -25,6 +25,8 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 
 const _ = require('lodash');
 
+const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+
 const exec = require('child-process-promise').exec;
 
 const f = require('../../net2/Firewalla.js');
@@ -140,9 +142,13 @@ class WireGuard {
     await exec(`sudo wg set ${config.intf} private-key ${privateKeyLocation}`);
     await exec(`sudo ip addr add ${config.localAddressCIDR} dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo ip link set up dev ${config.intf}`).catch(() => undefined);
-    await exec(`sudo iptables -t nat -A POSTROUTING -o ${firerouter.getDefaultWanIntfName()} -j MASQUERADE`).catch(() => undefined);
-    await exec(`sudo ip rule del from all iif ${config.intf} lookup wan_routable`).catch(() => undefined);
-    await exec(`sudo ip rule add from all iif ${config.intf} lookup wan_routable`).catch(() => undefined);
+    await exec(wrapIptables(`sudo iptables -t nat -A POSTROUTING -s ${config.localAddressCIDR} -o ${firerouter.getDefaultWanIntfName()} -j MASQUERADE`)).catch(() => undefined);
+    await exec(`sudo ip rule del from all iif ${config.intf} lookup global_default priority 10001`).catch(() => undefined);
+    await exec(`sudo ip rule add from all iif ${config.intf} lookup global_default priority 10001`).catch(() => undefined);
+    await exec(`sudo ip route add ${config.localAddressCIDR} dev ${config.intf} table lan_routable`).catch(() => undefined)
+    await exec(`sudo ip route add ${config.localAddressCIDR} dev ${config.intf} table wan_routable`).catch(() => undefined);
+    await exec(`sudo ip rule del from all iif ${config.intf} lookup lan_routable priority 5002`).catch(() => undefined);
+    await exec(`sudo ip rule add from all iif ${config.intf} lookup lan_routable priority 5002`).catch(() => undefined);
 
     // FIXME: should support in FireRouter
     const ipsetName = `c_net_vpn-${config.intf}_set`;

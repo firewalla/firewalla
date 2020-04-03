@@ -3,6 +3,7 @@
 # confgen.sh <instance_name> <local_ip> <dns> <server_network> <local_port>
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 INSTANCE_NAME=$1
 LOCAL_IP=$2
@@ -19,9 +20,10 @@ PROTO=$7
 
 chmod 777 -R /etc/openvpn
 
+OPENSSL_CNF=$(get_openssl_cnf_file)
 # Ensure nextUpdate in openssl crl to 3600 days
-if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
-  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
+if [ -f $OPENSSL_CNF ]; then
+  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' $OPENSSL_CNF
 fi
 
 if [ ! -s /etc/openvpn/crl.pem ]; then

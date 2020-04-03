@@ -42,6 +42,14 @@ class GoldPlatform extends Platform {
     return "tcp";
   }
 
+  getDHCPServiceName() {
+    return "firerouter_dhcp";
+  }
+
+  getDNSServiceName() {
+    return "firerouter_dns";
+  }
+
   getBoardSerial() {
     // use mac address as unique serial number
     return this.getSignatureMac();

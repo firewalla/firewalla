@@ -189,7 +189,8 @@ async function generateNetworkInfo() {
       dns:          dns,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
-      type:         intf.config.meta.type
+      type:         intf.config.meta.type,
+      rtid:         intf.state.rtid || 0
     }
 
     await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))

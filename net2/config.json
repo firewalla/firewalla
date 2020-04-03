@@ -111,7 +111,6 @@
     },
     "OpenPortByInboundFlowSensor": {},
     "BoneSensor": {},
-    "APISensor": {},
     "DNSCryptPlugin": {
       "refreshInterval": 1440
     },

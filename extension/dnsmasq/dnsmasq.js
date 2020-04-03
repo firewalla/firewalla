@@ -104,7 +104,8 @@ const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || 
 const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
 const RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
-const SERVICE_NAME = platform.isFireRouterManaged() ? 'firerouter_dns' : 'firemasq';
+const SERVICE_NAME = platform.getDNSServiceName();
+const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
 const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
@@ -847,7 +848,7 @@ module.exports = class DNSMASQ {
         continue;
       }
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const netSet = NetworkProfile.getNetIpsetName(uuid) + "6";
+      const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
       const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
       const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
         .mth(netSet, "src,src", "set")
@@ -964,7 +965,7 @@ module.exports = class DNSMASQ {
       this.needWriteHostsFile = null;
       this.writeHostsFile().then((reload) => {
         if (reload) {
-          this.reloadDnsmasq();
+          this.reloadDHCPDnsmasq();
         }
       });
     }
@@ -987,15 +988,18 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async reloadDnsmasq() {
-    this.counter.reloadDnsmasq++;
-    log.info("start to reload dnsmasq (-HUP):", this.counter.reloadDnsmasq);
-    try {
-      await execAsync('sudo systemctl reload firemasq');
-    } catch (err) {
-      log.error("Unable to reload firemasq service", err);
-    }
-    log.info("Dnsmasq has been Reloaded:", this.counter.reloadDnsmasq);
+  async reloadDHCPDnsmasq() {
+    if (this.restartDHCPTask)
+      clearTimeout(this.restartDHCPTask);
+    this.restartDHCPTask = setTimeout(async () => {
+      this.counter.reloadDnsmasq++;
+      log.info(`Restarting: ${DHCP_SERVICE_NAME}`, this.counter.reloadDnsmasq);
+      await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
+        log.info(`${DHCP_SERVICE_NAME} has been restarted:`, this.counter.reloadDnsmasq);
+      }).catch((err) => {
+        log.error(`Unable to restart ${DHCP_SERVICE_NAME} service`, err);
+      });
+    }, 5000);
   }
 
   computeHash(content) {
@@ -1034,12 +1038,12 @@ module.exports = class DNSMASQ {
     //   return map
     // }, Promise.resolve({}))
 
-    const hostsList = []
+    let hostsList = []
 
     for (const h of hosts) {
+      const monitor = h.spoofing === 'true' ? 'monitor' : 'unmonitor';
+      let reserved = false;
       for (const intf of sysManager.getMonitoringInterfaces()) {
-        const monitor = h.spoofing === 'true' ? 'monitor' : 'unmonitor'
-
         let reservedIp = null;
         if (h.intfIp && h.intfIp[intf.uuid]) {
           reservedIp = h.intfIp[intf.uuid].ipv4
@@ -1050,12 +1054,19 @@ module.exports = class DNSMASQ {
         }
 
         reservedIp = reservedIp ? reservedIp + ',' : ''
-
-        hostsList.push(
-          `${h.mac},set:${monitor},${reservedIp}${lease_time}`
-        )
+        if (reservedIp !== "") {
+          hostsList.push(
+            `${h.mac},set:${monitor},${reservedIp}${lease_time}`
+          );
+          reserved = true;
+        }
+      }
+      if (!reserved) {
+        hostsList.push(`${h.mac},set:${monitor},${lease_time}`);
       }
     }
+    // remove duplicate items
+    hostsList = hostsList.filter((v, i, a) => a.indexOf(v) === i);
 
     let _hosts = hostsList.join("\n") + "\n";
 
@@ -1074,7 +1085,7 @@ module.exports = class DNSMASQ {
 
     log.debug("HostsFile:", util.inspect(hostsList));
 
-    fs.writeFileSync(HOSTFILE_PATH, _hosts);
+    await fs.writeFileAsync(HOSTFILE_PATH, _hosts);
     log.info("Hosts file has been updated:", this.counter.writeHostsFile)
 
     return true;
@@ -1107,6 +1118,7 @@ module.exports = class DNSMASQ {
       await this.restartDnsmasqDocker();
     } else {
       await this.restartDnsmasq();
+      await this.reloadDHCPDnsmasq();
     }
   }
 
@@ -1141,7 +1153,7 @@ module.exports = class DNSMASQ {
         log.info("Status check timer installed")
       }
     } catch (err) {
-      log.error("Got error when restarting firemasq:", err);
+      log.error(`Got error when restarting ${SERVICE_NAME}:`, err);
     }
   }
 
@@ -1267,6 +1279,9 @@ module.exports = class DNSMASQ {
 
   async rawStop() {
     let cmd = null;
+    // do not stop dnsmasq if it is managed by firerouter
+    if (platform.isFireRouterManaged())
+      return;
     if (f.isDocker()) {
       cmd = util.format("(file %s &>/dev/null && (cat %s | sudo xargs kill)) || true", pidFile, pidFile);
     } else {
@@ -1348,14 +1363,6 @@ module.exports = class DNSMASQ {
     log.info("Stopping DNSMASQ:");
     await this._remove_all_iptables_rules();
     await this.rawStop();
-  }
-
-  async restart() {
-    try {
-      await execAsync("sudo systemctl restart firemasq");
-    } catch (err) {
-      log.error("DNSMASQ:RESTART:Error", "Failed to restart dnsmasq: " + err);
-    }
   }
 
   async applyMode(mode) {
