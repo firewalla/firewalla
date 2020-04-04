@@ -25,7 +25,7 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 
 const _ = require('lodash');
 
-const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
 
 const exec = require('child-process-promise').exec;
 
