@@ -77,7 +77,8 @@
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
-    "RemoteNotificationSensor": {}
+    "RemoteNotificationSensor": {},
+    "WireGuardPlugin": {}
   },
   "intels": [
     "DedupAlarm",
