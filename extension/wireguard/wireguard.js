@@ -41,8 +41,6 @@ const intf = "wg0";
 
 const fs = require('fs');
 
-const _ = require('lodash');
-
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
