@@ -41,6 +41,8 @@ const intf = "wg0";
 
 const fs = require('fs');
 
+const _ = require('lodash');
+
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
@@ -65,15 +67,27 @@ class WireGuard {
     };
   }
 
-  async randomClientConfig() {
-    const privateKey = (await exec("wg genkey")).stdout.replace("\n", "");
-    const publicKey = (await exec(`echo ${privateKey} | wg pubkey`)).stdout.replace("\n", "");
+  async isAddressUsed(address) {
+    const peers = await this.getAllPeers();
+    const matchedPeers = peers.filter((peer) => {
+      return peer.localAddress === address;
+    });
+    return !_.isEmpty(matchedPeers);
+  }
 
-    const localAddress = `10.1.0.${Math.floor(Math.random()*253) + 2}/24`;
 
-    return {
-      privateKey, publicKey, localAddress
-    };
+  async findAvailableLocalAddress() {
+    for(var i = 0; i < 100; i++) {
+      const localAddress = `10.1.0.${Math.floor(Math.random()*253) + 2}/24`;
+      
+      const used = await this.isAddressUsed(localAddress);
+
+      if(!used) {
+        return localAddress;
+      }
+    }
+
+    return null;
   }
 
   async getConfig() {
@@ -92,9 +106,12 @@ class WireGuard {
     }
   }
 
-  async createPeer(id) {
-    const peerConfig = await this.randomClientConfig();
-    peerConfig.id = id;
+  async createPeer(data) {
+    const peerConfig = {};
+    peerConfig.publicKey = data.publicKey;
+    peerConfig.localAddress = await this.findAvailableLocalAddress()
+    peerConfig.id = data.id;
+    peerConfig.name = data.name;    
     await rclient.saddAsync(sharedPeerConfigKey, JSON.stringify(peerConfig));
     const config = await this.getConfig();
     await this.addPeer(config, peerConfig);
@@ -106,9 +123,7 @@ class WireGuard {
     for(const peer of peers) {
       try {
         const peerConfig = JSON.parse(peer);
-        if(peerConfig && peerConfig.id === id) {
-          config.push(peerConfig);
-        }
+        config.push(peerConfig);
       } catch(err) {
         log.error("Failed to parse config, err:", err);        
       }
