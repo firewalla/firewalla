@@ -132,6 +132,12 @@ class WireGuardPlugin extends Sensor {
       return;
     }
 
+    extensionManager.onGet("wireguard.getAllConfig", async () => {
+      const config = await wireguard.getConfig();
+      const peerConfig = await wireguard.getAllPeers();
+      return {config, peerConfig};
+    });
+
     extensionManager.onGet("wireguard.getPeers", async (msg) => {
       return wireguard.getAllPeers();
     });
