@@ -121,7 +121,7 @@ class WireGuard {
     for(const peer of peers) {
       try {
         const peerConfig = JSON.parse(peer);
-        config.push(peerConfig);
+        configs.push(peerConfig);
       } catch(err) {
         log.error("Failed to parse config, err:", err);        
       }
