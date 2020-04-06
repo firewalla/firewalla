@@ -37,8 +37,6 @@ const { delay } = require('../../util/util.js');
 const f = require('../../net2/Firewalla.js');
 const yaml = require('../../api/dist/lib/js-yaml.min.js');
 
-const configKey = "ext.ss2.config";
-
 const CountryUpdater = require('../../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
 const ipset = require('../../net2/Ipset.js');
