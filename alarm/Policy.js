@@ -19,6 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const util = require('util');
 const minimatch = require("minimatch");
+const cronParser = require('cron-parser');
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -174,11 +175,27 @@ class Policy {
   isDisabled() {
     return this.disabled && this.disabled == '1'
   }
+  inSchedule(alarmTimestamp) {
+    const cronTime = this.cronTime;
+    const duration = parseFloat(this.duration); // in seconds
+    const interval = cronParser.parseExpression(cronTime);
+    const lastDate = interval.prev().getTime() / 1000;
+    log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
+
+    if (alarmTimestamp > lastDate && alarmTimestamp < lastDate + duration) {
+      return true
+    } else {
+      return false
+    }
+  }
 
   match(alarm) {
 
     if (this.isExpired()) {
       return false // always return unmatched if policy is already expired
+    }
+    if (this.cronTime && this.duration && !this.inSchedule(alarm.alarmTimestamp)) {
+      return false;
     }
 
     if (

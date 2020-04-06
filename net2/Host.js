@@ -430,17 +430,17 @@ class Host {
       const rtIdHex = Number(rtId).toString(16);
       if (state === true) {
         // set skbmark
-        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_wan_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
+        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
       }
       if (state === false) {
         // clear skbmark
-        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_wan_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
+        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
       }
       if (state === null) {
         // do not change skbmark
-        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
       }
       return true;
     } catch (err) {
@@ -852,7 +852,9 @@ class Host {
       let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr)
 
       if (!results) return obj;
-
+      if (this.ipv6Addr) {
+        obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
+      }
       obj.agents = results;
       let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
