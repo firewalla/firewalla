@@ -147,7 +147,7 @@ class WireGuard {
   async start() {
     const config = await this.getConfig();
     log.info(`Starting wireguard on interface ${config.intf}`);
-    log.info("Config is", config);
+//    log.info("Config is", config);
     await exec(`sudo ip link add dev ${config.intf} type wireguard`).catch(() => undefined);
     await exec(`sudo wg set ${config.intf} listen-port ${config.listenPort}`);
     const privateKeyLocation = `/etc/wireguard/${config.intf}.privateKey`;
@@ -187,10 +187,15 @@ class WireGuard {
   }
 
   async addPeer(config, peerConfig) {
+    if(!peerConfig.localAddress) {
+      return;
+    }
+
     const pubKey = peerConfig && peerConfig.publicKey;
     if (pubKey) {
       log.info(`Adding Peer ${pubKey}...`);
-      await exec(`sudo wg set ${config.intf} peer ${pubKey} allowed-ips 0.0.0.0/0`).catch((err) => {
+      const localIP = peerConfig && peerConfig.localAddress && peerConfig.localAddress.replace("/24", "/32")
+      await exec(`sudo wg set ${config.intf} peer ${pubKey} allowed-ips ${localIP}`).catch((err) => {
         log.error("Got error when adding peer to wg, err:", err);
       });
     }
