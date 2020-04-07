@@ -79,11 +79,11 @@ class PortForward {
             switch (channel) {
               case Message.MSG_SYS_NETWORK_INFO_RELOADED:
                 (async () => {
-                  if (sysManager.myDefaultWanIp() !== this._selfIP) {
-                    log.info(`Firewalla default WAN IP changed from ${this._selfIP} to ${sysManager.myDefaultWanIp()}, refresh all rules...`);
+                  if (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().filter(i => !this._wanIPs.includes(i)).length > 0) {
+                    log.info(`Firewalla WAN IPs changed, refresh all rules...`, this._wanIPs, sysManager.myWanIps());
                     await iptable.portForwardFlushAsync();
                     await this.restore();
-                    this._selfIP = sysManager.myDefaultWanIp();
+                    this._wanIPs = sysManager.myWanIps();
                   }
                 })().catch((err) => {
                   log.error("Failed to refresh port forward rules", err);
@@ -95,10 +95,10 @@ class PortForward {
           sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
         }
       })    
-      instance = this
+      instance = this;
     }
 
-    return instance
+    return instance;
   }
 
   async refreshConfig() {
@@ -234,21 +234,20 @@ class PortForward {
         }
       }
 
-      if (!sysManager.myDefaultWanIp()) {
-        log.error("Default WAN IP is not found, skip add port forward", map);
-        return;
-      }
+      for (const wanIP of sysManager.myWanIps()) {
+        if (!wanIP)
+          continue;
+        if (!this._isLANInterfaceIP(map.toIP)) {
+          log.warn("IP is not in secondary network, port forward will not be applied: ", map);
+          return;
+        }
 
-      if (!this._isLANInterfaceIP(map.toIP)) {
-        log.warn("IP is not in secondary network, port forward will not be applied: ", map);
-        return;
+        log.info(`Adding port forward, external IP: ${wanIP}`, map);
+        map.state = true;
+        const dupMap = JSON.parse(JSON.stringify(map));
+        dupMap.destIP = wanIP;
+        await iptable.portforwardAsync(dupMap);
       }
-      
-      log.info("PORTMAP: Add", map);
-      map.state = true;
-      const dupMap = JSON.parse(JSON.stringify(map))
-      dupMap.destIP = sysManager.myDefaultWanIp()
-      await iptable.portforwardAsync(dupMap)
     } catch (err) {
       log.error("Failed to add port mapping:", err);
     }
@@ -259,14 +258,17 @@ class PortForward {
     let old = this.find(map);
     while (old >= 0) {
       this.config.maps[old].state = false;
-      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]))
+
+      for (const wanIP of sysManager.myWanIps()) {
+        if (!wanIP)
+          continue;
+        log.info(`Removing port forward, external IP: ${wanIP}`, map);
+        const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
+        dupMap.destIP = wanIP;
+        await iptable.portforwardAsync(dupMap);
+      }      
+
       this.config.maps.splice(old, 1);
-
-      log.info("PortForwarder:removePort Found MAP", dupMap);
-
-      // we call remove anyway ... even there is no entry
-      await iptable.portforwardAsync(dupMap);
-
       old = this.find(map);
     }
   }
@@ -286,7 +288,7 @@ class PortForward {
 
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
-    this._selfIP = sysManager.myDefaultWanIp();
+    this._wanIPs = sysManager.myWanIps();
   
     await this.loadConfig()
     await this.restore()

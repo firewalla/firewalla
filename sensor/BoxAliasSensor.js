@@ -60,7 +60,7 @@ class BoxAliasSensor extends Sensor {
             log.error(`fail to write ${generatedConfigFile}`, err.message);
         });
 
-        await dnsmasq.restartDnsmasq();
+        dnsmasq.scheduleRestartDNSService();
       } else {
         // each network has dedicated dnsmasq interface and its config directory
         const monitoringInterfaces = sysManager.getMonitoringInterfaces();
@@ -78,7 +78,7 @@ class BoxAliasSensor extends Sensor {
             log.error(`Failed to generate box_alias conf file ${dnsmasqConfDir}/box_alias.conf`, err.message);
           });
         }
-        await dnsmasq.restartDnsmasq();
+        dnsmasq.scheduleRestartDNSService();
       }
     }
 

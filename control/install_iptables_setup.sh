@@ -530,6 +530,10 @@ sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
 sudo iptables -w -t mangle -F FW_PREROUTING
 sudo iptables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null || sudo iptables -w -t mangle -A PREROUTING -j FW_PREROUTING
 
+# vpn client inbound reply chain
+sudo iptables -w -t mangle -N FW_RT_VC_REPLY &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_VC_REPLY &> /dev/null
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir REPLY -j FW_RT_VC_REPLY
 # vpn client chain
 sudo iptables -w -t mangle -N FW_RT_VC &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_VC
@@ -589,6 +593,10 @@ sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
 sudo ip6tables -w -t mangle -F FW_PREROUTING
 sudo ip6tables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null || sudo ip6tables -w -t mangle -A PREROUTING -j FW_PREROUTING
 
+# vpn client inbound reply chain
+sudo ip6tables -w -t mangle -N FW_RT_VC_REPLY &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_VC_REPLY &> /dev/null
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir REPLY -j FW_RT_VC_REPLY
 # vpn client chain
 sudo ip6tables -w -t mangle -N FW_RT_VC &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_VC

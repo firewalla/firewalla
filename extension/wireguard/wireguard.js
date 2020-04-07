@@ -25,7 +25,7 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 
 const _ = require('lodash');
 
-const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
 
 const exec = require('child-process-promise').exec;
 
@@ -65,15 +65,27 @@ class WireGuard {
     };
   }
 
-  async randomClientConfig() {
-    const privateKey = (await exec("wg genkey")).stdout.replace("\n", "");
-    const publicKey = (await exec(`echo ${privateKey} | wg pubkey`)).stdout.replace("\n", "");
+  async isAddressUsed(address) {
+    const peers = await this.getAllPeers();
+    const matchedPeers = peers.filter((peer) => {
+      return peer.localAddress === address;
+    });
+    return !_.isEmpty(matchedPeers);
+  }
 
-    const localAddress = `10.1.0.${Math.floor(Math.random()*253) + 2}/24`;
 
-    return {
-      privateKey, publicKey, localAddress
-    };
+  async findAvailableLocalAddress() {
+    for(var i = 0; i < 100; i++) {
+      const localAddress = `10.1.0.${Math.floor(Math.random()*253) + 2}/24`;
+      
+      const used = await this.isAddressUsed(localAddress);
+
+      if(!used) {
+        return localAddress;
+      }
+    }
+
+    return null;
   }
 
   async getConfig() {
@@ -92,9 +104,12 @@ class WireGuard {
     }
   }
 
-  async createPeer(id) {
-    const peerConfig = await this.randomClientConfig();
-    peerConfig.id = id;
+  async createPeer(data) {
+    const peerConfig = {};
+    peerConfig.publicKey = data.publicKey;
+    peerConfig.localAddress = await this.findAvailableLocalAddress()
+    peerConfig.id = data.id;
+    peerConfig.name = data.name;    
     await rclient.saddAsync(sharedPeerConfigKey, JSON.stringify(peerConfig));
     const config = await this.getConfig();
     await this.addPeer(config, peerConfig);
@@ -106,9 +121,7 @@ class WireGuard {
     for(const peer of peers) {
       try {
         const peerConfig = JSON.parse(peer);
-        if(peerConfig && peerConfig.id === id) {
-          config.push(peerConfig);
-        }
+        configs.push(peerConfig);
       } catch(err) {
         log.error("Failed to parse config, err:", err);        
       }
@@ -134,7 +147,7 @@ class WireGuard {
   async start() {
     const config = await this.getConfig();
     log.info(`Starting wireguard on interface ${config.intf}`);
-    log.info("Config is", config);
+//    log.info("Config is", config);
     await exec(`sudo ip link add dev ${config.intf} type wireguard`).catch(() => undefined);
     await exec(`sudo wg set ${config.intf} listen-port ${config.listenPort}`);
     const privateKeyLocation = `/etc/wireguard/${config.intf}.privateKey`;
@@ -174,10 +187,15 @@ class WireGuard {
   }
 
   async addPeer(config, peerConfig) {
+    if(!peerConfig.localAddress) {
+      return;
+    }
+
     const pubKey = peerConfig && peerConfig.publicKey;
     if (pubKey) {
       log.info(`Adding Peer ${pubKey}...`);
-      await exec(`sudo wg set ${config.intf} peer ${pubKey} allowed-ips 0.0.0.0/0`).catch((err) => {
+      const localIP = peerConfig && peerConfig.localAddress && peerConfig.localAddress.replace("/24", "/32")
+      await exec(`sudo wg set ${config.intf} peer ${pubKey} allowed-ips ${localIP}`).catch((err) => {
         log.error("Got error when adding peer to wg, err:", err);
       });
     }

@@ -334,12 +334,6 @@ module.exports = class {
     if (config.alternativeDnsServers && Array.isArray(config.alternativeDnsServers)) {
       dnsmasq.setInterfaceNameServers("alternative", config.alternativeDnsServers);
       needUpdate = true;
-      needRestart = true;
-    }
-    if (config.wifiDnsServers && Array.isArray(config.wifiDnsServers)) {
-      dnsmasq.setInterfaceNameServers("wifi", config.wifiDnsServers);
-      needUpdate = true;
-      needRestart = true;
     }
     if (config.secondaryDhcpRange) {
       dnsmasq.setDhcpRange("secondary", config.secondaryDhcpRange.begin, config.secondaryDhcpRange.end);
@@ -347,10 +341,6 @@ module.exports = class {
     }
     if (config.alternativeDhcpRange) {
       dnsmasq.setDhcpRange("alternative", config.alternativeDhcpRange.begin, config.alternativeDhcpRange.end);
-      needRestart = true;
-    }
-    if (config.wifiDhcpRange) {
-      dnsmasq.setDhcpRange("wifi", config.wifiDhcpRange.begin, config.wifiDhcpRange.end);
       needRestart = true;
     }
     if (needUpdate)

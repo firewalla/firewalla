@@ -347,7 +347,8 @@ class SysManager {
 
       await exec(`sudo timedatectl set-timezone ${timezone}`);
       await exec('sudo systemctl restart cron.service');
-
+      await exec('sudo systemctl restart rsyslog');
+      
       //don't restart when initializing timezone
       tz && (await exec('sudo systemctl restart firemain'));
       return null;
@@ -528,6 +529,11 @@ class SysManager {
   getDefaultWanInterface() {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     return wanIntf && this.getInterface(wanIntf);
+  }
+
+  myWanIps() {
+    const wanIntfs = fireRouter.getWanIntfNames() || [];
+    return wanIntfs.map(i => this.getInterface(i)).filter(iface => iface && iface.ip_address).map(i => i.ip_address);
   }
 
   myDefaultWanIp() {

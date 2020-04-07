@@ -551,7 +551,7 @@ class NetworkProfile {
     }
     this._tags = updatedTags;
     await this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
-    await dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
   }
 }
 
