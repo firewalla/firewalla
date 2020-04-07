@@ -1225,7 +1225,7 @@ class Host {
     }
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
-    await dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
     this.save("tags", null);
   }
 }
