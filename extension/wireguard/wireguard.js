@@ -25,6 +25,8 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 
 const _ = require('lodash');
 
+const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
+
 const exec = require('child-process-promise').exec;
 
 const f = require('../../net2/Firewalla.js');
@@ -63,15 +65,27 @@ class WireGuard {
     };
   }
 
-  async randomClientConfig() {
-    const privateKey = (await exec("wg genkey")).stdout.replace("\n", "");
-    const publicKey = (await exec(`echo ${privateKey} | wg pubkey`)).stdout.replace("\n", "");
+  async isAddressUsed(address) {
+    const peers = await this.getAllPeers();
+    const matchedPeers = peers.filter((peer) => {
+      return peer.localAddress === address;
+    });
+    return !_.isEmpty(matchedPeers);
+  }
 
-    const localAddress = `10.1.0.${Math.floor(Math.random()*253) + 2}/24`;
 
-    return {
-      privateKey, publicKey, localAddress
-    };
+  async findAvailableLocalAddress() {
+    for(var i = 0; i < 100; i++) {
+      const localAddress = `10.1.0.${Math.floor(Math.random()*253) + 2}/24`;
+      
+      const used = await this.isAddressUsed(localAddress);
+
+      if(!used) {
+        return localAddress;
+      }
+    }
+
+    return null;
   }
 
   async getConfig() {
@@ -90,9 +104,12 @@ class WireGuard {
     }
   }
 
-  async createPeer(id) {
-    const peerConfig = await this.randomClientConfig();
-    peerConfig.id = id;
+  async createPeer(data) {
+    const peerConfig = {};
+    peerConfig.publicKey = data.publicKey;
+    peerConfig.localAddress = await this.findAvailableLocalAddress()
+    peerConfig.id = data.id;
+    peerConfig.name = data.name;    
     await rclient.saddAsync(sharedPeerConfigKey, JSON.stringify(peerConfig));
     const config = await this.getConfig();
     await this.addPeer(config, peerConfig);
@@ -104,9 +121,7 @@ class WireGuard {
     for(const peer of peers) {
       try {
         const peerConfig = JSON.parse(peer);
-        if(peerConfig && peerConfig.id === id) {
-          config.push(peerConfig);
-        }
+        configs.push(peerConfig);
       } catch(err) {
         log.error("Failed to parse config, err:", err);        
       }
@@ -132,7 +147,7 @@ class WireGuard {
   async start() {
     const config = await this.getConfig();
     log.info(`Starting wireguard on interface ${config.intf}`);
-    log.info("Config is", config);
+//    log.info("Config is", config);
     await exec(`sudo ip link add dev ${config.intf} type wireguard`).catch(() => undefined);
     await exec(`sudo wg set ${config.intf} listen-port ${config.listenPort}`);
     const privateKeyLocation = `/etc/wireguard/${config.intf}.privateKey`;
@@ -140,9 +155,13 @@ class WireGuard {
     await exec(`sudo wg set ${config.intf} private-key ${privateKeyLocation}`);
     await exec(`sudo ip addr add ${config.localAddressCIDR} dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo ip link set up dev ${config.intf}`).catch(() => undefined);
-    await exec(`sudo iptables -t nat -A POSTROUTING -o ${firerouter.getDefaultWanIntfName()} -j MASQUERADE`).catch(() => undefined);
-    await exec(`sudo ip rule del from all iif ${config.intf} lookup wan_routable`).catch(() => undefined);
-    await exec(`sudo ip rule add from all iif ${config.intf} lookup wan_routable`).catch(() => undefined);
+    await exec(wrapIptables(`sudo iptables -t nat -A POSTROUTING -s ${config.localAddressCIDR} -o ${firerouter.getDefaultWanIntfName()} -j MASQUERADE`)).catch(() => undefined);
+    await exec(`sudo ip rule del from all iif ${config.intf} lookup global_default priority 10001`).catch(() => undefined);
+    await exec(`sudo ip rule add from all iif ${config.intf} lookup global_default priority 10001`).catch(() => undefined);
+    await exec(`sudo ip route add ${config.localAddressCIDR} dev ${config.intf} table lan_routable`).catch(() => undefined)
+    await exec(`sudo ip route add ${config.localAddressCIDR} dev ${config.intf} table wan_routable`).catch(() => undefined);
+    await exec(`sudo ip rule del from all iif ${config.intf} lookup lan_routable priority 5002`).catch(() => undefined);
+    await exec(`sudo ip rule add from all iif ${config.intf} lookup lan_routable priority 5002`).catch(() => undefined);
 
     // FIXME: should support in FireRouter
     const ipsetName = `c_net_vpn-${config.intf}_set`;
@@ -168,10 +187,15 @@ class WireGuard {
   }
 
   async addPeer(config, peerConfig) {
+    if(!peerConfig.localAddress) {
+      return;
+    }
+
     const pubKey = peerConfig && peerConfig.publicKey;
     if (pubKey) {
       log.info(`Adding Peer ${pubKey}...`);
-      await exec(`sudo wg set ${config.intf} peer ${pubKey} allowed-ips 0.0.0.0/0`).catch((err) => {
+      const localIP = peerConfig && peerConfig.localAddress && peerConfig.localAddress.replace("/24", "/32")
+      await exec(`sudo wg set ${config.intf} peer ${pubKey} allowed-ips ${localIP}`).catch((err) => {
         log.error("Got error when adding peer to wg, err:", err);
       });
     }

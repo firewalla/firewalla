@@ -546,6 +546,9 @@ class HostTool {
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
   async generateLocalDomain(mac) {
+    if( mac=='0.0.0.0' ) {
+      return;
+    }
     const macEntry = await this.getMACEntry(mac);
     let customizeDomainName = macEntry.customizeDomainName
     let ipv4Addr = macEntry.ipv4Addr;
@@ -554,8 +557,8 @@ class HostTool {
     name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
     customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
     await this.updateMACKey({
-      localDomain: name ? `${name}.lan` : '',
-      userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
+      localDomain: name ? `${name}${suffix}` : '',
+      userLocalDomain: customizeDomainName ? `${customizeDomainName}${suffix}` : '',
       mac: mac
     }, true);
   }
