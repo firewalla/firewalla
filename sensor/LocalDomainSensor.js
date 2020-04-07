@@ -68,7 +68,7 @@ class LocalDomainSensor extends Sensor {
     async globalOff() {
         try {
             await unlinkAsync(LOCAL_DOMAIN_FILE);
-            dnsmasq.restartDnsmasq();
+            dnsmasq.scheduleRestartDNSService();
         } catch (err) {
             if (err.code === 'ENOENT') {
                 log.info(`Dnsmasq: No ${LOCAL_DOMAIN_FILE}, skip remove`);

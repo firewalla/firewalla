@@ -202,34 +202,34 @@ class AdblockPlugin extends Sensor {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.restartDnsmasq();
+      await dnsmasq.scheduleRestartDNSService();
     }
   
     async systemStop() {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.restartDnsmasq();
+      await dnsmasq.scheduleRestartDNSService();
     }
   
     async perTagStart(tagUid) {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.restartDnsmasq();
+      await dnsmasq.scheduleRestartDNSService();
     }
   
     async perTagStop(tagUid) {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\n`; // match negative tag
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.restartDnsmasq();
+      await dnsmasq.scheduleRestartDNSService();
     }
   
     async perTagReset(tagUid) {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       await fs.unlinkAsync(configFile).catch((err) => {});
-      await dnsmasq.restartDnsmasq();
+      await dnsmasq.scheduleRestartDNSService();
     }
   
     async perNetworkStart(uuid) {
@@ -242,7 +242,7 @@ class AdblockPlugin extends Sensor {
         const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
         const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
-        dnsmasq.restartDnsmasq();
+        dnsmasq.scheduleRestartDNSService();
     }
   
     async perNetworkStop(uuid) {
@@ -256,7 +256,7 @@ class AdblockPlugin extends Sensor {
       // explicit disable family protect
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async perNetworkReset(uuid) {
@@ -269,28 +269,28 @@ class AdblockPlugin extends Sensor {
       const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async perDeviceStart(macAddress) {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async perDeviceStop(macAddress) {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async perDeviceReset(macAddress) {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     // global on/off
