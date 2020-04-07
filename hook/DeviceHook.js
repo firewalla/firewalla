@@ -166,7 +166,9 @@ class DeviceHook extends Hook {
       sem.on("DeviceUpdate", (event) => {
         let host = event.host
         let mac = host.mac;
-  
+        let ip = host.ipv4 || host.ipv4Addr;
+        host.ipv4 = ip;
+        host.ipv4Addr = ip;
         if (_.isString(host.ipv4)) {
           const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
   
