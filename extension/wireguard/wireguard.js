@@ -57,11 +57,12 @@ class WireGuard {
   async randomServerConfig() {
     const privateKey = (await exec("wg genkey")).stdout.replace("\n", "");
     const publicKey = (await exec(`echo ${privateKey} | wg pubkey`)).stdout.replace("\n", "");
-    const listenPort = 36060;
-    const localNet = "10.1.0.0/24";
-    const localAddressCIDR = "10.1.0.1/24";
+    const listenPort = 30000 + Math.floor(Math.random() * 10000);
+    const networkNumber = Math.floor(Math.random() * 256);
+    const localNet = `10.1.${networkNumber}.0/24`;
+    const localAddressCIDR = `10.1.${networkNumber}.1/24`;
     return {
-      privateKey, publicKey, listenPort, localAddress, localNet, intf, localAddressCIDR
+      privateKey, publicKey, listenPort, localNet, intf, localAddressCIDR
     };
   }
 
@@ -158,8 +159,8 @@ class WireGuard {
     await exec(wrapIptables(`sudo iptables -t nat -A POSTROUTING -s ${config.localAddressCIDR} -o ${firerouter.getDefaultWanIntfName()} -j MASQUERADE`)).catch(() => undefined);
     await exec(`sudo ip rule del from all iif ${config.intf} lookup global_default priority 10001`).catch(() => undefined);
     await exec(`sudo ip rule add from all iif ${config.intf} lookup global_default priority 10001`).catch(() => undefined);
-    await exec(`sudo ip route add ${config.localAddressCIDR} dev ${config.intf} table lan_routable`).catch(() => undefined)
-    await exec(`sudo ip route add ${config.localAddressCIDR} dev ${config.intf} table wan_routable`).catch(() => undefined);
+    await exec(`sudo ip route add ${config.localNet} dev ${config.intf} table lan_routable`).catch(() => undefined)
+    await exec(`sudo ip route add ${config.localNet} dev ${config.intf} table wan_routable`).catch(() => undefined);
     await exec(`sudo ip rule del from all iif ${config.intf} lookup lan_routable priority 5002`).catch(() => undefined);
     await exec(`sudo ip rule add from all iif ${config.intf} lookup lan_routable priority 5002`).catch(() => undefined);
 

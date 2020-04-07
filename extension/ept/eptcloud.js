@@ -78,7 +78,7 @@ class EptCloudExtension {
 
     setInterval(() => {
       this.job();
-    }, 1000 * 60 * 30); // every thirty minutes
+    }, 1000 * 3600 * 24); // every day
   }
 }
 
