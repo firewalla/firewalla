@@ -180,23 +180,17 @@ class FlowTool {
         : (options.mac ? await this.getRecentOutgoingConnections(options.mac, options) : await this.getAllRecentOutgoingConnections(options))
     } else {
       let outgoing, incoming;
-      if (options.intf) {
-        outgoing = await this.getAllRecentOutgoingConnections(options);
-        incoming = await this.getAllRecentIncomingConnections(options);
-      } else if (options.tag) {
-        outgoing = await this.getAllRecentOutgoingConnections(options);
-        incoming = await this.getAllRecentIncomingConnections(options);
-      } else if (options.mac) {
+      if (options.mac) {
         outgoing = await this.getRecentOutgoingConnections(options.mac, options);
         incoming = await this.getRecentIncomingConnections(options.mac, options);
-      } else {
+      } else { // intf, tag, and default
         outgoing = await this.getAllRecentOutgoingConnections(options)
         incoming = await this.getAllRecentIncomingConnections(options)
       }
       recentFlows = _.orderBy(outgoing.concat(incoming), 'ts', options.asc ? 'asc' : 'desc')
         .slice(0, options.count);
     }
-    
+
     json.flows.recent = recentFlows;
 
     return recentFlows
@@ -352,10 +346,9 @@ class FlowTool {
     await Promise.all(allMacs.map(async mac => {
       const optionsCopy = JSON.parse(JSON.stringify(options)) // get a clone to avoid side impact to other functions
 
-      optionsCopy.mac = mac; // Why is options.mac set here? This function get recent connections of the entire network. It seems that a specific mac address doesn't make any sense.
-      let flows = await this.getRecentConnections(mac, direction, optionsCopy);
+      const flows = await this.getRecentConnections(mac, direction, optionsCopy);
 
-      flows.map((flow) => {
+      flows.forEach(flow => {
         flow.device = mac
       });
 

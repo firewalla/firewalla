@@ -1729,6 +1729,7 @@ class PolicyManager2 {
       })
 
       if (matchedPolicies.length > 0) {
+        log.debug('1st matched policy', matchedPolicies[0])
         callback(null, true)
       } else {
         callback(null, false)
