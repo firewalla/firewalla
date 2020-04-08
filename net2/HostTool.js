@@ -556,6 +556,7 @@ class HostTool {
     if (!ipv4Addr || (!name && !customizeDomainName)) return;
     name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
     customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
+    const suffix = (await rclient.getAsync('local:domain:suffix')) || '.lan';
     await this.updateMACKey({
       localDomain: name ? `${name}${suffix}` : '',
       userLocalDomain: customizeDomainName ? `${customizeDomainName}${suffix}` : '',

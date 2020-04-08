@@ -70,9 +70,16 @@ class BonjourSensor extends Sensor {
       // otherwise dgram.addMembership will emit error and crash the process
       if (sysManager.getMonitoringInterfaces().filter(i => i.ip_address).length == 0)
         return;
+      let bound = false;
       // create new bonjour listeners
       for (const iface of sysManager.getMonitoringInterfaces().filter(i => i.ip_address)) {
-        const instance = Bonjour({interface: iface.ip_address});
+        const opts = {interface: iface.ip_address};
+        if (!bound) {
+          // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
+          opts.bind = "0.0.0.0";
+          bound = true;
+        }
+        const instance = Bonjour(opts);
         instance._server.mdns.on('warning', (err) => log.warn(`Warning from mDNS server on ${iface.ip_address}`, err));
         instance._server.mdns.on('error', (err) => log.error(`Error from mDNS server on ${iface.ip_address}`, err));
         const tcpBrowser = instance.find({protocol: 'tcp'}, (service) => this.bonjourParse(service));
