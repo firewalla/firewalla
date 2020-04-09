@@ -154,18 +154,18 @@ class Tag {
   async destroyEnv() {
     const PM2 = require('../alarm/PolicyManager2.js');
     const pm2 = new PM2();
-    await pm2.deleteTagRelatedPolicies(uid);
+    await pm2.deleteTagRelatedPolicies(this.o.uid);
     const EM = require('../alarm/ExceptionManager.js');
     const em = new EM();
-    await em.deleteTagRelatedExceptions(uid);
+    await em.deleteTagRelatedExceptions(this.o.uid);
 
     const FlowAggrTool = require('../net2/FlowAggrTool');
     const flowAggrTool = new FlowAggrTool();
     const FlowManager = require('../net2/FlowManager.js');
     const flowManager = new FlowManager('info');
 
-    await flowAggrTool.removeAggrFlowsAllTag(uid);
-    await flowManager.removeFlowTag(uid);
+    await flowAggrTool.removeAggrFlowsAllTag(this.o.uid);
+    await flowManager.removeFlowTag(this.o.uid);
 
     // flush related ipsets
     await exec(`sudo ipset flush -! ${Tag.getTagIpsetName(this.o.uid)}`).catch((err) => {
