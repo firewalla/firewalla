@@ -250,23 +250,75 @@ class NetworkProfile {
   }
 
   async shield(policy) {
-    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(NetworkProfile.getNetIpsetName(this.o.uuid), "dst,dst", "set", true).mth(NetworkProfile.getNetIpsetName(this.o.uuid), "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
-    const rule6 = new Rule().fam(6).chn('FW_FIREWALL_SELECTOR').mth(NetworkProfile.getNetIpsetName(this.o.uuid, 6), "dst,dst", "set", true).mth(NetworkProfile.getNetIpsetName(this.o.uuid, 6), "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
-    if (policy.state === true) {
-      await exec(rule.toCmd('-A')).catch((err) => {
-        log.error(`Failed to enable IPv4 inbound firewall for ${this.o.intf}`, err.message);
-      });
-      await exec(rule6.toCmd('-A')).catch((err) => {
-        log.error(`Failed to enable IPv6 inbound firewall for ${this.o.intf}`, err.message);
-      });
-    } else {
-      await exec(rule.toCmd('-D')).catch((err) => {
-        log.error(`Failed to disable IPv4 inbound firewall for ${this.o.intf}`, err.message);
-      });
-      await exec(rule6.toCmd('-D')).catch((err) => {
-        log.error(`Failed to disable IPv6 inbound firewall for ${this.o.intf}`, err.message);
-      });
+    let internetRule = new Rule().chn("FW_F_NET_SELECTOR")
+      .mth(NetworkProfile.getNetIpsetName(this.o.uuid, 4), "dst,dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let internetRule6 = new Rule().fam(6).chn("FW_F_NET_SELECTOR")
+      .mth(NetworkProfile.getNetIpsetName(this.o.uuid, 6), "dst,dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let intranetRule = new Rule().chn("FW_F_NET_SELECTOR")
+      .mth(NetworkProfile.getNetIpsetName(this.o.uuid, 4), "dst,dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
+      .mth(NetworkProfile.getNetIpsetName(this.o.uuid, 4), "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let intranetRule6 = new Rule().fam(6).chn("FW_F_NET_SELECTOR")
+      .mth(NetworkProfile.getNetIpsetName(this.o.uuid, 6), "dst,dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
+      .mth(NetworkProfile.getNetIpsetName(this.o.uuid, 6), "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    // remove all possible previous rules
+    await exec(internetRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(internetRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(internetRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(internetRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(intranetRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(intranetRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(intranetRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(intranetRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+
+    let cmd = "-I";
+    if (policy.internet !== true && policy.internet !== false)
+      policy.internet = null;
+    if (policy.internet === true) {
+      internetRule.jmp("FW_INBOUND_FIREWALL");
+      internetRule6.jmp("FW_INBOUND_FIREWALL");
     }
+    if (policy.internet === false) {
+      internetRule.jmp("RETURN");
+      internetRule6.jmp("RETURN");
+    }
+    if (policy.internet === null) {
+      cmd = "-D";
+    }
+    await exec(internetRule.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv4 internet inbound firewall for ${this.o.uuid}`, internetRule.toCmd(cmd), err.message);
+    });
+    await exec(internetRule6.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv6 internet inbound firewall for ${this.o.uuid}`, internetRule6.toCmd(cmd), err.message);
+    });
+
+    cmd = "-I";
+    if (policy.intranet !== true && policy.intranet !== false)
+      policy.internet = null;
+    if (policy.intranet === true) {
+      intranetRule.jmp("FW_INBOUND_FIREWALL");
+      intranetRule6.jmp("FW_INBOUND_FIREWALL");
+    }
+    if (policy.intranet === false) {
+      intranetRule.jmp("RETURN");
+      intranetRule6.jmp("RETURN");
+    }
+    if (policy.internet === null) {
+      cmd = "-D";
+    }
+    await exec(intranetRule.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv4 intranet inbound firewall for ${this.o.uuid}`, intranetRule.toCmd(cmd), err.message);
+    });
+    await exec(intranetRule6.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv6 intranet inbound firewall for ${this.o.uuid}`, intranetRule6.toCmd(cmd), err.message);
+    });
   }
 
   // underscore prefix? follow same function name in Host.js :(
