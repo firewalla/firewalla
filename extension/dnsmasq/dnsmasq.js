@@ -109,6 +109,7 @@ const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
+const ADDN_HOSTS_FILE = f.getRuntimeInfoFolder() + "/dnsmasq_addn_hosts";
 
 const flowUtil = require('../../net2/FlowUtil.js');
 
@@ -1409,10 +1410,12 @@ module.exports = class DNSMASQ {
         const localDomain = await rclient.hgetAsync(key, "localDomain");
         const userLocalDomain = await rclient.hgetAsync(key, "userLocalDomain");
         const ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
+        const ipv6Addr = await rclient.hgetAsync(key, "ipv6Addr");
         if (!deviceDomainMap[mac]) {
           deviceDomainMap[mac] = {
             mac: mac,
             ipv4Addr: ipv4Addr,
+            ipv6Addr: ipv6Addr,
             localDomain: localDomain,
             userLocalDomain: userLocalDomain
           }
@@ -1420,7 +1423,7 @@ module.exports = class DNSMASQ {
           needUpdate = true;
         } else {
           let deviceDomain = deviceDomainMap[mac];
-          if (deviceDomain.localDomain != localDomain || deviceDomain.userLocalDomain != userLocalDomain) {
+          if (deviceDomain.localDomain != localDomain || deviceDomain.userLocalDomain != userLocalDomain || !deviceDomain.hasOwnProperty("ipv6Addr")) {
             if (deviceDomain.userLocalDomain) {
               //If userLocalDomain is specified,only update when userLocalDomain changed
               needUpdate = (deviceDomain.userLocalDomain != userLocalDomain);
@@ -1428,9 +1431,10 @@ module.exports = class DNSMASQ {
               //If userLocalDomain is not specified, update when preferredName is changed
               needUpdate = (deviceDomain.localDomain != localDomain);
             }
-            needUpdate = (deviceDomain.ipv4Addr != ipv4Addr || needUpdate);
+            needUpdate = (deviceDomain.ipv4Addr != ipv4Addr || deviceDomain.ipv6Addr != ipv6Addr || needUpdate);
             deviceDomain.mac = mac;
             deviceDomain.ipv4Addr = ipv4Addr;
+            deviceDomain.ipv6Addr = ipv6Addr;
             deviceDomain.userLocalDomain = userLocalDomain;
             deviceDomain.localDomain = localDomain;
           }
@@ -1438,15 +1442,29 @@ module.exports = class DNSMASQ {
       }
       await rclient.setAsync(LOCAL_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
       let localDeviceDomain = "";
+      let localDeviceDomainAddn = "";
       for (const key in deviceDomainMap) {
         const deviceDomain = deviceDomainMap[key];
         let { localDomain, userLocalDomain } = deviceDomain;
         if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
-          localDomain && (localDeviceDomain += `address=/${localDomain}/${deviceDomain.ipv4Addr}\n`);
-          userLocalDomain && (localDeviceDomain += `address=/${userLocalDomain}/${deviceDomain.ipv4Addr}\n`);
+          localDomain && (localDeviceDomainAddn += `${deviceDomain.ipv4Addr} ${localDomain}\n`);
+          userLocalDomain && (localDeviceDomainAddn += `${deviceDomain.ipv4Addr} ${userLocalDomain}\n`);
+        }
+        if (deviceDomain.ipv6Addr) {
+          let ipv6Addr = null;
+          try {
+            ipv6Addr = JSON.parse(deviceDomain.ipv6Addr);
+          } catch (err) {}
+          if (Array.isArray(ipv6Addr)) {
+            for (const addr of ipv6Addr) {
+              localDomain && (localDeviceDomainAddn += `${addr} ${localDomain}\n`);
+              userLocalDomain && (localDeviceDomainAddn += `${addr} ${userLocalDomain}\n`);
+            }
+          }
         }
       }
       (isInit || needUpdate) && await this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
+      (isInit || needUpdate) && await this.throttleUpdatingConf(ADDN_HOSTS_FILE, localDeviceDomainAddn);
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
@@ -1469,7 +1487,7 @@ module.exports = class DNSMASQ {
     try {
       const dnsmasqConfKey = "dnsmasq:conf";
       let md5sumNow = '';
-      for (const confs of [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH]) {
+      for (const confs of [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH, ADDN_HOSTS_FILE]) {
         const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
