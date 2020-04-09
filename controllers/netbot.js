@@ -3996,7 +3996,7 @@ class netBot extends ControllerBot {
       this.msgHandler(gid, rawmsg, (err, response) => {
         if (processed)
           return;
-
+    
         processed = true;
         if (err) {
           reject(err);
