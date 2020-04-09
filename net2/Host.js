@@ -852,7 +852,9 @@ class Host {
       let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr)
 
       if (!results) return obj;
-
+      if (this.ipv6Addr) {
+        obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
+      }
       obj.agents = results;
       let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
@@ -1223,7 +1225,7 @@ class Host {
     }
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
-    await dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
     this.save("tags", null);
   }
 }

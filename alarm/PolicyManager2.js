@@ -1117,7 +1117,7 @@ class PolicyManager2 {
         // dnsmasq_entry: use dnsmasq instead of iptables
         if (policy.dnsmasq_entry) {
           await dnsmasq.addPolicyFilterEntry([target], {pid, scope, intfs, tags}).catch(() => {});
-          await dnsmasq.restartDnsmasq()
+          dnsmasq.scheduleRestartDNSService()
         } else if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs)) {
           if (!_.isEmpty(tags)) {
             await Block.setupTagRules(pid, tags, pid, "hash:ip", whitelist);
@@ -1491,7 +1491,7 @@ class PolicyManager2 {
         // dnsmasq_entry: use dnsmasq instead of iptables
         if (policy.dnsmasq_entry) {
           await dnsmasq.removePolicyFilterEntry([target], {pid, scope, intfs, tags}).catch(() => {});
-          await dnsmasq.restartDnsmasq()
+          dnsmasq.scheduleRestartDNSService();
         } else if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs)) {
           if (!_.isEmpty(tags)) {
             await domainBlock.unblockDomain(target, {

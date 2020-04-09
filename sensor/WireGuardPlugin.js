@@ -132,12 +132,20 @@ class WireGuardPlugin extends Sensor {
       return;
     }
 
+    extensionManager.onGet("wireguard.getAllConfig", async () => {
+      const config = await wireguard.getConfig();
+      const configCopy = JSON.parse(JSON.stringify(config));
+      delete configCopy.privateKey; // no need to keep private key
+      const peerConfig = await wireguard.getAllPeers();
+      return {config, peerConfig};
+    });
+
     extensionManager.onGet("wireguard.getPeers", async (msg) => {
       return wireguard.getAllPeers();
     });
 
     extensionManager.onCmd("wireguard.createPeer", (msg, data) => {
-      return wireguard.createPeer({id: data.peerId});
+      return wireguard.createPeer(data);
     });
   }
 }

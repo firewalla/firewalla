@@ -1013,14 +1013,20 @@ class netBot extends ControllerBot {
       case "hostDomain": {
         let data = msg.data;
         (async () => {
-          if (hostTool.isMacAddress(msg.target)) {
+          if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
             const macAddress = msg.target
-            const { customizeDomainName } = data.value
-            let macObject = {
-              mac: macAddress,
-              customizeDomainName: customizeDomainName ? customizeDomainName : ''
+            const { customizeDomainName, suffix } = data.value;
+            if (customizeDomainName && macAddress != '0.0.0.0') {
+              let macObject = {
+                mac: macAddress,
+                customizeDomainName: customizeDomainName
+              }
+              await hostTool.updateMACKey(macObject, true);
             }
-            await hostTool.updateMACKey(macObject, true);
+            if (suffix && macAddress == '0.0.0.0') {
+              suffix = suffix.startsWith('.') ? suffix : `.${suffix}`;
+              await rclient.setAsync('local:domain:suffix', suffix);
+            }
             await hostTool.generateLocalDomain(macAddress);
             sem.emitEvent({
               type: "LocalDomainUpdate",
@@ -1154,13 +1160,21 @@ class netBot extends ControllerBot {
       case "dataPlan":
         (async () => {
           const { total, date, enable } = value;
+          let oldPlan = {};
+          try {
+            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan"));
+          } catch (e) { }
           const featureName = 'data_plan';
+          oldPlan.enable = fc.isFeatureOn(featureName);
           if (enable) {
             await fc.enableDynamicFeature(featureName)
             await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
           } else {
             await fc.disableDynamicFeature(featureName);
             await rclient.delAsync("sys:data:plan");
+          }
+          if (!_.isEqual(oldPlan, value)) {
+            await exec("redis-cli keys 'data:plan:*' | xargs redis-cli del");
           }
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
