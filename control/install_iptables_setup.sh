@@ -113,6 +113,27 @@ sudo iptables -w -N FW_FIREWALL_SELECTOR &> /dev/null
 sudo iptables -w -F FW_FIREWALL_SELECTOR
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_SELECTOR || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_SELECTOR
 
+# initialize device, device group, network, network group, global firewall selector chains, the sequenen corresponds to hierarchy priority
+sudo iptables -w -N FW_F_DEV_SELECTOR &> /dev/null
+sudo iptables -w -F FW_F_DEV_SELECTOR
+sudo iptables -w -A FW_FIREWALL_SELECTOR -j FW_F_DEV_SELECTOR
+# chain the device group chain to the end of device chain
+sudo iptables -w -N FW_F_DEV_G_SELECTOR &> /dev/null
+sudo iptables -w -F FW_F_DEV_G_SELECTOR
+sudo iptables -w -A FW_F_DEV_SELECTOR -j FW_F_DEV_G_SELECTOR
+# chain the network chain to the end of device group chain
+sudo iptables -w -N FW_F_NET_SELECTOR &> /dev/null
+sudo iptables -w -F FW_F_NET_SELECTOR
+sudo iptables -w -A FW_F_DEV_G_SELECTOR -j FW_F_NET_SELECTOR
+# chain the network group chain to the end of network chain
+sudo iptables -w -N FW_F_NET_G_SELECTOR &> /dev/null
+sudo iptables -w -F FW_F_NET_G_SELECTOR
+sudo iptables -w -A FW_F_NET_SELECTOR -j FW_F_NET_G_SELECTOR
+# chain the global chain to the end of network group chain
+sudo iptables -w -N FW_F_GLOBAL_SELECTOR &> /dev/null
+sudo iptables -w -F FW_F_GLOBAL_SELECTOR
+sudo iptables -w -A FW_F_NET_G_SELECTOR -j FW_F_GLOBAL_SELECTOR
+
 # initialize inbound firewall chain
 sudo iptables -w -N FW_INBOUND_FIREWALL &> /dev/null
 sudo iptables -w -F FW_INBOUND_FIREWALL
@@ -344,7 +365,28 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_FIREWALL_SELECTOR
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_SELECTOR || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_SELECTOR
 
-   # initialize inbound firewall chain
+  # initialize device, device group, network, network group, global firewall selector chains, the sequenen corresponds to hierarchy priority
+  sudo ip6tables -w -N FW_F_DEV_SELECTOR &> /dev/null
+  sudo ip6tables -w -F FW_F_DEV_SELECTOR
+  sudo ip6tables -w -A FW_FIREWALL_SELECTOR -j FW_F_DEV_SELECTOR
+  # chain the device group chain to the end of device chain
+  sudo ip6tables -w -N FW_F_DEV_G_SELECTOR &> /dev/null
+  sudo ip6tables -w -F FW_F_DEV_G_SELECTOR
+  sudo ip6tables -w -A FW_F_DEV_SELECTOR -j FW_F_DEV_G_SELECTOR
+  # chain the network chain to the end of device group chain
+  sudo ip6tables -w -N FW_F_NET_SELECTOR &> /dev/null
+  sudo ip6tables -w -F FW_F_NET_SELECTOR
+  sudo ip6tables -w -A FW_F_DEV_G_SELECTOR -j FW_F_NET_SELECTOR
+  # chain the network group chain to the end of network chain
+  sudo ip6tables -w -N FW_F_NET_G_SELECTOR &> /dev/null
+  sudo ip6tables -w -F FW_F_NET_G_SELECTOR
+  sudo ip6tables -w -A FW_F_NET_SELECTOR -j FW_F_NET_G_SELECTOR
+  # chain the global chain to the end of network group chain
+  sudo ip6tables -w -N FW_F_GLOBAL_SELECTOR &> /dev/null
+  sudo ip6tables -w -F FW_F_GLOBAL_SELECTOR
+  sudo ip6tables -w -A FW_F_NET_G_SELECTOR -j FW_F_GLOBAL_SELECTOR
+
+  # initialize inbound firewall chain
   sudo ip6tables -w -N FW_INBOUND_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_INBOUND_FIREWALL
   sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP

@@ -630,23 +630,73 @@ class Host {
   }
 
   async shield(policy) {
-    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}4`, "dst,dst", "set", true).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
-    const rule6 = new Rule().fam(6).chn('FW_FIREWALL_SELECTOR').mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}6`, "dst,dst", "set", true).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
-    if (policy.state === true) {
-      await exec(rule.toCmd('-A')).catch((err) => {
-        log.error(`Failed to enable device IPv4 inbound firewall for ${this.o.mac}`, err.message);
-      });
-      await exec(rule6.toCmd('-A')).catch((err) => {
-        log.error(`Failed to enable device IPv6 inbound firewall for ${this.o.mac}`, err.message);
-      });
-    } else {
-      await exec(rule.toCmd('-D')).catch((err) => {
-        log.error(`Failed to disable device IPv4 inbound firewall for ${this.o.mac}`, err.message);
-      });
-      await exec(rule6.toCmd('-D')).catch((err) => {
-        log.error(`Failed to disable device IPv6 inbound firewall for ${this.o.mac}`, err.message);
-      });
+    let internetRule = new Rule().chn("FW_F_DEV_SELECTOR")
+      .mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}4`, "dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let internetRule6 = new Rule().fam(6).chn("FW_F_DEV_SELECTOR")
+      .mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}6`, "dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let intranetRule = new Rule().chn("FW_F_DEV_SELECTOR")
+      .mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}4`, "dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
+      .pam("-m conntrack --ctstate NEW");
+    let intranetRule6 = new Rule().fam(6).chn("FW_F_DEV_SELECTOR")
+      .mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}6`, "dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
+      .pam("-m conntrack --ctstate NEW");
+    // remove all possiblee previous rules
+    await exec(internetRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(internetRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(internetRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(internetRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(intranetRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(intranetRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(intranetRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(intranetRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+
+    let cmd = "-I";
+    if (policy.internet !== true && policy.internet !== false)
+      policy.internet = null;
+    if (policy.internet === true) {
+      internetRule.jmp("FW_INBOUND_FIREWALL");
+      internetRule6.jmp("FW_INBOUND_FIREWALL");
     }
+    if (policy.internet === false) {
+      internetRule.jmp("RETURN");
+      internetRule6.jmp("RETURN");
+    }
+    if (policy.internet === null) {
+      cmd = "-D";
+    }
+    await exec(internetRule.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv4 internet inbound firewall for ${this.o.mac}`, internetRule.toCmd(cmd), err.message);
+    });
+    await exec(internetRule6.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv6 internet inbound firewall for ${this.o.mac}`, internetRule6.toCmd(cmd), err.message);
+    });
+
+    cmd = "-I";
+    if (policy.intranet !== true && policy.internet !== false)
+      policy.intranet = null;
+    if (policy.intranet === true) {
+      intranetRule.jmp("FW_INBOUND_FIREWALL");
+      intranetRule6.jmp("FW_INBOUND_FIREWALL");
+    }
+    if (policy.intranet === false) {
+      intranetRule.jmp("RETURN");
+      intranetRule6.jmp("RETURN");
+    }
+    if (policy.intranet === null) {
+      cmd = "-D";
+    }
+    await exec(intranetRule.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv4 intranet inbound firewall for ${this.o.mac}`, intranetRule.toCmd(cmd), err.message);
+    });
+    await exec(intranetRule6.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv6 intranet inbound firewall for ${this.o.mac}`, intranetRule6.toCmd(cmd), err.message);
+    });
   }
 
   // Notice
@@ -1195,6 +1245,8 @@ class Host {
         await exec(`sudo ipset del -! ${Tag.getTagMacIpsetName(removedTag)} ${this.o.mac}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagMacTrackingIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagMacTrackingIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {});
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
@@ -1213,6 +1265,12 @@ class Host {
         });
         await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
           log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to tag ipset ${Tag.getTagIpsetName(uid)}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagMacTrackingIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
+          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to tag ipset ${Tag.getTagMacTrackingIpsetName(uid)}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagMacTrackingIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
+          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to tag ipset ${Tag.getTagMacTrackingIpsetName(uid)}`, err.message);
         });
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {

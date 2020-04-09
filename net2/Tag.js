@@ -27,6 +27,7 @@ const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js')
 const {Rule, wrapIptables} = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
+const ipset = require('./Ipset.js');
 Promise.promisifyAll(fs);
 
 
@@ -128,6 +129,11 @@ class Tag {
     return `c_tag_${uid}_n_set`;
   }
 
+  // this can be used to match IP of device alone on this tag
+  static getTagMacTrackingIpsetName(uid) {
+    return `c_tag_${uid}_tracking_set`;
+  }
+
   async createEnv() {
     // create related ipsets
     await exec(`sudo ipset create -! ${Tag.getTagIpsetName(this.o.uid)} list:set`).catch((err) => {
@@ -144,6 +150,11 @@ class Tag {
     await exec(`sudo ipset create -! ${Tag.getTagNetIpsetName(this.o.uid)} list:set`).catch((err) => {
       log.error(`Failed to create tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
     });
+    // it is needed to apply device tag level policy which needs destination IP
+    await exec(`sudo ipset create -! ${Tag.getTagMacTrackingIpsetName(this.o.uid)} list:set`).catch((err) => {
+      log.error(`Failed to create tag mac tracking ipset ${Tag.getTagMacTrackingIpsetName(this.o.uid)}`, err.message);
+    });
+
     // tag dnsmasq entry can be referred by domain blocking rules
     const dnsmasqEntry = `group-tag=@${this.o.uid}$tag_${this.o.uid}`;
     await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_${this.o.uid}.conf`, dnsmasqEntry).catch((err) => {
@@ -176,7 +187,10 @@ class Tag {
     });
     await exec(`sudo ipset flush -! ${Tag.getTagNetIpsetName(this.o.uid)}`).catch((err) => {
       log.error(`Failed to flush tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
-    })
+    });
+    await exec(`sudo ipset flush -! ${Tag.getTagMacTrackingIpsetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag mac tracking ipset ${Tag.getTagMacTrackingIpsetName(this.o.uid)}`, err.message);
+    });
     // delete related dnsmasq config files
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
@@ -191,23 +205,108 @@ class Tag {
   }
 
   async shield(policy) {
-    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(Tag.getTagIpsetName(this.o.uid), "dst,dst", "set", true).mth(Tag.getTagIpsetName(this.o.uid), "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
-    const rule6 = rule.clone().fam(6);
-    if (policy.state === true) {
-      await exec(rule.toCmd('-A')).catch((err) => {
-        log.error(`Failed to enable IPv4 inbound firewall on tag ${this.o.name}`, err.message);
-      });
-      await exec(rule6.toCmd('-A')).catch((err) => {
-        log.error(`Failed to enable IPv6 inbound firewall on tag ${this.o.name}`, err.message);
-      });
-    } else {
-      await exec(rule.toCmd('-D')).catch((err) => {
-        log.error(`Failed to disable IPv4 inbound firewall on tag ${this.o.name}`, err.message);
-      });
-      await exec(rule6.toCmd('-D')).catch((err) => {
-        log.error(`Failed to disable IPv6 inbound firewall on tag ${this.o.name}`, err.message);
-      });
+    let internetDevGroupRule = new Rule().chn("FW_F_DEV_G_SELECTOR")
+      .mth(Tag.getTagMacTrackingIpsetName(this.o.uid), "dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let internetDevGroupRule6 = internetDevGroupRule.clone().fam(6);
+    let intranetDevGroupRule = new Rule().chn("FW_F_DEV_G_SELECTOR")
+      .mth(Tag.getTagMacTrackingIpsetName(this.o.uid), "dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
+      .mth(Tag.getTagIpsetName(this.o.uid), "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let intranetDevGroupRule6 = intranetDevGroupRule.clone().fam(6);
+
+    let internetNetGroupRule = new Rule().chn("FW_F_NET_G_SELECTOR")
+      .mth(Tag.getTagNetIpsetName(this.o.uid), "dst,dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let internetNetGroupRule6 = internetNetGroupRule.clone().fam(6);
+    let intranetNetGroupRule = new Rule().chn("FW_F_NET_G_SELECTOR")
+      .mth(Tag.getTagNetIpsetName(this.o.uid), "dst,dst", "set", true)
+      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
+      .mth(Tag.getTagIpsetName(this.o.uid), "src,src", "set", false)
+      .pam("-m conntrack --ctstate NEW");
+    let intranetNetGroupRule6 = intranetNetGroupRule.clone().fam(6);
+    // remove all possible previous rules
+    await exec(internetDevGroupRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(internetDevGroupRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(internetDevGroupRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(internetDevGroupRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(internetNetGroupRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(internetNetGroupRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(internetNetGroupRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(internetNetGroupRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(intranetDevGroupRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(intranetDevGroupRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(intranetDevGroupRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(intranetDevGroupRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(intranetNetGroupRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(intranetNetGroupRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+    await exec(intranetNetGroupRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
+    await exec(intranetNetGroupRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
+
+    let cmd = "-I";
+    if (policy.internet !== true && policy.internet !== false)
+      policy.internet = null;
+    if (policy.internet === true) {
+      internetDevGroupRule.jmp("FW_INBOUND_FIREWALL");
+      internetDevGroupRule6.jmp("FW_INBOUND_FIREWALL");
+      internetNetGroupRule.jmp("FW_INBOUND_FIREWALL");
+      internetNetGroupRule6.jmp("FW_INBOUND_FIREWALL");
     }
+    if (policy.internet === false) {
+      internetDevGroupRule.jmp("RETURN");
+      internetDevGroupRule6.jmp("RETURN");
+      internetNetGroupRule.jmp("RETURN");
+      internetNetGroupRule6.jmp("RETURN");
+    }
+    if (policy.internet === null) {
+      cmd = "-D";
+    }
+    await exec(internetDevGroupRule.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv4 internet inbound firewall for ${this.o.uid}`, internetDevGroupRule.toCmd(cmd), err.message);
+    });
+    await exec(internetDevGroupRule6.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv6 internet inbound firewall for ${this.o.uid}`, internetDevGroupRule6.toCmd(cmd), err.message);
+    });
+    await exec(internetNetGroupRule.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv4 internet inbound firewall for ${this.o.uid}`, internetNetGroupRule.toCmd(cmd), err.message);
+    });
+    await exec(internetNetGroupRule6.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv6 internet inbound firewall for ${this.o.uid}`, internetNetGroupRule6.toCmd(cmd), err.message);
+    });
+
+    cmd = "-I";
+    if (policy.intranet !== true && policy.intranet !== false)
+      policy.intranet = null;
+    if (policy.intranet === true) {
+      intranetDevGroupRule.jmp("FW_INBOUND_FIREWALL");
+      intranetDevGroupRule6.jmp("FW_INBOUND_FIREWALL");
+      intranetNetGroupRule.jmp("FW_INBOUND_FIREWALL");
+      intranetNetGroupRule6.jmp("FW_INBOUND_FIREWALL");
+    }
+    if (policy.intranet === false) {
+      intranetDevGroupRule.jmp("RETURN");
+      intranetDevGroupRule6.jmp("RETURN");
+      intranetNetGroupRule.jmp("RETURN");
+      intranetNetGroupRule6.jmp("RETURN");
+    }
+    if (policy.intranet === null) {
+      cmd = "-D";
+    }
+    await exec(intranetDevGroupRule.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv4 intranet inbound firewall for ${this.o.uid}`, intranetDevGroupRule.toCmd(cmd), err.message);
+    });
+    await exec(intranetDevGroupRule6.toCmd(cmd)).catch((err) => {
+      log.error(`Failed to apply IPv6 intranet inbound firewall for ${this.o.uid}`, intranetDevGroupRule6.toCmd(cmd), err.message);
+    });
+    await exec(intranetNetGroupRule.toCmd(cmd)).catch ((err) => {
+      log.error(`Failed to apply IPv4 intranet inbound firewall for ${this.o.uid}`, intranetNetGroupRule.toCmd(cmd), err.message);
+    });
+    await exec(intranetNetGroupRule6.toCmd(cmd)).catch ((err) => {
+      log.error(`Failed to apply IPv6 intranet inbound firewall for ${this.o.uid}`, intranetNetGroupRule6.toCmd(cmd), err.message);
+    });
   }
 
   async vpnClient(policy) {
