@@ -33,6 +33,11 @@ const networkTool = require('../net2/NetworkTool')();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 
+const PlatformLoader = require('../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform();
+
+const { Address4, Address6 } = require('ip-address')
+
 class NmapSensor extends Sensor {
   constructor() {
     super();
@@ -167,10 +172,8 @@ class NmapSensor extends Sensor {
     return host;
   }
 
-  getNetworkRanges() {
-    return this.interfaces && this.interfaces.filter(i => i.name && !i.name.includes("vpn")).map((x) => { // do not scan vpn interface
-      return { range: networkTool.capSubnet(x.subnet), intf_mac: x.mac_address, intf_uuid: x.uuid }
-    })
+  getScanInterfaces() {
+    return sysManager.getMonitoringInterfaces().filter(i => i.name && !i.name.includes("vpn")) // do not scan vpn interface
   }
 
   scheduleReload() {
@@ -200,20 +203,20 @@ class NmapSensor extends Sensor {
   }
 
   checkAndRunOnce(fastMode) {
-    this.interfaces = sysManager.getMonitoringInterfaces();
     if (this.isSensorEnabled()) {
-      let range = this.getNetworkRanges()
-      return this.runOnce(fastMode, range)
+      return this.runOnce(fastMode)
     }
   }
 
-  runOnce(fastMode, networkRanges) {
-    if (!networkRanges)
+  runOnce(fastMode) {
+    const interfaces = this.getScanInterfaces()
+
+    if (!interfaces)
       return Promise.reject(new Error("network range is required"));
 
-    return Promise.all(networkRanges.map(({ range, intf_mac, intf_uuid }) => {
+    return Promise.all(interfaces.map(intf => {
 
-      log.info("Scanning network", range, "to detect new devices...");
+      let range = intf.subnet
 
       try {
         range = networkTool.capSubnet(range)
@@ -222,7 +225,10 @@ class NmapSensor extends Sensor {
         return Promise.resolve(); // Skipping this scan
       }
 
-      let cmd = fastMode
+      log.info("Scanning network", range, "to detect new devices...");
+
+
+      const cmd = fastMode
         ? util.format('sudo nmap -sn -PO --send-ip --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary)
         : util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
 
@@ -236,7 +242,7 @@ class NmapSensor extends Sensor {
           }
           hosts.forEach((h) => {
             log.debug("Found device:", h.ipv4Addr);
-            this._processHost(h, intf_mac, intf_uuid);
+            this._processHost(h, intf);
           })
 
         }).catch((err) => {
@@ -260,19 +266,15 @@ class NmapSensor extends Sensor {
     });
   }
 
-  _processHost(host, intf_mac, intf_uuid) {
+  async _processHost(host, intf) {
     if (!host.mac) {
-      for (const intf of this.interfaces) {
-        const intfName = intf.name;
-        if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intfName)) {
-          host.mac = sysManager.myMAC(intfName)
-          break;
-        } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intfName)) {
-          host.mac = sysManager.myWifiMAC(intfName);
-          break;
-        } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2(intfName)) {
-          return // do nothing on secondary ip
-        }
+      const intfName = intf.name;
+      if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intfName)) {
+        host.mac = sysManager.myMAC(intfName)
+      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intfName)) {
+        host.mac = sysManager.myWifiMAC(intfName);
+      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2(intfName)) {
+        return // do nothing on secondary ip
       }
       if (!host.mac) {
         log.warn("Unidentified MAC Address for host", host);
@@ -281,13 +283,25 @@ class NmapSensor extends Sensor {
     }
 
     if (host && host.mac) {
+
+      // exclude router on overlay network for RED, BLUE
+      if (['red', 'blue'].includes(platform.getName())) {
+        const ip4 = new Address4(host.ipv4Addr)
+        const defIntf = sysManager.getDefaultWanInterface()
+        const gatewayMac = await sysManager.myGatewayMac(defIntf.name)
+        if (ip4.isInSubnet(defIntf.subnetAddress4) && host.mac == gatewayMac) {
+          log.info('Ignore gateway on overlay network')
+          return
+        }
+      }
+
       const hostInfo = {
         ipv4: host.ipv4Addr,
         ipv4Addr: host.ipv4Addr,
         mac: host.mac,
         macVendor: host.macVendor,
-        intf_mac: intf_mac,
-        intf_uuid: intf_uuid,
+        intf_mac: intf.mac_address,
+        intf_uuid: intf.uuid,
         from: "nmap"
       };
 
@@ -310,7 +324,7 @@ class NmapSensor extends Sensor {
   }
 
   static scan(cmd) {
-    log.info("Running command:", cmd);
+    log.debug("Running command:", cmd);
 
     return new Promise((resolve, reject) => {
       cp.exec(cmd, (err, stdout, stderr) => {

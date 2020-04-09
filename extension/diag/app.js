@@ -391,7 +391,7 @@ class App {
 
     log.info("", IPv4List);
 
-    const action = create ? '-A' : '-D';
+    const action = create ? '-I' : '-D';
 
     for (const ip of IPv4List) {
       if (!ip) continue;

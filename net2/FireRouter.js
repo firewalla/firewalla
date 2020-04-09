@@ -518,6 +518,7 @@ class FireRouter {
     return JSON.parse(JSON.stringify(logicIntfNames));
   }
 
+  // should always be an array
   getMonitoringIntfNames() {
     return JSON.parse(JSON.stringify(monitoringIntfNames))
   }
