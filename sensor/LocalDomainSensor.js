@@ -25,10 +25,12 @@ const featureName = 'local_domain';
 const f = require('../net2/Firewalla.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
+const ADDN_HOSTS_CONF = FILTER_DIR + "/addn_hosts.conf";
 const ADDN_HOSTS_FILE = f.getRuntimeInfoFolder() + "/dnsmasq_addn_hosts";
 const util = require('util');
 const fs = require('fs');
 const unlinkAsync = util.promisify(fs.unlink);
+const writeFileAsync = util.promisify(fs.writeFile);
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
 const updateFlag = "1";
@@ -55,6 +57,7 @@ class LocalDomainSensor extends Sensor {
         });
     }
     async globalOn() {
+        await writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + ADDN_HOSTS_FILE);
         await rclient.delAsync("local:device:domain");
         const hosts = await hostManager.getHostsAsync();
         let macArr = [];
@@ -74,7 +77,7 @@ class LocalDomainSensor extends Sensor {
     async globalOff() {
         try {
             await unlinkAsync(LOCAL_DOMAIN_FILE);
-            await unlinkAsync(ADDN_HOSTS_FILE);
+            await unlinkAsync(ADDN_HOSTS_CONF);
             dnsmasq.scheduleRestartDNSService();
         } catch (err) {
             if (err.code === 'ENOENT') {
