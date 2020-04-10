@@ -22,7 +22,7 @@ const Mode = require('../net2/Mode.js');
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
-const modeManager = require('../net2/ModeManager.js');
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
 
 const routerChangeKey = 'sys:router:change';
 const routerMacKey = 'sys:router:mac';
@@ -46,17 +46,34 @@ class RouterChangeSensor extends Sensor {
       return;
     }
 
-    const gatewayIp = sysManager.myGateway();
-    const gatewayMac = await hostTool.getMacByIP(gatewayIp);
-    const isMember = await rclient.sismemberAsync(routerMacKey, gatewayMac);
     const hasAny = await rclient.scardAsync(routerMacKey);
-    if (!isMember && hasAny > 0) {
-      await modeManager.setNoneAndPublish();
+    let interfaces = sysManager.getMonitoringInterfaces().filter(intf => intf.gateway_ip && intf.type == 'wan');
+    let routerChange = false;
+    for (const intf of interfaces) {
+      const gatewayMac = await hostTool.getMacByIP(intf.gateway_ip);
+      const isMember = await rclient.sismemberAsync(routerMacKey, gatewayMac);
+      if (!isMember) {
+        routerChange = true;
+        await rclient.saddAsync(routerMacKey, gatewayMac);
+        const network = networkProfileManager.getNetworkProfile(intf.uuid);
+        if (network) {
+          await network.setPolicy("monitoring", false);
+        }
+      }
+    }
+
+    if (routerChange && hasAny > 0) {
       await rclient.setAsync(routerChangeKey, 1);
       await rclient.expireAsync(routerChangeKey, 3600 * 24 * 7); // one week
-    }
-    if (!isMember) {
-      await rclient.saddAsync(routerMacKey, gatewayMac);
+
+      sem.sendEventToFireApi({
+        type: 'FW_NOTIFICATION',
+        titleKey: 'NOTIF_BOX_ROUTER_CHANGE_TITLE',
+        bodyKey: 'NOTIF_BOX_ROUTER_CHANGE_BODY',
+        titleLocalKey: 'BOX_ROUTER_CHANGE',
+        bodyLocalKey: 'BOX_ROUTER_CHANGE',
+        payload: {}
+      });
     }
   }
 }

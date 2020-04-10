@@ -3864,6 +3864,18 @@ class netBot extends ControllerBot {
       case "resetRouterChangeFlag": {
         (async () => {
           await rclient.delAsync("sys:router:change");
+          let uuids = [];
+          if (!value.uuids) {
+            uuids = sysManager.getMonitoringInterfaces().filter(intf => intf.gateway_ip && intf.type == 'wan').map(intf => intf.uuid);
+          } else {
+            uuids = value.uuids;
+          }
+          for (const uuid of uuids) {
+            const network = this.networkProfileManager.getNetworkProfile(uuid);
+            if (network) {
+              await network.setPolicy("monitoring", true);
+            }
+          }
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
