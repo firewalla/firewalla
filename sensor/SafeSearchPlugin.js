@@ -139,10 +139,12 @@ class SafeSearchPlugin extends Sensor {
             if (tagUid) {
               if (policy && policy.state === true)
                 this.tagSettings[tagUid] = 1;
+              // false means unset, this is for backward compatibility
               if (policy && policy.state === false)
-                this.tagSettings[tagUid] = -1;
-              if (policy && policy.state === null)
                 this.tagSettings[tagUid] = 0;
+              // null means disabled, this is for backward compatibility
+              if (policy && policy.state === null)
+                this.tagSettings[tagUid] = -1;
               await this.applyTagSafeSearch(tagUid);
             }
             break;
@@ -153,9 +155,9 @@ class SafeSearchPlugin extends Sensor {
               if (policy && policy.state === true)
                 this.networkSettings[uuid] = 1;
               if (policy && policy.state === false)
-                this.networkSettings[uuid] = -1;
-              if (policy && policy.state === null)
                 this.networkSettings[uuid] = 0;
+              if (policy && policy.state === null)
+                this.networkSettings[uuid] = -1;
               await this.applyNetworkSafeSearch(uuid);
             }
             break;
@@ -166,9 +168,9 @@ class SafeSearchPlugin extends Sensor {
               if (policy && policy.state === true)
                 this.macAddressSettings[macAddress] = 1;
               if (policy && policy.state === false)
-                this.macAddressSettings[macAddress] = -1;
+                this.macAddressSettings[macAddress] = 0;
               if (policy && policy.state === null)
-                this.macAddressSettings[macAddress] = 0
+                this.macAddressSettings[macAddress] = -1;
               await this.applyDeviceSafeSearch(macAddress);
             }
             break;
