@@ -138,7 +138,7 @@ class PiHolePlugin extends Sensor {
 
   async systemStart() {
     log.info("Starting pihole at global level...");
-    const entry = `server=${pihole.getLocalServer()}\n`;
+    const entry = `server=127.0.0.1#${pihole.getUDPPort()}\n`;
     await fs.writeFileAsync(systemConfigFile, entry);
     await dnsmasq.scheduleRestartDNSService();
   }
