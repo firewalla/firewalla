@@ -170,7 +170,7 @@ class PiHole {
   }
 
   async postStart(config = {}) {
-    await this.allowDockerBridgeToAccessWan();
+    await this.allowDockerBridgeToAccessOtherNetworks();
   }
 
   async isListening() {
