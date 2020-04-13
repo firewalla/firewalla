@@ -3616,6 +3616,7 @@ class netBot extends ControllerBot {
           const intf = msg.data.value.interface;
           const dhcpRange = msg.data.value.dhcpRange;
           const dnsServers = msg.data.value.dnsServers || []; // default value is empty
+          const dhcpLeaseTime = msg.data.value.dhcpLeaseTime;
           if (!network || !intf || !intf.ipAddress || !intf.subnetMask) {
             this.simpleTxData(msg, {}, { code: 400, msg: "network, interface.ipAddress/subnetMask should be specified." }, callback);
             return;
@@ -3646,7 +3647,11 @@ class netBot extends ControllerBot {
                 mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
                 mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
               }
-              fc.updateUserConfigSync({ secondaryInterface: mergedSecondaryInterface });
+              let mergedUserConfig = { secondaryInterface: mergedSecondaryInterface };
+              if (dhcpRange && dhcpLeaseTime) {
+                mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { secondary: dhcpLeaseTime});
+              }
+              await fc.updateUserConfig(mergedUserConfig);
               const dnsmasqPolicy = { secondaryDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
@@ -3674,7 +3679,11 @@ class netBot extends ControllerBot {
               }
               updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
               const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
-              fc.updateUserConfigSync({ alternativeInterface: mergedAlternativeInterface });
+              let mergedUserConfig = { alternativeInterface: mergedAlternativeInterface };
+              if (dhcpRange && dhcpLeaseTime) {
+                mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { alternative: dhcpLeaseTime});
+              }
+              fc.updateUserConfigSync(mergedUserConfig);
               const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
@@ -3682,27 +3691,6 @@ class netBot extends ControllerBot {
               setTimeout(() => {
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
-              this.simpleTxData(msg, {}, null, callback);
-              break;
-            }
-            case "wifi": {
-              const currentWifiInterface = currentConfig.wifiInterface;
-              const updatedWifiConfig = { intf: "wlan0" };
-              const wifiIpAddress = intf.ipAddress;
-              const wifiSubnetMask = intf.subnetMask;
-              const wifiIpSubnet = iptool.subnet(wifiIpAddress, wifiSubnetMask);
-              updatedWifiConfig.ip = wifiIpAddress + "/" + wifiIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
-              updatedWifiConfig.mode = intf.mode || "router";
-              updatedWifiConfig.ssid = intf.ssid || "FW_AP";
-              updatedWifiConfig.password = intf.password || "firewalla";
-              updatedWifiConfig.band = intf.band || "g";
-              updatedWifiConfig.channel = intf.channel || "5";
-              const mergedWifiInterface = Object.assign({}, currentWifiInterface, updatedWifiConfig); // if ip2 is not defined, it will be inherited from previous settings
-              fc.updateUserConfigSync({ wifiInterface: mergedWifiInterface });
-              const dnsmasqPolicy = { wifiDnsServers: dnsServers };
-              if (dhcpRange)
-                dnsmasqPolicy.wifiDhcpRange = dhcpRange;
-              this._dnsmasq("0.0.0.0", dnsmasqPolicy)
               this.simpleTxData(msg, {}, null, callback);
               break;
             }
@@ -3773,6 +3761,7 @@ class netBot extends ControllerBot {
                         subnetMask: secondaryIpSubnet.subnetMask
                       },
                       dhcpRange: dhcpRange,
+                      dhcpLeaseTime: (config.dhcpLeaseTime && config.dhcpLeaseTime.secondary) || (config.dhcp && config.dhcp.leaseTime),
                       dnsServers: secondaryDnsServers
                     }, null, callback);
                 });
@@ -3801,6 +3790,7 @@ class netBot extends ControllerBot {
                         gateway: alternativeInterface.gateway
                       },
                       dhcpRange: dhcpRange,
+                      dhcpLeaseTime: (config.dhcpLeaseTime && config.dhcpLeaseTime.alternative) || (config.dhcp && config.dhcp.leaseTime),
                       dnsServers: alternativeDnsServers
                     }, null, callback);
                 });
