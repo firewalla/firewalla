@@ -528,7 +528,8 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "SS2Plugin": {},
-    "WireGuardPlugin": {}
+    "WireGuardPlugin": {},
+    "PiHolePlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},

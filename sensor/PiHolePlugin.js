@@ -141,16 +141,12 @@ class PiHolePlugin extends Sensor {
     const entry = `server=${pihole.getLocalServer()}\n`;
     await fs.writeFileAsync(systemConfigFile, entry);
     await dnsmasq.scheduleRestartDNSService();
-
-    await pihole.redirectTraffic();
   }
 
   async systemStop() {
     log.info("Stopping pihole at global level...");
     await fs.unlinkAsync(systemConfigFile).catch(() => undefined);
     dnsmasq.scheduleRestartDNSService();
-
-    await pihole.stop();
   }
 
   async perDeviceStart(macAddress) {

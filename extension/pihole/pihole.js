@@ -76,8 +76,8 @@ class PiHole {
 
   async updateConfig(config, input = {}) {
     config.ports = [
-      `'${tcpPort}:53/tcp'`,
-      `'${udpPort}:53/udp'`
+      `${tcpPort}:53/tcp`,
+      `${udpPort}:53/udp`
     ];
     const tz = await sysManager.getTimezone();
     config.environment["TZ"] = tz;    
@@ -94,7 +94,7 @@ class PiHole {
         if(doc && doc.services) {
 
           if(doc.services.pihole) {
-            this.updateConfig(doc.services.pihole, this.config);
+            await this.updateConfig(doc.services.pihole, this.config);
           }       
         }
         
@@ -114,6 +114,7 @@ class PiHole {
     try {
       await this.preStart();
       await this.rawStart()
+      await this.allowDockerBridgeToAccessWan();
       
       let up = false;
       for(let i = 0; i < 30; i++) {
