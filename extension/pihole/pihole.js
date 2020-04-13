@@ -114,7 +114,6 @@ class PiHole {
     try {
       await this.preStart();
       await this.rawStart()
-      await this.allowDockerBridgeToAccessWan();
       
       let up = false;
       for(let i = 0; i < 30; i++) {
@@ -126,7 +125,7 @@ class PiHole {
           break;
         }
         await delay(5000);
-      }
+      }      
 
       if(!up) {
         log.info("Failed to bring up pihole, quitting...");
@@ -159,8 +158,7 @@ class PiHole {
   }
 
   async postStart(config = {}) {
-    // need to make sure both overture and trojan are listening..
-
+    await this.allowDockerBridgeToAccessWan();
   }
 
   async isListening() {
