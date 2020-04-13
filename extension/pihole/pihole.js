@@ -84,7 +84,15 @@ class PiHole {
       `${webHttpsPort}:443/udp`
     ];
     const tz = await sysManager.getTimezone();
-    config.environment["TZ"] = tz;    
+    config.environment["TZ"] = tz;
+    let dnses = sysManager.myDNS();
+    if(dnses.length > 0) {
+      config.environment["DNS1"] = dnses[0];
+    }
+    if(dnses.length > 1) {
+      config.environment["DNS2"] = dnses[1];
+    }
+
   }  
 
   async preStart() {
