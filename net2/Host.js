@@ -64,6 +64,8 @@ const instances = {}; // this instances cache can ensure that Host object for ea
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
 
+const envCreatedMap = {};
+
 class Host {
   constructor(obj, mgr, callback) {
     if (!instances[obj.mac]) {
@@ -96,7 +98,7 @@ class Host {
 
         this.loadPolicy(callback);
 
-        Host.ensureCreateTrackingIpset(this.o.mac).then(() => {
+        Host.ensureCreateDeviceIpset(this.o.mac).then(() => {
           this.subscribe(this.o.mac, "Device:Updated");
         }).catch((err) => {
           log.error(`Failed to create tracking ipset for ${this.o.mac}`, err.message);
@@ -128,13 +130,30 @@ class Host {
     this.parse();
   }
 
-  static getTrackingIpsetPrefix(mac) {
-    return `c_${mac}_ip`;
+  static getIpSetName(mac, af = 4) {
+    return `c_${mac}_ip${af}`;
   }
 
-  static async ensureCreateTrackingIpset(mac) {
-    await exec(`sudo ipset create -! ${Host.getTrackingIpsetPrefix(mac)}4 hash:ip family inet maxelem 10 timeout 900`);
-    await exec(`sudo ipset create -! ${Host.getTrackingIpsetPrefix(mac)}6 hash:ip family inet6 maxelem 30 timeout 900`);
+  static getMacSetName(mac) {
+    return `c_${mac}_mac_set`;
+  }
+
+  static getDeviceSetName(mac) {
+    return `c_${mac}_set`;
+  }
+
+  static async ensureCreateDeviceIpset(mac) {
+    if (envCreatedMap[mac])
+      return;
+    await exec(`sudo ipset create -! ${Host.getIpSetName(mac, 4)} hash:ip family inet maxelem 10 timeout 900`);
+    await exec(`sudo ipset create -! ${Host.getIpSetName(mac, 6)} hash:ip family inet6 maxelem 30 timeout 900`);
+    await exec(`sudo ipset create -! ${Host.getMacSetName(mac)} hash:mac maxelem 1`);
+    await exec(`sudo ipset add -! ${Host.getMacSetName(mac)} ${mac}`);
+    await exec(`sudo ipset create -! ${Host.getDeviceSetName(mac)} list:set`);
+    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getMacSetName(mac)}`);
+    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getIpSetName(mac, 4)}`);
+    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getIpSetName(mac, 6)}`);
+    envCreatedMap[mac] = 1;
   }
 
   /* example of ipv6Host
@@ -528,11 +547,11 @@ class Host {
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC} ${this.o.mac}`).catch((err) => {
         log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC}`, err.message);
       });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}4 from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 4)} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-        log.error(`Failed to remove ${Host.getTrackingIpsetPrefix(this.o.mac)}6 from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 6)} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
@@ -542,11 +561,11 @@ class Host {
       await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC} ${this.o.mac}`).catch((err) => {
         log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC}`, err);
       });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-        log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
     }
 
@@ -630,73 +649,6 @@ class Host {
   }
 
   async shield(policy) {
-    let internetRule = new Rule().chn("FW_F_DEV_SELECTOR")
-      .mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}4`, "dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
-      .pam("-m conntrack --ctstate NEW");
-    let internetRule6 = new Rule().fam(6).chn("FW_F_DEV_SELECTOR")
-      .mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}6`, "dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
-      .pam("-m conntrack --ctstate NEW");
-    let intranetRule = new Rule().chn("FW_F_DEV_SELECTOR")
-      .mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}4`, "dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
-      .pam("-m conntrack --ctstate NEW");
-    let intranetRule6 = new Rule().fam(6).chn("FW_F_DEV_SELECTOR")
-      .mth(`${Host.getTrackingIpsetPrefix(this.o.mac)}6`, "dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
-      .pam("-m conntrack --ctstate NEW");
-    // remove all possiblee previous rules
-    await exec(internetRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(internetRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(internetRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(internetRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(intranetRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(intranetRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(intranetRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(intranetRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-
-    let cmd = "-I";
-    if (policy.internet !== true && policy.internet !== false)
-      policy.internet = null;
-    if (policy.internet === true) {
-      internetRule.jmp("FW_INBOUND_FIREWALL");
-      internetRule6.jmp("FW_INBOUND_FIREWALL");
-    }
-    if (policy.internet === false) {
-      internetRule.jmp("RETURN");
-      internetRule6.jmp("RETURN");
-    }
-    if (policy.internet === null) {
-      cmd = "-D";
-    }
-    await exec(internetRule.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv4 internet inbound firewall for ${this.o.mac}`, internetRule.toCmd(cmd), err.message);
-    });
-    await exec(internetRule6.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv6 internet inbound firewall for ${this.o.mac}`, internetRule6.toCmd(cmd), err.message);
-    });
-
-    cmd = "-I";
-    if (policy.intranet !== true && policy.internet !== false)
-      policy.intranet = null;
-    if (policy.intranet === true) {
-      intranetRule.jmp("FW_INBOUND_FIREWALL");
-      intranetRule6.jmp("FW_INBOUND_FIREWALL");
-    }
-    if (policy.intranet === false) {
-      intranetRule.jmp("RETURN");
-      intranetRule6.jmp("RETURN");
-    }
-    if (policy.intranet === null) {
-      cmd = "-D";
-    }
-    await exec(intranetRule.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv4 intranet inbound firewall for ${this.o.mac}`, intranetRule.toCmd(cmd), err.message);
-    });
-    await exec(intranetRule6.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv6 intranet inbound firewall for ${this.o.mac}`, intranetRule6.toCmd(cmd), err.message);
-    });
   }
 
   // Notice
@@ -731,8 +683,8 @@ class Host {
         const macEntry = await hostTool.getMACEntry(this.o.mac);
         const ipv4Addr = macEntry && macEntry.ipv4Addr;
         if (ipv4Addr) {
-          await exec(`sudo ipset -exist add -! ${Host.getTrackingIpsetPrefix(this.o.mac)}4 ${ipv4Addr}`).catch((err) => {
-            log.error(`Failed to add ${ipv4Addr} to ${Host.getTrackingIpsetPrefix(this.o.mac)}4`, err.message);
+          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
+            log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
           });
         }
         let ipv6Addr = null;
@@ -741,8 +693,8 @@ class Host {
         } catch (err) {}
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
-            await exec(`sudo ipset -exist add -! ${Host.getTrackingIpsetPrefix(this.o.mac)}6 ${addr}`).catch((err) => {
-              log.error(`Failed to add ${addr} to ${Host.getTrackingIpsetPrefix(this.o.mac)}6`, err.message);
+            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
+              log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
             });
           }
         }
@@ -1242,11 +1194,11 @@ class Host {
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {
-        await exec(`sudo ipset del -! ${Tag.getTagMacIpsetName(removedTag)} ${this.o.mac}`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagMacTrackingIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagMacTrackingIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
@@ -1257,20 +1209,20 @@ class Host {
     for (let uid of tags) {
       const tag = TagManager.getTagByUid(uid);
       if (tag) {
-        await exec(`sudo ipset add -! ${Tag.getTagMacIpsetName(uid)} ${this.o.mac}`).catch((err) => {
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         });
-        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to tag ipset ${Tag.getTagIpsetName(uid)}`, err.message);
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
         });
-        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to tag ipset ${Tag.getTagIpsetName(uid)}`, err.message);
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
         });
-        await exec(`sudo ipset add -! ${Tag.getTagMacTrackingIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to tag ipset ${Tag.getTagMacTrackingIpsetName(uid)}`, err.message);
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
         });
-        await exec(`sudo ipset add -! ${Tag.getTagMacTrackingIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to tag ipset ${Tag.getTagMacTrackingIpsetName(uid)}`, err.message);
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to tag ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
         });
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {

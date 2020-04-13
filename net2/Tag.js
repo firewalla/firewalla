@@ -27,8 +27,9 @@ const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js')
 const {Rule, wrapIptables} = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
-const ipset = require('./Ipset.js');
 Promise.promisifyAll(fs);
+
+const envCreatedMap = {};
 
 
 class Tag {
@@ -115,45 +116,55 @@ class Tag {
   }
 
   // this can be used to match everything on this tag, including device and network
-  static getTagIpsetName(uid) {
+  static getTagSetName(uid) {
     return `c_tag_${uid}_set`;
   }
 
   // this can be used to match device alone on this tag
-  static getTagMacIpsetName(uid) {
-    return `c_tag_${uid}_m_set`
+  static getTagDeviceMacSetName(uid) {
+    return `c_tag_${uid}_dev_mac_set`
   }
 
   // this can be used to match network alone on this tag
-  static getTagNetIpsetName(uid) {
-    return `c_tag_${uid}_n_set`;
+  static getTagNetSetName(uid) {
+    return `c_tag_${uid}_net_set`;
   }
 
-  // this can be used to match IP of device alone on this tag
-  static getTagMacTrackingIpsetName(uid) {
-    return `c_tag_${uid}_tracking_set`;
+  // this can be used to match mac as well as IP of device on this tag
+  static getTagDeviceSetName(uid) {
+    return `c_tag_${uid}_dev_set`;
   }
 
-  async createEnv() {
+  static async ensureCreateEnforcementEnv(uid) {
+    if (envCreatedMap[uid])
+      return;
     // create related ipsets
-    await exec(`sudo ipset create -! ${Tag.getTagIpsetName(this.o.uid)} list:set`).catch((err) => {
-      log.error(`Failed to create tag ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset create -! ${Tag.getTagSetName(uid)} list:set`).catch((err) => {
+      log.error(`Failed to create tag ipset ${Tag.getTagSetName(uid)}`, err.message);
     });
-    await exec(`sudo ipset create -! ${Tag.getTagMacIpsetName(this.o.uid)} hash:mac`).catch((err) => {
-      log.error(`Failed to create tag mac ipset ${Tag.getTagMacIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset create -! ${Tag.getTagDeviceMacSetName(uid)} hash:mac`).catch((err) => {
+      log.error(`Failed to create tag mac ipset ${Tag.getTagDeviceMacSetName(uid)}`, err.message);
     });
-    await exec(`sudo ipset add -! ${Tag.getTagIpsetName(this.o.uid)} ${Tag.getTagMacIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to add ${Tag.getTagMacIpsetName(this.o.uid)} to ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Tag.getTagDeviceMacSetName(uid)}`).catch((err) => {
+      log.error(`Failed to add ${Tag.getTagDeviceMacSetName(uid)} to ipset ${Tag.getTagSetName(uid)}`, err.message);
     });
     // you may think this tag net set is redundant? 
     // it is needed to apply fine-grained policy on tag level. e.g., customized wan, QoS
-    await exec(`sudo ipset create -! ${Tag.getTagNetIpsetName(this.o.uid)} list:set`).catch((err) => {
-      log.error(`Failed to create tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset create -! ${Tag.getTagNetSetName(uid)} list:set`).catch((err) => {
+      log.error(`Failed to create tag net ipset ${Tag.getTagNetSetName(uid)}`, err.message);
     });
-    // it is needed to apply device tag level policy which needs destination IP
-    await exec(`sudo ipset create -! ${Tag.getTagMacTrackingIpsetName(this.o.uid)} list:set`).catch((err) => {
-      log.error(`Failed to create tag mac tracking ipset ${Tag.getTagMacTrackingIpsetName(this.o.uid)}`, err.message);
+    // it can be used to match src,dst on devices in the group
+    await exec(`sudo ipset create -! ${Tag.getTagDeviceSetName(uid)} list:set`).catch((err) => {
+      log.error(`Failed to create tag mac tracking ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
     });
+    await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Tag.getTagDeviceMacSetName(uid)}`).catch((err) => {
+      log.error(`Failed to add ${Tag.getTagDeviceMacSetName(uid)} to ${Tag.getTagDeviceSetName(uid)}`, err.message);
+    });
+    envCreatedMap[uid] = 1;
+  }
+
+  async createEnv() {
+    await Tag.ensureCreateEnforcementEnv(this.o.uid);
 
     // tag dnsmasq entry can be referred by domain blocking rules
     const dnsmasqEntry = `group-tag=@${this.o.uid}$tag_${this.o.uid}`;
@@ -179,17 +190,17 @@ class Tag {
     await flowManager.removeFlowTag(uid);
 
     // flush related ipsets
-    await exec(`sudo ipset flush -! ${Tag.getTagIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to flush tag ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset flush -! ${Tag.getTagSetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag ipset ${Tag.getTagSetName(this.o.uid)}`, err.message);
     });
-    await exec(`sudo ipset flush -! ${Tag.getTagMacIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to flush tag mac ipset ${Tag.getTagMacIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset flush -! ${Tag.getTagDeviceMacSetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag mac ipset ${Tag.getTagDeviceMacSetName(this.o.uid)}`, err.message);
     });
-    await exec(`sudo ipset flush -! ${Tag.getTagNetIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to flush tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset flush -! ${Tag.getTagNetSetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag net ipset ${Tag.getTagNetSetName(this.o.uid)}`, err.message);
     });
-    await exec(`sudo ipset flush -! ${Tag.getTagMacTrackingIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to flush tag mac tracking ipset ${Tag.getTagMacTrackingIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset flush -! ${Tag.getTagDeviceSetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag mac tracking ipset ${Tag.getTagDeviceSetName(this.o.uid)}`, err.message);
     });
     // delete related dnsmasq config files
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
@@ -205,108 +216,6 @@ class Tag {
   }
 
   async shield(policy) {
-    let internetDevGroupRule = new Rule().chn("FW_F_DEV_G_SELECTOR")
-      .mth(Tag.getTagMacTrackingIpsetName(this.o.uid), "dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
-      .pam("-m conntrack --ctstate NEW");
-    let internetDevGroupRule6 = internetDevGroupRule.clone().fam(6);
-    let intranetDevGroupRule = new Rule().chn("FW_F_DEV_G_SELECTOR")
-      .mth(Tag.getTagMacTrackingIpsetName(this.o.uid), "dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
-      .mth(Tag.getTagIpsetName(this.o.uid), "src,src", "set", false)
-      .pam("-m conntrack --ctstate NEW");
-    let intranetDevGroupRule6 = intranetDevGroupRule.clone().fam(6);
-
-    let internetNetGroupRule = new Rule().chn("FW_F_NET_G_SELECTOR")
-      .mth(Tag.getTagNetIpsetName(this.o.uid), "dst,dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
-      .pam("-m conntrack --ctstate NEW");
-    let internetNetGroupRule6 = internetNetGroupRule.clone().fam(6);
-    let intranetNetGroupRule = new Rule().chn("FW_F_NET_G_SELECTOR")
-      .mth(Tag.getTagNetIpsetName(this.o.uid), "dst,dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", true)
-      .mth(Tag.getTagIpsetName(this.o.uid), "src,src", "set", false)
-      .pam("-m conntrack --ctstate NEW");
-    let intranetNetGroupRule6 = intranetNetGroupRule.clone().fam(6);
-    // remove all possible previous rules
-    await exec(internetDevGroupRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(internetDevGroupRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(internetDevGroupRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(internetDevGroupRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(internetNetGroupRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(internetNetGroupRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(internetNetGroupRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(internetNetGroupRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(intranetDevGroupRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(intranetDevGroupRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(intranetDevGroupRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(intranetDevGroupRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(intranetNetGroupRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(intranetNetGroupRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(intranetNetGroupRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(intranetNetGroupRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-
-    let cmd = "-I";
-    if (policy.internet !== true && policy.internet !== false)
-      policy.internet = null;
-    if (policy.internet === true) {
-      internetDevGroupRule.jmp("FW_INBOUND_FIREWALL");
-      internetDevGroupRule6.jmp("FW_INBOUND_FIREWALL");
-      internetNetGroupRule.jmp("FW_INBOUND_FIREWALL");
-      internetNetGroupRule6.jmp("FW_INBOUND_FIREWALL");
-    }
-    if (policy.internet === false) {
-      internetDevGroupRule.jmp("RETURN");
-      internetDevGroupRule6.jmp("RETURN");
-      internetNetGroupRule.jmp("RETURN");
-      internetNetGroupRule6.jmp("RETURN");
-    }
-    if (policy.internet === null) {
-      cmd = "-D";
-    }
-    await exec(internetDevGroupRule.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv4 internet inbound firewall for ${this.o.uid}`, internetDevGroupRule.toCmd(cmd), err.message);
-    });
-    await exec(internetDevGroupRule6.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv6 internet inbound firewall for ${this.o.uid}`, internetDevGroupRule6.toCmd(cmd), err.message);
-    });
-    await exec(internetNetGroupRule.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv4 internet inbound firewall for ${this.o.uid}`, internetNetGroupRule.toCmd(cmd), err.message);
-    });
-    await exec(internetNetGroupRule6.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv6 internet inbound firewall for ${this.o.uid}`, internetNetGroupRule6.toCmd(cmd), err.message);
-    });
-
-    cmd = "-I";
-    if (policy.intranet !== true && policy.intranet !== false)
-      policy.intranet = null;
-    if (policy.intranet === true) {
-      intranetDevGroupRule.jmp("FW_INBOUND_FIREWALL");
-      intranetDevGroupRule6.jmp("FW_INBOUND_FIREWALL");
-      intranetNetGroupRule.jmp("FW_INBOUND_FIREWALL");
-      intranetNetGroupRule6.jmp("FW_INBOUND_FIREWALL");
-    }
-    if (policy.intranet === false) {
-      intranetDevGroupRule.jmp("RETURN");
-      intranetDevGroupRule6.jmp("RETURN");
-      intranetNetGroupRule.jmp("RETURN");
-      intranetNetGroupRule6.jmp("RETURN");
-    }
-    if (policy.intranet === null) {
-      cmd = "-D";
-    }
-    await exec(intranetDevGroupRule.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv4 intranet inbound firewall for ${this.o.uid}`, intranetDevGroupRule.toCmd(cmd), err.message);
-    });
-    await exec(intranetDevGroupRule6.toCmd(cmd)).catch((err) => {
-      log.error(`Failed to apply IPv6 intranet inbound firewall for ${this.o.uid}`, intranetDevGroupRule6.toCmd(cmd), err.message);
-    });
-    await exec(intranetNetGroupRule.toCmd(cmd)).catch ((err) => {
-      log.error(`Failed to apply IPv4 intranet inbound firewall for ${this.o.uid}`, intranetNetGroupRule.toCmd(cmd), err.message);
-    });
-    await exec(intranetNetGroupRule6.toCmd(cmd)).catch ((err) => {
-      log.error(`Failed to apply IPv6 intranet inbound firewall for ${this.o.uid}`, intranetNetGroupRule6.toCmd(cmd), err.message);
-    });
   }
 
   async vpnClient(policy) {
@@ -324,11 +233,11 @@ class Tag {
         return false;
       const rtIdHex = Number(rtId).toString(16);
       // remove old mark first
-      await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)}`);
+      await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)}`);
       if (this._netFwMark) {
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
       }
       this._netFwMark = null;
@@ -344,11 +253,11 @@ class Tag {
         // do not change skbmark
       }
       if (this._netFwMark) {
-        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
         // add to the beginning of the chain so that it has the lowest priority and can be overriden by the subsequent rules 
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
       }
       return true;

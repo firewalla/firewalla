@@ -80,6 +80,9 @@ class Policy {
       if (!_.isArray(this.tag) || _.isEmpty(this.tag))
         delete this.tag;
     }
+    this.whitelist = false;
+    if (raw.whitelist)
+      this.whitelist = JSON.parse(raw.whitelist);
 
     if (raw.expire === "") {
       delete this.expire;
@@ -136,12 +139,10 @@ class Policy {
       this.target === policy.target &&
       this.expire === policy.expire &&
       this.cronTime === policy.cronTime &&
-      this.remote === policy.remote &&
-      this.remoteType === policy.remoteType &&
-      this.local == policy.local &&
-      this.localType === policy.localType &&
       this.remotePort === policy.remotePort &&
       this.localPort === policy.localPort &&
+      this.protocol === policy.protocol &&
+      this.direction === policy.direction &&
       this.proto === policy.proto
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);

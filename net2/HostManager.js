@@ -1396,37 +1396,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    let internetRule = new Rule().chn("FW_F_GLOBAL_SELECTOR")
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", true)
-      .mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false)
-      .pam("-m conntrack --ctstate NEW");
-    let internetRule6 = internetRule.clone().fam(6);
-    // remove all possible previous rules
-    await exec(internetRule.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(internetRule.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-    await exec(internetRule6.clone().jmp("FW_INBOUND_FIREWALL").toCmd("-D")).catch((err) => {});
-    await exec(internetRule6.clone().jmp("RETURN").toCmd("-D")).catch((err) => {});
-
-    let cmd = "-I";
-    if (policy.internet !== true && policy.internet !== false)
-      policy.internet = null;
-    if (policy.internet === true) {
-      internetRule.jmp("FW_INBOUND_FIREWALL");
-      internetRule6.jmp("FW_INBOUND_FIREWALL");
-    }
-    if (policy.internet === false) {
-      internetRule.jmp("RETURN");
-      internetRule6.jmp("RETURN");
-    }
-    if (policy.internet === null) {
-      cmd = "-D"
-    }
-    await exec(internetRule.toCmd(cmd)).catch((err) => {
-      log.error("Failed to apply IPv4 global internet inbound firewall", internetRule.toCmd(cmd), err.message);
-    });
-    await exec(internetRule6.toCmd(cmd)).catch((err) => {
-      log.error("Failed to apply IPv6 global internet inbound firewall", internetRule6.toCmd(cmd), err.message);
-    });
+    
   }
 
   async getVpnActiveDeviceCount(profileId) {
