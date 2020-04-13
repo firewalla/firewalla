@@ -564,6 +564,7 @@ class SysManager {
   }
 
   isMyIP(ip) {
+    if (!ip) return false
     let interfaces = this.getMonitoringInterfaces();
     return interfaces.map(i => i.ip_address === ip).some(Boolean);
   }
