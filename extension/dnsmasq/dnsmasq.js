@@ -1145,7 +1145,8 @@ module.exports = class DNSMASQ {
       alternativeDnsServers = interfaceNameServers.alternative.join(',');
     }
 
-    const leaseTime = fConfig.dhcp && fConfig.dhcp.leaseTime || "24h";
+    let secondaryLeaseTime = (fConfig.dhcpLeaseTime && fConfig.dhcpLeaseTime.secondary) || (fConfig.dhcp && fConfig.dhcp.leaseTime) || "24h";
+    let alternativeLeaseTime = (fConfig.dhcpLeaseTime && fConfig.dhcpLeaseTime.alternative) || (fConfig.dhcp && fConfig.dhcp.leaseTime) || "24h";
     const monitoringInterface = fConfig.monitoringInterface || "eth0";
 
     if (this.mode === Mode.MODE_DHCP) {
@@ -1157,7 +1158,7 @@ module.exports = class DNSMASQ {
         secondaryRange.begin,
         secondaryRange.end,
         secondaryMask,
-        leaseTime
+        secondaryLeaseTime
       );
 
       // allocate primary(alternative) interface ip to unmonitored hosts
@@ -1167,7 +1168,7 @@ module.exports = class DNSMASQ {
         alternativeRange.begin,
         alternativeRange.end,
         alternativeMask,
-        leaseTime
+        alternativeLeaseTime
       );
 
       // secondary interface ip as router for monitored hosts and new hosts
@@ -1195,7 +1196,7 @@ module.exports = class DNSMASQ {
         alternativeRange.begin,
         alternativeRange.end,
         alternativeMask,
-        leaseTime
+        alternativeLeaseTime
       );
 
       // Firewalla's ip as router for monitored hosts and new hosts. In case Firewalla's ip is changed, a thorough restart is required
