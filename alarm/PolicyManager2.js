@@ -439,7 +439,7 @@ class PolicyManager2 {
 
   async checkAndSave(policy, callback) {
     callback = callback || function () { }
-    if (!policy instanceof Policy) callback(new Error("Not Policy instance"));
+    if (!(policy instanceof Policy)) callback(new Error("Not Policy instance"));
     //FIXME: data inconsistence risk for multi-processes or multi-threads
     try {
       if (this.isFirewallaOrCloud(policy)) {
@@ -468,11 +468,11 @@ class PolicyManager2 {
 
   checkAndSaveAsync(policy) {
     return new Promise((resolve, reject) => {
-      this.checkAndSave(policy, (err, resultPolicy) => {
+      this.checkAndSave(policy, (err, policy, alreadyExists) => {
         if (err) {
           reject(err)
         } else {
-          resolve(resultPolicy)
+          resolve({policy, alreadyExists})
         }
       })
     })
@@ -1716,25 +1716,17 @@ class PolicyManager2 {
     }
   }
 
-  match(alarm, callback) {
-    this.loadActivePolicies((err, policies) => {
-      if (err) {
-        log.error("Failed to load active policy rules")
-        callback(err)
-        return
-      }
+  async match(alarm) {
+    const policies = await this.loadActivePoliciesAsync()
 
-      const matchedPolicies = policies.filter((policy) => {
-        return policy.match(alarm)
-      })
+    const matchedPolicies = policies.filter(policy => policy.match(alarm))
 
-      if (matchedPolicies.length > 0) {
-        log.debug('1st matched policy', matchedPolicies[0])
-        callback(null, true)
-      } else {
-        callback(null, false)
-      }
-    })
+    if(matchedPolicies.length > 0) {
+      log.debug('1st matched policy', matchedPolicies[0])
+      return true
+    } else {
+      return false
+    }
   }
 
 
