@@ -497,9 +497,9 @@ class netBot extends ControllerBot {
         notifMsg["title-loc-args"] = newArray;
         notifMsg["loc-key"] = alarm.localizedNotificationContentKey();
         notifMsg["loc-args"] = alarm.localizedNotificationContentArray();
-        notifMsg["title_loc_key"] = alarm.localizedNotificationTitleKey().replace(/[.:]/g, '_');
+        notifMsg["title_loc_key"] = alarm.localizedNotificationTitleKey().replace(/[.:-]/g, '_');
         notifMsg["title_loc_args"] = newArray;
-        notifMsg["body_loc_key"] = alarm.localizedNotificationContentKey().replace(/[.:]/g, '_');
+        notifMsg["body_loc_key"] = alarm.localizedNotificationContentKey().replace(/[.:-]/g, '_');
         notifMsg["body_loc_args"] = alarm.localizedNotificationContentArray();
 
         const forceUseNotificationLocalization = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
@@ -529,7 +529,7 @@ class netBot extends ControllerBot {
 
       if (event.titleLocalKey) {
         notifyMsg["title-loc-key"] = `notif.title.${event.titleLocalKey}`;
-        notifyMsg["title_loc_key"] = notifyMsg["title-loc-key"].replace(/[.:]/g, '_');
+        notifyMsg["title_loc_key"] = notifyMsg["title-loc-key"].replace(/[.:-]/g, '_');
 
         let titleArgs = [];
 
@@ -549,7 +549,7 @@ class netBot extends ControllerBot {
 
       if (event.bodyLocalKey) {
         notifyMsg["loc-key"] = `notif.content.${event.bodyLocalKey}`;
-        notifyMsg["body_loc_key"] = notifyMsg["loc-key"].replace(/[.:]/g, '_');
+        notifyMsg["body_loc_key"] = notifyMsg["loc-key"].replace(/[.:-]/g, '_');
 
         if (event.bodyLocalArgs) {
           notifyMsg["loc-args"] = event.bodyLocalArgs;
@@ -3996,7 +3996,7 @@ class netBot extends ControllerBot {
       this.msgHandler(gid, rawmsg, (err, response) => {
         if (processed)
           return;
-    
+
         processed = true;
         if (err) {
           reject(err);
