@@ -45,6 +45,8 @@ const sysManager = require('../../net2/SysManager.js');
 
 const tcpPort = 10053;
 const udpPort = 10053;
+const webHttpPort = 10080;
+const webHttpsPort = 10443;
 
 class PiHole {
   constructor() {
@@ -77,7 +79,9 @@ class PiHole {
   async updateConfig(config, input = {}) {
     config.ports = [
       `${tcpPort}:53/tcp`,
-      `${udpPort}:53/udp`
+      `${udpPort}:53/udp`,
+      `${webHttpPort}:80/udp`,
+      `${webHttpsPort}:443/udp`
     ];
     const tz = await sysManager.getTimezone();
     config.environment["TZ"] = tz;    
