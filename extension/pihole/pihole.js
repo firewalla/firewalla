@@ -80,8 +80,8 @@ class PiHole {
     config.ports = [
       `${tcpPort}:53/tcp`,
       `${udpPort}:53/udp`,
-      `${webHttpPort}:80/udp`,
-      `${webHttpsPort}:443/udp`
+      `${webHttpPort}:80/tcp`,
+      `${webHttpsPort}:443/tcp`
     ];
     const tz = await sysManager.getTimezone();
     config.environment["TZ"] = tz;
