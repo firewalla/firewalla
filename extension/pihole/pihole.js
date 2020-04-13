@@ -203,7 +203,7 @@ class PiHole {
         if(bridgeName && subnet) {
           await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`);
           await exec(`sudo ip route add ${subnet} dev ${bridgeName} table lan_routable`);
-          await exec(`sudo ip rule add from all iif ${bridgeName} lookup lan_routable`)
+          await exec(`sudo ip rule add from all iif ${bridgeName} lookup lan_routable priority 5002`)
         } else {
           throw new Error("invalid docker network");
         }
