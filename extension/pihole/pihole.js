@@ -186,8 +186,8 @@ class PiHole {
     return (this.config && this.config.name) || "default";
   }
 
-  // this needs to be done before rerouting traffic to docker
-  async allowDockerBridgeToAccessWan() {
+  // include WAN and LAN
+  async allowDockerBridgeToAccessOtherNetworks() {
     const dockerNetworkConfig = await exec("sudo docker network inspect pihole_default");
     const stdout = dockerNetworkConfig.stdout;
     if(!stdout) {
@@ -202,6 +202,8 @@ class PiHole {
         const subnet = network1.IPAM && network1.IPAM.Config && network1.IPAM.Config[0] && network1.IPAM.Config[0].Subnet;
         if(bridgeName && subnet) {
           await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`);
+          await exec(`sudo ip route add ${subnet} dev ${bridgeName} table lan_routable`);
+          await exec(`sudo ip rule add from all iif ${bridgeName} lookup lan_routable`)
         } else {
           throw new Error("invalid docker network");
         }
