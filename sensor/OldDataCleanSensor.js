@@ -402,6 +402,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("appflow", "appflow:*");
       await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
       await this.regularClean("dns", "rdns:ip:*");
+      await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*")
       await this.cleanHourlyStats();
