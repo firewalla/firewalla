@@ -79,7 +79,7 @@ class PortForward {
             switch (channel) {
               case Message.MSG_SYS_NETWORK_INFO_RELOADED:
                 (async () => {
-                  if (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().filter(i => !this._wanIPs.includes(i)).length > 0) {
+                  if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
                     log.info(`Firewalla WAN IPs changed, refresh all rules...`, this._wanIPs, sysManager.myWanIps());
                     await iptable.portForwardFlushAsync();
                     await this.restore();

@@ -36,7 +36,7 @@ const Message = require('../net2/Message.js');
 const PlatformLoader = require('../platform/PlatformLoader.js');
 const platform = PlatformLoader.getPlatform();
 
-const { Address4, Address6 } = require('ip-address')
+const { Address4 } = require('ip-address')
 
 class NmapSensor extends Sensor {
   constructor() {
@@ -204,17 +204,17 @@ class NmapSensor extends Sensor {
 
   checkAndRunOnce(fastMode) {
     if (this.isSensorEnabled()) {
-      return this.runOnce(fastMode)
+      this.runOnce(fastMode)
     }
   }
 
-  runOnce(fastMode) {
+  async runOnce(fastMode) {
     const interfaces = this.getScanInterfaces()
 
     if (!interfaces)
-      return Promise.reject(new Error("network range is required"));
+      log.error("Failed to get interface list");
 
-    return Promise.all(interfaces.map(intf => {
+    for (const intf of interfaces) {
 
       let range = intf.subnet
 
@@ -222,7 +222,7 @@ class NmapSensor extends Sensor {
         range = networkTool.capSubnet(range)
       } catch (e) {
         log.error('Error reducing scan range:', range, fastMode, e);
-        return Promise.resolve(); // Skipping this scan
+        return // Skipping this scan
       }
 
       log.info("Scanning network", range, "to detect new devices...");
@@ -232,49 +232,62 @@ class NmapSensor extends Sensor {
         ? util.format('sudo nmap -sn -PO --send-ip --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary)
         : util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
 
-      return NmapSensor.scan(cmd)
-        .then((hosts) => {
-          log.info("Analyzing scan result...");
+      try {
+        const hosts = await NmapSensor.scan(cmd)
+        log.info("Analyzing scan result...");
 
-          if (hosts.length === 0) {
-            log.info("No device is found for network", range);
-            return;
-          }
-          hosts.forEach((h) => {
-            log.debug("Found device:", h.ipv4Addr);
-            this._processHost(h, intf);
-          })
+        if (hosts.length === 0) {
+          log.info("No device is found for network", range);
+          return;
+        }
 
-        }).catch((err) => {
-          log.error("Failed to scan:", err);
-        });
-    })).then(() => {
-      setTimeout(() => {
-        log.info("publish Scan:Done after scan is finished")
-        this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-      }, 3 * 1000)
+        for (const host of hosts) {
+          await this._processHost(host, intf)
+        }
+      } catch(err) {
+        log.error("Failed to scan:", err);
+      }
+    }
 
-      Firewalla.isBootingComplete()
-        .then((result) => {
-          if (!result) {
-            setTimeout(() => {
-              log.info("publish Scan:Done after scan is finished")
-              this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-            }, 7 * 1000)
-          }
-        })
-    });
+    setTimeout(() => {
+      log.info("publish Scan:Done after scan is finished")
+      this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+    }, 3 * 1000)
+
+    Firewalla.isBootingComplete()
+      .then((result) => {
+        if (!result) {
+          setTimeout(() => {
+            log.info("publish Scan:Done after scan is finished")
+            this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+          }, 7 * 1000)
+        }
+      })
   }
 
   async _processHost(host, intf) {
+    log.debug("Found device:", host.ipv4Addr, host.mac);
+
+    if (['red', 'blue'].includes(platform.getName())) {
+      if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
+        log.debug("Ingore Firewalla's overlay IP")
+        return
+      }
+
+      const ip4 = new Address4(host.ipv4Addr)
+      const defIntf = sysManager.getDefaultWanInterface()
+      const gatewayMac = await sysManager.myGatewayMac(defIntf.name)
+      if (ip4.isInSubnet(defIntf.subnetAddress4) && host.mac == gatewayMac) {
+        log.warn('Ignore gateway on overlay network')
+        return
+      }
+    }
+
     if (!host.mac) {
-      const intfName = intf.name;
-      if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intfName)) {
-        host.mac = sysManager.myMAC(intfName)
-      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intfName)) {
-        host.mac = sysManager.myWifiMAC(intfName);
-      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2(intfName)) {
-        return // do nothing on secondary ip
+      if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intf.name)) {
+        host.mac = sysManager.myMAC(intf.name)
+      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intf.name)) {
+        host.mac = sysManager.myWifiMAC(intf.name);
       }
       if (!host.mac) {
         log.warn("Unidentified MAC Address for host", host);
@@ -283,17 +296,6 @@ class NmapSensor extends Sensor {
     }
 
     if (host && host.mac) {
-
-      // exclude router on overlay network for RED, BLUE
-      if (['red', 'blue'].includes(platform.getName())) {
-        const ip4 = new Address4(host.ipv4Addr)
-        const defIntf = sysManager.getDefaultWanInterface()
-        const gatewayMac = await sysManager.myGatewayMac(defIntf.name)
-        if (ip4.isInSubnet(defIntf.subnetAddress4) && host.mac == gatewayMac) {
-          log.info('Ignore gateway on overlay network')
-          return
-        }
-      }
 
       const hostInfo = {
         ipv4: host.ipv4Addr,

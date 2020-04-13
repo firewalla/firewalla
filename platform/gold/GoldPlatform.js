@@ -18,7 +18,7 @@
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
-const fs = require('fs').promises;
+const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
