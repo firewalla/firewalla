@@ -39,7 +39,7 @@ check_file() {
 check_dmesg_ethernet() {
     echo "----------------------- Ethernet Link Up/Down in dmesg ----------------------------"
 
-    dmesg | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
+    dmesg --time-format iso | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
 
     echo ""
     echo ""
@@ -98,7 +98,7 @@ check_systemctl_services() {
 check_rejection() {
     echo "----------------------- Node Rejections ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec grep "Possibly Unhandled Rejection" -A 10 {} \;
+    find /home/pi/logs/ -type f -mtime -2 -exec grep -a "Possibly Unhandled Rejection" -A 10 {} \;
 
     echo ""
     echo ""
@@ -107,7 +107,7 @@ check_rejection() {
 check_exception() {
     echo "----------------------- Node Exceptions ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec egrep -H -i '##### CRASH #####' -A 20 {} \;
+    find /home/pi/logs/ -type f -mtime -2 -exec egrep -a -H -i '##### CRASH #####' -A 20 {} \;
 
     echo ""
     echo ""
@@ -116,7 +116,7 @@ check_exception() {
 check_reboot() {
     echo "----------------------- Reboot Record ------------------------------"
 
-    sudo grep REBOOT /var/log/syslog
+    sudo grep -a REBOOT /var/log/syslog
 
     echo ""
     echo ""
@@ -126,8 +126,12 @@ check_each_system_config() {
     local VALUE=$2
     if [[ $VALUE == "" ]]; then
         VALUE="false"
+    elif [[ $VALUE == "1" ]]; then
+        VALUE="true"
+    elif [[ $VALUE == "0" ]]; then
+        VALUE="false"
     fi
-    printf "%15s %20s\n" "$1" "$VALUE"
+    printf "%30s %20s\n" "$1" "$VALUE"
 }
 
 get_redis_key_with_no_ttl() {
@@ -266,7 +270,7 @@ check_hosts() {
                 DEVICE_VPN="false"
             fi
         fi
-        
+
         local DEVICE_FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$DEVICE_MAC -inf +inf)
         local DEVICE_FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$DEVICE_MAC -inf +inf)
 
@@ -299,11 +303,34 @@ check_iptables() {
 
 check_sys_features() {
     echo "---------------------- System Features ------------------"
+    declare -A FEATURES
+    local FILE="$FIREWALLA_HOME/net2/config.json"
+    if [[ -f "$FILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
+        while IFS="=" read -r key value
+        do
+            FEATURES["$key"]="$value"
+        done <<< "$JSON"
+    fi
+
+    FILE="$HOME/.firewalla/config/config.json"
+    if [[ -f "$FILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
+        if [[ "$JSON" != "" ]]; then
+            while IFS="=" read -r key value
+            do
+                FEATURES["$key"]="$value"
+            done <<< "$JSON"
+        fi
+    fi
 
     local HKEYS=$(redis-cli hkeys sys:features)
-
     for hkey in $HKEYS; do
-      check_each_system_config $hkey $(redis-cli hget sys:features $hkey)
+        FEATURES["$hkey"]=$(redis-cli hget sys:features $hkey)
+    done
+
+    for key in ${!FEATURES[*]}; do
+        check_each_system_config $key ${FEATURES[$key]}
     done
 
     echo ""
@@ -333,7 +360,7 @@ check_speed() {
 
 check_conntrack() {
     echo "---------------------- Conntrack Count------------------"
-    
+
     cat /proc/sys/net/netfilter/nf_conntrack_count
 
     echo ""

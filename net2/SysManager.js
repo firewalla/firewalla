@@ -18,6 +18,8 @@ const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
 const util = require('util');
+const fs = require('fs')
+
 const iptool = require('ip');
 var instance = null;
 const license = require('../util/license.js');
@@ -266,10 +268,10 @@ class SysManager {
 
   systemRebootedDueToIssue(reset) {
     try {
-      if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) {
+      if (fs.existsSync("/home/pi/.firewalla/managed_reboot")) {
         log.info("SysManager:RebootDueToIssue");
         if (reset == true) {
-          require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
+          fs.unlinkSync("/home/pi/.firewalla/managed_reboot");
         }
         return true;
       }
@@ -281,10 +283,10 @@ class SysManager {
 
   systemRebootedByUser(reset) {
     try {
-      if (require('fs').existsSync("/home/pi/.firewalla/managed_real_reboot")) {
+      if (fs.existsSync("/home/pi/.firewalla/managed_real_reboot")) {
         log.info("SysManager:RebootByUser");
         if (reset == true) {
-          require('fs').unlinkSync("/home/pi/.firewalla/managed_real_reboot");
+          fs.unlinkSync("/home/pi/.firewalla/managed_real_reboot");
         }
         return true;
       }
@@ -335,43 +337,31 @@ class SysManager {
     return tz;
   }
 
-  setTimezone(timezone, callback) {
-    callback = callback || function () { }
-
+  async setTimezone(timezone) {
+    const tz = await this.getTimezone();
     this.timezone = timezone;
-    rclient.hset("sys:config", "timezone", timezone, (err) => {
-      if (err) {
-        log.error("Failed to set timezone " + timezone + ", err: " + err);
-      }
+    if (tz == timezone) {
+      return null;
+    }
+    try {
+      await rclient.hsetAsync("sys:config", "timezone", timezone);
       pclient.publish("System:TimezoneChange", timezone);
 
-      // TODO: each running process may not be set to the target timezone until restart
-      (async () => {
-        try {
-          let cmd = `sudo timedatectl set-timezone ${timezone}`
-          await exec(cmd)
-
-          // TODO: we can improve in the future that only restart if new timezone is different from old one
-          // but the impact is low since calling this settimezone function is very rare
-          let cronRestartCmd = "sudo systemctl restart cron.service"
-          await exec(cronRestartCmd)
-
-          callback(null)
-        } catch (err) {
-          log.error("Failed to set timezone:", err);
-          callback(err)
-        }
-      })()
-    });
+      await exec(`sudo timedatectl set-timezone ${timezone}`);
+      await exec('sudo systemctl restart cron.service');
+      await exec('sudo systemctl restart rsyslog');
+      
+      //don't restart when initializing timezone
+      tz && (await exec('sudo systemctl restart firemain'));
+      return null;
+    } catch (err) {
+      log.error("Failed to set timezone:", err);
+      return err;
+    }
   }
 
   update(callback) {
     if (!callback) callback = () => { }
-
-    if (!fireRouter.isReady()) {
-      callback()
-      return
-    }
 
     return util.callbackify(this.updateAsync).bind(this)(callback)
   }
@@ -543,6 +533,11 @@ class SysManager {
     return wanIntf && this.getInterface(wanIntf);
   }
 
+  myWanIps() {
+    const wanIntfs = fireRouter.getWanIntfNames() || [];
+    return wanIntfs.map(i => this.getInterface(i)).filter(iface => iface && iface.ip_address).map(i => i.ip_address);
+  }
+
   myDefaultWanIp() {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     if (wanIntf)
@@ -569,6 +564,7 @@ class SysManager {
   }
 
   isMyIP(ip) {
+    if (!ip) return false
     let interfaces = this.getMonitoringInterfaces();
     return interfaces.map(i => i.ip_address === ip).some(Boolean);
   }
@@ -687,6 +683,11 @@ class SysManager {
     return this.getInterface(intf) && this.getInterface(intf).gateway;
   }
 
+  async myGatewayMac(intf = this.config.monitoringInterface) {
+    const ip = this.myGateway(intf);
+    return rclient.hget(`host:ip4:${ip}`, 'mac')
+  }
+
   myGateway6(intf = this.config.monitoringInterface) {
     return this.getInterface(intf) && this.getInterface(intf).gateway6;
   }
@@ -764,8 +765,8 @@ class SysManager {
 
   // serial may not come back with anything for some platforms
 
-  getSysInfoAsync() {
-    return util.promisify(this.getSysInfo).bind(this)()
+  getSysInfo(callback = () => {}) {
+    return util.callbackify(this.getSysInfo).bind(this)(callback)
   }
 
   /*
@@ -775,17 +776,17 @@ class SysManager {
   */
 
 
-  getSysInfo(callback) {
+  async getSysInfoAsync() {
     // Fetch statics only once, they should only be updated when services are restarted
     if (!this.serial) {
       let serial = null;
       if (f.isDocker() || f.isTravis()) {
-        serial = require('child_process').execSync("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
+        serial = await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
       } else {
         for (let index = 0; index < serialFiles.length; index++) {
           const serialFile = serialFiles[index];
           try {
-            serial = require('fs').readFileSync(serialFile, 'utf8');
+            serial = fs.readFileSync(serialFile, 'utf8');
             break;
           } catch (err) {
           }
@@ -802,35 +803,34 @@ class SysManager {
 
     let cpuTemperature = 50; // stub cpu value for docker/travis
     if (!f.isDocker() && !f.isTravis()) {
-      cpuTemperature = platform.getCpuTemperature();
+      cpuTemperature = await platform.getCpuTemperature();
     }
 
     try {
-      this.repo.branch = this.repo.branch || require('fs').readFileSync("/tmp/REPO_BRANCH", "utf8").trim();
-      this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD", "utf8").trim();
-      this.repo.tag = this.repo.tag || require('fs').readFileSync("/tmp/REPO_TAG", "utf8").trim();
+      this.repo.branch = this.repo.branch || fs.readFileSync("/tmp/REPO_BRANCH", "utf8").trim();
+      this.repo.head = this.repo.head || fs.readFileSync("/tmp/REPO_HEAD", "utf8").trim();
+      this.repo.tag = this.repo.tag || fs.readFileSync("/tmp/REPO_TAG", "utf8").trim();
     } catch (err) {
       log.error("Failed to load repo info from /tmp", err);
     }
     // ======== end of statics =========
 
 
-    let stat = require("../util/Stats.js");
-    stat.sysmemory(null, (err, data) => {
-      callback(null, {
-        ip: this.myIp(),
-        mac: this.mySignatureMac(),
-        serial: this.serial,
-        repoBranch: this.repo.branch,
-        repoHead: this.repo.head,
-        repoTag: this.repo.tag,
-        language: this.language,
-        timezone: this.timezone,
-        memory: data,
-        cpuTemperature: cpuTemperature,
-        sss: sss.getSysInfo()
-      });
-    });
+    const stat = require("../util/Stats.js");
+    const memory = await util.promisify(stat.sysmemory)()
+    return {
+      ip: this.myIp(),
+      mac: this.mySignatureMac(),
+      serial: this.serial,
+      repoBranch: this.repo.branch,
+      repoHead: this.repo.head,
+      repoTag: this.repo.tag,
+      language: this.language,
+      timezone: this.timezone,
+      memory,
+      cpuTemperature,
+      sss: sss.getSysInfo()
+    }
   }
 
   // if the ip is part of our cloud, no need to log it, since it might cost space and memory
@@ -889,7 +889,7 @@ class SysManager {
     }
 
     if (new Address4(ip).isValid()) {
-      if (this.isMulticastIP4(ip)) {
+      if (this.isMulticastIP4(ip) || ip == '127.0.0.1') {
         return true;
       }
       return this.inMySubnets4(ip, intf)

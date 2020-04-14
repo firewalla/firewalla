@@ -138,12 +138,12 @@ class DNSCryptPlugin extends Sensor {
   async systemStart() {
     const entry = `server=${dc.getLocalServer()}\n`;
     await fs.writeFileAsync(systemConfigFile, entry);
-    await dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async systemStop() {
     await fs.unlinkAsync(systemConfigFile).catch(() => undefined);
-    await dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async perDeviceStart(macAddress) {
@@ -151,7 +151,7 @@ class DNSCryptPlugin extends Sensor {
     const configFile = `${dnsmasqConfigFolder}/doh_${macAddress}.conf`;
     const dnsmasqentry = `server=${dc.getLocalServer()}%${macAddress.toUpperCase()}\n`;
     await fs.writeFileAsync(configFile, dnsmasqentry);
-    dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async perDeviceStop(macAddress) {
@@ -166,7 +166,7 @@ class DNSCryptPlugin extends Sensor {
         log.warn(`Dnsmasq: Error when remove ${configFile}`, err);
       }
     }
-    dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   // global on/off

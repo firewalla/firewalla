@@ -104,6 +104,18 @@ class Platform {
     }
   }
 
+  getDNSServiceName() {
+    return "firemasq";
+  }
+
+  getDHCPServiceName() {
+    return "firemasq";
+  }
+
+  getVPNServerDefaultProtocol() {
+    return "udp";
+  }
+
   getName() {}
 
   getBoardSerial() {}
@@ -112,9 +124,11 @@ class Platform {
 
   getSubnetCapacity() {}
 
-  getCpuTemperature() {}
+  async getCpuTemperature() {}
 
   getPolicyCapacity() {}
+
+  getAllowCustomizedProfiles(){}
 
   getDHCPCapacity() {
     return true

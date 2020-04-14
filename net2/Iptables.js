@@ -19,6 +19,7 @@ const log = require('./logger.js')(__filename);
 const cp = require('child_process');
 const spawn = cp.spawn;
 const execAsync = require('util').promisify(cp.exec)
+const ipset = require('./Ipset.js');
 
 const util = require('util');
 
@@ -217,7 +218,7 @@ function iptables(rule, callback) {
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
-          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination ${dns}`
+          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ${dns}`
         }
 
         switch(action) {
@@ -231,7 +232,7 @@ function iptables(rule, callback) {
             cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination " + dns;
+            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + ` -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ` + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + ` -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ` + dns;
           break;
         }
 
@@ -491,8 +492,8 @@ class Rule {
   tab(t) { this.tables = t; return this }
   pro(p) { this.proto = p; return this }
   chn(c) { this.chain = c; return this }
-  mth(name, spec, type = "set") {
-    this.match.push({ name, spec, type })
+  mth(name, spec, type = "set", positive = true) {
+    this.match.push({ name, spec, type, positive })
     return this
   }
   jmp(j) { this.jump = j; return this }
@@ -522,7 +523,10 @@ class Rule {
     this.match.forEach((match) => {
       switch(match.type) {
         case 'set':
-          cmd.push('-m set --match-set', match.name)
+          cmd.push('-m set');
+          if (!match.positive)
+            cmd.push('!');
+          cmd.push('--match-set', match.name)
           if (match.spec === 'both')
             cmd.push('src,dst')
           else
@@ -530,26 +534,38 @@ class Rule {
           break;
 
         case 'iif':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-i', match.name);
           break;
 
         case 'oif':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-o', match.name);
           break;
 
         case 'src':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-s', match.name);
           break;
 
         case 'dst':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-d', match.name);
           break;
 
         case 'sport':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('--sport', match.name);
           break;
 
         case 'dport':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('--dport', match.name);
           break;
 

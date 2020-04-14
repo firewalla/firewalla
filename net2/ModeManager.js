@@ -84,7 +84,7 @@ async function _disableSpoofMode() {
   log.info("Spoof instances are stopped");
 }
 
-async function _changeToAlternativeIpSubnet() {
+async function changeToAlternativeIpSubnet() {
   const fConfig = Config.getConfig(true);
   // backward compatibility if alternativeInterface is not set
   if (!fConfig.alternativeInterface)
@@ -148,7 +148,7 @@ async function _changeToAlternativeIpSubnet() {
   }
 }
 
-async function _enableSecondaryInterface() {
+async function enableSecondaryInterface() {
   try {
     const fConfig = Config.getConfig(true);
 
@@ -373,20 +373,20 @@ async function setNoneAndPublish() {
 }
 
 module.exports = {
-  apply: apply,
-  mode: mode,
-  listenOnChange: listenOnChange,
-  publish: publish,
-  setDHCPAndPublish: setDHCPAndPublish,
-  setRouterAndPublish: setRouterAndPublish,
-  setSpoofAndPublish: setSpoofAndPublish,
-  setAutoSpoofAndPublish: setAutoSpoofAndPublish,
-  setDHCPSpoofAndPublish: setDHCPSpoofAndPublish,
-  setManualSpoofAndPublish: setManualSpoofAndPublish,
-  setNoneAndPublish: setNoneAndPublish,
-  publishManualSpoofUpdate: publishManualSpoofUpdate,
-  publishNetworkInterfaceUpdate: publishNetworkInterfaceUpdate,
-  enableSecondaryInterface: _enableSecondaryInterface,
-  changeToAlternativeIpSubnet: _changeToAlternativeIpSubnet,
-  toggleCompatibleSpoof: toggleCompatibleSpoof
+  apply,
+  mode,
+  listenOnChange,
+  publish,
+  setDHCPAndPublish,
+  setRouterAndPublish,
+  setSpoofAndPublish,
+  setAutoSpoofAndPublish,
+  setDHCPSpoofAndPublish,
+  setManualSpoofAndPublish,
+  setNoneAndPublish,
+  publishManualSpoofUpdate,
+  publishNetworkInterfaceUpdate,
+  enableSecondaryInterface,
+  changeToAlternativeIpSubnet,
+  toggleCompatibleSpoof,
 }

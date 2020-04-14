@@ -112,7 +112,7 @@ async function isSpoofModeOn() {
   return (await isAutoSpoofModeOn()) || (await isDHCPSpoofModeOn())
 }
 
-function isAutoSpoofModeOn() {  
+function isAutoSpoofModeOn() {
   return isXModeOn(MODE_AUTO_SPOOF)
 }
 
@@ -120,7 +120,7 @@ function isDHCPSpoofModeOn() {
   return isXModeOn(MODE_DHCP_SPOOF)
 }
 
-function isManualSpoofModeOn() {  
+function isManualSpoofModeOn() {
   return isXModeOn(MODE_MANUAL_SPOOF)
 }
 
@@ -139,32 +139,39 @@ function isXModeOn(x) {
     });
 }
 
-module.exports = {
-  isSpoofModeOn:isSpoofModeOn,
-  isDHCPModeOn:isDHCPModeOn,
-  isDHCPSpoofModeOn: isDHCPSpoofModeOn,
-  isManualSpoofModeOn:isManualSpoofModeOn,
-  isNoneModeOn:isNoneModeOn,
-  isAutoSpoofModeOn:isAutoSpoofModeOn,
-  isRouterModeOn: isRouterModeOn,
+async function isModeConfigured() {
+  const type = await rclient.typeAsync("mode");
+  return type != "none"; // if the mode key doesn't exist, the type should be none
+}
 
-  getSetupModeSync:getSetupModeSync,
-  getSetupMode:getSetupMode,
-  reloadSetupMode:reloadSetupMode,
-  setSetupMode:setSetupMode,
-  
-  dhcpModeOn: dhcpModeOn,
-  routerModeOn: routerModeOn,
-  spoofModeOn: spoofModeOn,
-  autoSpoofModeOn: autoSpoofModeOn,
-  dhcpSpoofModeOn: dhcpSpoofModeOn,
-  manualSpoofModeOn: manualSpoofModeOn,
-  noneModeOn: noneModeOn,
-  
-  MODE_NONE: MODE_NONE,
-  MODE_AUTO_SPOOF: MODE_AUTO_SPOOF,
-  MODE_MANUAL_SPOOF: MODE_MANUAL_SPOOF,
-  MODE_DHCP: MODE_DHCP,
-  MODE_DHCP_SPOOF: MODE_DHCP_SPOOF,
-  MODE_ROUTER: MODE_ROUTER
+module.exports = {
+  isSpoofModeOn,
+  isDHCPModeOn,
+  isDHCPSpoofModeOn,
+  isManualSpoofModeOn,
+  isNoneModeOn,
+  isAutoSpoofModeOn,
+  isRouterModeOn,
+
+  getSetupModeSync,
+  getSetupMode,
+  reloadSetupMode,
+  setSetupMode,
+
+  dhcpModeOn,
+  routerModeOn,
+  spoofModeOn,
+  autoSpoofModeOn,
+  dhcpSpoofModeOn,
+  manualSpoofModeOn,
+  noneModeOn,
+
+  MODE_NONE,
+  MODE_AUTO_SPOOF,
+  MODE_MANUAL_SPOOF,
+  MODE_DHCP,
+  MODE_DHCP_SPOOF,
+  MODE_ROUTER,
+
+  isModeConfigured,
 };

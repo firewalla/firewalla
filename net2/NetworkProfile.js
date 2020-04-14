@@ -20,8 +20,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const PolicyManager = require('./PolicyManager.js');
 const pm = new PolicyManager();
 const f = require('./Firewalla.js');
-const iptables = require('./Iptables.js');
-const ip6tables = require('./Ip6tables.js');
+const {Rule} = require('./Iptables.js');
+const ipset = require('./Ipset.js');
 const exec = require('child-process-promise').exec;
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
@@ -40,6 +40,8 @@ const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js')
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
+
+const envCreatedMap = {};
 
 class NetworkProfile {
   constructor(o) {
@@ -156,11 +158,12 @@ class NetworkProfile {
     const sm = new SpooferManager();
     if (state === true) {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-      await exec(`sudo ipset del -! monitoring_off_set ${netIpsetName}`).catch((err) => {
-        log.error(`Failed to remove ${netIpsetName} from monitoring_off_set`, err.message);
+      const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset del -! monitoring_off_set ${netIpsetName}6`).catch((err) => {
-        log.error(`Failed to remove ${netIpsetName}6 from monitoring_off_set`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName6}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway  && this.o.gateway.length > 0 
@@ -193,11 +196,12 @@ class NetworkProfile {
       }
     } else {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-      await exec(`sudo ipset add -! monitoring_off_set ${netIpsetName}`).catch((err) => {
-        log.error(`Failed to add ${netIpsetName} to monitoring_off_set`, err.message);
+      const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
-      await exec(`sudo ipset add -! monitoring_off_set ${netIpsetName}6`).catch((err) => {
-        log.error(`Failed to add ${netIpsetName}6 to monitoring_off_set`, err.message);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName6}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName6} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
       });
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway) {
@@ -228,17 +232,17 @@ class NetworkProfile {
       const rtIdHex = Number(rtId).toString(16);
       if (state === true) {
         // set skbmark
-        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
-        await exec(`sudo ipset -! add c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/0xffff`);
+        await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/0xffff`);
       }
       if (state === false) {
         // reset skbmark
-        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
-        await exec(`sudo ipset -! add c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/0xffff`);
+        await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/0xffff`);
       }
       if (state === null) {
         // do not change skbmark
-        await exec(`sudo ipset -! del c_wan_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
+        await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
       }
       return true;
     } catch (err) {
@@ -248,42 +252,49 @@ class NetworkProfile {
   }
 
   async shield(policy) {
-
   }
 
   // underscore prefix? follow same function name in Host.js :(
   async _dnsmasq(policy) {
     const dnsCaching = policy.dnsCaching;
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-    if (!netIpsetName) {
+    const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+    if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.intf}`);
       return;
     }
     if (dnsCaching === true) {
-      let cmd =  `sudo ipset del -! no_dns_caching_set ${netIpsetName}`;
+      let cmd =  `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}`;
       await exec(cmd).catch((err) => {
         log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
-      cmd = `sudo ipset del -! no_dns_caching_set ${netIpsetName}6`;
+      cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName6}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
       });
     } else {
-      let cmd =  `sudo ipset add -! no_dns_caching_set ${netIpsetName}`;
+      let cmd =  `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}`;
       await exec(cmd).catch((err) => {
         log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
-      cmd = `sudo ipset add -! no_dns_caching_set ${netIpsetName}6`;
+      cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName6}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName}6 ${this.o.intf}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
       });
     }
   }
 
-  static getNetIpsetName(uuid) {
+  static getNetIpsetName(uuid, af = 4) {
     // TODO: need find a better way to get a unique name from uuid
     if (uuid) {
-      return `c_net_${uuid.substring(0, 13)}_set`;
+      return `c_net_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
+    } else
+      return null;
+  }
+
+  static getRouteIpsetName(uuid, af = 4) {
+    if (uuid) {
+      return `c_route_${uuid.substring(0, 13)}_set` + (af === 4 ? "": "6");
     } else
       return null;
   }
@@ -299,15 +310,31 @@ class NetworkProfile {
   // In case the network doesn't exist at the time when policy is enforced, but may be restored from config history in future.
   // Thereby, the rule can still be applied and take effect once the network is restored
   static async ensureCreateEnforcementEnv(uuid) {
+    if (envCreatedMap[uuid])
+      return;
     const netIpsetName = NetworkProfile.getNetIpsetName(uuid);
-    if (!netIpsetName) {
+    const netIpsetName6 = NetworkProfile.getNetIpsetName(uuid, 6);
+    if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get ipset name for ${uuid}`);
     } else {
       await exec(`sudo ipset create -! ${netIpsetName} hash:net,iface maxelem 1024`).catch((err) => {
         log.error(`Failed to create network profile ipset ${netIpsetName}`, err.message);
       });
-      await exec(`sudo ipset create -! ${netIpsetName}6 hash:net,iface family inet6 maxelem 1024`).catch((err) => {
-        log.error(`Failed to create network profile ipset ${netIpsetName}6`, err.message);
+      await exec(`sudo ipset create -! ${netIpsetName6} hash:net,iface family inet6 maxelem 1024`).catch((err) => {
+        log.error(`Failed to create network profile ipset ${netIpsetName6}`, err.message);
+      });
+    }
+    // routing ipset with skbmark extensions
+    const routeIpsetName = NetworkProfile.getRouteIpsetName(uuid);
+    const routeIpsetName6 = NetworkProfile.getRouteIpsetName(uuid, 6);
+    if (!routeIpsetName || !routeIpsetName6) {
+      log.error(`Failed to get route ipset name for ${uuid}`);
+    } else {
+      await exec(`sudo ipset create -! ${routeIpsetName} hash:net maxelem 10 skbinfo`).catch((err) => {
+        log.error(`Failed to create network profile routing ipset ${routeIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset create -! ${routeIpsetName6} hash:net family inet6 maxelem 10 skbinfo`).catch((err) => {
+        log.error(`Failed to create network profile ipset ${routeIpsetName6}`, err.message);
       });
     }
     // ensure existence of dnsmasq per-network config directory
@@ -316,83 +343,124 @@ class NetworkProfile {
         log.error(`Failed to create dnsmasq config directory for ${uuid}`);
       });
     }
+    envCreatedMap[uuid] = 1;
   }
 
   async createEnv() {
     // create and populate related ipsets
+    await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-    if (!netIpsetName) {
+    const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+    if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
       let realIntf = this.o.intf;
       if (realIntf && realIntf.endsWith(":0"))
         realIntf = realIntf.substring(0, realIntf.length - 2);
       await exec(`sudo ipset flush -! ${netIpsetName}`).then(() => {
-        if (this.o && this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0)
+        if (this.o && this.o.monitoring === true && this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0)
           return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${realIntf}`);
       }).catch((err) => {
         log.error(`Failed to populate network profile ipset ${netIpsetName}`, err.message);
       });
-      await exec(`sudo ipset flush -! ${netIpsetName}6`).then(async () => {
-        if (this.o && this.o.ipv6Subnets && this.o.ipv6Subnets.length != 0) {
+      await exec(`sudo ipset flush -! ${netIpsetName6}`).then(async () => {
+        if (this.o && this.o.monitoring === true && this.o.ipv6Subnets && this.o.ipv6Subnets.length != 0) {
           for (const subnet6 of this.o.ipv6Subnets)
-            await exec(`sudo ipset add -! ${netIpsetName}6 ${subnet6},${realIntf}`).catch((err) => {});
+            await exec(`sudo ipset add -! ${netIpsetName6} ${subnet6},${realIntf}`).catch((err) => {});
         }
       }).catch((err) => {
-        log.error(`Failed to populate network profile ipset ${netIpsetName}6`, err.message);
+        log.error(`Failed to populate network profile ipset ${netIpsetName6}`, err.message);
       });
       // add to c_lan_set accordingly, some feature has mandatory to be enabled on lan only, e.g., vpn client
       let op = "del"
-      if (this.o.type === "lan")
+      if (this.o.type === "lan" && this.o.monitoring === true)
         op = "add"
       await exec(`sudo ipset ${op} -! c_lan_set ${netIpsetName}`).then(() => {
-        return exec(`sudo ipset ${op} -! c_lan_set ${netIpsetName}6`);
+        return exec(`sudo ipset ${op} -! c_lan_set ${netIpsetName6}`);
       }).catch((err) => {
         log.error(`Failed to ${op} ${netIpsetName}(6) to c_lan_set`, err.message);
       });
-      // add to monitored_net_set accordingly
+      // add to monitored net ipset accordingly
       op = "del";
       if (this.o.monitoring === true)
         op = "add";
-      await exec(`sudo ipset ${op} -! monitored_net_set ${netIpsetName}`).then(() => {
-        return exec(`sudo ipset ${op} -! monitored_net_set ${netIpsetName}6`);
+      await exec(`sudo ipset ${op} -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}`).then(() => {
+        return exec(`sudo ipset ${op} -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName6}`);
       }).catch((err) => {
-        log.error(`Failed to ${op} ${netIpsetName}(6) to monitored_net_set`, err.message);
+        log.error(`Failed to ${op} ${netIpsetName}(6) to ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
       });
+    }
+
+    const routeIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
+    const routeIpsetName6 = NetworkProfile.getRouteIpsetName(this.o.uuid, 6);
+    if (!routeIpsetName || !routeIpsetName6) {
+      log.error(`Failed to get route ipset name for ${this.o.uuid}`);
+    } else {
+      await exec(`sudo ipset flush -! ${routeIpsetName}`).catch((err) => {});
+      await exec(`sudo ipset flush -! ${routeIpsetName6}`).catch((err) => {});
+      if (this.o.type === "wan") {
+        const rtIdHex = Number(this.o.rtid).toString(16);
+        // since hash:net does not allow /0 as cidr subnet, need to add two complementary entries to the ipset
+        if (this.o.gateway) {
+          await exec(`sudo ipset add -! ${routeIpsetName} 0.0.0.0/1 skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
+            log.error(`Failed to add 0.0.0.0/1 skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          });
+          await exec(`sudo ipset add -! ${routeIpsetName} 128.0.0.0/1 skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
+            log.error(`Failed to add 128.0.0.0/1 skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          });
+        }
+        if (this.o.gateway6) {
+          await exec(`sudo ipset add -! ${routeIpsetName6} ::/1 skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
+            log.error(`Failed to add ::/1 skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName6}`, err.message);
+          });
+          await exec(`sudo ipset add -! ${routeIpsetName6} 8000::/1 skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
+            log.error(`Failed to add 8000::/1 skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName6}`, err.message);
+          });
+        }
+      }
     }
   }
 
   async destroyEnv() {
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-    if (!netIpsetName) {
+    const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+    if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
       await exec(`sudo ipset flush -! ${netIpsetName}`).catch((err) => {
         log.debug(`Failed to flush network profile ipset ${netIpsetName}`, err.message);
       });
-      await exec(`sudo ipset flush -! ${netIpsetName}6`).catch((err) => {
-        log.debug(`Failed to flush network profile ipset ${netIpsetName}6`, err.message);
+      await exec(`sudo ipset flush -! ${netIpsetName6}`).catch((err) => {
+        log.debug(`Failed to flush network profile ipset ${netIpsetName6}`, err.message);
       });
       // although net ipset is already flushed, still remove it from c_lan_set anyway to keep consistency
-      if (this.o.type === "lan") {
-        await exec(`sudo ipset del -! c_lan_set ${netIpsetName}`).catch((err) => {
-          log.debug(`Failed to remove ${netIpsetName} from c_lan_set`, err.message);
-        });
-        await exec(`sudo ipset del -! c_lan_set ${netIpsetName}6`).catch((err) => {
-          log.debug(`Failed to remove ${netIpsetName}6 from c_lan_set`, err.message);
-        });
-      }
-      // still remove it from monitored_net_set anyway to keep consistency
-      if (this.o.monitoring === true) {
-        await exec(`sudo ipset del -! monitored_net_set ${netIpsetName}`).catch((err) => {
-          log.debug(`Failed to remove ${netIpsetName} from monitored_net_set`, err.message);
-        });
-        await exec(`sudo ipset del -! monitored_net_set ${netIpsetName}6`).catch((err) => {
-          log.debug(`Failed to remove ${netIpsetName}6 from monitored_net_set`, err.message);
-        });
-      }
+      await exec(`sudo ipset del -! c_lan_set ${netIpsetName}`).catch((err) => {
+        log.debug(`Failed to remove ${netIpsetName} from c_lan_set`, err.message);
+      });
+      await exec(`sudo ipset del -! c_lan_set ${netIpsetName6}`).catch((err) => {
+        log.debug(`Failed to remove ${netIpsetName6} from c_lan_set`, err.message);
+      });
+      // still remove it from monitored net set anyway to keep consistency
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}`).catch((err) => {
+        log.debug(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName6}`).catch((err) => {
+        log.debug(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
+      });
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
+    }
+
+    const routeIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
+    const routeIpsetName6 = NetworkProfile.getRouteIpsetName(this.o.uuid, 6);
+    if (!routeIpsetName || !routeIpsetName6) {
+      log.error(`Failed to get route ipset name for ${this.o.uuid}`);
+    } else {
+      await exec(`sudo ipset flush -! ${routeIpsetName}`).catch((err) => {
+        log.debug(`Failed to flush network profile route ipset ${routeIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset flush -! ${routeIpsetName6}`).catch((err) => {
+        log.debug(`Failed to flush network profile route ipset ${routeIpsetName6}`, err.message);
+      });
     }
     this.oper = null; // clear oper cache used in PolicyManager.js
     // disable spoof instances
@@ -420,7 +488,8 @@ class NetworkProfile {
     tags = tags || [];
     this._tags = this._tags || [];
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-    if (!netIpsetName) {
+    const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+    if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get ipset name for network profile ${this.o.uuid}`);
       return;
     }
@@ -429,15 +498,15 @@ class NetworkProfile {
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {
-        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}`).then(() => {
-          return exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}6`);
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName6}`);
         }).catch((err) => {
-          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagSetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        await exec(`sudo ipset del -! ${Tag.getTagNetIpsetName(removedTag)} ${netIpsetName}`).then(() => {
-          return exec(`sudo ipset del -! ${Tag.getTagNetIpsetName(removedTag)} ${netIpsetName}6`);
+        await exec(`sudo ipset del -! ${Tag.getTagNetSetName(removedTag)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset del -! ${Tag.getTagNetSetName(removedTag)} ${netIpsetName6}`);
         }).catch((err) => {
-          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetSetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
       } else {
@@ -449,15 +518,15 @@ class NetworkProfile {
     for (let uid of tags) {
       const tag = TagManager.getTagByUid(uid);
       if (tag) {
-        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}`).then(() => {
-          return exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}6`);
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName6}`);
         }).catch((err) => {
-          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagSetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        await exec(`sudo ipset add -! ${Tag.getTagNetIpsetName(uid)} ${netIpsetName}`).then(() => {
-          return exec(`sudo ipset add -! ${Tag.getTagNetIpsetName(uid)} ${netIpsetName}6`);
+        await exec(`sudo ipset add -! ${Tag.getTagNetSetName(uid)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset add -! ${Tag.getTagNetSetName(uid)} ${netIpsetName6}`);
         }).catch((err) => {
-          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetSetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
         await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
@@ -470,7 +539,7 @@ class NetworkProfile {
     }
     this._tags = updatedTags;
     await this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
-    await dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
   }
 }
 

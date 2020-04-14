@@ -103,7 +103,7 @@ async function calculateZeekOptions(monitoringInterfaces) {
     if (!monitoringInterfaces.includes(intfName))
       continue;
     const intf = intfNameMap[intfName];
-    const subIntfs = intf.intf;
+    const subIntfs = intf.config && intf.config.intf;
     if (!subIntfs) {
       parentInterfaces[intfName] = 1;
     } else {
@@ -115,7 +115,7 @@ async function calculateZeekOptions(monitoringInterfaces) {
         }
       }
       if (typeof subIntfs === 'string') {
-        const rawIntf = subIntf.split('.')[0];
+        const rawIntf = subIntfs.split('.')[0];
         parentInterfaces[rawIntf] = 1;
       }
     }
@@ -189,7 +189,8 @@ async function generateNetworkInfo() {
       dns:          dns,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
-      type:         intf.config.meta.type
+      type:         intf.config.meta.type,
+      rtid:         intf.state.rtid || 0
     }
 
     await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
@@ -225,7 +226,7 @@ class FireRouter {
     const intf = fwConfig.firerouter.interface;
     routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
-    
+
     this.ready = false
     this.sysNetworkInfo = [];
 
@@ -303,7 +304,7 @@ class FireRouter {
       }
       if (!defaultWanIntfName )
         log.error("Default WAN interface is not defined in router config");
-      
+
 
       switch(mode) {
         case Mode.MODE_AUTO_SPOOF:
@@ -400,7 +401,7 @@ class FireRouter {
       const mac = _.get(sysinfo, `${intf}.mac.mac_address`, '').toUpperCase();
       const ip = _.get(sysinfo, `${intf}.ip_address`, '');
       const gateway = _.get(sysinfo, `${intf}.gateway`, '');
-      const _dns = _.get(sysinfo, `${intf}.dns`, []); 
+      const _dns = _.get(sysinfo, `${intf}.dns`, []);
       let v4dns = [];
       for (let i in _dns) {
         if (new Address4(_dns[i]).isValid()) {
@@ -456,7 +457,6 @@ class FireRouter {
 
     log.info('FireRouter initialization complete')
     this.ready = true
-    await pclient.publishAsync(Message.MSG_SYS_FR_RELOADED, "")
 
     if (f.isMain() && (
       // zeek used to be bro
@@ -518,6 +518,7 @@ class FireRouter {
     return JSON.parse(JSON.stringify(logicIntfNames));
   }
 
+  // should always be an array
   getMonitoringIntfNames() {
     return JSON.parse(JSON.stringify(monitoringIntfNames))
   }

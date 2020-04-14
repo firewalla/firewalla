@@ -66,7 +66,8 @@ const traceroute = require('../vendor/traceroute/traceroute.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
-const exec = require('child-process-promise').exec
+const execAsync = require('child-process-promise').exec
+const { exec, execSync } = require('child_process')
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
@@ -138,7 +139,9 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
 const Alarm = require('../alarm/Alarm.js');
-const FRPSUCCESSCODE = 0
+const FRPSUCCESSCODE = 0;
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -315,7 +318,7 @@ class netBot extends ControllerBot {
         const homePath = f.getFirewallaHome();
         let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
         log.info("sendLog: cmdline", filename, password, cmdline);
-        require('child_process').exec(cmdline, (err, out, code) => {
+        exec(cmdline, (err, out, code) => {
           if (err != null) {
             log.error("sendLog: unable to process encrypt-upload", err, out, code);
           } else {
@@ -740,26 +743,26 @@ class netBot extends ControllerBot {
     } else if (msg.type == "CONTROL") {
       if (msg.control && msg.control === "reboot") {
         log.error("FIREWALLA REMOTE REBOOT");
-        require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
+        exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "upgrade") {
         log.error("FIREWALLA REMOTE UPGRADE ");
-        require('child_process').exec('sync & /home/pi/firewalla/scripts/upgrade', (err, out, code) => {
+        exec('sync & /home/pi/firewalla/scripts/upgrade', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "clean_intel") {
         log.error("FIREWALLA CLEAN INTEL ");
-        require('child_process').exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del", (err, out, code) => {
+        exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del", (err, out, code) => {
         });
       } else if (msg.control && msg.control === "ping") {
         log.error("FIREWALLA CLOUD PING ");
       } else if (msg.control && msg.control === "v6on") {
-        require('child_process').exec('sync & touch /home/pi/.firewalla/config/enablev6', (err, out, code) => {
+        exec('sync & touch /home/pi/.firewalla/config/enablev6', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "v6off") {
-        require('child_process').exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
+        exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "script") {
-        require('child_process').exec('sync & /home/pi/firewalla/scripts/' + msg.command, (err, out, code) => {
+        exec('sync & /home/pi/firewalla/scripts/' + msg.command, (err, out, code) => {
         });
       } else if (msg.control && msg.control === "raw") {
         log.error("FIREWALLA CLOUD RAW ");
@@ -767,13 +770,13 @@ class netBot extends ControllerBot {
         if (sysManager.isSystemDebugOn() || !f.isProduction()) {
           if (msg.command) {
             log.error("FIREWALLA CLOUD RAW EXEC", msg.command);
-            require('child_process').exec('sync & ' + msg.command, (err, out, code) => {
+            exec('sync & ' + msg.command, (err, out, code) => {
             });
           }
         }
       } else if (msg.control === 'cloud') {
         log.error("Firewalla Cloud");
-        // cloud commands will never / ever be ran on production 
+        // cloud commands will never / ever be ran on production
         if (sysManager.isSystemDebugOn() || !f.isProduction()) {
           if (msg.command) {
             const cloudManager = require('../extension/cloud/CloudManager.js');
@@ -813,7 +816,7 @@ class netBot extends ControllerBot {
 
   }
 
-  setHandler(gid, msg /*rawmsg.message.obj*/, callback = () => { }) {
+  setHandler(gid, msg /*rawmsg.message.obj*/, callback = () => {}) {
     // mtype: set
     // target = "ip address" 0.0.0.0 is self
     // data.item = policy
@@ -838,7 +841,7 @@ class netBot extends ControllerBot {
       case "policy":
         (async () => {
           // further policy enforcer should be implemented in Host.js or PolicyManager.js
-          let processorMap = {
+          const processorMap = {
             "ipAllocation": this._ipAllocation,
             "vpn": this._vpn,
             "shadowsocks": this._shadowsocks,
@@ -855,42 +858,40 @@ class netBot extends ControllerBot {
           for (const o of Object.keys(value)) {
             if (processorMap[o]) {
               await util.promisify(processorMap[o]).bind(this)(msg.target, value[o])
+              continue
+            }
+
+            const target = msg.target
+            const policyData = value[o]
+
+            log.info(o, target, policyData)
+
+            if (target === "0.0.0.0") {
+              await this.hostManager.setPolicyAsync(o, policyData);
+              continue
+            }
+
+            if (target.startsWith("network:")) {
+              const uuid = target.substring(8);
+              const network = this.networkProfileManager.getNetworkProfile(uuid);
+              if (network) {
+                await network.loadPolicy();
+                await network.setPolicy(o, policyData);
+              }
+            } else if (target.startsWith("tag:")) {
+              const tagUid = target.substring(4);
+              const tag = await this.tagManager.getTagByUid(tagUid);
+              if (tag) {
+                await tag.loadPolicy();
+                await tag.setPolicy(o, policyData)
+              }
             } else {
-
-              let target = msg.target
-              let policyData = value[o]
-
-              log.info(o, target, policyData)
-
-              if (target === "0.0.0.0") {
-                await this.hostManager.loadPolicyAsync()
-                await this.hostManager.setPolicyAsync(o, policyData);
+              let host = await this.hostManager.getHostAsync(target)
+              if (host) {
+                await host.loadPolicyAsync()
+                await host.setPolicyAsync(o, policyData)
               } else {
-                if (target.startsWith("network:")) {
-                  const uuid = target.substring(8);
-                  const network = this.networkProfileManager.getNetworkProfile(uuid);
-                  if (network) {
-                    await network.loadPolicy();
-                    await network.setPolicy(o, policyData);
-                  }
-                } else {
-                  if (target.startsWith("tag:")) {
-                    const tagUid = target.substring(4);
-                    const tag = await this.tagManager.getTagByUid(tagUid);
-                    if (tag) {
-                      await tag.loadPolicy();
-                      await tag.setPolicy(o, policyData)
-                    }
-                  } else {
-                    let host = await this.hostManager.getHostAsync(target)
-                    if (host) {
-                      await host.loadPolicyAsync()
-                      await host.setPolicyAsync(o, policyData)
-                    } else {
-                      throw new Error('Invalid host')
-                    }
-                  }
-                }
+                throw new Error('Invalid host')
               }
             }
           }
@@ -1011,14 +1012,20 @@ class netBot extends ControllerBot {
       case "hostDomain": {
         let data = msg.data;
         (async () => {
-          if (hostTool.isMacAddress(msg.target)) {
+          if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
             const macAddress = msg.target
-            const { customizeDomainName } = data.value
-            let macObject = {
-              mac: macAddress,
-              customizeDomainName: customizeDomainName ? customizeDomainName : ''
+            const { customizeDomainName, suffix } = data.value;
+            if (customizeDomainName && macAddress != '0.0.0.0') {
+              let macObject = {
+                mac: macAddress,
+                customizeDomainName: customizeDomainName
+              }
+              await hostTool.updateMACKey(macObject, true);
             }
-            await hostTool.updateMACKey(macObject, true);
+            if (suffix && macAddress == '0.0.0.0') {
+              suffix = suffix.startsWith('.') ? suffix : `.${suffix}`;
+              await rclient.setAsync('local:domain:suffix', suffix);
+            }
             await hostTool.generateLocalDomain(macAddress);
             sem.emitEvent({
               type: "LocalDomainUpdate",
@@ -1051,9 +1058,12 @@ class netBot extends ControllerBot {
       }
       case "timezone":
         if (value.timezone) {
-          sysManager.setTimezone(value.timezone, (err) => {
+          (async () => {
+            const err = await sysManager.setTimezone(value.timezone);
             this.simpleTxData(msg, {}, err, callback);
-          });
+          })();
+        }else{
+          this.simpleTxData(msg, {}, new Error("Invalid timezone"), callback);
         }
         break;
       case "includeNameInNotification": {
@@ -1149,13 +1159,21 @@ class netBot extends ControllerBot {
       case "dataPlan":
         (async () => {
           const { total, date, enable } = value;
+          let oldPlan = {};
+          try {
+            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan"));
+          } catch (e) { }
           const featureName = 'data_plan';
+          oldPlan.enable = fc.isFeatureOn(featureName);
           if (enable) {
             await fc.enableDynamicFeature(featureName)
             await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
           } else {
             await fc.disableDynamicFeature(featureName);
             await rclient.delAsync("sys:data:plan");
+          }
+          if (!_.isEqual(oldPlan, value)) {
+            await execAsync("redis-cli keys 'data:plan:*' | xargs redis-cli del");
           }
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -1256,7 +1274,7 @@ class netBot extends ControllerBot {
             })
         }
         break;
-      case "tag": 
+      case "tag":
         if (msg.target) {
           let tag = msg.target;
           log.info("Loading tag info:", tag);
@@ -1816,7 +1834,7 @@ class netBot extends ControllerBot {
               case "openvpn":
                 const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
                 const cmd = "mkdir -p " + dirPath;
-                await exec(cmd);
+                await execAsync(cmd);
                 const files = await readdirAsync(dirPath);
                 const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
                 Array.prototype.push.apply(profiles, await Promise.all(ovpns.map(async filename => {
@@ -1872,8 +1890,7 @@ class netBot extends ControllerBot {
         })
         break;
       case "publicIp":
-        let checkHost = value.checkHost || "8.8.8.8";
-        traceroute.trace(checkHost, (err, hops, destination) => {
+        traceroute.trace(value.checkHost || "8.8.8.8", (err, hops, destination) => {
           if (err) {
             this.simpleTxData(msg, {}, err, callback);
           } else {
@@ -1909,7 +1926,7 @@ class netBot extends ControllerBot {
           } else {
             target = target.toUpperCase();
           }
-          const { downloadStats, uploadStats, totalDownload, totalUpload, 
+          const { downloadStats, uploadStats, totalDownload, totalUpload,
             monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
           this.simpleTxData(msg, {
             downloadStats: downloadStats,
@@ -1917,7 +1934,7 @@ class netBot extends ControllerBot {
             totalDownload: totalDownload,
             totalUpload: totalUpload,
             monthlyBeginTs: monthlyBeginTs,
-            monthlyEndTs: monthlyEndTs 
+            monthlyEndTs: monthlyEndTs
           }, null, callback)
         })();
         break;
@@ -2063,7 +2080,7 @@ class netBot extends ControllerBot {
     let jsonobj = intf.toJson();
     // load 24 hours download/upload trend
     jsonobj.flowsummary = await flowManager.getTargetStats('intf:' + target);
-    
+
     // target: 'uuid'
     options.intf = target;
     await Promise.all([
@@ -2126,7 +2143,7 @@ class netBot extends ControllerBot {
     let jsonobj = tag.toJson();
     // load 24 hours download/upload trend
     jsonobj.flowsummary = await flowManager.getTargetStats('tag:' + target);
-    
+
     // target: 'uuid'
     options.tag = target;
     await Promise.all([
@@ -2302,19 +2319,18 @@ class netBot extends ControllerBot {
 
     if (msg.data.item === "dhcpCheck") {
       (async () => {
-        let mode = require('../net2/Mode.js');
+        const mode = require('../net2/Mode.js');
+        const dhcp = require("../extension/dhcp/dhcp.js");
         await mode.reloadSetupMode();
-        let dhcpModeOn = await mode.isDHCPModeOn();
-        if (dhcpModeOn) {
-          const dhcpFound = await rclient.getAsync("sys:scan:dhcpserver");
-          const response = {
-            DHCPMode: true,
-            DHCPDiscover: dhcpFound
-          };
-          this.simpleTxData(msg, response, null, callback);
-        } else {
-          this.simpleTxData(msg, { DHCPMode: false }, null, callback);
+        const routerIP = sysManager.myGateway();
+        let DHCPDiscover = false;
+        if (routerIP) {
+          DHCPDiscover = await dhcp.dhcpServerStatus(routerIP);
         }
+        this.simpleTxData(msg, {
+          DHCPMode: await mode.isDHCPModeOn(),
+          DHCPDiscover: DHCPDiscover
+        }, null, callback)
       })().catch((err) => {
         log.error("Failed to do DHCP discover", err);
         this.simpleTxData(msg, null, err, callback);
@@ -2486,7 +2502,7 @@ class netBot extends ControllerBot {
         break;
       }
       case "alarm:block":
-        am2.blockFromAlarm(value.alarmID, value, (err, policy, otherBlockedAlarms, alreadyExists) => {
+        am2.blockFromAlarm(value.alarmID, value, (err, { policy, otherBlockedAlarms, alreadyExists }) => {
           if (value && value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
             this.simpleTxData(msg, {
               policy: policy,
@@ -2724,8 +2740,19 @@ class netBot extends ControllerBot {
         break;
       case "policy:search": {
         (async () => {
-          const result = await pm2.searchPolicy(value.target);
-          this.simpleTxData(msg, result[0], result[1], callback);
+          const resultCheck = await pm2.checkSearchTarget(value.target);
+          if (resultCheck.err != null) {
+            this.simpleTxData(msg, null, resultCheck.err, callback)
+            return;
+          }
+
+          let data = {};
+          data.polices = await pm2.searchPolicy(resultCheck.waitSearch, resultCheck.isDomain);
+          data.exceptions = await em.searchException(value.target);
+          if (resultCheck.isDomain) {
+            data.dnsmasqs = await dnsmasq.searchDnsmasq(value.target);
+          }
+          this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })
@@ -3165,7 +3192,7 @@ class netBot extends ControllerBot {
         }
         const settings = value.settings || {};
         (async () => {
-          const allowCustomizedProfiles = fc.getConfig().allowCustomizedProfiles || 1;
+          const allowCustomizedProfiles = platform.getAllowCustomizedProfiles() || 1;
           const allSettings = await VpnManager.getAllSettings();
           if (Object.keys(allSettings).filter((name) => {
             return name !== "fishboneVPN1" && name !== cn;
@@ -3381,7 +3408,7 @@ class netBot extends ControllerBot {
                 const ovpnClient = new OpenVPNClient({ profileId: profileId });
                 const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
                 const cmd = "mkdir -p " + dirPath;
-                await exec(cmd);
+                await execAsync(cmd);
                 const files = await readdirAsync(dirPath);
                 const ovpns = files.filter(filename => filename !== `${profileId}.ovpn` && filename.endsWith('.ovpn'));
                 if (ovpns && ovpns.length >= 10) {
@@ -3589,6 +3616,7 @@ class netBot extends ControllerBot {
           const intf = msg.data.value.interface;
           const dhcpRange = msg.data.value.dhcpRange;
           const dnsServers = msg.data.value.dnsServers || []; // default value is empty
+          const dhcpLeaseTime = msg.data.value.dhcpLeaseTime;
           if (!network || !intf || !intf.ipAddress || !intf.subnetMask) {
             this.simpleTxData(msg, {}, { code: 400, msg: "network, interface.ipAddress/subnetMask should be specified." }, callback);
             return;
@@ -3619,7 +3647,11 @@ class netBot extends ControllerBot {
                 mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
                 mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
               }
-              fc.updateUserConfigSync({ secondaryInterface: mergedSecondaryInterface });
+              let mergedUserConfig = { secondaryInterface: mergedSecondaryInterface };
+              if (dhcpRange && dhcpLeaseTime) {
+                mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { secondary: dhcpLeaseTime});
+              }
+              await fc.updateUserConfig(mergedUserConfig);
               const dnsmasqPolicy = { secondaryDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
@@ -3647,7 +3679,11 @@ class netBot extends ControllerBot {
               }
               updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
               const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
-              fc.updateUserConfigSync({ alternativeInterface: mergedAlternativeInterface });
+              let mergedUserConfig = { alternativeInterface: mergedAlternativeInterface };
+              if (dhcpRange && dhcpLeaseTime) {
+                mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { alternative: dhcpLeaseTime});
+              }
+              fc.updateUserConfigSync(mergedUserConfig);
               const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
@@ -3655,27 +3691,6 @@ class netBot extends ControllerBot {
               setTimeout(() => {
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
-              this.simpleTxData(msg, {}, null, callback);
-              break;
-            }
-            case "wifi": {
-              const currentWifiInterface = currentConfig.wifiInterface;
-              const updatedWifiConfig = { intf: "wlan0" };
-              const wifiIpAddress = intf.ipAddress;
-              const wifiSubnetMask = intf.subnetMask;
-              const wifiIpSubnet = iptool.subnet(wifiIpAddress, wifiSubnetMask);
-              updatedWifiConfig.ip = wifiIpAddress + "/" + wifiIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
-              updatedWifiConfig.mode = intf.mode || "router";
-              updatedWifiConfig.ssid = intf.ssid || "FW_AP";
-              updatedWifiConfig.password = intf.password || "firewalla";
-              updatedWifiConfig.band = intf.band || "g";
-              updatedWifiConfig.channel = intf.channel || "5";
-              const mergedWifiInterface = Object.assign({}, currentWifiInterface, updatedWifiConfig); // if ip2 is not defined, it will be inherited from previous settings
-              fc.updateUserConfigSync({ wifiInterface: mergedWifiInterface });
-              const dnsmasqPolicy = { wifiDnsServers: dnsServers };
-              if (dhcpRange)
-                dnsmasqPolicy.wifiDhcpRange = dhcpRange;
-              this._dnsmasq("0.0.0.0", dnsmasqPolicy)
               this.simpleTxData(msg, {}, null, callback);
               break;
             }
@@ -3746,6 +3761,7 @@ class netBot extends ControllerBot {
                         subnetMask: secondaryIpSubnet.subnetMask
                       },
                       dhcpRange: dhcpRange,
+                      dhcpLeaseTime: (config.dhcpLeaseTime && config.dhcpLeaseTime.secondary) || (config.dhcp && config.dhcp.leaseTime),
                       dnsServers: secondaryDnsServers
                     }, null, callback);
                 });
@@ -3774,6 +3790,7 @@ class netBot extends ControllerBot {
                         gateway: alternativeInterface.gateway
                       },
                       dhcpRange: dhcpRange,
+                      dhcpLeaseTime: (config.dhcpLeaseTime && config.dhcpLeaseTime.alternative) || (config.dhcp && config.dhcp.leaseTime),
                       dnsServers: alternativeDnsServers
                     }, null, callback);
                 });
@@ -3849,6 +3866,7 @@ class netBot extends ControllerBot {
         break;
       case "alpha":
         targetBranch = "beta_7_0";
+        break;
       case "salpha":
         targetBranch = "beta_8_0";
         break;
@@ -3862,7 +3880,7 @@ class netBot extends ControllerBot {
 
     log.info("Going to switch to branch", targetBranch);
 
-    await exec(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
+    await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
     sysTool.upgradeToLatest()
   }
 
@@ -3883,7 +3901,7 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
-      log.error("Got error before simpleTxData:", err, err.stack);
+      log.error("Got error before simpleTxData:", err);
       code = 500;
       if (err && err.code) {
         code = err.code;
@@ -4108,9 +4126,9 @@ class netBot extends ControllerBot {
   setupDialog() {
     this.dialog.matches('^system reset', (session) => {
       this.tx(this.primarygid, "performing reset of everything", "system resetting");
-      let task = require('child_process').exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
+      let task = exec('/home/pi/firewalla/scripts/system-reset-all', (err, out, code) => {
         this.tx(this.primarygid, "Done, will reboot now and the system will reincarnated, this group is no longer useful, you can delete it.", "system resetting");
-        require('child_process').exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
+        exec('sync & /home/pi/firewalla/scripts/fire-reboot-normal', (err, out, code) => {
         });
       });
 
@@ -4140,7 +4158,7 @@ process.on('uncaughtException', (err) => {
   });
   setTimeout(() => {
     try {
-      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
+      execSync("touch /home/pi/.firewalla/managed_reboot")
     } catch (e) {
     }
     process.exit(1);

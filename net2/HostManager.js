@@ -88,7 +88,7 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const iptables = require('./Iptables.js');
-const ip6tables = require('./Ip6tables.js');
+const ipset = require('./Ipset.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -104,7 +104,7 @@ Promise.promisifyAll(fs);
 const Message = require('./Message.js');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
-const wrapIptables = require("./Iptables.js").wrapIptables;
+const {Rule} = require("./Iptables.js");
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -279,7 +279,6 @@ module.exports = class HostManager {
       json.isBeta = false
     }
 
-    json.cpuid = platform.getBoardSerial();
     json.updateTime = Date.now();
     if (sysManager.sshPassword && f.isApi()) {
       json.ssh = sysManager.sshPassword;
@@ -1023,6 +1022,7 @@ module.exports = class HostManager {
           json.isBindingOpen = 0;
         }
 
+        json.localDomainSuffix = (await rclient.get('local:domain:suffix')) || '.lan';
         callback(null, json);
       } catch(err) {
         log.error("Caught error when preparing init data: " + err);
@@ -1396,25 +1396,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    if (policy.state === true) {
-      let cmd = wrapIptables(`sudo iptables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
-      await exec(cmd).catch((err) => {
-        log.error("Failed to enable IPv4 inbound firewall");
-      });
-      cmd = wrapIptables(`sudo ip6tables -w -A FW_INBOUND_FIREWALL -j FW_DROP`);
-      await exec(cmd).catch((err) => {
-        log.error("Failed to enable IPv6 inbound firewall");
-      });
-    } else {
-      let cmd = wrapIptables(`sudo iptables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
-      await exec(cmd).catch((err) => {
-        log.error("Failed to enable IPv4 inbound firewall");
-      });
-      cmd = wrapIptables(`sudo ip6tables -w -D FW_INBOUND_FIREWALL -j FW_DROP`);
-      await exec(cmd).catch((err) => {
-        log.error("Failed to enable IPv6 inbound firewall");
-      });
-    }
+    
   }
 
   async getVpnActiveDeviceCount(profileId) {

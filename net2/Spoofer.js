@@ -14,16 +14,12 @@
  */
 'use strict'
 
-var ipTool = require('ip');
-
-let l2 = require('../util/Layer2.js');
-
 var instance = null;
 
-let log = require("./logger.js")(__filename, 'info');
+const log = require("./logger.js")(__filename, 'info');
 
-let monitoredKey = "monitored_hosts";
-let unmonitoredKey = "unmonitored_hosts";
+const monitoredKey = "monitored_hosts";
+const unmonitoredKey = "unmonitored_hosts";
 // hosts in key unmonitored_hosts will be auto removed in 8 seconds.
 // hosts in key unmonitored_hosts_all will not be auto removed
 // key unmonitored_hosts_all is used to prevent same host from inserting to unmonitored_hosts multiple times
@@ -32,8 +28,6 @@ const unmonitoredKeyAll = "unmonitored_hosts_all";
 let monitoredKey6 = "monitored_hosts6";
 
 const addrIfaceMap = {};
-
-const sysManager = require('./SysManager.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -47,7 +41,7 @@ module.exports = class {
     iface = iface || addrIfaceMap[address];
     if (!iface)
       return;
-    
+
     let flag = await mode.isSpoofModeOn();
     if (!flag)
       return;
@@ -84,7 +78,7 @@ module.exports = class {
     let flag = await mode.isSpoofModeOn();
     if (!flag)
       return;
-    
+
     const subMonitoredKey = `monitored_hosts_${iface}`;
     const subUnmonitoredKey = `unmonitored_hosts_${iface}`;
     let isMember = await rclient.sismemberAsync(monitoredKey, address);
@@ -104,7 +98,7 @@ module.exports = class {
         rclient.sremAsync(subUnmonitoredKey, address);
       }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
     }
-  }  
+  }
 
   /* spoof6 is different than ipv4.  Some hosts may take on random addresses
    * hence storing a unmonitoredKey list does not make sense.
@@ -154,7 +148,7 @@ module.exports = class {
     }
     await rclient.sremAsync(subMonitoredKey6, address);
   }
-  
+
   /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
    */
   validateV6Spoofs(ipv6Addrs) {
@@ -168,7 +162,7 @@ module.exports = class {
           if (v6db[datas[i]] == null) {
             log.info("Spoof6:Remove:By:Check", datas[i]);
             this.newUnspoof6(datas[i]);
-          }         
+          }
         }
       }
     });
@@ -186,7 +180,7 @@ module.exports = class {
           if (v4db[datas[i]] == null) {
             log.info("Spoof4:Remove:By:Check:Device", datas[i]);
             this.newUnspoof(datas[i]);
-          }         
+          }
         }
       }
     });

@@ -149,7 +149,7 @@ class SS2Plugin extends Sensor {
     log.info("Starting SS2 at global level...");
     const entry = `server=${ss2.getLocalServer()}\n`;
     await fs.writeFileAsync(systemConfigFile, entry);
-    await dnsmasq.restartDnsmasq();
+    await dnsmasq.scheduleRestartDNSService();
 
     await ss2.redirectTraffic();
   }
@@ -157,7 +157,7 @@ class SS2Plugin extends Sensor {
   async systemStop() {
     log.info("Stopping SS2 at global level...");
     await fs.unlinkAsync(systemConfigFile).catch(() => undefined);
-    await dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
 
     await ss2.stop();
   }
@@ -167,7 +167,7 @@ class SS2Plugin extends Sensor {
     const configFile = `${dnsmasqConfigFolder}/ss2_${macAddress}.conf`;
     const dnsmasqentry = `server=${ss2.getLocalServer()}%${macAddress.toUpperCase()}\n`;
     await fs.writeFileAsync(configFile, dnsmasqentry);
-    dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async perDeviceStop(macAddress) {
@@ -182,7 +182,7 @@ class SS2Plugin extends Sensor {
         log.warn(`Dnsmasq: Error when remove ${configFile}`, err);
       }
     }
-    dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   // global on/off

@@ -19,6 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const util = require('util');
 const minimatch = require("minimatch");
+const cronParser = require('cron-parser');
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -79,6 +80,9 @@ class Policy {
       if (!_.isArray(this.tag) || _.isEmpty(this.tag))
         delete this.tag;
     }
+    this.whitelist = false;
+    if (raw.whitelist)
+      this.whitelist = JSON.parse(raw.whitelist);
 
     if (raw.expire === "") {
       delete this.expire;
@@ -135,13 +139,12 @@ class Policy {
       this.target === policy.target &&
       this.expire === policy.expire &&
       this.cronTime === policy.cronTime &&
-      this.remote === policy.remote &&
-      this.remoteType === policy.remoteType &&
-      this.local == policy.local &&
-      this.localType === policy.localType &&
       this.remotePort === policy.remotePort &&
       this.localPort === policy.localPort &&
-      this.proto === policy.proto
+      this.protocol === policy.protocol &&
+      this.direction === policy.direction &&
+      this.proto === policy.proto &&
+      this.whitelist === this.whitelist
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {
@@ -174,11 +177,27 @@ class Policy {
   isDisabled() {
     return this.disabled && this.disabled == '1'
   }
+  inSchedule(alarmTimestamp) {
+    const cronTime = this.cronTime;
+    const duration = parseFloat(this.duration); // in seconds
+    const interval = cronParser.parseExpression(cronTime);
+    const lastDate = interval.prev().getTime() / 1000;
+    log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
+
+    if (alarmTimestamp > lastDate && alarmTimestamp < lastDate + duration) {
+      return true
+    } else {
+      return false
+    }
+  }
 
   match(alarm) {
 
     if (this.isExpired()) {
       return false // always return unmatched if policy is already expired
+    }
+    if (this.cronTime && this.duration && !this.inSchedule(alarm.alarmTimestamp)) {
+      return false;
     }
 
     if (

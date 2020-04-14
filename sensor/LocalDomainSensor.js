@@ -25,9 +25,12 @@ const featureName = 'local_domain';
 const f = require('../net2/Firewalla.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
+const ADDN_HOSTS_CONF = FILTER_DIR + "/addn_hosts.conf";
+const ADDN_HOSTS_FILE = f.getRuntimeInfoFolder() + "/dnsmasq_addn_hosts";
 const util = require('util');
 const fs = require('fs');
 const unlinkAsync = util.promisify(fs.unlink);
+const writeFileAsync = util.promisify(fs.writeFile);
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
 const updateFlag = "1";
@@ -46,10 +49,16 @@ class LocalDomainSensor extends Sensor {
         this.hookFeature(featureName);
         sem.on('LocalDomainUpdate', async (event) => {
             const macArr = event.macArr;
+            if (macArr.includes('0.0.0.0')) {
+                await this.localDomainSuffixUpdate();
+                return;
+            }
             await dnsmasq.setupLocalDeviceDomain(macArr, true);
         });
     }
     async globalOn() {
+        await writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + ADDN_HOSTS_FILE);
+        await rclient.delAsync("local:device:domain");
         const hosts = await hostManager.getHostsAsync();
         let macArr = [];
         for (const host of hosts) {
@@ -68,7 +77,8 @@ class LocalDomainSensor extends Sensor {
     async globalOff() {
         try {
             await unlinkAsync(LOCAL_DOMAIN_FILE);
-            dnsmasq.restartDnsmasq();
+            await unlinkAsync(ADDN_HOSTS_CONF);
+            dnsmasq.scheduleRestartDNSService();
         } catch (err) {
             if (err.code === 'ENOENT') {
                 log.info(`Dnsmasq: No ${LOCAL_DOMAIN_FILE}, skip remove`);
@@ -76,6 +86,20 @@ class LocalDomainSensor extends Sensor {
                 log.warn(`Dnsmasq: Error when remove ${LOCAL_DOMAIN_FILE}`, err);
             }
         }
+    }
+    async localDomainSuffixUpdate() {
+        const hosts = await hostManager.getHostsAsync();
+        let macArr = [];
+        for (const host of hosts) {
+            if (host && host.o && host.o.mac) {
+                macArr.push(host.o.mac)
+            }
+        }
+        const promises = macArr.map(async (mac) => {
+            await hostTool.generateLocalDomain(mac);
+        })
+        await Promise.all(promises);
+        await dnsmasq.setupLocalDeviceDomain(macArr, true);
     }
 }
 

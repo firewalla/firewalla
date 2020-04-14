@@ -22,6 +22,8 @@ const cp = require('child_process');
 const exec = require('child_process').exec
 const sysManager = require('../net2/SysManager.js');
 const firewalla = require('../net2/Firewalla.js');
+const pl = require('../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
 
@@ -41,7 +43,6 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const UPNP = require('../extension/upnp/upnp.js');
 const Message = require('../net2/Message.js');
-const Mode = require('../net2/Mode.js');
 
 const moment = require('moment');
 
@@ -57,7 +58,7 @@ class VpnManager {
               try {
                 if (!this.started)
                   return;
-                this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
+                this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
                   log.error("Failed to set Upnp port mapping", err);
                 });
               } catch(err) {
@@ -144,8 +145,8 @@ class VpnManager {
   }
 
   async removeUpnpPortMapping(opts) {
-    if (await Mode.isRouterModeOn()) {
-      log.info("VPN server UPnP port mapping is not used in router mode");
+    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+      log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to remove upnp port mapping`);
       return false;
     }
     log.info("VpnManager:RemoveUpnpPortMapping", opts);
@@ -169,8 +170,8 @@ class VpnManager {
   }
 
   async addUpnpPortMapping(protocol, localPort, externalPort, description) {
-    if (await Mode.isRouterModeOn()) {
-      log.info("VPN server UPnP port mapping is not used in router mode");
+    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+      log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to add upnp port mapping`);
       return false;
     }
     log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
@@ -215,6 +216,11 @@ class VpnManager {
           this.needRestart = true;
         this.externalPort = config.externalPort;
       }
+      if (config.protocol) {
+        if (this.protocol && this.protocol !== config.protocol)
+          this.needRestart = true;
+        this.protocol = config.protocol;
+      }
     }
     if (this.serverNetwork == null) {
       this.serverNetwork = this.generateNetwork();
@@ -232,6 +238,9 @@ class VpnManager {
       this.externalPort = this.localPort;
       this.needRestart = true;
     }
+    if (this.protocol == null) {
+      this.protocol = platform.getVPNServerDefaultProtocol();
+    }
     if (this.instanceName == null) {
       this.instanceName = "server";
       this.needRestart = true;
@@ -242,8 +251,8 @@ class VpnManager {
     }
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
     // sysManager.myIp() is not used in the below command
-    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./confgen.sh %s %s %s %s %s %s'; sync",
-      fHome, confGenLockFile, this.instanceName, sysManager.myIp(), mydns, this.serverNetwork, this.netmask, this.localPort);
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./confgen.sh %s %s %s %s %s %s %s'; sync",
+      fHome, confGenLockFile, this.instanceName, sysManager.myIp(), mydns, this.serverNetwork, this.netmask, this.localPort, this.protocol);
     log.info("VPNManager:CONFIGURE:cmd", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);
@@ -254,13 +263,14 @@ class VpnManager {
       serverNetwork: this.serverNetwork,
       netmask: this.netmask,
       localPort: this.localPort,
-      externalPort: this.externalPort
+      externalPort: this.externalPort,
+      protocol: this.protocol
     };
   }
 
   async killClient(addr) {
     if (!addr) return;
-    const cmd = `echo "kill ${addr}" | nc localhost 5194`;
+    const cmd = `echo "kill ${addr}" | nc -w 5 -q 2 localhost 5194`;
     await execAsync(cmd).catch((err) => {
       log.warn(`Failed to kill client with address ${addr}`, err);
     });
@@ -270,7 +280,7 @@ class VpnManager {
     // statistics include client lists and rx/tx bytes
     let cmd = `systemctl is-active openvpn@${this.instanceName}`;
     return await execAsync(cmd).then(async () => {
-      cmd = `echo "status" | nc localhost 5194 | tail -n +2`;
+      cmd = `echo "status" | nc -w 5 -q 2 localhost 5194 | tail -n +2`;
       /*
       OpenVPN CLIENT LIST
       Updated,Fri Aug  9 12:08:18 2019
@@ -294,6 +304,7 @@ class VpnManager {
           switch (line) {
             case "OpenVPN CLIENT LIST":
               i += 1; // skip one line, which is something like "Updated,Thu Aug  8 18:24:32 2019"
+              // falls through
             case "ROUTING TABLE":
               currentSection = line;
               i += 1;
@@ -383,7 +394,7 @@ class VpnManager {
       if (this.refreshTask)
         clearInterval(this.refreshTask);
       await this.removeUpnpPortMapping({
-        protocol: 'udp',
+        protocol: this.protocol,
         private: this.localPort,
         public: this.externalPort
       });
@@ -401,7 +412,8 @@ class VpnManager {
       netmask: this.netmask,
       localPort: this.localPort,
       externalPort: this.externalPort,
-      portmapped: this.portmapped
+      portmapped: this.portmapped,
+      protocol: this.protocol
     };
   }
 
@@ -421,7 +433,8 @@ class VpnManager {
         netmask: this.netmask,
         localPort: this.localPort,
         externalPort: this.externalPort,
-        portmapped: this.portmapped
+        portmapped: this.portmapped,
+        protocol: this.protocol
       };
       // callback(null, this.portmapped, this.portmapped, this.serverNetwork, this.localPort);
     }
@@ -437,14 +450,14 @@ class VpnManager {
       this.refreshTask = setInterval(async () => {
         this.upnp.gw = sysManager.myDefaultGateway();
         // extend upnp lease once every 10 minutes in case router flushes it unexpectedly
-        this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
+        this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
           log.error("Failed to set Upnp port mapping", err);
         });
       }, 600000);
     }
 
     await this.removeUpnpPortMapping({
-      protocol: 'udp',
+      protocol: this.protocol,
       private: this.localPort,
       public: this.externalPort
     }).catch((err)=> {
@@ -461,7 +474,7 @@ class VpnManager {
       await execAsync(util.format("sudo systemctl %s openvpn@%s", op, this.instanceName));
       this.started = true;
       await this.setIptables();
-      this.portmapped = await this.addUpnpPortMapping("udp", this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
+      this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
         log.error("Failed to set Upnp port mapping", err);
         return false;
       });
@@ -474,7 +487,8 @@ class VpnManager {
         netmask: this.netmask,
         localPort: this.localPort,
         externalPort: this.externalPort,
-        portmapped: this.portmapped
+        portmapped: this.portmapped,
+        protocol: this.protocol
       };
     } catch (err) {
       log.info("Failed to start VPN", err);
@@ -535,8 +549,6 @@ class VpnManager {
       }
     }
     // check if there is conflict between client subnets and Firewalla's subnets
-    const mySubnet = sysManager.mySubnet();
-    const mySubnet2 = sysManager.mySubnet2();
     for (let clientSubnet of clientSubnets) {
       const ipSubnets = clientSubnet.split('/');
       if (ipSubnets.length != 2)
@@ -626,6 +638,7 @@ class VpnManager {
   static getOvpnFile(commonName, password, regenerate, externalPort, callback) {
     let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
     let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
+    const protocol = platform.getVPNServerDefaultProtocol();
 
     log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
 
@@ -651,8 +664,8 @@ class VpnManager {
 
       const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-      let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s'; sync",
-        fHome, vpnLockFile, commonName, password, ip, externalPort);
+      let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync",
+        fHome, vpnLockFile, commonName, password, ip, externalPort, protocol);
       log.info("VPNManager:GEN", cmd);
       exec(cmd, (err, stdout, stderr) => {
         if (err) {

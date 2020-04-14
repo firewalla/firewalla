@@ -82,16 +82,19 @@ fireRouter.waitTillReady().then(() => {
 
 const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
 
-function run0() {
+async function run0() {
+  const isModeConfigured = await mode.isModeConfigured();
+
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
+      isModeConfigured &&
       sysManager.isConfigInitialized()) {
-    boneSensor.checkIn()
-      .then(() => {
-        run() // start running after bone checkin successfully
-      }).catch(() => {
-        run() // running firewalla in non-license mode if checkin failed
-      });
+    await boneSensor.checkIn().catch((err) => {
+      log.error("Got error when checkin, err", err);
+      // running firewalla in non-license mode if checkin failed, do not return, continue run()
+    })
+
+    await run();
   } else {
     if (!interfaceDetected) {
       log.info("Awaiting interface detection...");
@@ -101,6 +104,8 @@ function run0() {
       log.forceInfo("Waiting for first app to connect...");
     } else if(!sysManager.isConfigInitialized()) {
       log.info("Waiting for configuration setup...");
+    } else if(!isModeConfigured) {
+      log.info("Waiting for mode setup...");
     }
 
     setTimeout(()=>{
@@ -158,6 +163,7 @@ async function resetModeInInitStage() {
 
   // Do not fallback to none on router/DHCP mode
   if(!bootingComplete && firstBindDone && (mode.isSpoofModeOn() || mode.isDHCPSpoofModeOn())) {
+    log.warn("Reverting to limited mode");
     await mode.noneModeOn()
   }
 }

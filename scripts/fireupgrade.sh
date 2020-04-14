@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2020 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -117,48 +117,14 @@ restore_values() {
 
 await_ip_assigned || restore_values
 
-
-TIME_THRESHOLD="2019-10-14"
-
-function sync_time() {
-    time_website=$1
-    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
-    if [[ "x$time" == "x" ]]; then
-        logger "ERROR: Failed to load date info from website: $time_website"
-        return 1
-    else
-        # compare website time against threshold to prevent it goes bad in some rare cases
-        tsWebsite=$(date -d "$time" +%s)
-        tsThreshold=$(date -d "$TIME_THRESHOLD" +%s)
-        if [ $tsWebsite -ge $tsThreshold ];
-        then
-          sudo date -s "$time";
-        else
-          return 1
-        fi
-    fi
-}
-
-if [[ ! -f /.dockerenv ]]; then
-    logger "FIREWALLA.UPGRADE.DATE.SYNC"
-    sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
-    ret=$?
-    if [[ $ret -ne 0 ]]; then
-        sudo systemctl stop ntp
-        sudo date -s "$TIME_THRESHOLD" # set minimal date here to prevent SSL failure on undergoing HTTPS calls
-        sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
-        sudo systemctl start ntp
-    fi
-    logger "FIREWALLA.UPGRADE.DATE.SYNC.DONE"
-    sync
-fi
+$FIREWALLA_HOME/scripts/fire-time.sh
 
 GITHUB_STATUS_API=https://api.github.com
 
 logger `date`
 rc=1
-for i in `seq 1 10`; do
-    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
+for i in `seq 1 5`; do
+    HTTP_STATUS_CODE=`curl -m10 -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       rc=0
       break
