@@ -31,7 +31,6 @@ const exec = require('child-process-promise').exec;
 
 const f = require('../../net2/Firewalla.js');
 
-const configKey = "ext.wireguard.config";
 const sharedPeerConfigKey = "ext.wireguard.peers.config";
 
 const sysManager = require('../../net2/SysManager.js')
@@ -90,7 +89,7 @@ class WireGuard {
   }
 
   async getConfig() {
-    const redisConfig = await rclient.getAsync(configKey);
+    const redisConfig = await rclient.hgetAsync("sys:features:config", "wireguard");
     if (redisConfig) {
       try {
         return JSON.parse(redisConfig);
@@ -100,7 +99,7 @@ class WireGuard {
       }
     } else {
       const config = await this.randomServerConfig();
-      await rclient.setAsync(configKey, JSON.stringify(config));
+      await rclient.hsetAsync("sys:features:config", "wireguard", JSON.stringify(config));
       return config;
     }
   }
