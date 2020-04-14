@@ -92,8 +92,26 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  getKeys(keyPattern) {
-    return rclient.keysAsync(keyPattern);
+  async getKeys(keyPattern) {
+    let cursor = 0;
+    let stop = false;
+    let keys = [];
+    while (stop !== true) {
+      const result = await rclient.scanAsync(cursor, "MATCH", keyPattern, "COUNT", 100);
+      if (!result) {
+        log.info("Unexpected error when scan redis, return result is null");
+        stop = true;
+        break;
+      }
+      
+      cursor = result[0];
+      if(cursor == 0) {
+        stop = true;
+      }
+
+      keys.push.apply(keys, result[1]);
+    }
+    return keys
   }
 
   // clean by expired time and count
@@ -401,8 +419,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
       await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
-      await this.regularClean("dns", "rdns:ip:*");
-      await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*")
       await this.cleanHourlyStats();
@@ -425,10 +441,24 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async dailyJob() {
+    try {
+      log.info("Start cleaning old data in redis(dailyJob)")
+
+      await this.regularClean("dns", "rdns:ip:*");
+      await this.regularClean("dns", "rdns:domain:*");
+      
+      log.info("dailyJob is executed successfully");
+    } catch(err) {
+      log.error("Failed to run daily job, err:", err);
+    }
+  }
+
   listen() {
     sclient.on("message", (channel, message) => {
       if(channel === "OldDataCleanSensor" && message === "Start") {
         this.scheduledJob();
+        this.dailyJob();
       }
     });
     sclient.subscribe("OldDataCleanSensor");
@@ -504,10 +534,15 @@ class OldDataCleanSensor extends Sensor {
 
     setTimeout(() => {
       this.scheduledJob();
+      this.dailyJob();
       this.oneTimeJob()
       setInterval(() => {
         this.scheduledJob();
       }, 1000 * 60 * 60); // cleanup every hour
+
+      setInterval(() => {
+        this.dailyJob();
+      }, 1000 * 60 * 60 * 24); // cleanup every day
     }, 1000 * 60 * 5); // first time in 5 mins
   }
 }
