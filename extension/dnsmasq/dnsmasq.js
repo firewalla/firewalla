@@ -533,7 +533,7 @@ module.exports = class DNSMASQ {
         await fs.appendFileAsync(categoryBlockMacSetFile, macSetEntry);
       }
     } catch (err) {
-      log.error("Failed to add category mact set entry into file:", err);
+      log.error("Failed to add category mac set entry into file:", err);
     } finally {
       this.workingInProgress = false; // make sure the flag is reset back
     }
@@ -590,7 +590,7 @@ module.exports = class DNSMASQ {
         await fs.writeFileAsync(categoryBlockMacSetFile, newData);
       }
     } catch (err) {
-      log.error("Failed to update category mact set entry file:", err);
+      log.error("Failed to update category mac set entry file:", err);
     } finally {
       this.workingInProgress = false;
     }
