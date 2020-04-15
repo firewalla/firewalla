@@ -38,20 +38,19 @@ const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
+const { isSimilarHost } = require('../util/util');
+
+const BlockManager = require('../control/BlockManager.js');
+const blockManager = new BlockManager();
+
+const _ = require('lodash');
 class DomainBlock {
 
   constructor() {
     sem.once('IPTABLES_READY', async () => {
-      sem.on('UPDATE_CATEGORY_DEFAULT_DOMAIN', async (event) => {
+      sem.on('UPDATE_CATEGORY_DOMAIN', async (event) => {
         if (event.category) {
-          const PM2 = require('../alarm/PolicyManager2.js');
-          const pm2 = new PM2();
-          const policies = await pm2.loadActivePoliciesAsync();
-          for (const policy of policies) {
-            if (policy.type == "category" && policy.target == event.category && policy.dnsmasq_entry) {
-              await pm2.tryPolicyEnforcement(policy, 'reenforce', policy)
-            }
-          }
+          await this.updateCategoryBlock(event.category);
         }
       })
     })
@@ -84,12 +83,40 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    const blockSet = options.blockSet || "blocked_domain_set"
+    const blockSet = options.blockSet || "blocked_domain_set";
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
       for (const addr of addresses) {
         try {
-          await Block.block(addr, blockSet)
+          // if the ip shared with other domain, should not apply ip level block
+          // if a.com and b.com share ip and one of them block, it should be domain level
+          // if both block, should update to ip level
+          const key = blockManager.ipBlockInfoKey(addr);
+          const exist = (await rclient.existsAsync(key) == 1);
+          let ipBlockInfo = {
+            blockSet: blockSet,
+            ip: addr,
+            targetDomains: [],
+            sharedDomains: [],
+            ts: new Date() / 1000
+          };
+          if (exist) {
+            ipBlockInfo = JSON.parse(await rclient.getAsync(key));
+          }
+          ipBlockInfo.targetDomains.push(domain);
+          const allDomains = await dnsTool.getAllDns(addr);
+          const sharedDomains = _.differenceWith(ipBlockInfo.targetDomains, allDomains, (a, b) => {
+            return isSimilarHost(a, b);
+          });
+          if (sharedDomains.length == 0) {
+            ipBlockInfo.block_level = 'ip';
+            await Block.block(addr, blockSet)
+          } else {
+            ipBlockInfo.block_level = 'domain';
+          }
+          ipBlockInfo.sharedDomains = sharedDomains;
+          ipBlockInfo.ts = new Date() / 1000;
+          await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
         } catch (err) { }
       }
     }
@@ -102,7 +129,24 @@ class DomainBlock {
     if (addresses) {
       for (const addr of addresses) {
         try {
-          Block.unblock(addr, blockSet)
+          Block.unblock(addr, blockSet);
+          const key = blockManager.ipBlockInfoKey(addr);
+          const exist = (await rclient.existsAsync(key) == 1);
+          if (exist) {
+            let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
+            ipBlockInfo.sharedDomains.push(domain);
+            ipBlockInfo.targetDomains = _.filter(ipBlockInfo.targetDomains, (a) => {
+              return a != domain;
+            })
+            if (ipBlockInfo.targetDomains.length == 0) {
+              await rclient.delAsync(key);
+            } else {
+              ipBlockInfo.ts = new Date() / 1000;
+              ipBlockInfo.block_level = 'domain';
+              await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+            }
+
+          }
         } catch (err) { }
       }
     }

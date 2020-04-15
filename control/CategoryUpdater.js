@@ -76,7 +76,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
           await this.refreshAllCategoryRecords()
 
-          sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
+          sem.on('UPDATE_CATEGORY_DOMAIN', (event) => {
             if (event.category) {
               this.recycleIPSet(event.category);
               domainBlock.updateCategoryBlock(event.category);
@@ -138,7 +138,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     commands.push.apply(commands, domains)
     sem.emitEvent({
-      type: "UPDATE_CATEGORY_DEFAULT_DOMAIN",
+      type: "UPDATE_CATEGORY_DOMAIN",
       category: category,
       toProcess: "FireMain"
     });

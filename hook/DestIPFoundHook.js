@@ -46,7 +46,7 @@ const QUEUE_SIZE_RESUME = 1000;
 const TRUST_THRESHOLD = 10 // to be updated
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
-
+const {isSimilarHost} = require('../util/util');
 class DestIPFoundHook extends Hook {
 
   constructor() {
@@ -223,20 +223,6 @@ class DestIPFoundHook extends Hook {
     }
   }
 
-  _isSimilarHost(h1, h2) {
-    if (!h1 || !h2)
-      return false;
-    const h1Sections = h1.split('.').reverse();
-    const h2Sections = h2.split('.').reverse();
-    // compare at most last three sections
-    const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 3);
-    for (let i = 0; i != limit; i++) {
-      if (h1Sections[i] !== h2Sections[i])
-        return false;
-    }
-    return true;
-  }
-
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
@@ -281,7 +267,7 @@ class DestIPFoundHook extends Hook {
 
         if (intel && !intel.cloudFailed) {
           // use cache data if host is similar or ssl org is identical (relatively loose condition to avoid calling intel API too frequently)
-          if (domains.length == 0 || (sslInfo && intel.org && sslInfo.O === intel.org) || (intel.host && this._isSimilarHost(domains[0], intel.host))) {
+          if (domains.length == 0 || (sslInfo && intel.org && sslInfo.O === intel.org) || (intel.host && isSimilarHost(domains[0], intel.host))) {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
             return;
