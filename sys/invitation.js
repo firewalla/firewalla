@@ -282,7 +282,7 @@ class FWInvitation {
     let txtfield = {
       'gid': this.gid,
       'seed': this.symmetrickey.seed,
-      'keyhint': 'You will find the key on the back of your device',
+      'keyhint': '',
       'service': FW_SERVICE,
       'type': FW_SERVICE_TYPE,
       'mid': uuid.v4(),
@@ -328,6 +328,10 @@ class FWInvitation {
       if (ip2 && iptool.isV4Format(ip2))
         otherAddrs.push(ip2);
       txtfield.ipaddresses = otherAddrs.join(",");
+
+      if(obj.r && obj.r.length > 4) {
+        txtfield.rr = obj.r.substring(0,4);
+      }
 
       log.info("TXT:", txtfield);
       const serial = platform.getBoardSerial();

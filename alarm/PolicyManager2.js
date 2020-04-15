@@ -71,6 +71,7 @@ const dnsmasq = new DNSMASQ();
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
 const Tag = require('../net2/Tag.js');
+const ipset = require('../net2/Ipset.js');
 
 const _ = require('lodash');
 
@@ -94,7 +95,9 @@ const simpleRuleSetMap = {
   'net': 'net_set',
   'remotePort': 'remote_port_set',
   'remoteIpPort': 'remote_ip_port_set',
-  'remoteNetPort': 'remote_net_port_set'
+  'remoteNetPort': 'remote_net_port_set',
+  'domain': 'domain_set',
+  'dns': 'domain_set'
 }
 
 class PolicyManager2 {
@@ -439,7 +442,7 @@ class PolicyManager2 {
 
   async checkAndSave(policy, callback) {
     callback = callback || function () { }
-    if (!policy instanceof Policy) callback(new Error("Not Policy instance"));
+    if (!(policy instanceof Policy)) callback(new Error("Not Policy instance"));
     //FIXME: data inconsistence risk for multi-processes or multi-threads
     try {
       if (this.isFirewallaOrCloud(policy)) {
@@ -468,11 +471,11 @@ class PolicyManager2 {
 
   checkAndSaveAsync(policy) {
     return new Promise((resolve, reject) => {
-      this.checkAndSave(policy, (err, resultPolicy) => {
+      this.checkAndSave(policy, (err, policy, alreadyExists) => {
         if (err) {
           reject(err)
         } else {
-          resolve(resultPolicy)
+          resolve({policy, alreadyExists})
         }
       })
     })
@@ -846,6 +849,7 @@ class PolicyManager2 {
       let host = await ht.getMACEntry(mac);
       if (host) {
         return {
+          mac: mac,
           ip: host.ipv4Addr,
           port: matches[2],
           protocol: matches[3]
@@ -1030,7 +1034,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, intf, target, whitelist, tag } = policy
+    let { pid, scope, target, whitelist, tag, remotePort, localPort, protocol, direction} = policy;
 
     // tag = []
     // scope !== []
@@ -1056,105 +1060,100 @@ class PolicyManager2 {
         return;
       }
     }
+
+    let remoteSet4 = null;
+    let remoteSet6 = null;
+    let localPortSet = null;
+    let remotePortSet = null;
+    let remotePositive = true;
+    let remoteTupleCount = 1;
+    if (localPort) {
+      localPortSet = `c_${pid}_local_port`;
+      await ipset.create(localPortSet, "bitmap:port");
+      await Block.block(localPort, localPortSet);
+    }
+    if (remotePort) {
+      remotePortSet = `c_${pid}_remote_port`;
+      await ipset.create(remotePortSet, "bitmap:port");
+      await Block.block(remotePort, remotePortSet);
+    }
     
     switch (type) {
       case "ip":
-      case "net":
+      case "net": {
+        remoteSet4 = Block.getDstSet(pid);
+        remoteSet6 = Block.getDstSet6(pid);
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet) {
+          await ipset.create(remoteSet4, ruleSetTypeMap[type], true);
+          await ipset.create(remoteSet6, ruleSetTypeMap[type], false);
+          await Block.block(target, Block.getDstSet(pid));
+        } else {
+          // apply to global without specified src/dst port, directly add to global ip or net allow/block set
+          const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          await Block.block(target, set);
+          return;
+        }
+        break;
+      }
       case "remotePort":
       case "remoteIpPort":
       case "remoteNetPort":
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, pid, ruleSetTypeMap[type], whitelist);
-            await Block.block(target, Block.getDstSet(pid));
-          } 
-
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, pid, ruleSetTypeMap[type], whitelist);
-            await Block.block(target, Block.getDstSet(pid));
-          } 
-          
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, pid, ruleSetTypeMap[type], null, whitelist);
-            await Block.addMacToSet(scope, Block.getMacSet(pid));
-            await Block.block(target, Block.getDstSet(pid));
+        const values = (target && target.split(',')) || [];
+        if (values.length == 2) {
+          // ip,port or net,port
+          if (type === "remoteIpPort") {
+            remoteSet4 = Block.getDstSet(pid);
+            remoteSet6 = Block.getDstSet6(pid);
+            await ipset.create(remoteSet4, "hash:ip", true);
+            await ipset.create(remoteSet6, "hash:ip", false);
           }
-        } else {
-          // All
-          const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type];
-          await Block.block(target, set);
+          if (type === "remoteNetPort") {
+            remoteSet4 = Block.getDstSet(pid);
+            remoteSet6 = Block.getDstSet6(pid);
+            await ipset.create(remoteSet4, "hash:net", true);
+            await ipset.create(remoteSet6, "hash:net", false);
+          }
+          await Block.block(values[0], Block.getDstSet(pid));
+          remotePort = values[1];
+        } else
+          remotePort = values[0] || null;
+        
+        if (remotePort) {
+          remotePortSet = `c_${pid}_remote_port`;
+          await ipset.create(remotePortSet, "bitmap:port");
+          await Block.block(remotePort, remotePortSet);
         }
         break;
 
       case "mac":
-        if (target.toLowerCase() == "tag") {
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, null, null, whitelist);
-          } 
-          
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, null, null, whitelist);
-          }
-
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, null, null, null, whitelist);
-            await Block.addMacToSet(scope, Block.getMacSet(pid), whitelist);
-            for (const mac of scope) {
-              accounting.addBlockedDevice(mac);
-            }
-          }
-        } else {
-          await Block.setupRules(pid, pid, null, null, null, whitelist);
-          await Block.addMacToSet([target], Block.getMacSet(pid), whitelist)
-          // await Block.addMacToSet([target], null, whitelist)
-          accounting.addBlockedDevice(target);
-        }
+      case "internet": // mac is the alias of internet
+        remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
+        remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
+        remotePositive = false;
+        remoteTupleCount = 2;
         break;
-
       case "domain":
       case "dns":
-        // FIXME support tags and intfs for dnsmasq
-        // dnsmasq_entry: use dnsmasq instead of iptables
-        if (policy.dnsmasq_entry) {
-          await dnsmasq.addPolicyFilterEntry([target], {pid, scope, intfs, tags}).catch(() => {});
-          dnsmasq.scheduleRestartDNSService()
-        } else if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs)) {
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, pid, "hash:ip", whitelist);
-            await domainBlock.blockDomain(target, {
-              exactMatch: policy.domainExactMatch,
-              blockSet: Block.getDstSet(pid)
-            });
-          }
-          
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, pid, "hash:ip", whitelist);
-            await domainBlock.blockDomain(target, {
-              exactMatch: policy.domainExactMatch,
-              blockSet: Block.getDstSet(pid)
-            });
-          }
-
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, pid, "hash:ip", intf, whitelist);
-            await Block.addMacToSet(scope, Block.getMacSet(pid));
-            await domainBlock.blockDomain(target, {
-              exactMatch: policy.domainExactMatch,
-              blockSet: Block.getDstSet(pid),
-              scope: scope
-            }) 
-          }
+        await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags }).catch(() => { });
+        dnsmasq.scheduleRestartDNSService();
+        if (policy.dnsmasq_only)
+          return;
+        remoteSet4 = Block.getDstSet(pid);
+        remoteSet6 = Block.getDstSet6(pid);
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet) {
+          await ipset.create(remoteSet4, "hash:ip", true);
+          await ipset.create(remoteset6, "hash:ip", false);
+          await domainBlock.blockDomain(target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(pid)
+          });
         } else {
-          // All 
-          let options = {
-            exactMatch: policy.domainExactMatch
-          };
-          if (whitelist) {
-            options.blockSet = "whitelist_domain_set";
-          } else {
-            options.blockSet = "blocked_domain_set";
-          }
-          await domainBlock.blockDomain(target, options);
+          const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          await domainBlock.blockDomain(target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: set
+          });
+          return;
         }
         break;
 
@@ -1162,230 +1161,87 @@ class PolicyManager2 {
       // do not support scope || tags || intfs
       case "devicePort": {
         let data = await this.parseDevicePortRule(target);
-        if (data) {
-          // if (whitelist) {
-          //   await Block.blockPublicPort(data.ip, data.port, data.protocol, "whitelist_ip_port_set");
-          // } else {
-          //   await Block.blockPublicPort(data.ip, data.port, data.protocol)
-          // }
+        if (data && data.mac) {
+          protocol = data.protocol;
+          localPort = data.port;
+          scope = [data.mac];
 
-          await Block.setupRules(pid, null, pid, "hash:ip,port", null, whitelist);
-          await Block.blockPublicPort(data.ip, data.port, data.protocol, Block.getDstSet(pid));
-        }
+          if (localPort) {
+            localPortSet = `c_${pid}_local_port`;
+            await ipset.create(localPortSet, "bitmap:port");
+            await Block.block(localPort, localPortSet);
+          } else
+            return; 
+        } else
+          return;
         break;
       }
 
       case "category":
-        // FIXME support tags and intfs for dnsmasq
-        if (policy.dnsmasq_entry) {
-          await domainBlock.blockCategory(target, {
-            pid,
-            scope: scope,
-            category: target,
-            intfs,
-            tags
-          });
-        } else if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, target, "hash:ip", whitelist);
-          } 
-
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, target, "hash:ip", whitelist);
-          }
-
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, target, "hash:ip", null, whitelist);
-            await Block.addMacToSet(scope, Block.getMacSet(pid));
-          }
-        } else {
-          await Block.setupRules(pid, null, target, "hash:ip", null, whitelist);
-          if (!scope && !whitelist && target === 'default_c') try {
-            await categoryUpdater.iptablesRedirectCategory(target)
-          } catch (err) {
-            log.error("Failed to redirect default_c traffic", err)
-          }
-        }
+        /* TODO: support dnsmasq on category
+        await domainBlock.blockCategory(target, {
+          pid,
+          scope: scope,
+          category: target,
+          intfs,
+          tags
+        });
+        */
+        if (policy.dnsmasq_only)
+          return;
+        remoteSet4 = categoryUpdater.getIPSetName(target);
+        remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
         break;
 
       case "country":
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
-          await countryUpdater.activateCountry(target);
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, countryUpdater.getCategory(target), "hash:net", whitelist);
-          } 
-          
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, countryUpdater.getCategory(target), "hash:net", whitelist);
-          }
-
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, countryUpdater.getCategory(target), "hash:net", null, whitelist);
-            await Block.addMacToSet(scope, Block.getMacSet(pid));
-          }
-        } else {
-          await Block.setupRules(pid, null, countryUpdater.getCategory(target), "hash:net", null, whitelist);
-        }
+        await countryUpdater.activateCountry(target);
+        remoteSet4 = countryUpdater.getIPSetName(countryUpdater.getCategory(target));
+        remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(target));
         break;
 
-      case "inbound_allow": {
-        const idPrefix = `ib_${pid}`;
-        // flow desc corresponds to 5-tuple of flow
-        const {remote, remoteType, local, localType, remotePort, localPort, proto} = policy;
-        let remoteSet4 = null;
-        let remoteSet6 = null;
-        let localSet4 = null;
-        let localSet6 = null;
-        let remoteSpec = "src";
-        let localSpec = "dst";
-        switch (remoteType) {
-          case "ip": {
-            remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:ip", 4);
-            remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:ip", 6);
-            if (new Address4(remote).isValid()) {
-              if (remoteSet4)
-                await Block.addToMatchingSet(`${idPrefix}_${remoteType}4`, remote);
-              else {
-                log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
-                return;
-              }
-            } else {
-              if (new Address6(remote).isValid()) {
-                if (remoteSet6)
-                  await Block.addToMatchingSet(`${idPrefix}_${remoteType}6`, remote);
-                else {
-                  log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
-                  return;
-                }
-              }
-            }
-            break;
-          }
-          case "net": {
-            remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:net", 4);
-            remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:net", 6);
-            if (new Address4(remote).isValid()) {
-              if (remoteSet4)
-                await Block.addToMatchingSet(`${idPrefix}_${remoteType}4`, remote);
-              else {
-                log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
-                return;
-              }
-            } else {
-              if (new Address6(remote).isValid()) {
-                if (remoteSet6)
-                  await Block.addToMatchingSet(`${idPrefix}_${remoteType}6`, remote);
-                else {
-                  log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
-                  return;
-                }
-              }
-            }
-            break;
-          }
-          case "domain": {
-            remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:ip", 4);
-            remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:ip", 6);
-            if (remoteSet4)
-              await domainBlock.blockDomain(remote, {
-                exactMatch: policy.domainExactMatch,
-                blockSet: remoteSet4
-              });
-            else {
-              log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
-              return;
-            }
-            break;
-          }
-          case "country": {
-            await countryUpdater.activateCountry(remote);
-            remoteSet4 = countryUpdater.getIPSetName(countryUpdater.getCategory(remote));
-            remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(remote));
-            if (!remoteSet4) {
-              log.error(`Failed to create ipset for remote ${remoteType} ${remote}`);
-              return;
-            }
-            break;
-          }
-          case "mac": {
-            // remote is device mac address
-            await Host.ensureCreateTrackingIpset(remote);
-            remoteSet4 = `${Host.getTrackingIpsetPrefix(remote)}4`;
-            remoteSet6 = `${Host.getTrackingIpsetPrefix(remote)}6`;
-            remoteSpec = "src";
-            break;
-          }
-          case "network": {
-            // remote is network uuid
-            await NetworkProfile.ensureCreateEnforcementEnv(remote);
-            remoteSet4 = NetworkProfile.getNetIpsetName(remote);
-            remoteSet6 = NetworkProfile.getNetIpsetName(remote, 6);
-            remoteSpec = "src,src";
-            break;
-          }
-          case "tag": {
-            // remote is tag uid
-            const tag = TagManager.getTagByUid(remote);
-            if (!tag) {
-              log.warn(`Tag ${remote} does not exist, no need to apply `, policy);
-              return;
-            }
-            remoteSet4 = Tag.getTagIpsetName(remote);
-            remoteSet6 = remoteSet4;
-            remoteSpec = "src,src";
-            break;
-          }
-          default:
-            // remote is not specified, match all remote
-        }
-        switch (localType) {
-          case "mac": {
-            // local is device mac address
-            await Host.ensureCreateTrackingIpset(local);
-            localSet4 = `${Host.getTrackingIpsetPrefix(local)}4`;
-            localSet6 = `${Host.getTrackingIpsetPrefix(local)}6`;
-            localSpec = "dst";
-            break;
-          }
-          case "network": {
-            // local is network uuid
-            await NetworkProfile.ensureCreateEnforcementEnv(local);
-            localSet4 = NetworkProfile.getNetIpsetName(local);
-            localSet6 = NetworkProfile.getNetIpsetName(local, 6);
-            localSpec = "dst,dst";
-            break;
-          }
-          case "tag": {
-            // local is tag uid
-            const tag = TagManager.getTagByUid(local);
-            if (!tag) {
-              log.warn(`Tag ${local} does not exist, no need to apply `, policy);
-              return;
-            }
-            localSet4 = Tag.getTagIpsetName(local);
-            localSet6 = localSet4;
-            localSpec = "dst,dst";
-            break;
-          }
-          default:
-            // local is not specified, match all local
-        }
-        if (proto !== "tcp" && proto !== "udp" && proto !== "udplite" && proto !== "dccp" && proto !== "sctp") {
-          if (remotePort)
-            log.error("Remote port is not supported if protocol is not in 'tcp, udp, udplite, dccp, sctp'", policy);
-          if (localPort)
-            log.error("Local port is not supported if protocol is not in 'tcp, udp, udplite, dccp, sctp'", policy);
-          if (remotePort || localPort)
-            return;
-        }
-
-        await Block.manipulateFiveTupleRule("-I", remoteSet4, remoteSpec, remotePort, localSet4, localSpec, localPort, proto, "FW_ACCEPT", "FW_INBOUND_FIREWALL", "filter", 4);
-        await Block.manipulateFiveTupleRule("-I", remoteSet6, remoteSpec, remotePort, localSet6, localSpec, localPort, proto, "FW_ACCEPT", "FW_INBOUND_FIREWALL", "filter", 6);
+      case "intranet":
+        remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
+        remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
+        remoteTupleCount = 2;
         break;
-      }
+
+      case "network":
+        // target is network uuid
+        await NetworkProfile.ensureCreateEnforcementEnv(target);
+        remoteSet4 = NetworkProfile.getNetIpsetName(target, 4);
+        remoteSet6 = NetworkProfile.getNetIpsetName(target, 6);
+        remoteTupleCount = 2;
+        break;
+
+      case "tag":
+        // target is tag uid
+        await Tag.ensureCreateEnforcementEnv(target);
+        remoteSet4 = Tag.getTagSetName(target);
+        remoteSet6 = Tag.getTagSetName(target);
+        remoteTupleCount = 2;
+        break;
+
+      case "device":
+        // target is device mac address
+        await Host.ensureCreateDeviceIpset(target);
+        remoteSet4 = Host.getDeviceSetName(target);
+        remoteSet6 = Host.getDeviceSetName(target);
+        break;
 
       default:
         throw new Error("Unsupported policy type");
+    }
+
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
+      if (!_.isEmpty(tags))
+        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "create");
+      if (!_.isEmpty(intfs))
+        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "create");
+      if (!_.isEmpty(scope))
+        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "create");
+    } else {
+      // apply to global
+      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "create");
     }
   }
 
@@ -1415,7 +1271,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, intf, target, whitelist, tag } = policy
+    let { pid, scope, target, whitelist, tag, remotePort, localPort, protocol, direction} = policy;
 
     let intfs = [];
     let tags = [];
@@ -1440,300 +1296,210 @@ class PolicyManager2 {
       }
     }
 
+    let remoteSet4 = null;
+    let remoteSet6 = null;
+    let localPortSet = null;
+    let remotePortSet = null;
+    let remotePositive = true;
+    let remoteTupleCount = 1;
+    if (localPort) {
+      localPortSet = `c_${pid}_local_port`;
+      await Block.unblock(localPort, localPortSet);
+    }
+    if (remotePort) {
+      remotePortSet = `c_${pid}_remote_port`;
+      await Block.unblock(remotePort, remotePortSet);
+    }
+
     switch (type) {
       case "ip":
-      case "net":
+      case "net": {
+        remoteSet4 = Block.getDstSet(pid);
+        remoteSet6 = Block.getDstSet6(pid);
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet) {
+          await Block.unblock(target, Block.getDstSet(pid));
+        } else {
+          const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          await Block.unblock(target, set);
+          return;
+        }
+        break;
+      }
       case "remotePort":
       case "remoteIpPort":
       case "remoteNetPort":
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, pid, ruleSetTypeMap[type], whitelist, true);
+        const values = (target && target.split(',')) || [];
+        if (values.length == 2) {
+          // ip,port or net,port
+          if (type === "remoteIpPort") {
+            remoteSet4 = Block.getDstSet(pid);
+            remoteSet6 = Block.getDstSet6(pid);
+            await ipset.create(remoteSet4, "hash:ip", true);
+            await ipset.create(remoteSet6, "hash:ip", false);
           }
+          if (type === "remoteNetPort") {
+            remoteSet4 = Block.getDstSet(pid);
+            remoteSet6 = Block.getDstSet6(pid);
+            await ipset.create(remoteSet4, "hash:net", true);
+            await ipset.create(remoteSet6, "hash:net", false);
+          }
+          await Block.block(values[0], Block.getDstSet(pid));
+          remotePort = values[1];
+        } else
+          remotePort = values[0] || null;
 
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, pid, ruleSetTypeMap[type], whitelist, true);
-          }
-
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, pid, ruleSetTypeMap[type], null, whitelist, true);
-          }
-        } else {
-          const set = (whitelist ? 'whitelist_' : 'blocked_') + simpleRuleSetMap[type];
-          await Block.unblock(target, set)
+        if (remotePort) {
+          remotePortSet = `c_${pid}_remote_port`;
+          await Block.unblock(remotePort, remotePortSet);
         }
         break;
 
       case "mac":
-        if (target.toLowerCase() == "tag") {
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, null, null, whitelist, true);
-          } 
-          
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, null, null, whitelist, true);
-          }
-
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, null, null, null, whitelist, true);
-            for (const mac of scope) {
-              accounting.removeBlockedDevice(mac);
-            }
-          }
-        } else {
-          await Block.setupRules(pid, pid, null, null, null, whitelist, true);
-          accounting.removeBlockedDevice(target);
-        }
+      case "internet":
+        remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
+        remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
+        remotePositive = false;
+        remoteTupleCount = 2;
         break;
-
       case "domain":
       case "dns":
-        // dnsmasq_entry: use dnsmasq instead of iptables
-        if (policy.dnsmasq_entry) {
-          await dnsmasq.removePolicyFilterEntry([target], {pid, scope, intfs, tags}).catch(() => {});
-          dnsmasq.scheduleRestartDNSService();
-        } else if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs)) {
-          if (!_.isEmpty(tags)) {
-            await domainBlock.unblockDomain(target, {
-              exactMatch: policy.domainExactMatch,
-              blockSet: Block.getDstSet(pid)
-            });
-            await Block.setupTagRules(pid, tags, pid, 'hash:ip', whitelist, true);
-          } 
-
-          if (!_.isEmpty(intfs)) {
-            await domainBlock.unblockDomain(target,  {
-              exactMatch: policy.domainExactMatch,
-              blockSet: Block.getDstSet(pid)
-            });
-            await Block.setupIntfsRules(pid, intfs, pid, 'hash:ip', whitelist, true);
-          }
-          
-          if (!_.isEmpty(scope)) {
-            await domainBlock.unblockDomain(target, {
-              exactMatch: policy.domainExactMatch,
-              blockSet: Block.getDstSet(pid),
-              scope: scope
-            })
-            // destroy domain dst cache, since there may be various domain dst cache in different policies
-            await Block.setupRules(pid, pid, pid, 'hash:ip', null, whitelist, true);
-          } 
+        await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags }).catch(() => { });
+        dnsmasq.scheduleRestartDNSService();
+        if (policy.dnsmasq_only)
+          return;
+        remoteSet4 = Block.getDstSet(pid);
+        remoteSet6 = Block.getDstSet6(pid);
+        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || localPortSet || remotePortSet) {
+          await domainBlock.unblockDomain(target, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(pid)
+          });
         } else {
-          let options = {
-            exactMatch: policy.domainExactMatch
-          };
-          if (whitelist) {
-            options.blockSet = "whitelist_domain_set";
-          } else {
-            options.blockSet = "blocked_domain_set";
-          }
-          await domainBlock.unblockDomain(target, options);
+          const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          await domainBlock.unblockDomain(targeet, {
+            exactMatch: policy.domainExactMatch,
+            blockSet: set
+          });
+          return;
         }
         break;
 
       case "devicePort": {
         let data = await this.parseDevicePortRule(target)
-        if (data) {
-          await Block.unblockPublicPort(data.ip, data.port, data.protocol, Block.getDstSet(pid));
-          await Block.setupRules(pid, null, pid, "hash:ip,port", null, whitelist, true);
-        }
+        if (data && data.mac) {
+          protocol = data.protocol;
+          localPort = data.port;
+          scope = [data.mac];
+
+          if (localPort) {
+            localPortSet = `c_${pid}_local_port`;
+            await Block.unblock(localPort, localPortSet);
+          } else
+            return;
+        } else
+          return;
         break;
       }
 
       case "category":
-        if (policy.dnsmasq_entry) {
-          await domainBlock.unblockCategory(target, {
-            pid,
-            scope: scope,
-            category: target,
-            intfs,
-            tags
-          });
-        } else if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, target, "hash:ip", whitelist, true, false);
-          }
-          
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, target, "hash:ip", whitelist, true, false);
-          }
-
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, target, "hash:ip", null, whitelist, true, false);
-          }
-        } else {
-          await Block.setupRules(pid, null, target, 'hash:ip', null, whitelist, true, false);
-          if (!scope && !whitelist && target === 'default_c') try {
-            await categoryUpdater.iptablesUnredirectCategory(target)
-          } catch (err) {
-            log.error("Failed to redirect default_c traffic", err)
-          }
-        }
+        /* TODO: support dnsmasq on category
+        await domainBlock.unblockCategory(target, {
+          pid,
+          scope: scope,
+          category: target,
+          intfs,
+          tags
+        });
+        */
+        if (policy.dnsmasq_only)
+          return;
+        remoteSet4 = categoryUpdater.getIPSetName(target);
+        remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
         break;
 
       case "country":
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
-          if (!_.isEmpty(tags)) {
-            await Block.setupTagRules(pid, tags, countryUpdater.getCategory(target), 'hash:net', whitelist, true, false);
-          } 
-
-          if (!_.isEmpty(intfs)) {
-            await Block.setupIntfsRules(pid, intfs, countryUpdater.getCategory(target), 'hash:net', whitelist, true, false);
-          }
-
-          if (!_.isEmpty(scope)) {
-            await Block.setupRules(pid, pid, countryUpdater.getCategory(target), 'hash:net', null, whitelist, true, false);
-          }
-        } else {
-          await Block.setupRules(pid, null, countryUpdater.getCategory(target), 'hash:net', null, whitelist, true, false);
-        }
+        remoteSet4 = countryUpdater.getIPSetName(countryUpdater.getCategory(target));
+        remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(target));
         break;
 
-        case "inbound_allow": {
-          const idPrefix = `ib_${pid}`;
-          // flow desc corresponds to 5-tuple of flow
-          const {remote, remoteType, local, localType, remotePort, localPort, proto} = policy;
-          let remoteSet4 = null;
-          let remoteSet6 = null;
-          let localSet4 = null;
-          let localSet6 = null;
-          let remoteSpec = "src";
-          let localSpec = "dst";
-          switch (remoteType) {
-            case "ip": {
-              remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:ip", 4);
-              remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:ip", 6);
-              break;
-            }
-            case "net": {
-              remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:net", 4);
-              remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:net", 6);
-              break;
-            }
-            case "domain": {
-              remoteSet4 = await Block.createMatchingSet(`${idPrefix}_${remoteType}4`, "hash:ip", 4);
-              remoteSet6 = await Block.createMatchingSet(`${idPrefix}_${remoteType}6`, "hash:ip", 6);
-              if (remoteSet4)
-                await domainBlock.unblockDomain(remote, {
-                  exactMatch: policy.domainExactMatch,
-                  blockSet: remoteSet4
-                });
-              else {
-                log.error(`Failed to find ipset for remote ${remoteType} ${remote}`);
-                return;
-              }
-              break;
-            }
-            case "country": {
-              remoteSet4 = countryUpdater.getIPSetName(countryUpdater.getCategory(remote));
-              remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(remote));
-              break;
-            }
-            case "mac": {
-              // remote is device mac address
-              await Host.ensureCreateTrackingIpset(remote);
-              remoteSet4 = `${Host.getTrackingIpsetPrefix(remote)}4`;
-              remoteSet6 = `${Host.getTrackingIpsetPrefix(remote)}6`;
-              remoteSpec = "src";
-              break;
-            }
-            case "network": {
-              // remote is network uuid
-              await NetworkProfile.ensureCreateEnforcementEnv(remote);
-              remoteSet4 = NetworkProfile.getNetIpsetName(remote);
-              remoteSet6 = NetworkProfile.getNetIpsetName(remote, 6);
-              remoteSpec = "src,src";
-              break;
-            }
-            case "tag": {
-              // remote is tag uid
-              const tag = TagManager.getTagByUid(remote);
-              if (!tag) {
-                log.warn(`Tag ${remote} does not exist, no need to remove `, policy);
-                return;
-              }
-              remoteSet4 = Tag.getTagIpsetName(remote);
-              remoteSet6 = remoteSet4;
-              remoteSpec = "src,src";
-              break;
-            }
-            default:
-              // remote is not specified, match all remote
-          }
-          switch (localType) {
-            case "mac": {
-              // local is device mac address
-              await Host.ensureCreateTrackingIpset(local);
-              localSet4 = `${Host.getTrackingIpsetPrefix(local)}4`;
-              localSet6 = `${Host.getTrackingIpsetPrefix(local)}6`;
-              localSpec = "dst";
-              break;
-            }
-            case "network": {
-              // local is network uuid
-              await NetworkProfile.ensureCreateEnforcementEnv(local);
-              localSet4 = NetworkProfile.getNetIpsetName(local);
-              localSet6 = NetworkProfile.getNetIpsetName(local, 6);
-              localSpec = "dst,dst";
-              break;
-            }
-            case "tag": {
-              // local is tag uid
-              const tag = TagManager.getTagByUid(local);
-              if (!tag) {
-                log.warn(`Tag ${local} does not exist, no need to remove `, policy);
-                return;
-              }
-              localSet4 = Tag.getTagIpsetName(local);
-              localSet6 = localSet4;
-              localSpec = "dst,dst";
-              break;
-            }
-            default:
-              // local is not specified, match all local
-          }
-          if (proto !== "tcp" && proto !== "udp" && proto !== "udplite" && proto !== "dccp" && proto !== "sctp") {
-            if (remotePort)
-              log.error("Remote port is not supported if protocol is not in 'tcp, udp, udplite, dccp, sctp'", policy);
-            if (localPort)
-              log.error("Local port is not supported if protocol is not in 'tcp, udp, udplite, dccp, sctp'", policy);
-            if (remotePort || localPort)
-              return;
-          }
-  
-          await Block.manipulateFiveTupleRule("-D", remoteSet4, remoteSpec, remotePort, localSet4, localSpec, localPort, proto, "FW_ACCEPT", "FW_INBOUND_FIREWALL", "filter", 4);
-          await Block.manipulateFiveTupleRule("-D", remoteSet6, remoteSpec, remotePort, localSet6, localSpec, localPort, proto, "FW_ACCEPT", "FW_INBOUND_FIREWALL", "filter", 6);
-          if (remoteType !== "country") {
-            // destroy rule specific ip set
-            await Block.destroyMatchingSet(`${idPrefix}_${remoteType}4`);
-            await Block.destroyMatchingSet(`${idPrefix}_${remoteType}6`);
-          }
-          break;
-        }
+        case "intranet":
+        remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
+        remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
+        remoteTupleCount = 2;
+        break;
+
+      case "network":
+        // target is network uuid
+        await NetworkProfile.ensureCreateEnforcementEnv(target);
+        remoteSet4 = NetworkProfile.getNetIpsetName(target, 4);
+        remoteSet6 = NetworkProfile.getNetIpsetName(target, 6);
+        remoteTupleCount = 2;
+        break;
+
+      case "tag":
+        // target is tag uid
+        await Tag.ensureCreateEnforcementEnv(target);
+        remoteSet4 = Tag.getTagSetName(target);
+        remoteSet6 = Tag.getTagSetName(target);
+        remoteTupleCount = 2;
+        break;
+
+      case "device":
+        // target is device mac address
+        await Host.ensureCreateDeviceIpset(target);
+        remoteSet4 = Host.getDeviceSetName(target);
+        remoteSet6 = Host.getDeviceSetName(target);
+        break;
 
       default:
         throw new Error("Unsupported policy");
     }
+
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
+      if (!_.isEmpty(tags))
+        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "destroy");
+      if (!_.isEmpty(intfs))
+        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "destroy");
+      if (!_.isEmpty(scope))
+        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "destroy");
+    } else {
+      // apply to global
+      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "destroy");
+    }
+
+    if (localPortSet) {
+      await ipset.flush(localPortSet);
+      await ipset.destroy(localPortSet);
+    }
+    if (remotePortSet) {
+      await ipset.flush(remotePortSet);
+      await ipset.destroy(remotePortSet);
+    }
+    if (remoteSet4) {
+      if (type === "ip" || type === "net" || type === "remoteIpPort" || type === "remoteNetPort" || type === "domain" || type === "dns") {
+        await ipset.flush(remoteSet4);
+        await ipset.destroy(remoteSet4);
+      }
+    }
+    if (remoteSet6) {
+      if (type === "ip" || type === "net" || type === "remoteIpPort" || type === "remoteNetPort" || type === "domain" || type === "dns") {
+        await ipset.flush(remoteSet6);
+        await ipset.destroy(remoteSet6);
+      }
+    }
   }
 
-  match(alarm, callback) {
-    this.loadActivePolicies((err, policies) => {
-      if (err) {
-        log.error("Failed to load active policy rules")
-        callback(err)
-        return
-      }
+  async match(alarm) {
+    const policies = await this.loadActivePoliciesAsync()
 
-      const matchedPolicies = policies.filter((policy) => {
-        return policy.match(alarm)
-      })
+    const matchedPolicies = policies.filter(policy => policy.match(alarm))
 
-      if (matchedPolicies.length > 0) {
-        callback(null, true)
-      } else {
-        callback(null, false)
-      }
-    })
+    if(matchedPolicies.length > 0) {
+      log.debug('1st matched policy', matchedPolicies[0])
+      return true
+    } else {
+      return false
+    }
   }
 
 
@@ -1809,7 +1575,7 @@ class PolicyManager2 {
     let ipsets = [];
     let ipsetContent = ""; // for string matching
     try {
-      let cmdResult = await exec("sudo iptables -S | grep -E 'FW_BLOCK'");
+      let cmdResult = await exec("sudo iptables -S | grep -E 'FW_FIREWALL'");
       let iptableFW = cmdResult.stdout.toString().trim(); // iptables content
       cmdResult = await exec(`sudo ipset -S`);
       let cmdResultContent = cmdResult.stdout.toString().trim().split('\n');
@@ -1861,11 +1627,11 @@ class PolicyManager2 {
           if (rule) {
             matchedRules.push(rule);
           }
-        } else if (ipsetName == "blocked_ip_set" && iptool.isV4Format(currentTxt)) {
+        } else if (ipsetName == "block_ip_set" && iptool.isV4Format(currentTxt)) {
           matchedRules = rules.filter(rule => rule.type == "ip" && rule.target === currentTxt);
-        } else if (ipsetName == "blocked_net_set" && iptool.isV4Format(currentTxt)) {
+        } else if (ipsetName == "block_net_set" && iptool.isV4Format(currentTxt)) {
           matchedRules = rules.filter(rule => rule.type == "net" && iptool.cidrSubnet(rule.target).contains(currentTxt));
-        } else if (ipsetName == "blocked_domain_set" && iptool.isV4Format(currentTxt)) {
+        } else if (ipsetName == "block_domain_set" && iptool.isV4Format(currentTxt)) {
           const filterRules = rules.filter(rule => ["dns", "domain"].includes(rule.type));
           if (isDomain) {
             const domains = await dnsTool.getAllDns(currentTxt); // 54.169.195.247 => ["api.github.com", "github.com"]

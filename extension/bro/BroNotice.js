@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -34,18 +34,23 @@ class BroNotice {
   //  sub: target
   //  dst: no presence
   async processSSHScan(alarm, broObj) {
+    if (sysManager.isMyIP(broObj.src)) {
+      log.info("Ignoring bro notice", broObj.msg)
+      return null;
+    }
+
     const subMessage = broObj.sub
     // sub message:
     //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
 
-    let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
+    let addresses = subMessage.replace(/.*Sampled servers: {2}/, '').split(", ")
     addresses = addresses.filter((v, i, array) => {
       return array.indexOf(v) === i
     })
 
     if (addresses.length == 0) {
       alarm["p.local.decision"] == "ignore";
-      return;
+      return null;
     }
     let deivceNames = [];
     for (const address of addresses) {
@@ -74,6 +79,11 @@ class BroNotice {
   //  dst: target
   //  sub: "local" || "remote"
   async processPortScan(alarm, broObj) {
+    if (sysManager.isMyIP(broObj.src)) {
+      log.info("Ignoring bro notice", broObj.msg)
+      return null;
+    }
+
     if (alarm["p.device.ip"] == broObj.src) {
       alarm["p.local_is_client"] = "1";
     } else {
@@ -82,6 +92,11 @@ class BroNotice {
   }
 
   async processHeartbleed(alarm, broObj) {
+    if (sysManager.isMyIP(broObj.src)) {
+      log.info("Ignoring bro notice", broObj.msg)
+      return null;
+    }
+
     if (sysManager.isLocalIP(broObj["src"])) {
       alarm["p.local_is_client"] = "1";
     } else {
@@ -94,6 +109,7 @@ class BroNotice {
       alarm['p.action.block'] = true; // block automatically if attack succeed
   }
 
+  //  sub: interesting host name
   async processSSHInterestingLogin(alarm, broObj) {
     const sub = broObj["sub"];
 
@@ -141,7 +157,8 @@ class BroNotice {
     const noticeType = alarm["p.noticeType"];
 
     if (!noticeType || !broObj) {
-      return;
+      log.warn('Invalid bro notice', broObj)
+      return null;
     }
 
     alarm["e.bro.raw"] = JSON.stringify(broObj);
@@ -185,6 +202,6 @@ class BroNotice {
       target: alarm["p.dest.ip"]
     }
   }
-};
+}
 
 module.exports = new BroNotice();

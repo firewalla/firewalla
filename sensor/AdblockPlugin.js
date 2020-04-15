@@ -99,10 +99,12 @@ class AdblockPlugin extends Sensor {
               if (tagUid) {
                 if (policy === true)
                   this.tagSettings[tagUid] = 1;
+                // false means unset, this is for backward compatibility
                 if (policy === false)
-                  this.tagSettings[tagUid] = -1;
-                if (policy === null)
                   this.tagSettings[tagUid] = 0;
+                // null means disabled, this is for backward compatibility
+                if (policy === null)
+                  this.tagSettings[tagUid] = -1;
                 await this.applyTagAdblock(tagUid);
               }
               break;
@@ -113,9 +115,9 @@ class AdblockPlugin extends Sensor {
                 if (policy === true)
                   this.networkSettings[uuid] = 1;
                 if (policy === false)
-                  this.networkSettings[uuid] = -1;
-                if (policy === null)
                   this.networkSettings[uuid] = 0;
+                if (policy === null)
+                  this.networkSettings[uuid] = -1;
                 await this.applyNetworkAdblock(uuid);
               }
               break;
@@ -126,9 +128,9 @@ class AdblockPlugin extends Sensor {
                 if (policy === true)
                   this.macAddressSettings[macAddress] = 1;
                 if (policy === false)
-                  this.macAddressSettings[macAddress] = -1;
+                  this.macAddressSettings[macAddress] = 0;
                 if (policy === null)
-                  this.macAddressSettings[macAddress] = 0
+                  this.macAddressSettings[macAddress] = -1;
                 await this.applyDeviceAdblock(macAddress);
               }
               break;

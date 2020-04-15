@@ -453,8 +453,8 @@ class OldDataCleanSensor extends Sensor {
               target_name: hostInfo.name || hostInfo.bname || hostInfo.ipv4Addr,
               target_ip: hostInfo.ipv4Addr // target_name and target ip are necessary for old app display
             })
-            const result = await pm2.checkAndSaveAsync(newRule);
-            if (result) {
+            const { policy } = await pm2.checkAndSaveAsync(newRule);
+            if (policy) {
               await rclient.hsetAsync(key, "blockin", false);
               log.info("Migrated successfully")
             } else {

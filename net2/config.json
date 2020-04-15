@@ -528,7 +528,8 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "SS2Plugin": {},
-    "WireGuardPlugin": {}
+    "WireGuardPlugin": {},
+    "PiHolePlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -666,7 +667,8 @@
     "alarm_openport": false,
     "device_service_scan": true,
     "wireguard": false,
-    "ipv6": false
+    "ipv6": false,
+    "pihole": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
