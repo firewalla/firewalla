@@ -1570,8 +1570,9 @@ class PolicyManager2 {
     return result;
   }
 
-  async searchPolicy(waitSearch, isDomain) {
-    let result = [];
+  async searchPolicy(waitSearch, isDomain, target) {
+    const addrPort = target.split(":");
+    const targetDomain = addrPort[0];
     let ipsets = [];
     let ipsetContent = ""; // for string matching
     try {
@@ -1598,6 +1599,8 @@ class PolicyManager2 {
       log.error(err);
     }
 
+    let polices = [];
+    let crossIps = [];
     const rules = await this.loadActivePoliciesAsync();
     for (const currentTxt of waitSearch) {
       if (!currentTxt || currentTxt.trim().length == 0) continue;
@@ -1707,17 +1710,32 @@ class PolicyManager2 {
           }
         } else if (ipsetName.search(/c_bd_([a-zA-Z_]+)_set/) > -1 && iptool.isV4Format(currentTxt)) {
           matchedRules = rules.filter(rule => rule.type == "category" && ipsetName === Block.getDstSet(rule.target));
+          if (isDomain) {
+            for (const matchedRule of matchedRules) {
+              let domains = await domainBlock.getCategoryDomains(matchedRule.target);
+              domains = domains.filter(domain => !(domain == targetDomain || domain.indexOf(targetDomain) > -1));
+              for (const domain of domains) {
+                const dnsAddresses = await dnsTool.getIPsByDomain(domain);
+                if (dnsAddresses && dnsAddresses.length > 0 && dnsAddresses.some(dnsIp => dnsIp == currentTxt)) {
+                  crossIps.push({ip: currentTxt, domain: domain, pid: matchedRule.pid});
+                }
+              }
+            }
+          }
         } else if (ipsetName.indexOf("_country:") > -1 && iptool.isV4Format(currentTxt)) {
           matchedRules = rules.filter(rule => rule.type == "country" && ipsetName === Block.getDstSet(countryUpdater.getCategory(rule.target)));
         }
 
         if (matchedRules.length > 0) {
-          result.push.apply(result, matchedRules.map((rule) => rule.pid));
+          polices.push.apply(polices, matchedRules.map((rule) => rule.pid));
         }
       }
     }
 
-    return _.uniqWith(result, _.isEqual);
+    let result = {};
+    result.polices = _.uniqWith(polices, _.isEqual);
+    result.crossIps = _.uniqWith(crossIps, _.isEqual);
+    return result;
   }
 
   async checkRunPolicies(initialFlag) {
