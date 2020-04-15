@@ -986,7 +986,7 @@ class PolicyManager2 {
   }
 
   generateTaget(policy) {
-    const { type, target, protocol, ip, net, port } = policy
+    let { type, target, protocol, ip, net, port } = policy
     if (!_.isEmpty(target)) return target
 
     if (!_.isEmpty(ip) && !_.isArray(ip)) ip = [ip]
@@ -1142,7 +1142,7 @@ class PolicyManager2 {
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet) {
           await ipset.create(remoteSet4, "hash:ip", true);
-          await ipset.create(remoteset6, "hash:ip", false);
+          await ipset.create(remoteSet6, "hash:ip", false);
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid)
@@ -1376,7 +1376,7 @@ class PolicyManager2 {
           });
         } else {
           const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
-          await domainBlock.unblockDomain(targeet, {
+          await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: set
           });
