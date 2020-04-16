@@ -65,10 +65,10 @@ class BlockManager {
             const alreayExistInTargetDomains = _.find(targetDomains, (targetDomain) => {
                 return isSimilarHost(targetDomain, domain);
             })
-            if (ipBlcokInfo.block_level == 'ip' && !alreayExistInTargetDomains) {
+            if (ipBlcokInfo.blockLevel == 'ip' && !alreayExistInTargetDomains) {
                 log.info('ip block level change when new doamin comming', ip, domain)
                 ipBlcokInfo.sharedDomains = [domain];
-                ipBlcokInfo.block_level = 'domain';
+                ipBlcokInfo.blockLevel = 'domain';
                 ipBlcokInfo.ts = new Date() / 1000;
                 Block.unblock(ip, blockSet);
                 await rclient.setAsync(key, JSON.stringify(ipBlcokInfo));
@@ -80,21 +80,72 @@ class BlockManager {
         log.info('schedule refresh block level for these ips:', ipBlockKeys)
         ipBlockKeys.map(async (key) => {
             let ipBlcokInfo = JSON.parse(await rclient.getAsync(key));
-            const { targetDomains, ip, block_level, blockSet } = ipBlcokInfo;
+            const { targetDomains, ip, blockLevel, blockSet } = ipBlcokInfo;
             const allDomains = await dnsTool.getAllDns(ip);
             const sharedDomains = _.differenceWith(targetDomains, allDomains, (a, b) => {
                 return isSimilarHost(a, b);
             });
-            if (sharedDomains.length == 0 && block_level == 'domain') {
+            if (sharedDomains.length == 0 && blockLevel == 'domain') {
                 Block.block(ip, blockSet)
             }
-            if (sharedDomains.length > 0 && block_level == 'ip') {
+            if (sharedDomains.length > 0 && blockLevel == 'ip') {
                 Block.unblock(ip, blockSet);
             }
             ipBlcokInfo.ts = new Date() / 1000;
             ipBlcokInfo.sharedDomains = sharedDomains;
             await rclient.setAsync(key, JSON.stringify(ipBlcokInfo));
         })
+    }
+    async updateIpBlockInfo(ip, domain, action, blockSet = 'blocked_domain_set') {
+        const key = this.ipBlockInfoKey(ip);
+        const exist = (await rclient.existsAsync(key) == 1);
+        let ipBlockInfo = {
+            blockSet: blockSet,
+            ip: ip,
+            targetDomains: [],
+            sharedDomains: [],
+            ts: new Date() / 1000
+        }
+        if (exist) {
+            ipBlockInfo = JSON.parse(await rclient.getAsync(key));
+        }
+        switch (action) {
+            case 'block': {
+                // if the ip shared with other domain, should not apply ip level block
+                // if a.com and b.com share ip and one of them block, it should be domain level
+                // if both block, should update to ip level
+                ipBlockInfo.targetDomains.push(domain);
+                const allDomains = await dnsTool.getAllDns(ip);
+                const sharedDomains = _.differenceWith(ipBlockInfo.targetDomains, allDomains, (a, b) => {
+                    return isSimilarHost(a, b);
+                });
+                log.info(`${domain}'s ip ${ip} shared with domains ${sharedDomains.join(',')}`)
+                if (sharedDomains.length == 0) {
+                    ipBlockInfo.blockLevel = 'ip';
+                } else {
+                    ipBlockInfo.blockLevel = 'domain';
+                }
+                ipBlockInfo.sharedDomains = sharedDomains;
+                ipBlockInfo.ts = new Date() / 1000;
+                await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+                break;
+            }
+            case 'unblock': {
+                ipBlockInfo.sharedDomains.push(domain);
+                ipBlockInfo.targetDomains = _.filter(ipBlockInfo.targetDomains, (a) => {
+                    return a != domain;
+                })
+                if (ipBlockInfo.targetDomains.length == 0) {
+                    await rclient.delAsync(key);
+                } else {
+                    ipBlockInfo.ts = new Date() / 1000;
+                    ipBlockInfo.blockLevel = 'domain';
+                    await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+                }
+                break;
+            }
+        }
+        return ipBlockInfo;
     }
 }
 
