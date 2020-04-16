@@ -445,79 +445,6 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
   }
 }
 
-async function addMacToSet(macAddresses, ipset = null, whitelist = false) {
-  ipset = ipset || (whitelist ? 'whitelist_mac_set' : 'blocked_mac_set');
-
-  for (const mac of macAddresses || []) {
-    await Ipset.add(ipset, mac);
-  }
-}
-
-async function delMacFromSet(macAddresses, ipset = null, whitelist = false) {
-  ipset = ipset || (whitelist ? 'whitelist_mac_set' : 'blocked_mac_set');
-
-  for (const mac of macAddresses || []) {
-    await Ipset.del(ipset, mac);
-  }
-}
-
-function blockPublicPort(localIPAddress, localPort, protocol, ipset) {
-  ipset = ipset || "blocked_ip_port_set";
-  log.info("Blocking public port:", localIPAddress, localPort, protocol, ipset);
-  protocol = protocol || "tcp";
-
-  const entry = util.format("%s,%s:%s", localIPAddress, protocol, localPort);
-
-  if(!iptool.isV4Format(localIPAddress)) {
-    ipset = ipset + '6'
-  }
-
-  return Ipset.add(ipset, entry)
-}
-
-function unblockPublicPort(localIPAddress, localPort, protocol, ipset) {
-  ipset = ipset || "blocked_ip_port_set";
-  log.info("Unblocking public port:", localIPAddress, localPort, protocol);
-  protocol = protocol || "tcp";
-
-  let entry = util.format("%s,%s:%s", localIPAddress, protocol, localPort);
-
-  if(!iptool.isV4Format(localIPAddress)) {
-    ipset = ipset + '6'
-  }
-
-  return Ipset.del(ipset, entry)
-}
-
-async function createMatchingSet(id, type, af = 4) {
-  if (!id || !type)
-    return null;
-  let name = `c_${id}`;
-  await Ipset.create(name, type, af == 4).catch((err) => {
-    log.error(`Failed to create ipset ${name}`, err.message);
-    name = null;
-  });
-  return name;
-}
-
-async function addToMatchingSet(id, value) {
-  if (!id || !value)
-    return;
-  const name = `c_${id}`;
-  await Ipset.add(name, value).catch((err) => {
-    log.error(`Failed to add ${value} to ipset ${name}`, err.message);
-  });
-}
-
-async function destroyMatchingSet(id) {
-  if (!id)
-    return;
-  const name = `c_${id}`;
-  await Ipset.destroy(name).catch((err) => {
-    log.error(`Failed to destroy ipset ${name}`, err.message);
-  });
-}
-
 async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPositive = true, srcPortSet, dstMatchingSet, dstSpec, dstPositive = true, dstPortSet, proto, ctDir, target, chain, table, af = 4) {
   // sport and dport can be range string, e.g., 10000-20000
   const rule = new Rule(table).fam(af).chn(chain);
@@ -545,18 +472,11 @@ module.exports = {
   setupCategoryEnv: setupCategoryEnv,
   setupGlobalRules: setupGlobalRules,
   setupDevicesRules: setupDevicesRules,
-  addMacToSet: addMacToSet,
-  delMacFromSet: delMacFromSet,
-  blockPublicPort:blockPublicPort,
-  unblockPublicPort: unblockPublicPort,
   getDstSet: getDstSet,
   getDstSet6: getDstSet6,
   getMacSet: getMacSet,
   existsBlockingEnv: existsBlockingEnv,
   setupTagsRules: setupTagsRules,
   setupIntfsRules: setupIntfsRules,
-  createMatchingSet: createMatchingSet,
-  addToMatchingSet: addToMatchingSet,
-  destroyMatchingSet: destroyMatchingSet,
   manipulateFiveTupleRule: manipulateFiveTupleRule
 }

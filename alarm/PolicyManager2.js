@@ -191,8 +191,12 @@ class PolicyManager2 {
             } else {
               log.info("START REENFORCING POLICY", policy.pid, action);
 
-              await this.unenforce(oldPolicy)
-              await this.enforce(policy)
+              await this.unenforce(oldPolicy).catch((err) => {
+                log.error("Failed to unenforce policy before reenforce", err.message, policy);
+              });
+              await this.enforce(policy).catch((err) => {
+                log.error("Failed to reenforce policy", err.message, policy);
+              })
             }
           } catch (err) {
             log.error("reenforce policy failed:" + err, policy)
@@ -1024,7 +1028,7 @@ class PolicyManager2 {
   }
 
   async _enforce(policy) {
-    log.info(`Enforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, whitelist:${policy.whitelist}`);
+    log.info(`Enforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -1034,7 +1038,12 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, whitelist, tag, remotePort, localPort, protocol, direction} = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction} = policy;
+
+    if (action !== "block" && action !== "allow") {
+      log.error(`Unsupported action ${action} for policy ${pid}`);
+      return;
+    }
 
     // tag = []
     // scope !== []
@@ -1089,7 +1098,7 @@ class PolicyManager2 {
           await Block.block(target, Block.getDstSet(pid));
         } else {
           // apply to global without specified src/dst port, directly add to global ip or net allow/block set
-          const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
           await Block.block(target, set);
           return;
         }
@@ -1134,7 +1143,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags }).catch(() => { });
+        await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
         dnsmasq.scheduleRestartDNSService();
         if (policy.dnsmasq_only)
           return;
@@ -1148,7 +1157,7 @@ class PolicyManager2 {
             blockSet: Block.getDstSet(pid)
           });
         } else {
-          const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: set
@@ -1234,14 +1243,14 @@ class PolicyManager2 {
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "create");
+        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create");
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "create");
+        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create");
       if (!_.isEmpty(scope))
-        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "create");
+        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create");
     } else {
       // apply to global
-      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "create");
+      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create");
     }
   }
 
@@ -1265,13 +1274,18 @@ class PolicyManager2 {
   }
 
   async _unenforce(policy) {
-    log.info(`Unenforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, whitelist:${policy.whitelist}`);
+    log.info(`Unenforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
 
     await this._removeActivatedTime(policy)
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, whitelist, tag, remotePort, localPort, protocol, direction} = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction} = policy;
+
+    if (action !== "block" && action !== "allow") {
+      log.error(`Unsupported action ${action} for policy ${pid}`);
+      return;
+    }
 
     let intfs = [];
     let tags = [];
@@ -1319,7 +1333,7 @@ class PolicyManager2 {
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet) {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
-          const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
           await Block.unblock(target, set);
           return;
         }
@@ -1363,7 +1377,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags }).catch(() => { });
+        await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
         dnsmasq.scheduleRestartDNSService();
         if (policy.dnsmasq_only)
           return;
@@ -1375,7 +1389,7 @@ class PolicyManager2 {
             blockSet: Block.getDstSet(pid)
           });
         } else {
-          const set = (whitelist ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: set
@@ -1457,14 +1471,14 @@ class PolicyManager2 {
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "destroy");
+        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy");
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "destroy");
+        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy");
       if (!_.isEmpty(scope))
-        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "destroy");
+        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy");
     } else {
       // apply to global
-      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, whitelist ? "allow" : "block", direction, "destroy");
+      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy");
     }
 
     if (localPortSet) {
