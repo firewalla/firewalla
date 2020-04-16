@@ -48,7 +48,6 @@ const ipset = require('../../net2/Ipset.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq_local";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
-const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
 const LOCAL_DOMAIN_KEY = "local:device:domain"
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
@@ -493,9 +492,9 @@ module.exports = class DNSMASQ {
           // global effective policy
           const entries = [];
           if (options.action === "block")
-            entries.push(`address=${domain}/${BLACK_HOLE_IP}`);
+            entries.push(`address=/${domain}/${BLACK_HOLE_IP}`);
           else
-            entries.push(`server=${domain}/#`);
+            entries.push(`server=/${domain}/#`);
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.writeFileAsync(filePath, entries.join('\n'));
         }
@@ -1471,7 +1470,6 @@ module.exports = class DNSMASQ {
         }
       }
       await rclient.setAsync(LOCAL_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
-      let localDeviceDomain = "";
       let localDeviceDomainAddn = "";
       for (const key in deviceDomainMap) {
         const deviceDomain = deviceDomainMap[key];
@@ -1493,7 +1491,6 @@ module.exports = class DNSMASQ {
           }
         }
       }
-      (isInit || needUpdate) && await this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
       (isInit || needUpdate) && await this.throttleUpdatingConf(ADDN_HOSTS_FILE, localDeviceDomainAddn);
     } catch (e) {
       log.error("Failed to setup local device domain", e);
