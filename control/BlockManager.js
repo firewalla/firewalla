@@ -57,30 +57,14 @@ class BlockManager {
         // }
     }
     async applyNewDomain(ip, domain) {
-        const key = this.ipBlockInfoKey(ip);
-        const exist = (await rclient.existsAsync(key) == 1);
-        if (exist) {
-            let ipBlcokInfo = JSON.parse(await rclient.getAsync(key));
-            const { blockSet, targetDomains } = ipBlcokInfo;
-            const alreayExistInTargetDomains = _.find(targetDomains, (targetDomain) => {
-                return isSimilarHost(targetDomain, domain);
-            })
-            if (ipBlcokInfo.blockLevel == 'ip' && !alreayExistInTargetDomains) {
-                log.info('ip block level change when new doamin comming', ip, domain)
-                ipBlcokInfo.sharedDomains = [domain];
-                ipBlcokInfo.blockLevel = 'domain';
-                ipBlcokInfo.ts = new Date() / 1000;
-                Block.unblock(ip, blockSet);
-                await rclient.setAsync(key, JSON.stringify(ipBlcokInfo));
-            }
-        }
+        await this.updateIpBlockInfo(ip, domain, 'newDomain')
     }
     async scheduleRefreshBlockLevel() {
         const ipBlockKeys = await rclient.keysAsync("ip:block:info:*");
         log.info('schedule refresh block level for these ips:', ipBlockKeys)
         ipBlockKeys.map(async (key) => {
-            let ipBlcokInfo = JSON.parse(await rclient.getAsync(key));
-            const { targetDomains, ip, blockLevel, blockSet } = ipBlcokInfo;
+            let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
+            const { targetDomains, ip, blockLevel, blockSet } = ipBlockInfo;
             const allDomains = await dnsTool.getAllDns(ip);
             const sharedDomains = _.differenceWith(targetDomains, allDomains, (a, b) => {
                 return isSimilarHost(a, b);
@@ -91,9 +75,9 @@ class BlockManager {
             if (sharedDomains.length > 0 && blockLevel == 'ip') {
                 Block.unblock(ip, blockSet);
             }
-            ipBlcokInfo.ts = new Date() / 1000;
-            ipBlcokInfo.sharedDomains = sharedDomains;
-            await rclient.setAsync(key, JSON.stringify(ipBlcokInfo));
+            ipBlockInfo.ts = new Date() / 1000;
+            ipBlockInfo.sharedDomains = sharedDomains;
+            await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
         })
     }
     async updateIpBlockInfo(ip, domain, action, blockSet = 'blocked_domain_set') {
@@ -141,6 +125,25 @@ class BlockManager {
                     ipBlockInfo.ts = new Date() / 1000;
                     ipBlockInfo.blockLevel = 'domain';
                     await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+                }
+                break;
+            }
+            case 'newDomain': {
+                if (exist) {
+                    const { blockSet, targetDomains } = ipBlockInfo;
+                    const alreayExistInTargetDomains = _.find(targetDomains, (targetDomain) => {
+                        return isSimilarHost(targetDomain, domain);
+                    })
+                    if (!alreayExistInTargetDomains) {
+                        if (ipBlockInfo.blockLevel == 'ip') {
+                            log.info('ip block level change when new doamin comming', ip, domain)
+                            ipBlockInfo.blockLevel = 'domain';
+                            Block.unblock(ip, blockSet);
+                        }
+                        ipBlockInfo.sharedDomains.push(domain);
+                        ipBlockInfo.ts = new Date() / 1000;
+                        await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+                    }
                 }
                 break;
             }
