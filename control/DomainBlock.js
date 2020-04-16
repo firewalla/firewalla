@@ -102,6 +102,7 @@ class DomainBlock {
           const sharedDomains = _.differenceWith(ipBlockInfo.targetDomains, allDomains, (a, b) => {
             return isSimilarHost(a, b);
           });
+          log.info(`${domain}'s ip ${addr} shared with domains ${sharedDomains.join(',')}`)
           if (sharedDomains.length == 0) {
             ipBlockInfo.block_level = 'ip';
             await Block.block(addr, blockSet)
