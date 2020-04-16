@@ -492,9 +492,9 @@ module.exports = class DNSMASQ {
           // global effective policy
           const entries = [];
           if (options.action === "block")
-            entries.push(`address=${domain}/${BLACK_HOLE_IP}`);
+            entries.push(`address=/${domain}/${BLACK_HOLE_IP}`);
           else
-            entries.push(`server=${domain}/#`);
+            entries.push(`server=/${domain}/#`);
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.writeFileAsync(filePath, entries.join('\n'));
         }
