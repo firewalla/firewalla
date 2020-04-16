@@ -20,6 +20,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Block = require('./Block.js');
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 const { isSimilarHost } = require('../util/util');
 const _ = require('lodash');
 let instance = null
@@ -30,11 +32,6 @@ class BlockManager {
             instance = this;
             const refreshInterval = 15 * 60; // 15 mins
             sem.once('IPTABLES_READY', async () => {
-                sem.on('UPDATE_CATEGORY_DOMAIN', async (event) => {
-                    if (event.category) {
-                        await this.categoryUpdate(event.category);
-                    }
-                });
                 setTimeout(() => {
                     this.scheduleRefreshBlockLevel();
                 }, refreshInterval * 1000)
@@ -45,16 +42,26 @@ class BlockManager {
     ipBlockInfoKey(ip) {
         return `ip:block:info:${ip}`
     }
-    async categoryUpdate() {
-        // todo
-        // const PM2 = require('../alarm/PolicyManager2.js');
-        // const pm2 = new PM2();
-        // const policies = await pm2.loadActivePoliciesAsync();
-        // for (const policy of policies) {
-        //     if (policy.type == "category" && policy.target == event.category && policy.dnsmasq_entry) {
-        //         await pm2.tryPolicyEnforcement(policy, 'reenforce', policy)
-        //     }
-        // }
+    getCategoryIpMapping(category) {
+        return `rdns:category:${category}`
+    }
+    async getPureCategoryIps(category, categoryIps) {
+        const pureCategoryIps = [];
+        for (const categoryIp of categoryIps) {
+            let pure = true;
+            const domains = await dnsTool.getAllDns(categoryIp);
+            for (const domain of domains) {
+                const ips = await dnsTool.getIPsByDomain(domain);
+                for (const ip of ips) {
+                    const intel = await intelTool.getIntel(ip);
+                    pure = pure && intel && intel.category == category;
+                    if (!pure) break;
+                }
+                if (!pure) break;
+            }
+            if (pure) pureCategoryIps.push(categoryIp)
+        }
+        return pureCategoryIps;
     }
     async applyNewDomain(ip, domain) {
         await this.updateIpBlockInfo(ip, domain, 'newDomain')
@@ -77,6 +84,7 @@ class BlockManager {
             }
             ipBlockInfo.ts = new Date() / 1000;
             ipBlockInfo.sharedDomains = sharedDomains;
+            ipBlockInfo.allDomains = allDomains;
             await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
         })
     }
@@ -88,6 +96,7 @@ class BlockManager {
             ip: ip,
             targetDomains: [],
             sharedDomains: [],
+            allDomains: [],
             ts: new Date() / 1000
         }
         if (exist) {
@@ -110,6 +119,7 @@ class BlockManager {
                     ipBlockInfo.blockLevel = 'domain';
                 }
                 ipBlockInfo.sharedDomains = sharedDomains;
+                ipBlockInfo.allDomains = allDomains;
                 ipBlockInfo.ts = new Date() / 1000;
                 await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
                 break;
@@ -141,6 +151,7 @@ class BlockManager {
                             Block.unblock(ip, blockSet);
                         }
                         ipBlockInfo.sharedDomains.push(domain);
+                        ipBlockInfo.allDomains = await dnsTool.getAllDns(ip);
                         ipBlockInfo.ts = new Date() / 1000;
                         await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
                     }

@@ -303,13 +303,23 @@ class DestIPFoundHook extends Hook {
       await this.updateCategoryDomain(aggrIntelInfo);
       await this.updateCountryIP(aggrIntelInfo);
 
+      const oldIntel = await intelTool.getIntel(ip);
+      // when ip change the category should update old category ipset
+      // it is no pure category ip
+      if(oldIntel && oldIntel.category &&oldIntel.category !=  aggrIntelInfo.category){
+        sem.emitEvent({
+          type: "UPDATE_CATEGORY_DOMAIN",
+          category: oldIntel.category,
+          toProcess: "FireMain"
+        });
+      }
+
       // only set default action when cloud succeeded
       if(!aggrIntelInfo.action &&
         aggrIntelInfo.category !== 'intel' && // a special workaround here, only reset action when category is no longer intel
         !aggrIntelInfo.cloudFailed &&
         skipReadLocalCache
       ) {
-        const oldIntel = await intelTool.getIntel(ip);
         if(oldIntel.category === 'intel') {
           log.info("Reset local intel action since it's not intel categary anymore.");
           aggrIntelInfo.action = "none";

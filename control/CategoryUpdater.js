@@ -25,7 +25,8 @@ const dnsTool = new DNSTool()
 
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const domainBlock = require('../control/DomainBlock.js')();
-
+const BlockManager = require('../control/BlockManager.js');
+const blockManager = new BlockManager();
 const exec = require('child-process-promise').exec
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -285,6 +286,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
   getDomainMapping(domain) {
     return `rdns:domain:${domain}`
   }
+  getCategoryIpMapping(category) {
+    return `rdns:category:${category}`
+  }
 
   async getDomainMappingsByDomainPattern(domainPattern) {
     const keys = await rclient.keysAsync(this.getDomainMapping(domainPattern))
@@ -322,14 +326,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
 
     if (hasAny) {
-      let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      const categoryIps = await rclient.zrangeAsync(mapping,0,-1);
+      const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
+      let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      if(pureCategoryIps.length==0)return;
       await exec(cmd4).catch((err) => {
         log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
       })
       await exec(cmd6).catch((err) => {
         log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
       })
+      const categoryIpMappingKey = this.getCategoryIpMapping(category);
+      await rclient.saddAsync(categoryIpMappingKey, pureCategoryIps);
     }
 
   }
@@ -381,14 +390,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
 
     if (hasAny) {
-      let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+      const categoryFilterIps = await rclient.zrangeAsync(mapping,0,-1);
+      let cmd4 = `echo "${categoryFilterIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${categoryFilterIps.join('\n')}" | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
       await exec(cmd4).catch((err) => {
         log.error(`Failed to delete ipset by category ${category} domain ${domain}, err: ${err}`)
       })
       await exec(cmd6).catch((err) => {
         log.error(`Failed to delete ipset6 by category ${category} domain ${domain}, err: ${err}`)
       })
+      const categoryIpMappingKey = this.getCategoryIpMapping(category);
+      await rclient.sremAsync(categoryIpMappingKey,categoryFilterIps);
     }
   }
 
@@ -421,15 +433,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipsetName = this.getTempIPSetName(category)
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
-
-      let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+      const categoryFilterIps = await rclient.zrangeAsync(smappings,0,-1);
+      let cmd4 = `echo "${categoryFilterIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${categoryFilterIps.join('\n')}" | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
       try {
         await exec(cmd4);
         await exec(cmd6);
       } catch (err) {
         log.error(`Failed to filter ipset by category ${category} domain pattern ${domain}, err: ${err}`)
       }
+      const categoryIpMappingKey = this.getCategoryIpMapping(category);
+      await rclient.sremAsync(categoryIpMappingKey,categoryFilterIps);
     }
   }
 
@@ -464,15 +478,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipsetName = this.getTempIPSetName(category)
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
-
-      let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      const categoryIps = await rclient.zrangeAsync(smappings,0,-1);
+      const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
+      if(pureCategoryIps.length==0)return;
+      let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
       try {
         await exec(cmd4)
         await exec(cmd6)
       } catch (err) {
         log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
       }
+      const categoryIpMappingKey = this.getCategoryIpMapping(category);
+      await rclient.saddAsync(categoryIpMappingKey,pureCategoryIps);
     }
   }
 
@@ -510,7 +528,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     await this.swapIpset(category);
-
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
