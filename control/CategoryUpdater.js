@@ -274,7 +274,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     this.addUpdateIPSetByDomainTask(category, d);
     this.addFilterIPSetByDomainTask(category);
     if (!dynamicCategoryDomainExists && !defaultDomainExists) {
-      domainBlock.updateCategoryBlock(category);
+      sem.emitEvent({
+        type: "UPDATE_CATEGORY_DOMAIN",
+        category: category,
+        toProcess: "FireMain"
+      });
     }
   }
 
