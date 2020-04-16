@@ -24,7 +24,6 @@ const dnsmasq = new DNSMASQ();
 const featureName = 'local_domain';
 const f = require('../net2/Firewalla.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
-const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
 const ADDN_HOSTS_CONF = FILTER_DIR + "/addn_hosts.conf";
 const ADDN_HOSTS_FILE = f.getRuntimeInfoFolder() + "/dnsmasq_addn_hosts";
 const util = require('util');
@@ -76,14 +75,13 @@ class LocalDomainSensor extends Sensor {
     }
     async globalOff() {
         try {
-            await unlinkAsync(LOCAL_DOMAIN_FILE);
             await unlinkAsync(ADDN_HOSTS_CONF);
             dnsmasq.scheduleRestartDNSService();
         } catch (err) {
             if (err.code === 'ENOENT') {
-                log.info(`Dnsmasq: No ${LOCAL_DOMAIN_FILE}, skip remove`);
+                log.info(`Dnsmasq: No ${ADDN_HOSTS_CONF}, skip remove`);
             } else {
-                log.warn(`Dnsmasq: Error when remove ${LOCAL_DOMAIN_FILE}`, err);
+                log.warn(`Dnsmasq: Error when remove ${ADDN_HOSTS_CONF}`, err);
             }
         }
     }
