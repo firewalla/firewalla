@@ -522,8 +522,8 @@ module.exports = class DNSMASQ {
     const allowEntries = [];
     try {
       for (const domain of domains) {
-        blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}${category}_block`);
-        allowEntries.push(`server=/${domain}/#${category}_allow`);
+        blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
+        allowEntries.push(`server=/${domain}/#$${category}_allow`);
       }
       await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
       await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
@@ -639,24 +639,21 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
-    const fileExists = await fs.accessAsync(categoryBlockMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
-    if (!fileExists) return;
+    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
+    const blockEntries = [];
+    const allowEntries = [];
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    let entry = "";
     for (const domain of domains) {
-      entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
+      blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
+      allowEntries.push(`server=/${domain}/#$${category}_allow`);
     }
     try {
-      await fs.writeFileAsync(categoryBlockDomainsFile, entry);
-      //check dnsmasq need restart or not
-      const data = await fs.readFileAsync(categoryBlockMacSetFile, 'utf8');
-      if (data.indexOf(`$${category}_block`) > -1)
-        this.scheduleRestartDNSService();
+      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
+      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
     } catch (err) {
       log.error("Failed to update category entry into file:", err);
     } finally {
@@ -1562,8 +1559,8 @@ module.exports = class DNSMASQ {
 
       const files = await fs.readdirAsync(dir);
       await Promise.all(files.map(async (filename) => {
+        const filePath = `${dir}/${filename}`;
         try {
-          const filePath = `${dir}/${filename}`;
           const fileStat = await fs.statAsync(filePath);
           if (fileStat.isFile()) {
             let match = false;
