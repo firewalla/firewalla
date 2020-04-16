@@ -143,8 +143,7 @@ class Policy {
       this.localPort === policy.localPort &&
       this.protocol === policy.protocol &&
       this.direction === policy.direction &&
-      this.proto === policy.proto &&
-      this.whitelist === this.whitelist
+      this.action === this.action
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {

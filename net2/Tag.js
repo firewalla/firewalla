@@ -165,12 +165,6 @@ class Tag {
 
   async createEnv() {
     await Tag.ensureCreateEnforcementEnv(this.o.uid);
-
-    // tag dnsmasq entry can be referred by domain blocking rules
-    const dnsmasqEntry = `group-tag=@${this.o.uid}$tag_${this.o.uid}`;
-    await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_${this.o.uid}.conf`, dnsmasqEntry).catch((err) => {
-      log.error(`Failed to create dnsmasq entry for tag ${this.o.uid}`, err.message);
-    });
   }
 
   async destroyEnv() {
