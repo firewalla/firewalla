@@ -40,7 +40,7 @@ function getSetupModeSync() {
   return _setupMode
 }
 
-function getSetupMode() {
+async function getSetupMode() {
   if(_setupMode) {
     return Promise.resolve(_setupMode);
   }
@@ -48,7 +48,7 @@ function getSetupMode() {
   return reloadSetupMode();
 }
 
-function reloadSetupMode() {
+async function reloadSetupMode() {
   return rclient.getAsync(REDIS_KEY_MODE)
     .then((mode) => {
       if(mode) {
@@ -128,7 +128,7 @@ function isNoneModeOn() {
   return isXModeOn(MODE_NONE)
 }
 
-function isXModeOn(x) {
+async function isXModeOn(x) {
   if(_setupMode && _setupMode === x) {
     return Promise.resolve(true);
   }
