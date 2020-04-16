@@ -95,7 +95,7 @@ let upstreamDNS = null;
 
 const FILTER_EXPIRE_TIME = 86400 * 1000;
 
-const BLACK_HOLE_IP = "0.0.0.0"
+const BLACK_HOLE_IP = "" // return NXDOMAIN for blocked domains
 const BLUE_HOLE_IP = "198.51.100.100"
 
 const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
