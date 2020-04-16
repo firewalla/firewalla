@@ -47,13 +47,7 @@ const _ = require('lodash');
 class DomainBlock {
 
   constructor() {
-    sem.once('IPTABLES_READY', async () => {
-      sem.on('UPDATE_CATEGORY_DOMAIN', async (event) => {
-        if (event.category) {
-          await this.updateCategoryBlock(event.category);
-        }
-      })
-    })
+
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
