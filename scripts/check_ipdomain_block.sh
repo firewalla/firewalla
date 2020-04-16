@@ -136,6 +136,7 @@ function check_ip {
       rule_id=$(echo $setName | sed 's/.*_\([0-9]\+\)_.*/\1/')
       rule_category=$(echo $setName | sed 's/c_bd_\([a-zA-Z_]\+\)_set/\1/')
       rule_country=$(echo $setName | sed 's/c_bd_country:\([a-zA-Z]\+\)_set/\1/')
+      block_set=$(echo $setName | egrep -o "^block[^ ]*(_ip_set|_net_set|_domain_set)$")
       if [[ $rule_id != $setName ]]; then
         if echo $REDISRULES | grep "policy:$rule_id" &>/dev/null; then
           policy_ret=1
@@ -150,7 +151,7 @@ function check_ip {
             ip_ret=0
           fi
         fi
-      elif [[ "$setName" == "blocked_ip_set" || "$setName" == "blocked_domain_set" || "$setName" == "blocked_net_set" ]]; then
+      elif [[ -n $block_set ]]; then
         check_redis_rule $setName $1 $1 $2
         if [[ $? -eq 0 ]]; then
           ip_ret=0

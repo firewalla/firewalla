@@ -2746,8 +2746,7 @@ class netBot extends ControllerBot {
             return;
           }
 
-          let data = {};
-          data.polices = await pm2.searchPolicy(resultCheck.waitSearch, resultCheck.isDomain);
+          let data = await pm2.searchPolicy(resultCheck.waitSearch, resultCheck.isDomain, value.target);
           data.exceptions = await em.searchException(value.target);
           if (resultCheck.isDomain) {
             data.dnsmasqs = await dnsmasq.searchDnsmasq(value.target);

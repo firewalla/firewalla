@@ -95,7 +95,7 @@ let upstreamDNS = null;
 
 const FILTER_EXPIRE_TIME = 86400 * 1000;
 
-const BLACK_HOLE_IP = "0.0.0.0"
+const BLACK_HOLE_IP = "" // return NXDOMAIN for blocked domains
 const BLUE_HOLE_IP = "198.51.100.100"
 
 const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
@@ -447,37 +447,58 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      let entry = "";
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
           if (!_.isEmpty(options.scope)) {
+            // use single config file for all devices configuration
+            const entries = [];
             for (const mac of options.scope) {
-              entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
+              entries.push(`mac-address-tag=%${mac}$policy_${options.pid}`);
+              if (options.action === "block")
+                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              else
+                entries.push(`server=/${domain}/#$policy_${options.pid}`);
             }
-          } 
+            const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
+          }
           
           if (!_.isEmpty(options.intfs)) {
-            let intfsEntry = `address=/${domain}/${BLACK_HOLE_IP}\n`;
-            for (const intf in options.intfs) {
-              const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-              await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
+            const NetworkProfile = require('../../net2/NetworkProfile.js');
+            // use separate config file for each network configuration
+            for (const intf of options.intfs) {
+              const entries = [`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}`];
+              if (options.action === "block")
+                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              else
+                entries.push(`server=/${domain}/#$policy_${options.pid}`);
+              const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`; 
+              await fs.writeFileAsync(filePath, entries.join('\n'));
             }
           } 
           
           if (!_.isEmpty(options.tags)) {
+            // use separate config file for each tag configuration
             for (const tag of options.tags) {
-              let tagsEntry = `group-tag=@${tag}$policy_${options.pid}\naddress=/${domain}/$policy_${options.pid}\n`;
-              const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-              await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+              const entries = [`group-tag=@${tag}$policy_${options.pid}`];
+              if (options.action === "block")
+                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              else
+                entries.push(`server=/${domain}/#$policy_${options.pid}`);
+              const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+              await fs.writeFileAsync(filePath, entries.join('\n'));
             }
           }
         } else {
-          entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
+          // global effective policy
+          const entries = [];
+          if (options.action === "block")
+            entries.push(`address=${domain}/${BLACK_HOLE_IP}`);
+          else
+            entries.push(`server=${domain}/#`);
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.writeFileAsync(filePath, entries.join('\n'));
         }
-      }
-    
-      if (!_.isEmpty(entry)) {
-        await fs.appendFileAsync(policyFilterFile, entry);
       }
     } catch (err) {
       log.error("Failed to add policy filter entry into file:", err);
@@ -496,41 +517,66 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
+    const blockEntries = [];
+    const allowEntries = [];
     try {
-      let entry = "", macSetEntry = "";
       for (const domain of domains) {
-        entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
+        blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}${category}_block`);
+        allowEntries.push(`server=/${domain}/#${category}_allow`);
       }
+      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
+      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
 
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
         if (options.scope && options.scope.length > 0) {
+          // use single config for all devices configuration
+          const entries = [];
           for (const mac of options.scope) {
-            macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
+            if (options.action === "block")
+              entries.push(`mac-address-tag=%${mac}$${category}_block`);
+            else
+              entries.push(`mac-address-tag=%${mac}$${category}_allow`);
           }
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.writeFileAsync(filePath, entries.join('\n'));
         } 
         
         if (!_.isEmpty(options.intfs)) {
-          let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}_block\n`;
-          for (const intf in options.intfs) {
-            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-            await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
+          const NetworkProfile = require('../../net2/NetworkProfile.js');
+          // use separate config file for each network configuration
+          for (const intf of options.intfs) {
+            const entries = [];
+            if (options.action === "block")
+              entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_block`);
+            else
+              entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_allow`);
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         } 
         
         if (!_.isEmpty(options.tags)) {
+          // use separate config file for each tag configuration
           for (const tag of options.tags) {
-            let tagsEntry = `group-tag=@${tag}$${category}_block\n`;
-            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-            await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+            const entries = [];
+            if (options.action === "block")
+              entries.push(`group-tag=@${tag}$${category}_block`);
+            else
+              entries.push(`group-tag=@${tag}$${category}_allow`);
+            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         }
       } else {
-        macSetEntry = `mac-address-tag=%${systemLevelMac}$${category}_block\n`;
-      }
-      await fs.writeFileAsync(categoryBlockDomainsFile, entry);
-      if (!_.isEmpty(macSetEntry)) {
-        await fs.appendFileAsync(categoryBlockMacSetFile, macSetEntry);
+        // global effective policy
+        const entries = [];
+        if (options.action === "block")
+          entries.push(`mac-address-tag=%${systemLevelMac}$${category}_block`);
+        else
+          entries.push(`mac-address-tag=%${systemLevelMac}$${category}_allow`);
+        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        await fs.writeFileAsync(filePath, entries.join('\n'));
       }
     } catch (err) {
       log.error("Failed to add category mac set entry into file:", err);
@@ -548,49 +594,41 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     try {
       options = options || {};
-      const category = options.category;
-      const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
-      let macSetEntry = [];
     
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
         if (options.scope && options.scope.length > 0) {
-          for (const mac of options.scope) {
-            macSetEntry.push(`mac-address-tag=%${mac.toUpperCase()}$${category}_block`)
-          }
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.unlinkAsync(filePath).catch((err) => {
+            log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+          });
         } 
         
         if (!_.isEmpty(options.intfs)) {
-          // let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}_block\n`;
-          for (const intf in options.intfs) {
-            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-            try {
-              await fs.unlinkAsync(intfPolicyFilterFile);
-            } catch (error) { }
+          const NetworkProfile = require('../../net2/NetworkProfile.js');
+          for (const intf of options.intfs) {
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
           }
         } 
         
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
-            // let tagsEntry = `group-tag=@${tag}$${category}_block\n`;
-            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-            try {
-              await fs.unlinkAsync(tagPolicyFilterFile);
-            } catch (error) { }
+            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
           }
         }
       } else {
-        macSetEntry.push(`mac-address-tag=%${systemLevelMac}$${category}_block`)
-      }
-    
-      if (!_.isEmpty(macSetEntry)) {
-        let data = await fs.readFileAsync(categoryBlockMacSetFile, 'utf8');
-        let newData = data.split("\n").filter((line) => {
-          return macSetEntry.indexOf(line) == -1
-        }).join("\n");
-        await fs.writeFileAsync(categoryBlockMacSetFile, newData);
+        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        await fs.unlinkAsync(filePath).catch((err) => {
+          log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+        });
       }
     } catch (err) {
-      log.error("Failed to update category mac set entry file:", err);
+      log.error("Failed to remove policy config file:", err);
     } finally {
       this.workingInProgress = false;
     }
@@ -635,47 +673,41 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      let entry = [];
-      for (const domain of domains) {
-        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
-          if (!_.isEmpty(options.scope)) {
-            for (const mac of options.scope) {
-              entry.push(`address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}`)
-            }
-          } 
-          
-          if (!_.isEmpty(options.tags)) {
-            for (const tag of options.tags) {
-              const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-              try {
-                await fs.unlinkAsync(tagPolicyFilterFile);
-              } catch (error) {}
-            }
-          } 
-          
-          if (!_.isEmpty(options.intfs)) {
-            // let intfsEntry = `address=/${domain}/0.0.0.0\n`;
-            for (const intf in options.intfs) {
-              const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-              try {
-                await fs.unlinkAsync(intfPolicyFilterFile);
-              } catch (error) {}
-            } 
-          }
-        } else {
-          entry.push(`address=/${domain}/${BLACK_HOLE_IP}`);
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+        if (!_.isEmpty(options.scope)) {
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.unlinkAsync(filePath).catch((err) => {
+            log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+          });
         }
-      }
-    
-      if (!_.isEmpty(entry)) {
-        let data = await fs.readFileAsync(policyFilterFile, 'utf8');
-        let newData = data.split("\n").filter((line) => {
-          return entry.indexOf(line) == -1
-        }).join("\n");
-        await fs.writeFileAsync(policyFilterFile, newData);
+
+        if (!_.isEmpty(options.intfs)) {
+          const NetworkProfile = require('../../net2/NetworkProfile.js');
+          for (const intf of options.intfs) {
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
+          }
+        }
+
+        if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
+          }
+        }
+      } else {
+        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        await fs.unlinkAsync(filePath).catch((err) => {
+          log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+        });
+
       }
     } catch (err) {
-      log.error("Failed to write policy data file:", err);
+      log.error("Failed to remove policy config file:", err);
     } finally {
       this.workingInProgress = false; // make sure the flag is reset back
     }

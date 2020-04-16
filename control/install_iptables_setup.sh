@@ -529,7 +529,7 @@ if [[ -e /sbin/ip6tables ]]; then
   # initialize nat firewall chain
   sudo ip6tables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
   sudo ip6tables -w -t nat -F FW_NAT_FIREWALL
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_FIREWALL || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_FIREWALL
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_FIREWALL || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_FIREWALL
   # device block/allow chains
   sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_DEV_ALLOW &> /dev/null
   sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_DEV_ALLOW

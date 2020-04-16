@@ -508,7 +508,7 @@ class NetworkProfile {
         }).catch((err) => {
           log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetSetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
+        await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.uuid}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
@@ -529,7 +529,7 @@ class NetworkProfile {
           log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetSetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
-        await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
+        await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.uuid}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
         })
         updatedTags.push(uid);
