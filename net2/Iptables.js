@@ -484,6 +484,7 @@ class Rule {
     this.family = 4;
     this.table = table;
     this.match = [];
+    this.modules = [];
     this.params = null;
     this.cmt = null;
   }
@@ -496,10 +497,14 @@ class Rule {
     this.match.push({ name, spec, type, positive })
     return this
   }
+  mdl(module, expr) {
+    this.modules.push({module, expr});
+    return this;
+  }
   jmp(j) { this.jump = j; return this }
 
   pam(p) { this.params = p; return this }
-  comment(c) { this.cmt = c; return this;}
+  comment(c) { return this.mdl("comment", `--comment ${c}`)}
 
   clone() {
     return Object.assign(Object.create(Rule.prototype), this)
@@ -519,6 +524,10 @@ class Rule {
     ]
 
     this.proto && cmd.push('-p', this.proto)
+
+    this.modules.forEach((m) => {
+      cmd.push(`-m ${m.module} ${m.expr}`);
+    });
 
     this.match.forEach((match) => {
       switch(match.type) {

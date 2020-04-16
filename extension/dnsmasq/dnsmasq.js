@@ -888,8 +888,8 @@ module.exports = class DNSMASQ {
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const netSet = NetworkProfile.getNetIpsetName(uuid);
       const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(netSet, "src,src", "set")
-        .mth(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, "src,src", "set", false)
+        .mdl("set", `--match-set ${netSet} src,src`)
+        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
       const redirectUDP = redirectTCP.clone().pro('udp')
@@ -916,8 +916,8 @@ module.exports = class DNSMASQ {
       const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
       const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
       const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(netSet, "src,src", "set")
-        .mth(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, "src,src", "set", false)
+        .mdl("set", `--match-set ${netSet} src,src`)
+        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
       const redirectUDP = redirectTCP.clone().pro('udp');
