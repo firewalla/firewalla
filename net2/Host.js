@@ -675,8 +675,7 @@ class Host {
       } else if (type === "Intel:Detected") {
         // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && f.isMain()) {
-        this.applyPolicy((err)=>{
-        });
+        this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
         // update tracking ipset
@@ -701,6 +700,14 @@ class Host {
       }
     });
   }
+
+  scheduleApplyPolicy() {
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
+    this.applyPolicyTask = setTimeout(() => {
+      this.applyPolicy();
+    }, 3000);
+  }  
 
   async applyPolicyAsync() {
     await this.loadPolicyAsync()
@@ -1101,9 +1108,7 @@ class Host {
     const obj = {};
     obj[name] = data;
     if (this.subscriber) {
-      setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
-      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+      this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
     }
     return obj
   }
