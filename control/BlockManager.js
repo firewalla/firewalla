@@ -73,7 +73,7 @@ class BlockManager {
             let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
             const { targetDomains, ip, blockLevel, blockSet } = ipBlockInfo;
             const allDomains = await dnsTool.getAllDns(ip);
-            const sharedDomains = _.differenceWith(targetDomains, allDomains, (a, b) => {
+            const sharedDomains = _.differenceWith(allDomains, targetDomains, (a, b) => {
                 return isSimilarHost(a, b);
             });
             if (sharedDomains.length == 0 && blockLevel == 'domain') {
@@ -109,7 +109,7 @@ class BlockManager {
                 // if both block, should update to ip level
                 ipBlockInfo.targetDomains.push(domain);
                 const allDomains = await dnsTool.getAllDns(ip);
-                const sharedDomains = _.differenceWith(ipBlockInfo.targetDomains, allDomains, (a, b) => {
+                const sharedDomains = _.differenceWith(allDomains, ipBlockInfo.targetDomains, (a, b) => {
                     return isSimilarHost(a, b);
                 });
                 sharedDomains.length > 0 && log.info(`${ipBlockInfo.targetDomains.join(',')} ip ${ip} shared with domains ${sharedDomains.join(',')}`)
