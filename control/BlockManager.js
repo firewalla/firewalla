@@ -112,7 +112,7 @@ class BlockManager {
                 const sharedDomains = _.differenceWith(ipBlockInfo.targetDomains, allDomains, (a, b) => {
                     return isSimilarHost(a, b);
                 });
-                log.info(`${domain}'s ip ${ip} shared with domains ${sharedDomains.join(',')}`)
+                sharedDomains.length > 0 && log.info(`${ipBlockInfo.targetDomains.join(',')} ip ${ip} shared with domains ${sharedDomains.join(',')}`)
                 if (sharedDomains.length == 0) {
                     ipBlockInfo.blockLevel = 'ip';
                 } else {
