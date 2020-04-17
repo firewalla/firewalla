@@ -317,8 +317,8 @@ class FWInvitation {
 
     txtfield.model = platform.getName();
 
-    this.displayLicense(this.symmetrickey.license)
-    this.displayKey(this.symmetrickey.userkey);
+//    this.displayLicense(this.symmetrickey.license)
+//    this.displayKey(this.symmetrickey.userkey);
     //    this.displayInvite(obj); // no need to display invite in firewalla any more
 
     network.get_private_ip((err, ip) => {
@@ -336,7 +336,7 @@ class FWInvitation {
       log.info("TXT:", txtfield);
       const serial = platform.getBoardSerial();
       this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
-      this.displayBonjourMessage(txtfield);
+//      this.displayBonjourMessage(txtfield);
       this.storeBonjourMessage(txtfield);
     });
 
