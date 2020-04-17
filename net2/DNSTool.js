@@ -30,9 +30,6 @@ let instance = null;
 const DomainUpdater = require('../control/DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 
-const BlockManager = require('../control/BlockManager.js');
-const blockManager = new BlockManager();
-
 class DNSTool {
 
   constructor() {
@@ -120,6 +117,8 @@ class DNSTool {
     const now = Math.ceil(Date.now() / 1000);
     await rclient.zaddAsync(key, now, domain);
     await rclient.expireAsync(key, expire);
+    const BlockManager = require('../control/BlockManager.js');
+    const blockManager = new BlockManager();
     blockManager.applyNewDomain(ip, domain);
   }
 
