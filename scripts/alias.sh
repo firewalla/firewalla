@@ -78,3 +78,22 @@ function mycatip () {
 }
 
 alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi/firewalla/scripts/main-run'
+
+function ggsupport {
+  SUPPORT_TOKEN=$1
+  PORT=$2
+
+echo "[common]
+server_addr = support.firewalla.com
+server_port = 10000
+privilege_token = $SUPPORT_TOKEN
+
+[SSH$PORT]
+type = tcp
+local_ip = 127.0.0.1
+local_port = 22
+remote_port = $PORT
+use_encryption = true" > ~/support.ini
+
+/home/pi/firewalla/extension/frp/frpc.$(uname -m) -c ~/support.ini
+}
