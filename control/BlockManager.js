@@ -22,7 +22,6 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
-const { isSimilarHost } = require('../util/util');
 const _ = require('lodash');
 let instance = null
 
@@ -46,20 +45,31 @@ class BlockManager {
         return `rdns:category:${category}`
     }
     async getPureCategoryIps(category, categoryIps) {
-        const pureCategoryIps = [];
-        for (const categoryIp of categoryIps) {
-            let pure = true;
-            const domains = await dnsTool.getAllDns(categoryIp);
-            for (const domain of domains) {
-                const ips = await dnsTool.getIPsByDomain(domain);
-                for (const ip of ips) {
-                    const intel = await intelTool.getIntel(ip);
-                    pure = pure && intel && intel.category == category;
+        const pureCategoryIps = [], mixupCategoryIps = [];
+        try {
+            const now = new Date();
+            log.info(`jack test start to check pure ${category},categoryIps length ${categoryIps.length}`);
+            for (const categoryIp of categoryIps) {
+                let pure = true;
+                const domains = await dnsTool.getAllDns(categoryIp);
+                for (const domain of domains) {
+                    const ips = await dnsTool.getIPsByDomain(domain);
+                    for (const ip of ips) {
+                        const intel = await intelTool.getIntel(ip);
+                        pure = pure && intel && intel.category == category;
+                        if (!pure) break;
+                    }
                     if (!pure) break;
                 }
-                if (!pure) break;
+                pure ? pureCategoryIps.push(categoryIp) : mixupCategoryIps.push(categoryIp);
             }
-            if (pure) pureCategoryIps.push(categoryIp)
+            const categoryIpMappingKey = this.getCategoryIpMapping(category);
+            mixupCategoryIps.length > 0 && await rclient.sremAsync(categoryIpMappingKey, mixupCategoryIps);
+            pureCategoryIps.length > 0 && await rclient.saddAsync(categoryIpMappingKey, pureCategoryIps);
+            log.info(`jack test category ${category} pure ips ${pureCategoryIps}, mixup ips ${mixupCategoryIps}`);
+            log.info(`jack test start to check pure ${category} during ${new Date() - now} ms`);
+        } catch (e) {
+            log.info("jack test check failed", e)
         }
         return pureCategoryIps;
     }
@@ -74,7 +84,7 @@ class BlockManager {
             const { targetDomains, ip, blockLevel, blockSet } = ipBlockInfo;
             const allDomains = await dnsTool.getAllDns(ip);
             const sharedDomains = _.differenceWith(allDomains, targetDomains, (a, b) => {
-                return isSimilarHost(a, b);
+                return this.domainCovered(b, a);
             });
             if (sharedDomains.length == 0 && blockLevel == 'domain') {
                 Block.block(ip, blockSet)
@@ -110,7 +120,7 @@ class BlockManager {
                 ipBlockInfo.targetDomains.push(domain);
                 const allDomains = await dnsTool.getAllDns(ip);
                 const sharedDomains = _.differenceWith(allDomains, ipBlockInfo.targetDomains, (a, b) => {
-                    return isSimilarHost(a, b);
+                    return this.domainCovered(b, a);
                 });
                 sharedDomains.length > 0 && log.info(`${ipBlockInfo.targetDomains.join(',')} ip ${ip} shared with domains ${sharedDomains.join(',')}`)
                 if (sharedDomains.length == 0) {
@@ -140,9 +150,10 @@ class BlockManager {
             }
             case 'newDomain': {
                 if (exist) {
+                    // it is old ip and new domain
                     const { blockSet, targetDomains } = ipBlockInfo;
                     const alreayExistInTargetDomains = _.find(targetDomains, (targetDomain) => {
-                        return isSimilarHost(targetDomain, domain);
+                        return this.domainCovered(targetDomain, domain);
                     })
                     if (!alreayExistInTargetDomains) {
                         if (ipBlockInfo.blockLevel == 'ip') {
@@ -160,6 +171,19 @@ class BlockManager {
             }
         }
         return ipBlockInfo;
+    }
+    domainCovered(blockDomain, otherDomain) {
+        // a.b.com covred x.a.b.com
+        if (!otherDomain) return true;
+        if (blockDomain.startsWith('*.')) blockDomain = blockDomain.substring(2)
+        if (otherDomain.startsWith('*.')) otherDomain = otherDomain.substring(2)
+        const h1Sections = blockDomain.split('.').reverse();
+        const h2Sections = otherDomain.split('.').reverse();
+        for (let i = 0; i < h1Sections.length; i++) {
+            if (h1Sections[i] !== h2Sections[i])
+                return false;
+        }
+        return true;
     }
 }
 

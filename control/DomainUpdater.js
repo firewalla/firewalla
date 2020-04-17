@@ -71,8 +71,14 @@ class DomainUpdater {
             let blockSet = "blocked_domain_set";
             if (options.blockSet)
               blockSet = options.blockSet;
-            if (!options.ignoreApplyBlock)
-              await Block.block(address, blockSet);
+            if (!options.ignoreApplyBlock){
+              const BlockManager = require('./BlockManager.js');
+              const blockManager = new BlockManager();
+              const ipBlockInfo = await blockManager.updateIpBlockInfo(address, config.domain, 'block', blockSet);
+              if (ipBlockInfo.blockLevel == 'ip') {
+                await Block.block(address, blockSet)
+              }
+            }
           }
         }
       }

@@ -304,7 +304,7 @@ class DestIPFoundHook extends Hook {
       await this.updateCountryIP(aggrIntelInfo);
 
       const oldIntel = await intelTool.getIntel(ip);
-      // when ip change the category should update old category ipset
+      // when ip category changed should update old category ipset
       // it is no pure category ip
       if(oldIntel && oldIntel.category &&oldIntel.category !=  aggrIntelInfo.category){
         sem.emitEvent({

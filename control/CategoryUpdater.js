@@ -334,8 +334,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await exec(cmd6).catch((err) => {
       log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
     })
-    const categoryIpMappingKey = this.getCategoryIpMapping(category);
-    await rclient.saddAsync(categoryIpMappingKey, pureCategoryIps);
 
   }
 
@@ -484,8 +482,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
       } catch (err) {
         log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
       }
-      const categoryIpMappingKey = this.getCategoryIpMapping(category);
-      await rclient.saddAsync(categoryIpMappingKey,pureCategoryIps);
     }
   }
 

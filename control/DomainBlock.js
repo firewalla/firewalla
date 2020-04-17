@@ -38,7 +38,6 @@ const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
-const { isSimilarHost } = require('../util/util');
 
 const BlockManager = require('../control/BlockManager.js');
 const blockManager = new BlockManager();
