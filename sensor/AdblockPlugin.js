@@ -74,6 +74,10 @@ class AdblockPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
+                    if (fc.isFeatureOn("adblock", true)) {//compatibility: new firewlla, old app
+                        await fc.enableDynamicFeature("adblock");
+                        return;
+                    }
                 } else {
                     this.systemSwitch = false;
                 }
