@@ -237,52 +237,6 @@ module.exports = class {
   }
 
   async whitelist(host, config) {
-    if (host.constructor.name == 'HostManager') {
-      if (iptablesReady)
-        return Block.setupGlobalLockDown(config.state);
-      else
-        // wait until basic ipables are all set
-        return new Promise((resolve, reject) => {
-          sem.once('IPTABLES_READY', () => {
-            Block.setupGlobalLockDown(config.state)
-              .then(resolve).catch(reject)
-          })
-        })
-    }
-
-    if (host.constructor.name === "Tag") {
-      if (iptablesReady)
-        return Block.setupTagLockDown(config.state, host.o && host.o.uid);
-      else {
-        // wait until basic iptables are all set
-        return new Promise((resolve, reject) => {
-          sem.once('IPTABLES_READY', () => {
-            Block.setupTagLockDown(config.state, host.o && host.o.uid)
-              .then(resolve).catch(reject);
-          });
-        })
-      }
-    }
-
-    if (host.constructor.name == "NetworkProfile") {
-      if (iptablesReady) {
-        return Block.setupNetworkLockDown(config.state, host.o && host.o.uuid);
-      } else {
-        return new Promise((resolve, reject) => {
-          sem.once('IPTABLES_READY', () => {
-            Block.setupNetworkLockDown(config.state, host.o && host.o.uuid)
-              .then(resolve).catch(reject);
-          })
-        });
-      }
-    }
-
-    if (!host.o.mac) throw new Error('Invalid host MAC');
-
-    if (config.state)
-      return Block.addMacToSet([host.o.mac], 'device_whitelist_set')
-    else
-      return Block.delMacFromSet([host.o.mac], 'device_whitelist_set')
   }
 
   shadowsocks(host, config) {

@@ -41,6 +41,8 @@ const instances = {}; // this instances cache can ensure that NetworkProfile obj
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
 
+const envCreatedMap = {};
+
 class NetworkProfile {
   constructor(o) {
     if (!instances[o.uuid]) {
@@ -71,9 +73,9 @@ class NetworkProfile {
   }
 
   scheduleApplyPolicy() {
-    if (this.reapplyTask)
-      clearTimeout(this.reapplyTask);
-    this.reapplyTask = setTimeout(() => {
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
+    this.applyPolicyTask = setTimeout(() => {
       this.applyPolicy();
     }, 3000);
   }
@@ -105,9 +107,7 @@ class NetworkProfile {
     this._policy[name] = data;
     await this.savePolicy();
     if (this.subscriber) {
-      setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, {name, data});
-      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+      this.subscriber.publish("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, {name, data});
     }
   }
 
@@ -250,23 +250,6 @@ class NetworkProfile {
   }
 
   async shield(policy) {
-    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(NetworkProfile.getNetIpsetName(this.o.uuid), "dst,dst", "set", true).mth(NetworkProfile.getNetIpsetName(this.o.uuid), "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
-    const rule6 = new Rule().fam(6).chn('FW_FIREWALL_SELECTOR').mth(NetworkProfile.getNetIpsetName(this.o.uuid, 6), "dst,dst", "set", true).mth(NetworkProfile.getNetIpsetName(this.o.uuid, 6), "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
-    if (policy.state === true) {
-      await exec(rule.toCmd('-A')).catch((err) => {
-        log.error(`Failed to enable IPv4 inbound firewall for ${this.o.intf}`, err.message);
-      });
-      await exec(rule6.toCmd('-A')).catch((err) => {
-        log.error(`Failed to enable IPv6 inbound firewall for ${this.o.intf}`, err.message);
-      });
-    } else {
-      await exec(rule.toCmd('-D')).catch((err) => {
-        log.error(`Failed to disable IPv4 inbound firewall for ${this.o.intf}`, err.message);
-      });
-      await exec(rule6.toCmd('-D')).catch((err) => {
-        log.error(`Failed to disable IPv6 inbound firewall for ${this.o.intf}`, err.message);
-      });
-    }
   }
 
   // underscore prefix? follow same function name in Host.js :(
@@ -325,6 +308,8 @@ class NetworkProfile {
   // In case the network doesn't exist at the time when policy is enforced, but may be restored from config history in future.
   // Thereby, the rule can still be applied and take effect once the network is restored
   static async ensureCreateEnforcementEnv(uuid) {
+    if (envCreatedMap[uuid])
+      return;
     const netIpsetName = NetworkProfile.getNetIpsetName(uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(uuid, 6);
     if (!netIpsetName || !netIpsetName6) {
@@ -356,6 +341,7 @@ class NetworkProfile {
         log.error(`Failed to create dnsmasq config directory for ${uuid}`);
       });
     }
+    envCreatedMap[uuid] = 1;
   }
 
   async createEnv() {
@@ -510,17 +496,17 @@ class NetworkProfile {
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {
-        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName}`).then(() => {
-          return exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${netIpsetName6}`);
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName6}`);
         }).catch((err) => {
-          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagSetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        await exec(`sudo ipset del -! ${Tag.getTagNetIpsetName(removedTag)} ${netIpsetName}`).then(() => {
-          return exec(`sudo ipset del -! ${Tag.getTagNetIpsetName(removedTag)} ${netIpsetName6}`);
+        await exec(`sudo ipset del -! ${Tag.getTagNetSetName(removedTag)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset del -! ${Tag.getTagNetSetName(removedTag)} ${netIpsetName6}`);
         }).catch((err) => {
-          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetIpsetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to remove ${netIpsetName}(6) from ${Tag.getTagNetSetName(removedTag)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.intf}.conf`).catch((err) => {});
+        await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.uuid}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
@@ -530,18 +516,18 @@ class NetworkProfile {
     for (let uid of tags) {
       const tag = TagManager.getTagByUid(uid);
       if (tag) {
-        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName}`).then(() => {
-          return exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${netIpsetName6}`);
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName6}`);
         }).catch((err) => {
-          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagSetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
-        await exec(`sudo ipset add -! ${Tag.getTagNetIpsetName(uid)} ${netIpsetName}`).then(() => {
-          return exec(`sudo ipset add -! ${Tag.getTagNetIpsetName(uid)} ${netIpsetName6}`);
+        await exec(`sudo ipset add -! ${Tag.getTagNetSetName(uid)} ${netIpsetName}`).then(() => {
+          return exec(`sudo ipset add -! ${Tag.getTagNetSetName(uid)} ${netIpsetName6}`);
         }).catch((err) => {
-          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetIpsetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetSetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
-        await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.intf}.conf`, dnsmasqEntry).catch((err) => {
+        await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.uuid}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
         })
         updatedTags.push(uid);

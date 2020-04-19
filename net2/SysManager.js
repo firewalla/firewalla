@@ -564,6 +564,7 @@ class SysManager {
   }
 
   isMyIP(ip) {
+    if (!ip) return false
     let interfaces = this.getMonitoringInterfaces();
     return interfaces.map(i => i.ip_address === ip).some(Boolean);
   }
@@ -680,6 +681,11 @@ class SysManager {
 
   myGateway(intf = this.config.monitoringInterface) {
     return this.getInterface(intf) && this.getInterface(intf).gateway;
+  }
+
+  async myGatewayMac(intf = this.config.monitoringInterface) {
+    const ip = this.myGateway(intf);
+    return rclient.hget(`host:ip4:${ip}`, 'mac')
   }
 
   myGateway6(intf = this.config.monitoringInterface) {

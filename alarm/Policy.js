@@ -80,6 +80,9 @@ class Policy {
       if (!_.isArray(this.tag) || _.isEmpty(this.tag))
         delete this.tag;
     }
+    this.upnp = false;
+    if (raw.upnp)
+      this.upnp = JSON.parse(raw.upnp);
 
     if (raw.expire === "") {
       delete this.expire;
@@ -136,13 +139,12 @@ class Policy {
       this.target === policy.target &&
       this.expire === policy.expire &&
       this.cronTime === policy.cronTime &&
-      this.remote === policy.remote &&
-      this.remoteType === policy.remoteType &&
-      this.local == policy.local &&
-      this.localType === policy.localType &&
       this.remotePort === policy.remotePort &&
       this.localPort === policy.localPort &&
-      this.proto === policy.proto
+      this.protocol === policy.protocol &&
+      this.direction === policy.direction &&
+      this.action === policy.action &&
+      this.upnp === policy.upnp
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {

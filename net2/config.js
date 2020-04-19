@@ -59,6 +59,7 @@ async function removeUserNetworkConfig() {
   delete userConfig.alternativeInterface;
   delete userConfig.secondaryInterface;
   delete userConfig.wifiInterface;
+  delete userConfig.dhcpLeaseTime;
   
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print

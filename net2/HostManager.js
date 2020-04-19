@@ -179,25 +179,24 @@ module.exports = class HostManager {
             }
           });
         });
-        this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
-          if (!f.isMain()) {
-            return;
-          }
-          if (!this.iptablesReady) {
-            log.warn("Iptables is not ready yet");
-            return;
-          }
-
-          this.safeExecPolicy()
-
-          /*
-          this.loadPolicy((err,data)=> {
-              log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
-              policyManager.execute(this,"0.0.0.0",this.policy,null);
+        if (f.isMain()) {
+          this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
+            if (!this.iptablesReady) {
+              log.warn("Iptables is not ready yet");
+              return;
+            }
+  
+            this.scheduleExecPolicy();
+  
+            /*
+            this.loadPolicy((err,data)=> {
+                log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
+                policyManager.execute(this,"0.0.0.0",this.policy,null);
+            });
+            */
+            log.info("SystemPolicy:Changed", channel, ip, type, obj);
           });
-          */
-          log.info("SystemPolicy:Changed", channel, ip, type, obj);
-        });
+        }
 
         this.keepalive();
         setInterval(()=>{
@@ -208,6 +207,15 @@ module.exports = class HostManager {
       instance = this;
     }
     return instance;
+  }
+
+  scheduleExecPolicy() {
+    if (this.execPolicyTask)
+      clearTimeout(this.execPolicyTask);
+    // set a minimal interval of exec policy to avoid policy apply too frequently
+    this.execPolicyTask = setTimeout(() => {
+      this.safeExecPolicy();
+    }, 3000);
   }
 
   keepalive() {
@@ -1355,9 +1363,7 @@ module.exports = class HostManager {
     obj[name] = data;
     log.info(name, obj)
     if (this.messageBus) {
-      setTimeout(() => {
-        this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
-      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+      this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
     }
     return obj
   }
@@ -1396,26 +1402,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    const rule = new Rule().chn('FW_FIREWALL_SELECTOR').mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst", "set", true).mth(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src", "set", false).pam("-m conntrack --ctstate NEW").jmp("FW_INBOUND_FIREWALL");
-    if (policy.state === true) {
-      let cmd = rule.toCmd('-A');
-      await exec(cmd).catch((err) => {
-        log.error("Failed to enable global IPv4 inbound firewall", err.message);
-      });
-      cmd = rule.clone().fam(6).toCmd('-A');
-      await exec(cmd).catch((err) => {
-        log.error("Failed to enable global IPv6 inbound firewall", err.message);
-      });
-    } else {
-      let cmd = rule.toCmd('-D');
-      await exec(cmd).catch((err) => {
-        log.error("Failed to disable global IPv4 inbound firewall", err.message);
-      });
-      cmd = rule.clone().fam(6).toCmd('-D');
-      await exec(cmd).catch((err) => {
-        log.error("Failed to disable global IPv6 inbound firewall", err.message);
-      });
-    }
+    
   }
 
   async getVpnActiveDeviceCount(profileId) {
@@ -1707,7 +1694,7 @@ module.exports = class HostManager {
           if (!skipHosts) {
             log.info("Apply host policies...");
             for (let i in this.hosts.all) {
-              this.hosts.all[i].applyPolicy();
+              this.hosts.all[i].scheduleApplyPolicy();
             }
           }
         });

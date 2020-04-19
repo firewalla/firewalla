@@ -426,27 +426,16 @@ module.exports = class {
     // TODO: might need to add static ip address here
   }
 
-  match(alarm, callback) {
+  async match(alarm) {
 
-    if(this.isFirewallaCloud(alarm)) {
-      callback(null, true, [])
-      return
+    const results = await this.loadExceptionsAsync()
+
+    let matches = results.filter((e) => e.match(alarm));
+    if (matches.length > 0) {
+      log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
     }
 
-    this.loadExceptions((err, results) => {
-      if(err) {
-        callback(err);
-        return;
-      }
-
-      let matches = results.filter((e) => e.match(alarm));
-      if(matches.length > 0) {
-        log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
-        callback(null, true, matches);
-      } else {
-        callback(null, false);
-      }
-    });
+    return matches
   }
 
   // incr by 1 to count how many times this exception matches alarms

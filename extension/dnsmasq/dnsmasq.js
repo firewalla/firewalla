@@ -48,7 +48,6 @@ const ipset = require('../../net2/Ipset.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq_local";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
-const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
 const LOCAL_DOMAIN_KEY = "local:device:domain"
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
@@ -95,7 +94,7 @@ let upstreamDNS = null;
 
 const FILTER_EXPIRE_TIME = 86400 * 1000;
 
-const BLACK_HOLE_IP = "0.0.0.0"
+const BLACK_HOLE_IP = "" // return NXDOMAIN for blocked domains
 const BLUE_HOLE_IP = "198.51.100.100"
 
 const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
@@ -109,6 +108,7 @@ const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
+const ADDN_HOSTS_FILE = f.getRuntimeInfoFolder() + "/dnsmasq_addn_hosts";
 
 const flowUtil = require('../../net2/FlowUtil.js');
 
@@ -446,37 +446,58 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      let entry = "";
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
           if (!_.isEmpty(options.scope)) {
+            // use single config file for all devices configuration
+            const entries = [];
             for (const mac of options.scope) {
-              entry += `address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}\n`
+              entries.push(`mac-address-tag=%${mac}$policy_${options.pid}`);
+              if (options.action === "block")
+                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              else
+                entries.push(`server=/${domain}/#$policy_${options.pid}`);
             }
-          } 
+            const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
+          }
           
           if (!_.isEmpty(options.intfs)) {
-            let intfsEntry = `address=/${domain}/${BLACK_HOLE_IP}\n`;
-            for (const intf in options.intfs) {
-              const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-              await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
+            const NetworkProfile = require('../../net2/NetworkProfile.js');
+            // use separate config file for each network configuration
+            for (const intf of options.intfs) {
+              const entries = [`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}`];
+              if (options.action === "block")
+                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              else
+                entries.push(`server=/${domain}/#$policy_${options.pid}`);
+              const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`; 
+              await fs.writeFileAsync(filePath, entries.join('\n'));
             }
           } 
           
           if (!_.isEmpty(options.tags)) {
+            // use separate config file for each tag configuration
             for (const tag of options.tags) {
-              let tagsEntry = `group-tag=@${tag}$policy_${options.pid}\naddress=/${domain}/$policy_${options.pid}\n`;
-              const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-              await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+              const entries = [`group-tag=@${tag}$policy_${options.pid}`];
+              if (options.action === "block")
+                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              else
+                entries.push(`server=/${domain}/#$policy_${options.pid}`);
+              const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+              await fs.writeFileAsync(filePath, entries.join('\n'));
             }
           }
         } else {
-          entry += `address=/${domain}/${BLACK_HOLE_IP}\n`
+          // global effective policy
+          const entries = [];
+          if (options.action === "block")
+            entries.push(`address=/${domain}/${BLACK_HOLE_IP}`);
+          else
+            entries.push(`server=/${domain}/#`);
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.writeFileAsync(filePath, entries.join('\n'));
         }
-      }
-    
-      if (!_.isEmpty(entry)) {
-        await fs.appendFileAsync(policyFilterFile, entry);
       }
     } catch (err) {
       log.error("Failed to add policy filter entry into file:", err);
@@ -495,44 +516,69 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
+    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
+    const blockEntries = [];
+    const allowEntries = [];
     try {
-      let entry = "", macSetEntry = "";
       for (const domain of domains) {
-        entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
+        blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
+        allowEntries.push(`server=/${domain}/#$${category}_allow`);
       }
+      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
+      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
 
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
         if (options.scope && options.scope.length > 0) {
+          // use single config for all devices configuration
+          const entries = [];
           for (const mac of options.scope) {
-            macSetEntry += `mac-address-tag=%${mac.toUpperCase()}$${category}_block\n`
+            if (options.action === "block")
+              entries.push(`mac-address-tag=%${mac}$${category}_block`);
+            else
+              entries.push(`mac-address-tag=%${mac}$${category}_allow`);
           }
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.writeFileAsync(filePath, entries.join('\n'));
         } 
         
         if (!_.isEmpty(options.intfs)) {
-          let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}_block\n`;
-          for (const intf in options.intfs) {
-            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-            await fs.writeFileAsync(intfPolicyFilterFile, intfsEntry);
+          const NetworkProfile = require('../../net2/NetworkProfile.js');
+          // use separate config file for each network configuration
+          for (const intf of options.intfs) {
+            const entries = [];
+            if (options.action === "block")
+              entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_block`);
+            else
+              entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_allow`);
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         } 
         
         if (!_.isEmpty(options.tags)) {
+          // use separate config file for each tag configuration
           for (const tag of options.tags) {
-            let tagsEntry = `group-tag=@${tag}$${category}_block\n`;
-            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-            await fs.writeFileAsync(tagPolicyFilterFile, tagsEntry);
+            const entries = [];
+            if (options.action === "block")
+              entries.push(`group-tag=@${tag}$${category}_block`);
+            else
+              entries.push(`group-tag=@${tag}$${category}_allow`);
+            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         }
       } else {
-        macSetEntry = `mac-address-tag=%${systemLevelMac}$${category}_block\n`;
-      }
-      await fs.writeFileAsync(categoryBlockDomainsFile, entry);
-      if (!_.isEmpty(macSetEntry)) {
-        await fs.appendFileAsync(categoryBlockMacSetFile, macSetEntry);
+        // global effective policy
+        const entries = [];
+        if (options.action === "block")
+          entries.push(`mac-address-tag=%${systemLevelMac}$${category}_block`);
+        else
+          entries.push(`mac-address-tag=%${systemLevelMac}$${category}_allow`);
+        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        await fs.writeFileAsync(filePath, entries.join('\n'));
       }
     } catch (err) {
-      log.error("Failed to add category mact set entry into file:", err);
+      log.error("Failed to add category mac set entry into file:", err);
     } finally {
       this.workingInProgress = false; // make sure the flag is reset back
     }
@@ -547,49 +593,41 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     try {
       options = options || {};
-      const category = options.category;
-      const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
-      let macSetEntry = [];
     
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
         if (options.scope && options.scope.length > 0) {
-          for (const mac of options.scope) {
-            macSetEntry.push(`mac-address-tag=%${mac.toUpperCase()}$${category}_block`)
-          }
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.unlinkAsync(filePath).catch((err) => {
+            log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+          });
         } 
         
         if (!_.isEmpty(options.intfs)) {
-          // let intfsEntry = `mac-address-tag=%00:00:00:00:00:00$${category}_block\n`;
-          for (const intf in options.intfs) {
-            const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-            try {
-              await fs.unlinkAsync(intfPolicyFilterFile);
-            } catch (error) { }
+          const NetworkProfile = require('../../net2/NetworkProfile.js');
+          for (const intf of options.intfs) {
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
           }
         } 
         
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
-            // let tagsEntry = `group-tag=@${tag}$${category}_block\n`;
-            const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-            try {
-              await fs.unlinkAsync(tagPolicyFilterFile);
-            } catch (error) { }
+            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
           }
         }
       } else {
-        macSetEntry.push(`mac-address-tag=%${systemLevelMac}$${category}_block`)
-      }
-    
-      if (!_.isEmpty(macSetEntry)) {
-        let data = await fs.readFileAsync(categoryBlockMacSetFile, 'utf8');
-        let newData = data.split("\n").filter((line) => {
-          return macSetEntry.indexOf(line) == -1
-        }).join("\n");
-        await fs.writeFileAsync(categoryBlockMacSetFile, newData);
+        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        await fs.unlinkAsync(filePath).catch((err) => {
+          log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+        });
       }
     } catch (err) {
-      log.error("Failed to update category mact set entry file:", err);
+      log.error("Failed to remove policy config file:", err);
     } finally {
       this.workingInProgress = false;
     }
@@ -600,24 +638,21 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryBlockMacSetFile = FILTER_DIR + `/${category}_mac_set.conf`;
-    const fileExists = await fs.accessAsync(categoryBlockMacSetFile, fs.constants.F_OK).then(() => true).catch(() => false);
-    if (!fileExists) return;
+    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
+    const blockEntries = [];
+    const allowEntries = [];
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    let entry = "";
     for (const domain of domains) {
-      entry += `address=/${domain}/${BLACK_HOLE_IP}$${category}_block\n`;
+      blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
+      allowEntries.push(`server=/${domain}/#$${category}_allow`);
     }
     try {
-      await fs.writeFileAsync(categoryBlockDomainsFile, entry);
-      //check dnsmasq need restart or not
-      const data = await fs.readFileAsync(categoryBlockMacSetFile, 'utf8');
-      if (data.indexOf(`$${category}_block`) > -1)
-        this.scheduleRestartDNSService();
+      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
+      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
     } catch (err) {
       log.error("Failed to update category entry into file:", err);
     } finally {
@@ -634,47 +669,41 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      let entry = [];
-      for (const domain of domains) {
-        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
-          if (!_.isEmpty(options.scope)) {
-            for (const mac of options.scope) {
-              entry.push(`address=/${domain}/${BLACK_HOLE_IP}%${mac.toUpperCase()}`)
-            }
-          } 
-          
-          if (!_.isEmpty(options.tags)) {
-            for (const tag of options.tags) {
-              const tagPolicyFilterFile = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`; 
-              try {
-                await fs.unlinkAsync(tagPolicyFilterFile);
-              } catch (error) {}
-            }
-          } 
-          
-          if (!_.isEmpty(options.intfs)) {
-            // let intfsEntry = `address=/${domain}/0.0.0.0\n`;
-            for (const intf in options.intfs) {
-              const intfPolicyFilterFile = `${FILTER_DIR}/${intf}/policy_${options.pid}.conf`; 
-              try {
-                await fs.unlinkAsync(intfPolicyFilterFile);
-              } catch (error) {}
-            } 
-          }
-        } else {
-          entry.push(`address=/${domain}/${BLACK_HOLE_IP}`);
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+        if (!_.isEmpty(options.scope)) {
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.unlinkAsync(filePath).catch((err) => {
+            log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+          });
         }
-      }
-    
-      if (!_.isEmpty(entry)) {
-        let data = await fs.readFileAsync(policyFilterFile, 'utf8');
-        let newData = data.split("\n").filter((line) => {
-          return entry.indexOf(line) == -1
-        }).join("\n");
-        await fs.writeFileAsync(policyFilterFile, newData);
+
+        if (!_.isEmpty(options.intfs)) {
+          const NetworkProfile = require('../../net2/NetworkProfile.js');
+          for (const intf of options.intfs) {
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
+          }
+        }
+
+        if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
+          }
+        }
+      } else {
+        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        await fs.unlinkAsync(filePath).catch((err) => {
+          log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+        });
+
       }
     } catch (err) {
-      log.error("Failed to write policy data file:", err);
+      log.error("Failed to remove policy config file:", err);
     } finally {
       this.workingInProgress = false; // make sure the flag is reset back
     }
@@ -859,8 +888,8 @@ module.exports = class DNSMASQ {
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const netSet = NetworkProfile.getNetIpsetName(uuid);
       const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(netSet, "src,src", "set")
-        .mth(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, "src,src", "set", false)
+        .mdl("set", `--match-set ${netSet} src,src`)
+        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
       const redirectUDP = redirectTCP.clone().pro('udp')
@@ -887,8 +916,8 @@ module.exports = class DNSMASQ {
       const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
       const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
       const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(netSet, "src,src", "set")
-        .mth(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, "src,src", "set", false)
+        .mdl("set", `--match-set ${netSet} src,src`)
+        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
       const redirectUDP = redirectTCP.clone().pro('udp');
@@ -1144,7 +1173,8 @@ module.exports = class DNSMASQ {
       alternativeDnsServers = interfaceNameServers.alternative.join(',');
     }
 
-    const leaseTime = fConfig.dhcp && fConfig.dhcp.leaseTime || "24h";
+    let secondaryLeaseTime = (fConfig.dhcpLeaseTime && fConfig.dhcpLeaseTime.secondary) || (fConfig.dhcp && fConfig.dhcp.leaseTime) || "24h";
+    let alternativeLeaseTime = (fConfig.dhcpLeaseTime && fConfig.dhcpLeaseTime.alternative) || (fConfig.dhcp && fConfig.dhcp.leaseTime) || "24h";
     const monitoringInterface = fConfig.monitoringInterface || "eth0";
 
     if (this.mode === Mode.MODE_DHCP) {
@@ -1156,7 +1186,7 @@ module.exports = class DNSMASQ {
         secondaryRange.begin,
         secondaryRange.end,
         secondaryMask,
-        leaseTime
+        secondaryLeaseTime
       );
 
       // allocate primary(alternative) interface ip to unmonitored hosts
@@ -1166,7 +1196,7 @@ module.exports = class DNSMASQ {
         alternativeRange.begin,
         alternativeRange.end,
         alternativeMask,
-        leaseTime
+        alternativeLeaseTime
       );
 
       // secondary interface ip as router for monitored hosts and new hosts
@@ -1194,7 +1224,7 @@ module.exports = class DNSMASQ {
         alternativeRange.begin,
         alternativeRange.end,
         alternativeMask,
-        leaseTime
+        alternativeLeaseTime
       );
 
       // Firewalla's ip as router for monitored hosts and new hosts. In case Firewalla's ip is changed, a thorough restart is required
@@ -1409,10 +1439,12 @@ module.exports = class DNSMASQ {
         const localDomain = await rclient.hgetAsync(key, "localDomain");
         const userLocalDomain = await rclient.hgetAsync(key, "userLocalDomain");
         const ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
+        const ipv6Addr = await rclient.hgetAsync(key, "ipv6Addr");
         if (!deviceDomainMap[mac]) {
           deviceDomainMap[mac] = {
             mac: mac,
             ipv4Addr: ipv4Addr,
+            ipv6Addr: ipv6Addr,
             localDomain: localDomain,
             userLocalDomain: userLocalDomain
           }
@@ -1420,7 +1452,7 @@ module.exports = class DNSMASQ {
           needUpdate = true;
         } else {
           let deviceDomain = deviceDomainMap[mac];
-          if (deviceDomain.localDomain != localDomain || deviceDomain.userLocalDomain != userLocalDomain) {
+          if (deviceDomain.localDomain != localDomain || deviceDomain.userLocalDomain != userLocalDomain || !deviceDomain.hasOwnProperty("ipv6Addr")) {
             if (deviceDomain.userLocalDomain) {
               //If userLocalDomain is specified,only update when userLocalDomain changed
               needUpdate = (deviceDomain.userLocalDomain != userLocalDomain);
@@ -1428,25 +1460,38 @@ module.exports = class DNSMASQ {
               //If userLocalDomain is not specified, update when preferredName is changed
               needUpdate = (deviceDomain.localDomain != localDomain);
             }
-            needUpdate = (deviceDomain.ipv4Addr != ipv4Addr || needUpdate);
+            needUpdate = (deviceDomain.ipv4Addr != ipv4Addr || deviceDomain.ipv6Addr != ipv6Addr || needUpdate);
             deviceDomain.mac = mac;
             deviceDomain.ipv4Addr = ipv4Addr;
+            deviceDomain.ipv6Addr = ipv6Addr;
             deviceDomain.userLocalDomain = userLocalDomain;
             deviceDomain.localDomain = localDomain;
           }
         }
       }
       await rclient.setAsync(LOCAL_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
-      let localDeviceDomain = "";
+      let localDeviceDomainAddn = "";
       for (const key in deviceDomainMap) {
         const deviceDomain = deviceDomainMap[key];
         let { localDomain, userLocalDomain } = deviceDomain;
         if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
-          localDomain && (localDeviceDomain += `address=/${localDomain}/${deviceDomain.ipv4Addr}\n`);
-          userLocalDomain && (localDeviceDomain += `address=/${userLocalDomain}/${deviceDomain.ipv4Addr}\n`);
+          localDomain && (localDeviceDomainAddn += `${deviceDomain.ipv4Addr} ${localDomain}\n`);
+          userLocalDomain && (localDeviceDomainAddn += `${deviceDomain.ipv4Addr} ${userLocalDomain}\n`);
+        }
+        if (deviceDomain.ipv6Addr) {
+          let ipv6Addr = null;
+          try {
+            ipv6Addr = JSON.parse(deviceDomain.ipv6Addr);
+          } catch (err) {}
+          if (Array.isArray(ipv6Addr)) {
+            for (const addr of ipv6Addr) {
+              localDomain && (localDeviceDomainAddn += `${addr} ${localDomain}\n`);
+              userLocalDomain && (localDeviceDomainAddn += `${addr} ${userLocalDomain}\n`);
+            }
+          }
         }
       }
-      (isInit || needUpdate) && await this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
+      (isInit || needUpdate) && await this.throttleUpdatingConf(ADDN_HOSTS_FILE, localDeviceDomainAddn);
     } catch (e) {
       log.error("Failed to setup local device domain", e);
     }
@@ -1469,7 +1514,7 @@ module.exports = class DNSMASQ {
     try {
       const dnsmasqConfKey = "dnsmasq:conf";
       let md5sumNow = '';
-      for (const confs of [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH]) {
+      for (const confs of [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH, ADDN_HOSTS_FILE]) {
         const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
@@ -1511,8 +1556,8 @@ module.exports = class DNSMASQ {
 
       const files = await fs.readdirAsync(dir);
       await Promise.all(files.map(async (filename) => {
+        const filePath = `${dir}/${filename}`;
         try {
-          const filePath = `${dir}/${filename}`;
           const fileStat = await fs.statAsync(filePath);
           if (fileStat.isFile()) {
             let match = false;

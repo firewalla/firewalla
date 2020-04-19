@@ -97,6 +97,10 @@ function print_block_rule {
   printf "%25s %8s %30s %10s %25s %10s %15s\n" "$1" "$rule_id" "$target" "$ptype" "$scope" "$expire" "$crontime"
 }
 
+function print_block_target {
+  printf "%25s %8s %30s %10s %25s %10s %15s\n" "" "" "$1" "" "" "" ""
+}
+
 function check_ip {
   local ip_ret ipsets rule_id rule_category rule_country policy_ret ipset_content set_type set_compare set_exists
 
@@ -132,6 +136,7 @@ function check_ip {
       rule_id=$(echo $setName | sed 's/.*_\([0-9]\+\)_.*/\1/')
       rule_category=$(echo $setName | sed 's/c_bd_\([a-zA-Z_]\+\)_set/\1/')
       rule_country=$(echo $setName | sed 's/c_bd_country:\([a-zA-Z]\+\)_set/\1/')
+      block_set=$(echo $setName | egrep -o "^block[^ ]*(_ip_set|_net_set|_domain_set)$")
       if [[ $rule_id != $setName ]]; then
         if echo $REDISRULES | grep "policy:$rule_id" &>/dev/null; then
           policy_ret=1
@@ -146,18 +151,18 @@ function check_ip {
             ip_ret=0
           fi
         fi
-      elif [[ "$setName" == "blocked_ip_set" || "$setName" == "blocked_domain_set" || "$setName" == "blocked_net_set" ]]; then
-        check_redis_rule $setName $1 $2
+      elif [[ -n $block_set ]]; then
+        check_redis_rule $setName $1 $1 $2
         if [[ $? -eq 0 ]]; then
           ip_ret=0
         fi
       elif [[ $rule_category != $setName ]]; then
-        check_redis_rule $setName $rule_category $2
+        check_redis_rule $setName $rule_category $1 $2
         if [[ $? -eq 0 ]]; then
           ip_ret=0
         fi
       elif [[ $rule_country != $setName ]]; then
-        check_redis_rule $setName $rule_country $2
+        check_redis_rule $setName $rule_country $1 $2
         if [[ $? -eq 0 ]]; then
           ip_ret=0
         fi
@@ -187,10 +192,10 @@ function check_redis_rule {
     fi
 
     mac_ret=1
-    if [[ -z $3 ]]; then
+    if [[ -z $4 ]]; then
       mac_ret=0
     else
-      if [[ $(check_redis_rule_mac $policyKey $3) -eq 0 ]]; then
+      if [[ $(check_redis_rule_mac $policyKey $4) -eq 0 ]]; then
         mac_ret=0
       fi
     fi
@@ -209,8 +214,19 @@ function check_redis_rule {
     elif [[ $ptype == "net" && $(in_subnet $target $2) -eq 0 && $mac_ret -eq 0 ]]; then
       print_block_rule $setName $policyKey
       rule_ret=0
-    elif [[ $ptype == "category" && $target == *$2* && $mac_ret -eq 0 ]]; then
-      print_block_rule $setName $policyKey
+    elif [[ $ptype == "category" && $target == *$2* && $mac_ret -eq 0 && -n $3 ]]; then
+      domain_name=""
+      category_domain=`redis-cli zrange "dynamicCategoryDomain:$target" 0 -1`
+      while read domain; do
+        redis-cli zrange "rdns:domain:$domain" 0 -1 | grep $3 &> /dev/null
+        if [[ $? -eq 0 ]]; then
+          domain_name="$domain_name $domain"
+        fi
+      done <<< "$category_domain"
+      print_block_rule $setName $policyKey 
+      if [[ $domain_name != "" ]]; then
+        print_block_target "$domain_name"
+      fi
       rule_ret=0
     elif [[ $ptype == "country" && $target == *$2* && $mac_ret -eq 0 ]]; then
       print_block_rule $setName $policyKey

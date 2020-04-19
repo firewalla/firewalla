@@ -1456,12 +1456,10 @@ module.exports = class {
       if (obj.note == null) {
         return;
       }
+
       // TODO: on DHCP mode, notice could be generated on ethx or ethx:0 first
       // and the other one will be suppressed. And we'll lost either device/dest info
-      if (obj.src != null && sysManager.isMyIP(obj.src) ||
-        obj.dst != null && sysManager.isMyIP(obj.dst)) {
-        return;
-      }
+
       log.debug("Notice:Processing", obj);
       if (this.config.bro.notice.ignore[obj.note] == null) {
         let strdata = JSON.stringify(obj);
@@ -1504,9 +1502,9 @@ module.exports = class {
           "p.dest.ip": dh
         });
 
-        await broNotice.processNotice(alarm, obj);
+        alarm = await broNotice.processNotice(alarm, obj);
 
-        am2.enqueueAlarm(alarm);
+        alarm && am2.enqueueAlarm(alarm);
       }
     } catch (e) {
       log.error("Notice:Error Unable to save", e, data);

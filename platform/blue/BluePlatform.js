@@ -20,7 +20,7 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 
-const fs = require('fs').promises;
+const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile)
 

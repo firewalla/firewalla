@@ -39,8 +39,10 @@ router.post('/message/:gid',
       const gid = req.params.gid;
 
       (async() =>{
+        const time = process.hrtime();
         const controller = await cloudWrapper.getNetBotController(gid);
         const response = await controller.msgHandlerAsync(gid, req.body);
+        log.info('API Cost Time:', `${process.hrtime(time)[1]/1e6} ms`);
         res.body = JSON.stringify(response);
         next();
       })()
