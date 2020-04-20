@@ -48,7 +48,6 @@ class BlockManager {
         const pureCategoryIps = [], mixupCategoryIps = [];
         try {
             const now = new Date();
-            log.info(`jack test start to check pure ${category},categoryIps length ${categoryIps.length}`);
             for (const categoryIp of categoryIps) {
                 let pure = true;
                 const domains = await dnsTool.getAllDns(categoryIp);
@@ -66,10 +65,13 @@ class BlockManager {
             const categoryIpMappingKey = this.getCategoryIpMapping(category);
             mixupCategoryIps.length > 0 && await rclient.sremAsync(categoryIpMappingKey, mixupCategoryIps);
             pureCategoryIps.length > 0 && await rclient.saddAsync(categoryIpMappingKey, pureCategoryIps);
-            log.info(`jack test category ${category} pure ips ${pureCategoryIps}, mixup ips ${mixupCategoryIps}`);
-            log.info(`jack test start to check pure ${category} during ${new Date() - now} ms`);
+            if (new Date() - now > 1000) {
+                log.info(`jack test check during ${category} ${new Date() - now} ms`);
+                log.info(`jack test categoryIps:${categoryIps} mixupCategoryIps:${mixupCategoryIps} pureCategoryIps:${pureCategoryIps}`)
+            }
+
         } catch (e) {
-            log.info("jack test check failed", e)
+            log.info("get pure category ips failed", e)
         }
         return pureCategoryIps;
     }
