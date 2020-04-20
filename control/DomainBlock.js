@@ -28,8 +28,10 @@ const dnsTool = new DNSTool()
 
 const dns = require('dns');
 const util = require('util');
-const resolve4Async = util.promisify(dns.resolve4)
-const resolve6Async = util.promisify(dns.resolve6)
+const resolver = new dns.Resolver();
+let resolve4Async;
+let resolve6Async;
+const fc = require('../net2/config.js');
 
 const SysManager = require("../net2/SysManager.js")
 const sysManager = new SysManager()
@@ -134,7 +136,7 @@ class DomainBlock {
 
   resolve4WithTimeout(domain, timeout) {
     let callbackCalled = false
-
+    
     return new Promise((resolve, reject) => {
       resolve4Async(domain).then((addresses) => {
         if (!callbackCalled) {
@@ -182,6 +184,14 @@ class DomainBlock {
   }
 
   async resolveDomain(domain) {
+    if (fc.isFeatureOn('doh')) {
+      resolver.setServers(['127.0.0.1:8853']);
+      resolve4Async = util.promisify(resolver.resolve4.bind(resolver));
+      resolve6Async = util.promisify(resolver.resolve6.bind(resolver));
+    } else {
+      resolve4Async = util.promisify(dns.resolve4);
+      resolve6Async = util.promisify(dns.resolve6);
+    }
     const v4Addresses = await this.resolve4WithTimeout(domain, 3 * 1000).catch((err) => []); // 3 seconds for timeout
     await dnsTool.addReverseDns(domain, v4Addresses);
 
