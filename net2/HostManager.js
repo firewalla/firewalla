@@ -159,7 +159,15 @@ module.exports = class HostManager {
           if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
             if (this.iptablesReady) {
               log.info("Rescan hosts due to network info is reloaded");
-              this.getHosts();
+              this.getHosts((err, result) => {
+                if (result && _.isArray(result)) {
+                  for (const host of result) {
+                    host.updateHostsFile().catch((err) => {
+                      log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                    });
+                  }
+                }
+              });
             }
           }
         });

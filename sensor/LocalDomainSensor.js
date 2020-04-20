@@ -26,13 +26,10 @@ const f = require('../net2/Firewalla.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const ADDN_HOSTS_CONF = FILTER_DIR + "/addn_hosts.conf";
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
-const ADDN_HOSTS_FILE = f.getRuntimeInfoFolder() + "/dnsmasq_addn_hosts";
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
-const HostTool = require('../net2/HostTool.js')
-const hostTool = new HostTool();
 const updateFlag = "1";
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
