@@ -32,6 +32,7 @@ const resolver = new dns.Resolver();
 let resolve4Async;
 let resolve6Async;
 const fc = require('../net2/config.js');
+const dc = require('../extension/dnscrypt/dnscrypt');
 
 const SysManager = require("../net2/SysManager.js")
 const sysManager = new SysManager()
@@ -184,7 +185,8 @@ class DomainBlock {
 
   async resolveDomain(domain) {
     if (fc.isFeatureOn('doh')) {
-      resolver.setServers(['127.0.0.1:8853']);
+      const server = `127.0.0.1:${dc.getLocalPort()}`;
+      resolver.setServers([server]);
       resolve4Async = util.promisify(resolver.resolve4.bind(resolver));
       resolve6Async = util.promisify(resolver.resolve6.bind(resolver));
     } else {
