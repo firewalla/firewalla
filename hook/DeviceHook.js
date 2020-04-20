@@ -293,7 +293,7 @@ class DeviceHook extends Hook {
               host.spoof(true);
             }
           });
-          this.setupLocalDeviceDomain(host.mac, 'new_device');
+          await this.setupLocalDeviceDomain(host.mac, 'new_device');
   
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
         })().catch((err) => {
@@ -357,7 +357,7 @@ class DeviceHook extends Hook {
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
           let hostManager = new HostManager()
           hostManager.getHost(host.mac);
-          this.setupLocalDeviceDomain(host.mac, 'ip_change');
+          await this.setupLocalDeviceDomain(host.mac, 'ip_change');
   
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
         })().catch((err) => {
@@ -432,7 +432,7 @@ class DeviceHook extends Hook {
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
           let hostManager = new HostManager();
           hostManager.getHost(host.mac);
-          this.setupLocalDeviceDomain(host.mac, 'ip_change');
+          await this.setupLocalDeviceDomain(host.mac, 'ip_change');
   
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
         })().catch((err) => {
@@ -488,8 +488,8 @@ class DeviceHook extends Hook {
   
           await hostTool.updateMACKey(enrichedHost); // host:mac:.....
           // publish device updated event to trigger 
+          await this.setupLocalDeviceDomain(host.mac, 'info_change');
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
-          this.setupLocalDeviceDomain(host.mac, 'info_change');
           // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
           // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
           //         return;
@@ -734,10 +734,7 @@ class DeviceHook extends Hook {
     if (type == 'new_device' || type == 'info_change') {
       await hostTool.generateLocalDomain(mac);
     }
-    await dnsmasq.setupLocalDeviceDomain([mac]);
   }
-
-
 }
 
 module.exports = DeviceHook;
