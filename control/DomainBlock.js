@@ -136,7 +136,6 @@ class DomainBlock {
 
   resolve4WithTimeout(domain, timeout) {
     let callbackCalled = false
-    
     return new Promise((resolve, reject) => {
       resolve4Async(domain).then((addresses) => {
         if (!callbackCalled) {
