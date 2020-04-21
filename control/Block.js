@@ -40,7 +40,9 @@ async function setupBlockChain() {
 
   await exec(cmd);
 
+  
   await Promise.all([
+    /*
     setupCategoryEnv("games"),
     setupCategoryEnv("porn"),
     setupCategoryEnv("social"),
@@ -49,6 +51,7 @@ async function setupBlockChain() {
     setupCategoryEnv("p2p"),
     setupCategoryEnv("gamble"),
     setupCategoryEnv("av"),
+    */
     setupCategoryEnv("default_c"),
   ])
 
