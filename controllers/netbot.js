@@ -1014,11 +1014,11 @@ class netBot extends ControllerBot {
         (async () => {
           if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
             const macAddress = msg.target
-            let { customizedHostname, suffix } = data.value;
-            if (customizedHostname && hostTool.isMacAddress(macAddress)) {
+            let { customizeDomainName, suffix } = data.value;
+            if (customizeDomainName && hostTool.isMacAddress(macAddress)) {
               let macObject = {
                 mac: macAddress,
-                customizedHostname: customizedHostname
+                customizeDomainName: customizeDomainName
               }
               await hostTool.updateMACKey(macObject, true);
             }

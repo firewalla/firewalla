@@ -1204,6 +1204,7 @@ class PolicyManager2 {
         */
         if (policy.dnsmasq_only)
           return;
+        await categoryUpdater.activateCategory(target);
         remoteSet4 = categoryUpdater.getIPSetName(target);
         remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
         break;
