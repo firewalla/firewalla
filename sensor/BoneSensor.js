@@ -180,34 +180,7 @@ class BoneSensor extends Sensor {
     }
 
     const data = await Bone.checkinAsync(fConfig, license, sysInfo);
-    let spoofMode = await mode.isSpoofModeOn();
-    const spoofOffKey = 'sys:bone:spoofOff';
-    let spoofOff = null;
-    if (spoofMode) {
-      spoofOff = data.spoofOff;
-    }
-    if (spoofOff) {
-      await rclient.setAsync(spoofOffKey, spoofOff);
-      //turn off simple mode
-      await accessAsync(`${firewalla.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
-        return execAsync(`touch ${firewalla.getFirewallaHome()}/bin/dev`);
-      }).then(() => {
-        const sm = new SpooferManager();
-        sm.scheduleReload();
-      });
-    } else {
-      const redisSpoofOff = await rclient.getAsync(spoofOffKey);
-      if (redisSpoofOff) {
-        await rclient.delAsync(spoofOffKey);
-        await accessAsync(`${firewalla.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
-          return execAsync(`rm ${firewalla.getFirewallaHome()}/bin/dev`).then(() => {
-            const sm = new SpooferManager();
-            sm.scheduleReload();
-          });
-        }).catch((err) => {});
-      }
-    }
-
+    await this.checkCloudSpoofOff(data.spoofOff);
     this.lastCheckedIn = Date.now() / 1000;
 
     log.info("Cloud checked in successfully:")//, JSON.stringify(data));
@@ -257,6 +230,32 @@ class BoneSensor extends Sensor {
 
     if (data && data.frpToken) {
       await rclient.hsetAsync("sys:config", "frpToken", data.frpToken)
+    }
+  }
+
+  async checkCloudSpoofOff(spoofOff) {
+    let spoofMode = await mode.isSpoofModeOn();
+    const spoofOffKey = 'sys:bone:spoofOff';
+    if (spoofOff && spoofMode) {
+      await rclient.setAsync(spoofOffKey, spoofOff);
+      //turn off simple mode
+      await accessAsync(`${firewalla.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
+        return execAsync(`touch ${firewalla.getFirewallaHome()}/bin/dev`);
+      }).then(() => {
+        const sm = new SpooferManager();
+        sm.scheduleReload();
+      });
+    } else {
+      const redisSpoofOff = await rclient.getAsync(spoofOffKey);
+      if (redisSpoofOff) {
+        await rclient.delAsync(spoofOffKey);
+        await accessAsync(`${firewalla.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
+          return execAsync(`rm ${firewalla.getFirewallaHome()}/bin/dev`).then(() => {
+            const sm = new SpooferManager();
+            sm.scheduleReload();
+          });
+        }).catch((err) => {});
+      }
     }
   }
 
