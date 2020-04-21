@@ -429,8 +429,8 @@ class FireRouter {
         }
       }
 
-      monitoringIntfNames = [ 'eth0', 'eth0:0' ];
-      logicIntfNames = ['eth0', 'eth0:0'];
+      monitoringIntfNames = [ 'eth0' ];
+      logicIntfNames = ['eth0'];
       zeekOptions = {
         listenInterfaces: ["eth0"],
         restrictFilters: {}
@@ -631,6 +631,8 @@ class FireRouter {
       const ModeManager = require('./ModeManager.js');
       await ModeManager.changeToAlternativeIpSubnet();
       await ModeManager.enableSecondaryInterface();
+      monitoringIntfNames.push('eth0:0')
+      logicIntfNames.push('eth0:0')
     }
     // publish message to trigger firerouter init
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
