@@ -1146,6 +1146,10 @@ class PolicyManager2 {
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remotePositive = false;
         remoteTupleCount = 2;
+        // legacy data format
+        if (target && ht.isMacAddress(target)) {
+          scope = [target];
+        }
         break;
       case "domain":
       case "dns":
@@ -1387,6 +1391,10 @@ class PolicyManager2 {
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remotePositive = false;
         remoteTupleCount = 2;
+        // legacy data format
+        if (target && ht.isMacAddress(target)) {
+          scope = [target];
+        }
         break;
       case "domain":
       case "dns":
