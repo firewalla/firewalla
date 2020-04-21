@@ -1377,6 +1377,11 @@ module.exports = class HostManager {
   }
 
   async spoof(state) {
+    const redisSpoofOff = await rclient.getAsync('sys:bone:spoofOff');
+    if (redisSpoofOff) {
+      return;
+    }
+
     log.debug("System:Spoof:", state, this.spoofing);
     const sm = new SpooferManager();
     if (state == false) {

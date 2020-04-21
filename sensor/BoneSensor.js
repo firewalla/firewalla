@@ -37,6 +37,13 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const execAsync = require('child-process-promise').exec
 
+const SpooferManager = require('../net2/SpooferManager.js');
+const mode = require('../net2/Mode.js');
+const firewalla = require('../net2/Firewalla.js');
+const util = require('util');
+const fs = require('fs');
+const accessAsync = util.promisify(fs.access);
+
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
 
@@ -173,6 +180,33 @@ class BoneSensor extends Sensor {
     }
 
     const data = await Bone.checkinAsync(fConfig, license, sysInfo);
+    let spoofMode = await mode.isSpoofModeOn();
+    const spoofOffKey = 'sys:bone:spoofOff';
+    let spoofOff = null;
+    if (spoofMode) {
+      spoofOff = data.spoofOff;
+    }
+    if (spoofOff) {
+      await rclient.setAsync(spoofOffKey, spoofOff);
+      //turn off simple mode
+      await accessAsync(`${firewalla.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
+        return execAsync(`touch ${firewalla.getFirewallaHome()}/bin/dev`);
+      }).then(() => {
+        const sm = new SpooferManager();
+        sm.scheduleReload();
+      });
+    } else {
+      const redisSpoofOff = await rclient.getAsync(spoofOffKey);
+      if (redisSpoofOff) {
+        await rclient.delAsync(spoofOffKey);
+        await accessAsync(`${firewalla.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
+          return execAsync(`rm ${firewalla.getFirewallaHome()}/bin/dev`).then(() => {
+            const sm = new SpooferManager();
+            sm.scheduleReload();
+          });
+        }).catch((err) => {});
+      }
+    }
 
     this.lastCheckedIn = Date.now() / 1000;
 

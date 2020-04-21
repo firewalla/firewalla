@@ -33,7 +33,7 @@ is_bitbridge7_active () {
     fi
 }
 
-if is_spoof_mode && is_bitbridge7_active; then
+if [[ is_spoof_mode && ! -e /home/pi/firewalla/bin/dev && is_bitbridge7_active ]]; then
     if bitbridge7_ping; then
         exit 0
     else
