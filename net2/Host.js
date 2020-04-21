@@ -716,34 +716,34 @@ class Host {
     if (Date.now() / 1000 - lastActiveTimestamp > 1800) {
       // remove hosts file if it is not active in the last 30 minutes
       await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleReloadDNSService();
       return;
     }
     if (!ipv4Addr) {
       await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleReloadDNSService();
       return;
     }
     let ipv6Addr = null;
     try {
       ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
     } catch (err) {}
-    const aliases = [localDomain, userLocalDomain].filter((d) => d.length !== 0).filter((v, i, a) => {
+    const aliases = [localDomain, userLocalDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
       return a.indexOf(v) === i;
     })
     const iface = sysManager.getInterfaceViaIP4(ipv4Addr);
     if (!iface) {
       await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleReloadDNSService();
       return;
     }
-    const suffixes = (iface.searchDomains || []).concat([suffix]).filter((v, i, a) => {
+    const suffixes = (iface.searchDomains || []).concat([suffix]).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
       return a.indexOf(v) === i;
     });
     const entries = [];
     for (const suffix of suffixes) {
       for (const alias of aliases) {
-        const fqdn = getCanonicalizedDomainname(`${alias}.${suffix}`.replace(/\s+/g, "."));
+        const fqdn = `${alias}.${suffix}`;
         entries.push(`${ipv4Addr} ${fqdn}`);
         if (_.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
@@ -754,10 +754,10 @@ class Host {
     }
     if (entries.length !== 0) {
       await fs.writeFileAsync(hostsFile, entries.join("\n"));
-      dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleReloadDNSService();
     } else {
       await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleReloadDNSService();
     }
     this.scheduleInvalidateHostsFile();
   }
@@ -769,9 +769,9 @@ class Host {
       const hostsFile = Host.getHostsFilePath(this.o.mac);
       log.info(`Host ${this.o.mac} remains inactive for 30 minutes, removing hosts file ${hostsFile} ...`);
       fs.unlinkAsync(hostsFile).then(() => {
-        dnsmasq.scheduleRestartDNSService();
+        dnsmasq.scheduleReloadDNSService();
       }).catch((err) => {});
-    }, 1800);
+    }, 1800 * 1000);
   }
 
   static getHostsFilePath(mac) {

@@ -249,6 +249,20 @@ module.exports = class DNSMASQ {
     }, 5000);
   }
 
+  scheduleReloadDNSService() {
+    if (this.reloadDNSTask)
+      clearTimeout(this.reloadDNSTask);
+    this.reloadDNSTask = setTimeout(async () => {
+      this.counter.reloadDnsmasq++;
+      log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
+      await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
+        log.info(`${SERVICE_NAME} has been reloaded`, this.counter.reloadDnsmasq);
+      }).catch((err) => {
+        log.error(`Failed to reload ${SERVICE_NAME} service`, err.message);
+      });
+    }, 5000);
+  }
+
   scheduleRestartDHCPService(ignoreFileCheck = false) {
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
