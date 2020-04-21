@@ -20,7 +20,8 @@ const fc = require('../net2/config.js')
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Block = require('./Block.js');
-
+const BlockManager = require('../control/BlockManager.js');
+const blockManager = new BlockManager();
 const exec = require('child-process-promise').exec
 
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
@@ -151,15 +152,13 @@ class CategoryUpdaterBase {
     if(options && options.useTemp) {
       ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
     }
-
-    const hasAny = await rclient.scardAsync(key)
-
-    if(hasAny > 0) {
-      let cmd4 = `redis-cli smembers ${key} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      await exec(cmd4).catch((err) => {
-        log.error(`Failed to update ipset by ${category} with ip${ip6?6:4} addresses`, err);
-      })
-    }
+    const categoryIps = await rclient.smembersAsync(key,0,-1);
+    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
+    if(pureCategoryIps.length==0)return;
+    let cmd4 = `echo "${pureCategoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    await exec(cmd4).catch((err) => {
+      log.error(`Failed to update ipset by ${category} with ip${ip6?6:4} addresses`, err);
+    })
   }
 
   async updatePersistentIPSets(category, options) {
