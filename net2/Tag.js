@@ -42,7 +42,7 @@ class Tag {
       if (o && o.uid) {
         this.subscriber.subscribeOnce("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, (channel, type, id, obj) => {
           log.info(`Tag policy is changed on ${this.o.uid} ${this.o.name}`, obj);
-          this.applyPolicy();
+          this.scheduleApplyPolicy();
         });
       }
     }
@@ -72,6 +72,14 @@ class Tag {
 
   _getPolicyKey() {
     return `policy:tag:${this.o.uid}`;
+  }
+
+  scheduleApplyPolicy() {
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
+    this.applyPolicyTask = setTimeout(() => {
+      this.applyPolicy();
+    }, 3000);
   }
 
   async applyPolicy() {
@@ -109,9 +117,7 @@ class Tag {
     this._policy[name] = data;
     await this.savePolicy();
     if (this.subscriber) {
-      setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, {name, data});
-      }, 2000); // 2 seconds buffer for concurrent policy dta change to be persisted
+      this.subscriber.publish("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, {name, data});
     }
   }
 

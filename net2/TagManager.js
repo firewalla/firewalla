@@ -37,7 +37,7 @@ class TagManager {
         await this.refreshTags();
         for (let uid in this.tags) {
           const tag = this.tags[uid];
-          await tag.applyPolicy();
+          tag.scheduleApplyPolicy();
         }
       });
     }
@@ -48,7 +48,7 @@ class TagManager {
       if (f.isMain()) {
         for (let uid in this.tags) {
           const tag = this.tags[uid];
-          await tag.applyPolicy();
+          tag.scheduleApplyPolicy();
         }
       }
     });

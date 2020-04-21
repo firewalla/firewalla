@@ -46,6 +46,8 @@ const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js')
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 
+const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
+
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 
@@ -675,8 +677,7 @@ class Host {
       } else if (type === "Intel:Detected") {
         // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && f.isMain()) {
-        this.applyPolicy((err)=>{
-        });
+        this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
         // update tracking ipset
@@ -698,9 +699,92 @@ class Host {
             });
           }
         }
+        await this.updateHostsFile();
       }
     });
   }
+
+  async updateHostsFile() {
+    const macEntry = await hostTool.getMACEntry(this.o.mac);
+    const ipv4Addr = macEntry && macEntry.ipv4Addr;
+    // update hosts file in dnsmasq
+    const hostsFile = Host.getHostsFilePath(this.o.mac);
+    const suffix = await rclient.getAsync('local:domain:suffix') || "lan";
+    const localDomain = macEntry.localDomain || "";
+    const userLocalDomain = macEntry.userLocalDomain || "";
+    const lastActiveTimestamp = Number(macEntry.lastActiveTimestamp || 0);
+    if (Date.now() / 1000 - lastActiveTimestamp > 1800) {
+      // remove hosts file if it is not active in the last 30 minutes
+      await fs.unlinkAsync(hostsFile).catch((err) => { });
+      dnsmasq.scheduleReloadDNSService();
+      return;
+    }
+    if (!ipv4Addr) {
+      await fs.unlinkAsync(hostsFile).catch((err) => { });
+      dnsmasq.scheduleReloadDNSService();
+      return;
+    }
+    let ipv6Addr = null;
+    try {
+      ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+    } catch (err) {}
+    const aliases = [localDomain, userLocalDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
+      return a.indexOf(v) === i;
+    })
+    const iface = sysManager.getInterfaceViaIP4(ipv4Addr);
+    if (!iface) {
+      await fs.unlinkAsync(hostsFile).catch((err) => { });
+      dnsmasq.scheduleReloadDNSService();
+      return;
+    }
+    const suffixes = (iface.searchDomains || []).concat([suffix]).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
+      return a.indexOf(v) === i;
+    });
+    const entries = [];
+    for (const suffix of suffixes) {
+      for (const alias of aliases) {
+        const fqdn = `${alias}.${suffix}`;
+        entries.push(`${ipv4Addr} ${fqdn}`);
+        if (_.isArray(ipv6Addr)) {
+          for (const addr of ipv6Addr) {
+            entries.push(`${addr} ${fqdn}`);
+          }
+        }
+      }
+    }
+    if (entries.length !== 0) {
+      await fs.writeFileAsync(hostsFile, entries.join("\n"));
+      dnsmasq.scheduleReloadDNSService();
+    } else {
+      await fs.unlinkAsync(hostsFile).catch((err) => { });
+      dnsmasq.scheduleReloadDNSService();
+    }
+    this.scheduleInvalidateHostsFile();
+  }
+
+  scheduleInvalidateHostsFile() {
+    if (this.invalidateHostsFileTask)
+      clearTimeout(this.invalidateHostsFileTask);
+    this.invalidateHostsFileTask = setTimeout(() => {
+      const hostsFile = Host.getHostsFilePath(this.o.mac);
+      log.info(`Host ${this.o.mac} remains inactive for 30 minutes, removing hosts file ${hostsFile} ...`);
+      fs.unlinkAsync(hostsFile).then(() => {
+        dnsmasq.scheduleReloadDNSService();
+      }).catch((err) => {});
+    }, 1800 * 1000);
+  }
+
+  static getHostsFilePath(mac) {
+    return `${f.getRuntimeInfoFolder()}/hosts/${mac}`;
+  }
+
+  scheduleApplyPolicy() {
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
+    this.applyPolicyTask = setTimeout(() => {
+      this.applyPolicy();
+    }, 3000);
+  }  
 
   async applyPolicyAsync() {
     await this.loadPolicyAsync()
@@ -1101,9 +1185,7 @@ class Host {
     const obj = {};
     obj[name] = data;
     if (this.subscriber) {
-      setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
-      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+      this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
     }
     return obj
   }

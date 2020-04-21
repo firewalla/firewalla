@@ -498,9 +498,9 @@ class netBot extends ControllerBot {
         notifMsg["title-loc-args"] = newArray;
         notifMsg["loc-key"] = alarm.localizedNotificationContentKey();
         notifMsg["loc-args"] = alarm.localizedNotificationContentArray();
-        notifMsg["title_loc_key"] = alarm.localizedNotificationTitleKey();
+        notifMsg["title_loc_key"] = alarm.localizedNotificationTitleKey().replace(/[.:-]/g, '_');
         notifMsg["title_loc_args"] = newArray;
-        notifMsg["body_loc_key"] = alarm.localizedNotificationContentKey();
+        notifMsg["body_loc_key"] = alarm.localizedNotificationContentKey().replace(/[.:-]/g, '_');
         notifMsg["body_loc_args"] = alarm.localizedNotificationContentArray();
 
         const forceUseNotificationLocalization = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
@@ -530,7 +530,7 @@ class netBot extends ControllerBot {
 
       if (event.titleLocalKey) {
         notifyMsg["title-loc-key"] = `notif.title.${event.titleLocalKey}`;
-        notifyMsg["title_loc_key"] = `notif.title.${event.titleLocalKey}`;
+        notifyMsg["title_loc_key"] = notifyMsg["title-loc-key"].replace(/[.:-]/g, '_');
 
         let titleArgs = [];
 
@@ -550,7 +550,7 @@ class netBot extends ControllerBot {
 
       if (event.bodyLocalKey) {
         notifyMsg["loc-key"] = `notif.content.${event.bodyLocalKey}`;
-        notifyMsg["body_loc_key"] = `notif.content.${event.bodyLocalKey}`;
+        notifyMsg["body_loc_key"] = notifyMsg["loc-key"].replace(/[.:-]/g, '_');
 
         if (event.bodyLocalArgs) {
           notifyMsg["loc-args"] = event.bodyLocalArgs;
@@ -1014,19 +1014,20 @@ class netBot extends ControllerBot {
         (async () => {
           if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
             const macAddress = msg.target
-            const { customizeDomainName, suffix } = data.value;
-            if (customizeDomainName && macAddress != '0.0.0.0') {
+            let { customizedHostname, suffix } = data.value;
+            if (customizedHostname && hostTool.isMacAddress(macAddress)) {
               let macObject = {
                 mac: macAddress,
-                customizeDomainName: customizeDomainName
+                customizedHostname: customizedHostname
               }
               await hostTool.updateMACKey(macObject, true);
             }
             if (suffix && macAddress == '0.0.0.0') {
-              suffix = suffix.startsWith('.') ? suffix : `.${suffix}`;
               await rclient.setAsync('local:domain:suffix', suffix);
             }
-            await hostTool.generateLocalDomain(macAddress);
+            if (hostTool.isMacAddress(macAddress)) {
+              await hostTool.generateLocalDomain(macAddress);
+            }
             sem.emitEvent({
               type: "LocalDomainUpdate",
               message: `Update device:${macAddress} userLocalDomain`,

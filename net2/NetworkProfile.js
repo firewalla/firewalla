@@ -73,9 +73,9 @@ class NetworkProfile {
   }
 
   scheduleApplyPolicy() {
-    if (this.reapplyTask)
-      clearTimeout(this.reapplyTask);
-    this.reapplyTask = setTimeout(() => {
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
+    this.applyPolicyTask = setTimeout(() => {
       this.applyPolicy();
     }, 3000);
   }
@@ -107,9 +107,7 @@ class NetworkProfile {
     this._policy[name] = data;
     await this.savePolicy();
     if (this.subscriber) {
-      setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, {name, data});
-      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+      this.subscriber.publish("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, {name, data});
     }
   }
 

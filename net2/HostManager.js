@@ -159,7 +159,15 @@ module.exports = class HostManager {
           if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
             if (this.iptablesReady) {
               log.info("Rescan hosts due to network info is reloaded");
-              this.getHosts();
+              this.getHosts((err, result) => {
+                if (result && _.isArray(result)) {
+                  for (const host of result) {
+                    host.updateHostsFile().catch((err) => {
+                      log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                    });
+                  }
+                }
+              });
             }
           }
         });
@@ -179,25 +187,24 @@ module.exports = class HostManager {
             }
           });
         });
-        this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
-          if (!f.isMain()) {
-            return;
-          }
-          if (!this.iptablesReady) {
-            log.warn("Iptables is not ready yet");
-            return;
-          }
-
-          this.safeExecPolicy()
-
-          /*
-          this.loadPolicy((err,data)=> {
-              log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
-              policyManager.execute(this,"0.0.0.0",this.policy,null);
+        if (f.isMain()) {
+          this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
+            if (!this.iptablesReady) {
+              log.warn("Iptables is not ready yet");
+              return;
+            }
+  
+            this.scheduleExecPolicy();
+  
+            /*
+            this.loadPolicy((err,data)=> {
+                log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
+                policyManager.execute(this,"0.0.0.0",this.policy,null);
+            });
+            */
+            log.info("SystemPolicy:Changed", channel, ip, type, obj);
           });
-          */
-          log.info("SystemPolicy:Changed", channel, ip, type, obj);
-        });
+        }
 
         this.keepalive();
         setInterval(()=>{
@@ -208,6 +215,15 @@ module.exports = class HostManager {
       instance = this;
     }
     return instance;
+  }
+
+  scheduleExecPolicy() {
+    if (this.execPolicyTask)
+      clearTimeout(this.execPolicyTask);
+    // set a minimal interval of exec policy to avoid policy apply too frequently
+    this.execPolicyTask = setTimeout(() => {
+      this.safeExecPolicy();
+    }, 3000);
   }
 
   keepalive() {
@@ -1355,9 +1371,7 @@ module.exports = class HostManager {
     obj[name] = data;
     log.info(name, obj)
     if (this.messageBus) {
-      setTimeout(() => {
-        this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
-      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+      this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
     }
     return obj
   }
@@ -1688,7 +1702,7 @@ module.exports = class HostManager {
           if (!skipHosts) {
             log.info("Apply host policies...");
             for (let i in this.hosts.all) {
-              this.hosts.all[i].applyPolicy();
+              this.hosts.all[i].scheduleApplyPolicy();
             }
           }
         });

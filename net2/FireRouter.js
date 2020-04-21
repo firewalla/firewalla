@@ -142,6 +142,7 @@ async function generateNetworkInfo() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
+    const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
     let ip6s = [];
     let ip6Masks = [];
     let ip6Subnets = [];
@@ -190,7 +191,8 @@ async function generateNetworkInfo() {
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type,
-      rtid:         intf.state.rtid || 0
+      rtid:         intf.state.rtid || 0,
+      searchDomains: searchDomains
     }
 
     await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))

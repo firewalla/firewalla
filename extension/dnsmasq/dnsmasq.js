@@ -48,7 +48,6 @@ const ipset = require('../../net2/Ipset.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq_local";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
-const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
 const LOCAL_DOMAIN_KEY = "local:device:domain"
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
@@ -109,7 +108,7 @@ const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
-const ADDN_HOSTS_FILE = f.getRuntimeInfoFolder() + "/dnsmasq_addn_hosts";
+const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 
 const flowUtil = require('../../net2/FlowUtil.js');
 
@@ -246,6 +245,20 @@ module.exports = class DNSMASQ {
         log.info(`${SERVICE_NAME} has been restarted`, this.counter.restart);
       }).catch((err) => {
         log.error(`Failed to restart ${SERVICE_NAME} service`, err.message);
+      });
+    }, 5000);
+  }
+
+  scheduleReloadDNSService() {
+    if (this.reloadDNSTask)
+      clearTimeout(this.reloadDNSTask);
+    this.reloadDNSTask = setTimeout(async () => {
+      this.counter.reloadDnsmasq++;
+      log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
+      await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
+        log.info(`${SERVICE_NAME} has been reloaded`, this.counter.reloadDnsmasq);
+      }).catch((err) => {
+        log.error(`Failed to reload ${SERVICE_NAME} service`, err.message);
       });
     }, 5000);
   }
@@ -493,9 +506,9 @@ module.exports = class DNSMASQ {
           // global effective policy
           const entries = [];
           if (options.action === "block")
-            entries.push(`address=${domain}/${BLACK_HOLE_IP}`);
+            entries.push(`address=/${domain}/${BLACK_HOLE_IP}`);
           else
-            entries.push(`server=${domain}/#`);
+            entries.push(`server=/${domain}/#`);
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.writeFileAsync(filePath, entries.join('\n'));
         }
@@ -889,8 +902,8 @@ module.exports = class DNSMASQ {
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const netSet = NetworkProfile.getNetIpsetName(uuid);
       const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(netSet, "src,src", "set")
-        .mth(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, "src,src", "set", false)
+        .mdl("set", `--match-set ${netSet} src,src`)
+        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
       const redirectUDP = redirectTCP.clone().pro('udp')
@@ -917,8 +930,8 @@ module.exports = class DNSMASQ {
       const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
       const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
       const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mth(netSet, "src,src", "set")
-        .mth(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, "src,src", "set", false)
+        .mdl("set", `--match-set ${netSet} src,src`)
+        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
         .mth(53, null, 'dport')
         .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
       const redirectUDP = redirectTCP.clone().pro('udp');
@@ -1380,7 +1393,7 @@ module.exports = class DNSMASQ {
         if (err.code !== "EEXIST")
           log.error(`Failed to create ${FILTER_DIR}`, err);
       });
-      const dirs = [FILTER_DIR, LEGACY_FILTER_DIR];
+      const dirs = [FILTER_DIR, LEGACY_FILTER_DIR, HOSTS_DIR];
 
       const cleanDir = (async (dir) => {
         const dirExists = await fs.accessAsync(dir, fs.constants.F_OK).then(() => true).catch(() => false);
@@ -1417,90 +1430,6 @@ module.exports = class DNSMASQ {
     }
   }
 
-  //save data in redis
-  //{mac:{ipv4Addr:ipv4Addr,name:name}}
-  //host: { ipv4Addr: '192.168.218.160',mac: 'F8:A2:D6:F1:16:53',name: 'LAPTOP-Lenovo' }
-  async setupLocalDeviceDomain(macArr, isInit) {
-    if (!fc.isFeatureOn('local_domain')) {
-      return;
-    }
-    if (this.updatingLocalDomain) {
-      const cooldown = 3 * 1000;
-      return setTimeout(() => {
-        this.setupLocalDeviceDomain(macArr, isInit)
-      }, cooldown)
-    }
-    this.updatingLocalDomain = true;
-    const json = await rclient.getAsync(LOCAL_DOMAIN_KEY);
-    try {
-      let needUpdate = false;
-      let deviceDomainMap = JSON.parse(json) || {};
-      for (const mac of macArr) {
-        const key = hostTool.getMacKey(mac);
-        const localDomain = await rclient.hgetAsync(key, "localDomain");
-        const userLocalDomain = await rclient.hgetAsync(key, "userLocalDomain");
-        const ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
-        const ipv6Addr = await rclient.hgetAsync(key, "ipv6Addr");
-        if (!deviceDomainMap[mac]) {
-          deviceDomainMap[mac] = {
-            mac: mac,
-            ipv4Addr: ipv4Addr,
-            ipv6Addr: ipv6Addr,
-            localDomain: localDomain,
-            userLocalDomain: userLocalDomain
-          }
-          // new device found
-          needUpdate = true;
-        } else {
-          let deviceDomain = deviceDomainMap[mac];
-          if (deviceDomain.localDomain != localDomain || deviceDomain.userLocalDomain != userLocalDomain || !deviceDomain.hasOwnProperty("ipv6Addr")) {
-            if (deviceDomain.userLocalDomain) {
-              //If userLocalDomain is specified,only update when userLocalDomain changed
-              needUpdate = (deviceDomain.userLocalDomain != userLocalDomain);
-            } else {
-              //If userLocalDomain is not specified, update when preferredName is changed
-              needUpdate = (deviceDomain.localDomain != localDomain);
-            }
-            needUpdate = (deviceDomain.ipv4Addr != ipv4Addr || deviceDomain.ipv6Addr != ipv6Addr || needUpdate);
-            deviceDomain.mac = mac;
-            deviceDomain.ipv4Addr = ipv4Addr;
-            deviceDomain.ipv6Addr = ipv6Addr;
-            deviceDomain.userLocalDomain = userLocalDomain;
-            deviceDomain.localDomain = localDomain;
-          }
-        }
-      }
-      await rclient.setAsync(LOCAL_DOMAIN_KEY, JSON.stringify(deviceDomainMap));
-      let localDeviceDomain = "";
-      let localDeviceDomainAddn = "";
-      for (const key in deviceDomainMap) {
-        const deviceDomain = deviceDomainMap[key];
-        let { localDomain, userLocalDomain } = deviceDomain;
-        if (deviceDomain.ipv4Addr && validator.isIP(deviceDomain.ipv4Addr)) {
-          localDomain && (localDeviceDomainAddn += `${deviceDomain.ipv4Addr} ${localDomain}\n`);
-          userLocalDomain && (localDeviceDomainAddn += `${deviceDomain.ipv4Addr} ${userLocalDomain}\n`);
-        }
-        if (deviceDomain.ipv6Addr) {
-          let ipv6Addr = null;
-          try {
-            ipv6Addr = JSON.parse(deviceDomain.ipv6Addr);
-          } catch (err) {}
-          if (Array.isArray(ipv6Addr)) {
-            for (const addr of ipv6Addr) {
-              localDomain && (localDeviceDomainAddn += `${addr} ${localDomain}\n`);
-              userLocalDomain && (localDeviceDomainAddn += `${addr} ${userLocalDomain}\n`);
-            }
-          }
-        }
-      }
-      (isInit || needUpdate) && await this.throttleUpdatingConf(LOCAL_DOMAIN_FILE, localDeviceDomain);
-      (isInit || needUpdate) && await this.throttleUpdatingConf(ADDN_HOSTS_FILE, localDeviceDomainAddn);
-    } catch (e) {
-      log.error("Failed to setup local device domain", e);
-    }
-    this.updatingLocalDomain = false;
-  }
-
   async throttleUpdatingConf(filePath, data) {
     const cooldown = 5 * 1000;
     if (this.throttleTimer[filePath]) {
@@ -1517,7 +1446,7 @@ module.exports = class DNSMASQ {
     try {
       const dnsmasqConfKey = "dnsmasq:conf";
       let md5sumNow = '';
-      for (const confs of [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH, ADDN_HOSTS_FILE]) {
+      for (const confs of [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH]) {
         const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }

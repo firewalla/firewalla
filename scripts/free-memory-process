@@ -24,8 +24,8 @@ bitbridge6_mem2=$(pgrep -x bitbridge6 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {pr
 bro_mem2=$(pgrep -x $(bro_proc_name) | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
 NOP=`ps -ef |wc -l`
 NOT=`ps -aHx | wc -l`
-firemain_NOF=`lsof -p $firemain_pid | wc -l`
-firemon_NOF=`lsof -p $firemon_pid | wc -l`
+firemain_NOF=`ls -l /proc/$firemain_pid/fd | wc -l`
+firemon_NOF=`ls -l /proc/$firemon_pid/fd | wc -l`
 NOF=`cat /proc/sys/fs/file-nr`
 firemon_threads=$( ps -o nlwp -h $firemon_pid)
 firemain_threads=$( ps -o nlwp -h $firemain_pid)

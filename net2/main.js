@@ -162,7 +162,10 @@ async function resetModeInInitStage() {
   // start spoofing again when restarting
 
   // Do not fallback to none on router/DHCP mode
-  if(!bootingComplete && firstBindDone && (mode.isSpoofModeOn() || mode.isDHCPSpoofModeOn())) {
+  const isSpoofOn = await mode.isSpoofModeOn(); 
+  const isDHCPSpoofOn = await mode.isDHCPSpoofModeOn();
+
+  if(!bootingComplete && firstBindDone && (isSpoofOn || isDHCPSpoofOn)) {
     log.warn("Reverting to limited mode");
     await mode.noneModeOn()
   }

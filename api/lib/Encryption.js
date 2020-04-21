@@ -70,7 +70,11 @@ module.exports = class {
       return;
     }
 
+    // log.info('Response Data:', JSON.parse(body));
+    const time = process.hrtime();
     cloudWrapper.getCloud().encryptMessage(gid, body, (err, encryptedResponse) => {
+      log.info('EncryptMessage Cost Time:', `${process.hrtime(time)[1]/1e6} ms`);
+
       if(err) {
         res.json({error: err});
         return;
