@@ -65,11 +65,6 @@ class BlockManager {
             const categoryIpMappingKey = this.getCategoryIpMapping(category);
             mixupCategoryIps.length > 0 && await rclient.sremAsync(categoryIpMappingKey, mixupCategoryIps);
             pureCategoryIps.length > 0 && await rclient.saddAsync(categoryIpMappingKey, pureCategoryIps);
-            if (new Date() - now > 1000) {
-                log.info(`jack test check during ${category} ${new Date() - now} ms`);
-                log.info(`jack test categoryIps:${categoryIps} mixupCategoryIps:${mixupCategoryIps} pureCategoryIps:${pureCategoryIps}`)
-            }
-
         } catch (e) {
             log.info("get pure category ips failed", e)
         }
