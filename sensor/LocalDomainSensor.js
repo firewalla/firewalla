@@ -61,6 +61,7 @@ class LocalDomainSensor extends Sensor {
     async globalOn() {
         await exec(`mkdir -p ${HOSTS_DIR}`);
         await fs.writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
+        dnsmasq.scheduleRestartDNSService();
         const hosts = await hostManager.getHostsAsync();
         if (this.newFeature) {
             for (const host of hosts) {
