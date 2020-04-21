@@ -514,10 +514,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
       await this.updateIPSetByDomain(category, domain, {useTemp: true});
-
-      await this.filterIPSetByDomain(category, domain, {useTemp: true});
     }
-
+    await this.filterIPSetByDomain(category, { useTemp: true });
     await this.swapIpset(category);
     log.info(`Successfully recycled ipset for category ${category}`)
   }
