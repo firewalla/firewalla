@@ -152,7 +152,7 @@ class CategoryUpdaterBase {
     if(options && options.useTemp) {
       ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
     }
-    const categoryIps = await rclient.smembersAsync(key,0,-1);
+    const categoryIps = await rclient.smembersAsync(key);
     const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
     if(pureCategoryIps.length==0)return;
     let cmd4 = `echo "${pureCategoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
