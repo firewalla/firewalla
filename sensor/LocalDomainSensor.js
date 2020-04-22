@@ -25,13 +25,11 @@ const featureName = 'local_domain';
 const f = require('../net2/Firewalla.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const ADDN_HOSTS_CONF = FILTER_DIR + "/addn_hosts.conf";
-const ADDN_HOSTS_FILE = f.getRuntimeInfoFolder() + "/dnsmasq_addn_hosts";
-const util = require('util');
+const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 const fs = require('fs');
-const unlinkAsync = util.promisify(fs.unlink);
-const writeFileAsync = util.promisify(fs.writeFile);
-const HostTool = require('../net2/HostTool.js')
-const hostTool = new HostTool();
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+const exec = require('child-process-promise').exec;
 const updateFlag = "1";
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -47,35 +45,37 @@ class LocalDomainSensor extends Sensor {
         }
         this.hookFeature(featureName);
         sem.on('LocalDomainUpdate', async (event) => {
-            const macArr = event.macArr;
+            const macArr = event.macArr || [];
             if (macArr.includes('0.0.0.0')) {
                 await this.localDomainSuffixUpdate();
                 return;
             }
-            await dnsmasq.setupLocalDeviceDomain(macArr, true);
+            for (const mac of macArr) {
+                const host = await hostManager.getHostAsync(mac);
+                await host.updateHostsFile().catch((err) => {
+                    log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                });
+            }
         });
     }
     async globalOn() {
-        await writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + ADDN_HOSTS_FILE);
-        await rclient.delAsync("local:device:domain");
+        await exec(`mkdir -p ${HOSTS_DIR}`);
+        await fs.writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
+        dnsmasq.scheduleRestartDNSService();
         const hosts = await hostManager.getHostsAsync();
-        let macArr = [];
-        for (const host of hosts) {
-            if (host && host.o && host.o.mac) {
-                macArr.push(host.o.mac)
+        if (this.newFeature) {
+            for (const host of hosts) {
+                if (host && host.o && host.o.mac) {
+                    await host.updateHostsFile().catch((err) => {
+                        log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                    });
+                }
             }
         }
-        if (this.newFeature) {
-            const promises = macArr.map(async (mac) => {
-                await hostTool.generateLocalDomain(mac);
-            })
-            await Promise.all(promises);
-        }
-        await dnsmasq.setupLocalDeviceDomain(macArr, true);
     }
     async globalOff() {
         try {
-            await unlinkAsync(ADDN_HOSTS_CONF);
+            await fs.unlinkAsync(ADDN_HOSTS_CONF);
             dnsmasq.scheduleRestartDNSService();
         } catch (err) {
             if (err.code === 'ENOENT') {
@@ -87,17 +87,13 @@ class LocalDomainSensor extends Sensor {
     }
     async localDomainSuffixUpdate() {
         const hosts = await hostManager.getHostsAsync();
-        let macArr = [];
         for (const host of hosts) {
             if (host && host.o && host.o.mac) {
-                macArr.push(host.o.mac)
+                await host.updateHostsFile().catch((err) => {
+                    log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                });
             }
         }
-        const promises = macArr.map(async (mac) => {
-            await hostTool.generateLocalDomain(mac);
-        })
-        await Promise.all(promises);
-        await dnsmasq.setupLocalDeviceDomain(macArr, true);
     }
 }
 

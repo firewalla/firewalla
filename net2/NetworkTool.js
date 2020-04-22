@@ -164,6 +164,7 @@ class NetworkTool {
         else
           i.type = "wan"; 
       }
+      i.searchDomains = [];
     });
 
     return list

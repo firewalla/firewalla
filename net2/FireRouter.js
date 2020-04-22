@@ -142,6 +142,7 @@ async function generateNetworkInfo() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
+    const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
     let ip6s = [];
     let ip6Masks = [];
     let ip6Subnets = [];
@@ -190,7 +191,8 @@ async function generateNetworkInfo() {
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type,
-      rtid:         intf.state.rtid || 0
+      rtid:         intf.state.rtid || 0,
+      searchDomains: searchDomains
     }
 
     await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
@@ -427,8 +429,8 @@ class FireRouter {
         }
       }
 
-      monitoringIntfNames = [ 'eth0', 'eth0:0' ];
-      logicIntfNames = ['eth0', 'eth0:0'];
+      monitoringIntfNames = [ 'eth0' ];
+      logicIntfNames = ['eth0'];
       zeekOptions = {
         listenInterfaces: ["eth0"],
         restrictFilters: {}
@@ -629,6 +631,8 @@ class FireRouter {
       const ModeManager = require('./ModeManager.js');
       await ModeManager.changeToAlternativeIpSubnet();
       await ModeManager.enableSecondaryInterface();
+      monitoringIntfNames.push('eth0:0')
+      logicIntfNames.push('eth0:0')
     }
     // publish message to trigger firerouter init
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");

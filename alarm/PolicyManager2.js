@@ -1146,6 +1146,10 @@ class PolicyManager2 {
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remotePositive = false;
         remoteTupleCount = 2;
+        // legacy data format
+        if (target && ht.isMacAddress(target)) {
+          scope = [target];
+        }
         break;
       case "domain":
       case "dns":
@@ -1204,6 +1208,7 @@ class PolicyManager2 {
         */
         if (policy.dnsmasq_only)
           return;
+        await categoryUpdater.activateCategory(target);
         remoteSet4 = categoryUpdater.getIPSetName(target);
         remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
         break;
@@ -1386,6 +1391,10 @@ class PolicyManager2 {
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remotePositive = false;
         remoteTupleCount = 2;
+        // legacy data format
+        if (target && ht.isMacAddress(target)) {
+          scope = [target];
+        }
         break;
       case "domain":
       case "dns":
