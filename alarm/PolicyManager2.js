@@ -1153,8 +1153,10 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
-        dnsmasq.scheduleRestartDNSService();
+        if (direction !== "inbound") {
+          await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
+          dnsmasq.scheduleRestartDNSService();
+        }
         if (policy.dnsmasq_only)
           return;
         remoteSet4 = Block.getDstSet(pid);
@@ -1398,8 +1400,10 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
-        dnsmasq.scheduleRestartDNSService();
+        if (direction !== "inbound") {
+          await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
+          dnsmasq.scheduleRestartDNSService();
+        }
         if (policy.dnsmasq_only)
           return;
         remoteSet4 = Block.getDstSet(pid);
