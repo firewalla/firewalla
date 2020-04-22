@@ -66,20 +66,69 @@ if [ -z "$PARAMS" ]; then
     exit 0
 fi
 
+
+UNAME=$(uname -m)
+
+case "$UNAME" in
+"x86_64")
+  PLATFORM=gold
+  OVERLAYROOT=1
+  ;;
+"aarch64")
+  PLATFORM=blue
+  OVERLAYROOT=0
+  ;;
+"armv7l")
+  PLATFORM=red
+  OVERLAYROOT=0
+  ;;
+*)
+  ;;
+esac
+
+if [ $OVERLAYROOT != 1 ]; then
+  $PRE_EXEC
+
+  if [ "$NOUPDATE" != 1 ]; then
+    sudo /usr/bin/apt-get update
+  fi
+  # Dpkg::Options
+  # confold: If a conffile has been modified and the version in the package
+  # did change, always keep the old version without prompting, unless the
+  # --force-confdef is also specified, in which case the default action is preferred.
+  sudo /usr/bin/apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" -y $PARAMS
+
+  $POST_EXEC
+else
+  # Some directories do not exist in lower fs, e.g.
+  # /var/log -> /log/system
+  # /var/lib/apt -> /log/apt/lib
+  sudo mount -o bind /log /media/root-ro/log
+
+# don't indent here-document with space
+cat << EOF | sudo overlayroot-chroot
 $PRE_EXEC
 
 if [ "$NOUPDATE" != 1 ]; then
-    sudo /usr/bin/apt-get update
+    /usr/bin/apt-get update
 fi
-# confold: If a conffile has been modified and the version in the package
-# did change, always keep the old version without prompting, unless the
-# --force-confdef is also specified, in which case the default action is preferred.
-sudo /usr/bin/apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" -y $PARAMS
+/usr/bin/apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" -y $PARAMS
 
 $POST_EXEC
+EOF
+
+  sudo umount /media/root-ro/log
+fi
 
 # /etc/profile.d/armbian-check-first-login-reboot.sh
-if [ "$NOREBOOT" != 1 ] && [ -f "/var/run/.reboot_required" ]; then
-    logger "Reboot required for newly added/upgraded packages, REBOOT in 10 seconds"
-    shutdown -r -t 10
+# Gold -> /usr/lib/update-notifier/update-motd-reboot-require
+if [ "$NOREBOOT" != 1 ] && ([ -f "/var/run/.reboot_required" ] || [ -f "/var/run/reboot-required" ]); then
+    echo "Reboot required for newly added/upgraded packages, reboot in 10 seconds"
+    sudo shutdown -r -t 10
 fi
+
+if [ "$NOREBOOT" != 1 ] && [ $OVERLAYROOT == 1 ] && mount |grep " /media/root-ro "|grep ro &>/dev/null; then
+    echo "Root still in rw mode, reboot in 10 seconds"
+    sudo shutdown -r -t 10
+fi
+
