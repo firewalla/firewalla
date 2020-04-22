@@ -245,6 +245,7 @@ module.exports = class {
         sem.emitEvent({
           type: "DeviceUpdate",
           message: "Firewalla self discovery",
+          suppressAlarm: true,
           host: {
             name: "Firewalla",
             uid: intf.ip_address,
