@@ -239,6 +239,9 @@ class FireRouter {
 
     sclient.on("message", (channel, message) => {
       switch (channel) {
+        case Message.MSG_SECONDARY_IFACE_UP:
+          // this message should only be triggered on red/blue
+          this.secondaryIfaceEnabled = true;
         case Message.MSG_FR_CHANGE_APPLIED:
         case Message.MSG_NETWORK_CHANGED: {
           // these two message types should cover all proactive and reactive network changes
@@ -249,6 +252,7 @@ class FireRouter {
       }
     });
 
+    sclient.subscribe(Message.MSG_SECONDARY_IFACE_UP);
     sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
   }
@@ -431,6 +435,10 @@ class FireRouter {
 
       monitoringIntfNames = [ 'eth0' ];
       logicIntfNames = ['eth0'];
+      if (this.secondaryIfaceEnabled) {
+        monitoringIntfNames.push("eth0:0");
+        logicIntfNames.push("eth0:0");
+      }
       zeekOptions = {
         listenInterfaces: ["eth0"],
         restrictFilters: {}
@@ -631,8 +639,7 @@ class FireRouter {
       const ModeManager = require('./ModeManager.js');
       await ModeManager.changeToAlternativeIpSubnet();
       await ModeManager.enableSecondaryInterface();
-      monitoringIntfNames.push('eth0:0')
-      logicIntfNames.push('eth0:0')
+      await pclient.publishAsync(Message.MSG_SECONDARY_IFACE_UP, "");
     }
     // publish message to trigger firerouter init
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");

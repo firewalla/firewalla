@@ -20,6 +20,7 @@ const MSG_SYS_NETWORK_INFO_UPDATED = "System:network_info_updated";
 const MSG_SYS_NETWORK_INFO_RELOADED = "System:network_info_reloaded";
 const MSG_FR_CHANGE_APPLIED = "firerouter.change_applied";
 const MSG_SYS_API_INTERFACE_CHANGED = "System:api:interface_changed";
+const MSG_SECONDARY_IFACE_UP = "System:secondary_interface:up";
 
 module.exports = {
   MSG_NETWORK_CHANGED,
@@ -27,4 +28,5 @@ module.exports = {
   MSG_SYS_NETWORK_INFO_RELOADED,
   MSG_FR_CHANGE_APPLIED,
   MSG_SYS_API_INTERFACE_CHANGED,
+  MSG_SECONDARY_IFACE_UP
 }
