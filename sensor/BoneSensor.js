@@ -163,7 +163,8 @@ class BoneSensor extends Sensor {
     // First checkin usually have no meaningful data ...
     //
     try {
-      if (this.lastCheckedIn) {
+      if (this.lastCheckedIn && this.iptablesReady) {
+        // HostManager.getCheckIn will call getHosts, which should be called after iptables is ready
         let HostManager = require("../net2/HostManager.js");
         let hostManager = new HostManager();
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
@@ -237,6 +238,10 @@ class BoneSensor extends Sensor {
 
     sem.on("PublicIP:Updated", () => {
       this.checkIn();
+    });
+
+    sem.once("IPTABLES_READY", () => {
+      this.iptablesReady = true;
     });
 
     sem.on("CloudReCheckin", async () => {
