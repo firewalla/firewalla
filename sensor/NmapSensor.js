@@ -229,7 +229,7 @@ class NmapSensor extends Sensor {
 
 
       const cmd = fastMode
-        ? `sudo nmap -sn -PO ${['red', 'blue'].includes(platform.getName()) ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}`
+        ? `sudo nmap -sn -PO ${intf.type === "wan" ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}`
         : `sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ${range} -oX - | ${xml2jsonBinary}`;
 
       try {
