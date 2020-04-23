@@ -244,6 +244,7 @@ class FireRouter {
           log.info("Interface config is changed, schedule reload from FireRouter and restart Brofish ...");
           reloadNeeded = true;
           this.broRestartNeeded = true;
+          break;
         }
         case Message.MSG_SECONDARY_IFACE_UP: {
           // this message should only be triggered on red/blue
