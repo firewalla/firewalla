@@ -142,6 +142,7 @@ class BoneSensor extends Sensor {
   }
 
   async checkIn() {
+    this.getLocalRepoChangeFile();
     const url = await this.getForcedCloudInstanceURL();
 
     if (url) {
@@ -170,6 +171,9 @@ class BoneSensor extends Sensor {
       }
     } catch (e) {
       log.error("BoneCheckIn Error fetching hostInfo", e);
+    }
+    if (this.localRepoChangeFiles) {
+      sysInfo.localRepoChangeFiles = this.localRepoChangeFiles;
     }
 
     const data = await Bone.checkinAsync(fConfig, license, sysInfo);
@@ -284,6 +288,17 @@ class BoneSensor extends Sensor {
           })
       }
     })
+  }
+
+  getLocalRepoChangeFile() {
+    if (!this.localRepoChangeFiles) {
+      const cmd = "git status -uno --porcelain | awk '{print $1, $2}' | head -n 10";
+      try {
+        this.localRepoChangeFiles = require('child_process').execSync(cmd).toString('utf-8').split("\n").filter((line) => line.length > 0);
+      } catch (err) {
+        log.error(err);
+      }
+    }
   }
 }
 

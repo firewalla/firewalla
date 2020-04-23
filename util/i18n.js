@@ -1,35 +1,53 @@
-'use strict'
+'use strict';
 
-let i18n = require('i18n');
-
+const log = require('../net2/logger.js')(__filename);
 let flat = require('flat');
 let util = require('util');
 
 let f = require('../net2/Firewalla.js');
-let defaultLocale = "en";
-// let moment = require("moment");
+const Mustache = require('mustache');
+const fs = require('fs');
+const existsAsync = util.promisify(fs.exists);
 
-i18n.configure({
-  locales:['en', 'zh'],
-  directory: f.getLocalesDirectory(),
-  defaultLocale: defaultLocale,
-  updateFiles: false
-});
-// moment.locale(defaultLocale);
+let instance = null;
+class i18n {
+  constructor() {
+    if (instance == null) {
+      instance = this;
+      this.setLocale("en");
+    }
+    return instance;
+  }
+  
+  __(msgTemplate, info) {
+    if (!(this.localeJson && this.localeJson.hasOwnProperty(msgTemplate))) {
+      return msgTemplate;
+    }
+    
+    return Mustache.render(this.localeJson[msgTemplate], flat.unflatten(info));
+  }
+  
+  async setLocale(locale) {
+    if (this.defaultLocale != locale) {
+      this.defaultLocale = locale;
+      const directory = f.getLocalesDirectory();
+      this.localeJson = require(`${directory}/en.json`);
+      if (this.defaultLocale != "en") {
+        let filePath = `${directory}/${this.defaultLocale}.json`;
+        const fileExists = await existsAsync(filePath);
+        if (fileExists) {
+          const newJson = require(filePath);
+          Object.assign(this.localeJson, newJson);
+        }
+      }
+    }
 
-function m(msgTemplate, info) {
-  return i18n.__(msgTemplate, flat.unflatten(info));
+    return this.defaultLocale;
+  }
+
+  getLocale() {
+    return this.defaultLocale;
+  }
 }
 
-function mf(msgTemplate, info) {
-  return i18n.__mf(msgTemplate, flat.unflatten(info));
-}
-
-module.exports = {
-  "__": m,
-  // setLocale: i18n.setLocale,
-  "__mf": mf,
-  setLocale: () => {}, // disable set locale feature for now
-  getLocale: i18n.getLocale
-};
-
+module.exports = new i18n();
