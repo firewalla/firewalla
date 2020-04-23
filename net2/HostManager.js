@@ -1394,6 +1394,11 @@ module.exports = class HostManager {
         });
       });
     } else {
+      const redisSpoofOff = await rclient.getAsync('sys:bone:spoofOff');
+      if (redisSpoofOff) {
+        return;
+      }
+
       await iptables.switchMonitoringAsync(true);
       await iptables.switchMonitoringAsync(true, 6);
       // remove dev flag file if it exists and restart bitbridge

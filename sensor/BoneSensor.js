@@ -37,6 +37,10 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const execAsync = require('child-process-promise').exec
 
+const mode = require('../net2/Mode.js');
+let HostManager = require('../net2/HostManager.js');
+let hostManager = new HostManager();
+
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
 
@@ -174,7 +178,7 @@ class BoneSensor extends Sensor {
     }
 
     const data = await Bone.checkinAsync(fConfig, license, sysInfo);
-
+    await this.checkCloudSpoofOff(data.spoofOff);
     this.lastCheckedIn = Date.now() / 1000;
 
     log.info("Cloud checked in successfully:")//, JSON.stringify(data));
@@ -224,6 +228,24 @@ class BoneSensor extends Sensor {
 
     if (data && data.frpToken) {
       await rclient.hsetAsync("sys:config", "frpToken", data.frpToken)
+    }
+  }
+
+  async checkCloudSpoofOff(spoofOff) {
+    let spoofMode = await mode.isSpoofModeOn();
+    const spoofOffKey = 'sys:bone:spoofOff';
+    if (spoofOff && spoofMode) {
+      await rclient.setAsync(spoofOffKey, spoofOff);
+      //turn off simple mode
+      hostManager.spoof(false);
+    } else {
+      const redisSpoofOff = await rclient.getAsync(spoofOffKey);
+      if (redisSpoofOff) {
+        await rclient.delAsync(spoofOffKey);
+        if (spoofMode) {
+          hostManager.spoof(true);
+        }
+      }
     }
   }
 
