@@ -820,7 +820,7 @@ module.exports = class {
         }
       }
       if (!localMac || localMac.constructor.name !== "String") {
-        return;
+        localMac = null;
       }
 
       const intfInfo = sysManager.getInterfaceViaIP4(lhost);
@@ -831,9 +831,12 @@ module.exports = class {
         intfId = '';
       }
 
-      localMac = localMac.toUpperCase();
-      const hostInfo = hostManager.getHostFastByMAC(localMac);
-      let tags = hostInfo ? hostInfo.getTags() : [];
+      let tags = [];
+      if (localMac) {
+        localMac = localMac.toUpperCase();
+        const hostInfo = hostManager.getHostFastByMAC(localMac);
+        tags = hostInfo ? hostInfo.getTags() : [];
+      }
 
       if (intfId !== '') {
         const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
@@ -1049,7 +1052,7 @@ module.exports = class {
 
       // Single flow is written to redis first to prevent data loss, will be removed in most cases
       if (tmpspec) {
-        if (tmpspec.lh === tmpspec.sh) {
+        if (tmpspec.lh === tmpspec.sh && localMac) {
           // record device as active if and only if device originates the connection
           let macIPEntry = this.activeMac[localMac];
           if (!macIPEntry)
@@ -1063,8 +1066,6 @@ module.exports = class {
           }
           this.activeMac[localMac] = macIPEntry;
         }
-        let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
-        let strdata = JSON.stringify(tmpspec);
 
         if (tmpspec.fd == 'in') {
           // use now instead of the start time of this flow
@@ -1091,42 +1092,46 @@ module.exports = class {
           }
         }
 
-
-        //let redisObj = [key, tmpspec.ts, strdata];
-        // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
-        let redisObj = [key, now, strdata];
-        log.debug("Conn:Save:Temp", redisObj);
-
-        sem.sendEventToFireMain({
-          type: "NewGlobalFlow",
-          flow: tmpspec,
-          suppressEventLogging: true
-        });
-
-        if (tmpspec.fd == 'out') {
-          this.recordOutPort(tmpspec);
-        }
-
-        rclient.zadd(redisObj, (err, response) => {
-          if (err == null) {
-
-            let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-
-            setTimeout(() => {
-              sem.emitEvent({
-                type: 'DestIPFound',
-                ip: remoteIPAddress,
-                fd: tmpspec.fd,
-                ob: tmpspec.ob,
-                rb: tmpspec.rb,
-                suppressEventLogging: true
-              });
-            }, 1 * 1000); // make it a little slower so that dns record will be handled first
-
-          } else {
-            log.error("Failed to save tmpspec: ", tmpspec, err);
+        if (localMac) {
+          let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
+          let strdata = JSON.stringify(tmpspec);
+  
+          //let redisObj = [key, tmpspec.ts, strdata];
+          // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
+          let redisObj = [key, now, strdata];
+          log.debug("Conn:Save:Temp", redisObj);
+  
+          sem.sendEventToFireMain({
+            type: "NewGlobalFlow",
+            flow: tmpspec,
+            suppressEventLogging: true
+          });
+  
+          if (tmpspec.fd == 'out') {
+            this.recordOutPort(tmpspec);
           }
-        });
+  
+          rclient.zadd(redisObj, (err, response) => {
+            if (err == null) {
+  
+              let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+  
+              setTimeout(() => {
+                sem.emitEvent({
+                  type: 'DestIPFound',
+                  ip: remoteIPAddress,
+                  fd: tmpspec.fd,
+                  ob: tmpspec.ob,
+                  rb: tmpspec.rb,
+                  suppressEventLogging: true
+                });
+              }, 1 * 1000); // make it a little slower so that dns record will be handled first
+  
+            } else {
+              log.error("Failed to save tmpspec: ", tmpspec, err);
+            }
+          });
+        }
       }
 
       // TODO: Need to write code take care to ensure orig host is us ...
@@ -1138,6 +1143,8 @@ module.exports = class {
         log.info("Processing Flow Stash");
         for (let i in this.flowstash) {
           let spec = this.flowstash[i];
+          if (!spec.mac)
+            continue;
           try {
             if (spec._afmap && Object.keys(spec._afmap).length > 0) {
               for (let i in spec._afmap) {
