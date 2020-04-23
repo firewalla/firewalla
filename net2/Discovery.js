@@ -92,7 +92,6 @@ module.exports = class {
   }
 
   async discoverMac(mac) {
-    await this.discoverInterfacesAsync(false);
     const list = sysManager.getMonitoringInterfaces();
     log.info("Discovery::DiscoverMAC", list);
     let found = null;
