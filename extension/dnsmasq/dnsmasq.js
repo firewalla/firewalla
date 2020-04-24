@@ -154,7 +154,8 @@ module.exports = class DNSMASQ {
       this.counter = {
         reloadDnsmasq: 0,
         writeHostsFile: 0,
-        restart: 0
+        restart: 0,
+        restartDHCP: 0
       }
       this.dnsTag = {
         adblock: "$adblock"
