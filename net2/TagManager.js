@@ -30,30 +30,38 @@ class TagManager {
     this.iptablesReady = false;
     this.tags = {};
 
+    this.scheduleRefresh();
+
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
         this.iptablesReady = true;
         log.info("Iptable is ready, apply tag policies ...");
-        await this.refreshTags();
-        for (let uid in this.tags) {
-          const tag = this.tags[uid];
-          tag.scheduleApplyPolicy();
-        }
+        this.scheduleRefresh();
       });
     }
 
     this.subscriber.subscribeOnce("DiscoveryEvent", "Tags:Updated", null, async (channel, type, id, obj) => {
       log.info(`Tags are updated`);
+      this.scheduleRefresh();
+    });
+    
+    return this;
+  }
+
+  scheduleRefresh() {
+    if (this.refreshTask)
+      clearTimeout(this.refreshTask);
+    this.refreshTask = setTimeout(async () => {
       await this.refreshTags();
       if (f.isMain()) {
-        for (let uid in this.tags) {
-          const tag = this.tags[uid];
-          tag.scheduleApplyPolicy();
+        if (this.iptablesReady) {
+          for (let uid in this.tags) {
+            const tag = this.tags[uid];
+            tag.scheduleApplyPolicy();
+          }
         }
       }
-    });
-    this.refreshTags();
-    return this;
+    }, 3000);
   }
 
   async toJson() {

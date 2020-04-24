@@ -155,25 +155,8 @@ module.exports = class HostManager {
           this.iptablesReady = true;
         })
 
-        sclient.on("message", (channel, message) => {
-          if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-            if (this.iptablesReady) {
-              log.info("Rescan hosts due to network info is reloaded");
-              this.getHosts((err, result) => {
-                if (result && _.isArray(result)) {
-                  for (const host of result) {
-                    host.updateHostsFile().catch((err) => {
-                      log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
-                    });
-                  }
-                }
-              });
-            }
-          }
-        });
-
-        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
-
+        // beware that MSG_SYS_NETWORK_INFO_RELOADED will trigger scan from sensors and thus generate Scan:Done event
+        // getHosts will be invoked here to reflect updated hosts information
         log.info("Subscribing Scan:Done event...")
         this.messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
           if (!this.iptablesReady) {
@@ -182,6 +165,13 @@ module.exports = class HostManager {
           }
           log.info("New Host May be added rescan");
           this.getHosts((err, result) => {
+            if (result && _.isArray(result)) {
+              for (const host of result) {
+                host.updateHostsFile().catch((err) => {
+                  log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                });
+              }
+            }
             if (this.callbacks[type]) {
               this.callbacks[type](channel, type, ip, obj);
             }
@@ -1197,7 +1187,7 @@ module.exports = class HostManager {
 
     // Only allow requests be executed in a frenquency lower than 1 every 5 mins
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
-    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
+    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {              
       log.info("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length>0){
         return this.hosts.all
@@ -1394,6 +1384,11 @@ module.exports = class HostManager {
         });
       });
     } else {
+      const redisSpoofOff = await rclient.getAsync('sys:bone:spoofOff');
+      if (redisSpoofOff) {
+        return;
+      }
+
       await iptables.switchMonitoringAsync(true);
       await iptables.switchMonitoringAsync(true, 6);
       // remove dev flag file if it exists and restart bitbridge

@@ -105,7 +105,6 @@ class ICMP6Sensor extends Sensor {
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `A new ipv6 is found @ ICMP6Sensor ${tgtIp} ${dstMac}`,
-          suppressAlarm: true,
           host: {
             ipv6Addr: [tgtIp],
             mac: dstMac.toUpperCase(),

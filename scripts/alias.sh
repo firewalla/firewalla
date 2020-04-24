@@ -53,6 +53,7 @@ alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name
 alias ll2='redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMon\", \"level\":\"info\"}"'
 alias ll3='redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireApi\", \"level\":\"info\"}"'
 alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
+alias frcc='curl "http://localhost:8837/v1/config/active" | json_pp'
 
 alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -'
 alias cbd='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/check_ipdomain_block.sh 2>/dev/null | bash /dev/stdin --domain'
@@ -82,10 +83,12 @@ alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi
 function ggsupport {
   SUPPORT_TOKEN=$1
   PORT=$2
+  SERVER_PORT=${3:-10000}
+  SERVER=${4:-support.firewalla.com}
 
 echo "[common]
-server_addr = support.firewalla.com
-server_port = 10000
+server_addr = $SERVER
+server_port = $SERVER_PORT
 privilege_token = $SUPPORT_TOKEN
 
 [SSH$PORT]

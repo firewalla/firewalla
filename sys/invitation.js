@@ -213,6 +213,15 @@ class FWInvitation {
               !types.includes(lic.DATA.LICENSE.toLowerCase())) {
               // invalid license
               log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
+
+              // remove license record in redis
+              await rclient.delAsync("firereset:license");
+
+              // record license error
+              await rclient.setAsync("firereset:error", JSON.stringify({
+                "error_code": "invalid_license_type"
+              }));
+
               return {
                 status: "pending"
               };
@@ -224,6 +233,15 @@ class FWInvitation {
           }
         } catch (err) {
           log.error("Invalid license", err);
+
+          // remove license record in redis
+          await rclient.delAsync("firereset:license");
+
+          // record license error
+          await rclient.setAsync("firereset:error", JSON.stringify({
+            "error_code": "invalid_license"
+          }));
+          
           return {
             status: "pending"
           }

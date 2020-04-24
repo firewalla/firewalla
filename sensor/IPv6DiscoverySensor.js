@@ -74,7 +74,6 @@ class IPv6DiscoverySensor extends Sensor {
     sem.emitEvent({
       type: "DeviceUpdate",
       message: `A new ipv6 is found @ IPv6DisocverySensor ${v6addrs} ${mac}`,
-      suppressAlarm: true,
       host: {
         ipv6Addr: v6addrs,
         mac: mac.toUpperCase(),

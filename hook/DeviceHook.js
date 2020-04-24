@@ -589,7 +589,7 @@ class DeviceHook extends Hook {
   }
 
   getFirstIPv6(host) {
-    return host.ipv6Addr && host.ipv6Addr.length > 0 && host.ipv6Addr[0]
+    return (host.ipv6Addr && host.ipv6Addr.length > 0 && host.ipv6Addr[0]) || "";
   }
 
   getPreferredName(host) {
