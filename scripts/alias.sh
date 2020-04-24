@@ -82,9 +82,14 @@ alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi
 function ggsupport {
   SUPPORT_TOKEN=$1
   PORT=$2
+  SERVER=$3
+
+  if [[ -z $SERVER ]]; then
+    SERVER="support.firewalla.com"
+  fi
 
 echo "[common]
-server_addr = support.firewalla.com
+server_addr = $SERVER
 server_port = 10000
 privilege_token = $SUPPORT_TOKEN
 
