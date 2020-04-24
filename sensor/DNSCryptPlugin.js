@@ -132,6 +132,7 @@ class DNSCryptPlugin extends Sensor {
   }
 
   async systemStart() {
+    //special patch for dns leak
     const entry = `server=${dc.getLocalServer()}\nserver=${dc.getLocalServer()}\n`;
     await fs.writeFileAsync(systemConfigFile, entry);
     await dnsmasq.restartDnsmasq();
@@ -145,6 +146,7 @@ class DNSCryptPlugin extends Sensor {
   async perDeviceStart(macAddress) {
     log.info(`Starting DoH on device ${macAddress}...`);
     const configFile = `${dnsmasqConfigFolder}/doh_${macAddress}.conf`;
+    //special patch for dns leak
     const dnsmasqentry = `server=${dc.getLocalServer()}%${macAddress.toUpperCase()}\nserver=${dc.getLocalServer()}%${macAddress.toUpperCase()}\n`;
     await fs.writeFileAsync(configFile, dnsmasqentry);
     dnsmasq.restartDnsmasq();
