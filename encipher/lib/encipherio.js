@@ -355,6 +355,7 @@ let legoEptCloud = class {
       family: 4,
       method: 'POST',
       json: group,
+      maxAttempts: 3
     };
 
     const response = await this.rrWithEptRelogin(options)
@@ -447,6 +448,7 @@ let legoEptCloud = class {
       uri: this.endpoint + '/group/' + gid,
       family: 4,
       method: 'DELETE',
+      maxAttempts: 3
     }
 
     log.debug("group delete ", options);
@@ -1157,7 +1159,7 @@ let legoEptCloud = class {
       json: {
         'symmetricKey': peerKey,
       },
-      maxAttempts: 1
+      maxAttempts: 3
     };
 
     const resp = await this.rrWithEptRelogin(options)
