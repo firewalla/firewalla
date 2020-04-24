@@ -23,6 +23,8 @@ const dnsTool = new DNSTool()
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 const _ = require('lodash');
+const fc = require('../net2/config.js');
+const featureName = 'smart_block';
 let instance = null
 
 class BlockManager {
@@ -31,9 +33,23 @@ class BlockManager {
             instance = this;
             const refreshInterval = 15 * 60; // 15 mins
             sem.once('IPTABLES_READY', async () => {
-                setTimeout(() => {
-                    this.scheduleRefreshBlockLevel();
-                }, refreshInterval * 1000)
+                if (fc.isFeatureOn(featureName)) {
+                    this.scheduleId = setInterval(() => {
+                        this.scheduleRefreshBlockLevel();
+                    }, refreshInterval * 1000)
+                }
+                fc.onFeature(featureName, (feature, status) => {
+                    if (feature !== featureName) {
+                        return
+                    }
+                    if (status) {
+                        this.scheduleId = setInterval(() => {
+                            this.scheduleRefreshBlockLevel();
+                        }, refreshInterval * 1000)
+                    } else {
+                        clearInterval(this.scheduleId);
+                    }
+                })
             })
         }
         return instance
@@ -45,6 +61,9 @@ class BlockManager {
         return `rdns:category:${category}`
     }
     async getPureCategoryIps(category, categoryIps) {
+        if (!fc.isFeatureOn(featureName)) {
+            return categoryIps;
+        }
         const pureCategoryIps = [], mixupCategoryIps = [];
         try {
             const now = new Date();
@@ -96,6 +115,11 @@ class BlockManager {
         })
     }
     async updateIpBlockInfo(ip, domain, action, blockSet = 'blocked_domain_set') {
+        if (!fc.isFeatureOn(featureName)) {
+            return {
+                blockLevel: 'ip'
+            };
+        }
         const key = this.ipBlockInfoKey(ip);
         const exist = (await rclient.existsAsync(key) == 1);
         let ipBlockInfo = {
