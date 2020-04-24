@@ -228,6 +228,18 @@ function getEncipherConfigFolder() {
   return "/encipher.config";
 }
 
+function getFireRouterHiddenFolder() {
+  return `${getUserHome()}/.router`;
+}
+
+function getFireRouterRuntimeInfoFolder() {
+  return `${getFireRouterHiddenFolder()}/run`;
+}
+
+function getFireRouterConfigFolder() {
+  return `${getFireRouterHiddenFolder()}/config`;
+}
+
 // Get config data from fishbone
 var _boneInfo = null;
 function getBoneInfo(callback) {
@@ -336,6 +348,8 @@ module.exports = {
   getLogFolder: getLogFolder,
   getRuntimeInfoFolder: getRuntimeInfoFolder,
   getUserConfigFolder: getUserConfigFolder,
+  getFireRouterRuntimeInfoFolder: getFireRouterRuntimeInfoFolder,
+  getFireRouterConfigFolder: getFireRouterConfigFolder,
   getUserID: getUserID,
   getBoneInfo: getBoneInfo,
   getBoneInfoSync: getBoneInfoSync,
