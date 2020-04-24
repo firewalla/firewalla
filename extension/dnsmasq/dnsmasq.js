@@ -273,10 +273,10 @@ module.exports = class DNSMASQ {
           return;
       }
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
-      this.counter.reloadDnsmasq++;
-      log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.reloadDnsmasq);
+      this.counter.restartDHCP++;
+      log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
       await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
-        log.info(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.reloadDnsmasq);
+        log.info(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
       });
