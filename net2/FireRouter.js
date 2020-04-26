@@ -232,10 +232,7 @@ class FireRouter {
     this.ready = false
     this.sysNetworkInfo = [];
 
-    this.init(true).catch(err => {
-      log.error('FireRouter failed to initialize', err)
-      process.exit(1);
-    })
+    this.retryUntilInitComplete()
 
     sclient.on("message", (channel, message) => {
       let reloadNeeded = false;
@@ -272,6 +269,16 @@ class FireRouter {
     sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
   }
 
+  async retryUntilInitComplete() {
+    try {
+      await this.init(true)
+    } catch(err) {
+      log.error('FireRouter failed to initialize', err)
+      await delay(5000)
+      this.retryUntilInitComplete()
+    }
+  }
+
   scheduleReload() {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
@@ -280,7 +287,6 @@ class FireRouter {
     }, 3000);
   }
 
-  // let it crash
   async init(first = false) {
     let zeekOptions = {
       listenInterfaces: [],
