@@ -1891,44 +1891,38 @@ class PolicyManager2 {
       const rawData = actions[action] || [];
       switch (action) {
         case 'create':
-          (async () => {
-            for(const rawPolicy of rawData){
-              const { policy, alreadyExists } = await this.checkAndSaveAsync(new Policy(rawPolicy));
-              let result = policy;
-              if (alreadyExists == 'duplicated') {
-                result = 'duplicated'
-              }
-              results.create.push(result);
+          for(const rawPolicy of rawData){
+            const { policy, alreadyExists } = await this.checkAndSaveAsync(new Policy(rawPolicy));
+            let result = policy;
+            if (alreadyExists == 'duplicated') {
+              result = 'duplicated'
             }
-          })
+            results.create.push(result);
+          }
           break;
         case 'update':
-          (async () => {
-            for(const rawPolicy of rawData){
-              const pid = rawPolicy.pid;
-              const oldPolicy = await this.getPolicy(pid);
-              await this.updatePolicyAsync(rawPolicy);
-              const newPolicy = await this.getPolicy(pid);
-              this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);
-              results.update.push(newPolicy);
-            }
-          })();
+          for(const rawPolicy of rawData){
+            const pid = rawPolicy.pid;
+            const oldPolicy = await this.getPolicy(pid);
+            await this.updatePolicyAsync(rawPolicy);
+            const newPolicy = await this.getPolicy(pid);
+            this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);
+            results.update.push(newPolicy);
+          }
           break;
         case 'delete':
-          (async () => {
-            for(const policyID of rawData){
-              let policy = await this.getPolicy(policyID);
-              let result;
-              if (policy) {
-                await this.disableAndDeletePolicy(policyID);
-                policy.deleted = true;
-                result = policy;
-              } else {
-                result = "invalid policy";
-              }
-              results.delete.push(result);
+          for(const policyID of rawData){
+            let policy = await this.getPolicy(policyID);
+            let result;
+            if (policy) {
+              await this.disableAndDeletePolicy(policyID);
+              policy.deleted = true;
+              result = policy;
+            } else {
+              result = "invalid policy";
             }
-          })();
+            results.delete.push(result);
+          }
           break;
       }
     }
