@@ -1909,7 +1909,7 @@ class PolicyManager2 {
               const oldPolicy = await this.getPolicy(pid);
               await this.updatePolicyAsync(rawPolicy);
               const newPolicy = await this.getPolicy(pid);
-              await this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);
+              this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);
               results.update.push(newPolicy);
             }
           })();
