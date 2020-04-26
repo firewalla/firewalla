@@ -2592,9 +2592,9 @@ class netBot extends ControllerBot {
           (async () => {
             const alarmIDs = value.alarmIDs;
             if (alarmIDs && _.isArray(alarmIDs)) {
-              await Promise.all(alarmIDs.map(async (alarmID) => {
+              for (const alarmID of alarmIDs) {
                 alarmID && await am2.removeAlarmAsync(alarmID);
-              }))
+              }
             } else {
               await am2.removeAlarmAsync(value.alarmID);
             }
@@ -2701,8 +2701,8 @@ class netBot extends ControllerBot {
           const policyIDs = value.policyIDs;
           if (policyIDs && _.isArray(policyIDs)) {
             let results={};
-            await Promise.all(policyIDs.map(async(policyID)=>{
-              let policy = await pm2.getPolicy(policyID)
+            for (const policyID of policyIDs) {
+              let policy = await pm2.getPolicy(policyID);
               if (policy) {
                 await pm2.disableAndDeletePolicy(policyID)
                 policy.deleted = true;
@@ -2710,8 +2710,8 @@ class netBot extends ControllerBot {
               } else {
                 results[policyID] = "invalid policy";
               }
-              this.simpleTxData(msg, results, null, callback);
-            }));
+            };
+            this.simpleTxData(msg, results, null, callback);
           } else {
             let policy = await pm2.getPolicy(value.policyID)
             if (policy) {
