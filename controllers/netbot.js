@@ -2590,7 +2590,14 @@ class netBot extends ControllerBot {
       case "alarm:delete":
         try {
           (async () => {
-            await am2.removeAlarmAsync(value.alarmID);
+            const alarmIDs = value.alarmIDs;
+            if (alarmIDs && _.isArray(alarmIDs)) {
+              await Promise.all(alarmIDs.map(async (alarmID) => {
+                alarmID && await am2.removeAlarmAsync(alarmID);
+              }))
+            } else {
+              await am2.removeAlarmAsync(value.alarmID);
+            }
             this.simpleTxData(msg, {}, null, callback)
           })()
         } catch (err) {
@@ -2691,13 +2698,29 @@ class netBot extends ControllerBot {
         break;
       case "policy:delete":
         (async () => {
-          let policy = await pm2.getPolicy(value.policyID)
-          if (policy) {
-            await pm2.disableAndDeletePolicy(value.policyID)
-            policy.deleted = true // policy is marked ask deleted
-            this.simpleTxData(msg, policy, null, callback);
+          const policyIDs = value.policyIDs;
+          if (policyIDs && _.isArray(policyIDs)) {
+            let results={};
+            await Promise.all(policyIDs.map(async(policyID)=>{
+              let policy = await pm2.getPolicy(policyID)
+              if (policy) {
+                await pm2.disableAndDeletePolicy(policyID)
+                policy.deleted = true;
+                results[policyID] = policy;
+              } else {
+                results[policyID] = "invalid policy";
+              }
+              this.simpleTxData(msg, results, null, callback);
+            }));
           } else {
-            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            let policy = await pm2.getPolicy(value.policyID)
+            if (policy) {
+              await pm2.disableAndDeletePolicy(value.policyID)
+              policy.deleted = true // policy is marked ask deleted
+              this.simpleTxData(msg, policy, null, callback);
+            } else {
+              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            }
           }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
