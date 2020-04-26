@@ -1104,7 +1104,8 @@ class PolicyManager2 {
           await Block.block(target, Block.getDstSet(pid));
         } else {
           // apply to global without specified src/dst port, directly add to global ip or net allow/block set
-          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
+          // Block.block will distribute IPv4/IPv6 to corresponding ipset, additional '6' will be added to set name for IPv6 ipset
           await Block.block(target, set);
           return;
         }
@@ -1169,7 +1170,7 @@ class PolicyManager2 {
             blockSet: Block.getDstSet(pid)
           });
         } else {
-          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: set
@@ -1352,7 +1353,7 @@ class PolicyManager2 {
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet) {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
-          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
           await Block.unblock(target, set);
           return;
         }
@@ -1414,7 +1415,7 @@ class PolicyManager2 {
             blockSet: Block.getDstSet(pid)
           });
         } else {
-          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: set
