@@ -3,13 +3,13 @@ const util = require('util')
 
 var client = exports;
 
-function Client() {
-  this.ssdp = nat.ssdp.create();
+function Client(opts) {
+  this.ssdp = nat.ssdp.create(opts);
   this.timeout = 1800;
 }
 
-client.create = function create() {
-  return new Client();
+client.create = function create(opts) {
+  return new Client(opts);
 };
 
 function normalizeOptions(options) {

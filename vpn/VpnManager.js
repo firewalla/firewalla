@@ -26,6 +26,7 @@ const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
+const mode = require('../net2/Mode.js');
 
 const fs = require('fs');
 
@@ -149,6 +150,10 @@ class VpnManager {
       log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to remove upnp port mapping`);
       return false;
     }
+    if (mode.isRouterModeOn()) {
+      log.info(`VPN server UPnP port mapping is not used in router mode`);
+      return false;
+    }
     log.info("VpnManager:RemoveUpnpPortMapping", opts);
     let timeoutExecuted = false;
     return new Promise((resolve, reject) => {
@@ -172,6 +177,10 @@ class VpnManager {
   async addUpnpPortMapping(protocol, localPort, externalPort, description) {
     if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
       log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to add upnp port mapping`);
+      return false;
+    }
+    if (mode.isRouterModeOn()) {
+      log.info(`VPN server UPnP port mapping is not used in router mode`);
       return false;
     }
     log.info("VpnManager:AddUpnpPortMapping", protocol, localPort, externalPort, description);
