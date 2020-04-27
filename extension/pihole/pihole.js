@@ -166,7 +166,7 @@ class PiHole {
   }
 
   async rawStop() {
-    return exec("sudo systemctl stop docker-compose@pihole")
+    return exec("sudo systemctl stop docker-compose@pihole").catch(() => {})
   }
 
   async postStart(config = {}) {

@@ -170,7 +170,7 @@ class SS2 {
   }
 
   async rawStop() {
-    return exec("sudo systemctl stop docker-compose@ss2")
+    return exec("sudo systemctl stop docker-compose@ss2").catch(() => {})
   }
 
   async postStart(config = {}) {
