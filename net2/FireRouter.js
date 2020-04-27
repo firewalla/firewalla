@@ -575,7 +575,6 @@ class FireRouter {
     }
   }
 
-  // call checkConfig() for the impact before actually commit it
   async setConfig(config) {
     const options = {
       method: "POST",
@@ -606,6 +605,10 @@ class FireRouter {
     // await this.init()
     // init of FireRouter should be triggered by published message
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+    if (f.isApi()) {
+      // reload config from lower layer to reflect change immediately in FireAPI
+      routerConfig = await getConfig();
+    }
 
     return resp.body
   }

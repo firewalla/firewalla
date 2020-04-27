@@ -1185,7 +1185,7 @@ class netBot extends ControllerBot {
         (async () => {
           await FireRouter.setConfig(value.config, value.restart);
           // successfully set config, save config to history
-          const latestConfig = await FireRouter.getConfig();
+          const latestConfig = FireRouter.getConfig();
           await FireRouter.saveConfigHistory(latestConfig);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
