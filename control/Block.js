@@ -183,29 +183,29 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
     case "inbound": {
       // inbound filter rules
       await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", filterTarget, filterChain, "filter", 4, `rule_${pid}`, ctstate);
-      await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "OIGINAL", filterTarget, filterChain, "filter", 4, `rule_${pid}`, ctstate);
+      await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "ORIGINAL", filterTarget, filterChain, "filter", 4, `rule_${pid}`, ctstate);
       await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", filterTarget, filterChain, "filter", 6, `rule_${pid}`, ctstate);
-      await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "OIGINAL", filterTarget, filterChain, "filter", 6, `rule_${pid}`, ctstate);
+      await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "ORIGINAL", filterTarget, filterChain, "filter", 6, `rule_${pid}`, ctstate);
       // inbound nat rules
       /*
       await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", natTarget, natChain, "nat", 4, `rule_${pid}`, ctstate);
-      await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "OIGINAL", natTarget, natChain, "nat", 4, `rule_${pid}`, ctstate);
+      await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "ORIGINAL", natTarget, natChain, "nat", 4, `rule_${pid}`, ctstate);
       await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", natTarget, natChain, "nat", 6, `rule_${pid}`, ctstate);
-      await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "OIGINAL", natTarget, natChain, "nat", 6, `rule_${pid}`, ctstate);
+      await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "ORIGINAL", natTarget, natChain, "nat", 6, `rule_${pid}`, ctstate);
       */
       break;
     }
     case "outbound": {
       // outbound filter rules
-      await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "OIGINAL", filterTarget, filterChain, "filter", 4, `rule_${pid}`, ctstate);
+      await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", filterTarget, filterChain, "filter", 4, `rule_${pid}`, ctstate);
       await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "REPLY", filterTarget, filterChain, "filter", 4, `rule_${pid}`, ctstate);
-      await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "OIGINAL", filterTarget, filterChain, "filter", 6, `rule_${pid}`, ctstate);
+      await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", filterTarget, filterChain, "filter", 6, `rule_${pid}`, ctstate);
       await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "REPLY", filterTarget, filterChain, "filter", 6, `rule_${pid}`, ctstate);
       // outbound nat rules
       /*
-      await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "OIGINAL", natTarget, natChain, "nat", 4, `rule_${pid}`, ctstate);
+      await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", natTarget, natChain, "nat", 4, `rule_${pid}`, ctstate);
       await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "REPLY", natTarget, natChain, "nat", 4, `rule_${pid}`, ctstate);
-      await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "OIGINAL", natTarget, natChain, "nat", 6, `rule_${pid}`, ctstate);
+      await this.manipulateFiveTupleRule(op, null, null, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", natTarget, natChain, "nat", 6, `rule_${pid}`, ctstate);
       await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, null, null, true, localPortSet, proto, "REPLY", natTarget, natChain, "nat", 6, `rule_${pid}`, ctstate);
       */
       break;
