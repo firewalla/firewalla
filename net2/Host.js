@@ -1025,6 +1025,14 @@ class Host {
       }
     }
 
+    if(this.o.openports) {
+      try {
+        json.openports = JSON.parse(this.o.openports);
+      } catch(err) {
+        log.error("Failed to parse openports:", err);
+      }
+    }
+
     // json.macVendor = this.name();
 
     return json;
