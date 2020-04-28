@@ -170,7 +170,7 @@ class SSDPSensor extends Sensor {
         this.ssdpClient.stop();
       this.ssdpClient = null;
       const monitoringInterfaces = sm.getMonitoringInterfaces();
-      const ifaces = monitoringInterfaces.filter(i => i.name).map(i => i.name);
+      const ifaces = monitoringInterfaces.filter(i => i.name && !i.name.endsWith(":0")).map(i => i.name);
       this.ssdpClient = new SSDPClient({interfaces: ifaces});
       this.ssdpClient.on('response', (header, statusCode, rinfo) => {
         this.onResponse(header, statusCode, rinfo)
