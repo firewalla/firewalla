@@ -15,14 +15,15 @@ function Ssdp(opts) {
   this._boundCount = 0;
   this._closed = false;
   this._queue = [];
+  this.listenAddr = this._opts.listenAddr || null;
 
   // Create sockets on all external interfaces
   this.createSockets();
 }
 util.inherits(Ssdp, EventEmitter);
 
-ssdp.create = function create() {
-  return new Ssdp();
+ssdp.create = function create(opts) {
+  return new Ssdp(opts);
 };
 
 Ssdp.parseMimeHeader = function (headerStr) {
@@ -40,6 +41,16 @@ Ssdp.parseMimeHeader = function (headerStr) {
 Ssdp.prototype.createSockets = function createSockets() {
   var self = this;
   var interfaces = os.networkInterfaces();
+  if (this.listenAddr) {
+    const filteredInterfaces = {};
+    for (const name in interfaces) {
+      const addrs = interfaces[name].filter(i => i.address === this.listenAddr);
+      if (addrs.length > 0) {
+        filteredInterfaces[name] = addrs;
+      }
+    }
+    interfaces = filteredInterfaces;
+  }
 
   this.sockets = Object.keys(interfaces).reduce(function(a, key) {
     return a.concat(interfaces[key].filter(function(item) {
@@ -98,8 +109,10 @@ Ssdp.prototype.search = function search(device, promise) {
 
 Ssdp.prototype.createSocket = function createSocket(interface) {
   var self = this;
-  var socket = dgram.createSocket(interface.family === 'IPv4' ?
-                                  'udp4' : 'udp6');
+  var socket = dgram.createSocket({
+    type: interface.family === 'IPv4' ? 'udp4' : 'udp6',
+    reuseAddr: true
+  });
 
   socket.on('message', function (message, info) {
     // Ignore messages after closing sockets

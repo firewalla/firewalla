@@ -89,65 +89,64 @@ class UPNPSensor extends Sensor {
 
   run() {
     this.interfaces = sysManager.getMonitoringInterfaces();
-    setInterval(() => {
-      upnp.getPortMappingsUPNP(async (err, results) => {
-        if (err) {
-          log.error("Error getting mappings", err);
-        }
+    setInterval(async () => {
+      const results = await upnp.getPortMappingsUPNP().catch((err) => {
+        log.error(`Failed to get UPnP mappings`, err);
+        return [];
+      });
 
-        if (!results) {
-          results = []
-          log.info("No upnp mapping found in network");
-        }
+      if (!results) {
+        results = []
+        log.info("No upnp mapping found in network");
+      }
 
-        const key = "sys:scan:nat";
+      const key = "sys:scan:nat";
 
-        try {
-          let entries = await rclient.hgetAsync(key, 'upnp');
-          let preMappings = JSON.parse(entries) || [];
+      try {
+        let entries = await rclient.hgetAsync(key, 'upnp');
+        let preMappings = JSON.parse(entries) || [];
 
-          const mergedResults = this.mergeResults(results, preMappings);
+        const mergedResults = this.mergeResults(results, preMappings);
 
-          if (cfg.isFeatureOn(ALARM_UPNP)) {
-            for (let current of mergedResults) {
-              let firewallaRegistered = sysManager.isMyIP(current.private.host) &&
-                upnp.getRegisteredUpnpMappings().some(m => upnp.mappingCompare(current, m));
-              
-              if (
-                !firewallaRegistered &&
-                !preMappings.some(pre => compareUpnp(current, pre))
-              ) {
-                let alarm = new Alarm.UpnpAlarm(
-                  new Date() / 1000,
-                  current.private.host,
-                  {
-                    'p.source': 'UPNPSensor',
-                    'p.device.ip': current.private.host,
-                    'p.upnp.public.host': current.public.host,
-                    'p.upnp.public.port': current.public.port.toString(),
-                    'p.upnp.private.host': current.private.host,
-                    'p.upnp.private.port': current.private.port.toString(),
-                    'p.upnp.protocol': current.protocol,
-                    'p.upnp.enabled': current.enabled.toString(),
-                    'p.upnp.description': current.description,
-                    'p.upnp.ttl': current.ttl.toString(),
-                    'p.upnp.local': current.local.toString(),
-                    'p.device.port': current.private.port.toString(),
-                    'p.protocol': current.protocol
-                  }
-                );
-                await am2.enqueueAlarm(alarm);
-              }
+        if (cfg.isFeatureOn(ALARM_UPNP)) {
+          for (let current of mergedResults) {
+            let firewallaRegistered = sysManager.isMyIP(current.private.host) &&
+              upnp.getRegisteredUpnpMappings().some(m => upnp.mappingCompare(current, m));
+
+            if (
+              !firewallaRegistered &&
+              !preMappings.some(pre => compareUpnp(current, pre))
+            ) {
+              let alarm = new Alarm.UpnpAlarm(
+                new Date() / 1000,
+                current.private.host,
+                {
+                  'p.source': 'UPNPSensor',
+                  'p.device.ip': current.private.host,
+                  'p.upnp.public.host': current.public.host,
+                  'p.upnp.public.port': current.public.port.toString(),
+                  'p.upnp.private.host': current.private.host,
+                  'p.upnp.private.port': current.private.port.toString(),
+                  'p.upnp.protocol': current.protocol,
+                  'p.upnp.enabled': current.enabled.toString(),
+                  'p.upnp.description': current.description,
+                  'p.upnp.ttl': current.ttl.toString(),
+                  'p.upnp.local': current.local.toString(),
+                  'p.device.port': current.private.port.toString(),
+                  'p.protocol': current.protocol
+                }
+              );
+              await am2.enqueueAlarm(alarm);
             }
           }
-
-          if (await rclient.hmsetAsync(key, { upnp: JSON.stringify(mergedResults) }))
-            log.info("UPNP mapping is updated,", mergedResults.length, "entries");
-
-        } catch (err) {
-          log.error("Failed to scan upnp mapping: " + err);
         }
-      });
+
+        if (await rclient.hmsetAsync(key, { upnp: JSON.stringify(mergedResults) }))
+          log.info("UPNP mapping is updated,", mergedResults.length, "entries");
+
+      } catch (err) {
+        log.error("Failed to scan upnp mapping: " + err);
+      }
     }, this.config.interval * 1000 || 60 * 10 * 1000); // default to 10 minutes
   }
 }

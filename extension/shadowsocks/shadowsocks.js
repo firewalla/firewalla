@@ -19,7 +19,7 @@ const log = require("../../net2/logger.js")(__filename);
 
 const sysManager = require('../../net2/SysManager.js');
 const UPNP = require('../../extension/upnp/upnp');
-const upnp = new UPNP(sysManager.myGateway());
+const upnp = new UPNP();
 const firewalla = require('../../net2/Firewalla.js');
 //TODO: support real config file for Firewalla class
 const key = require('../common/key.js');
