@@ -48,6 +48,7 @@ const i18n = require('i18n');
 const PORT = normalizePort(process.env.PORT) || 8833;
 const PORT_LOCAL_API = 8834;
 const apiServers = {}
+const localApiServers = {}
 
 let language = 'en';
 
@@ -63,7 +64,6 @@ function run0() {
       sysManager.isConfigInitialized()) {
     log.info("Firewalla initialization complete");
     run();
-    runLocalAPI();
   } else {
     setTimeout(()=>{
       sysManager.update(null);
@@ -89,7 +89,11 @@ async function run() {
   const app = require('../app.js');
   app.set('port', PORT);
 
+  const appLocal = require('../app-local.js');
+  appLocal.set('port', PORT_LOCAL_API);
+
   refreshListeningInterfaces(app)
+  refreshListeningInterfaces(appLocal, true)
 
   sclient.on("message", (channel, message) => {
     switch (channel) {
@@ -97,6 +101,7 @@ async function run() {
       case Message.MSG_SYS_API_INTERFACE_CHANGED:
         log.info('Message received', channel)
         refreshListeningInterfaces(app)
+        refreshListeningInterfaces(appLocal, true)
         break
     }
   });
@@ -107,28 +112,31 @@ async function run() {
 
 // policy:system => apiInterface has higher priority over firerouter interfaces change
 // cloud socket should always be available whatever policy:system says
-async function refreshListeningInterfaces(app) {
+async function refreshListeningInterfaces(app, local = false) {
   log.info('refreshing listening interfaces')
 
   const userInterfaces = await getUserInterfaces()
 
-  const listeningInterfaces = userInterfaces ?
-    userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf)).filter(Boolean) :
-    sysManager.getMonitoringInterfaces()
+  // local api always use monitoring interfaces
+  const listeningInterfaces =
+    local && f.isProductionOrBetaOrAlpha() ? [] :
+    local || !userInterfaces ? sysManager.getMonitoringInterfaces() :
+    userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf)).filter(Boolean)
 
   // always listen to localhost
   const targetIP4Set = new Set(listeningInterfaces.map(i => i.ip_address).concat('127.0.0.1'))
 
   log.debug(targetIP4Set)
 
-  for (const ip in apiServers[PORT]) {
+  const port = local ? PORT_LOCAL_API : PORT
+  for (const ip in apiServers[port]) {
     if (!targetIP4Set.has(ip)) {
-      stopServer(app, ip, PORT)
+      stopServer(app, ip, port)
     }
   }
 
   for (const ip of targetIP4Set) {
-    createServerAndListen(app, ip, PORT)
+    createServerAndListen(app, ip, port)
   }
 }
 
@@ -179,17 +187,6 @@ function stopServer(app, ip, port) {
   }
 }
 
-
-function runLocalAPI() {
-  const app2 = require('../app-local.js');
-  app2.set('port', PORT_LOCAL_API);
-
-  if (f.isProductionOrBetaOrAlpha()) {
-    createServerAndListen(app2, 'localhost', PORT_LOCAL_API)
-  } else {
-    createServerAndListen(app2, '0.0.0.0', PORT_LOCAL_API)
-  }
-}
 
 /**
  * Normalize a port into a number, string, or false.
