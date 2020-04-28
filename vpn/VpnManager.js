@@ -50,7 +50,7 @@ const moment = require('moment');
 class VpnManager {
   constructor() {
     if (instance == null) {
-      this.upnp = new UPNP(sysManager.myDefaultGateway());
+      this.upnp = new UPNP();
       if (firewalla.isMain()) {
         sclient.on("message", async (channel, message) => {
           switch (channel) {

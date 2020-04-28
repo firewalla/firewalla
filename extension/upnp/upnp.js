@@ -170,6 +170,7 @@ module.exports = class {
         upnpClient.externalIp((err, ip) => {
           if (err || ip == null) {
             log.info(`UPnP monitor client does not work on ${iface.ip_address}`);
+            upnpClient.close();
           } else {
             this.monitoredUpnpClients.push(upnpClient);
           }
