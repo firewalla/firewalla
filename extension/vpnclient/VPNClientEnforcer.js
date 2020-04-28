@@ -79,6 +79,7 @@ class VPNClientEnforcer {
     const tableName = this._getRoutingTableName(vpnIntf);
     // ensure customized routing table is created
     const rtId = await routing.createCustomizedRoutingTable(tableName);
+    await routing.flushRoutingTable(tableName);
     // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
     await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`);
     let cmd = "ip route list";
@@ -118,15 +119,19 @@ class VPNClientEnforcer {
     return `vpn_client_${vpnIntf}_set`;
   }
 
-  async enforceDNSRedirect(vpnIntf, dnsServers) {
+  async enforceDNSRedirect(vpnIntf, dnsServers, remoteIP) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
     const rtId = await this.getRtId(vpnIntf);
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
+    const tableName = this._getRoutingTableName(vpnIntf);
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
+      // add to vpn client routing table
+      if (remoteIP)
+        await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName).catch((err) => {});
       // round robin rule for multiple dns servers
       if (i == 0) {
         // no need to use statistic module for the first rule
@@ -151,15 +156,19 @@ class VPNClientEnforcer {
     }
   }
 
-  async unenforceDNSRedirect(vpnIntf, dnsServers) {
+  async unenforceDNSRedirect(vpnIntf, dnsServers, remoteIP) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
     const rtId = await this.getRtId(vpnIntf);
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
+    const tableName = this._getRoutingTableName(vpnIntf);
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
+      // remove from vpn client routing table
+      if (remoteIP)
+        await routing.removeRouteFromTable(dnsServer, remoteIP, vpnIntf, tableName).catch((err) => {});
       // round robin rule for multiple dns servers
       if (i == 0) {
         // no need to use statistic module for the first rule
