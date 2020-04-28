@@ -111,7 +111,7 @@ module.exports = class {
   scheduleReload() {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
-    this.reloadTask = setTimeout(() => {
+    this.reloadTask = setTimeout(async () => {
       if (this.wanNatPmpClient)
         this.wanNatPmpClient.close();
       this.wanNatPmpClient = null;
@@ -122,10 +122,9 @@ module.exports = class {
         c.close();
       }
       this.monitoredUpnpClients = [];
-
       // check availability of UPnP
       const defaultWanIp = sysManager.myDefaultWanIp();
-      if (defaultWanIp && ip.isPrivate(defaultWanIp) && !mode.isRouterModeOn()) {
+      if (defaultWanIp && ip.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {
         const wanUpnpClient = natupnp.createClient({listenAddr: defaultWanIp});
         wanUpnpClient.externalIp((err, ip) => {
           if (err || ip == null) {
@@ -139,7 +138,7 @@ module.exports = class {
       }
       // check availability of NATPMP
       const defaultGateway = sysManager.myDefaultGateway();
-      if (defaultGateway && ip.isPrivate(defaultWanIp) && !mode.isRouterModeOn()) {
+      if (defaultGateway && ip.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {
         const wanNatPmpClient = natpmp.connect(defaultGateway);
         wanNatPmpClient.on('error', (err) => {
           log.error(`NATPMP write clien does not work on gw ${defaultGateway}`, err);
