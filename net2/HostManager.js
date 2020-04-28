@@ -1359,7 +1359,7 @@ module.exports = class HostManager {
     await this.saveSinglePolicy(name)
     let obj = {};
     obj[name] = data;
-    log.info(name, obj)
+    log.debug(name, obj)
     if (this.messageBus) {
       this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
     }
