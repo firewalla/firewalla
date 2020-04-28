@@ -32,8 +32,10 @@
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
+const sem = require('./SensorEventManager').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const UPNP = require('../extension/upnp/upnp.js');
 const upnp = new UPNP();
@@ -41,9 +43,13 @@ const upnp = new UPNP();
 const cfg = require('../net2/config.js');
 
 const sysManager = require('../net2/SysManager.js');
+const Message = require('../net2/Message.js');
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const fs = require('fs');
+const exec = require('child-process-promise').exec;
 
 const _ = require('lodash');
 
@@ -61,7 +67,7 @@ function compareUpnp(a, b) {
 class UPNPSensor extends Sensor {
   constructor() {
     super();
-    this.interfaces = null;
+    this.upnpLeaseFileWatchers = [];
   }
 
   isExpired(mapping) {
@@ -87,67 +93,124 @@ class UPNPSensor extends Sensor {
       .filter((mapping) => !this.isExpired(mapping));
   }
 
-  run() {
-    this.interfaces = sysManager.getMonitoringInterfaces();
-    setInterval(async () => {
-      const results = await upnp.getPortMappingsUPNP().catch((err) => {
-        log.error(`Failed to get UPnP mappings`, err);
-        return [];
-      });
-
-      if (!results) {
-        results = []
-        log.info("No upnp mapping found in network");
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(async () => {
+      // UPnP lease file only exists on FireRouter enabled devices
+      if (!platform.isFireRouterManaged())
+        return;
+      for (const watcher of this.upnpLeaseFileWatchers) {
+        watcher.close();
       }
-
-      const key = "sys:scan:nat";
-
-      try {
-        let entries = await rclient.hgetAsync(key, 'upnp');
-        let preMappings = JSON.parse(entries) || [];
-
-        const mergedResults = this.mergeResults(results, preMappings);
-
-        if (cfg.isFeatureOn(ALARM_UPNP)) {
-          for (let current of mergedResults) {
-            let firewallaRegistered = sysManager.isMyIP(current.private.host) &&
-              upnp.getRegisteredUpnpMappings().some(m => upnp.mappingCompare(current, m));
-
-            if (
-              !firewallaRegistered &&
-              !preMappings.some(pre => compareUpnp(current, pre))
-            ) {
-              let alarm = new Alarm.UpnpAlarm(
-                new Date() / 1000,
-                current.private.host,
-                {
-                  'p.source': 'UPNPSensor',
-                  'p.device.ip': current.private.host,
-                  'p.upnp.public.host': current.public.host,
-                  'p.upnp.public.port': current.public.port.toString(),
-                  'p.upnp.private.host': current.private.host,
-                  'p.upnp.private.port': current.private.port.toString(),
-                  'p.upnp.protocol': current.protocol,
-                  'p.upnp.enabled': current.enabled.toString(),
-                  'p.upnp.description': current.description,
-                  'p.upnp.ttl': current.ttl.toString(),
-                  'p.upnp.local': current.local.toString(),
-                  'p.device.port': current.private.port.toString(),
-                  'p.protocol': current.protocol
-                }
-              );
-              await am2.enqueueAlarm(alarm);
+      this.upnpLeaseFileWatchers = [];
+      const monitoringInterfaces = sysManager.getMonitoringInterfaces();
+      for (const iface of monitoringInterfaces) {
+        if (iface.name && iface.name.endsWith(":0"))
+          continue;
+        const leaseFile = `/var/run/upnp.${iface.name}.leases`;
+        await exec(`sudo touch ${leaseFile}`).then(() => {
+          const watcher = fs.watch(leaseFile, {}, (e, filename) => {
+            if (e === "change") {
+              log.info(`UPnP lease file ${leaseFile} is changed, schedule checking UPnP leases ...`);
+              this.scheduleCheckUPnPLeases();
             }
+          });
+          log.info(`Watching UPnP lease file change on ${leaseFile} ...`);
+          this.upnpLeaseFileWatchers.push(watcher);
+        }).catch((err) => {
+          log.error(`Failed to watch file change ${leaseFile}`, err.message);
+        });
+      }
+    }, 5000);
+  }
+
+  scheduleCheckUPnPLeases() {
+    if (this.checkTask)
+      clearTimeout(this.checkTask);
+    this.checkTask = setTimeout(() => {
+      this._checkUpnpLeases().catch((err) => {
+        log.error(`Error occurred while check UPnP leases`, err.message);
+      });
+    }, 3000);
+  }
+
+  async _checkUpnpLeases() {
+    const results = await upnp.getPortMappingsUPNP().catch((err) => {
+      log.error(`Failed to get UPnP mappings`, err);
+      return [];
+    });
+
+    if (!results) {
+      results = []
+      log.info("No upnp mapping found in network");
+    }
+
+    const key = "sys:scan:nat";
+
+    try {
+      let entries = await rclient.hgetAsync(key, 'upnp');
+      let preMappings = JSON.parse(entries) || [];
+
+      const mergedResults = this.mergeResults(results, preMappings);
+
+      if (cfg.isFeatureOn(ALARM_UPNP)) {
+        for (let current of mergedResults) {
+          let firewallaRegistered = sysManager.isMyIP(current.private.host) &&
+            upnp.getRegisteredUpnpMappings().some(m => upnp.mappingCompare(current, m));
+
+          if (
+            !firewallaRegistered &&
+            !preMappings.some(pre => compareUpnp(current, pre))
+          ) {
+            let alarm = new Alarm.UpnpAlarm(
+              new Date() / 1000,
+              current.private.host,
+              {
+                'p.source': 'UPNPSensor',
+                'p.device.ip': current.private.host,
+                'p.upnp.public.host': current.public.host,
+                'p.upnp.public.port': current.public.port.toString(),
+                'p.upnp.private.host': current.private.host,
+                'p.upnp.private.port': current.private.port.toString(),
+                'p.upnp.protocol': current.protocol,
+                'p.upnp.enabled': current.enabled.toString(),
+                'p.upnp.description': current.description,
+                'p.upnp.ttl': current.ttl.toString(),
+                'p.upnp.local': current.local.toString(),
+                'p.device.port': current.private.port.toString(),
+                'p.protocol': current.protocol
+              }
+            );
+            await am2.enqueueAlarm(alarm);
           }
         }
-
-        if (await rclient.hmsetAsync(key, { upnp: JSON.stringify(mergedResults) }))
-          log.info("UPNP mapping is updated,", mergedResults.length, "entries");
-
-      } catch (err) {
-        log.error("Failed to scan upnp mapping: " + err);
       }
-    }, this.config.interval * 1000 || 60 * 10 * 1000); // default to 10 minutes
+
+      if (await rclient.hmsetAsync(key, { upnp: JSON.stringify(mergedResults) }))
+        log.info("UPNP mapping is updated,", mergedResults.length, "entries");
+
+    } catch (err) {
+      log.error("Failed to scan upnp mapping: " + err);
+    }
+  }
+
+  run() {
+    sem.once('IPTABLES_READY', () => {
+      this.scheduleReload();
+
+      sclient.on("message", (channel, message) => {
+        if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+          log.info("Schedule reload UPNPSensor since network info is reloaded");
+          this.scheduleReload();
+        }
+      });
+      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+      
+      setInterval(() => {
+        this.scheduleCheckUPnPLeases();
+      }, this.config.interval * 1000 || 60 * 10 * 1000); // default to 10 minutes
+    });
   }
 }
 
