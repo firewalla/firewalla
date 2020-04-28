@@ -15,16 +15,29 @@
 'use strict';
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const ip = require('ip');
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+const f = require('../net2/Firewalla.js');
+const dhcphookForGoldFile = `${f.getFireRouterConfigFolder()}/dhcp/conf/dhcpScript.conf`;
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+
 class DnsmasqDhcpSensor extends Sensor {
     constructor() {
         super();
     }
-    run() {
+    async run() {
+        if (platform.getName() == 'gold') {
+            await fs.writeFileAsync(dhcphookForGoldFile, `dhcp-script=/home/pi/firewalla/extension/dnsmasq/dhcp_hook.sh`);
+            await dnsmasq.scheduleRestartDHCPService();
+        }
         sclient.on("message", (channel, message) => {
             if (channel == 'dnsmasq.dhcp.lease') {
                 if (message) {

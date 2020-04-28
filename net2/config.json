@@ -524,7 +524,7 @@
       "firstScan": 120
     },
     "DnsmasqDhcpSensor": {},
-    "BlockRuleCheckSensor": {},
+    "RuleCheckSensor": {},
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "SS2Plugin": {},
@@ -668,7 +668,9 @@
     "device_service_scan": true,
     "wireguard": false,
     "ipv6": false,
-    "pihole": false
+    "pihole": false,
+    "adblock": false,
+    "family_protect": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

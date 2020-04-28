@@ -1185,7 +1185,7 @@ class netBot extends ControllerBot {
         (async () => {
           await FireRouter.setConfig(value.config, value.restart);
           // successfully set config, save config to history
-          const latestConfig = await FireRouter.getConfig();
+          const latestConfig = FireRouter.getConfig();
           await FireRouter.saveConfigHistory(latestConfig);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -2590,7 +2590,14 @@ class netBot extends ControllerBot {
       case "alarm:delete":
         try {
           (async () => {
-            await am2.removeAlarmAsync(value.alarmID);
+            const alarmIDs = value.alarmIDs;
+            if (alarmIDs && _.isArray(alarmIDs)) {
+              for (const alarmID of alarmIDs) {
+                alarmID && await am2.removeAlarmAsync(alarmID);
+              }
+            } else {
+              await am2.removeAlarmAsync(value.alarmID);
+            }
             this.simpleTxData(msg, {}, null, callback)
           })()
         } catch (err) {
@@ -2691,13 +2698,45 @@ class netBot extends ControllerBot {
         break;
       case "policy:delete":
         (async () => {
-          let policy = await pm2.getPolicy(value.policyID)
-          if (policy) {
-            await pm2.disableAndDeletePolicy(value.policyID)
-            policy.deleted = true // policy is marked ask deleted
-            this.simpleTxData(msg, policy, null, callback);
+          const policyIDs = value.policyIDs;
+          if (policyIDs && _.isArray(policyIDs)) {
+            let results={};
+            for (const policyID of policyIDs) {
+              let policy = await pm2.getPolicy(policyID);
+              if (policy) {
+                await pm2.disableAndDeletePolicy(policyID)
+                policy.deleted = true;
+                results[policyID] = policy;
+              } else {
+                results[policyID] = "invalid policy";
+              }
+            };
+            this.simpleTxData(msg, results, null, callback);
           } else {
-            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            let policy = await pm2.getPolicy(value.policyID)
+            if (policy) {
+              await pm2.disableAndDeletePolicy(value.policyID)
+              policy.deleted = true // policy is marked ask deleted
+              this.simpleTxData(msg, policy, null, callback);
+            } else {
+              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
+      case "policy:batch":
+        (async () => {
+          /*
+            actions: {create: [policy instance], delete: [policy instance], update:[policyID]}
+          */
+          const actions = value.actions;
+          if (actions) {
+            const result = await pm2.batchPolicy(actions)
+            this.simpleTxData(msg, result, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error("invalid actions"), callback);
           }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)

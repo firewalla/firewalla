@@ -268,10 +268,19 @@ class OpenVPNClient extends VPNClient {
       this.emit('link_broken');
       return;
     }
-    // always refresh routes in case main routing table is changed
-    log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
-    await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf);
-    this._remoteIP = newRemoteIP;    
+    if (newRemoteIP != this._remoteIP) {
+      log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
+      const settings = this.settings || await this.loadSettings();
+      if (this._dnsServers && this._dnsServers.length > 0) {
+        if (settings.routeDNS) {
+          await vpnClientEnforcer.enforceDNSRedirect(intf, this._dnsServers, newRemoteIP);
+        } else {
+          await vpnClientEnforcer.unenforceDNSRedirect(intf, this._dnsServers, newRemoteIP);
+        }
+      }
+      await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
+      this._remoteIP = newRemoteIP;
+    }
   }
 
   async start() {
@@ -323,12 +332,33 @@ class OpenVPNClient extends VPNClient {
     });
   }
 
+  getPushedDNSSServers() {
+    return this._dnsServers || [];
+  }
+
   async _processPushOptions(status) {
     const pushOptionsFile = this._getPushOptionsPath();
     if (await accessAsync(pushOptionsFile, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const content = await readFileAsync(pushOptionsFile, "utf8");
       if (!content)
         return;
+      // parse pushed DNS servers
+      const dnsServers = [];
+      for (let line of content.split("\n")) {
+        if (line && line.length != 0) {
+          log.info(`Processing ${status} push options from ${this.profileId}: ${line}`);
+          const options = line.split(/\s+/);
+          switch (options[0]) {
+            case "dhcp-option":
+              if (options[1] === "DNS") {
+                dnsServers.push(options[2]);
+              }
+              break;
+            default:
+          }
+        }
+      }
+      this._dnsServers = dnsServers;
       this.emit(`push_options_${status}`, content);
     }
   }

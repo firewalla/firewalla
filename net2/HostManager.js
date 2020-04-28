@@ -1359,7 +1359,7 @@ module.exports = class HostManager {
     await this.saveSinglePolicy(name)
     let obj = {};
     obj[name] = data;
-    log.info(name, obj)
+    log.debug(name, obj)
     if (this.messageBus) {
       this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
     }
@@ -1457,27 +1457,13 @@ module.exports = class HostManager {
             return {state: false, running: false, reconnecting: 0};
           if (ovpnClient.listenerCount('push_options_start') === 0) {
             ovpnClient.once('push_options_start', async (content) => {
-              const dnsServers = [];
-              for (let line of content.split("\n")) {
-                if (line && line.length != 0) {
-                  log.info(`Apply push options from ${profileId}: ${line}`);
-                  const options = line.split(/\s+/);
-                  switch (options[0]) {
-                    case "dhcp-option":
-                      if (options[1] === "DNS") {
-                        dnsServers.push(options[2]);
-                      }
-                      break;
-                    default:
-                  }
-                }
-              }
+              const dnsServers = ovpnClient.getPushedDNSSServers() || [];
               // redirect dns to vpn channel
               if (dnsServers.length > 0) {
                 if (settings.routeDNS) {
-                  await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+                  await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
                 } else {
-                  await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+                  await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
                 }
               }
 
@@ -1595,7 +1581,7 @@ module.exports = class HostManager {
             }
             if (dnsServers.length > 0) {
               // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
-              await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers);
+              await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
             }
 
             const updatedPolicy = this.policy["vpnClient"];

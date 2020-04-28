@@ -51,8 +51,8 @@ exports.RESULT_CODES = {
  * Creates a Client instance. Familiar API to `net.connect()`.
  */
 
-exports.connect = function (gateway) {
-  var client = new Client(gateway);
+exports.connect = function (gateway, listenAddr) {
+  var client = new Client(gateway, listenAddr);
   process.nextTick(function () {
     client.connect();
   });
@@ -63,9 +63,9 @@ exports.connect = function (gateway) {
  * The NAT-PMP "Client" class.
  */
 
-function Client (gateway) {
+function Client (gateway, listenAddr) {
   if (!(this instanceof Client)) {
-    return new Client(gateway);
+    return new Client(gateway, listenAddr);
   }
   debug('creating new Client instance for gateway', gateway);
   EventEmitter.call(this);
@@ -74,7 +74,7 @@ function Client (gateway) {
   this.listening = false;
   this.gateway = gateway;
 
-  this.socket = dgram.createSocket('udp4');
+  this.socket = dgram.createSocket({type: 'udp4', reuseAddr: true});
   on('listening', this);
   on('message', this);
   on('close', this);
