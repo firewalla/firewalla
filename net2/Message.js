@@ -22,6 +22,7 @@ const MSG_FR_CHANGE_APPLIED = "firerouter.change_applied";
 const MSG_FR_IFACE_CHANGE_APPLIED = "firerouter.iface_change_applied";
 const MSG_SYS_API_INTERFACE_CHANGED = "System:api:interface_changed";
 const MSG_SECONDARY_IFACE_UP = "System:secondary_interface:up";
+const MSG_OVPN_CLIENT_ROUTE_UP = "ovpn_client.route_up";
 
 module.exports = {
   MSG_NETWORK_CHANGED,
@@ -30,5 +31,6 @@ module.exports = {
   MSG_FR_CHANGE_APPLIED,
   MSG_FR_IFACE_CHANGE_APPLIED,
   MSG_SYS_API_INTERFACE_CHANGED,
-  MSG_SECONDARY_IFACE_UP
+  MSG_SECONDARY_IFACE_UP,
+  MSG_OVPN_CLIENT_ROUTE_UP
 }

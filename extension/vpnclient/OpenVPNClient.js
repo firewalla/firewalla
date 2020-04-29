@@ -24,6 +24,8 @@ const f = require('../../net2/Firewalla.js');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const iptables = require('../../net2/Iptables.js');
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../../net2/Message.js');
 
 const instances = {};
 
@@ -52,10 +54,20 @@ class OpenVPNClient extends VPNClient {
 
       if (f.isMain()) {
         setInterval(() => {
-          this._refreshRoutes().catch((err) => {
-            log.error("Failed to refresh route", err);
+          this._checkConnectivity().catch((err) => {
+            log.error("Failed to check connectivity", err);
           });
         }, 60000); // refresh routes once every minute, in case of remote IP or interface name change due to auto reconnection
+
+        sclient.on("message", (channel, message) => {
+          if (channel === Message.MSG_OVPN_CLIENT_ROUTE_UP && message === this.profileId) {
+            log.info(`VPN client ${this.profileId} route is up, attempt refreshing routes ...`);
+            this._refreshRoutes().catch((err) => {
+              log.error("Failed to refresh routes", err);
+            });
+          }
+        });
+        sclient.subscribe(Message.MSG_OVPN_CLIENT_ROUTE_UP);
       }
     }
     return instances[profileId];
@@ -256,21 +268,14 @@ class OpenVPNClient extends VPNClient {
   }
 
   async _refreshRoutes() {
-    // no need to refresh routes if vpn client is not started
-    if (!this._started) {
+    if (!this._started)
       return;
-    }
     const newRemoteIP = await this.getRemoteIP();
     const intf = this.getInterfaceName();
-    if (newRemoteIP === null) {
-      // vpn client is down unexpectedly
-      log.error("VPN client " + this.profileId + " remote IP is missing.");
-      this.emit('link_broken');
-      return;
-    }
-    if (newRemoteIP != this._remoteIP) {
+    if (newRemoteIP) {
       log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
       const settings = this.settings || await this.loadSettings();
+      await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
       if (this._dnsServers && this._dnsServers.length > 0) {
         if (settings.routeDNS) {
           await vpnClientEnforcer.enforceDNSRedirect(intf, this._dnsServers, newRemoteIP);
@@ -278,8 +283,21 @@ class OpenVPNClient extends VPNClient {
           await vpnClientEnforcer.unenforceDNSRedirect(intf, this._dnsServers, newRemoteIP);
         }
       }
-      await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
       this._remoteIP = newRemoteIP;
+    }
+  }
+
+  async _checkConnectivity() {
+    // no need to refresh routes if vpn client is not started
+    if (!this._started) {
+      return;
+    }
+    const newRemoteIP = await this.getRemoteIP();
+    if (newRemoteIP === null) {
+      // vpn client is down unexpectedly
+      log.error("VPN client " + this.profileId + " remote IP is missing.");
+      this.emit('link_broken');
+      return;
     }
   }
 
