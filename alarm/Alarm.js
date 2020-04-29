@@ -935,7 +935,7 @@ class UpnpAlarm extends Alarm {
       'p.device.mac',
       'p.upnp.protocol',
       //'p.upnp.public.host', check header of UPNPSensor for details
-      'p.upnp.public.port',
+      //'p.upnp.public.port',
       'p.upnp.private.host',
       'p.upnp.private.port'
     ];
