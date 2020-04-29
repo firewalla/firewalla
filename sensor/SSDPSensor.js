@@ -171,7 +171,7 @@ class SSDPSensor extends Sensor {
       this.ssdpClient = null;
       const monitoringInterfaces = sm.getMonitoringInterfaces();
       const ifaces = monitoringInterfaces.filter(i => i.name && !i.name.endsWith(":0")).map(i => i.name);
-      this.ssdpClient = new SSDPClient({interfaces: ifaces});
+      this.ssdpClient = new SSDPClient({interfaces: ifaces, explicitSocketBind: true});
       this.ssdpClient.on('response', (header, statusCode, rinfo) => {
         this.onResponse(header, statusCode, rinfo)
       });
@@ -200,6 +200,12 @@ class SSDPSensor extends Sensor {
         if (this.ssdpClient)
           this.ssdpClient.search('ssdp:all');
       }, this.config.interval * 1000 || 10 * 60 * 1000); // every 10 minutes
+
+      setInterval(() => {
+        // there is a bug in os.networkInterfaces() that is used in node-ssdp. It will not return interface without carrier.
+        // this is a workaround to refresh the listen instances of ssdp client in case carrier changes.
+        this.scheduleReload();
+      }, 900 * 1000);
     });
   }
 }
