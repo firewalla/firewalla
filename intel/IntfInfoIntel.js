@@ -32,7 +32,7 @@ class IntfInfoIntel extends Intel {
                     'p.intf.name': intfInfo.name
                 });
             } else {
-                log.error(`Unable to find nif uuid, ${intfId}`);
+                log.error(`Unable to find nif uuid, ${alarm['p.intf.id']}`);
             }
         }
 
