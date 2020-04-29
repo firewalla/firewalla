@@ -44,6 +44,7 @@ Ssdp.prototype.createSockets = function createSockets() {
   var interfaces = os.networkInterfaces();
 
   if (this.listenAddr) {
+    // os.networkInterfaces() will not return interface without carrier, even with an address configured on it
     const socket = self.createSocket(this.listenAddr, this.type);
     this.sockets = [socket];
   } else {
