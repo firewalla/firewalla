@@ -17,5 +17,5 @@ rm -f $LOCAL_FILE
 redis-cli -n 1 publish "ifdown" "$dev" || true
 
 if [[ $(uname -m) == "x86_64" ]]; then
-  (sudo iptables -w -C FR_WAN_ACCEPT -p tcp --dport $local_port_1 -j ACCEPT &>/dev/null && sudo iptables -w -D FR_WAN_ACCEPT -p tcp --dport $local_port_1 -j ACCEPT) || true
+  (sudo iptables -w -C FW_INPUT_ACCEPT -p tcp --dport $local_port_1 -j ACCEPT &>/dev/null && sudo iptables -w -D FW_INPUT_ACCEPT -p tcp --dport $local_port_1 -j ACCEPT) || true
 fi

@@ -96,7 +96,7 @@ class NetworkProfile {
     if (!this.o.gateway6 || !_.isArray(this.o.dns) || !this.o.dns.includes(this.o.gateway))
       // do not bother if ipv6 default route is not set or gateway ipv4 is not DNS server
       return;
-    if (Mode.isSpoofModeOn()) {
+    if (await Mode.isSpoofModeOn()) {
       // discovered new gateway IPv6 addresses and router also acts as dns, re-apply policy
       log.info(`New gateway IPv6 addresses are discovered, re-applying policy on ${this.o.uuid} ${this.o.intf}`, this._discoveredGateway6);
       this.scheduleApplyPolicy();
@@ -344,17 +344,31 @@ class NetworkProfile {
     envCreatedMap[uuid] = 1;
   }
 
-  async createEnv() {
+async createEnv() {
     // create and populate related ipsets
     await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
+    let realIntf = this.o.intf;
+    if (realIntf && realIntf.endsWith(":0"))
+      realIntf = realIntf.substring(0, realIntf.length - 2);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").pro("tcp").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule6 = inputRule.clone().fam(6);
+    if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
+      // add DROP rule on WAN interface in router mode
+      await exec(inputRule.toCmd("-A")).catch((err) => {
+        log.error(`Failed to add IPv4 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
+      });
+      await exec(inputRule6.toCmd("-A")).catch((err) => {
+        log.error(`Failed to add IPv6 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
+      });
+    } else {
+      await exec(inputRule.toCmd("-D")).catch((err) => {});
+      await exec(inputRule6.toCmd("-D")).catch((err) => {});
+    }
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
     if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      let realIntf = this.o.intf;
-      if (realIntf && realIntf.endsWith(":0"))
-        realIntf = realIntf.substring(0, realIntf.length - 2);
       await exec(`sudo ipset flush -! ${netIpsetName}`).then(() => {
         if (this.o && this.o.monitoring === true && this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0)
           return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${realIntf}`);
@@ -420,6 +434,15 @@ class NetworkProfile {
   }
 
   async destroyEnv() {
+    let realIntf = this.o.intf;
+    if (realIntf && realIntf.endsWith(":0"))
+      realIntf = realIntf.substring(0, realIntf.length - 2);
+    // remove WAN INPUT protection rules
+    const inputRule = new Rule().chn("FW_INPUT_DROP").pro("tcp").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule6 = inputRule.clone().fam(6);
+    await exec(inputRule.toCmd("-D")).catch((err) => {});
+    await exec(inputRule6.toCmd("-D")).catch((err) => {});
+
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
     if (!netIpsetName || !netIpsetName6) {
