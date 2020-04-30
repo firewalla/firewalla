@@ -377,7 +377,7 @@
         }
       },
       "defaultConfig": {
-        "youtube": "strict",
+        "youtube": "off",
         "google": "on",
         "bing": "on",
         "duckduckgo": "on"
