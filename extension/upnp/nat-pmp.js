@@ -73,6 +73,7 @@ function Client (gateway, listenAddr) {
   this._queue = [];
   this.listening = false;
   this.gateway = gateway;
+  this.listenAddr = listenAddr;
 
   this.socket = dgram.createSocket({type: 'udp4', reuseAddr: true});
   on('listening', this);
@@ -93,7 +94,10 @@ Client.prototype.connect = function () {
     return false;
   }
   this._connecting = true;
-  this.socket.bind(exports.CLIENT_PORT);
+  if (this.listenAddr)
+    this.socket.bind(exports.CLIENT_PORT, this.listenAddr);
+  else
+    this.socket.bind(exports.CLIENT_PORT);
 };
 
 /**
