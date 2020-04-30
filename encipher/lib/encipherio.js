@@ -32,14 +32,15 @@ const fConfig = require('../../net2/config.js').getConfig();
 const { delay } = require('../../util/util.js')
 const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 const rclient = require('../../util/redis_manager.js').getRedisClient()
-const sem = require('../../sensor/SensorEventManager.js').getInstance();
+// const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const exec = require('child-process-promise').exec;
 
 const rp = require('request-promise');
 
 const NODE_VERSION_SUPPORTS_RSA = 12
-const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
+// const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
+// const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
 
 const util = require('util')
 
@@ -858,6 +859,7 @@ let legoEptCloud = class {
         this.notifyGids.push(gid);
         this.socket = io2('https://firewalla.encipher.io',{path: '/socket',transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
+          // this.lastDisconnection = Date.now() / 1000
           this.notifySocket = false;
           log.error('Cloud disconnected')
         });
@@ -878,21 +880,24 @@ let legoEptCloud = class {
         });
         this.socket.on('reconnect', ()=>{
           log.info('--== Cloud reconnected ==--')
-          if (Date.now() / 1000 - this.lastReconnection > NOTIF_ONLINE_INTERVAL) {
-            this.lastReconnection = Date.now() / 1000
-            sem.sendEventToFireApi({
-              type: 'FW_NOTIFICATION',
-              titleKey: 'NOTIF_BOX_ONLINE_TITLE',
-              bodyKey: 'NOTIF_BOX_ONLINE_BODY',
-              titleLocalKey: 'BOX_ONLINE',
-              bodyLocalKey: 'BOX_ONLINE',
-              payload: {}
-            });
-          }
+          // if (this.lastDisconnection
+          //   && Date.now() / 1000 - this.lastDisconnection > NOTIF_OFFLINE_THRESHOLD
+          //   && Date.now() / 1000 - this.lastReconnection > NOTIF_ONLINE_INTERVAL
+          // ) {
+          //   this.lastReconnection = Date.now() / 1000
+          //   sem.sendEventToFireApi({
+          //     type: 'FW_NOTIFICATION',
+          //     titleKey: 'NOTIF_BOX_ONLINE_TITLE',
+          //     bodyKey: 'NOTIF_BOX_ONLINE_BODY',
+          //     titleLocalKey: 'BOX_ONLINE',
+          //     bodyLocalKey: 'BOX_ONLINE',
+          //     payload: {}
+          //   });
+          // }
         })
         this.socket.on('connect', ()=>{
           this.notifySocket = true;
-          this.lastReconnection = this.lastReconnection || Date.now() / 1000
+          // this.lastReconnection = this.lastReconnection || Date.now() / 1000
           log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name);
           if (this.notifyGids.length>0) {
             this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':group.group.name});
