@@ -78,6 +78,9 @@ class BonjourSensor extends Sensor {
           // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
           opts.bind = "0.0.0.0";
           bound = true;
+        } else {
+          // no need to bind on any address, multicast query can still be sent via interface in opts
+          opts.bind = false;
         }
         const instance = Bonjour(opts);
         instance._server.mdns.on('warning', (err) => log.warn(`Warning from mDNS server on ${iface.ip_address}`, err));

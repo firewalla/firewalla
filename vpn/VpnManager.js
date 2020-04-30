@@ -150,7 +150,7 @@ class VpnManager {
       log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to remove upnp port mapping`);
       return false;
     }
-    if (mode.isRouterModeOn()) {
+    if (await mode.isRouterModeOn()) {
       log.info(`VPN server UPnP port mapping is not used in router mode`);
       return false;
     }
@@ -179,7 +179,7 @@ class VpnManager {
       log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to add upnp port mapping`);
       return false;
     }
-    if (mode.isRouterModeOn()) {
+    if (await mode.isRouterModeOn()) {
       log.info(`VPN server UPnP port mapping is not used in router mode`);
       return false;
     }

@@ -17,3 +17,5 @@ chown pi $GATEWAY_FILE
 SUBNET_FILE="/home/pi/.firewalla/run/ovpn_profile/$PROFILE_ID.subnet"
 echo "$route_network_1/$route_netmask_1" > $SUBNET_FILE
 chown pi $SUBNET_FILE
+
+redis-cli publish "ovpn_client.route_up" "$PROFILE_ID"

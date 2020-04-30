@@ -128,12 +128,9 @@ module.exports = class {
         const wanUpnpClient = natupnp.createClient({listenAddr: defaultWanIp});
         wanUpnpClient.externalIp((err, ip) => {
           if (err || ip == null) {
-            log.info(`UPnP write client does not work on ${defaultWanIp}`);
-            wanUpnpClient.close();
-            this.wanUpnpClient = null;
-          } else {
-            this.wanUpnpClient = wanUpnpClient;
+            log.info(`UPnP write client may not work on WAN ${defaultWanIp}`);
           }
+          this.wanUpnpClient = wanUpnpClient;
         });
       }
       // check availability of NATPMP
@@ -148,12 +145,9 @@ module.exports = class {
         if (wanNatPmpClient) {
           wanNatPmpClient.externalIp((err, info) => {
             if (err || info == null) {
-              log.info(`NATPMP write client does not work on gw ${defaultGateway}`);
-              wanNatPmpClient.close();
-              this.wanNatPmpClient = null;
-            } else {
-              this.wanNatPmpClient = wanNatPmpClient;
+              log.info(`NATPMP write client may not work on gw ${defaultGateway}`);
             }
+            this.wanNatPmpClient = wanNatPmpClient;
           });
         }
       }
@@ -168,11 +162,9 @@ module.exports = class {
         const upnpClient = natupnp.createClient({listenAddr: iface.ip_address});
         upnpClient.externalIp((err, ip) => {
           if (err || ip == null) {
-            log.info(`UPnP monitor client does not work on ${iface.ip_address}`);
-            upnpClient.close();
-          } else {
-            this.monitoredUpnpClients.push(upnpClient);
+            log.info(`UPnP monitor client may not work on ${iface.ip_address}`);
           }
+          this.monitoredUpnpClients.push(upnpClient);
         });
       }
       
