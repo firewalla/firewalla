@@ -377,7 +377,7 @@
         }
       },
       "defaultConfig": {
-        "youtube": "strict",
+        "youtube": "off",
         "google": "on",
         "bing": "on",
         "duckduckgo": "on"
@@ -625,7 +625,7 @@
     "porn": true,
     "video": true,
     "game": true,
-    "vpn": true,
+    "vpn": false,
     "large_upload": true,
     "abnormal_bandwidth_usage": true,
     "data_plan": true,
