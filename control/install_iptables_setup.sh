@@ -230,6 +230,13 @@ sudo iptables -w -t nat -N FW_POSTROUTING &> /dev/null
 
 sudo iptables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null || sudo iptables -w -t nat -A POSTROUTING -j FW_POSTROUTING
 
+# nat POSTROUTING port forward hairpin chain
+sudo iptables -w -t nat -N FW_POSTROUTING_PORT_FORWARD &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_PORT_FORWARD
+sudo iptables -w -t nat -C FW_POSTROUTING -j FW_POSTROUTING_PORT_FORWARD &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -j FW_POSTROUTING_PORT_FORWARD
+sudo iptables -w -t nat -N FW_POSTROUTING_HAIRPIN &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_HAIRPIN
+
 # nat blackhole 8888
 sudo iptables -w -t nat -N FW_NAT_HOLE &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_HOLE
@@ -237,18 +244,20 @@ sudo iptables -w -t nat -A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -A FW_NAT_HOLE -j RETURN
 
+
+# DNAT related chain comes first
+# create port forward chain in PREROUTING, this is used in ipv4 only
+sudo iptables -w -t nat -N FW_PREROUTING_EXT_IP &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_EXT_IP &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_EXT_IP
+sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
 # initialize nat bypass chain
 sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_BYPASS
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
 # directly accept for monitoring off devices/networks
 sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
-
-# DNAT related chain comes first
-# create port forward chain in PREROUTING, this is used in ipv4 only
-sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
-sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_PORT_FORWARD &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_PORT_FORWARD
 # create dns redirect chain in PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT

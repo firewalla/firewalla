@@ -42,6 +42,7 @@ class NetworkTool {
   async updateMonitoringInterface() {
     const cmd = "/sbin/ip route show | awk '/default via/ {print $5}' | head -n 1"
     const result = await exec(cmd).catch((err) => null);
+    fConfig = Config.getConfig(true);
     if (result && result.stdout) {
       const intf = result.stdout.trim();
       const secondaryInterface = fConfig.secondaryInterface;

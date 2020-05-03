@@ -19,6 +19,7 @@ const log = require("./logger.js")(__filename);
 
 const fs = require('fs');
 const f = require('./Firewalla.js');
+const cp = require('child_process');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -81,15 +82,19 @@ function getConfig(reload) {
     let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
-    try {
-      if(fs.existsSync(userConfigFile)) {
-        // let fileJson = fs.readFileSync(userConfigFile, 'utf8');
-        // log.info(`getConfig fileJson:${fileJson}` + new Error("").stack);
-        // userConfig = JSON.parse(fileJson);
-        userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+    for (let i = 0; i !== 5; i++) {
+      try {
+        if (fs.existsSync(userConfigFile)) {
+          // let fileJson = fs.readFileSync(userConfigFile, 'utf8');
+          // log.info(`getConfig fileJson:${fileJson}` + new Error("").stack);
+          // userConfig = JSON.parse(fileJson);
+          userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+          break;
+        }
+      } catch (err) {
+        log.error(`Error parsing user config, retry count ${i}`, err);
+        cp.execSync('sleep 1');
       }
-    } catch(err) {
-      log.error("Error parsing user config:" + err.message);
     }
 
     let testConfig = {};
