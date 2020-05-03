@@ -117,6 +117,10 @@ class GoldPlatform extends Platform {
     return 18;
   }
 
+  hasMultipleCPUs() {
+    return true
+  }
+
   async getCpuTemperature() {
     try {
       const path = '/sys/class/hwmon/hwmon1/'

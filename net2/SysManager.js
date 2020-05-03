@@ -802,8 +802,16 @@ class SysManager {
     }
 
     let cpuTemperature = 50; // stub cpu value for docker/travis
+    let cpuTemperatureList = [ cpuTemperature ]
     if (!f.isDocker() && !f.isTravis()) {
-      cpuTemperature = await platform.getCpuTemperature();
+      if (platform.hasMultipleCPUs()) {
+        const list = await platform.getCpuTemperature();
+        cpuTemperature = list[0]
+        cpuTemperatureList = list
+      } else {
+        cpuTemperature = await platform.getCpuTemperature();
+        cpuTemperatureList = [ cpuTemperature ]
+      }
     }
 
     try {
@@ -829,6 +837,7 @@ class SysManager {
       timezone: this.timezone,
       memory,
       cpuTemperature,
+      cpuTemperatureList,
       sss: sss.getSysInfo()
     }
   }
