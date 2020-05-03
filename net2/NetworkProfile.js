@@ -392,6 +392,17 @@ async createEnv() {
       }).catch((err) => {
         log.error(`Failed to ${op} ${netIpsetName}(6) to c_lan_set`, err.message);
       });
+      // add to NAT hairpin chain if it is LAN network
+      if (this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0) {
+        const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${this.o.ipv4Subnet}`, null, "src").jmp("MASQUERADE");
+        if (this.o.type === "lan" && this.o.monitoring === true) {
+          await exec(rule.toCmd('-A')).catch((err) => {
+            log.error(`Failed to add NAT hairpin rule for ${this.o.intf}, ${this.o.uuid}`);
+          });
+        } else {
+          await exec(rule.toCmd('-D')).catch((err) => {});
+        }
+      }
       // add to monitored net ipset accordingly
       op = "del";
       if (this.o.monitoring === true)
@@ -461,6 +472,11 @@ async createEnv() {
       await exec(`sudo ipset del -! c_lan_set ${netIpsetName6}`).catch((err) => {
         log.debug(`Failed to remove ${netIpsetName6} from c_lan_set`, err.message);
       });
+      // remove from NAT hairpin chain anyway
+      if (this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0) {
+        const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${this.o.ipv4Subnet}`, null, "src").jmp("MASQUERADE");
+        await exec(rule.toCmd('-D')).catch((err) => {});
+      }
       // still remove it from monitored net set anyway to keep consistency
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}`).catch((err) => {
         log.debug(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
