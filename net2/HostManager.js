@@ -769,7 +769,9 @@ module.exports = class HostManager {
       this.policyRulesForInit(json),
       this.exceptionRulesForInit(json),
       this.natDataForInit(json),
-      this.getCloudURL(json)
+      this.getCloudURL(json),
+      this.networkConfig(json, true),
+      this.networkProfilesForInit(json),
     ]
 
     this.basicDataForInit(json, {});
@@ -922,8 +924,14 @@ module.exports = class HostManager {
     }
   }
 
-  async networkConfig(json) {
+  async networkConfig(json, filterSensitive = false) {
     const config = await FireRouter.getConfig();
+    if (filterSensitive && config && config.interface && config.interface.pppoe) {
+      for (const key in config.interface.pppoe) {
+        const temp = _.omit(config.interface.pppoe[key], ['password', 'username']);
+        config.interface.pppoe[key] = temp;
+      }
+    }
     json.networkConfig = config;
   }
 
