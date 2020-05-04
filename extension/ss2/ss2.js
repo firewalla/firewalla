@@ -25,6 +25,10 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 
 const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
 
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+
+const Message = require('../../net2/Message.js');
+
 const _ = require('lodash');
 
 const exec = require('child-process-promise').exec;
@@ -59,6 +63,23 @@ class SS2 {
       instance = this;
       this.config = {};
       this.ready = false;
+      this.shouldRedirect = false;
+
+      sclient.on("message", async (channel, message) => {
+        switch (channel) {
+          case Message.MSG_SYS_NETWORK_INFO_RELOADED: {
+            if(this.shouldRedirect) {
+              (async () => {
+                log.info("sys:network:info is reloaded, re-adding ss2 network to wan_routable ...");
+                await this.allowDockerBridgeToAccessWan();
+                log.info("re-added");
+              })();
+            }
+          }
+        }
+      });
+      
+      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
     }
     return instance;
   }
@@ -210,7 +231,9 @@ class SS2 {
         const bridgeName = `br-${network1.Id && network1.Id.substring(0, 12)}`;
         const subnet = network1.IPAM && network1.IPAM.Config && network1.IPAM.Config[0] && network1.IPAM.Config[0].Subnet;
         if(bridgeName && subnet) {
-          await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`);
+          await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`).catch((err) => {
+            log.error("Failed to add ss2 network to wan_routable, err:", err);
+          });
         } else {
           throw new Error("invalid docker network");
         }
@@ -236,11 +259,12 @@ class SS2 {
     await this.allowDockerBridgeToAccessWan();
     await this.prepareCHNRoute();
     await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j ${this.getChainName()}`));
-    
+    this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
     await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j ${this.getChainName()}`));
+    this.shouldRedirect = false;
   }
 
   getDNSPort() {
