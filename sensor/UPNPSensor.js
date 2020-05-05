@@ -115,6 +115,10 @@ class UPNPSensor extends Sensor {
               log.info(`UPnP lease file ${leaseFile} is changed, schedule checking UPnP leases ...`);
               this.scheduleCheckUPnPLeases();
             }
+            if (e === "rename") {
+              log.info(`UPnP lease file ${leaseFile} is renamed, schedule reload UPNPSensor ...`);
+              this.scheduleReload();
+            }
           });
           log.info(`Watching UPnP lease file change on ${leaseFile} ...`);
           this.upnpLeaseFileWatchers.push(watcher);
