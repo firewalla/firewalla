@@ -104,15 +104,18 @@ function isDevelopmentVersion() {
 }
 
 function isBeta() {
-  let branch = getBranch()
+  const branch = getBranch();
+
+  if(!branch) {
+    return false;
+  }
+
   if(branch.match(/^beta_.*/)) {
-    if(branch === 'beta_8_0') {
+    if(isAlpha()) {
       return false;
-    } else if(branch === 'beta_7_0') {
-      return false;
-    } else {
-      return true;
     }
+
+    return true;
   } else {
     return false
   }  
@@ -120,11 +123,17 @@ function isBeta() {
 
 function isAlpha() {
   let branch = getBranch()
-  if(branch === 'beta_7_0' || branch === 'beta_8_0') {
-    return true
+  if(!branch) {
+    return false;
+  }
+
+  if(branch.match(/^beta_8_.*/)) {
+    return true;
+  } else if(branch.match(/^beta_7_.*/)) {
+    return true;
   } else {
     return false
-  } 
+  }
 }
 
 function isProduction() {
