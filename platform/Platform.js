@@ -140,6 +140,11 @@ class Platform {
   getBroTabFile() {
     return `${f.getFirewallaHome()}/etc/brotab`;
   }
+
+  hasMultipleCPUs() {
+    return false
+  }
+
 }
 
 module.exports = Platform;
