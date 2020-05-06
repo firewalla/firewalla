@@ -95,7 +95,7 @@ function pre_main() {
 #     # if [[ ! -d ~/.nvm ]]; then
 #     #   install_node8
 #     # fi
-    
+
 #     # make sure node_modules use the right repo
 #     cd ~/.node_modules
 #     NM_URL=$(git remote get-url origin)
@@ -104,8 +104,8 @@ function pre_main() {
 #       git remote remove origin
 #       git remote add origin https://github.com/firewalla/fnm.node8.armv7l.git
 #       git pull origin $branch
-#     fi    
-    
+#     fi
+
 #   fi
 #   return 0
 # }
@@ -131,23 +131,31 @@ function update_node_modules {
 
       NODE_VERSION=$($FIREWALLA_HOME/bin/node -v)
 
-      RE_NODE4='^v4\..*$'      
+      RE_NODE4='^v4\..*$'
       if [[ $NODE_VERSION =~ $RE_NODE4 ]]; then
         REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM.node4
       fi
 
-      
+
       if [[ -d $FW_NODE_MODULES_PATH && -f $REVISION_FILE ]]; then
         cd $FW_NODE_MODULES_PATH
+
+        modulesBranch=$(git rev-parse --abbrev-ref HEAD)
+        if [[ $branch != $modulesBranch ]]; then
+            logger "FIREWALLA: NODE MODULES BRANCH MISMATCH: $modulesBranch, NOW SWITCHING TO $branch..."
+            $MGIT remote set-branches origin $branch
+            $MGIT fetch origin $branch
+            $MGIT checkout $branch
+        fi
 
         EXPECTED_REVISION=$(cat $REVISION_FILE)
         CURRENT_REVISION=$(git log | head -n 1 | awk '{print $2}')
 
         cd $FW_NODE_MODULES_PATH
-   
+
         logger "FIREWALLA: MAIN-STARTED CHECKING MODULE STATUS $(date)"
         if [[ `git status -uno --porcelain` ]]; then
-          NODE_MODULE_CHANGED=true  
+          NODE_MODULE_CHANGED=true
         else
           NODE_MODULE_CHANGED=false;
         fi
@@ -188,7 +196,7 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      cp $FIREWALLA_HOME/bin/mock/bitbridge6a $FIREWALLA_HOME/bin/.
      if [ -f /home/pi/.firewalla/config/enablev6 ]; then
          cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
-     else 
+     else
          cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
      fi
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
@@ -275,10 +283,10 @@ function create_bootstrap_scripts_folder() {
     if [[ ! -f /.dockerenv ]]; then
         if [ -s /home/pi/scripts/fireupgrade.sh ]; then
             [ -s /home/pi/firewalla/etc/fireupgrade2.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade2.service /etc/systemd/system/fireupgrade.service
-        else 
+        else
             [ -s /home/pi/firewalla/etc/fireupgrade.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/fireupgrade.service
         fi
-    fi 
+    fi
     sync
     sync
 }
