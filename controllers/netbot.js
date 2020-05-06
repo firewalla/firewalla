@@ -2897,7 +2897,7 @@ class netBot extends ControllerBot {
           })
 
           let mode = require('../net2/Mode.js')
-          if (mode.isManualSpoofModeOn()) {
+          if (await mode.isManualSpoofModeOn()) {
             await new SpooferManager().loadManualSpoof(mac)
           }
 

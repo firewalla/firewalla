@@ -104,6 +104,16 @@ sudo iptables -w -N FW_FORWARD &>/dev/null
 
 sudo iptables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo iptables -w -A FORWARD -j FW_FORWARD
 
+# INPUT chain protection
+sudo iptables -w -N FW_INPUT_ACCEPT &> /dev/null
+sudo iptables -w -F FW_INPUT_ACCEPT
+sudo iptables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_ACCEPT
+sudo iptables -w -A FW_INPUT_ACCEPT -p tcp -m multiport --dports 22 -j ACCEPT
+
+sudo iptables -w -N FW_INPUT_DROP &> /dev/null
+sudo iptables -w -F FW_INPUT_DROP
+sudo iptables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_DROP
+
 # multi protocol block chain
 sudo iptables -w -N FW_DROP &>/dev/null
 sudo iptables -w -F FW_DROP
@@ -220,6 +230,13 @@ sudo iptables -w -t nat -N FW_POSTROUTING &> /dev/null
 
 sudo iptables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null || sudo iptables -w -t nat -A POSTROUTING -j FW_POSTROUTING
 
+# nat POSTROUTING port forward hairpin chain
+sudo iptables -w -t nat -N FW_POSTROUTING_PORT_FORWARD &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_PORT_FORWARD
+sudo iptables -w -t nat -C FW_POSTROUTING -j FW_POSTROUTING_PORT_FORWARD &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -j FW_POSTROUTING_PORT_FORWARD
+sudo iptables -w -t nat -N FW_POSTROUTING_HAIRPIN &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_HAIRPIN
+
 # nat blackhole 8888
 sudo iptables -w -t nat -N FW_NAT_HOLE &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_HOLE
@@ -227,18 +244,20 @@ sudo iptables -w -t nat -A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -A FW_NAT_HOLE -j RETURN
 
+
+# DNAT related chain comes first
+# create port forward chain in PREROUTING, this is used in ipv4 only
+sudo iptables -w -t nat -N FW_PREROUTING_EXT_IP &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_EXT_IP &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_EXT_IP
+sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
 # initialize nat bypass chain
 sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_BYPASS
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
 # directly accept for monitoring off devices/networks
 sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
-
-# DNAT related chain comes first
-# create port forward chain in PREROUTING, this is used in ipv4 only
-sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
-sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_PORT_FORWARD &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_PORT_FORWARD
 # create dns redirect chain in PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
@@ -391,6 +410,16 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_FORWARD &>/dev/null
   
   sudo ip6tables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_FORWARD
+
+  # INPUT chain protection
+  sudo ip6tables -w -N FW_INPUT_ACCEPT &> /dev/null
+  sudo ip6tables -w -F FW_INPUT_ACCEPT
+  sudo ip6tables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p tcp -m multiport --dports 22 -j ACCEPT
+
+  sudo ip6tables -w -N FW_INPUT_DROP &> /dev/null
+  sudo ip6tables -w -F FW_INPUT_DROP
+  sudo ip6tables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_DROP
 
   # multi protocol block chain
   sudo ip6tables -w -N FW_DROP &>/dev/null

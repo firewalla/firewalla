@@ -130,13 +130,13 @@ module.exports = class {
           if (err || ip == null) {
             log.info(`UPnP write client may not work on WAN ${defaultWanIp}`);
           }
-          this.wanUpnpClient = wanUpnpClient;
         });
+        this.wanUpnpClient = wanUpnpClient;
       }
       // check availability of NATPMP
       const defaultGateway = sysManager.myDefaultGateway();
       if (defaultGateway && ip.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {
-        const wanNatPmpClient = natpmp.connect(defaultGateway);
+        const wanNatPmpClient = natpmp.connect(defaultGateway, defaultWanIp);
         wanNatPmpClient.on('error', (err) => {
           log.error(`NATPMP write clien does not work on gw ${defaultGateway}`, err);
           wanNatPmpClient.close();
@@ -147,8 +147,8 @@ module.exports = class {
             if (err || info == null) {
               log.info(`NATPMP write client may not work on gw ${defaultGateway}`);
             }
-            this.wanNatPmpClient = wanNatPmpClient;
           });
+          this.wanNatPmpClient = wanNatPmpClient;
         }
       }
 
