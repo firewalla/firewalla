@@ -48,7 +48,6 @@ const i18n = require('i18n');
 const PORT = normalizePort(process.env.PORT) || 8833;
 const PORT_LOCAL_API = 8834;
 const apiServers = {}
-const localApiServers = {}
 
 let language = 'en';
 
@@ -121,10 +120,15 @@ async function refreshListeningInterfaces(app, local = false) {
   const listeningInterfaces =
     local && f.isProductionOrBetaOrAlpha() ? [] :
     local || !userInterfaces ? sysManager.getMonitoringInterfaces() :
-    userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf)).filter(Boolean)
+    userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf))
 
   // always listen to localhost
-  const targetIP4Set = new Set(listeningInterfaces.map(i => i.ip_address).concat('127.0.0.1'))
+  const targetIP4Set = new Set(
+    listeningInterfaces
+      .filter(intf => intf && intf.ip_address)
+      .map(i => i.ip_address)
+      .concat('127.0.0.1')
+  )
 
   log.debug(targetIP4Set)
 
