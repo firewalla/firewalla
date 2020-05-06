@@ -1162,8 +1162,9 @@ class netBot extends ControllerBot {
           const { total, date, enable } = value;
           let oldPlan = {};
           try {
-            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan"));
-          } catch (e) { }
+            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan")) || {};
+          } catch (e) { 
+          }
           const featureName = 'data_plan';
           oldPlan.enable = fc.isFeatureOn(featureName);
           if (enable) {
