@@ -360,8 +360,6 @@ class SysManager {
       await exec('sudo systemctl restart cron.service');
       await exec('sudo systemctl restart rsyslog');
       
-      //don't restart when initializing timezone
-      tz && (await exec('sudo systemctl restart firemain'));
       return null;
     } catch (err) {
       log.error("Failed to set timezone:", err);
