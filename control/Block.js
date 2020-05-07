@@ -71,7 +71,7 @@ function getDstSet6(tag) {
 }
 
 
-async function setupCategoryEnv(category, dstType = "hash:ip") {
+async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128) {
   if(!category) {
     return;
   }
@@ -81,10 +81,10 @@ async function setupCategoryEnv(category, dstType = "hash:ip") {
   const ipset6 = getDstSet6(category);
   const tempIpset6 = getDstSet6(`tmp_${category}`);
 
-  const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} family inet hashsize 128 maxelem 65536`
-  const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} family inet6 hashsize 128 maxelem 65536`
-  const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} family inet hashsize 128 maxelem 65536`
-  const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} family inet6 hashsize 128 maxelem 65536`
+  const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} family inet hashsize ${hashSize} maxelem 65536`
+  const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} family inet6 hashsize ${hashSize} maxelem 65536`
+  const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} family inet hashsize ${hashSize} maxelem 65536`
+  const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} family inet6 hashsize ${hashSize} maxelem 65536`
 
   await exec(cmdCreateCategorySet);
   await exec(cmdCreateCategorySet6);
