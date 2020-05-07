@@ -507,7 +507,6 @@
         "bipartite_graph"
       ]
     },
-    "WirelessInterfaceSensor": {},
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,
