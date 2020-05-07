@@ -141,7 +141,7 @@ for key in "${!SRCPORT[@]}"; do
   ((SRCPORT_COUNT["${key%%,*}"]++))
 done
 for key in "${!DESTPORT[@]}"; do
-  ((DESTHOST_COUNT["${key%%,*}"]++))
+  ((DESTPORT_COUNT["${key%%,*}"]++))
 done
 for key in "${!DEST[@]}"; do
   ((DESTHOST_COUNT["${key%%,*}"]++))
