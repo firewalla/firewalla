@@ -28,9 +28,6 @@ const dnsTool = new DNSTool()
 
 const dns = require('dns');
 const util = require('util');
-const resolver = new dns.Resolver();
-let resolve4Async;
-let resolve6Async;
 const fc = require('../net2/config.js');
 const dc = require('../extension/dnscrypt/dnscrypt');
 
@@ -135,7 +132,7 @@ class DomainBlock {
     }
   }
 
-  resolve4WithTimeout(domain, timeout) {
+  resolve4WithTimeout(resolve4Async, domain, timeout) {
     let callbackCalled = false
     return new Promise((resolve, reject) => {
       resolve4Async(domain).then((addresses) => {
@@ -158,7 +155,7 @@ class DomainBlock {
     })
   }
 
-  resolve6WithTimeout(domain, timeout) {
+  resolve6WithTimeout(resolve6Async, domain, timeout) {
     let callbackCalled = false
 
     return new Promise((resolve, reject) => {
@@ -184,6 +181,9 @@ class DomainBlock {
   }
 
   async resolveDomain(domain) {
+    const resolver = new dns.Resolver();
+    let resolve4Async;
+    let resolve6Async;
     if (fc.isFeatureOn('doh')) {
       const server = `127.0.0.1:${dc.getLocalPort()}`;
       resolver.setServers([server]);
@@ -193,12 +193,12 @@ class DomainBlock {
       resolve4Async = util.promisify(dns.resolve4);
       resolve6Async = util.promisify(dns.resolve6);
     }
-    const v4Addresses = await this.resolve4WithTimeout(domain, 3 * 1000).catch((err) => []); // 3 seconds for timeout
+    const v4Addresses = await this.resolve4WithTimeout(resolve4Async, domain, 3 * 1000).catch((err) => []); // 3 seconds for timeout
     await dnsTool.addReverseDns(domain, v4Addresses);
 
     const gateway6 = sysManager.myGateway6()
     if (gateway6) { // only query if ipv6 is supported
-      const v6Addresses = await this.resolve6WithTimeout(domain, 3 * 1000).catch((err) => []);
+      const v6Addresses = await this.resolve6WithTimeout(resolve6Async, domain, 3 * 1000).catch((err) => []);
       await dnsTool.addReverseDns(domain, v6Addresses);
       return v4Addresses.concat(v6Addresses)
     } else {
