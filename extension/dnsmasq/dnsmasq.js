@@ -1367,6 +1367,13 @@ module.exports = class DNSMASQ {
     let checkResult = await this.verifyDNSConnectivity();
 
     if (checkResult) {
+      if (this.failCount > 8) {
+        log.info(`DNS is reachable again, add back DNS redirect rules ...`);
+        // add back dns redirect rules
+        await this._add_all_iptables_rules().catch((err) => {
+          log.error("Failed to add back DNS redirect rules", err.message);
+        });
+      }
       this.failCount = 0 // reset
       return;
     }
