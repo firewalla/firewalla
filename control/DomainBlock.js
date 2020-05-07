@@ -186,7 +186,7 @@ class DomainBlock {
   async resolveDomain(domain) {
     if (fc.isFeatureOn('doh')) {
       const server = `127.0.0.1:${dc.getLocalPort()}`;
-      resolver.setServers([server]);
+ //     resolver.setServers([server]);
       resolve4Async = util.promisify(resolver.resolve4.bind(resolver));
       resolve6Async = util.promisify(resolver.resolve6.bind(resolver));
     } else {
