@@ -77,7 +77,13 @@ while read proto orig oport resp rport state local_orig local_resp; do
     #host=""
     if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
           "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ||
-          "$orig" == ff0?::* || "$resp" == ff0?::* ]]; then continue; fi
+          # ff0 broadcast, fe[89abcde] link local & site local
+          "$orig" =~ f(f0|e[89abcde]).:.* ||
+          "$resp" =~ f(f0|e[89abcde]).:.* ||
+          # Firewalla dns block
+          "$orig" == "198.51.100.99" || "$orig" == "0.0.0.0" ||
+          "$resp" == "198.51.100.99" || "$resp" == "0.0.0.0"
+    ]]; then continue; fi
     # if [[ "${orig%.*}" == "$SUBNET" || "${orig%.*}" == "$SUBNET2" ]]; then host=$orig; fi
     # if [[ "${resp%.*}" == "$SUBNET" || "${resp%.*}" == "$SUBNET2" ]]; then host=$resp; fi
     # if [[ "$host" == "" ]]; then continue; fi
@@ -126,25 +132,26 @@ for state in ${STATES[@]}; do
 done
 echo ""
 
+# count unique source port, dest port, dest host
+declare -A SRCPORT_COUNT
+declare -A DESTPORT_COUNT
+declare -A DESTHOST_COUNT
+
+for key in "${!SRCPORT[@]}"; do
+  ((SRCPORT_COUNT["${key%%,*}"]++))
+done
+for key in "${!DESTPORT[@]}"; do
+  ((DESTHOST_COUNT["${key%%,*}"]++))
+done
+for key in "${!DEST[@]}"; do
+  ((DESTHOST_COUNT["${key%%,*}"]++))
+done
+
 for host in "${!HOST[@]}"; do
     printf '%-30s' "$host"
-
-    srcPorts=0
-    destPorts=0
-    destHosts=0
-    for key in "${!SRCPORT[@]}"; do
-        if [[ $key == $host* ]]; then ((srcPorts++)); fi
-    done
-    for key in "${!DESTPORT[@]}"; do
-        if [[ $key == $host* ]]; then ((destPorts++)); fi
-    done
-    for key in "${!DEST[@]}"; do
-        if [[ $key == $host* ]]; then ((destHosts++)); fi
-    done
-
-    printf '%-10s' $srcPorts
-    printf '%-10s' $destPorts
-    printf '%-10s' $destHosts
+    printf '%-10s' ${SRCPORT_COUNT[$host]}
+    printf '%-10s' ${DESTPORT_COUNT[$host]}
+    printf '%-10s' ${DESTHOST_COUNT[$host]}
     printf '%-10s' ${CONN[$host, "udp"]}
     printf '%-10s' ${CONN[$host, "tcp"]}
     for state in ${STATES[@]}; do
