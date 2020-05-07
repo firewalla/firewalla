@@ -55,7 +55,7 @@ const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
-const scheduler = require('../extension/scheduler/scheduler.js')()
+const scheduler = require('../extension/scheduler/scheduler.js')
 
 const Queue = require('bee-queue')
 

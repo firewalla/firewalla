@@ -298,7 +298,7 @@ class NetworkStatsSensor extends Sensor {
     this.cornJob && this.cornJob.stop();
     this.cornJob = new CronJob("00 30 02 * * *", () => {
       speedtest();
-    }, null, true, await sysManager.getTimezone())
+    }, null, true, sysManager.getTimezone())
   }
   stopSpeedTest() {
     this.cornJob && this.cornJob.stop();

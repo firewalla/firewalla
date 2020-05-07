@@ -110,7 +110,13 @@ class SysManager {
             i18n.setLocale(this.language);
             break;
           case "System:TimezoneChange":
-            this.timezone = message;
+            this.reloadTimezone().then(() => {
+              if (f.isMain()) {
+                pclient.publish(Message.MSG_SYS_TIMEZONE_RELOADED, message);
+              }
+            }).catch((err) => {
+              log.error("Failed to reload timezone", err.message);
+            });
             break;
           case "System:SSHPasswordChange": {
             const SSH = require('../extension/ssh/ssh.js');
@@ -137,6 +143,7 @@ class SysManager {
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
       this.delayedActions();
+      this.reloadTimezone();
 
       this.license = license.getLicense();
 
@@ -332,17 +339,19 @@ class SysManager {
     })
   }
 
-  async getTimezone() {
-    const tz = await rclient.hgetAsync("sys:config", "timezone");
-    return tz;
+  async reloadTimezone() {
+    this.timezone = await rclient.hgetAsync("sys:config", "timezone");
+  }
+
+  getTimezone() {
+    return this.timezone || "UTC";
   }
 
   async setTimezone(timezone) {
-    const tz = await this.getTimezone();
-    this.timezone = timezone;
-    if (tz == timezone) {
+    if (this.timezone == timezone) {
       return null;
     }
+    this.timezone = timezone;
     try {
       await rclient.hsetAsync("sys:config", "timezone", timezone);
       pclient.publish("System:TimezoneChange", timezone);
