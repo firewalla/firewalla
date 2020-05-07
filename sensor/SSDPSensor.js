@@ -176,7 +176,9 @@ class SSDPSensor extends Sensor {
         this.onResponse(header, statusCode, rinfo)
       });
       process.nextTick(() => {
-        this.ssdpClient.search('ssdp:all');
+        this.ssdpClient.search('ssdp:all').catch((err) => {
+          log.error(`Failed to do SSDP search`, err.message);
+        });
       });
     }, 5000);
   }
