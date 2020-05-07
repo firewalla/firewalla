@@ -83,7 +83,7 @@ class PiHole {
       `${webHttpPort}:80/tcp`,
       `${webHttpsPort}:443/tcp`
     ];
-    const tz = await sysManager.getTimezone();
+    const tz = sysManager.getTimezone();
     config.environment["TZ"] = tz;
     let dnses = sysManager.myDNS();
     if(dnses.length > 0) {
