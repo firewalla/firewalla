@@ -27,8 +27,10 @@ const log = require('../../net2/logger.js')(__filename)
 const CronJob = require('cron').CronJob;
 
 const cronParser = require('cron-parser');
-const moment = require('moment');
+const moment = require('moment-timezone');
 const sysManager = require('../../net2/SysManager.js');
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../../net2/Message.js');
 
 let instance = null;
 
@@ -54,7 +56,28 @@ class PolicyScheduler {
     if (instance == null) {
       instance = this;
     }
+    sclient.on("message", async (channel, message) => {
+      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+        log.info(`System timezone is reloaded, schedule reload scheduled policies ...`);
+        this.scheduleReload();
+      }
+    });
+    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
     return instance;
+  }
+
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(async () => {
+      const policyCopy = Object.keys(runningCronJobs).map(pid => runningCronJobs[pid].policy);
+      for (const policy of policyCopy) {
+        if (policy) {
+          await this.deregisterPolicy(policy);
+          await this.registerPolicy(policy);
+        }
+      }
+    }, 5000);
   }
 
   shouldPolicyBeRunning(policy) {
@@ -65,11 +88,11 @@ class PolicyScheduler {
       return 0
     }
 
-    const interval = cronParser.parseExpression(cronTime)
+    const interval = cronParser.parseExpression(cronTime, {tz: sysManager.getTimezone()});
     const lastDate = interval.prev().getTime();
-    const now = moment()
+    const now = moment().tz(sysManager.getTimezone());
 
-    const diff = now.diff(moment(lastDate), 'seconds')
+    const diff = now.diff(moment(lastDate).tz(sysManager.getTimezone()), 'seconds')
 
     if (diff < duration - MIN_DURATION) {
       return duration - diff // how many seconds left
@@ -129,7 +152,7 @@ class PolicyScheduler {
 
     try {
       log.info(`Registering policy ${policy.pid} for reoccuring`)
-      const tz = await sysManager.getTimezone();
+      const tz = sysManager.getTimezone();
       const job = new CronJob(cronTime, () => {
         this.apply(policy).catch(err => {
           log.error('Error applying scheduled policy', err)
@@ -139,7 +162,7 @@ class PolicyScheduler {
       true, // enable the job
       tz); // set local timezone. Otherwise FireMain seems to use UTC in the first running after initail pairing.
 
-      runningCronJobs[pid] = job // register job
+      runningCronJobs[pid] = {policy, job}; // register job
 
       const x = this.shouldPolicyBeRunning(policy) // it's in policy activation period when starting FireMain
       if (x > 0) {
@@ -164,7 +187,7 @@ class PolicyScheduler {
     log.info(`deregistering policy ${pid}`)
 
     const timer = policyTimers[pid]
-    const job = runningCronJobs[pid]
+    const job = runningCronJobs[pid] && runningCronJobs[pid].job;
 
     if (job) {
       job.stop()
@@ -179,5 +202,5 @@ class PolicyScheduler {
   }
 }
 
-module.exports = function() { return new PolicyScheduler() }
+module.exports = new PolicyScheduler();
 

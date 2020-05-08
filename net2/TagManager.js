@@ -61,7 +61,7 @@ class TagManager {
           }
         }
       }
-    }, 3000);
+    }, 1000);
   }
 
   async toJson() {
