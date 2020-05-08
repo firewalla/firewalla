@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,7 +17,7 @@
 const f = require('../../net2/Firewalla.js');
 const fHome = f.getFirewallaHome();
 
-const log = require('../../net2/logger.js')(__filename, 'info');
+const log = require('../../net2/logger.js')(__filename);
 
 const jsonfile = require('jsonfile');
 
@@ -33,38 +33,34 @@ if (config == null) {
 const eptname = config.endpoint_name;
 const appId = config.appId;
 const appSecret = config.appSecret;
+
 const cloud = require('../../encipher');
-
-let eptcloud = null;
-let nbControllers = {};
-
-let instance = null;
-
 const Bone = require('./../../lib/Bone');
-
 const rclient = require('../../util/redis_manager.js').getRedisClient()
-
 const { delay } = require('../../util/util.js')
+const sem = require('../../sensor/SensorEventManager.js')
 
 const util = require('util')
 
+const nbControllers = {};
+let instance = null;
+
 module.exports = class {
   constructor() {
-    
+
     if (instance == null) {
       instance = this;
 
-      eptcloud = new cloud(eptname);
-      this.eptcloud = eptcloud;
+      this.eptcloud = new cloud(eptname);
 
       (async() => {
 
         log.info("[Boot] Waiting for security keys to be ready");
-        // key ready
-        await eptcloud.utilKeyReady();
+        // Must wait here for FireKick to generate keys
+        await this.eptcloud.untilKeyReady();
 
         log.info("[Boot] Loading security keys");
-        await eptcloud.loadKeys();
+        await this.eptcloud.loadKeys();
 
         log.info("[Boot] Waiting for cloud token to be ready");
         // token ready
@@ -75,7 +71,7 @@ module.exports = class {
 
         // setup API sensors
         this.sl = require('../../sensor/APISensorLoader.js');
-        this.sl.initSensors(eptcloud);
+        await this.sl.initSensors(this.eptcloud);
         this.sl.run();
       })();
 
@@ -89,7 +85,20 @@ module.exports = class {
     try {
       await this.init();
     } catch (err) {
-      log.error('Init failed, retry now...', err)
+      log.error('Init failed, retry now...', err.message)
+      log.debug(err.stack)
+
+      try {
+        // create nbController in offline mode when connection to cloud failed
+        const { gid } = await Bone.checkCloud()
+        if (!nbControllers[gid]) {
+          const name = await rclient.getAsync('groupName')
+          this.createController(gid, name, null, true)
+        }
+      } catch(err) {
+        log.error('Error creating controller', err)
+      }
+
       await delay(3000);
       return this.tryingInit();
     }
@@ -99,55 +108,49 @@ module.exports = class {
     return nbControllers[gid];
   }
 
-  init() {
+  async init() {
     log.info("Initializing Cloud Wrapper...");
 
-    return new Promise((resolve, reject) => {
-      // Initialize cloud and netbot controller
-      eptcloud.eptlogin(appId, appSecret, null, eptname, function(err, result) {
-        if(err) {
-          log.info("Failed to login encipher cloud: " + err);
-          process.exit(1);
-        } else {
-          log.info("Success logged in Firewalla Cloud");
+    await this.eptcloud.eptLogin(appId, appSecret, null, eptname)
 
-          eptcloud.eptGroupList(eptcloud.eid, function (err, groups) {
-            if(err) {
-              log.error("Fail to find groups")
-              reject(err);
-              return;
-            }
+    log.info("Success logged in Firewalla Cloud");
 
-            log.info(`Found ${groups.length} groups this device has joined`);
+    const groups = await this.eptcloud.eptGroupList(this.eptcloud.eid)
 
-            if(groups.length === 0) {
-              log.error("Wating for kickstart process to create group");
-              reject(new Error("This device belongs to no group"));
-              return;
-            }
+    log.info(`Found ${groups.length} groups this device has joined`);
 
-            groups.forEach((group) => {
-              let groupID = group.gid;
-              if(nbControllers[groupID]) {
-                return;
-              }
-              rclient.setAsync("groupName", group.name);
-              let NetBotController = require("../../controllers/netbot.js");
-              let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
-              nbConfig.controller = config.controllers[0];
-              // temp use apiMode = false to enable api to act as ui as well
-              let nbController = new NetBotController(nbConfig, config, eptcloud, groups, groupID, true, false);
-              if(nbController) {
-                nbControllers[groupID] = nbController;
-                log.info("netbot controller for group " + groupID + " is intialized successfully");
-              }
-            });
+    if(!groups.length) {
+      log.error("Wating for kickstart process to create group");
+      throw new Error("This device belongs to no group")
+    }
 
-            resolve();
-          });
-        }
-      });
-    })
+    for (const group of groups) {
+      this.createController(group.gid, group.name, groups, false)
+    }
+  }
+
+  createController(gid, name, groups, offlineMode) {
+    log.info(`Creating controller, gid: ${gid}, offlineMode: ${offlineMode}`)
+    if (nbControllers[gid]) {
+      if (nbControllers[gid].apiMode == offlineMode) {
+        return;
+      } else if (!offlineMode) {
+        // controller already exist, reconnect to cloud
+        nbControllers[gid].groups = groups
+        nbControllers[gid].initEptCloud()
+        return;
+      }
+    }
+    rclient.setAsync("groupName", name);
+    let NetBotController = require("../../controllers/netbot.js");
+    let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
+    nbConfig.controller = config.controllers[0];
+    // temp use apiMode = false to enable api to act as ui as well
+    let nbController = new NetBotController(nbConfig, config, this.eptcloud, groups, gid, true, offlineMode);
+    if(nbController) {
+      nbControllers[gid] = nbController;
+      log.info("netbot controller for group " + gid + " is intialized successfully");
+    }
   }
 
   async getNetBotController(groupID) {
@@ -166,6 +169,6 @@ module.exports = class {
   }
 
   getCloud() {
-    return eptcloud;
+    return this.eptcloud;
   }
 };

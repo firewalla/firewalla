@@ -20,6 +20,9 @@ let Firewalla = require('../net2/Firewalla.js');
 let Promise = require('bluebird');
 let cp = require('child_process');
 
+const cpp = require('child-process-promise');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 let instance = null;
 class DeviceMgmtTool {
   constructor() {
@@ -37,19 +40,44 @@ class DeviceMgmtTool {
     return Firewalla.getOverlayUpperDirPartition() + "/overlay-workdir";
   }
 
-  deleteGroup(eptcloud, gid) {
+  async deleteGroup(eptcloud, gid) {
     log.info("Delete group " + gid);
-    eptcloud.deleteGroup(gid, (err, body) => {
-      if (err != null) {
-        log.error("Error occurred while deleting group: " + err + ", body: " + body);
-      } else {
-        log.info("Group " + gid + " is deleted.");
-      }
-    });
+    await eptcloud.deleteGroup(gid)
+    log.info("Group " + gid + " is deleted.");
   }
-  
-  resetDevice() {
+
+  async resetGold() {
+    log.info("Resetting Gold...")
+    try {
+      await cpp.exec("sudo pkill -SIGUSR1 firereset");
+      await cpp.exec("sudo pkill -SIGUSR1 firereset");
+      await cpp.exec("sudo pkill -SIGUSR1 firereset");
+    } catch(err) {
+      log.error("Got error when resetting gold, err:", err);
+    }
+  }
+
+  async resetGoldAndShutdown() {
+    log.info("Resetting Gold and Shutdown...")
+    try {
+      await cpp.exec("sudo pkill -SIGUSR2 firereset");
+      await cpp.exec("sudo pkill -SIGUSR2 firereset");
+      await cpp.exec("sudo pkill -SIGUSR2 firereset");
+    } catch(err) {
+      log.error("Got error when resetting gold and shutdown, err:", err);
+    }
+  }
+
+  resetDevice(config) {
     log.info("Resetting device to factory defaults...");
+
+    if(platform.getName() === 'gold') {
+      if(config && config.shutdown) {
+        return this.resetGoldAndShutdown();
+      } else {
+        return this.resetGold();
+      }
+    }
 
     if(Firewalla.isOverlayFS()) {
       log.info("OverlayFS is enabled");

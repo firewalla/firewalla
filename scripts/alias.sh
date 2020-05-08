@@ -3,12 +3,15 @@
 alias sudo='sudo '
 alias apt='/home/pi/firewalla/scripts/apt.sh'
 alias apt-get='/home/pi/firewalla/scripts/apt.sh'
+alias tsys='sudo tail -F /var/log/syslog'
 alias t0='tail -F ~/.forever/main.log'
 alias t00='tail -F ~/.forever/*.log'
 alias t1='tail -F ~/.forever/kickui.log'
 alias t2='tail -F ~/.forever/monitor.log'
 alias t3='tail -F ~/.forever/api.log'
 alias t4='tail -F ~/.forever/blue.log'
+alias t5='tail -F ~/.forever/firereset.log'
+alias t6='tail -F ~/.forever/router.log'
 alias tt0='tail -F ~/logs/FireMain.log'
 alias tt00='tail -F ~/logs/Fire*.log'
 alias tt1='tail -F ~/logs/FireKick.log'
@@ -19,6 +22,8 @@ alias l1='less -R ~/.forever/kickui.log'
 alias l2='less -R ~/.forever/monitor.log'
 alias l3='less -R ~/.forever/api.log'
 alias l4='less -R ~/.forever/blue.log'
+alias l5='less -R ~/.forever/firereset.log'
+alias l6='less -R ~/.forever/router.log'
 alias frr='forever restartall'
 alias fr0='forever restart 0'
 alias fr1='forever restart 1'
@@ -30,6 +35,8 @@ alias sr1='sudo systemctl restart firekick'
 alias sr2='sudo systemctl restart firemon'
 alias sr3='touch /home/pi/.firewalla/managed_reboot; sudo systemctl restart fireapi'
 alias sr4='sudo systemctl restart firehttpd'
+alias sr5='sudo systemctl restart firereset'
+alias sr6='sudo systemctl restart firerouter'
 alias srb4='sudo systemctl restart bitbridge4'
 alias srb6='sudo systemctl restart bitbridge6'
 alias ss7='sudo systemctl stop frpc.support.service'
@@ -46,8 +53,12 @@ alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name
 alias ll2='redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMon\", \"level\":\"info\"}"'
 alias ll3='redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireApi\", \"level\":\"info\"}"'
 alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
+alias frcc='curl "http://localhost:8837/v1/config/active" | json_pp'
 
 alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -'
+alias cbd='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/check_ipdomain_block.sh 2>/dev/null | bash /dev/stdin --domain'
+alias cbi='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/check_ipdomain_block.sh 2>/dev/null | bash /dev/stdin --ip'
+alias sccf='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash /dev/stdin -f'
 alias remote_speed_test='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
 
 alias less='less -r'
@@ -68,3 +79,24 @@ function mycatip () {
 }
 
 alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi/firewalla/scripts/main-run'
+
+function ggsupport {
+  SUPPORT_TOKEN=$1
+  PORT=$2
+  SERVER_PORT=${3:-10000}
+  SERVER=${4:-support.firewalla.com}
+
+echo "[common]
+server_addr = $SERVER
+server_port = $SERVER_PORT
+privilege_token = $SUPPORT_TOKEN
+
+[SSH$PORT]
+type = tcp
+local_ip = 127.0.0.1
+local_port = 22
+remote_port = $PORT
+use_encryption = true" > ~/support.ini
+
+/home/pi/firewalla/extension/frp/frpc.$(uname -m) -c ~/support.ini
+}

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -99,9 +99,9 @@ function argumentsToString(v) {
 }
 
 module.exports = {
-  extend: extend,
-  getPreferredBName: getPreferredBName,
-  getPreferredName: getPreferredName,
-  delay: delay,
-  argumentsToString: argumentsToString
+  extend,
+  getPreferredBName,
+  getPreferredName,
+  delay,
+  argumentsToString
 }

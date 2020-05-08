@@ -27,8 +27,7 @@ const serviceConfigKey = "bone:service:config";
 const syncInterval = 1000 * 3600 * 4; // sync every 4 hours
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const License = require('../util/license');
 
@@ -37,6 +36,10 @@ const fConfig = require('../net2/config.js').getConfig();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const execAsync = require('child-process-promise').exec
+
+const mode = require('../net2/Mode.js');
+let HostManager = require('../net2/HostManager.js');
+let hostManager = new HostManager();
 
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
@@ -164,9 +167,10 @@ class BoneSensor extends Sensor {
     // First checkin usually have no meaningful data ...
     //
     try {
-      if (this.lastCheckedIn) {
+      if (this.lastCheckedIn && this.iptablesReady) {
+        // HostManager.getCheckIn will call getHosts, which should be called after iptables is ready
         let HostManager = require("../net2/HostManager.js");
-        let hostManager = new HostManager("cli", 'server', 'info');
+        let hostManager = new HostManager();
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
       }
     } catch (e) {
@@ -174,7 +178,7 @@ class BoneSensor extends Sensor {
     }
 
     const data = await Bone.checkinAsync(fConfig, license, sysInfo);
-
+    await this.checkCloudSpoofOff(data.spoofOff);
     this.lastCheckedIn = Date.now() / 1000;
 
     log.info("Cloud checked in successfully:")//, JSON.stringify(data));
@@ -227,6 +231,24 @@ class BoneSensor extends Sensor {
     }
   }
 
+  async checkCloudSpoofOff(spoofOff) {
+    let spoofMode = await mode.isSpoofModeOn();
+    const spoofOffKey = 'sys:bone:spoofOff';
+    if (spoofOff && spoofMode) {
+      await rclient.setAsync(spoofOffKey, spoofOff);
+      //turn off simple mode
+      hostManager.spoof(false);
+    } else {
+      const redisSpoofOff = await rclient.getAsync(spoofOffKey);
+      if (redisSpoofOff) {
+        await rclient.delAsync(spoofOffKey);
+        if (spoofMode) {
+          hostManager.spoof(true);
+        }
+      }
+    }
+  }
+
   run() {
     setInterval(() => {
       this.scheduledJob();
@@ -238,6 +260,10 @@ class BoneSensor extends Sensor {
 
     sem.on("PublicIP:Updated", () => {
       this.checkIn();
+    });
+
+    sem.once("IPTABLES_READY", () => {
+      this.iptablesReady = true;
     });
 
     sem.on("CloudReCheckin", async () => {

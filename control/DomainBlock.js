@@ -34,8 +34,7 @@ let resolve6Async;
 const fc = require('../net2/config.js');
 const dc = require('../extension/dnscrypt/dnscrypt');
 
-const SysManager = require("../net2/SysManager.js")
-const sysManager = new SysManager()
+const sysManager = require("../net2/SysManager.js")
 
 const sem = require('../sensor/SensorEventManager.js').getInstance()
 const DomainUpdater = require('./DomainUpdater.js');
@@ -66,17 +65,6 @@ class DomainBlock {
     options = options || {}
     log.info(`Implementing Block on ${domain}`);
 
-    if (options.dnsmasq_entry) {
-      await dnsmasq.addPolicyFilterEntry([domain], options).catch((err) => undefined);
-      sem.emitEvent({
-        type: 'ReloadDNSRule',
-        message: 'DNSMASQ filter rule is updated',
-        toProcess: 'FireMain',
-        suppressEventLogging: true
-      })
-      return;
-    }
-
     await this.syncDomainIPMapping(domain, options)
     domainUpdater.registerUpdate(domain, options);
     if (!options.ignoreApplyBlock) {
@@ -89,19 +77,7 @@ class DomainBlock {
   }
 
   async unblockDomain(domain, options) {
-    if (options.dnsmasq_entry) {
-      await dnsmasq.removePolicyFilterEntry([domain], options).catch((err) => undefined);
-      sem.emitEvent({
-        type: 'ReloadDNSRule',
-        message: 'DNSMASQ filter rule is updated',
-        toProcess: 'FireMain',
-        suppressEventLogging: true,
-      })
-      return
-    }
-    if (!options.ignoreUnapplyBlock) {
-      await this.unapplyBlock(domain, options);
-    }
+    await this.unapplyBlock(domain, options);
 
     if (!this.externalMapping) {
       await domainIPTool.removeDomainIPMapping(domain, options);
@@ -284,6 +260,7 @@ class DomainBlock {
       }
     }
   }
+
   async blockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.addPolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
@@ -305,10 +282,12 @@ class DomainBlock {
       suppressEventLogging: true,
     })
   }
+
   async updateCategoryBlock(category) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
   }
+
   async getCategoryDomains(category) {
     const CategoryUpdater = require('./CategoryUpdater.js');
     const categoryUpdater = new CategoryUpdater();
@@ -336,6 +315,7 @@ class DomainBlock {
     }
     return dedupAndPattern(finalDomains)
   }
+
   patternDomain(domain) {
     domain = domain || "";
     if (domain.startsWith("*.")) {
