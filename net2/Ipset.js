@@ -118,10 +118,11 @@ async function create(name, type, v4 = true) {
     case 'hash:mac':
       options = 'hashsize 128 maxelem 65536'
       break;
-    default:
+    default: {
       let family = 'family inet';
       if (!v4) family = family + '6';
       options = family + ' hashsize 128 maxelem 65536'
+    }
   }
   const cmd = `sudo ipset create -! ${name} ${type} ${options}`
   return exec(cmd)
@@ -137,6 +138,14 @@ function del(name, target) {
   return exec('sudo ipset ' + cmd);
 }
 
+const CONSTANTS = {
+  IPSET_MONITORED_NET: "monitored_net_set",
+  IPSET_MONITORING_OFF: "monitoring_off_set",
+  IPSET_MONITORING_OFF_MAC: "monitoring_off_mac_set",
+  IPSET_NO_DNS_BOOST: "no_dns_caching_set",
+  IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set"
+}
+
 module.exports = {
   enqueue,
   isReferenced,
@@ -144,5 +153,6 @@ module.exports = {
   flush,
   create,
   add,
-  del
+  del,
+  CONSTANTS
 }

@@ -1,3 +1,18 @@
+/*    Copyright 2016-2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 
 const log = require('../net2/logger.js')(__filename, 'info');
@@ -18,9 +33,9 @@ const initID = 1;
 const exceptionPrefix = "exception:";
 
 const flat = require('flat');
-const audit = require('../util/audit.js');
 
 const _ = require('lodash');
+const Alarm = require('../alarm/Alarm.js');
 
 module.exports = class {
   constructor() {
@@ -266,7 +281,6 @@ module.exports = class {
 
       this.enqueue(exception, (err) => {
         if(!err) {
-          audit.trace("Created exception", exception.eid);
 //            this.publisher.publish("EXCEPTION", "EXCEPTION:CREATED", exception.eid);
         }
 
@@ -279,7 +293,7 @@ module.exports = class {
   }
 
   exceptionExists(exceptionID) {
-    return rclient.keysAsync(exceptionPrefix + exceptionID);
+    return rclient.existsAsync(exceptionPrefix + exceptionID);
   }
 
   async deleteException(exceptionID) {
@@ -332,6 +346,23 @@ module.exports = class {
       .map(ex => ex.eid);
 
     await this.deleteExceptions(relatedEx);
+  }
+
+  async deleteTagRelatedExceptions(tag) {
+    // remove exceptions
+    let exceptions = await this.loadExceptionsAsync();
+    for (let index = 0; index < exceptions.length; index++) {
+      const exception = exceptions[index];
+      if (!_.isEmpty(exception['p.tag.ids']) && exception['p.tag.ids'].inclues(tag)) {
+        if (exception['p.tag.ids'].length <= 1) {
+          await this.deleteException(exception); 
+        } else {
+          let reducedTag = _.without(exception['p.tag.ids'], tag);
+          exception['p.tag.ids'] = reducedTag;
+          await this.updateException(exception);
+        }
+      }
+    }
   }
 
   async createException(json) {
@@ -395,27 +426,16 @@ module.exports = class {
     // TODO: might need to add static ip address here
   }
 
-  match(alarm, callback) {
+  async match(alarm) {
 
-    if(this.isFirewallaCloud(alarm)) {
-      callback(null, true, [])
-      return
+    const results = await this.loadExceptionsAsync()
+
+    let matches = results.filter((e) => e.match(alarm));
+    if (matches.length > 0) {
+      log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
     }
 
-    this.loadExceptions((err, results) => {
-      if(err) {
-        callback(err);
-        return;
-      }
-
-      let matches = results.filter((e) => e.match(alarm));
-      if(matches.length > 0) {
-        log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
-        callback(null, true, matches);
-      } else {
-        callback(null, false);
-      }
-    });
+    return matches
   }
 
   // incr by 1 to count how many times this exception matches alarms
@@ -440,4 +460,31 @@ module.exports = class {
     }
   }
 
+  async searchException(target) {
+    let matchedExceptions = [];
+    const addrPort = target.split(":");
+    const val2 = addrPort[0];
+    const exceptions = await this.loadExceptionsAsync();
+    for (const exception of exceptions) {
+      let match = false;
+      for (var key in exception) {
+        if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+          continue;
+        }
+
+        let payload = Object.assign({}, exception);
+        payload[key] = val2;
+        let alarm = new Alarm.Alarm("", Date.now(), "", payload);
+        if (exception.match(alarm)) {
+          match = true;
+          break;
+        }
+      }
+      if (match) {
+        matchedExceptions.push(exception);
+      }
+    }
+
+    return _.uniqWith(matchedExceptions.map((exception) => exception.eid), _.isEqual);
+  }
 };

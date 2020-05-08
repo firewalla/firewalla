@@ -34,7 +34,7 @@ router.post('/filter/renew',
 router.post('/iptables/add',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    dnsmasq.add_iptables_rules()
+    dnsmasq._add_iptables_rules()
       .then(result => res.status(200).send(''))
       .catch(err => res.status(500).send(''));
   });
@@ -42,7 +42,7 @@ router.post('/iptables/add',
 router.post('/iptables/remove',
   passport.authenticate('bearer', { session: false }),
   function(req, res, next) {
-    dnsmasq.remove_iptables_rules()
+    dnsmasq._remove_iptables_rules()
       .then(result => res.status(200).send(''))
       .catch(err => res.status(500).send(''));
   });

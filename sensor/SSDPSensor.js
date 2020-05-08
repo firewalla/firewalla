@@ -29,8 +29,9 @@ const parseString = require('xml2js').parseString;
 const l2 = require('../util/Layer2.js');
 
 const URL = require('url').URL;
-const SM = require('../net2/SysManager.js');
-const sm = new SM();
+const sm = require('../net2/SysManager.js');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
 
 class SSDPSensor extends Sensor {
 
@@ -161,20 +162,51 @@ class SSDPSensor extends Sensor {
     }
   }
   
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      if (this.ssdpClient)
+        this.ssdpClient.stop();
+      this.ssdpClient = null;
+      const monitoringInterfaces = sm.getMonitoringInterfaces();
+      const ifaces = monitoringInterfaces.filter(i => i.name && !i.name.endsWith(":0")).map(i => i.name);
+      this.ssdpClient = new SSDPClient({interfaces: ifaces, explicitSocketBind: true});
+      this.ssdpClient.on('response', (header, statusCode, rinfo) => {
+        this.onResponse(header, statusCode, rinfo)
+      });
+      process.nextTick(() => {
+        this.ssdpClient.search('ssdp:all');
+      });
+    }, 5000);
+  }
+
   run() {
-    this.ssdpClient = new SSDPClient();
     this.locationCache = {};
     this.CACHE_INTERVAL = this.config.cacheTTL || 3600; // one hour
-    this.ssdpClient.on('response', (header, statusCode, rinfo) => {
-      this.onResponse(header, statusCode, rinfo)
-    });
-    process.nextTick(() => {
-      this.ssdpClient.search('ssdp:all')
-    })
 
-    setInterval(() => {
-      this.ssdpClient.search('ssdp:all')
-    }, this.config.interval * 1000 || 10 * 60 * 1000) // every 10 minutes
+    sem.once('IPTABLES_READY', () => {
+      this.scheduleReload();
+
+      sclient.on("message", (channel, message) => {
+        if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+          log.info("Schedule reload SSDPSensor since network info is reloaded");
+          this.scheduleReload();
+        }
+      });
+      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+
+      setInterval(() => {
+        if (this.ssdpClient)
+          this.ssdpClient.search('ssdp:all');
+      }, this.config.interval * 1000 || 10 * 60 * 1000); // every 10 minutes
+
+      setInterval(() => {
+        // there is a bug in os.networkInterfaces() that is used in node-ssdp. It will not return interface without carrier.
+        // this is a workaround to refresh the listen instances of ssdp client in case carrier changes.
+        this.scheduleReload();
+      }, 900 * 1000);
+    });
   }
 }
 

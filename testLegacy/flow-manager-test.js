@@ -3,10 +3,9 @@ var _ = require('underscore');
 var chai = require('chai');
 var expect = chai.expect;
 var FlowManager = require('../net2/FlowManager.js')
-var SysManager= require('../net2/SysManager.js');
+var sysManager = require('../net2/SysManager.js');
 var flowManager = new FlowManager('info');
 
-var sysManager = new SysManager('info');
 
 var redis = require("redis");
 var rclient = redis.createClient();

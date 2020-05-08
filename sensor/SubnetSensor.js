@@ -20,17 +20,12 @@ const ip = require('ip');
 const log = require('../net2/logger.js')(__filename);
 
 const fc = require('../net2/config.js')
-const fConfig = require('../net2/config.js').getConfig();
-const Bone = require('../lib/Bone');
 const Sensor = require('./Sensor.js').Sensor;
-
-const rclient = require('../util/redis_manager.js').getRedisClient();
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Alarm = require('../alarm/Alarm');
 const AlarmManager2 = require('../alarm/AlarmManager2');
 const am2 = new AlarmManager2();
+const sysManager = require('../net2/SysManager.js');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -41,31 +36,25 @@ const ALARM_SUBNET = 'alarm_subnet';
 
 class SubnetSensor extends Sensor {
   async scheduledJob() {
-    let detectedInterfaces = await rclient.hgetallAsync('sys:network:info');
+    const monitoredInterfaces = sysManager.getMonitoringInterfaces();
+    for (const intf of monitoredInterfaces) {
+      if (intf && intf.subnet) {
+        let subnet = ip.cidrSubnet(intf.subnet);
+        let subnetCap = platform.getSubnetCapacity();
+        if (subnet.subnetMaskLength < subnetCap) {
+          let alarm = new Alarm.SubnetAlarm(
+            new Date() / 1000,
+            intf.gateway,
+            {
+              'p.device.ip': intf.gateway,
+              'p.subnet.length': subnet.subnetMaskLength
+            }
+          );
 
-    if (fConfig.discovery && fConfig.discovery.networkInterfaces) {
-      for (const interfaceName of fConfig.discovery.networkInterfaces) {
-        if (!detectedInterfaces[interfaceName]) continue;
-
-        let intf = JSON.parse(detectedInterfaces[interfaceName]);
-        if (intf && intf.subnet) {
-          let subnet = ip.cidrSubnet(intf.subnet);
-          let subnetCap = platform.getSubnetCapacity();
-          if (subnet.subnetMaskLength < subnetCap) {
-            let alarm = new Alarm.SubnetAlarm(
-              new Date() / 1000,
-              intf.gateway,
-              {
-                'p.device.ip': intf.gateway,
-                'p.subnet.length': subnet.subnetMaskLength
-              }
-            );
-
-            am2.enqueueAlarm(alarm);
-            log.info('Created a subnet alarm', alarm.aid, 'for subnet', intf.subnet);
-          }
+          am2.enqueueAlarm(alarm);
+          log.info('Created a subnet alarm', alarm.aid, 'for subnet', intf.subnet);
         }
-      };
+      }
     }
   }
 

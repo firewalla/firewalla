@@ -62,7 +62,7 @@ exports.get_active_network_interface_name = function(cb) {
 
 exports.interface_type_for = async function(nic_name) {
   try {
-    const result = await execAsync('cat /proc/net/wireless | grep ' + nic_name)
+    await execAsync('cat /proc/net/wireless | grep ' + nic_name)
     return 'Wireless'
   } catch(err) {
     return 'Wired'
@@ -72,7 +72,12 @@ exports.interface_type_for = async function(nic_name) {
 exports.mac_address_for = function(nic_name) {
   // This is a workaround for nodejs bug
   // https://github.com/libuv/libuv/commit/f1e0fc43d17d9f2d16b6c4f9da570a4f3f6063ed
-  // eth0:* virtual interface should use same mac address as main interface eth0
+  // ethx:* virtual interface should use same mac address as main interface ethx
+
+  // 19.08.30 os.networkInterfaces() mac address on different node versions
+  //    v8.16.1   failed
+  //    v10.16.3  failed
+  //    v12.9.1   passed
   let n = nic_name.replace(/:.*$/, "");
   var cmd = 'cat /sys/class/net/' + n + '/address';
   return trim_exec_async(cmd);
@@ -92,41 +97,40 @@ exports.gateway_ip6 = function(cb) {
   trim_exec(cmd, cb);
 };
 
-exports.gateway_ip6_sync = function() {  
+exports.gateway_ip6_sync = function() {
   const cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }' | head -n 1"
   return trim_exec_sync(cmd);
 };
 
 /*
-[ { name: 'eth0',
+[ { name: 'ethx',
     ip_address: '192.168.10.4',
     mac_address: '02:81:05:84:b0:5d',
     ip6_addresses: [ 'fe80::81:5ff:fe84:b05d' ],
     ip6_masks: [ 'ffff:ffff:ffff:ffff::' ],
     gateway_ip: '192.168.10.1',
     netmask: 'Mask:255.255.255.0',
-    type: 'Wired' },
-  { name: 'eth0:0',
+    conn_type: 'Wired' },
+  { name: 'ethx:0',
     ip_address: '192.168.218.1',
     mac_address: '02:81:05:84:b0:5d',
     netmask: 'Mask:255.255.255.0',
-    type: 'Wired' } ]
+    gateway_ip: '192.168.218.1',
+    conn_type: 'Wired' } ]
 */
 exports.get_network_interfaces_list = async function() {
 
-  var count = 0,
-    list = [],
-    nics = os.networkInterfaces();
+  let list = [];
+  const nics = os.networkInterfaces();
 
   for (var key in nics) {
     if (key != 'lo0' && key != 'lo' && !key.match(/^tun.*/) && !key.match(/^vpn_.*/)) { // filter vpn server and vpn client interfaces
 
-      count++;
       var obj = { name: key };
 
       nics[key].forEach(function(type) {
         if (type.family == 'IPv4') {
-          obj.ip_address = type.address;
+          obj.ip_address = type.address || null;
         }
         if (type.family == 'IPv6') {
           if (obj.ip6_addresses) {
@@ -134,9 +138,13 @@ exports.get_network_interfaces_list = async function() {
             if (type.netmask) {
               obj.ip6_masks.push(type.netmask);
             }
+            if (type.cidr) {
+              obj.ip6_subnets.push(type.cidr);
+            }
           } else {
             obj.ip6_addresses=[type.address];
             obj.ip6_masks=[type.netmask];
+            obj.ip6_subnets=[type.cidr];
           }
         }
         if (type.mac) {
@@ -151,9 +159,10 @@ exports.get_network_interfaces_list = async function() {
         exports.interface_type_for(obj.name)
       ])
       if (results[0]) obj.mac_address = results[0];
-      if (results[1]) obj.gateway_ip  = results[1];
+      // if there is no default router on this interface, set gateway_ip to null
+      if (results[1]) obj.gateway_ip  = results[1]; else obj.gateway_ip = null;
       if (results[2]) obj.netmask     = results[2];
-      if (results[3]) obj.type        = results[3];
+      if (results[3]) obj.conn_type   = results[3];
 
       list.push(obj);
     }

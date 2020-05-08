@@ -49,9 +49,9 @@ class FlowAggrTool {
     return util.format("aggrflow:%s:%s:%s:%s", mac, trafficDirection, interval, ts);
   }
 
-  getSumFlowKey(mac, trafficDirection, begin, end) {
-    if(mac) {
-      return util.format("sumflow:%s:%s:%s:%s", mac, trafficDirection, begin, end);
+  getSumFlowKey(target, trafficDirection, begin, end) {
+    if(target) {
+      return util.format("sumflow:%s:%s:%s:%s", target, trafficDirection, begin, end);
     } else {
       return util.format("syssumflow:%s:%s:%s", trafficDirection, begin, end);
     }
@@ -108,7 +108,7 @@ class FlowAggrTool {
 
     let count = await rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR) // only keep the MAX_FLOW_PER_SUM highest flows
     if(count > 0) {
-      log.warn(`${count} flows are removed from ${key} for self protection`)
+      log.warn(`${count} flows are trimmed from ${key}`)
     }
   }
 
@@ -130,6 +130,7 @@ class FlowAggrTool {
 
     for(let destIP in traffics) {
       let traffic = (traffics[destIP] && traffics[destIP][trafficDirection]) || 0;
+      let port = (traffics[destIP] && traffics[destIP].port) || [];
 
       if(traffic < MIN_AGGR_TRAFFIC) {
         continue                // skip very small traffic
@@ -138,13 +139,13 @@ class FlowAggrTool {
       args.push(traffic)
       args.push(JSON.stringify({
         device: mac,
-        destIP: destIP
+        destIP: destIP,
+        port: port
       }))
     }
 
     args.push(0);
     args.push("_"); // placeholder to keep key exists
-
     await rclient.zaddAsync(args)
     await rclient.expireAsync(key, expire)
     await this.trimFlow(mac, trafficDirection, interval, ts)
@@ -189,13 +190,21 @@ class FlowAggrTool {
       max_flow = MAX_FLOW_PER_HOUR
     }
 
-    let mac = options.mac; // if mac is undefined, by default it will scan over all machines
+    if(options.max_flow) {
+      max_flow = options.max_flow
+    }
 
-    let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
+    // if below are all undefined, by default it will scan over all machines
+    let intf = options.intf;
+    let tag = options.tag;
+    let mac = options.mac;
+    let target = intf && ('intf:' + intf.intf) || tag && ('tag:' + tag.tag) || mac;
+
+    let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
     let count = await rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow) // only keep the MAX_FLOW_PER_SUM highest flows
     if(count > 0) {
-      log.warn(`${count} flows are removed from ${sumFlowKey} for self protection`)
+      log.warn(`${count} flows are trimmed from ${sumFlowKey}`)
     }
   }
 
@@ -217,9 +226,13 @@ class FlowAggrTool {
     let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
     let interval = options.interval || 600; // by default 10 mins
 
-    let mac = options.mac; // if mac is undefined, by default it will scan over all machines
+    // if below are all undefined, by default it will scan over all machines
+    let intf = options.intf;
+    let tag = options.tag;
+    let mac = options.mac;
+    let target = intf && ('intf:' + intf.intf) || tag && ('tag:' + tag.tag) || mac;
 
-    let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
+    let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
     if(options.skipIfExists) {
       let exists = await rclient.existsAsync(sumFlowKey);
@@ -231,8 +244,8 @@ class FlowAggrTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    if(mac) {
-      log.debug(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
+    if(target) {
+      log.debug(util.format("Summing %s %s flows between %s and %s", target, trafficDirection, beginString, endString));
     } else {
       log.debug(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
     }
@@ -240,16 +253,20 @@ class FlowAggrTool {
     let ticks = this.getTicks(begin, end, interval);
     let tickKeys = null
 
-    if(mac) {
+    if (intf) {
+      tickKeys = _.flatten(intf.macs.map((mac) => ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick))));
+    } else if (tag) {
+      tickKeys = _.flatten(tag.macs.map((mac) => ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick))));
+    } else if(mac) {
       tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
     } else {
-      // * is a hack code here, in redis, it means matching everything during keys command
-      tickKeys = (await Promise.all(ticks.map((tick) => {
-        let keyPattern = this.getFlowKey('*', trafficDirection, interval, tick);
-        log.debug("Checking key pattern:", keyPattern);
-        return rclient.keysAsync(keyPattern);
-      })))
-        .reduce((a,b) => a.concat(b), []); // reduce version of flatMap
+      // only call keys once to improve performance
+      const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
+      const matchedKeys = await rclient.keysAsync(keyPattern);
+
+      tickKeys = matchedKeys.filter((key) => {
+        return ticks.some((tick) => key.endsWith(`:${tick}`))
+      });
     }
 
     let num = tickKeys.length;
@@ -278,7 +295,7 @@ class FlowAggrTool {
     let result = await rclient.zunionstoreAsync(args);
     if(result > 0) {
       if(options.setLastSumFlow) {
-        await this.setLastSumFlow(mac, trafficDirection, sumFlowKey)
+        await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
       }
       await rclient.expireAsync(sumFlowKey, expire)
       await this.trimSumFlow(trafficDirection, options)
@@ -287,8 +304,15 @@ class FlowAggrTool {
     return result;
   }
 
-  setLastSumFlow(mac, trafficDirection, keyName) {
-    let key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+  setLastSumFlow(target, trafficDirection, keyName) {
+    let key = "";
+    
+    if(target) {
+      key = util.format("lastsumflow:%s:%s", target, trafficDirection);
+    } else {
+      key = util.format("lastsumflow:%s", trafficDirection);
+    }
+
     return rclient.setAsync(key, keyName);
   }
 
@@ -303,6 +327,61 @@ class FlowAggrTool {
     return rclient.zrangeAsync(sumFlowKey, 0, count, 'withscores');
   }
 
+  // return a list of destinations sorted by transfer size desc
+  async getTopSumFlowByKeyAndDestination(key, count) {
+    // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
+    const destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
+    const results = {};
+    const totalPorts = {};
+
+    for(let i = 0; i < destAndScores.length; i++) {
+      if(i % 2 === 1) {
+        let payload = destAndScores[i-1];
+        let count = Number(destAndScores[i]);
+        if(payload !== '_' && count !== 0) {
+          try {
+            const json = JSON.parse(payload);
+            const dest = json.destIP;
+            const ports = json.port;
+            if(!dest) {
+              continue;
+            }  
+            if(results[dest]) {
+              results[dest] += count
+            } else {
+              results[dest] = count
+            }
+
+            if(ports) {
+              if(totalPorts[dest]) {
+                totalPorts[dest].push.apply(totalPorts[dest], ports)
+              } else {
+                totalPorts[dest] = ports
+              }
+            }
+          } catch(err) {
+            log.error("Failed to parse payload: ", payload);
+          }
+        }
+      }
+    }
+
+    const array = [];
+    for(const destIP in results) {
+      let ports = totalPorts[destIP] || [];
+      ports = ports.filter((v, i) => {
+        return ports.indexOf(v) === i;
+      })
+      array.push({ip: destIP, count: results[destIP], ports: ports});
+    }
+
+    array.sort(function(a, b) {
+      return a.count - b.count
+    });
+
+    return array;
+  }
+
   async getTopSumFlowByKey(key, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     let destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
@@ -314,7 +393,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             let json = JSON.parse(payload);
-            results.push({ip: json.destIP, device: json.device, count: count});
+            results.push({ip: json.destIP, device: json.device, count: count,port:json.port});
           } catch(err) {
             log.error("Failed to parse payload: ", payload);
           }
@@ -330,6 +409,52 @@ class FlowAggrTool {
 
   getCategoryActivitySumFlowByKey(key, count) {
     return this.getXActivitySumFlowByKey(key, 'category', count)
+  }
+
+  // group by activity, ignore individual devices
+  // return a list of categories sorted by time desc
+  async getXYActivitySumFlowByKey(key, xy, count) {
+    // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
+    const appAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
+    const results = {};
+
+    for(let i = 0; i < appAndScores.length; i++) {
+      if(i % 2 === 1) {
+        let payload = appAndScores[i-1];
+        let count = Number(appAndScores[i]);
+        if(payload !== '_' && count !== 0) {
+          try {
+            let json = JSON.parse(payload);
+            const key = json[xy];
+            if(!key) {
+              continue;
+            }            
+            if(results[key]) {
+              results[key] += count
+            } else {
+              results[key] = count
+            }
+          } catch(err) {
+            log.error("Failed to parse payload: ", payload);
+          }
+        }
+      }
+    }
+    
+    let array = [];
+    for(const category in results) {
+      const count = Math.floor(results[category]);
+      if(count < 10) {
+          continue;
+      }
+      array.push({category, count});
+    }
+
+    array.sort(function(a, b) {
+      return a.count - b.count
+    });
+
+    return array;
   }
 
   async getXActivitySumFlowByKey(key, x, count) {
@@ -413,7 +538,11 @@ class FlowAggrTool {
   }
 
   getCleanedAppKey(begin, end, options) {
-    if(options.mac) {
+    if (options.intf) {
+      return `app:intf:${options.intf.intf}:${begin}:${end}`;
+    } else if (options.tag) {
+      return `app:tag:${options.tag.tag}:${begin}:${end}`;
+    } else if(options.mac) {
       return `app:host:${options.mac}:${begin}:${end}`
     } else {
       return `app:system:${begin}:${end}`
@@ -474,7 +603,11 @@ class FlowAggrTool {
   }
 
   getCleanedCategoryKey(begin, end, options) {
-    if(options.mac) {
+    if (options.intf) {
+      return `category:intf:${_.isString(options.intf) ? options.intf : options.intf.intf}:${begin}:${end}`
+    } else if (options.tag) {
+      return `category:tag:${_.isString(options.tag) ? options.tag : options.tag.tag}:${begin}:${end}`
+    } else if(options.mac) {
       return `category:host:${options.mac}:${begin}:${end}`
     } else {
       return `category:system:${begin}:${end}`
@@ -532,6 +665,28 @@ class FlowAggrTool {
   getLastCategoryActivity(mac) {
     let key = util.format("lastcategory:host:%s", mac);
     return rclient.getAsync(key);
+  }
+  
+  async removeAggrFlowsAllTag(tag) {
+    let keys = [];
+
+    let search = await Promise.all([
+      rclient.keysAsync('lastsumflow:tag:' + tag + ':*'),
+      rclient.keysAsync('category:tag:' + tag + ':*'),
+      rclient.keysAsync('app:tag:' + tag + ':*'),
+    ]);
+
+    keys.push(
+      ... _.flatten(search),
+      // 'lastcategory:tag:' + tag,
+      // 'lastapp:tag:' + tag
+    );
+
+    return Promise.all([
+      rclient.delAsync(keys),
+      // this.removeAllFlowKeys(tag),
+      this.removeAllSumFlows('tag:' + tag),
+    ]);
   }
 
   async removeAggrFlowsAll(mac) {

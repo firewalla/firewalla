@@ -14,9 +14,9 @@ if [[ ! -f /blog/current/conn.log ]]; then
 fi
 
 cp /blog/current/conn.log /home/pi/conn.log
-total=$(cat /home/pi/conn.log | grep -v $self_ip | grep tcp | grep -v "OTH" | grep -v "198.51.100.99" | wc -l)
+total=$(cat /home/pi/conn.log | grep -v $self_ip | grep tcp | grep -v "OTH" | grep -v "0.0.0.0" | wc -l)
 echo "Total captured tcp connections: $total"
-complete=$(cat /home/pi/conn.log | grep -v $self_ip | grep tcp | grep -v "OTH" | grep -v "198.51.100.99" | grep "history\":\"ShA" | wc -l)
+complete=$(cat /home/pi/conn.log | grep -v $self_ip | grep tcp | grep -v "OTH" | grep -v "0.0.0.0" | grep "history\":\"ShA" | wc -l)
 echo "Completely captured tcp connections: $complete"
 complete_ratio=$(echo "scale=4;$complete/$total" | bc)
 echo "Compatibility probability: $complete_ratio"

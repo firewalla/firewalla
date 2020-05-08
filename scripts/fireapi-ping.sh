@@ -8,6 +8,8 @@ TOTAL_RETRIES=6
 SLEEP_TIMEOUT=10
 FIREAPI_GROUP_MEMBER_COUNT=$(redis-cli hget sys:ept group_member_cnt)
 
+LAST_CHECK_RESULT=""
+
 fireapi_ping() {
     FIREAPI_GID=$(redis-cli hget sys:ept gid)
     FIREAPI_GROUP_MEMBER_COUNT=$(redis-cli hget sys:ept group_member_cnt)
@@ -42,6 +44,7 @@ fireapi_ping() {
         -H 'Accept: application/json' \
         --data-binary "$FIREAPI_REQ" \
         --compressed)
+    LAST_CHECK_RESULT=$resp
    echo $resp | egrep -q '"code": *200'
 }
 
@@ -60,7 +63,7 @@ do
 done
 
 if [[ $ping_ok -ne 1 ]]; then
-    /home/pi/firewalla/scripts/firelog -t cloud -m "FireAPI ping FAILED, restart FireAPI now $FIREAPI_GID"
+    /home/pi/firewalla/scripts/firelog -t cloud -m "FireAPI ping FAILED, restart FireAPI now $FIREAPI_GID, $LAST_CHECK_RESULT"
     touch /home/pi/.firewalla/managed_reboot
     sudo systemctl restart fireapi
 fi

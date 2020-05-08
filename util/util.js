@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,11 +27,11 @@ function extend(target) {
 }
 
 function getPreferredName(hostObject) {
-  if (hostObject==null) {
+  if (hostObject == null) {
     return null
   }
 
-  if(hostObject.name) {
+  if (hostObject.name) {
     return hostObject.name // always use user customized name first
   }
 
@@ -41,27 +41,27 @@ function getPreferredName(hostObject) {
 
 function getPreferredBName(hostObject) {
 
-  if (hostObject==null) {
+  if (hostObject == null) {
     return null;
   }
 
-  if(hostObject.cloudName) {
+  if (hostObject.cloudName) {
     return hostObject.cloudName
   }
 
-  if(hostObject.spoofMeName) {
+  if (hostObject.spoofMeName) {
     return hostObject.spoofMeName
   }
 
-  if(hostObject.dhcpName) {
+  if (hostObject.dhcpName) {
     return hostObject.dhcpName
   }
 
-  if(hostObject.bonjourName) {
+  if (hostObject.bonjourName) {
     return hostObject.bonjourName
   }
 
-  if(hostObject.bname) {
+  if (hostObject.bname) {
     return hostObject.bname
   }
 
@@ -79,14 +79,29 @@ function getPreferredBName(hostObject) {
 }
 
 function delay(t) {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     setTimeout(resolve, t);
   });
 }
 
+// pass in function arguments object and returns string with whitespaces
+function argumentsToString(v) {
+  // convert arguments object to real array
+  var args = Array.prototype.slice.call(v);
+  for (var k in args) {
+    if (typeof args[k] === "object") {
+      // args[k] = JSON.stringify(args[k]);
+      args[k] = require('util').inspect(args[k], false, null, true);
+    }
+  }
+  var str = args.join(" ");
+  return str;
+}
+
 module.exports = {
-  extend:extend,
-  getPreferredBName: getPreferredBName,
-  getPreferredName: getPreferredName,
-  delay: delay
+  extend,
+  getPreferredBName,
+  getPreferredName,
+  delay,
+  argumentsToString
 }

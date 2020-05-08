@@ -38,7 +38,8 @@ const categoryHashsetMapping = {
   "av": "app.video",
   "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
   "gamble": "app.gamble",
-  "p2p": "app.p2p"
+  "p2p": "app.p2p",
+  "vpn": "app.vpn"
 }
 
 const securityHashMapping = {
@@ -48,28 +49,42 @@ const securityHashMapping = {
 class CategoryUpdateSensor extends Sensor {
 
   async regularJob() {
-    const categories = Object.keys(categoryHashsetMapping)
-    for (const category of categories) {
-      await this.updateCategory(category);
+    try {
+      const categories = Object.keys(categoryHashsetMapping)
+      log.info('Native categories', categories);
+      for (const category of categories) {
+        await this.updateCategory(category);
+      }
+    } catch(err) {
+      log.error("Failed to update categories", err)
     }
   }
 
   async securityJob() {
-    const securityCategories = Object.keys(securityHashMapping)
-    for (const category of securityCategories) {
-      await this.updateSecurityCategory(category)
+    try {
+      const securityCategories = Object.keys(securityHashMapping)
+      log.info('Active security categories', securityCategories);
+      for (const category of securityCategories) {
+        await this.updateSecurityCategory(category)
+      }
+    } catch(err) {
+      log.error("Failed to update security categories", err)
     }
   }
 
   async countryJob() {
-    await this.renewCountryList();
-    const activeCountries = countryUpdater.getActiveCountries();
-    log.info('Active countries', activeCountries);
-    for (const country of activeCountries) {
-      await this.updateCountryAllocation(country)
-      const category = countryUpdater.getCategory(country)
-      await countryUpdater.refreshCategoryRecord(category)
-      await countryUpdater.recycleIPSet(category)
+    try {
+      await this.renewCountryList();
+      const activeCountries = countryUpdater.getActiveCountries();
+      log.info('Active countries', activeCountries);
+      for (const country of activeCountries) {
+        await this.updateCountryAllocation(country)
+        const category = countryUpdater.getCategory(country)
+        await countryUpdater.refreshCategoryRecord(category)
+        await countryUpdater.recycleIPSet(category)
+      }
+    } catch(err) {
+      log.error("Failed to update conuntry sets", err)
     }
   }
 
@@ -78,6 +93,7 @@ class CategoryUpdateSensor extends Sensor {
 
     const hashset = this.getCategoryHashset(category)
     const domains = await this.loadCategoryFromBone(hashset);
+    if (domains == null) return
     log.info(`category ${category} has ${domains.length} domains`)
 
     await categoryUpdater.flushDefaultDomains(category);
@@ -89,6 +105,7 @@ class CategoryUpdateSensor extends Sensor {
 
     const hashset = securityHashMapping[category]
     const info = await this.loadCategoryFromBone(hashset);
+    if (info == null) return
 
     const domains = info.domain
     const ip4List = info["ip4"]
@@ -142,11 +159,28 @@ class CategoryUpdateSensor extends Sensor {
       // also triggers dynamic list and ipset update here
       // to make sure blocking takes effect immediately
       sem.on('Policy:CountryActivated', async (event) => {
-        await this.updateCountryAllocation(event.country)
-        const category = countryUpdater.getCategory(event.country)
-        await countryUpdater.refreshCategoryRecord(category)
-        await countryUpdater.recycleIPSet(category, false)
-      })
+        try {
+          await this.updateCountryAllocation(event.country)
+          const category = countryUpdater.getCategory(event.country)
+          await countryUpdater.refreshCategoryRecord(category)
+          await countryUpdater.recycleIPSet(category, false)
+        } catch(err) {
+          log.error("Failed to update conuntry set", event.country, err)
+        }
+      });
+
+      sem.on('Policy:CategoryActivated', async (event) => {
+        const category = event.category;
+        if (!categoryHashsetMapping[category]) {
+          log.error(`Cannot activate unrecognized category ${category}`);
+          return;
+        }
+        await categoryUpdater.refreshCategoryRecord(category).then(() => {
+          return categoryUpdater.recycleIPSet(category)
+        }).catch((err) => {
+          log.error(`Failed to activate category ${category}`, err.message);
+        });
+      });
 
       await this.regularJob()
       await this.securityJob()
@@ -162,16 +196,17 @@ class CategoryUpdateSensor extends Sensor {
 
   async loadCategoryFromBone(hashset) {
     if (hashset) {
+      let data
       try {
-        const data = await bone.hashsetAsync(hashset)
+        data = await bone.hashsetAsync(hashset)
         const list = JSON.parse(data)
         return list
       } catch(err) {
-        log.error("Failed to get hashset", hashset, err);
-        return []
+        log.error("Failed to get hashset", hashset, data, err);
+        return null
       }
     } else {
-      return []
+      return null
     }
   }
 
@@ -181,8 +216,12 @@ class CategoryUpdateSensor extends Sensor {
 
   async renewCountryList() {
     const countryList = await this.loadCategoryFromBone('country:list');
+    if (countryList == null) return
+
     await rclient.delAsync('country:list');
-    await rclient.saddAsync('country:list', countryList);
+    if (countryList.length) {
+      await rclient.saddAsync('country:list', countryList);
+    }
   }
 }
 

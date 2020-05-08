@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC / Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,7 +28,7 @@ const CronJob = require('cron').CronJob;
 
 const cronParser = require('cron-parser');
 const moment = require('moment');
-const SysManager = require('../../net2/SysManager.js');
+const sysManager = require('../../net2/SysManager.js');
 
 let instance = null;
 
@@ -55,7 +55,7 @@ class PolicyScheduler {
       instance = this;
     }
     return instance;
-  }  
+  }
 
   shouldPolicyBeRunning(policy) {
     const cronTime = policy.cronTime
@@ -95,13 +95,15 @@ class PolicyScheduler {
 
   async apply(policy, duration) {
     duration = duration || policy.duration
-    
+
     const pid = policy.pid
 
     await this.enforce(policy);
 
     const timer = setTimeout(async () => {     // when timer expires, it will unenforce policy
-      await this.unenforce(policy);
+      await this.unenforce(policy).catch(err => {
+        log.error('Error unenforcing scheduled policy', err)
+      });
       delete policyTimers[pid];
     }, parseFloat(duration) * 1000)
 
@@ -127,15 +129,16 @@ class PolicyScheduler {
 
     try {
       log.info(`Registering policy ${policy.pid} for reoccuring`)
-      const sysManager = new SysManager();
       const tz = await sysManager.getTimezone();
       const job = new CronJob(cronTime, () => {
-        this.apply(policy)
-      }, 
+        this.apply(policy).catch(err => {
+          log.error('Error applying scheduled policy', err)
+        })
+      },
       () => {},
       true, // enable the job
       tz); // set local timezone. Otherwise FireMain seems to use UTC in the first running after initail pairing.
-      
+
       runningCronJobs[pid] = job // register job
 
       const x = this.shouldPolicyBeRunning(policy) // it's in policy activation period when starting FireMain
@@ -151,7 +154,7 @@ class PolicyScheduler {
     }
   }
 
-  async deregisterPolicy(policy) {    
+  async deregisterPolicy(policy) {
     const pid = policy.pid
     if (pid == undefined) {
       // ignore
@@ -166,7 +169,7 @@ class PolicyScheduler {
     if (job) {
       job.stop()
       delete runningCronJobs[pid]
-    }    
+    }
 
     if (timer) {
       await this.unenforce(policy);

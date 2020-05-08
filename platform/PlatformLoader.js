@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,20 +42,23 @@ class PlatformLoader {
     }
 
     const uname = this.getPlatformName();
-    
+
     switch (uname) {
-    case "aarch64":
+    case "aarch64": {
       const BluePlatform = require('./blue/BluePlatform.js');
       this.platform = new BluePlatform();
       break;
-    case "armv7l":
+    }
+    case "armv7l": {
       const RedPlatform = require('./red/RedPlatform.js');
       this.platform = new RedPlatform();
-      break;      
-    case "x86_64":
-      const DockerPlatform = require('./docker/DockerPlatform.js');
-      this.platform = new DockerPlatform();
       break;
+    }
+    case "x86_64": {
+      const GoldPlatform = require('./gold/GoldPlatform.js');
+      this.platform = new GoldPlatform();
+      break;
+    }
     default:
       return null;
     }

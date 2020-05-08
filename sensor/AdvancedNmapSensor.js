@@ -1,7 +1,7 @@
 /**
  * Created by Melvin Tu on 29/06/2017.
  */
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2017-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,31 +17,29 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let util = require('util');
+const util = require('util');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const Sensor = require('./Sensor.js').Sensor;
 
-let Sensor = require('./Sensor.js').Sensor;
+const networkTool = require('../net2/NetworkTool')();
 
-let networkTool = require('../net2/NetworkTool')();
+const scriptConfig = require('../extension/nmap/scriptsConfig.json');
 
-let scriptConfig = require('../extension/nmap/scriptsConfig.json');
+const NmapSensor = require('../sensor/NmapSensor');
 
-let NmapSensor = require('../sensor/NmapSensor');
+const spt = require('../net2/SystemPolicyTool')();
 
-let cp = require('child_process');
+const Alarm = require('../alarm/Alarm');
+const AlarmManager2 = require('../alarm/AlarmManager2');
+const am2 = new AlarmManager2();
 
-let spt = require('../net2/SystemPolicyTool')();
+const sysManager = require('../net2/SysManager.js')
 
-let Alarm = require('../alarm/Alarm');
-let AlarmManager2 = require('../alarm/AlarmManager2');
-let am2 = new AlarmManager2();
+const Firewalla = require('../net2/Firewalla');
 
-let Firewalla = require('../net2/Firewalla');
-
-let xml2jsonBinary =
+const xml2jsonBinary =
   Firewalla.getFirewallaHome() +
   '/extension/xml2json/xml2json.' +
   Firewalla.getPlatform();
@@ -52,17 +50,16 @@ class AdvancedNmapSensor extends Sensor {
   }
 
   getNetworkRanges() {
-    return networkTool.getLocalNetworkInterface().then(results => {
-      this.networkRanges =
-        results &&
-        results.map(x => networkTool.capSubnet(x.subnet));
-      return this.networkRanges;
-    });
+    const results = sysManager.getMonitoringInterfaces()
+    const networkRanges =
+      results &&
+      results.map(x => networkTool.capSubnet(x.subnet));
+    return networkRanges;
   }
 
   run() {
-    let firstScanTime = (30 + Math.random() * 60) * 1000; // 30 - 90 seconds
-    let interval = (8 + Math.random() * 4) * 3600 * 1000; // 8-12 hours
+    const firstScanTime = (30 + Math.random() * 60) * 1000; // 30 - 90 seconds
+    const interval = (8 + Math.random() * 4) * 3600 * 1000; // 8-12 hours
     setTimeout(() => {
       this.checkAndRunOnce();
       setInterval(() => this.checkAndRunOnce, interval);
@@ -71,9 +68,9 @@ class AdvancedNmapSensor extends Sensor {
 
   createVulnerabilityAlarm(host, script) {
     try {
-      let ip = host.ipv4Addr;
-      let vid = script.key;
-      let alarm = new Alarm.VulnerabilityAlarm(new Date() / 1000, ip, vid, {
+      const ip = host.ipv4Addr;
+      const vid = script.key;
+      const alarm = new Alarm.VulnerabilityAlarm(new Date() / 1000, ip, vid, {
         'p.device.ip': ip,
         'p.vuln.key': vid,
         'p.vuln.title': script.title,
@@ -86,7 +83,7 @@ class AdvancedNmapSensor extends Sensor {
       log.info('Created a vulnerability alarm', alarm.aid, 'on device', ip);
     } catch(err) {
       log.error('Failed to create vulnerability alarm:', err, err.stack);
-    };
+    }
   }
 
   isSensorEnable() {
@@ -95,17 +92,17 @@ class AdvancedNmapSensor extends Sensor {
 
   async checkAndRunOnce() {
     try {
-      let result = await this.isSensorEnable()
+      const result = await this.isSensorEnable()
       if (result) {
-        await this.getNetworkRanges()
-        await this.runOnce();
-      };
+        const ranges = this.getNetworkRanges()
+        await this.runOnce(ranges);
+      }
     } catch(err) {
       log.error('Failed to run vulnerability scan', err);
-    };
+    }
   }
 
-  async runOnce() {
+  async runOnce(networkRanges) {
     if (!scriptConfig) return;
 
     log.info('Scanning network to detect vulnerability...');
@@ -113,14 +110,14 @@ class AdvancedNmapSensor extends Sensor {
     for (const scriptName of Object.keys(scriptConfig)) {
       log.info('Running script', scriptName);
 
-      let ports = scriptConfig[scriptName].ports;
+      const ports = scriptConfig[scriptName].ports;
 
       if (!ports) continue;
 
-      if (!this.networkRanges)
+      if (!networkRanges)
         throw new Error('Network range is required');
 
-      for (const range of this.networkRanges) {
+      for (const range of networkRanges) {
         let hosts = await this._scan(range, [scriptName], ports)
         log.info('Analyzing scan result...');
 
@@ -141,14 +138,14 @@ class AdvancedNmapSensor extends Sensor {
             });
           }
         });
-      };
-    };
+      }
+    }
   }
 
   _scan(range, scripts, ports) {
-    let portString = ports.join(',');
+    const portString = ports.join(',');
 
-    let scriptPaths = scripts.map(scriptName =>
+    const scriptPaths = scripts.map(scriptName =>
       util.format(
         '--script %s/extension/nmap/scripts/%s',
         Firewalla.getFirewallaHome(),
@@ -157,7 +154,7 @@ class AdvancedNmapSensor extends Sensor {
     );
 
     // nmap -Pn -p445 -n --script ~/Downloads/smb-vuln-ms17-010.nse 10.0.1.0/24 -oX - | ./xml2json
-    let cmd = util.format(
+    const cmd = util.format(
       'sudo nmap -n -Pn -p%s --host-timeout 60s %s %s -oX - | %s',
       portString,
       scriptPaths.join(' '),

@@ -1,6 +1,6 @@
 client
 dev tun
-proto udp
+proto PROTO
 remote PUBLIC_IP EXTERNAL_PORT
 resolv-retry infinite
 nobind

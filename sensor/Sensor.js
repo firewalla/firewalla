@@ -14,7 +14,13 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
+
+const extensionManager = require('./ExtensionManager.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fc = require('../net2/config.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
 
 let FWEvent = class {
   constructor(eid, type) {
@@ -36,7 +42,6 @@ let Sensor = class {
   getName() {
     return this.constructor.name
   }
-  
   setConfig(config) {
     require('util')._extend(this.config, config);
   }
@@ -57,8 +62,87 @@ let Sensor = class {
   monitorRun() {
 
   }
-  
-}
+
+  async globalOn() {
+
+  }
+
+  async globalOff() {
+
+  }
+
+  hookFeature(featureName) {
+    
+    sem.once('IPTABLES_READY', async () => {
+      if (fc.isFeatureOn(featureName)) {
+        await this.globalOn({booting: true});
+      } else {
+        await this.globalOff();
+      }
+      fc.onFeature(featureName, async (feature, status) => {
+        if (feature !== featureName) {
+          return;
+        }
+        if (status) {
+          await this.globalOn();
+        } else {
+          await this.globalOff();
+        }
+      })
+
+      await this.job();
+      if (this.refreshInterval) {
+        this.timer = setInterval(async () => {
+          return this.job();
+        }, this.refreshInterval);
+      }
+
+    });
+
+
+    this.getFeatureConfig = async () => {
+      const config = await rclient.hgetAsync("sys:features:config", featureName);
+      try {
+        if(config) {
+          return JSON.parse(config);
+        }
+        return {};
+      } catch(err) {
+        log.error(`Failed to parse config of feature ${featureName}, err:`, err);
+        return {};
+      }
+    };
+
+
+    this.setFeatureConfig = async (config) => {
+      return rclient.hsetAsync("sys:features:config", featureName, JSON.stringify(config));
+    };
+
+    this.getFeatureStats = async () => {
+      const stats = await rclient.hgetAsync("sys:features:stats", featureName);
+      try {
+        if(stats) {
+          return JSON.parse(stats);
+        }
+        return {};
+      } catch(err) {
+        log.error(`Failed to parse stats of feature ${featureName}, err:`, err);
+        return {};
+      }
+    };
+
+
+    this.setFeatureStats = async (stats) => {
+      return rclient.hsetAsync("sys:features:stats", featureName, JSON.stringify(stats));
+    };
+
+  }
+
+  async job() {
+
+  }
+
+};
 
 module.exports = {
   FWEvent: FWEvent,

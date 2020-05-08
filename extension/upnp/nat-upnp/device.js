@@ -10,6 +10,7 @@ function Device(url) {
   this.description = url;
   this.services = [
     'urn:schemas-upnp-org:service:WANIPConnection:1',
+    'urn:schemas-upnp-org:service:WANIPConnection:2',
     'urn:schemas-upnp-org:service:WANPPPConnection:1'
   ];
 };

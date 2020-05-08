@@ -1,23 +1,12 @@
 #!/bin/bash
 sync
 
-bro_process_cnt=`ps -ef |grep "broctl/standalone broctl/auto" | grep -v grep | wc -l`
-if [[ $bro_process_cnt < 3 ]]; then
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+bro_process_cnt=`ps -ef |grep "$(bro_proc_name)ctl/auto" | grep -v grep | wc -l`
+if [[ $bro_process_cnt -lt 3 ]]; then
     logger 'FIREWALLA: bro-quick-cron: bro restart due to bro vanished'
     sudo service brofish stop
     sudo service brofish start
-fi
-
-redis_process_cnt=`sudo systemctl status redis-server |grep 'active (running)' | wc -l`
-
-if [[ $redis_process_cnt = 0 ]]; then
-   /usr/bin/logger "FIREWALLA PING: REDIS GOING DOWN"
-   sleep 10
-   redis_process_cnt=`sudo systemctl status redis-server |grep 'active (running)' | wc -l`
-   if [[ $redis_process_cnt = 0 ]]; then
-       sudo rm -r -f /var/log/redis/*
-       /usr/bin/logger "REBOOT: FIREWALLA PING NO REDIS"
-       /home/pi/firewalla/scripts/fire-reboot
-       exit 0
-   fi
 fi

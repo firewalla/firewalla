@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,8 +16,7 @@
 'use strict';
 let instance = null;
 
-const SysManager = require('../../net2/SysManager.js')
-const sysManager = new SysManager();
+const sysManager = require('../../net2/SysManager.js')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
@@ -26,27 +25,38 @@ const log = require('../../net2/logger.js')(__filename);
 
 class BroNotice {
   constructor() {
-    if(instance === null) {
+    if (instance === null) {
       instance = this;
     }
   }
-  
+
   //  src: guesser
   //  sub: target
   //  dst: no presence
   async processSSHScan(alarm, broObj) {
+    if (sysManager.isMyIP(broObj.src)) {
+      log.info("Ignoring bro notice", broObj.msg)
+      return null;
+    }
+
     const subMessage = broObj.sub
     // sub message:
     //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
-    
-    let addresses = subMessage.replace(/.*Sampled servers:  /, '').split(", ")
+
+    let addresses = subMessage.replace(/.*Sampled servers: {2}/, '').split(", ")
     addresses = addresses.filter((v, i, array) => {
       return array.indexOf(v) === i
     })
 
     if (addresses.length == 0) {
       alarm["p.local.decision"] == "ignore";
-      return;
+      return null;
+    }
+    let deivceNames = [];
+    for (const address of addresses) {
+      let deviceName = await hostTool.getName(address);
+      deviceName = deviceName ? deviceName : address;
+      deivceNames.push(deviceName)
     }
 
     let target = addresses[0];
@@ -62,13 +72,18 @@ class BroNotice {
       alarm["device"] = target;
     }
 
-    alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${addresses.join(",")}`
+    alarm["p.message"] = `${alarm["p.message"].replace(/\.$/, '')} on device: ${deivceNames.join(",")}`
   }
 
   //  src: scanner
   //  dst: target
   //  sub: "local" || "remote"
   async processPortScan(alarm, broObj) {
+    if (sysManager.isMyIP(broObj.src)) {
+      log.info("Ignoring bro notice", broObj.msg)
+      return null;
+    }
+
     if (alarm["p.device.ip"] == broObj.src) {
       alarm["p.local_is_client"] = "1";
     } else {
@@ -77,7 +92,12 @@ class BroNotice {
   }
 
   async processHeartbleed(alarm, broObj) {
-    if(sysManager.isLocalIP(broObj["src"])) {
+    if (sysManager.isMyIP(broObj.src)) {
+      log.info("Ignoring bro notice", broObj.msg)
+      return null;
+    }
+
+    if (sysManager.isLocalIP(broObj["src"])) {
       alarm["p.local_is_client"] = "1";
     } else {
       // initiated from outside
@@ -89,10 +109,11 @@ class BroNotice {
       alarm['p.action.block'] = true; // block automatically if attack succeed
   }
 
+  //  sub: interesting host name
   async processSSHInterestingLogin(alarm, broObj) {
     const sub = broObj["sub"];
 
-    if(sub) {
+    if (sub) {
       alarm["p.dest.name"] = sub;
     }
   }
@@ -108,15 +129,15 @@ class BroNotice {
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
     }
 
-    if(broObj["file_mime_type"]) {
+    if (broObj["file_mime_type"]) {
       alarm["p.file.type"] = broObj["file_mime_type"];
     }
 
-    if(broObj["file_desc"]) {
+    if (broObj["file_desc"]) {
       alarm["p.file.desc"] = broObj["file_desc"];
     }
 
-    if(broObj.sub) {
+    if (broObj.sub) {
       alarm["p.malware.reference"] = broObj.sub;
     }
   }
@@ -135,18 +156,19 @@ class BroNotice {
   async processNotice(alarm, broObj) {
     const noticeType = alarm["p.noticeType"];
 
-    if(!noticeType || !broObj) {
-      return;
+    if (!noticeType || !broObj) {
+      log.warn('Invalid bro notice', broObj)
+      return null;
     }
 
     alarm["e.bro.raw"] = JSON.stringify(broObj);
 
-    switch(noticeType) {
+    switch (noticeType) {
       case "SSH::Password_Guessing":
         await this.processSSHScan(alarm, broObj);
         break;
 
-      case "Heartbleed::SSL_Heartbeat_Attack":  
+      case "Heartbleed::SSL_Heartbeat_Attack":
       case "Heartbleed::SSL_Heartbeat_Attack_Success":
         await this.processHeartbleed(alarm, broObj);
         break;
@@ -179,7 +201,7 @@ class BroNotice {
       type: "ip",
       target: alarm["p.dest.ip"]
     }
-  }  
-};
+  }
+}
 
 module.exports = new BroNotice();

@@ -1,9 +1,25 @@
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict'
 
-let log = require("./logger.js")(__filename, "info");
+const log = require("./logger.js")(__filename);
 
-let fs = require('fs');
-let f = require('./Firewalla.js');
+const fs = require('fs');
+const f = require('./Firewalla.js');
+const cp = require('child_process');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -30,6 +46,26 @@ async function updateUserConfig(updatedPart) {
   getConfig(true);
 }
 
+function updateUserConfigSync(updatedPart) {
+  getConfig(true);
+  userConfig = Object.assign({}, userConfig, updatedPart);
+  let userConfigFile = f.getUserConfigFolder() + "/config.json";
+  fs.writeFileSync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
+  getConfig(true);
+}
+
+async function removeUserNetworkConfig() {
+  await getUserConfig(true);
+  
+  delete userConfig.alternativeInterface;
+  delete userConfig.secondaryInterface;
+  delete userConfig.wifiInterface;
+  delete userConfig.dhcpLeaseTime;
+  
+  let userConfigFile = f.getUserConfigFolder() + "/config.json";
+  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
+}
+
 async function getUserConfig(reload) {
   if (!userConfig || reload === true) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
@@ -46,12 +82,19 @@ function getConfig(reload) {
     let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
-    try {
-      if(fs.existsSync(userConfigFile)) {
-        userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+    for (let i = 0; i !== 5; i++) {
+      try {
+        if (fs.existsSync(userConfigFile)) {
+          // let fileJson = fs.readFileSync(userConfigFile, 'utf8');
+          // log.info(`getConfig fileJson:${fileJson}` + new Error("").stack);
+          // userConfig = JSON.parse(fileJson);
+          userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+          break;
+        }
+      } catch (err) {
+        log.error(`Error parsing user config, retry count ${i}`, err);
+        cp.execSync('sleep 1');
       }
-    } catch(err) {
-      log.error("Error parsing user config");
     }
 
     let testConfig = {};
@@ -253,6 +296,7 @@ function getSimpleVersion() {
 
 module.exports = {
   updateUserConfig: updateUserConfig,
+  updateUserConfigSync: updateUserConfigSync,
   getConfig: getConfig,
   getSimpleVersion: getSimpleVersion,
   getUserConfig: getUserConfig,
@@ -264,5 +308,6 @@ module.exports = {
   disableDynamicFeature:disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
   syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs,
-  onFeature: onFeature  
+  onFeature: onFeature,
+  removeUserNetworkConfig: removeUserNetworkConfig
 };

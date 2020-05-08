@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016 - 2020 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,6 +18,7 @@ const log = require("../net2/logger.js")(__filename)
 const cp = require('child_process');
 
 const util = require('util');
+const _ = require('lodash')
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
@@ -103,13 +104,18 @@ function isDevelopmentVersion() {
 }
 
 function isBeta() {
-  let branch = getBranch()
+  const branch = getBranch();
+
+  if(!branch) {
+    return false;
+  }
+
   if(branch.match(/^beta_.*/)) {
-    if(branch === 'beta_7_0') {
+    if(isAlpha()) {
       return false;
-    } else {
-      return true;
     }
+
+    return true;
   } else {
     return false
   }  
@@ -117,11 +123,17 @@ function isBeta() {
 
 function isAlpha() {
   let branch = getBranch()
-  if(branch === 'beta_7_0') {
-    return true
+  if(!branch) {
+    return false;
+  }
+
+  if(branch.match(/^beta_8_.*/)) {
+    return true;
+  } else if(branch.match(/^beta_7_.*/)) {
+    return true;
   } else {
     return false
-  } 
+  }
 }
 
 function isProduction() {
@@ -225,6 +237,18 @@ function getEncipherConfigFolder() {
   return "/encipher.config";
 }
 
+function getFireRouterHiddenFolder() {
+  return `${getUserHome()}/.router`;
+}
+
+function getFireRouterRuntimeInfoFolder() {
+  return `${getFireRouterHiddenFolder()}/run`;
+}
+
+function getFireRouterConfigFolder() {
+  return `${getFireRouterHiddenFolder()}/config`;
+}
+
 // Get config data from fishbone
 var _boneInfo = null;
 function getBoneInfo(callback) {
@@ -293,11 +317,14 @@ function constants(name) {
   return __constants[name]
 }
 
-const BLACK_HOLE_IP = "198.51.100.99";
+const BLACK_HOLE_IP = "0.0.0.0";
 const BLUE_HOLE_IP = "198.51.100.100";
 const RED_HOLE_IP = "198.51.100.101";
 
 function isReservedBlockingIP(ip) {
+  // TODO: we should throw error here
+  if (!_.isString(ip)) return true
+
   return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip)
     || ip.match(/^[0:]+(:ffff:(0*:)?)?(0\.0\.0\.0|[0:]+)$/i); // all zero v6 address
 }
@@ -330,6 +357,8 @@ module.exports = {
   getLogFolder: getLogFolder,
   getRuntimeInfoFolder: getRuntimeInfoFolder,
   getUserConfigFolder: getUserConfigFolder,
+  getFireRouterRuntimeInfoFolder: getFireRouterRuntimeInfoFolder,
+  getFireRouterConfigFolder: getFireRouterConfigFolder,
   getUserID: getUserID,
   getBoneInfo: getBoneInfo,
   getBoneInfoSync: getBoneInfoSync,

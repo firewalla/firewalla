@@ -1,3 +1,18 @@
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict';
 
 var instance = null;
@@ -117,43 +132,6 @@ module.exports = class {
 
       passwd.on('error', (err) => {
         callback(new Error('Failed to start child process:' + err));
-      });
-    }
-
-    verifyPassword(password, callback) {
-
-      var pty = require('pty.js');
-      const su = pty.spawn('bash',
-          ["-i", "-c", "su " + process.env.USER + " -c 'ls &>/dev/null'"],
-          {
-            name: 'xterm-color',
-            cols: 80,
-            rows: 30,
-            cwd: process.env.HOME,
-            env: process.env
-          }
-        );
-
-      var success = true;
-
-      su.on('data', (data) => {
-        switch(data.toString('utf8')) {
-          case "Password: ":
-            su.write(password+"\n");
-            break;
-          case "su: Authentication failure":
-            success = false;
-          default:
-            break;
-        }
-      });
-
-      su.on('close', (err) => {
-        if(err || !success) {
-          callback(new Error("Password Check Failed"));
-        } else {
-          callback(null, true);
-        }
       });
     }
 

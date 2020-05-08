@@ -24,17 +24,14 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
-const SysManager = require('../../net2/SysManager')
-const sysManager = new SysManager()
+const sysManager = require('../../net2/SysManager')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
-const ipTool = require('ip');
-
-const ShieldManager = require('../../net2/ShieldManager.js');
-let shieldManager = null;
+const exec = require('child-process-promise').exec;
 
 const iptable = require("../../net2/Iptables.js");
+const Message = require('../../net2/Message.js');
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -79,28 +76,40 @@ class PortForward {
   
           sclient.on("message", (channel, message) => {
             switch (channel) {
-              case "System:IPChange":
+              case Message.MSG_SYS_NETWORK_INFO_RELOADED:
                 (async () => {
-                  if (sysManager.myIp() !== this._selfIP) {
-                    log.info(`Firewalla IP changed from ${this._selfIP} to ${sysManager.myIp()}, refresh all rules...`);
-                    await iptable.portForwardFlushAsync();
-                    await this.restore();
-                    this._selfIP = sysManager.myIp();
+                  if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
+                    this._wanIPs = sysManager.myWanIps();
+                    await this.updateExtIPChain(this._wanIPs);
                   }
+                  await this.refreshConfig();
                 })().catch((err) => {
-                  log.error("Failed to refresh port forward rules for System:IPChange", err);
+                  log.error("Failed to refresh port forward rules", err);
                 })
                 break;
               default:
             }
           });
-          sclient.subscribe("System:IPChange");
+          sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
         }
       })    
-      instance = this
+      instance = this;
     }
 
-    return instance
+    return instance;
+  }
+
+  async updateExtIPChain(extIPs) {
+    const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP`);
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to flush FW_PREROUTING_EXT_IP`, err.message);
+    });
+    for (const extIP of extIPs) {
+      const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PREROUTING_PORT_FORWARD`);
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to update FW_PREROUTING_EXT_IP with ${extIP}`, err.message);
+      });
+    }
   }
 
   async refreshConfig() {
@@ -236,19 +245,15 @@ class PortForward {
         }
       }
 
-      if (!this._isSecondaryInterfaceIP(map.toIP)) {
+      if (!this._isLANInterfaceIP(map.toIP)) {
         log.warn("IP is not in secondary network, port forward will not be applied: ", map);
         return;
       }
-      
-      log.info("PORTMAP: Add", map);
-      if (!shieldManager)
-        shieldManager = new ShieldManager();
-      await shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport)
+
+      log.info(`Add port forward`, map);
       map.state = true;
-      const dupMap = JSON.parse(JSON.stringify(map))
-      dupMap.destIP = sysManager.myIp()
-      await iptable.portforwardAsync(dupMap)
+      const dupMap = JSON.parse(JSON.stringify(map));
+      await iptable.portforwardAsync(dupMap);
     } catch (err) {
       log.error("Failed to add port mapping:", err);
     }
@@ -258,19 +263,12 @@ class PortForward {
   async removePort(map) {
     let old = this.find(map);
     while (old >= 0) {
-      this.config.maps[old].state = false;
-      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]))
-      this.config.maps.splice(old, 1);
-
-      log.info("PortForwarder:removePort Found MAP", dupMap);
-      if (!shieldManager)
-        shieldManager = new ShieldManager();
-      await shieldManager.removeIncomingRule(map.protocol, map.toIP, map.dport);
-
-      // we call remove anyway ... even there is no entry
-      dupMap.destIP = sysManager.myIp()
+      this.config.maps[old].state = false;      
+      log.info(`Remove port forward`, map);
+      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
       await iptable.portforwardAsync(dupMap);
 
+      this.config.maps.splice(old, 1);
       old = this.find(map);
     }
   }
@@ -290,9 +288,8 @@ class PortForward {
 
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
-    this._selfIP = sysManager.myIp();
-    shieldManager = new ShieldManager();
-  
+    this._wanIPs = sysManager.myWanIps();
+    await this.updateExtIPChain(this._wanIPs);
     await this.loadConfig()
     await this.restore()
     await this.refreshConfig()
@@ -309,14 +306,12 @@ class PortForward {
     })
   }
 
-  _isSecondaryInterfaceIP(ip) {
-    const ip2 = sysManager.myIp2();
-    const ipMask2 = sysManager.myIpMask2();
-    
-    if(ip && ip2 && ipMask2) {
-      return ipTool.subnet(ip2, ipMask2).contains(ip);
-    }
-    return false;
+  _isLANInterfaceIP(ip) {
+    const iface = sysManager.getInterfaceViaIP4(ip);
+    if (iface && iface.type === "lan")
+      return true;
+    else
+      return false;
   }
 }
 

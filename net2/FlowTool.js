@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,6 @@ const destIPFoundHook = new DestIPFoundHook();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
-
-const country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
@@ -147,7 +145,7 @@ class FlowTool {
       return false;
     }
     if (o.f === "s") {
-      // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
+      // short packet flag, maybe caused by arp spoof leaking, ignore these packets
       return false;
     }
 
@@ -161,9 +159,9 @@ class FlowTool {
     let lh = flow.lh;
 
     if (sh === lh) {
-      flow.country = country.getCountry(dh)
+      flow.country = intelTool.getCountry(dh)
     } else {
-      flow.country = country.getCountry(sh)
+      flow.country = intelTool.getCountry(sh)
     }
   }
 
@@ -175,19 +173,23 @@ class FlowTool {
     if (!("flows" in json)) {
       json.flows = {};
     }
-
-    let outgoing, incoming;
-    if (options.mac) {
-      outgoing = await this.getRecentOutgoingConnections(options.mac, options);
-      incoming = await this.getRecentIncomingConnections(options.mac, options);
+    let recentFlows = [];
+    if (options.direction) {
+      recentFlows = options.direction == 'in' ?
+        (options.mac ? await this.getRecentIncomingConnections(options.mac, options) : await this.getAllRecentIncomingConnections(options))
+        : (options.mac ? await this.getRecentOutgoingConnections(options.mac, options) : await this.getAllRecentOutgoingConnections(options))
+    } else {
+      let outgoing, incoming;
+      if (options.mac) {
+        outgoing = await this.getRecentOutgoingConnections(options.mac, options);
+        incoming = await this.getRecentIncomingConnections(options.mac, options);
+      } else { // intf, tag, and default
+        outgoing = await this.getAllRecentOutgoingConnections(options)
+        incoming = await this.getAllRecentIncomingConnections(options)
+      }
+      recentFlows = _.orderBy(outgoing.concat(incoming), 'ts', options.asc ? 'asc' : 'desc')
+        .slice(0, options.count);
     }
-    else {
-      outgoing = await this.getAllRecentOutgoingConnections(options)
-      incoming = await this.getAllRecentIncomingConnections(options)
-    }
-
-    let recentFlows = _.orderBy(outgoing.concat(incoming), 'ts', options.asc ? 'asc' : 'desc')
-      .slice(0, options.count);
 
     json.flows.recent = recentFlows;
 
@@ -224,6 +226,8 @@ class FlowTool {
     f.ts = flow.ts;
     f.fd = flow.fd;
     f.duration = flow.du
+    f.intf = flow.intf;
+    f.tags = flow.tags;
 
     if(flow.mac) {
       f.device = flow.mac;
@@ -324,17 +328,27 @@ class FlowTool {
   async getAllRecentConnections(direction, options) {
     options = options || {}
 
-    const allMacs = await hostTool.getAllMACs();
+    let allMacs = [];
+    if (options.intf) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager();
+      allMacs = hostManager.getIntfMacs(options.intf);
+    } else if (options.tag) {
+      const HostManager = require("../net2/HostManager.js");
+      const hostManager = new HostManager();
+      allMacs = hostManager.getTagMacs(_.toNumber(options.tag));
+    } else {
+      allMacs = await hostTool.getAllMACs();
+    }
 
     const allFlows = [];
 
     await Promise.all(allMacs.map(async mac => {
       const optionsCopy = JSON.parse(JSON.stringify(options)) // get a clone to avoid side impact to other functions
 
-      optionsCopy.mac = mac; // Why is options.mac set here? This function get recent connections of the entire network. It seems that a specific mac address doesn't make any sense.
-      let flows = await this.getRecentConnections(mac, direction, optionsCopy);
+      const flows = await this.getRecentConnections(mac, direction, optionsCopy);
 
-      flows.map((flow) => {
+      flows.forEach(flow => {
         flow.device = mac
       });
 
@@ -384,7 +398,7 @@ class FlowTool {
     const end = options.end || Math.floor(new Date() / 1000);
     const begin = options.begin || end - 3600 * 6; // 6 hours
     const direction = options.direction || 'in';
-    
+
     const key = util.format("flow:conn:%s:%s", direction, target);
 
     const results = await rclient.zrangebyscoreAsync([key, begin, end]);
@@ -396,11 +410,11 @@ class FlowTool {
     const list = results
     .map((jsonString) => {
       try {
-        return JSON.parse(jsonString);        
+        return JSON.parse(jsonString);
       } catch(err) {
         log.error(`Failed to parse json string: ${jsonString}, err: ${err}`);
         return null;
-      }      
+      }
     })
     .filter((x) => x !== null)
     .filter((x) => x.sh === destinationIP || x.dh === destinationIP)
@@ -417,7 +431,7 @@ class FlowTool {
 
   async getTransferTrend(deviceMAC, destinationIP, options) {
     options = options || {};
-    
+
     const transfers = [];
 
     if (!options.direction || options.direction === "in") {
@@ -426,7 +440,7 @@ class FlowTool {
       const t_in = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
       transfers.push.apply(transfers, t_in);
     }
-    
+
     if (!options.direction || options.direction === "out") {
       const optionsCopy = JSON.parse(JSON.stringify(options));
       optionsCopy.direction = "out";
@@ -454,9 +468,21 @@ class FlowTool {
     //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
     //   flowCopy.device = mac;
     // }
-    
+
     await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
     await rclient.zremrangebyrankAsync(key, 0, limit);
+
+    for (let index = 0; index < flowCopy.tags.length; index++) {
+      const tag = flowCopy.tags[index];
+      const tagKey = `flow:tag:${tag}:recent`;
+      await rclient.zaddAsync(tagKey, now, JSON.stringify(flowCopy));
+      await rclient.zremrangebyrankAsync(tagKey, 0, limit);
+    }
+
+    const intfKey = `flow:intf:${flowCopy.intf}:recent`;
+    await rclient.zaddAsync(intfKey, now, JSON.stringify(flowCopy));
+    await rclient.zremrangebyrankAsync(intfKey, 0, limit);
+
     return;
   }
 
@@ -550,7 +576,7 @@ class FlowTool {
     if(!options.no_merge) {
       mergedFlow = this._mergeFlows(
         _.orderBy(flowObjects, 'ts', options.asc ? 'asc' : 'desc')
-      ); 
+      );
     } else {
       mergedFlow = flowObjects
     }
@@ -620,7 +646,7 @@ class FlowTool {
     if(!flow) {
       return null
     }
-    
+
     if(flow.lh === flow.sh) {
       return flow.dh;
     } else {
@@ -641,6 +667,19 @@ class FlowTool {
       return flow.ob;
     } else {
       return flow.rb;
+    }
+  }
+  getTrafficPort(flow) {
+    let port;
+    if(flow.fd == "out"){
+      port = flow.sp
+    }else{
+      port = flow.dp
+    }
+    if(Array.isArray(port)){
+      return port
+    }else{
+      return [port]
     }
   }
 }

@@ -20,20 +20,19 @@ let Hook = require('./Hook.js');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let bone = require("../lib/Bone.js");
-
-let flowUtil = require("../net2/FlowUtil.js");
-
 let util = require('util');
+
+const MessageBus = require('../net2/MessageBus.js');
 
 class NewDeviceHook extends Hook {
 
   constructor() {
     super();
     this.queue = [];
+    this.messageBus = new MessageBus('info');
   }
 
-  findMac(name, mac, from, retry) {
+  async findMac(name, mac, from, retry) {
 
     retry = retry || 0;
 
@@ -41,11 +40,8 @@ class NewDeviceHook extends Hook {
     let d = new Discovery("nmap", null, "info", false);
 
     // get ip address and mac vendor
-    d.discoverMac(mac, (err, result) => {
-      if(err) {
-        log.error("Failed to discover mac address", mac, ": " + err);
-        return;
-      }
+    try {
+      let result = await d.discoverMac(mac)
 
       if(!result) {
         // not found... kinda strange, hack??
@@ -55,7 +51,7 @@ class NewDeviceHook extends Hook {
         // if first time, try again in another 10 seconds
         if(retry === 0) {
           setTimeout(() => this.findMac(name, mac, from, retry + 1),
-                     10 * 1000);
+            10 * 1000);
         }
         return;
       }
@@ -75,58 +71,63 @@ class NewDeviceHook extends Hook {
       //   // alarm will be handled and created by "NewDevice" event
       //
       // });
-    });
+    } catch(err) {
+      log.error("Failed to discover mac address", mac, ": " + err);
+      return;
+    }
   }
 
   run() {
+    sem.once('IPTABLES_READY', () => {
+      sem.on('NewDeviceWithMacOnly', async(event) => {
 
-    sem.on('NewDeviceWithMacOnly', async(event) => {
-
-      let mac = event.mac;
-      let name = event.name; // name should be fetched via DHCPDUMP
-      let from = event.from;
-
-      let HostTool = require('../net2/HostTool')
-      let hostTool = new HostTool();
-
-      if (from === "dhcp") {
-        let mtype = event.mtype;
-        // mtype should be either DHCPDISCOVER or DHCPREQUEST
-
-        let dhcpInfo = {
-          mac: mac,
-          timestamp: new Date() / 1000
-        };
-        if (name) dhcpInfo.name = name
-
-        await hostTool.updateDHCPInfo(mac, mtype, dhcpInfo);
-      }
-
-      const result = await hostTool.macExists(mac)
-
-      if(result) {
-        if(!name) {
-          return // hostname is not provided by dhcp request, can't update name
+        let mac = event.mac;
+        let name = event.name; // name should be fetched via DHCPDUMP
+        let from = event.from;
+  
+        let HostTool = require('../net2/HostTool')
+        let hostTool = new HostTool();
+  
+        if (from === "dhcp") {
+          let mtype = event.mtype;
+          // mtype should be either DHCPDISCOVER or DHCPREQUEST
+  
+          let dhcpInfo = {
+            mac: mac,
+            timestamp: new Date() / 1000
+          };
+          if (name) dhcpInfo.name = name
+  
+          await hostTool.updateDHCPInfo(mac, mtype, dhcpInfo);
         }
-
-        log.info("MAC Address", mac, " already exists, updating backup name");
-        sem.emitEvent({
-          type: "RefreshMacBackupName",
-          message: "Update device backup name via MAC Address",
-          suppressEventLogging: true,
-          mac:mac,
-          name: name
-        });
-        return;
-      }
-
-      // delay discover, this is to ensure ip address is already allocated
-      // to this new device
-      setTimeout(() => {
-        log.info(require('util').format("Trying to inspect more info on host %s (%s)", name, mac))
-        this.findMac(name, mac, event.from);
-      }, 5000);
-    });
+  
+        const result = await hostTool.macExists(mac)
+  
+        if(result) {
+          if(!name) {
+            return // hostname is not provided by dhcp request, can't update name
+          }
+          
+          log.info("MAC Address", mac, ` already exists, updating ${from}Name`);
+          let hostObj = {
+            mac: mac
+          }
+          const skey = `${from}Name`;
+          hostObj[skey] = name;
+          await hostTool.updateMACKey(hostObj, true);
+          await hostTool.generateLocalDomain(mac);
+          this.messageBus.publish("DiscoveryEvent", "Device:Updated", mac, hostObj);
+          return;
+        }
+  
+        // delay discover, this is to ensure ip address is already allocated
+        // to this new device
+        setTimeout(() => {
+          log.info(require('util').format("Trying to inspect more info on host %s (%s)", name, mac))
+          this.findMac(name, mac, event.from);
+        }, 5000);
+      });
+    })
   }
 }
 

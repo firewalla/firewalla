@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,9 +16,10 @@
 
 var instance = null;
 const log = require("./logger.js")("PolicyManager");
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
+const Message = require('./Message.js');
 const fc = require('../net2/config.js');
 
 const iptable = require('./Iptables.js');
@@ -44,16 +45,17 @@ const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 
-const features = require('../net2/features');
-
 const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
 
-const CategoryUpdater = require('../control/CategoryUpdater.js')
-const categoryUpdater = new CategoryUpdater()
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
+const { Rule } = require('../net2/Iptables.js');
 
 const util = require('util')
+
+const { exec } = require('child-process-promise')
 
 let iptablesReady = false
 
@@ -73,22 +75,29 @@ module.exports = class {
       return;
     }
 
+    await ip6table.prepare();
+    await iptable.prepare();
     await ip6table.flush()
     await iptable.flush()
 
-    let defaultTable = config['iptables']['defaults'];
-    let myip = sysManager.myIp();
-    let secondarySubnet = sysManager.mySubnet2();
-    for (let i in defaultTable) {
-      defaultTable[i] = defaultTable[i].replace("LOCALIP", myip);
+    // In case diag service is running, immediate adds redirection back to prevent pairing failure
+    sem.emitEvent({
+      type: 'DiagRedirectionRenew',
+      toProcess: 'FireKick',
+      message: 'Iptables flushed by FireMain'
+    })
+
+    // ======= default iptables =======
+    const secondarySubnet = sysManager.mySubnet2();
+    if (platform.getDHCPCapacity() && secondarySubnet) {
+      const overlayMasquerade =
+        new Rule('nat').chn('FW_POSTROUTING').mth(secondarySubnet, null, 'src').jmp('MASQUERADE');
+      await exec(overlayMasquerade.toCmd('-A'));
     }
-    if (secondarySubnet) {
-      for (let i in defaultTable) {
-        defaultTable[i] = defaultTable[i].replace("LOCALSUBNET2", secondarySubnet);
-      }
-    }
-    log.debug("PolicyManager:flush", defaultTable);
-    iptable.run(defaultTable);
+    const icmpv6Redirect =
+      new Rule().fam(6).chn('OUTPUT').pro('icmpv6').pam('--icmpv6-type redirect').jmp('DROP');
+    await exec(icmpv6Redirect.toCmd('-D'));
+    await exec(icmpv6Redirect.toCmd('-I'));
 
     // Setup iptables so that it's ready for blocking
     await Block.setupBlockChain();
@@ -132,18 +141,29 @@ module.exports = class {
     return resp;
   }
 
-  async vpnClient(host, policy) {
-    const updatedPolicy = JSON.parse(JSON.stringify(policy));
-    const result = await host.vpnClient(policy);
-    if (policy.state === true && !result) {
-      updatedPolicy.state = false;
-      host.setPolicy("vpnClient", updatedPolicy);
+  async vpnClient(target, policy) {
+    if (!target)
+      return;
+    switch (target.constructor.name) {
+      case "HostManager": {
+        const result = await target.vpnClient(policy); // result optionally contains value of state and running
+        const updatedPolicy = Object.assign({}, policy, result); // this may trigger an extra system policy apply but the result should be idempotent
+        target.setPolicy("vpnClient", updatedPolicy);
+        break;
+      }
+      case "NetworkProfile":
+      case "Tag":
+      case "Host": {
+        await target.vpnClient(policy);
+        break;
+      }
     }
+
   }
 
   async ipAllocation(host, policy) {
-    if (host.constructor.name !== 'Host') {
-      log.error("ipAllocation only supports per device policy", host.o.mac);
+    if (!host || host.constructor.name !== 'Host') {
+      log.error("ipAllocation only supports per device policy", host && host.o && host.o.mac);
       return;
     }
     await host.ipAllocation(policy);
@@ -196,10 +216,10 @@ module.exports = class {
 
     if (config.state == true) {
       (async () => {
-        const client = await ssClientManager.getSSClient();
-        await client.start();
+        await ssClientManager.initSSClients();
+        await ssClientManager.startService();
         await delay(10000);
-        await client.redirectTraffic();
+        await ssClientManager.startRedirect();
         log.info("SciSurf feature is enabled successfully for traffic redirection");
       })().catch((err) => {
         log.error("Failed to start scisurf feature:", err);
@@ -207,10 +227,8 @@ module.exports = class {
 
     } else {
       (async () => {
-        const client = await ssClientManager.getSSClient();
-        if (!client) return
-        await client.unRedirectTraffic();
-        await client.stop();
+        await ssClientManager.stopRedirect();
+        await ssClientManager.stopService();
         log.info("SciSurf feature is disabled successfully for traffic redirection");
       })().catch((err) => {
         log.error("Failed to disable SciSurf feature: " + err);
@@ -219,25 +237,6 @@ module.exports = class {
   }
 
   async whitelist(host, config) {
-    if (host.constructor.name == 'HostManager') {
-      if (iptablesReady)
-        return Block.setupGlobalWhitelist(config.state);
-      else
-        // wait until basic ipables are all set
-        return new Promise((resolve, reject) => {
-          sem.once('IPTABLES_READY', () => {
-            Block.setupGlobalWhitelist(config.state)
-              .then(resolve).catch(reject)
-          })
-        })
-    }
-
-    if (!host.o.mac) throw new Error('Invalid host MAC');
-
-    if (config.state)
-      return Block.addMacToSet([host.o.mac], 'device_whitelist_set')
-    else
-      return Block.delMacFromSet([host.o.mac], 'device_whitelist_set')
   }
 
   shadowsocks(host, config) {
@@ -276,7 +275,7 @@ module.exports = class {
 
   dnsmasq(host, config) {
     if(host.constructor.name !== 'HostManager') {
-      // per-device dnsmasq policy
+      // per-device or per-network dnsmasq policy
       host._dnsmasq(config);
       return;
     }
@@ -289,12 +288,6 @@ module.exports = class {
     if (config.alternativeDnsServers && Array.isArray(config.alternativeDnsServers)) {
       dnsmasq.setInterfaceNameServers("alternative", config.alternativeDnsServers);
       needUpdate = true;
-      needRestart = true;
-    }
-    if (config.wifiDnsServers && Array.isArray(config.wifiDnsServers)) {
-      dnsmasq.setInterfaceNameServers("wifi", config.wifiDnsServers);
-      needUpdate = true;
-      needRestart = true;
     }
     if (config.secondaryDhcpRange) {
       dnsmasq.setDhcpRange("secondary", config.secondaryDhcpRange.begin, config.secondaryDhcpRange.end);
@@ -302,10 +295,6 @@ module.exports = class {
     }
     if (config.alternativeDhcpRange) {
       dnsmasq.setDhcpRange("alternative", config.alternativeDhcpRange.begin, config.alternativeDhcpRange.end);
-      needRestart = true;
-    }
-    if (config.wifiDhcpRange) {
-      dnsmasq.setDhcpRange("wifi", config.wifiDhcpRange.begin, config.wifiDhcpRange.end);
       needRestart = true;
     }
     if (needUpdate)
@@ -357,15 +346,34 @@ module.exports = class {
     }
   }
 
-  execute(host, ip, policy, callback) {
-    if (host.oper == null) {
-      host.oper = {};
+  async apiInterface(host, config) {
+    if(host.constructor.name !== 'HostManager') {
+      log.error("apiInterface doesn't support per device policy", host);
+      return;
+    }
+
+    await pclient.publishAsync(Message.MSG_SYS_API_INTERFACE_CHANGED, JSON.stringify(config))
+  }
+
+  tags(target, config) {
+    if (!target)
+      return;
+    if (target.constructor.name === 'HostManager') {
+      log.error("tags doesn't support system policy");
+      return;
+    }
+    target.tags(config);
+  }
+
+  execute(target, ip, policy, callback) {
+    if (target.oper == null) {
+      target.oper = {};
     }
 
     if (policy == null || Object.keys(policy).length == 0) {
       log.debug("PolicyManager:Execute:NoPolicy", ip, policy);
-      host.spoof(true);
-      host.oper['monitor'] = true;
+      target.spoof(true);
+      target.oper['monitor'] = true;
       if (callback)
         callback(null, null);
       return;
@@ -373,10 +381,10 @@ module.exports = class {
     log.debug("PolicyManager:Execute:", ip, policy);
 
     for (let p in policy) {
-      if (host.oper[p] != null && JSON.stringify(host.oper[p]) === JSON.stringify(policy[p])) {
-        log.debug("PolicyManager:AlreadyApplied", p, host.oper[p]);
+      if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
+        log.debug("PolicyManager:AlreadyApplied", p, target.oper[p]);
         if (p === "monitor") {
-          host.spoof(policy[p]);
+          target.spoof(policy[p]);
         }
         continue;
       }
@@ -385,9 +393,9 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            hook(host, ip, policy[p])
+            hook(target, ip, policy[p])
           } catch (err) {
-            log.error(`Failed to call applyPolicy hook on ip ${ip} policy ${p}, err: ${err}`)
+            log.error(`Failed to call applyPolicy hook on target ${ip} policy ${p}, err: ${err}`)
           }
         }
       }
@@ -400,31 +408,35 @@ module.exports = class {
           }
         })();
       } else if (p === "monitor") {
-        host.spoof(policy[p]);
+        target.spoof(policy[p]);
       } else if (p === "vpnClient") {
-        this.vpnClient(host, policy[p]);
+        this.vpnClient(target, policy[p]);
       } else if (p === "vpn") {
-        this.vpn(host, policy[p], policy);
+        this.vpn(target, policy[p], policy);
       } else if (p === "shadowsocks") {
-        this.shadowsocks(host, policy[p]);
+        this.shadowsocks(target, policy[p]);
       } else if (p === "scisurf") {
-        this.scisurf(host, policy[p]);
+        this.scisurf(target, policy[p]);
       } else if (p === "whitelist") {
-        this.whitelist(host, policy[p]);
+        this.whitelist(target, policy[p]);
       } else if (p === "shield") {
-        host.shield(policy[p]);
+        target.shield(policy[p]);
       } else if (p === "enhancedSpoof") {
-        this.enhancedSpoof(host, policy[p]);
+        this.enhancedSpoof(target, policy[p]);
       } else if (p === "externalAccess") {
-        this.externalAccess(host, policy[p]);
+        this.externalAccess(target, policy[p]);
+      } else if (p === "apiInterface") {
+        this.apiInterface(target, policy[p]);
       } else if (p === "ipAllocation") {
-        this.ipAllocation(host, policy[p]);
+        this.ipAllocation(target, policy[p]);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
+      } else if (p === "tags") {
+        this.tags(target, policy[p]);
       }
 
       if (p !== "dnsmasq") {
-        host.oper[p] = policy[p];
+        target.oper[p] = policy[p];
       }
 
     }
@@ -432,28 +444,28 @@ module.exports = class {
     // put dnsmasq logic at the end, as it is foundation feature
 
     if (policy["dnsmasq"]) {
-      if (host.oper["dnsmasq"] != null &&
-        JSON.stringify(host.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
+      if (target.oper["dnsmasq"] != null &&
+        JSON.stringify(target.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
         // do nothing
       } else {
-        this.dnsmasq(host, policy["dnsmasq"]);
-        host.oper["dnsmasq"] = policy["dnsmasq"];
+        this.dnsmasq(target, policy["dnsmasq"]);
+        target.oper["dnsmasq"] = policy["dnsmasq"];
       }
     }
 
 
     if (policy['monitor'] == null) {
       log.debug("PolicyManager:ApplyingMonitor", ip);
-      host.spoof(true);
+      target.spoof(true);
       log.debug("PolicyManager:ApplyingMonitorDone", ip);
-      host.oper['monitor'] = true;
+      target.oper['monitor'] = true;
     }
 
     if (callback)
       callback(null, null);
   }
 
-  executeAsync(host, ip, policy) {
-    return util.promisify(this.execute).bind(this)(host, ip, policy)
+  executeAsync(target, ip, policy) {
+    return util.promisify(this.execute).bind(this)(target, ip, policy)
   }
 }

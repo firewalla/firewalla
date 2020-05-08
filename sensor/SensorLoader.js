@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,30 +14,39 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
+const config = require('../net2/config.js').getConfig();
+const fireRouter = require('../net2/FireRouter.js')
 
-let config = require('../net2/config.js').getConfig();
+const sensors = [];
+const sensorsHash = {}
 
-let sensors = [];
-let sensorsHash = {}
-
-function initSensors() {
+function initSingleSensor(sensorName) {
   let sensorConfigs = config.sensors;
 
-  if(!sensorConfigs)
-    return;
+  if(!sensorConfigs || !sensorConfigs[sensorName])
+    return null;
 
-  Object.keys(sensorConfigs).forEach((sensorName) => {
-    try {
-      let fp = './' + sensorName + '.js';
-      let s = require(fp);
-      let ss = new s();
-      ss.setConfig(sensorConfigs[sensorName]);
-      sensors.push(ss);
-      sensorsHash[sensorName] = ss
-    } catch(err) {
-      log.error(`Failed to load sensor: ${sensorName}: ${err}`)
-    }
+  try {
+    let fp = './' + sensorName + '.js';
+    let s = require(fp);
+    let ss = new s();
+    ss.setConfig(sensorConfigs[sensorName]);
+    sensors.push(ss);
+    sensorsHash[sensorName] = ss
+    return ss
+  } catch(err) {
+    log.error(`Failed to load sensor: ${sensorName}: ${err}`)
+    return null
+  }
+}
+
+async function initSensors() {
+  await fireRouter.waitTillReady()
+
+  Object.keys(config.sensors).forEach((sensorName) => {
+    if (!sensorsHash[sensorName])
+      initSingleSensor(sensorName)
   });
 }
 
@@ -58,6 +67,7 @@ function getSensor(name) {
 
 module.exports = {
   initSensors:initSensors,
+  initSingleSensor:initSingleSensor,
   run:run,
   getSensor: getSensor
 };

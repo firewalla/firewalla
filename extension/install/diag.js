@@ -1,3 +1,18 @@
+/*    Copyright 2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use strict'
 
 let instance = null;
@@ -6,8 +21,7 @@ const exec = require('child-process-promise').exec;
 const fConfig = require('../../net2/config.js').getConfig();
 const log = require('../../net2/logger.js')(__filename);
 
-const get_interfaces_list_async = require('util').promisify(require('network').get_interfaces_list);
-const activeInterface = fConfig.monitoringInterface || "eth0";
+const sysManager = require('../../net2/SysManager.js');
 
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -31,15 +45,8 @@ class FWDiag {
     return instance;
   }
 
-  async getNetworkInfo() {
-    const list = await get_interfaces_list_async();
-    for(const inter of list || []) {
-      if(inter.name === activeInterface) {
-        return inter;
-      }
-    }
-
-    return null;
+  getEndpoint() {
+    return fConfig.firewallaDiagServerURL || `https://api.firewalla.com/diag/api/v1/device/`
   }
 
   async getGatewayMac(gatewayIP) {
@@ -57,7 +64,7 @@ class FWDiag {
   }
 
   async getGatewayName(gatewayIP) {
-    const cmd = `arp ${gatewayIP} | tail -n 1 | awk '{print $1}'`; 
+    const cmd = `arp ${gatewayIP} | tail -n 1 | awk '{print $1}'`;
     // return empty if command execute failed
     const result = await exec(cmd).catch(() => "");
     const name = result.stdout;
@@ -91,7 +98,7 @@ class FWDiag {
   async hasLicenseFile() {
     const filePath = `${f.getHiddenFolder()}/license`;
     try {
-      const stat = await fs.accessAsync(filePath, fs.constants.F_OK);
+      await fs.accessAsync(filePath, fs.constants.F_OK);
       return true;
     } catch (err) {
       return false;
@@ -99,8 +106,8 @@ class FWDiag {
   }
 
   async prepareData(payload) {
-    const inter = await this.getNetworkInfo();
-    
+    const inter = sysManager.getDefaultWanInterface()
+
     const ip = inter.ip_address;
     const gateway = inter.gateway_ip;
     const mac = inter.mac_address;
@@ -127,7 +134,7 @@ class FWDiag {
       const rclient = require('../../util/redis_manager.js').getRedisClient();
 
       const options = {
-        uri: `${fConfig.firewallaDiagServerURL}/${data.gw}` || `https://api.firewalla.com/diag/api/v1/device/${data.gw}`,
+        uri:  this.getEndpoint() + data.gw,
         method: 'POST',
         json: data
       }
@@ -153,8 +160,8 @@ class FWDiag {
   }
 
   async prepareHelloData() {
-    const inter = await this.getNetworkInfo();
-    
+    const inter = sysManager.getDefaultWanInterface()
+
     const firewallaIP = inter.ip_address;
     const mac = inter.mac_address;
     const gateway = inter.gateway_ip;
@@ -193,12 +200,23 @@ class FWDiag {
   async sayHello() {
     const data = await this.prepareHelloData();
     const options = {
-      uri: `${fConfig.firewallaDiagServerURL}/hello` || `https://api.firewalla.com/diag/api/v1/device/hello`,
+      uri: this.getEndpoint() + 'hello',
       method: 'POST',
       json: data
     }
     await rp(options);
     log.info("said hello to Firewalla Cloud");
+  }
+
+  async log(level, data) {
+    const sysData = await this.prepareHelloData();
+    const options = {
+      uri: this.getEndpoint() + 'log/' + level,
+      method: 'POST',
+      json: Object.assign({}, data, sysData)
+    }
+    log.info(`Sending diag log, [${level}] ${JSON.stringify(data)}`);
+    await rp(options);
   }
 }
 

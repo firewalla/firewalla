@@ -19,8 +19,7 @@ const iptool = require('ip');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const asyncNative = require('../util/asyncNative.js');
 
@@ -123,13 +122,13 @@ module.exports = class DNSManager {
   // if x is there, the flow should not be used or presented.  It only be used
   // for purpose of accounting
 
-  async query(list, ipsrc, ipdst) {
+  async query(list, ipsrc, ipdst, deviceMac) {
 
     // use this as cache to calculate how much intel expires
     // no need to call Date.now() too many times.
     if (hostManager == null) {
       let HostManager = require("../net2/HostManager.js");
-      hostManager = new HostManager("cli", 'client', 'info');
+      hostManager = new HostManager();
     }
 
     if (list == null || list.length == 0) {
@@ -145,7 +144,7 @@ module.exports = class DNSManager {
       // filter out short connections
       let lhost = hostManager.getHostFast(o.lh);
       if (lhost) {
-        if (lhost.isFlowAllowed(o) == false) {
+        if (!lhost.isInternetAllowed()) {
           log.debug("### NOT LOOKUP6 ==:", o);
           flowUtil.addFlag(o, 'l'); //
           //flowUtil.addFlag(o,'x'); // need to revist on if need to ignore this flow ... most likely these flows are very short lived
@@ -186,18 +185,27 @@ module.exports = class DNSManager {
 
       const _ipsrc = o[ipsrc]
       const _ipdst = o[ipdst]
+      const _deviceMac = deviceMac && o[deviceMac];
       try {
         if(sysManager.isLocalIP(_ipsrc)) {
-          // enrichDeviceCount++;
-          await this.enrichDeviceIP(_ipsrc, o, "src")
+          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
+            await this.enrichDeviceMac(_deviceMac, o, "src");
+          } else {
+            // enrichDeviceCount++;
+            await this.enrichDeviceIP(_ipsrc, o, "src");
+          }
         } else {
           // enrichDstCount++;
-          await this.enrichDestIP(_ipsrc, o, "src")
+          await this.enrichDestIP(_ipsrc, o, "src");
         }
 
         if(sysManager.isLocalIP(_ipdst)) {
-          // enrichDeviceCount++;
-          await this.enrichDeviceIP(_ipdst, o, "dst")
+          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
+            await this.enrichDeviceMac(_deviceMac, o, "dst");
+          } else {
+            // enrichDeviceCount++;
+            await this.enrichDeviceIP(_ipdst, o, "dst");
+          }
         } else {
           // enrichDstCount++;
           await this.enrichDestIP(_ipdst, o, "dst")
@@ -214,6 +222,22 @@ module.exports = class DNSManager {
 
       //   throw err
       // });
+  }
+
+  async enrichDeviceMac(mac, flowObject, srcOrDest) {
+    if (!mac)
+      return;
+    mac = mac.toUpperCase();
+    await hostTool.getMACEntry(mac).then((macEntry) => {
+      if (macEntry) {
+        if(srcOrDest === "src") {
+          flowObject["shname"] = getPreferredBName(macEntry);
+        } else {
+          flowObject["dhname"] = getPreferredBName(macEntry);
+        }
+        flowObject.mac = mac;
+      }
+    }).catch((err) => {});
   }
 
   async enrichDeviceIP(ip, flowObject, srcOrDest) {

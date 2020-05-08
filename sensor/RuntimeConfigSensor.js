@@ -52,7 +52,7 @@ class RuntimeConfigSensor extends Sensor {
     try {
       await this.updateFakeClock();
     } catch(err) {
-      log.error("Failed to record latest time to fake-hwlock:", err);
+      log.error("Failed to record latest time to fake-hwlock:", err.message);
     }
   }
 

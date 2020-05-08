@@ -11,7 +11,7 @@ if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ca.key ]; then
   if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ta.key ]; then
     if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/$INSTANCE_NAME.crt ]; then
       logger "FIREWALLA: OpenVPN Setup Install Already Done for $INSTANCE_NAME"
-      sudo chmod 700 -R /etc/openvpn
+      sudo chmod 755 -R /etc/openvpn
       exit 0
     fi
   fi
@@ -23,7 +23,12 @@ ENCRYPT="1024"
 
 if [[ ${KEYS_FOLDER} == "keys" ]]; then
   rm -r -f /etc/openvpn
-  mkdir /etc/openvpn
+  if [[ $(uname -m) == "x86_64" ]]; then
+    sudo rm -rf /home/pi/openvpn/*
+    sudo ln -s /home/pi/openvpn /etc/openvpn
+  else
+    mkdir /etc/openvpn
+  fi
   cp -r /usr/share/easy-rsa /etc/openvpn
   sync
 
@@ -68,5 +73,5 @@ sudo chown pi /home/pi/ovpns -R
 # Generate static HMAC key to defend against DDoS
 openvpn --genkey --secret $KEYS_FOLDER/ta.key
 touch /etc/openvpn/multi_profile_support
-sudo chmod 700 -R /etc/openvpn
+sudo chmod 755 -R /etc/openvpn
 sync

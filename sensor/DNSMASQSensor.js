@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,16 +14,15 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
-let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-let dnsmasq = new DNSMASQ();
-
-let Mode = require('../net2/Mode.js');
+const Mode = require('../net2/Mode.js');
 
 class DNSMASQSensor extends Sensor {
   constructor() {
@@ -40,7 +39,9 @@ class DNSMASQSensor extends Sensor {
         log.error("Fail to install dnsmasq: " + err);
         throw err;
       })
-      .then(() => dnsmasq.start(false))
+      .then(async () => {
+        dnsmasq.start(false)
+      })
       .catch(err => log.error("Failed to start dnsmasq: " + err))
       .then(() => log.info("dnsmasq service is started successfully"));
   }
@@ -83,7 +84,7 @@ class DNSMASQSensor extends Sensor {
     return Mode.getSetupMode()
       .then((mode) => {
         dnsmasq.setMode(mode);
-        if(!this.registered) {
+        if (!this.registered) {
           log.info("Registering dnsmasq events listeners");
 
           sem.on("StartDNS", (event) => {

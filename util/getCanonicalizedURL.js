@@ -1,7 +1,5 @@
 'use strict'
-var URL = require('url');
 var StringCursor = require('./StringCursor');
-var Punycode = require('punycode');
 
 var PERCENT_ESCAPE = /%([A-Fa-f0-9]{2})/g;
 var ESCAPED_CHARCODES = [35, 37];
@@ -11,7 +9,7 @@ function hasPercentEscape(url) {
 }
 
 function getDecodedURI(uri) {
-  return uri.replace(PERCENT_ESCAPE, function(match, p1) {
+  return uri.replace(PERCENT_ESCAPE, function (match, p1) {
     return String.fromCharCode(parseInt(p1, 16));
   });
 }
@@ -35,7 +33,7 @@ function getEncodedURI(uri) {
 }
 
 function getEntirelyDecodedURI(uri) {
-  while(hasPercentEscape(uri)) {
+  while (hasPercentEscape(uri)) {
     uri = getDecodedURI(uri);
   }
   return uri;
@@ -50,6 +48,13 @@ function getCanonicalizedHostname(hostname) {
   );
 }
 
+function getCanonicalizedDomainname(hostname) {
+  return hostname.toLowerCase().replace(/^\.+/, '')
+    .replace(/\.+$/, '')
+    .replace(/\.+/g, '.')
+    .replace(/[^\w.-]/g, '')
+}
+
 function getCanonicalizedPathname(pathname) {
   return getEncodedURI(
     getEntirelyDecodedURI('/' + pathname)
@@ -62,7 +67,7 @@ function getCanonicalizedPathname(pathname) {
 function getCanonicalizedURL(url) {
   url = url.trim();
   url = url.replace(/[\t\r\n]/g, '');
-  
+
   var cursor = new StringCursor(url);
   var protocol = cursor.chompUntilIfExists(':') || 'http';
   cursor.chompWhile('/');
@@ -84,9 +89,13 @@ function getCanonicalizedURL(url) {
   };
 
   return (
-    `${f.protocol}://${f.hostname}${f.port ? ':'+f.port:''}`+
-    `${f.pathname}${search ? '?'+search:''}`
+    `${f.protocol}://${f.hostname}${f.port ? ':' + f.port : ''}` +
+    `${f.pathname}${search ? '?' + search : ''}`
   );
 }
 
-module.exports = getCanonicalizedURL;
+module.exports = {
+  getCanonicalizedURL: getCanonicalizedURL,
+  getCanonicalizedHostname: getCanonicalizedHostname,
+  getCanonicalizedDomainname: getCanonicalizedDomainname
+};

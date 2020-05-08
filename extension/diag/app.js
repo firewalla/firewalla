@@ -28,10 +28,17 @@ const exec = require('child-process-promise').exec
 const fs = require('fs')
 Promise.promisifyAll(fs)
 
+const Config = require('../../net2/config.js');
+const sysManager = require('../../net2/SysManager.js');
+
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 
 const { wrapIptables } = require('../../net2/Iptables.js')
+
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
+
+const Mode = require('../../net2/Mode.js');
 
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
@@ -43,6 +50,7 @@ const errorCodes = {
   "firemon": 104,
   "memory": 201,
   "database": 301,
+  "databaseConnectivity": 302,
   "gid": 401,
   "ip": 501
 }
@@ -142,6 +150,16 @@ class App {
     return 0
   }
 
+  async getDatabaseConnectivity() {
+    try {
+      await exec("redis-cli get mode")
+    } catch (err) {
+      log.error("Failed to check database connection status", err);
+      return errorCodes.databaseConnectivity
+    }
+    return 0
+  }
+
   async getGID() {
     try {
       const gid = await exec("redis-cli hget sys:ept gid")
@@ -163,13 +181,14 @@ class App {
   }
 
   async getPrimaryIP() {
-    const eth0s = require('os').networkInterfaces()["eth0"]
+    const config = Config.getConfig(true);
+    const eths = require('os').networkInterfaces()[config.monitoringInterface];
 
-    if (eth0s) {
-      for (let index = 0; index < eth0s.length; index++) {
-        const eth0 = eth0s[index]
-        if (eth0.family == "IPv4") {
-          return eth0.address
+    if (eths) {
+      for (let index = 0; index < eths.length; index++) {
+        const eth = eths[index]
+        if (eth.family == "IPv4") {
+          return eth.address
         }
       }
     }
@@ -178,7 +197,7 @@ class App {
   }
 
   async getQRImage() {
-    if(!this.broadcastInfo) {
+    if (!this.broadcastInfo) {
       return null;
     }
 
@@ -199,8 +218,9 @@ class App {
 
       await exec(cmd);
       return imagePath;
-    } catch(err) {
-      return null;
+    } catch (err) {
+      log.error("Failed to get QRImage", err);
+      return null
     }
   }
 
@@ -212,7 +232,7 @@ class App {
 
     this.app.use('/log', (req, res) => {
       const filename = "/home/pi/logs/FireKick.log";
-      (async() =>{
+      (async () => {
         const gid = await this.getFullGID()
         await fs.accessAsync(filename, fs.constants.F_OK)
         //tail -n 1000 /home/pi/logs/FireKick.log | sed -r   "s/0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"
@@ -237,105 +257,161 @@ class App {
     });
 
     this.app.use('/pairing', (req, res) => {
-      if(this.broadcastInfo) {
+      if (this.broadcastInfo) {
         res.json(this.broadcastInfo);
       } else {
         res.status(501).send('');
       }
     });
 
-    this.app.use('*', (req, res) => {
+    this.app.use('/pair/ping', (req, res) => {
+      res.json({});
+    });
+
+    this.app.use('/pair/ready', async (req, res) => {
+      try {
+        const values = await this.getPairingStatus();
+        if(values.success) {
+          res.json({
+            ready: true
+          });
+        } else {
+          res.json({
+            ready: false,
+            content: values
+          });
+        }
+      } catch(err) {
+        log.error("Failed to process request", err);
+        res.json({
+          ready: false
+        });
+      }
+    });
+
+    this.app.use('*', async (req, res) => {
       log.info("Got a request in *")
 
-      return (async() =>{
-        const time = this.getSystemTime()
-        const ip = await this.getPrimaryIP()
-        const gid = await this.getGID()
-        const database = await this.getDatabase()
-        const uptime = this.getUptime()
-        const nodeVersion = this.getNodeVersion()
-        const memory = await this.getSystemMemory()
-        const connected = this.getCloudConnectivity()
-        const systemServices = await this.getSystemServices()
-        const expireDate = this.expireDate;
-        const qrImagePath = await this.getQRImage()
-
-        let success = true
-        let values = {
-          now: new Date() / 1000
-        }
-
-        if(!this.broadcastInfo) {
-          values.err_binding = true
-          success = false;
-        }
-
-        if(qrImagePath) {
-          values.qrImage = true;
+      try {
+        const values = await this.getPairingStatus();
+        if(values.error) {
+          log.error("Failed to process request", err);
+          res.status(500).send({})
         } else {
-          success = false;
+          res.render('welcome', values)
         }
-
-        if(ip == "") {
-          values.err_ip = true
-          success = false
-        } else {
-          values.ip = ip
-        }
-
-        if(gid == null) {
-          values.err_config = true
-          success = false
-        }
-
-        if(database != 0) {
-          values.err_database = true
-          success = false
-        }
-
-        if(memory != 0) {
-          values.err_memory = true
-          success = false
-        }
-
-        if(connected != true) {
-          values.err_cloud = true
-          success = false
-        }
-
-        if(systemServices != 0) {
-          values.err_service = true
-          success = false
-        }
-
-        values.success = success
-
-        res.render('welcome', values)
-
-      })().catch((err) => {
+      } catch(err) {
         log.error("Failed to process request", err);
         res.status(500).send({})
-      })
+      }
     })
   }
 
+  async getPairingStatus() {
+    try {
+      const time = this.getSystemTime()
+      const ip = await this.getPrimaryIP();
+      const gid = await this.getGID()
+      const database = await this.getDatabase()
+      const uptime = this.getUptime()
+      const nodeVersion = this.getNodeVersion()
+      const memory = await this.getSystemMemory()
+      const connected = this.getCloudConnectivity()
+      const systemServices = await this.getSystemServices()
+      const expireDate = this.expireDate;
+      const qrImagePath = await this.getQRImage()
+
+      let success = true
+      let values = {
+        now: new Date() / 1000
+      }
+
+      if(!this.broadcastInfo) {
+        values.err_binding = true
+        success = false;
+      }
+
+      if(qrImagePath) {
+        values.qrImage = true;
+      } else {
+        success = false;
+      }
+
+      if(ip == "") {
+        values.err_ip = true
+        success = false
+      } else {
+        values.ip = ip
+      }
+
+      if(gid == null) {
+        values.err_config = true
+        success = false
+      }
+
+      if(database != 0) {
+        values.err_database = true
+        success = false
+      }
+
+      if(memory != 0) {
+        values.err_memory = true
+        success = false
+      }
+
+      if(connected != true) {
+        values.err_cloud = true
+        success = false
+      }
+
+      if(systemServices != 0) {
+        values.err_service = true
+        success = false
+      }
+
+      values.success = success
+
+      return values;
+
+    } catch(err) {
+      log.error("Failed to get pairing status, err:", err);
+      return {
+        success: false,
+        error: true
+      }
+    }
+  }
+
   async iptablesRedirection(create = true) {
-    const findInf = await exec(`ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/`);
-    const ips = findInf.stdout.split('\n')
+    let interfaces = sysManager.getLogicInterfaces()
+    if (await Mode.isRouterModeOn()) {
+      interfaces = interfaces.filter(intf => intf.type != 'wan')
+    }
+    const IPv4List = interfaces.map(intf => intf.ip_address)
 
-    const action = create ? '-A' : '-D';
+    log.info("", IPv4List);
 
-    for (const ip of ips) {
+    const action = create ? '-I' : '-D';
+
+    for (const ip of IPv4List) {
       if (!ip) continue;
 
       log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${port} on ${ip}`);
-      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} FW_PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
       await exec(cmd);
     }
   }
 
   start() {
-    this.app.listen(port, () => log.info(`Httpd listening on port ${port}!`));
+    this.app.listen(port, () => {
+      log.info(`Httpd listening on port ${port}!`)
+
+      sem.on("DiagRedirectionRenew", (event) => {
+        log.info("Renew port redirection")
+        this.iptablesRedirection();
+      })
+
+    });
   }
 }
 

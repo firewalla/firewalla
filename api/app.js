@@ -1,27 +1,30 @@
+/*    Copyright 2016-2020 Firewalla Inc.
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 /*
  * This app will provide API for external calls
  */
 'use strict';
 
-var express = require('express');
-var path = require('path');
-var logger = require('morgan');
-var cookieParser = require('cookie-parser');
-var bodyParser = require('body-parser');
-const passport = require('passport');
-var Strategy = require('passport-http-bearer').Strategy;
-var db = require('./db');
+const express = require('express');
+const path = require('path');
+const logger = require('morgan');
+const cookieParser = require('cookie-parser');
+const bodyParser = require('body-parser');
 
-let log = require('../net2/logger.js')(__filename, 'info')
-
-passport.use(new Strategy(
-  function(token, cb) {
-    db.users.findByToken(token, function(err, user) {
-      if (err) { return cb(err); }
-      if (!user) { return cb(null, false); }
-      return cb(null, user);
-    });
-  }));
+const log = require('../net2/logger.js')(__filename, 'info')
 
 var encipher = require('./routes/fastencipher2').router;
 
@@ -30,6 +33,8 @@ let si = require('../extension/sysinfo/SysInfo.js');
 si.startUpdating();
 
 var app = express();
+
+app.set('title', 'FireAPI')
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
@@ -47,19 +52,19 @@ app.use("/ss", require('./routes/ss.js'));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
-subpath_v1.use(passport.initialize());
-subpath_v1.use(passport.session());
 subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 subpath_v1.use('/encipher', encipher);
-subpath_v1.use('/encipher_raw', require('./routes/encipher.js'));
+subpath_v1.use('/encipher_raw', require('./routes/raw_encipher.js'));
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
-  var err = new Error('Not Found');
-  err.status = 404;
-  next(err);
+  // var err = new Error('Not Found');
+  // err.status = 404;
+  // next(err);
+  res.status(400).send('');
+  next();
 });
 
 // error handlers

@@ -4,7 +4,7 @@ if [[ -z $FW_SS_SERVER || -z $FW_SS_LOCAL_PORT ]]; then
   exit 1;
 fi
 
-CHAIN_NAME=FW_SHADOWSOCKS${FW_NAME}
+CHAIN_NAME=FW_SS${FW_NAME}
 
 sudo iptables -w -t nat -N $CHAIN_NAME
 sudo iptables -w -t nat -A $CHAIN_NAME -d $FW_SS_SERVER -j RETURN
@@ -17,8 +17,6 @@ sudo iptables -w -t nat -A $CHAIN_NAME -d 192.168.0.0/16 -j RETURN
 sudo iptables -w -t nat -A $CHAIN_NAME -d 224.0.0.0/4 -j RETURN
 sudo iptables -w -t nat -A $CHAIN_NAME -d 240.0.0.0/4 -j RETURN
 
-# for black hole ip, return it, no ss routing
-sudo iptables -w -t nat -A $CHAIN_NAME -d 198.51.100.99 -j RETURN
 
 sudo iptables -w -t nat -A $CHAIN_NAME -p tcp -m set --match-set chnroute dst -j RETURN
 

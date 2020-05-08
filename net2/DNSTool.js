@@ -16,6 +16,8 @@
 
 const log = require('./logger.js')(__filename);
 
+const sysManager = require('./SysManager.js');
+
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const iptool = require('ip')
@@ -119,18 +121,18 @@ class DNSTool {
 
   // doesn't have to keep it long, it's only used for instant blocking
 
-  async addReverseDns(dns, addresses, expire) {
+  async addReverseDns(domain, addresses, expire) {
     expire = expire || 24 * 3600; // one day by default
     addresses = addresses || []
 
     addresses = addresses.filter((addr) => {
-      return firewalla.isReservedBlockingIP(addr) != true
+      return addr && firewalla.isReservedBlockingIP(addr) != true
     })
 
-    let key = this.getReverseDNSKey(dns)
+    let key = this.getReverseDNSKey(domain)
 
-    const existing = await this.reverseDNSKeyExists(dns)
-    
+    const existing = await this.reverseDNSKeyExists(domain)
+
     let updated = false
     const validAddresses = [];
 
@@ -143,7 +145,7 @@ class DNSTool {
         updated = true
       }
     }
-    await domainUpdater.updateDomainMapping(dns, validAddresses);
+    await domainUpdater.updateDomainMapping(domain, validAddresses);
     
     if(updated === false && existing === false) {
       await rclient.zaddAsync(key, new Date() / 1000, firewalla.getRedHoleIP()); // red hole is a placeholder ip for non-existing domain
@@ -152,12 +154,12 @@ class DNSTool {
     await rclient.expireAsync(key, expire)
   }
 
-  async getAddressesByDNS(dns) {
-    let key = this.getReverseDNSKey(dns)
+  async getIPsByDomain(domain) {
+    let key = this.getReverseDNSKey(domain)
     return rclient.zrangeAsync(key, "0", "-1")
   }
 
-  async getAddressesByDNSPattern(dnsPattern) {
+  async getIPsByDomainPattern(dnsPattern) {
     let pattern = `rdns:domain:*.${dnsPattern}`
     
     let keys = await rclient.keysAsync(pattern)
@@ -193,9 +195,9 @@ class DNSTool {
       let addresses = [];
       if (!isDomainPattern) {
         domains[target] = 1;
-        addresses = await this.getAddressesByDNS(target);
+        addresses = await this.getIPsByDomain(target);
       } else {
-        addresses = await this.getAddressesByDNSPattern(target);
+        addresses = await this.getIPsByDomainPattern(target);
       }
       if (addresses && Array.isArray(addresses)) {
         for (const address of addresses) {
@@ -207,6 +209,43 @@ class DNSTool {
       return Object.keys(domains);
     }
   }
+
+  getDefaultDhcpRange(network) {
+    let subnet = null;
+    if (network === "alternative") {
+      subnet = iptool.cidrSubnet(sysManager.mySubnet());
+    }
+    else if (network === "secondary") {
+      const subnet2 = sysManager.mySubnet2() || "192.168.218.1/24";
+      subnet = iptool.cidrSubnet(subnet2);
+    }
+    else if (network === "wifi") {
+      const Config = require('./config.js');
+      const fConfig = Config.getConfig(true);
+      if (fConfig && fConfig.wifiInterface && fConfig.wifiInterface.iptool)
+        subnet = iptool.cidrSubnet(fConfig.wifiInterface.iptool);
+    }
+
+    if (!subnet) {
+      try {
+        // try if network is already a cidr subnet
+        subnet = iptool.cidrSubnet(network);
+      } catch (err) {
+        return null;
+      }
+    }
+
+    const firstAddr = iptool.toLong(subnet.firstAddress);
+    const lastAddr = iptool.toLong(subnet.lastAddress);
+    const midAddr = firstAddr + (lastAddr - firstAddr) / 5;
+    let rangeBegin = iptool.fromLong(midAddr);
+    let rangeEnd = iptool.fromLong(lastAddr - 3);
+    return {
+      begin: rangeBegin,
+      end: rangeEnd
+    };
+  }
+
 }
 
 
