@@ -232,25 +232,51 @@ class FireRouter {
     this.ready = false
     this.sysNetworkInfo = [];
 
-    this.init(true).catch(err => {
-      log.error('FireRouter failed to initialize', err)
-      process.exit(1);
-    })
+    this.retryUntilInitComplete()
 
     sclient.on("message", (channel, message) => {
+      let reloadNeeded = false;
       switch (channel) {
+        case Message.MSG_FR_IFACE_CHANGE_APPLIED : {
+          log.info("Interface config is changed, schedule reload from FireRouter and restart Brofish ...");
+          reloadNeeded = true;
+          this.broRestartNeeded = true;
+          break;
+        }
+        case Message.MSG_SECONDARY_IFACE_UP: {
+          // this message should only be triggered on red/blue
+          log.info("Secondary interface is up, schedule reload from FireRouter ...");
+          this.secondaryIfaceEnabled = true;
+          reloadNeeded = true;
+          break;
+        }
         case Message.MSG_FR_CHANGE_APPLIED:
         case Message.MSG_NETWORK_CHANGED: {
           // these two message types should cover all proactive and reactive network changes
           log.info("Network is changed, schedule reload from FireRouter ...");
-          this.scheduleReload();
+          reloadNeeded = true;
+          break;
         }
-        break;
+        default:
       }
+      if (reloadNeeded)
+        this.scheduleReload();
     });
 
+    sclient.subscribe(Message.MSG_SECONDARY_IFACE_UP);
     sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
+    sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
+  }
+
+  async retryUntilInitComplete() {
+    try {
+      await this.init(true)
+    } catch(err) {
+      log.error('FireRouter failed to initialize', err)
+      await delay(5000)
+      this.retryUntilInitComplete()
+    }
   }
 
   scheduleReload() {
@@ -261,7 +287,6 @@ class FireRouter {
     }, 3000);
   }
 
-  // let it crash
   async init(first = false) {
     let zeekOptions = {
       listenInterfaces: [],
@@ -429,8 +454,12 @@ class FireRouter {
         }
       }
 
-      monitoringIntfNames = [ 'eth0', 'eth0:0' ];
-      logicIntfNames = ['eth0', 'eth0:0'];
+      monitoringIntfNames = [ 'eth0' ];
+      logicIntfNames = ['eth0'];
+      if (this.secondaryIfaceEnabled) {
+        monitoringIntfNames.push("eth0:0");
+        logicIntfNames.push("eth0:0");
+      }
       zeekOptions = {
         listenInterfaces: ["eth0"],
         restrictFilters: {}
@@ -462,7 +491,7 @@ class FireRouter {
 
     if (f.isMain() && (
       // zeek used to be bro
-      this.platform.isFireRouterManaged() && broControl.optionsChanged(zeekOptions) ||
+      this.platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions) || this.broRestartNeeded) ||
       !this.platform.isFireRouterManaged() && first
     )) {
       this.broReady = false;
@@ -474,6 +503,7 @@ class FireRouter {
         .then(() => broControl.addCronJobs())
         .then(() => {
           log.info('Bro restarted');
+          this.broRestartNeeded = false;
           this.broReady = true;
         });
     } else {
@@ -545,7 +575,6 @@ class FireRouter {
     }
   }
 
-  // call checkConfig() for the impact before actually commit it
   async setConfig(config) {
     const options = {
       method: "POST",
@@ -576,6 +605,10 @@ class FireRouter {
     // await this.init()
     // init of FireRouter should be triggered by published message
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+    if (f.isApi()) {
+      // reload config from lower layer to reflect change immediately in FireAPI
+      routerConfig = await getConfig();
+    }
 
     return resp.body
   }
@@ -631,6 +664,7 @@ class FireRouter {
       const ModeManager = require('./ModeManager.js');
       await ModeManager.changeToAlternativeIpSubnet();
       await ModeManager.enableSecondaryInterface();
+      await pclient.publishAsync(Message.MSG_SECONDARY_IFACE_UP, "");
     }
     // publish message to trigger firerouter init
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");

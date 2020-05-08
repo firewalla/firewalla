@@ -1104,7 +1104,8 @@ class PolicyManager2 {
           await Block.block(target, Block.getDstSet(pid));
         } else {
           // apply to global without specified src/dst port, directly add to global ip or net allow/block set
-          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
+          // Block.block will distribute IPv4/IPv6 to corresponding ipset, additional '6' will be added to set name for IPv6 ipset
           await Block.block(target, set);
           return;
         }
@@ -1146,11 +1147,17 @@ class PolicyManager2 {
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remotePositive = false;
         remoteTupleCount = 2;
+        // legacy data format
+        if (target && ht.isMacAddress(target)) {
+          scope = [target];
+        }
         break;
       case "domain":
       case "dns":
-        await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
-        dnsmasq.scheduleRestartDNSService();
+        if (direction !== "inbound") {
+          await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
+          dnsmasq.scheduleRestartDNSService();
+        }
         if (policy.dnsmasq_only)
           return;
         remoteSet4 = Block.getDstSet(pid);
@@ -1163,7 +1170,7 @@ class PolicyManager2 {
             blockSet: Block.getDstSet(pid)
           });
         } else {
-          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
           await domainBlock.blockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: set
@@ -1204,6 +1211,7 @@ class PolicyManager2 {
         */
         if (policy.dnsmasq_only)
           return;
+        await categoryUpdater.activateCategory(target);
         remoteSet4 = categoryUpdater.getIPSetName(target);
         remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
         break;
@@ -1345,7 +1353,7 @@ class PolicyManager2 {
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet) {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
-          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
           await Block.unblock(target, set);
           return;
         }
@@ -1386,11 +1394,17 @@ class PolicyManager2 {
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remotePositive = false;
         remoteTupleCount = 2;
+        // legacy data format
+        if (target && ht.isMacAddress(target)) {
+          scope = [target];
+        }
         break;
       case "domain":
       case "dns":
-        await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
-        dnsmasq.scheduleRestartDNSService();
+        if (direction !== "inbound") {
+          await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
+          dnsmasq.scheduleRestartDNSService();
+        }
         if (policy.dnsmasq_only)
           return;
         remoteSet4 = Block.getDstSet(pid);
@@ -1401,7 +1415,7 @@ class PolicyManager2 {
             blockSet: Block.getDstSet(pid)
           });
         } else {
-          const set = (action === "allow" ? 'allow_' : 'block_') + simpleRuleSetMap[type];
+          const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: set
@@ -1866,6 +1880,54 @@ class PolicyManager2 {
     }
 
     return false;
+  }
+
+  async batchPolicy(actions) {
+    let results = {
+      'create':[],
+      'update':[],
+      'delete':[]
+    };
+    for(const action in actions){
+      const rawData = actions[action] || [];
+      switch (action) {
+        case 'create':
+          for(const rawPolicy of rawData){
+            const { policy, alreadyExists } = await this.checkAndSaveAsync(new Policy(rawPolicy));
+            let result = policy;
+            if (alreadyExists == 'duplicated') {
+              result = 'duplicated'
+            }
+            results.create.push(result);
+          }
+          break;
+        case 'update':
+          for(const rawPolicy of rawData){
+            const pid = rawPolicy.pid;
+            const oldPolicy = await this.getPolicy(pid);
+            await this.updatePolicyAsync(rawPolicy);
+            const newPolicy = await this.getPolicy(pid);
+            this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);
+            results.update.push(newPolicy);
+          }
+          break;
+        case 'delete':
+          for(const policyID of rawData){
+            let policy = await this.getPolicy(policyID);
+            let result;
+            if (policy) {
+              await this.disableAndDeletePolicy(policyID);
+              policy.deleted = true;
+              result = policy;
+            } else {
+              result = "invalid policy";
+            }
+            results.delete.push(result);
+          }
+          break;
+      }
+    }
+    return results;
   }
 }
 

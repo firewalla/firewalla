@@ -75,12 +75,22 @@ sudo ipset flush no_dns_caching_set
 sudo ipset add -! no_dns_caching_set no_dns_caching_mac_set
 sudo ipset flush monitored_net_set
 
-sudo ipset add -! blocked_ip_set $BLUE_HOLE_IP
+sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
-# This is to remove all vpn client ip sets
-for set in `sudo ipset list -name | egrep "^vpn_client_"`; do
-  sudo ipset destroy -! $set
-done
+# destroy chains in previous version, these should be removed in next release
+sudo iptables -F FW_BLOCK &>/dev/null && sudo iptables -X FW_BLOCK
+sudo iptables -F FW_NAT_BLOCK &>/dev/null && sudo iptables -X FW_NAT_BLOCK
+sudo iptables -F FW_WHITELIST_PREROUTE &>/dev/null && sudo iptables -X FW_WHITELIST_PREROUTE
+sudo iptables -F FW_WHITELIST &>/dev/null && sudo iptables -X FW_WHITELIST
+sudo iptables -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo iptables -X FW_NAT_WHITELIST_PREROUTE
+sudo iptables -F FW_NAT_WHITELIST &>/dev/null && sudo iptables -X FW_NAT_WHITELIST
+sudo ip6tables -F FW_BLOCK &>/dev/null && sudo ip6tables -X FW_BLOCK
+sudo ip6tables -F FW_NAT_BLOCK &>/dev/null && sudo ip6tables -X FW_NAT_BLOCK
+sudo ip6tables -F FW_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -X FW_WHITELIST_PREROUTE
+sudo ip6tables -F FW_WHITELIST &>/dev/null && sudo ip6tables -X FW_WHITELIST
+sudo ip6tables -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -X FW_NAT_WHITELIST_PREROUTE
+sudo ip6tables -F FW_NAT_WHITELIST &>/dev/null && sudo ip6tables -X FW_NAT_WHITELIST
+
 
 rules_to_remove=`ip rule list | grep -v -e "^501:" | grep -v -e "^1001:" | grep -v -e "^2001:" | grep -v -e "^3000:" | grep -v -e "^3001:" | grep -v -e "^4001:" | grep -v -e "^5001:" | grep -v -e "^5002:" | grep -v -e "^6001:" | grep -v -e "^7001:" | grep -v -e "^8001:" | grep -v -e "^9001:" | grep -v -e "^10001:" | cut -d: -f2-`;
 while IFS= read -r line; do
@@ -94,6 +104,16 @@ sudo iptables -w -N FW_FORWARD &>/dev/null
 
 sudo iptables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo iptables -w -A FORWARD -j FW_FORWARD
 
+# INPUT chain protection
+sudo iptables -w -N FW_INPUT_ACCEPT &> /dev/null
+sudo iptables -w -F FW_INPUT_ACCEPT
+sudo iptables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_ACCEPT
+sudo iptables -w -A FW_INPUT_ACCEPT -p tcp -m multiport --dports 22 -j ACCEPT
+
+sudo iptables -w -N FW_INPUT_DROP &> /dev/null
+sudo iptables -w -F FW_INPUT_DROP
+sudo iptables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_DROP
+
 # multi protocol block chain
 sudo iptables -w -N FW_DROP &>/dev/null
 sudo iptables -w -F FW_DROP
@@ -102,7 +122,6 @@ sudo iptables -w -A FW_DROP -j DROP
 
 sudo iptables -w -N FW_ACCEPT &>/dev/null
 sudo iptables -w -F FW_ACCEPT
-sudo iptables -w -A FW_ACCEPT -j CONNMARK --set-mark 0x1/0x1
 sudo iptables -w -A FW_ACCEPT -j ACCEPT
 
 # initialize bypass chain
@@ -118,13 +137,11 @@ sudo iptables -w -N FW_VPN_CLIENT &>/dev/null
 sudo iptables -w -F FW_VPN_CLIENT
 sudo iptable -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
-# do not traverse FW_FORWARD if the packet belongs to an accepted connection
-sudo iptables -w -C FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT &>/dev/null || sudo iptables -w -A FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT
 
 # initialize firewall chain
 sudo iptables -w -N FW_FIREWALL &> /dev/null
 sudo iptables -w -F FW_FIREWALL
-sudo iptables -w -C FW_FORWARD -j FW_FIREWALL || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
+sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
 # device block/allow chains
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_ALLOW
@@ -213,6 +230,13 @@ sudo iptables -w -t nat -N FW_POSTROUTING &> /dev/null
 
 sudo iptables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null || sudo iptables -w -t nat -A POSTROUTING -j FW_POSTROUTING
 
+# nat POSTROUTING port forward hairpin chain
+sudo iptables -w -t nat -N FW_POSTROUTING_PORT_FORWARD &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_PORT_FORWARD
+sudo iptables -w -t nat -C FW_POSTROUTING -j FW_POSTROUTING_PORT_FORWARD &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -j FW_POSTROUTING_PORT_FORWARD
+sudo iptables -w -t nat -N FW_POSTROUTING_HAIRPIN &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_HAIRPIN
+
 # nat blackhole 8888
 sudo iptables -w -t nat -N FW_NAT_HOLE &>/dev/null
 sudo iptables -w -t nat -F FW_NAT_HOLE
@@ -220,33 +244,35 @@ sudo iptables -w -t nat -A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -A FW_NAT_HOLE -j RETURN
 
+
+# DNAT related chain comes first
+# create port forward chain in PREROUTING, this is used in ipv4 only
+sudo iptables -w -t nat -N FW_PREROUTING_EXT_IP &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_EXT_IP &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_EXT_IP
+sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
 # initialize nat bypass chain
 sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_BYPASS
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
 # directly accept for monitoring off devices/networks
 sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
-
-# DNAT related chain comes first
-# create port forward chain in PREROUTING, this is used in ipv4 only
-sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
-sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_PORT_FORWARD || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_PORT_FORWARD
 # create dns redirect chain in PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
 
 # initialize nat firewall chain
 sudo iptables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_FIREWALL
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_FIREWALL || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_FIREWALL
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_FIREWALL &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_FIREWALL
 # device block/allow chains
 sudo iptables -w -t nat -N FW_NAT_FIREWALL_DEV_ALLOW &> /dev/null
 sudo iptables -w -t nat -F FW_NAT_FIREWALL_DEV_ALLOW
@@ -385,6 +411,16 @@ if [[ -e /sbin/ip6tables ]]; then
   
   sudo ip6tables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_FORWARD
 
+  # INPUT chain protection
+  sudo ip6tables -w -N FW_INPUT_ACCEPT &> /dev/null
+  sudo ip6tables -w -F FW_INPUT_ACCEPT
+  sudo ip6tables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p tcp -m multiport --dports 22 -j ACCEPT
+
+  sudo ip6tables -w -N FW_INPUT_DROP &> /dev/null
+  sudo ip6tables -w -F FW_INPUT_DROP
+  sudo ip6tables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_DROP
+
   # multi protocol block chain
   sudo ip6tables -w -N FW_DROP &>/dev/null
   sudo ip6tables -w -F FW_DROP
@@ -393,7 +429,6 @@ if [[ -e /sbin/ip6tables ]]; then
 
   sudo ip6tables -w -N FW_ACCEPT &>/dev/null
   sudo ip6tables -w -F FW_ACCEPT
-  sudo ip6tables -w -A FW_ACCEPT -j CONNMARK --set-mark 0x1/0x1
   sudo ip6tables -w -A FW_ACCEPT -j ACCEPT
 
   # initialize bypass chain
@@ -405,13 +440,10 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_BYPASS -m set --match-set monitoring_off_set dst,dst -j FW_ACCEPT
 
 
-  # do not traverse FW_FORWARD if the packet belongs to an accepted connection
-  sudo ip6tables -w -C FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT &>/dev/null || sudo ip6tables -w -A FW_FORWARD -m connmark --mark 0x1/0x1 -j ACCEPT
-
   # initialize firewall chain
   sudo ip6tables -w -N FW_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL
-  sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
+  sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
   # device block/allow chains
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_ALLOW
@@ -518,18 +550,18 @@ if [[ -e /sbin/ip6tables ]]; then
   # DNAT related chain comes first
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT  
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT  
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
-  sudo ip6tables -w -t nat -C FW_REROUTING -j FW_PREROUTING_DNS_DEFAULT || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+  sudo ip6tables -w -t nat -C FW_REROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
 
   # initialize nat firewall chain
   sudo ip6tables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
   sudo ip6tables -w -t nat -F FW_NAT_FIREWALL
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_FIREWALL || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_FIREWALL
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_FIREWALL &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_FIREWALL
   # device block/allow chains
   sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_DEV_ALLOW &> /dev/null
   sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_DEV_ALLOW
@@ -615,14 +647,6 @@ fi
 sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
 sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
 
-# This is to remove all customized ip sets, to have a clean start
-for set in `sudo ipset list -name | egrep "^c_"`; do
-  sudo ipset flush -! $set
-done
-# flush before destory, some ipsets may be referred in other ipsets and cannot be destroyed at the first run
-for set in `sudo ipset list -name | egrep "^c_"`; do
-  sudo ipset destroy -! $set
-done
 # create a list of set which stores net set of lan networks
 sudo ipset create -! c_lan_set list:set
 sudo ipset flush -! c_lan_set
@@ -760,6 +784,15 @@ sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_DEVICE
 sudo ip6tables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_REG_DEVICE
 sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
+
+# This will remove all customized ip sets that are not referred in iptables after initialization
+for set in `sudo ipset list -name | egrep "^c_"`; do
+  sudo ipset flush -! $set
+done
+# flush before destory, some ipsets may be referred in other ipsets and cannot be destroyed at the first run
+for set in `sudo ipset list -name | egrep "^c_"`; do
+  sudo ipset destroy -! $set
+done
 
 
 

@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('./SensorEventManager.js').getInstance();
 
 const Bonjour = require('bonjour');
 const Promise = require('bluebird');
@@ -78,6 +78,9 @@ class BonjourSensor extends Sensor {
           // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
           opts.bind = "0.0.0.0";
           bound = true;
+        } else {
+          // no need to bind on any address, multicast query can still be sent via interface in opts
+          opts.bind = false;
         }
         const instance = Bonjour(opts);
         instance._server.mdns.on('warning', (err) => log.warn(`Warning from mDNS server on ${iface.ip_address}`, err));
@@ -112,16 +115,18 @@ class BonjourSensor extends Sensor {
   }
 
   run() {
-    log.info("Bonjour Watch Starting");
-    this.scheduleReload();
-
-    sclient.on("message", (channel, message) => {
-      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-        log.info("Schedule reload BonjourSensor since network info is reloaded");
-        this.scheduleReload();
-      }
+    sem.once('IPTABLES_READY', () => {
+      log.info("Bonjour Watch Starting");
+      this.scheduleReload();
+  
+      sclient.on("message", (channel, message) => {
+        if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+          log.info("Schedule reload BonjourSensor since network info is reloaded");
+          this.scheduleReload();
+        }
+      });
+      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
     });
-    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
   }
 
   async _getMacFromIP(ipAddr) {

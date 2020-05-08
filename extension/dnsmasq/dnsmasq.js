@@ -154,7 +154,8 @@ module.exports = class DNSMASQ {
       this.counter = {
         reloadDnsmasq: 0,
         writeHostsFile: 0,
-        restart: 0
+        restart: 0,
+        restartDHCP: 0
       }
       this.dnsTag = {
         adblock: "$adblock"
@@ -273,10 +274,10 @@ module.exports = class DNSMASQ {
           return;
       }
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
-      this.counter.reloadDnsmasq++;
-      log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.reloadDnsmasq);
+      this.counter.restartDHCP++;
+      log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
       await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
-        log.info(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.reloadDnsmasq);
+        log.info(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
       });

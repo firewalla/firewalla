@@ -39,10 +39,6 @@ const dnsmasq = new DNSMASQ();
 
 const fc = require('../net2/config.js');
 
-const spt = require('../net2/SystemPolicyTool')();
-const rclient = require('../util/redis_manager.js').getRedisClient();
-const updateFeature = "family";
-const updateFlag = "2";
 
 const featureName = "family_protect";
 const policyKeyName = "family";
@@ -59,13 +55,6 @@ class FamilyProtectPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
-        if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
-            const isPolicyEnabled = await spt.isPolicyEnabled(policyKeyName);
-            if (isPolicyEnabled) {
-                await fc.enableDynamicFeature(featureName);
-            }
-            await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
-        }
 
         this.hookFeature(featureName);
     }

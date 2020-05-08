@@ -22,8 +22,6 @@ const f = require('./Firewalla.js');
 const fc = require('./config.js');
 const { exec } = require('child-process-promise')
 
-const sysManager = require('./SysManager.js');
-
 function is_interface_valid(netif) {
   return (
     netif.ip_address != null &&
@@ -122,6 +120,7 @@ exports.create = async function (config) {
     }
   }
 
+  const gatewayIp = await linux.gateway_ip_for(config.monitoringInterface)
   for (const intf of list) {
     const subnets = getSubnets(intf.name, 'IPv4');
 
@@ -134,7 +133,7 @@ exports.create = async function (config) {
       secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
       break;
     }
-    if (secondaryIpSubnet.split('/')[0] === sysManager.myGateway()) {
+    if (secondaryIpSubnet.split('/')[0] === gatewayIp) {
       log.warn("Conflict with gateway IP: ", secondaryIpSubnet);
       secondaryIpSubnet = generateRandomIpSubnet(secondaryIpSubnet);
       break;

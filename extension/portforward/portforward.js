@@ -28,8 +28,7 @@ const sysManager = require('../../net2/SysManager')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
-const ipTool = require('ip');
-
+const exec = require('child-process-promise').exec;
 
 const iptable = require("../../net2/Iptables.js");
 const Message = require('../../net2/Message.js');
@@ -80,11 +79,10 @@ class PortForward {
               case Message.MSG_SYS_NETWORK_INFO_RELOADED:
                 (async () => {
                   if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
-                    log.info(`Firewalla WAN IPs changed, refresh all rules...`, this._wanIPs, sysManager.myWanIps());
-                    await iptable.portForwardFlushAsync();
-                    await this.restore();
                     this._wanIPs = sysManager.myWanIps();
+                    await this.updateExtIPChain(this._wanIPs);
                   }
+                  await this.refreshConfig();
                 })().catch((err) => {
                   log.error("Failed to refresh port forward rules", err);
                 })
@@ -99,6 +97,19 @@ class PortForward {
     }
 
     return instance;
+  }
+
+  async updateExtIPChain(extIPs) {
+    const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP`);
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to flush FW_PREROUTING_EXT_IP`, err.message);
+    });
+    for (const extIP of extIPs) {
+      const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PREROUTING_PORT_FORWARD`);
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to update FW_PREROUTING_EXT_IP with ${extIP}`, err.message);
+      });
+    }
   }
 
   async refreshConfig() {
@@ -234,20 +245,15 @@ class PortForward {
         }
       }
 
-      for (const wanIP of sysManager.myWanIps()) {
-        if (!wanIP)
-          continue;
-        if (!this._isLANInterfaceIP(map.toIP)) {
-          log.warn("IP is not in secondary network, port forward will not be applied: ", map);
-          return;
-        }
-
-        log.info(`Adding port forward, external IP: ${wanIP}`, map);
-        map.state = true;
-        const dupMap = JSON.parse(JSON.stringify(map));
-        dupMap.destIP = wanIP;
-        await iptable.portforwardAsync(dupMap);
+      if (!this._isLANInterfaceIP(map.toIP)) {
+        log.warn("IP is not in secondary network, port forward will not be applied: ", map);
+        return;
       }
+
+      log.info(`Add port forward`, map);
+      map.state = true;
+      const dupMap = JSON.parse(JSON.stringify(map));
+      await iptable.portforwardAsync(dupMap);
     } catch (err) {
       log.error("Failed to add port mapping:", err);
     }
@@ -257,16 +263,10 @@ class PortForward {
   async removePort(map) {
     let old = this.find(map);
     while (old >= 0) {
-      this.config.maps[old].state = false;
-
-      for (const wanIP of sysManager.myWanIps()) {
-        if (!wanIP)
-          continue;
-        log.info(`Removing port forward, external IP: ${wanIP}`, map);
-        const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
-        dupMap.destIP = wanIP;
-        await iptable.portforwardAsync(dupMap);
-      }      
+      this.config.maps[old].state = false;      
+      log.info(`Remove port forward`, map);
+      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
+      await iptable.portforwardAsync(dupMap);
 
       this.config.maps.splice(old, 1);
       old = this.find(map);
@@ -289,7 +289,7 @@ class PortForward {
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
     this._wanIPs = sysManager.myWanIps();
-  
+    await this.updateExtIPChain(this._wanIPs);
     await this.loadConfig()
     await this.restore()
     await this.refreshConfig()

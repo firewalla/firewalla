@@ -24,6 +24,8 @@ const f = require('../../net2/Firewalla.js');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const iptables = require('../../net2/Iptables.js');
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../../net2/Message.js');
 
 const instances = {};
 
@@ -52,10 +54,20 @@ class OpenVPNClient extends VPNClient {
 
       if (f.isMain()) {
         setInterval(() => {
-          this._refreshRoutes().catch((err) => {
-            log.error("Failed to refresh route", err);
+          this._checkConnectivity().catch((err) => {
+            log.error("Failed to check connectivity", err);
           });
         }, 60000); // refresh routes once every minute, in case of remote IP or interface name change due to auto reconnection
+
+        sclient.on("message", (channel, message) => {
+          if (channel === Message.MSG_OVPN_CLIENT_ROUTE_UP && message === this.profileId) {
+            log.info(`VPN client ${this.profileId} route is up, attempt refreshing routes ...`);
+            this._refreshRoutes().catch((err) => {
+              log.error("Failed to refresh routes", err);
+            });
+          }
+        });
+        sclient.subscribe(Message.MSG_OVPN_CLIENT_ROUTE_UP);
       }
     }
     return instances[profileId];
@@ -256,22 +268,37 @@ class OpenVPNClient extends VPNClient {
   }
 
   async _refreshRoutes() {
+    if (!this._started)
+      return;
+    const newRemoteIP = await this.getRemoteIP();
+    const intf = this.getInterfaceName();
+    if (newRemoteIP) {
+      log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
+      const settings = this.settings || await this.loadSettings();
+      await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
+      if (this._dnsServers && this._dnsServers.length > 0) {
+        if (settings.routeDNS) {
+          await vpnClientEnforcer.enforceDNSRedirect(intf, this._dnsServers, newRemoteIP);
+        } else {
+          await vpnClientEnforcer.unenforceDNSRedirect(intf, this._dnsServers, newRemoteIP);
+        }
+      }
+      this._remoteIP = newRemoteIP;
+    }
+  }
+
+  async _checkConnectivity() {
     // no need to refresh routes if vpn client is not started
     if (!this._started) {
       return;
     }
     const newRemoteIP = await this.getRemoteIP();
-    const intf = this.getInterfaceName();
     if (newRemoteIP === null) {
       // vpn client is down unexpectedly
       log.error("VPN client " + this.profileId + " remote IP is missing.");
       this.emit('link_broken');
       return;
     }
-    // always refresh routes in case main routing table is changed
-    log.info(`Refresh OpenVPN client routes for ${this.profileId}: ${newRemoteIP}, ${intf}`);
-    await vpnClientEnforcer.enforceVPNClientRoutes(newRemoteIP, intf);
-    this._remoteIP = newRemoteIP;    
   }
 
   async start() {
@@ -323,12 +350,33 @@ class OpenVPNClient extends VPNClient {
     });
   }
 
+  getPushedDNSSServers() {
+    return this._dnsServers || [];
+  }
+
   async _processPushOptions(status) {
     const pushOptionsFile = this._getPushOptionsPath();
     if (await accessAsync(pushOptionsFile, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const content = await readFileAsync(pushOptionsFile, "utf8");
       if (!content)
         return;
+      // parse pushed DNS servers
+      const dnsServers = [];
+      for (let line of content.split("\n")) {
+        if (line && line.length != 0) {
+          log.info(`Processing ${status} push options from ${this.profileId}: ${line}`);
+          const options = line.split(/\s+/);
+          switch (options[0]) {
+            case "dhcp-option":
+              if (options[1] === "DNS") {
+                dnsServers.push(options[2]);
+              }
+              break;
+            default:
+          }
+        }
+      }
+      this._dnsServers = dnsServers;
       this.emit(`push_options_${status}`, content);
     }
   }

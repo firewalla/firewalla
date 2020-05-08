@@ -377,7 +377,7 @@
         }
       },
       "defaultConfig": {
-        "youtube": "strict",
+        "youtube": "off",
         "google": "on",
         "bing": "on",
         "duckduckgo": "on"
@@ -524,7 +524,7 @@
       "firstScan": 120
     },
     "DnsmasqDhcpSensor": {},
-    "BlockRuleCheckSensor": {},
+    "RuleCheckSensor": {},
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "SS2Plugin": {},
@@ -625,7 +625,7 @@
     "porn": true,
     "video": true,
     "game": true,
-    "vpn": true,
+    "vpn": false,
     "large_upload": true,
     "abnormal_bandwidth_usage": true,
     "data_plan": true,
@@ -668,7 +668,9 @@
     "device_service_scan": true,
     "wireguard": false,
     "ipv6": false,
-    "pihole": false
+    "pihole": false,
+    "adblock": false,
+    "family_protect": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

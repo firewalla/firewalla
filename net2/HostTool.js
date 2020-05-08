@@ -551,7 +551,8 @@ class HostTool {
       return;
     }
     const macEntry = await this.getMACEntry(mac);
-    let customizedHostname = macEntry.customizedHostname;
+    // customizeDomainName actually specifies hostname, domain corresponds to suffix
+    let customizedHostname = macEntry.customizeDomainName;
     let ipv4Addr = macEntry.ipv4Addr;
     let name = getPreferredName(macEntry);
     if (!ipv4Addr || (!name && !customizedHostname)) return;

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016 - 2020 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,8 @@ const Sensor = require('./Sensor.js').Sensor;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const Promise = require('bluebird');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
 
 const exec = require('child-process-promise').exec;
 
@@ -83,15 +84,31 @@ class PublicIPSensor extends Sensor {
 
   async run() {
     this.publicIPAPI = this.config.publicIPAPI || "https://api.ipify.org?format=json";
-    this.job();
+    this.scheduleRunJob();
 
     sem.on("PublicIP:Check", (event) => {
-      this.job();
+      this.scheduleRunJob();
     });
 
     setInterval(() => {
-      this.job();
+      this.scheduleRunJob();
     }, this.config.interval * 1000 || 1000 * 60 * 60 * 2); // check every 2 hrs
+
+    sclient.on("message", (channel, message) => {
+      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+        log.info("Schedule reload PublicIPSensor since network info is reloaded");
+        this.scheduleRunJob();
+      }
+    });
+    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+  }
+
+  scheduleRunJob() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      this.job();
+    }, 10000);
   }
 }
 

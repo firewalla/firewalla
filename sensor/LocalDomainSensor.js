@@ -30,19 +30,12 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
-const updateFlag = "1";
-const rclient = require('../util/redis_manager.js').getRedisClient();
 
 class LocalDomainSensor extends Sensor {
     constructor() {
         super();
-        this.newFeature = false;
     }
     async run() {
-        if (await rclient.hgetAsync("sys:upgrade", featureName) != updateFlag) {
-            this.newFeature = true;
-            await rclient.hsetAsync("sys:upgrade", featureName, updateFlag)
-        }
         this.hookFeature(featureName);
         sem.on('LocalDomainUpdate', async (event) => {
             const macArr = event.macArr || [];
@@ -63,13 +56,11 @@ class LocalDomainSensor extends Sensor {
         await fs.writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
         dnsmasq.scheduleRestartDNSService();
         const hosts = await hostManager.getHostsAsync();
-        if (this.newFeature) {
-            for (const host of hosts) {
-                if (host && host.o && host.o.mac) {
-                    await host.updateHostsFile().catch((err) => {
-                        log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
-                    });
-                }
+        for (const host of hosts) {
+            if (host && host.o && host.o.mac) {
+                await host.updateHostsFile().catch((err) => {
+                    log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                });
             }
         }
     }

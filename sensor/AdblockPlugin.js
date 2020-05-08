@@ -38,11 +38,6 @@ const TagManager = require('../net2/TagManager.js');
 
 const fc = require('../net2/config.js');
 
-const spt = require('../net2/SystemPolicyTool')();
-const rclient = require('../util/redis_manager.js').getRedisClient();
-const updateFeature = "adblock";
-const updateFlag = "2";
-
 const featureName = "adblock";
 const policyKeyName = "adblock";
 
@@ -58,13 +53,6 @@ class AdblockPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
-        if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
-            const isPolicyEnabled = await spt.isPolicyEnabled(policyKeyName);
-            if (isPolicyEnabled) {
-                await fc.enableDynamicFeature(featureName);
-            }
-            await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
-        }
 
         this.hookFeature(featureName);
     }

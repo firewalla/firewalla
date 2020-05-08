@@ -46,7 +46,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
       instance = this
 
       this.activeCategories = {
-        "default_c": 1,
+        "default_c": 1
+        // categories below should be activated on demand
+        /*
         "games": 1,
         "social": 1,
         "porn": 1,
@@ -55,6 +57,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         "p2p": 1,
         "gamble": 1,
         "vpn": 1
+        */
       };
 
       this.excludedDomains = {
@@ -93,6 +96,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     return instance
+  }
+
+  async activateCategory(category) {
+    if (this.activeCategories[category]) return;
+    await super.activateCategory(category);
+    sem.emitEvent({
+      type: "Policy:CategoryActivated",
+      toProcess: "FireMain",
+      message: "Category activated: " + category,
+      category: category
+    });
   }
 
   async executeIPSetTasks() {
