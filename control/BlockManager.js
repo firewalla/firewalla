@@ -40,7 +40,7 @@ class BlockManager {
                         this.scheduleRefreshBlockLevel();
                     }, refreshInterval * 1000)
                 }
-                fc.onFeature(featureName, (feature, status) => {
+                fc.onFeature(featureName, async (feature, status) => {
                     if (feature !== featureName) {
                         return
                     }
@@ -58,6 +58,7 @@ class BlockManager {
         return instance
     }
     async reenforcePolicies() {
+        log.info('smart block enabled, re-enforce policies');
         const policies = await pm2.loadActivePoliciesAsync();
         policies.map((policy) => {
             pm2.tryPolicyEnforcement(policy, 'reenforce', policy);
