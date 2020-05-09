@@ -239,9 +239,6 @@ async function run() {
   let PortForward = require("../extension/portforward/portforward.js");
   let portforward = new PortForward();
 
-  const BlockManager = require('../control/BlockManager.js');
-  const blockManager = new BlockManager();
-
   setTimeout(async ()=> {
     var PolicyManager = require('./PolicyManager.js');
     var policyManager = new PolicyManager();

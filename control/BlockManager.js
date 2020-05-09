@@ -25,8 +25,6 @@ const intelTool = new IntelTool();
 const _ = require('lodash');
 const fc = require('../net2/config.js');
 const featureName = 'smart_block';
-const PolicyManager2 = require('../alarm/PolicyManager2.js');
-const pm2 = new PolicyManager2();
 let instance = null
 
 class BlockManager {
@@ -58,6 +56,8 @@ class BlockManager {
         return instance
     }
     async reenforcePolicies() {
+        const PolicyManager2 = require('../alarm/PolicyManager2.js');
+        const pm2 = new PolicyManager2();
         log.info('smart block enabled, re-enforce policies');
         const policies = await pm2.loadActivePoliciesAsync();
         policies.map((policy) => {
