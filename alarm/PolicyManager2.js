@@ -1199,7 +1199,6 @@ class PolicyManager2 {
       }
 
       case "category":
-        /* TODO: support dnsmasq on category
         await domainBlock.blockCategory(target, {
           pid,
           scope: scope,
@@ -1207,7 +1206,6 @@ class PolicyManager2 {
           intfs,
           tags
         });
-        */
         if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
           return;
         await categoryUpdater.activateCategory(target);
@@ -1439,7 +1437,6 @@ class PolicyManager2 {
       }
 
       case "category":
-        /* TODO: support dnsmasq on category
         await domainBlock.unblockCategory(target, {
           pid,
           scope: scope,
@@ -1447,7 +1444,6 @@ class PolicyManager2 {
           intfs,
           tags
         });
-        */
         remoteSet4 = categoryUpdater.getIPSetName(target);
         remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
         break;

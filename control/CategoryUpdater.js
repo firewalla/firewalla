@@ -32,7 +32,7 @@ const exec = require('child-process-promise').exec
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const _ = require('lodash');
-
+const fc = require('../net2/config.js');
 let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 48 // two days...
@@ -86,6 +86,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
               domainBlock.updateCategoryBlock(event.category);
             }
           });
+          fc.onFeature('smart_block', async (feature) => {
+            if (feature !== 'smart_block') {
+              return
+            }
+            await this.refreshAllCategoryRecords();
+          })
         }
       })
       this.updateIPSetTasks = {};
