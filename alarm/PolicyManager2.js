@@ -28,7 +28,6 @@ const sysManager = require('../net2/SysManager.js')
 let instance = null;
 
 const policyActiveKey = "policy_active";
-
 const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
 const policyDisableAllKey = "policy:disable:all";
@@ -72,7 +71,7 @@ const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
 const Tag = require('../net2/Tag.js');
 const ipset = require('../net2/Ipset.js');
-
+const fc = require('../net2/config.js');
 const _ = require('lodash');
 
 const delay = require('../util/util.js').delay;
@@ -1158,7 +1157,7 @@ class PolicyManager2 {
           await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
           dnsmasq.scheduleRestartDNSService();
         }
-        if (policy.dnsmasq_only)
+        if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
           return;
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
@@ -1209,7 +1208,7 @@ class PolicyManager2 {
           tags
         });
         */
-        if (policy.dnsmasq_only)
+        if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
           return;
         await categoryUpdater.activateCategory(target);
         remoteSet4 = categoryUpdater.getIPSetName(target);
@@ -1405,8 +1404,6 @@ class PolicyManager2 {
           await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
           dnsmasq.scheduleRestartDNSService();
         }
-        if (policy.dnsmasq_only)
-          return;
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || localPortSet || remotePortSet) {
@@ -1451,8 +1448,6 @@ class PolicyManager2 {
           tags
         });
         */
-        if (policy.dnsmasq_only)
-          return;
         remoteSet4 = categoryUpdater.getIPSetName(target);
         remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
         break;

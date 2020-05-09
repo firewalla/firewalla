@@ -25,6 +25,8 @@ const intelTool = new IntelTool();
 const _ = require('lodash');
 const fc = require('../net2/config.js');
 const featureName = 'smart_block';
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PolicyManager2();
 let instance = null
 
 class BlockManager {
@@ -42,6 +44,7 @@ class BlockManager {
                     if (feature !== featureName) {
                         return
                     }
+                    await this.reenforcePolicies();
                     if (status) {
                         this.scheduleId = setInterval(() => {
                             this.scheduleRefreshBlockLevel();
@@ -53,6 +56,12 @@ class BlockManager {
             })
         }
         return instance
+    }
+    async reenforcePolicies() {
+        const policies = await pm2.loadActivePoliciesAsync();
+        policies.map((policy) => {
+            pm2.tryPolicyEnforcement(policy, 'reenforce', policy);
+        })
     }
     ipBlockInfoKey(ip) {
         return `ip:block:info:${ip}`
