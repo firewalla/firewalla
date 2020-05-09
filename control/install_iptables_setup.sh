@@ -239,7 +239,7 @@ sudo iptables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null || sudo ipt
 # nat POSTROUTING port forward hairpin chain
 sudo iptables -w -t nat -N FW_POSTROUTING_PORT_FORWARD &> /dev/null
 sudo iptables -w -t nat -F FW_POSTROUTING_PORT_FORWARD
-sudo iptables -w -t nat -C FW_POSTROUTING -m conntrack --ctstate DNAT -j FW_POSTROUTING_PORT_FORWARD &> /dev/null || sudo iptables -w -t nat -m conntrack --ctstate DNAT -A FW_POSTROUTING -j FW_POSTROUTING_PORT_FORWARD
+sudo iptables -w -t nat -C FW_POSTROUTING -m conntrack --ctstate DNAT -j FW_POSTROUTING_PORT_FORWARD &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -m conntrack --ctstate DNAT -j FW_POSTROUTING_PORT_FORWARD
 sudo iptables -w -t nat -N FW_POSTROUTING_HAIRPIN &> /dev/null
 sudo iptables -w -t nat -F FW_POSTROUTING_HAIRPIN
 
