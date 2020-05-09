@@ -20,8 +20,7 @@ const fc = require('../net2/config.js')
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Block = require('./Block.js');
-const BlockManager = require('../control/BlockManager.js');
-const blockManager = new BlockManager();
+
 const exec = require('child-process-promise').exec
 
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
@@ -153,6 +152,8 @@ class CategoryUpdaterBase {
       ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
     }
     const categoryIps = await rclient.smembersAsync(key);
+    const BlockManager = require('./BlockManager.js');
+    const blockManager = new BlockManager();
     const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
     if(pureCategoryIps.length==0)return;
     let cmd4 = `echo "${pureCategoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
