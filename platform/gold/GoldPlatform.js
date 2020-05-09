@@ -38,10 +38,6 @@ class GoldPlatform extends Platform {
     return ["eth0", "eth1", "eth2", "eth3"];
   }
 
-  getVPNServerDefaultProtocol() {
-    return "tcp";
-  }
-
   getDHCPServiceName() {
     return "firerouter_dhcp";
   }
