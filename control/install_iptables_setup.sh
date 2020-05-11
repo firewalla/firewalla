@@ -673,7 +673,8 @@ sudo ipset flush -! c_vpn_client_m_set
 # the sequence is important, higher priority rule is placed after lower priority rule
 sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
 sudo iptables -w -t mangle -F FW_PREROUTING
-sudo iptables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null || sudo iptables -w -t mangle -I PREROUTING -j FW_PREROUTING
+sudo iptables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null && sudo iptables -w -t mangle -D PREROUTING -j FW_PREROUTING
+sudo iptables -w -t mangle -I PREROUTING -j FW_PREROUTING
 
 # vpn client inbound reply chain
 sudo iptables -w -t mangle -N FW_RT_VC_REPLY &> /dev/null
@@ -736,7 +737,8 @@ sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
 sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
 sudo ip6tables -w -t mangle -F FW_PREROUTING
-sudo ip6tables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null || sudo ip6tables -w -t mangle -I PREROUTING -j FW_PREROUTING
+sudo ip6tables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null && sudo ip6tables -w -t mangle -D PREROUTING -j FW_PREROUTING
+sudo ip6tables -w -t mangle -I PREROUTING -j FW_PREROUTING
 
 # vpn client inbound reply chain
 sudo ip6tables -w -t mangle -N FW_RT_VC_REPLY &> /dev/null
