@@ -94,6 +94,15 @@ module.exports = class {
         await this._loadConfigFile();
         this.started = true;
         this.configComplete = true;
+        if (this.name === "support") {
+          if (this.supportTimeoutTask)
+            clearTimeout(this.supportTimeoutTask);
+          this.supportTimeoutTask = setTimeout(() => {
+            log.info("Support session is closed due to timeout");
+            this.stop();
+
+          }, 7 * 86400 * 1000);
+        }
       }
     })();
     sclient.on("message", (channel, message) => {
@@ -296,6 +305,9 @@ module.exports = class {
     if (this._isUp()) {
       this._stop();
     }
+    this.started = false;
+    if (this.supportTimeoutTask)
+      clearTimeout(this.supportTimeoutTask);
     return delay(500)
   }
 
@@ -373,7 +385,6 @@ module.exports = class {
     log.info("Try to stop FRP service:" + serviceName);
     spawnSync('sudo', ['systemctl', 'stop', serviceName]);
     clearInterval(this.healthChecker);
-    this.started = false;
   }
 
   _boneLog(message) {
@@ -436,6 +447,12 @@ module.exports = class {
       config = this.getConfig();
       if (config.startCode == FRPSUCCESSCODE) {
         tryStartFrpCount = 0;
+        if (this.supportTimeoutTask)
+          clearTimeout(this.supportTimeoutTask);
+        this.supportTimeoutTask = setTimeout(() => {
+          log.info("Support session is closed due to timeout");
+          this.stop();
+        }, 7 * 86400 * 1000); // support session keeps alive for at most 7 days
       } else {
         await this.stop();
         if (config.startCode == FRPINITCODE) {
