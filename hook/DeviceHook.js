@@ -289,7 +289,7 @@ class DeviceHook extends Hook {
             if (err) {
               log.error("Failed to get host after it is detected.");
             }
-            if (!sysManager.isMyIP(host.ipv4Addr) && host.ipv4Addr !== sysManager.myWifiIp()) {
+            if (!sysManager.isMyIP(host.ipv4Addr)) {
               host.spoof(true);
             }
           });
@@ -356,7 +356,11 @@ class DeviceHook extends Hook {
   
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
           let hostManager = new HostManager()
-          hostManager.getHost(host.mac);
+          hostManager.getHost(host.mac, (err, h) => {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+              h.spoof(true);
+            }
+          });
           await this.setupLocalDeviceDomain(host.mac, 'ip_change');
   
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
@@ -431,7 +435,11 @@ class DeviceHook extends Hook {
   
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
           let hostManager = new HostManager();
-          hostManager.getHost(host.mac);
+          hostManager.getHost(host.mac, (err, h) => {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+              h.spoof(true);
+            }
+          });
           await this.setupLocalDeviceDomain(host.mac, 'ip_change');
   
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
@@ -487,6 +495,12 @@ class DeviceHook extends Hook {
           }
   
           await hostTool.updateMACKey(enrichedHost); // host:mac:.....
+          let hostManager = new HostManager();
+          hostManager.getHost(mac, (err, h) => {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+              h.spoof(true);
+            }
+          });
           // publish device updated event to trigger 
           await this.setupLocalDeviceDomain(host.mac, 'info_change');
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
