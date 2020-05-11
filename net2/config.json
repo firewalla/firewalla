@@ -684,7 +684,7 @@
   },
   "ratelimit": {
     "name": "default",
-    "max": 5,
+    "max": 60,
     "duration": 60
   }
 }
