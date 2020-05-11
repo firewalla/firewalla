@@ -30,8 +30,6 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance()
 
 const bone = require("../../lib/Bone.js");
 
-const sysManager = require('../../net2/SysManager');
-
 //const spawn = require('child-process-promise').spawn;
 const spawn = require('child_process').spawn
 const spawnSync = require('child_process').spawnSync
@@ -42,12 +40,16 @@ const util = require('util');
 const fs = require('fs')
 const readFile = util.promisify(fs.readFile)
 const writeFile = util.promisify(fs.writeFile)
-const unlink = util.promisify(fs.unlink)
+
+const supportTimeout = 7 * 86400;
 
 const FRPERRORCODE = 1
 const FRPSUCCESSCODE = 0
 const FRPINITCODE = -1
 const FRPTRYCOUNT = 3
+
+const supportStartTimeKey = "frpc_support_start_time";
+const supportEndTimeKey = "frpc_support_end_time";
 
 function delay(t) {
   return new Promise(function (resolve) {
@@ -94,14 +96,23 @@ module.exports = class {
         await this._loadConfigFile();
         this.started = true;
         this.configComplete = true;
-        if (this.name === "support") {
-          if (this.supportTimeoutTask)
-            clearTimeout(this.supportTimeoutTask);
-          this.supportTimeoutTask = setTimeout(() => {
-            log.info("Support session is closed due to timeout");
-            this.stop();
+        if (this.name === "support" && firewalla.isApi()) {
+          this.startTime = await rclient.getAsync(supportStartTimeKey).then((value) => value && Number(value)) || Math.floor(Date.now() / 1000);
+          this.endTime = await rclient.getAsync(supportEndTimeKey).then((value) => value && Number(value)) || (this.startTime + supportTimeout);
+          const timeRemaining = this.endTime - Math.floor(Date.now() / 1000);
+          if (timeRemaining > 0) {
+            log.info(`Support session will be closed in ${timeRemaining} seconds`);
+            if (this.supportTimeoutTask)
+              clearTimeout(this.supportTimeoutTask);
+            this.supportTimeoutTask = setTimeout(() => {
+              log.info("Support session is closed due to timeout");
+              this.stop();
 
-          }, 7 * 86400 * 1000);
+            }, timeRemaining * 1000);
+          } else {
+            log.info(`Current support session is already expired, stop it ...`);
+            this.stop();
+          }
         }
       }
     })();
@@ -293,12 +304,12 @@ module.exports = class {
     const isUp = this._isUp();
     if (!isUp) {
       await this.createConfigFile();
-      return this._start();
+      await this._start();
     } else {
       await this._loadConfigFile();
-      this.started = true;
       this.configComplete = true;
     }
+    this.started = true;
   }
 
   async stop() {
@@ -343,7 +354,6 @@ module.exports = class {
       cp.on('exit', (code, signal) => {
         if (code === 0) {
           log.info("Service " + serviceName + " started successfully");
-          this.started = true;
           hasTimeout = false;
           // do not support health check temporarily
           // this._startHealthChecker();
@@ -438,7 +448,7 @@ module.exports = class {
     log.info(this._getServiceName(), "health checker started");
   }
 
-  async remoteSupportStart() {
+  async remoteSupportStart(timeout = supportTimeout) {
     let tryStartFrpCount = FRPTRYCOUNT,
       errMsg = [], config;
     do {
@@ -447,12 +457,18 @@ module.exports = class {
       config = this.getConfig();
       if (config.startCode == FRPSUCCESSCODE) {
         tryStartFrpCount = 0;
-        if (this.supportTimeoutTask)
-          clearTimeout(this.supportTimeoutTask);
-        this.supportTimeoutTask = setTimeout(() => {
-          log.info("Support session is closed due to timeout");
-          this.stop();
-        }, 7 * 86400 * 1000); // support session keeps alive for at most 7 days
+        if (firewalla.isApi()) {
+          if (this.supportTimeoutTask)
+            clearTimeout(this.supportTimeoutTask);
+          this.startTime = Math.floor(Date.now() / 1000);
+          this.endTime = this.startTime + timeout;
+          await rclient.setAsync(supportStartTimeKey, this.startTime);
+          await rclient.setAsync(supportEndTimeKey, this.endTime);
+          this.supportTimeoutTask = setTimeout(() => {
+            log.info("Support session is closed due to timeout");
+            this.stop();
+          }, supportTimeout * 1000); // support session keeps alive for at most 7 days
+        }
       } else {
         await this.stop();
         if (config.startCode == FRPINITCODE) {

@@ -2860,7 +2860,8 @@ class netBot extends ControllerBot {
         break;
       case "startSupport":
         (async () => {
-          let { config, errMsg } = await frp.remoteSupportStart();
+          const timeout = (value && value.timeout) || null;
+          let { config, errMsg } = await frp.remoteSupportStart(timeout);
           if (config.startCode == FRPSUCCESSCODE) {
             let newPassword = await ssh.resetRandomPasswordAsync();
             sysManager.setSSHPassword(newPassword); // in-memory update
