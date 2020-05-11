@@ -48,6 +48,10 @@ class DNSCrypt {
 
     return instance;
   }
+  
+  getLocalPort() {
+    return this.config.localPort || 8854;
+  }
 
   getLocalServer() {
     return `127.0.0.1#${this.config.localPort || 8854}`;

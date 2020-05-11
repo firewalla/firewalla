@@ -86,7 +86,8 @@ module.exports = class {
                 )) {
                   log.info("Mapping no longer exists, adding back to router...")
                   let { protocol, localPort, externalPort, description } = check;
-                  this.addPortMappingUPNP(protocol, localPort, externalPort, description)
+                  if (this.wanUpnpClient)
+                    this.addPortMappingUPNP(this.wanUpnpClient, protocol, localPort, externalPort, description);
                 } else {
                   log.info("Mapping still exists")
                 }
@@ -122,6 +123,7 @@ module.exports = class {
         c.close();
       }
       this.monitoredUpnpClients = [];
+      registeredUpnpMappings = [];
       // check availability of UPnP
       const defaultWanIp = sysManager.myDefaultWanIp();
       if (defaultWanIp && ip.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {

@@ -213,7 +213,8 @@ class CategoryUpdaterBase {
   }
 
   async activateCategory(category) {
-    await Block.setupCategoryEnv(category);
+    // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
+    await Block.setupCategoryEnv(category, 'hash:ip', 4096);
 
     this.activeCategories[category] = 1
   }

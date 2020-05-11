@@ -140,12 +140,10 @@ exports.create = async function (config) {
     }
   }
 
-  let flippedConfig = {
-    secondaryInterface: {
-      intf: conf.intf,
-      ip: secondaryIpSubnet
-    }
-  }
+  let flippedConfig = {}
+  flippedConfig.secondaryInterface = Object.assign({}, conf, {
+    ip: secondaryIpSubnet
+  })
   fc.updateUserConfigSync(flippedConfig);
 
   // reach here if interface with specified name does not exist or its ip/subnet needs to be updated

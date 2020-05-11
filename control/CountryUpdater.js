@@ -88,7 +88,8 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     this.activeCountries[code] = 1
     this.activeCategories[category] = 1
-    await Block.setupCategoryEnv(category, 'hash:net');
+    // use a larger hash size for country ipset since some country ipset may be large and cause performance issue
+    await Block.setupCategoryEnv(category, 'hash:net', 32768);
 
     sem.emitEvent({
       type: 'Policy:CountryActivated',

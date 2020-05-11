@@ -1162,8 +1162,9 @@ class netBot extends ControllerBot {
           const { total, date, enable } = value;
           let oldPlan = {};
           try {
-            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan"));
-          } catch (e) { }
+            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan")) || {};
+          } catch (e) { 
+          }
           const featureName = 'data_plan';
           oldPlan.enable = fc.isFeatureOn(featureName);
           if (enable) {
@@ -1360,8 +1361,9 @@ class netBot extends ControllerBot {
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
+            const protocol = vpnConfig && vpnConfig.protocol;
             VpnManager.configureClient("fishboneVPN1", null).then(() => {
-              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, (err, ovpnfile, password, timestamp) => {
+              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
                 if (err == null) {
                   datamodel.data = {
                     ovpnfile: ovpnfile,
@@ -3244,8 +3246,9 @@ class netBot extends ControllerBot {
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
+            const protocol = vpnConfig && vpnConfig.protocol;
             await VpnManager.configureClient(cn, settings).then(() => {
-              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, (err, ovpnfile, password, timestamp) => {
+              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
                 if (!err) {
                   this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
                 } else {
@@ -3293,7 +3296,8 @@ class netBot extends ControllerBot {
           let externalPort = "1194";
           if (vpnConfig && vpnConfig.externalPort)
             externalPort = vpnConfig.externalPort;
-          VpnManager.getOvpnFile(cn, null, false, externalPort, (err, ovpnfile, password, timestamp) => {
+          const protocol = vpnConfig && vpnConfig.protocol;
+          VpnManager.getOvpnFile(cn, null, false, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
             if (!err) {
               this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
             } else {

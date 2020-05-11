@@ -44,6 +44,7 @@ class Policy {
   constructor(raw) {
     if (!raw) throw new Error("Empty policy payload");
     if (!raw.type && !raw['i.type']) throw new Error("Invalid policy payload");
+    if (raw.type == 'internet') throw new Error(`Invalid policy type ${raw.type}`);
 
     Object.assign(this, raw);
 

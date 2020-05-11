@@ -24,6 +24,8 @@ const MSG_SYS_API_INTERFACE_CHANGED = "System:api:interface_changed";
 const MSG_SECONDARY_IFACE_UP = "System:secondary_interface:up";
 const MSG_OVPN_CLIENT_ROUTE_UP = "ovpn_client.route_up";
 
+const MSG_SYS_TIMEZONE_RELOADED = "System:timezone_reloaded";
+
 module.exports = {
   MSG_NETWORK_CHANGED,
   MSG_SYS_NETWORK_INFO_UPDATED,
@@ -32,5 +34,6 @@ module.exports = {
   MSG_FR_IFACE_CHANGE_APPLIED,
   MSG_SYS_API_INTERFACE_CHANGED,
   MSG_SECONDARY_IFACE_UP,
-  MSG_OVPN_CLIENT_ROUTE_UP
+  MSG_OVPN_CLIENT_ROUTE_UP,
+  MSG_SYS_TIMEZONE_RELOADED
 }
