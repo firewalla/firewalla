@@ -4053,7 +4053,6 @@ class netBot extends ControllerBot {
         const error = {
           "Retry-After": rateLimiterRes.msBeforeNext / 1000,
           "X-RateLimit-Limit": this.rateLimiter.points,
-          "X-RateLimit-Remaining": rateLimiterRes.remainingPoints,
           "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
         }
         processed = true;
