@@ -616,9 +616,7 @@
     ]
   },
   "app": {
-    "exclude": [
-
-    ]
+    "exclude": []
   },
   "userFeatures": {
     "porn": true,
@@ -683,5 +681,10 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
+  },
+  "ratelimit": {
+    "name": "default",
+    "max": 60,
+    "duration": 60
   }
 }

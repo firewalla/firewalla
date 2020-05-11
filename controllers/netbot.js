@@ -142,6 +142,7 @@ const Alarm = require('../alarm/Alarm.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
+const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -355,6 +356,18 @@ class netBot extends ControllerBot {
     this.eptCloudExtension.run(); // auto update group info from cloud
 
     this.sensorConfig = config.controller.sensor;
+
+    // Enhancement: need rate limit on the box api
+    const currentConfig = fc.getConfig(true);
+    const rateLimitOptions = currentConfig.ratelimit || {}
+    
+    this.rateLimiter = new RateLimiterRedis({
+      redis: rclient,
+      keyPrefix: `ratelimit:${rateLimitOptions.name}`,
+      points: rateLimitOptions.max || 60,
+      duration: rateLimitOptions.duration || 60//per second
+    })
+
     //flow.summaryhours
     sysManager.update((err, data) => {
     });
@@ -4025,16 +4038,26 @@ class netBot extends ControllerBot {
   msgHandlerAsync(gid, rawmsg) {
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
-      this.msgHandler(gid, rawmsg, (err, response) => {
-        if (processed)
-          return;
+      this.rateLimiter.consume('msg_handler').then((rateLimiterRes) => {
+        this.msgHandler(gid, rawmsg, (err, response) => {
+          if (processed)
+            return;
 
-        processed = true;
-        if (err) {
-          reject(err);
-        } else {
-          resolve(response);
+          processed = true;
+          if (err) {
+            reject(err);
+          } else {
+            resolve(response);
+          }
+        })
+      }).catch((rateLimiterRes) => {
+        const error = {
+          "Retry-After": rateLimiterRes.msBeforeNext / 1000,
+          "X-RateLimit-Limit": this.rateLimiter.points,
+          "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
         }
+        processed = true;
+        reject(error);
       })
     })
   }
@@ -4060,7 +4083,7 @@ class netBot extends ControllerBot {
 
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
-
+        
           if (rawmsg.message.appInfo) {
             this.processAppInfo(rawmsg.message.appInfo)
           }
