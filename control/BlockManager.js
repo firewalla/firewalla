@@ -148,7 +148,7 @@ class BlockManager {
                 // if the ip shared with other domain, should not apply ip level block
                 // if a.com and b.com share ip and one of them block, it should be domain level
                 // if both block, should update to ip level
-                !ipBlockInfo.targetDomains.include(domain) && ipBlockInfo.targetDomains.push(domain);
+                !ipBlockInfo.targetDomains.includes(domain) && ipBlockInfo.targetDomains.push(domain);
                 const allDomains = await dnsTool.getAllDns(ip);
                 const sharedDomains = _.differenceWith(allDomains, ipBlockInfo.targetDomains, (a, b) => {
                     return this.domainCovered(b, a);
@@ -166,7 +166,7 @@ class BlockManager {
                 break;
             }
             case 'unblock': {
-                !ipBlockInfo.sharedDomains.include(domain) && ipBlockInfo.sharedDomains.push(domain);
+                !ipBlockInfo.sharedDomains.includes(domain) && ipBlockInfo.sharedDomains.push(domain);
                 ipBlockInfo.targetDomains = _.filter(ipBlockInfo.targetDomains, (a) => {
                     return a != domain;
                 })
