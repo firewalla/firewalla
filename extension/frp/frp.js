@@ -41,7 +41,7 @@ const fs = require('fs')
 const readFile = util.promisify(fs.readFile)
 const writeFile = util.promisify(fs.writeFile)
 
-const supportTimeout = 7 * 86400;
+const supportTimeout = 7 * 86400; // support session keeps alive for at most 7 days
 
 const FRPERRORCODE = 1
 const FRPSUCCESSCODE = 0
@@ -467,7 +467,7 @@ module.exports = class {
           this.supportTimeoutTask = setTimeout(() => {
             log.info("Support session is closed due to timeout");
             this.stop();
-          }, supportTimeout * 1000); // support session keeps alive for at most 7 days
+          }, supportTimeout * 1000);
         }
       } else {
         await this.stop();
