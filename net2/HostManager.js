@@ -305,6 +305,8 @@ module.exports = class HostManager {
     json.model = platform.getName();
     json.branch = f.getBranch();
     if(frp.started && f.isApi()) {
+      json.remoteSupportStartTime = frp.startTime;
+      json.remoteSupportEndTime = frp.endTime;
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
     }
