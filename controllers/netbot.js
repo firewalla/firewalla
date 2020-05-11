@@ -142,7 +142,7 @@ const Alarm = require('../alarm/Alarm.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
-const RateLimiterRedis = require('../extension/rate-limiter-flexible/RateLimiterRedis.js');
+const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -357,15 +357,15 @@ class netBot extends ControllerBot {
 
     this.sensorConfig = config.controller.sensor;
 
-    // Enhancement: need rate limit on the box api, only for init temporarily
+    // Enhancement: need rate limit on the box api
     const currentConfig = fc.getConfig(true);
     const rateLimitOptions = currentConfig.ratelimit || {}
     
     this.rateLimiter = new RateLimiterRedis({
       redis: rclient,
       keyPrefix: `ratelimit:${rateLimitOptions.name}`,
-      points: rateLimitOptions.max,
-      duration: rateLimitOptions.duration
+      points: rateLimitOptions.max || 60,
+      duration: rateLimitOptions.duration || 60//per second
     })
 
     //flow.summaryhours
