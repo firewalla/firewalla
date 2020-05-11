@@ -1443,7 +1443,6 @@ class PolicyManager2 {
           scope: scope,
           category: target,
           intfs,
-          action: 'block',
           tags
         });
         remoteSet4 = categoryUpdater.getIPSetName(target);
