@@ -118,7 +118,7 @@ class PortForward {
     const mapsCopy = JSON.parse(JSON.stringify(this.config.maps));
     const updatedMaps = [];
     for (let map of mapsCopy) {
-      if (!map.toIP) {
+      if (!map.toIP && !map.toMac) {
         log.error("toIP is not defined: ", map);
         await this.removePort(map);
         continue;
