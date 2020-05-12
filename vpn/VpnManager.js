@@ -644,10 +644,15 @@ class VpnManager {
     });
   }
 
-  static getOvpnFile(commonName, password, regenerate, externalPort, callback) {
+  static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, callback) {
     let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
     let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
-    const protocol = platform.getVPNServerDefaultProtocol();
+    protocol = protocol || platform.getVPNServerDefaultProtocol();
+
+    let ip = sysManager.myDDNS();
+    if (ip == null) {
+      ip = sysManager.publicIp;
+    }
 
     log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
 
@@ -655,20 +660,17 @@ class VpnManager {
       if (ovpn != null && regenerate == false) {
         let password = fs.readFileSync(ovpn_password, 'utf8').trim();
         log.info("VPNManager:Found older ovpn file: " + ovpn_file);
+        let profile = ovpn.replace(/remote\s+[\S]+\s+\d+/g, `remote ${ip} ${externalPort}`);
+        profile = profile.replace(/proto\s+\w+/g, `proto ${protocol}`);
         (async () => {
           const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
-          callback(null, ovpn, password, timestamp);
+          callback(null, profile, password, timestamp);
         })();
         return;
       }
 
       if (password == null) {
         password = VpnManager.generatePassword(5);
-      }
-
-      let ip = sysManager.myDDNS();
-      if (ip == null) {
-        ip = sysManager.publicIp;
       }
 
       const vpnLockFile = "/dev/shm/vpn_gen_lock_file";

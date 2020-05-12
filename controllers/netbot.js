@@ -142,6 +142,7 @@ const Alarm = require('../alarm/Alarm.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
+const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -355,6 +356,18 @@ class netBot extends ControllerBot {
     this.eptCloudExtension.run(); // auto update group info from cloud
 
     this.sensorConfig = config.controller.sensor;
+
+    // Enhancement: need rate limit on the box api
+    const currentConfig = fc.getConfig(true);
+    const rateLimitOptions = currentConfig.ratelimit || {}
+    
+    this.rateLimiter = new RateLimiterRedis({
+      redis: rclient,
+      keyPrefix: `ratelimit:${rateLimitOptions.name}`,
+      points: rateLimitOptions.max || 60,
+      duration: rateLimitOptions.duration || 60//per second
+    })
+
     //flow.summaryhours
     sysManager.update((err, data) => {
     });
@@ -1162,8 +1175,9 @@ class netBot extends ControllerBot {
           const { total, date, enable } = value;
           let oldPlan = {};
           try {
-            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan"));
-          } catch (e) { }
+            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan")) || {};
+          } catch (e) { 
+          }
           const featureName = 'data_plan';
           oldPlan.enable = fc.isFeatureOn(featureName);
           if (enable) {
@@ -1360,8 +1374,9 @@ class netBot extends ControllerBot {
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
+            const protocol = vpnConfig && vpnConfig.protocol;
             VpnManager.configureClient("fishboneVPN1", null).then(() => {
-              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, (err, ovpnfile, password, timestamp) => {
+              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
                 if (err == null) {
                   datamodel.data = {
                     ovpnfile: ovpnfile,
@@ -2858,7 +2873,8 @@ class netBot extends ControllerBot {
         break;
       case "startSupport":
         (async () => {
-          let { config, errMsg } = await frp.remoteSupportStart();
+          const timeout = (value && value.timeout) || null;
+          let { config, errMsg } = await frp.remoteSupportStart(timeout);
           if (config.startCode == FRPSUCCESSCODE) {
             let newPassword = await ssh.resetRandomPasswordAsync();
             sysManager.setSSHPassword(newPassword); // in-memory update
@@ -3244,8 +3260,9 @@ class netBot extends ControllerBot {
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
+            const protocol = vpnConfig && vpnConfig.protocol;
             await VpnManager.configureClient(cn, settings).then(() => {
-              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, (err, ovpnfile, password, timestamp) => {
+              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
                 if (!err) {
                   this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
                 } else {
@@ -3293,7 +3310,8 @@ class netBot extends ControllerBot {
           let externalPort = "1194";
           if (vpnConfig && vpnConfig.externalPort)
             externalPort = vpnConfig.externalPort;
-          VpnManager.getOvpnFile(cn, null, false, externalPort, (err, ovpnfile, password, timestamp) => {
+          const protocol = vpnConfig && vpnConfig.protocol;
+          VpnManager.getOvpnFile(cn, null, false, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
             if (!err) {
               this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
             } else {
@@ -4020,16 +4038,26 @@ class netBot extends ControllerBot {
   msgHandlerAsync(gid, rawmsg) {
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
-      this.msgHandler(gid, rawmsg, (err, response) => {
-        if (processed)
-          return;
+      this.rateLimiter.consume('msg_handler').then((rateLimiterRes) => {
+        this.msgHandler(gid, rawmsg, (err, response) => {
+          if (processed)
+            return;
 
-        processed = true;
-        if (err) {
-          reject(err);
-        } else {
-          resolve(response);
+          processed = true;
+          if (err) {
+            reject(err);
+          } else {
+            resolve(response);
+          }
+        })
+      }).catch((rateLimiterRes) => {
+        const error = {
+          "Retry-After": rateLimiterRes.msBeforeNext / 1000,
+          "X-RateLimit-Limit": this.rateLimiter.points,
+          "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
         }
+        processed = true;
+        reject(error);
       })
     })
   }
@@ -4055,7 +4083,7 @@ class netBot extends ControllerBot {
 
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
-
+        
           if (rawmsg.message.appInfo) {
             this.processAppInfo(rawmsg.message.appInfo)
           }

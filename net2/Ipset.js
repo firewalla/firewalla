@@ -138,6 +138,13 @@ function del(name, target) {
   return exec('sudo ipset ' + cmd);
 }
 
+function batchOp(operations) {
+  if (!Array.isArray(operations) || operations.length === 0)
+    return;
+  const cmd = `echo "${operations.join('\n')}" | sudo ipset restore -!`;
+  return exec(cmd);
+}
+
 const CONSTANTS = {
   IPSET_MONITORED_NET: "monitored_net_set",
   IPSET_MONITORING_OFF: "monitoring_off_set",
@@ -154,5 +161,6 @@ module.exports = {
   create,
   add,
   del,
+  batchOp,
   CONSTANTS
 }

@@ -28,8 +28,11 @@ const dnsTool = new DNSTool()
 
 const dns = require('dns');
 const util = require('util');
-const resolve4Async = util.promisify(dns.resolve4)
-const resolve6Async = util.promisify(dns.resolve6)
+const resolver = new dns.Resolver();
+let resolve4Async;
+let resolve6Async;
+const fc = require('../net2/config.js');
+const dc = require('../extension/dnscrypt/dnscrypt');
 
 const sysManager = require("../net2/SysManager.js")
 
@@ -87,11 +90,9 @@ class DomainBlock {
     const blockSet = options.blockSet || "blocked_domain_set"
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      for (const addr of addresses) {
-        try {
-          await Block.block(addr, blockSet)
-        } catch (err) { }
-      }
+      await Block.batchBlock(addresses, blockSet).catch((err) => {
+        log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+      });
     }
   }
 
@@ -100,11 +101,9 @@ class DomainBlock {
 
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      for (const addr of addresses) {
-        try {
-          Block.unblock(addr, blockSet)
-        } catch (err) { }
-      }
+      await Block.batchUnblock(addresses, blockSet).catch((err) => {
+        log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
+      });
     }
   }
 
@@ -158,6 +157,18 @@ class DomainBlock {
   }
 
   async resolveDomain(domain) {
+    if (fc.isFeatureOn('doh')) {
+      const server = `127.0.0.1:${dc.getLocalPort()}`;
+      if (!this.setUpServers) {
+        resolver.setServers([server]);
+        this.setUpServers = true;
+      }
+      resolve4Async = util.promisify(resolver.resolve4.bind(resolver));
+      resolve6Async = util.promisify(resolver.resolve6.bind(resolver));
+    } else {
+      resolve4Async = util.promisify(dns.resolve4);
+      resolve6Async = util.promisify(dns.resolve6);
+    }
     const v4Addresses = await this.resolve4WithTimeout(domain, 3 * 1000).catch((err) => []); // 3 seconds for timeout
     await dnsTool.addReverseDns(domain, v4Addresses);
 

@@ -22,9 +22,9 @@ const util = require('util');
 
 const i18n = require('../util/i18n.js');
 const fc = require('../net2/config.js');
-const moment = require('moment');
+const moment = require('moment-timezone');
+const sysManager = require('../net2/SysManager.js');
 
-// let moment = require('moment');
 
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
@@ -284,7 +284,7 @@ class DeviceOfflineAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_DEVICE_OFFLINE", timestamp, device, info);
     if (info && info["p.device.lastSeen"]) {
-      this['p.device.lastSeenTimezone'] = moment(info["p.device.lastSeen"] * 1000).format('LT')
+      this['p.device.lastSeenTimezone'] = moment(info["p.device.lastSeen"] * 1000).tz(sysManager.getTimezone()).format('LT')
     }
   }
 

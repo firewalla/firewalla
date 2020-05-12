@@ -52,7 +52,7 @@ async function setupBlockChain() {
     setupCategoryEnv("gamble"),
     setupCategoryEnv("av"),
     */
-    setupCategoryEnv("default_c"),
+    setupCategoryEnv("default_c", "hash:ip", 4096),
   ])
 
   log.info("Finished setup for traffic blocking");
@@ -71,7 +71,7 @@ function getDstSet6(tag) {
 }
 
 
-async function setupCategoryEnv(category, dstType = "hash:ip") {
+async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128) {
   if(!category) {
     return;
   }
@@ -81,10 +81,10 @@ async function setupCategoryEnv(category, dstType = "hash:ip") {
   const ipset6 = getDstSet6(category);
   const tempIpset6 = getDstSet6(`tmp_${category}`);
 
-  const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} family inet hashsize 128 maxelem 65536`
-  const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} family inet6 hashsize 128 maxelem 65536`
-  const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} family inet hashsize 128 maxelem 65536`
-  const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} family inet6 hashsize 128 maxelem 65536`
+  const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} family inet hashsize ${hashSize} maxelem 65536`
+  const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} family inet6 hashsize ${hashSize} maxelem 65536`
+  const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} family inet hashsize ${hashSize} maxelem 65536`
+  const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} family inet6 hashsize ${hashSize} maxelem 65536`
 
   await exec(cmdCreateCategorySet);
   await exec(cmdCreateCategorySet6);
@@ -106,6 +106,14 @@ async function existsBlockingEnv(tag) {
   }
 }
 
+function batchBlock(elements, ipset) {
+  return batchSetupIpset(elements, ipset);
+}
+
+function batchUnblock(elements, ipset) {
+  return batchSetupIpset(elements, ipset, true);
+}
+
 function block(target, ipset) {
   return setupIpset(target, ipset)
 }
@@ -119,9 +127,41 @@ function unblock(target, ipset) {
   return setupIpset(target, ipset, true)
 }
 
-function setupIpset(target, ipset, remove = false) {
-  const ipSpliterIndex = target.search(/[/,]/)
-  const ipAddr = ipSpliterIndex > 0 ? target.substring(0, ipSpliterIndex) : target;
+async function batchSetupIpset(elements, ipset, remove = false) {
+  if (!_.isArray(elements) || elements.length === 0)
+    return;
+  const v4Set = ipset;
+  const v6Set = ipset + '6';
+  const gateway6 = sysManager.myGateway6();
+  const gateway = sysManager.myGateway();
+  const cmds = [];
+  const op = remove ? 'del' : 'add';
+  
+  for (const element of elements) {
+    const ipSpliterIndex = element.search(/[/,]/)
+    const ipAddr = ipSpliterIndex > 0 ? element.substring(0, ipSpliterIndex) : element;
+
+    //Prevent gateway IP from being added into blocking IP set dynamically
+    if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {
+      continue;
+    }
+    // check and add v6 suffix
+    if (ipAddr.match(/^\d+(-\d+)?$/)) {
+      // ports
+      cmds.push(`${op} ${v4Set} ${ipAddr}`);
+    } else if (iptool.isV4Format(ipAddr)) {
+      cmds.push(`${op} ${v4Set} ${ipAddr}`);
+    } else if (iptool.isV6Format(ipAddr)) {
+      cmds.push(`${op} ${v6Set} ${ipAddr}`);
+    }
+  }
+  log.debug(`Batch setup IP set ${op}`, cmds);
+  return Ipset.batchOp(cmds);
+} 
+
+function setupIpset(element, ipset, remove = false) {
+  const ipSpliterIndex = element.search(/[/,]/)
+  const ipAddr = ipSpliterIndex > 0 ? element.substring(0, ipSpliterIndex) : element;
 
   // check and add v6 suffix
   if (ipAddr.match(/^\d+(-\d+)?$/)) {
@@ -141,9 +181,9 @@ function setupIpset(target, ipset, remove = false) {
   }
   const action = remove ? Ipset.del : Ipset.add;
 
-  log.debug('setupIpset', action.prototype.constructor.name, ipset, target)
+  log.debug('setupIpset', action.prototype.constructor.name, ipset, element)
 
-  return action(ipset, target)
+  return action(ipset, element)
 }
 
 async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, allowOrBlock = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null) {
@@ -498,6 +538,8 @@ async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPosit
 
 module.exports = {
   setupBlockChain:setupBlockChain,
+  batchBlock: batchBlock,
+  batchUnblock: batchUnblock,
   block: block,
   unblock: unblock,
   setupCategoryEnv: setupCategoryEnv,

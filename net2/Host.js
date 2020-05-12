@@ -454,12 +454,14 @@ class Host {
         await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
         await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
       }
-      if (state === false) {
+      // null means off
+      if (state === null) {
         // clear skbmark
         await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
         await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
       }
-      if (state === null) {
+      // false means N/A
+      if (state === false) {
         // do not change skbmark
         await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
       }

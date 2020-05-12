@@ -5,6 +5,7 @@ set -e
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 CMD=$(basename $0)
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 usage() {
     cat <<EOU
@@ -31,11 +32,12 @@ switch_branch() {
     if [[ "$cur_branch" == "$tgt_branch" ]]; then
       exit 0
     fi
+    remote_branch=$(map_target_branch $branch)
     # walla repo
     ( cd $FIREWALLA_HOME
-    git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
-    $MGIT fetch origin $tgt_branch
-    git checkout -f -B $tgt_branch origin/$tgt_branch
+    git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
+    $MGIT fetch origin $remote_branch
+    git checkout -f -B $tgt_branch origin/$remote_branch
     )
 
     # node modules repo

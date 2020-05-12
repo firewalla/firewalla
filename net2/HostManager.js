@@ -305,6 +305,8 @@ module.exports = class HostManager {
     json.model = platform.getName();
     json.branch = f.getBranch();
     if(frp.started && f.isApi()) {
+      json.remoteSupportStartTime = frp.startTime;
+      json.remoteSupportEndTime = frp.endTime;
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
     }
@@ -925,7 +927,7 @@ module.exports = class HostManager {
   }
 
   async networkConfig(json, filterSensitive = false) {
-    const config = await FireRouter.getConfig();
+    const config = FireRouter.getConfig();
     if (filterSensitive && config && config.interface && config.interface.pppoe) {
       for (const key in config.interface.pppoe) {
         const temp = _.omit(config.interface.pppoe[key], ['password', 'username']);
