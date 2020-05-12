@@ -28,6 +28,7 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 # ensure that run directory already exists
 mkdir -p /home/pi/.firewalla/run
@@ -155,6 +156,7 @@ fi
 cd /home/pi/firewalla
 sudo chown -R pi /home/pi/firewalla/.git
 branch=$(git rev-parse --abbrev-ref HEAD)
+remote_branch=$(map_target_branch $branch)
 
 # continue to try upgrade even github api is not successfully.
 # very likely to fail
@@ -176,7 +178,7 @@ fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 sudo rm -f /home/pi/firewalla/.git/*.lock
-GIT_COMMAND="(sudo -u pi $MGIT fetch origin $branch && sudo -u pi $MGIT reset --hard FETCH_HEAD)"
+GIT_COMMAND="(sudo -u pi $MGIT fetch origin $remote_branch && sudo -u pi $MGIT reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
   (sleep 3; eval $GIT_COMMAND) ||
   (sleep 3; eval $GIT_COMMAND) ||
