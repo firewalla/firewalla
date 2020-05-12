@@ -35,7 +35,7 @@ latest_hash=$(git rev-parse origin/$remote_branch)
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.CHECK Starting, local hash: $current_hash, remote hash $latest_hash"
 
-if [ "$current_hash" == "$latst_hash" ]; then
+if [ "$current_hash" == "$latest_hash" ]; then
   /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.DONE.NOTHING"
    exit 0
 fi
