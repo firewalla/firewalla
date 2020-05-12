@@ -1559,6 +1559,8 @@ module.exports = class {
     }
 
     if (!_.isEmpty(userInput.tag)) {
+      if (!userInput.device && e["p.device.mac"])
+        delete e["p.device.mac"];
       e["p.tag.ids"] = [];
       for (const tagStr of userInput.tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
@@ -1572,6 +1574,8 @@ module.exports = class {
     }
 
     if (userInput && userInput.intf) {
+      if (!userInput.device && e["p.device.mac"])
+        delete e["p.device.mac"];
       e["p.intf.id"] = userInput.intf;
     }
     log.info("Exception object:", e);
