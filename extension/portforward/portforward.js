@@ -155,18 +155,20 @@ class PortForward {
           continue;
         }
         const ipv4Addr = macEntry.ipv4Addr;
-        if (ipv4Addr !== map.toIP) {
-          // remove old port forwarding rule with legacy IP address
-          log.info("IP address has changed, remove old rule: ", map);
-          await this.removePort(map);
-          if (ipv4Addr) {
-            // add new port forwarding rule with updated IP address
-            map.toIP = ipv4Addr;
-            log.info("IP address has changed, add new rule: ", map);
-            await this.addPort(map);
+        if(ipv4Addr) { // only check ip change if the device has a valid ip address
+          if (ipv4Addr !== map.toIP) {
+            // remove old port forwarding rule with legacy IP address
+            log.info("IP address has changed, remove old rule: ", map);
+            await this.removePort(map);
+            if (ipv4Addr) {
+              // add new port forwarding rule with updated IP address
+              map.toIP = ipv4Addr;
+              log.info("IP address has changed, add new rule: ", map);
+              await this.addPort(map);
+            }
           }
+          map.toIP = ipv4Addr; // ensure the latest ipv4 address is synced no matter if it is changed
         }
-        map.toIP = ipv4Addr; // ensure the latest ipv4 address is synced no matter if it is changed
         updatedMaps.push(map);
       }
     }
