@@ -2390,6 +2390,14 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break
+      case "shutdown:cancel":
+        (async () => {
+          await sysTool.cancelShutdown()
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
       case "reboot":
         (async () => {
           sysTool.rebootSystem()
@@ -3906,6 +3914,26 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "apt-get":
+        (async () => {
+          let cmd = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
+          if (value.execPreUpgrade) cmd = `${cmd} -pre "${value.execPreUpgrade}"`;
+          if (value.execPostUpgrade) cmd = `${cmd} -pst "${value.execPostUpgrade}"`;
+          if (value.noUpdate) cmd = cmd + ' -nu';
+          if (value.noReboot) cmd = cmd + ' -nr';
+          if (value.forceReboot) cmd = cmd + ' -fr';
+
+          if (!value.action) throw new Error('Missing parameter "action"')
+
+          cmd = `${cmd} ${value.action}`;
+
+          log.info('Running apt-get', cmd)
+          await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);

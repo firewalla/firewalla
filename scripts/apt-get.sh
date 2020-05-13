@@ -29,6 +29,11 @@ usage() {
     return
 }
 
+
+date
+echo "apt-get.sh $(printf -- '"%s" ' "$@")"
+logger "FIREWALLA: apt-get.sh $(printf -- '"%s" ' "$@")"
+
 PARAMS=""
 
 while [[ "$1" != "" ]]; do
