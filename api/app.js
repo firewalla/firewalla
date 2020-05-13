@@ -1,3 +1,18 @@
+/*    Copyright 2016-2019 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 /*
  * This app will provide API for external calls
  */
@@ -53,7 +68,7 @@ subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 subpath_v1.use('/encipher', encipher);
-subpath_v1.use('/encipher_raw', require('./routes/encipher.js'));
+subpath_v1.use('/encipher_raw', require('./routes/raw_encipher.js'));
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

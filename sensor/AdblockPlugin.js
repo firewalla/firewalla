@@ -43,8 +43,8 @@ const fc = require('../net2/config.js');
 
 const spt = require('../net2/SystemPolicyTool')();
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const updateFeature = "adblock";
-const updateFlag = "2";
+
+const featureName = "adblock";
 
 class AdblockPlugin extends Sensor {
     async run() {
@@ -56,37 +56,9 @@ class AdblockPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
-        if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
-            const isPolicyEnabled = await spt.isPolicyEnabled('adblock');
-            if (isPolicyEnabled) {
-                await fc.enableDynamicFeature("adblock");
-            }
-            await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
-        }
 
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        sem.once('IPTABLES_READY', async () => {
-            if (fc.isFeatureOn("adblock")) {
-                this.globalOn();
-            } else {
-                this.globalOff();
-            }
-            fc.onFeature("adblock", async (feature, status) => {
-                if (feature !== "adblock") {
-                    return;
-                }
-                if (status) {
-                    this.globalOn();
-                } else {
-                    this.globalOff();
-                }
-            })
-
-            this.job();
-            this.timer = setInterval(async () => {
-                return this.job();
-            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
-        });
+        this.hookFeature(featureName);
     }
 
     job() {
@@ -114,7 +86,7 @@ class AdblockPlugin extends Sensor {
                 const macAddress = host && host.o && host.o.mac;
                 if (macAddress) {
                     if (policy == true) {
-                        this.enabledMacAddresses.push(macAddress);
+                        !this.enabledMacAddresses.includes(macAddress) && this.enabledMacAddresses.push(macAddress);
                     } else {
                         const index = this.enabledMacAddresses.indexOf(macAddress);
                         if (index > -1) {

@@ -21,23 +21,30 @@ let config = require('../net2/config.js').getConfig();
 let sensors = [];
 let sensorsHash = {}
 
-function initSensors() {
+function initSingleSensor(sensorName) {
   let sensorConfigs = config.sensors;
 
-  if(!sensorConfigs)
-    return;
+  if(!sensorConfigs || !sensorConfigs[sensorName])
+    return null;
 
-  Object.keys(sensorConfigs).forEach((sensorName) => {
-    try {
-      let fp = './' + sensorName + '.js';
-      let s = require(fp);
-      let ss = new s();
-      ss.setConfig(sensorConfigs[sensorName]);
-      sensors.push(ss);
-      sensorsHash[sensorName] = ss
-    } catch(err) {
-      log.error(`Failed to load sensor: ${sensorName}: ${err}`)
-    }
+  try {
+    let fp = './' + sensorName + '.js';
+    let s = require(fp);
+    let ss = new s();
+    ss.setConfig(sensorConfigs[sensorName]);
+    sensors.push(ss);
+    sensorsHash[sensorName] = ss
+    return ss
+  } catch(err) {
+    log.error(`Failed to load sensor: ${sensorName}: ${err}`)
+    return null
+  }
+}
+
+function initSensors() {
+  Object.keys(config.sensors).forEach((sensorName) => {
+    if (!sensorsHash[sensorName])
+      initSingleSensor(sensorName)
   });
 }
 
@@ -58,6 +65,7 @@ function getSensor(name) {
 
 module.exports = {
   initSensors:initSensors,
+  initSingleSensor:initSingleSensor,
   run:run,
   getSensor: getSensor
 };

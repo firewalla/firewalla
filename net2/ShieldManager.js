@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,11 +43,10 @@ class ShieldManager {
         sclient.on("message", (channel, message) => {
           switch (channel) {
             case "System:VPNSubnetChanged":
-              const newVpnSubnet = message;
-              this._updateVPNOutgoingRules(newVpnSubnet);
+              this._updateVPNOutgoingRules(message);
               break;
             default:
-  
+
           }
         });
         sclient.subscribe("System:VPNSubnetChanged");
@@ -70,7 +69,7 @@ class ShieldManager {
                 const cmd = util.format("sudo ipset add -! trusted_ip_set6 %s", v6Addr);
                 await exec(cmd);
                 this.trustedIpv6Addrs[v6Addr] = 1;
-              };
+              }
             }
             // update ip address to protected_ip_set/protected_ip_set6
             if (host.mac && this.protected_macs[host.mac]) {
@@ -171,7 +170,7 @@ class ShieldManager {
       await exec(cmd).catch((err) => {
         log.error("Failed to activate global shield in iptables", err);
       });
-  
+
       cmd = wrapIptables("sudo ip6tables -w -A FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.error("Failed to activate global shield in ip6tables", err);
@@ -183,7 +182,7 @@ class ShieldManager {
         log.error("Cannot find host info of " + mac);
         return;
       }
-      
+
       if (this.protected_macs[mac]) {
         const legacyMacEntry = this.protected_macs[mac];
         const legacyIpv6Addrs = (legacyMacEntry.ipv6Addrs || []).sort();
@@ -197,7 +196,7 @@ class ShieldManager {
           return; // no need to call ipset command if ip addresses are not changed.
         }
       }
-      
+
       this.protected_macs[mac] = macEntry;
       const ipv4Addr = macEntry.ipv4Addr;
       if (ipv4Addr && ip.isV4Format(ipv4Addr)) {
@@ -220,7 +219,7 @@ class ShieldManager {
               log.error("Failed to add " + ipv4Addr + " to protected_ip_set6", err);
             });
           }
-        }  
+        }
       }
     }
   }
@@ -232,7 +231,7 @@ class ShieldManager {
       await exec(cmd).catch((err) => {
         log.debug("Failed to deactivate global shield in iptables", err);
       });
-  
+
       cmd = wrapIptables("sudo ip6tables -w -D FORWARD -j FW_SHIELD");
       await exec(cmd).catch((err) => {
         log.debug("Failed to deactivate global shield in ip6tables", err);

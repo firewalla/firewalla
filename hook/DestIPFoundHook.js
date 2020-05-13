@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,27 +20,21 @@ const Hook = require('./Hook.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const country = require('../extension/country/country.js');
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const f = require("../net2/Firewalla.js")
 
 const Promise = require('bluebird');
 
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager('info');
-
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
-
-const flowUtil = require('../net2/FlowUtil.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
+const country = require('../extension/country/country.js');
 const SysManager = require('../net2/SysManager.js')
 const sysManager = new SysManager('info');
 
@@ -133,11 +127,16 @@ class DestIPFoundHook extends Hook {
       // batch query
 
       // if(hashes.filter(x => x === info.ip).length > 0) {
-      if(info.apps) {
-        intel.apps = JSON.stringify(info.apps);
-        let keys = Object.keys(info.apps);
-        if(keys && keys[0]) {
-          intel.app = keys[0];
+      if(info.app) {
+        intel.apps = info.app; // json string format
+        try {
+          const apps = JSON.parse(intel.apps)
+          const keys = Object.keys(apps);
+          if(keys && keys[0]) {
+            intel.app = keys[0];
+          }
+        } catch(err) {
+          log.error("Failed to parse app json, err:", err);
         }
       }
 
@@ -158,11 +157,11 @@ class DestIPFoundHook extends Hook {
       if(info.action && info.action.block) {
         intel.action = "block"
       }
-      
+
       if(info.s) {
         intel.s = info.s;
       }
- 
+
       if(info.t) {
         intel.t = info.t;
       }
@@ -209,17 +208,6 @@ class DestIPFoundHook extends Hook {
     return domains;
   }
 
-  enrichCountry(ip) {
-    return country.getCountry(ip);
-  }
-
-  // this code shall be disabled in production.
-  // workaroundIntelUpdate(intel) {
-  //   if(intel.host.match(/weixin.qq.com$/) && !intel.apps) {
-  //     intel.apps = JSON.stringify({"wechat" : "100"});
-  //   }
-  // }
-
   async updateCategoryDomain(intel) {
     if(intel.host && intel.category && intel.t > TRUST_THRESHOLD) {
       if(intel.originIP) {
@@ -231,7 +219,7 @@ class DestIPFoundHook extends Hook {
   }
 
   async updateCountryIP(intel) {
-    if(intel.host && intel.country) {
+    if(intel.ip && intel.country) {
       await countryUpdater.updateIP(intel.country, intel.ip)
     }
   }
@@ -270,7 +258,7 @@ class DestIPFoundHook extends Hook {
       } catch(e) {
         ip = flow;
       }
-    } 
+    }
     options = options || {};
 
     if (sysManager.isLocalIP(ip)) {
@@ -302,7 +290,7 @@ class DestIPFoundHook extends Hook {
         }
       }
 
-      log.info("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domains + ", checking intels...");
+      log.debug("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domains + ", checking intels...");
 
       let ips = [ip];
 
@@ -324,9 +312,7 @@ class DestIPFoundHook extends Hook {
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
       let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
-      aggrIntelInfo.country = aggrIntelInfo.country || this.enrichCountry(ip) || ""; // empty string for unidentified country
-
-      // this.workaroundIntelUpdate(aggrIntelInfo);
+      aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip) || ""; // empty string for unidentified country
 
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
@@ -408,10 +394,6 @@ class DestIPFoundHook extends Hook {
 
       if(this.paused)
         return;
-
-      if(f.isReservedBlockingIP(ip)) {
-        return; // reserved black hole and blue hole...
-      }
 
       this.appendNewFlow(ip, fd);
     });

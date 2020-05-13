@@ -18,6 +18,7 @@ const log = require("../net2/logger.js")(__filename)
 const cp = require('child_process');
 
 const util = require('util');
+const _ = require('lodash')
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
@@ -293,11 +294,14 @@ function constants(name) {
   return __constants[name]
 }
 
-const BLACK_HOLE_IP = "198.51.100.99";
+const BLACK_HOLE_IP = "0.0.0.0";
 const BLUE_HOLE_IP = "198.51.100.100";
 const RED_HOLE_IP = "198.51.100.101";
 
 function isReservedBlockingIP(ip) {
+  // TODO: we should throw error here
+  if (!_.isString(ip)) return true
+
   return [BLACK_HOLE_IP, BLUE_HOLE_IP, RED_HOLE_IP, "0.0.0.0"].includes(ip)
     || ip.match(/^[0:]+(:ffff:(0*:)?)?(0\.0\.0\.0|[0:]+)$/i); // all zero v6 address
 }

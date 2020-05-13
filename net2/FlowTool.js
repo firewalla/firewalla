@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,6 @@ const destIPFoundHook = new DestIPFoundHook();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
-
-const country = require('../extension/country/country.js');
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
@@ -147,7 +145,7 @@ class FlowTool {
       return false;
     }
     if (o.f === "s") {
-      // short packet flag, maybe caused by arp spoof leaking, ignore these packets 
+      // short packet flag, maybe caused by arp spoof leaking, ignore these packets
       return false;
     }
 
@@ -161,9 +159,9 @@ class FlowTool {
     let lh = flow.lh;
 
     if (sh === lh) {
-      flow.country = country.getCountry(dh)
+      flow.country = intelTool.getCountry(dh)
     } else {
-      flow.country = country.getCountry(sh)
+      flow.country = intelTool.getCountry(sh)
     }
   }
 
@@ -384,7 +382,7 @@ class FlowTool {
     const end = options.end || Math.floor(new Date() / 1000);
     const begin = options.begin || end - 3600 * 6; // 6 hours
     const direction = options.direction || 'in';
-    
+
     const key = util.format("flow:conn:%s:%s", direction, target);
 
     const results = await rclient.zrangebyscoreAsync([key, begin, end]);
@@ -396,11 +394,11 @@ class FlowTool {
     const list = results
     .map((jsonString) => {
       try {
-        return JSON.parse(jsonString);        
+        return JSON.parse(jsonString);
       } catch(err) {
         log.error(`Failed to parse json string: ${jsonString}, err: ${err}`);
         return null;
-      }      
+      }
     })
     .filter((x) => x !== null)
     .filter((x) => x.sh === destinationIP || x.dh === destinationIP)
@@ -417,7 +415,7 @@ class FlowTool {
 
   async getTransferTrend(deviceMAC, destinationIP, options) {
     options = options || {};
-    
+
     const transfers = [];
 
     if (!options.direction || options.direction === "in") {
@@ -426,7 +424,7 @@ class FlowTool {
       const t_in = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
       transfers.push.apply(transfers, t_in);
     }
-    
+
     if (!options.direction || options.direction === "out") {
       const optionsCopy = JSON.parse(JSON.stringify(options));
       optionsCopy.direction = "out";
@@ -454,7 +452,7 @@ class FlowTool {
     //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
     //   flowCopy.device = mac;
     // }
-    
+
     await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
     await rclient.zremrangebyrankAsync(key, 0, limit);
     return;
@@ -550,7 +548,7 @@ class FlowTool {
     if(!options.no_merge) {
       mergedFlow = this._mergeFlows(
         _.orderBy(flowObjects, 'ts', options.asc ? 'asc' : 'desc')
-      ); 
+      );
     } else {
       mergedFlow = flowObjects
     }
@@ -620,7 +618,7 @@ class FlowTool {
     if(!flow) {
       return null
     }
-    
+
     if(flow.lh === flow.sh) {
       return flow.dh;
     } else {
@@ -641,6 +639,19 @@ class FlowTool {
       return flow.ob;
     } else {
       return flow.rb;
+    }
+  }
+  getTrafficPort(flow) {
+    let port;
+    if(flow.fd == "out"){
+      port = flow.sp
+    }else{
+      port = flow.dp
+    }
+    if(Array.isArray(port)){
+      return port
+    }else{
+      return [port]
     }
   }
 }

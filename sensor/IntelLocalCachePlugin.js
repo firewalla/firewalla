@@ -18,79 +18,132 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const extensionManager = require('./ExtensionManager.js')
-
-const f = require('../net2/Firewalla.js');
-
 const updateInterval = 2 * 24 * 3600 * 1000 // once per two days
 
 const hashKey = "gsb:bloomfilter:compressed";
+const loadCacheErrorKey = "load:cache:error";
 
 const BloomFilter = require('../vendor_lib/bloomfilter.js').BloomFilter;
 
 const urlhash = require("../util/UrlHash.js");
 
+const f = require('../net2/Firewalla.js');
+
 const _ = require('lodash');
+
+const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const bone = require("../lib/Bone.js");
 
-const jsonfile = require('jsonfile');
-
 const zlib = require('zlib');
+
+const fs = require('fs');
 
 const Promise = require('bluebird');
 
+Promise.promisifyAll(fs);
+
 const inflateAsync = Promise.promisify(zlib.inflate);
+
+const intelCacheFile = `${f.getUserConfigFolder()}/intel_cache.file`;
 
 class IntelLocalCachePlugin extends Sensor {
 
+  async loadCache() {
+    let stats, noent;
+    try {
+      stats = await fs.statAsync(intelCacheFile);
+    } catch (err) {
+      if (err.code !== "ENOENT") {
+        throw err;
+      }
+      noent = true;
+    }
+    // to download from cloud only if filter file has not been updated recently or doesn't exsit
+    if (noent || (new Date() - stats.mtime > updateInterval)) {
+      await this.loadCacheFromBone()
+    } else {
+      await this.loadCacheFromLocal(intelCacheFile);
+    }
+  }
   async loadCacheFromBone() {
+    const loadCacheError = await rclient.getAsync(loadCacheErrorKey);
+    if (loadCacheError) return;
     log.info(`Loading intel cache from cloud...`);
-    const data = await bone.hashsetAsync(hashKey)
+    const data = await bone.hashsetAsync(hashKey);
+    if (data) {
+      const bf = await this.loadCacheFromBase64(data, true);
+      if (bf) {
+        this.bf = bf;
+      }
+    }
+  }
+
+  async loadCacheFromLocal(path) {
+    try {
+      await fs.accessAsync(path, fs.constants.R_OK);
+      log.info(`Loading data from path: ${path}`);
+      const data = await fs.readFileAsync(path, { encoding: 'utf8' });
+      if (data) {
+        const bf = await this.loadCacheFromBase64(data, false);
+        if (bf) {
+          this.bf = bf;
+        }
+      }
+    } catch (err) {
+      log.info("Local intel file not exist, skipping...");
+      return;
+    }
+  }
+
+  async loadCacheFromBase64(data, fromCloud) {
     try {
       const buffer = Buffer.from(data, 'base64');
       const decompressedData = await inflateAsync(buffer);
       const decompressedString = decompressedData.toString();
       const payload = JSON.parse(decompressedString);
-      // jsonfile.writeFileSync("/tmp/x.json", payload);
-      this.bf = new BloomFilter(payload, 16);
+      const bf = new BloomFilter(payload, 16);
+      if (fromCloud) {
+        await fs.writeFileAsync(intelCacheFile, data);
+      }
       log.info(`Intel cache is loaded successfully! cache size ${decompressedString.length}`);
+      return bf;
     } catch (err) {
-      log.error(`Failed to load intel cache from cloud, err: ${err}`);
-      this.bf = null;
+      await rclient.setAsync(loadCacheErrorKey, "1");
+      await rclient.expireAsync(loadCacheErrorKey, 900) // auto expire in 15 minutes
+      log.error(`Failed to load cache data, err: ${err}`);
+      return null;
     }
   }
 
   async run() {
-    await this.loadCacheFromBone();
+    await this.loadCache();
 
     setInterval(() => {
-      this.loadCacheFromBone();
+      this.loadCache();
     }, updateInterval);
   }
 
   checkUrl(url) {
     // for testing only
-    if(this.config && this.config.testURLs && this.config.testURLs.includes(url)) {
+    if (this.config && this.config.testURLs && this.config.testURLs.includes(url)) {
       return true;
     }
 
-    if(!this.bf) {
+    if (!this.bf) {
       return false;
     }
 
     const hashes = urlhash.canonicalizeAndHashExpressions(url);
 
     const matchedHashes = hashes.filter((hash) => {
-      if(!hash) {
+      if (!hash) {
         return false;
       }
 
       const prefix = hash[1];
 
-      if(!prefix) {
+      if (!prefix) {
         return false;
       }
 

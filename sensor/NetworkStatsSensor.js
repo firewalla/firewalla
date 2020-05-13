@@ -22,6 +22,7 @@ const fc = require('../net2/config.js');
 
 const FEATURE_NETWORK_STATS = "network_stats";
 const FEATURE_LINK_STATS = "link_stats";
+const FEATURE_NETWORK_SPEED_TEST = "network_speed_test";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -30,13 +31,17 @@ const Ping = require('../extension/ping/Ping.js');
 const SysManager = require('../net2/SysManager.js');
 const sysManager = new SysManager();
 
+const util = require('util');
 const exec = require('child-process-promise').exec;
-const bone = require('../lib/Bone.js')
+const bone = require('../lib/Bone.js');
+const speedtest = require('../extension/speedtest/speedtest.js');
+const CronJob = require('cron').CronJob;
 
 const _ = require('lodash');
 
 class NetworkStatsSensor extends Sensor {
   async run() {
+    this.processPingConfigure();
     if (fc.isFeatureOn(FEATURE_NETWORK_STATS)) {
       await this.turnOn();
     } else {
@@ -45,7 +50,6 @@ class NetworkStatsSensor extends Sensor {
     fc.onFeature(FEATURE_NETWORK_STATS, (feature, status) => {
       if (feature != FEATURE_NETWORK_STATS)
         return
-
       if (status) {
         this.turnOn();
       } else {
@@ -53,20 +57,38 @@ class NetworkStatsSensor extends Sensor {
       }
     })
 
+    if (fc.isFeatureOn(FEATURE_NETWORK_SPEED_TEST)) {
+      this.runSpeedTest();
+    } else {
+      this.stopSpeedTest();
+    }
+    fc.onFeature(FEATURE_NETWORK_SPEED_TEST, (feature, status) => {
+      if (feature != FEATURE_NETWORK_SPEED_TEST)
+        return
+      if (status) {
+        this.runSpeedTest();
+      } else {
+        this.stopSpeedTest();
+      }
+    })
+
     this.previousLog = new Set();
+    this.checkNetworkStatus();
     setInterval(() => {
+      this.checkNetworkStatus();
       if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
 
       this.checkLinkStats();
     }, (this.config.interval || 300) * 1000);
   }
-
-  async turnOn() {
-    if(this.config.pingConfig) {
+  processPingConfigure() {
+    if (this.config.pingConfig) {
       Ping.configure(this.config.pingConfig);
     } else {
       Ping.configure();
     }
+  }
+  async turnOn() {
     this.pings = {};
 
     this.testGateway();
@@ -76,10 +98,10 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async turnOff() {
-    if(this.pings) {
-      for(const t in this.pings) {
+    if (this.pings) {
+      for (const t in this.pings) {
         const p = this.pings[t];
-        if(p) {
+        if (p) {
           p.stop();
           delete this.pings[t];
         }
@@ -94,7 +116,7 @@ class NetworkStatsSensor extends Sensor {
   }
 
   testPingPerf(type, target, redisKey) {
-    if(this.pings[type]) {
+    if (this.pings[type]) {
       this.pings[type].stop();
       delete this.pings[type];
     }
@@ -114,7 +136,7 @@ class NetworkStatsSensor extends Sensor {
 
   testDNSServerPing() {
     const dnses = sysManager.myDNS();
-    if(!_.isEmpty(dnses)) {
+    if (!_.isEmpty(dnses)) {
       this.testPingPerf("dns", dnses[0], "perf:ping:dns");
     }
   }
@@ -131,21 +153,21 @@ class NetworkStatsSensor extends Sensor {
     log.info("checking link stats")
     try {
       // "|| true" prevents grep from yielding error when nothing matches
-      const result = await exec('dmesg --time-format iso | grep -n "Link is Down" || true');
+      const result = await exec('dmesg --time-format iso | grep "Link is Down" || true');
       const lines = result.stdout.split('\n');
 
-      log.info(this.previousLog)
-      log.info(lines)
+      log.debug(this.previousLog)
+      log.debug(lines)
       // there's always an empty string
       if (lines.length <= 1) return;
 
-      for (let i = 0; i < lines.length - 1; i ++) {
-        const line = lines[i];
-        const numberAndTime = line.split(' ')[0].split(':');
-        const lineNumber = numberAndTime[0];
-        const lineTime = numberAndTime[1];
+      const newLines = []
 
-        if (this.previousLog.has(lineNumber)) {
+      for (let i = 0; i < lines.length - 1; i++) {
+        const line = lines[i];
+        const lineTime = line.split(' ')[0]
+
+        if (this.previousLog.has(lineTime)) {
           continue;
         } else {
           // log rotated
@@ -153,21 +175,86 @@ class NetworkStatsSensor extends Sensor {
             this.previousLog.clear()
           }
 
-          this.previousLog.add(lineNumber);
+          this.previousLog.add(lineTime);
 
-          await bone.logAsync("error",
-            {
-              type: 'FIREWALLA.NetworkStatsSensor.LinkDown',
-              msg: { line }
-            }
-          );
+          newLines.push(line)
         }
 
       }
 
-    } catch(err) {
+      if (newLines.length) {
+        await bone.logAsync("error",
+          {
+            type: 'FIREWALLA.NetworkStatsSensor.LinkDown',
+            msg: { newLines }
+          }
+        );
+      }
+
+    } catch (err) {
       log.error("Failed getting device log", err)
     }
+  }
+
+  async checkNetworkStatus() {
+    const internetTestHosts = this.config.internetTestHosts;
+    let dnses = sysManager.myDNS();
+    const gateway = sysManager.myGateway();
+    let servers = (this.config.dnsServers || []).concat(dnses);
+    servers.push(gateway);
+    if (!this.checkNetworkPings) this.checkNetworkPings = {};
+
+    for (const server of servers) {
+      if (this.checkNetworkPings[server]) continue;
+      this.checkNetworkPings[server] = new Ping(server);
+      this.checkNetworkPings[server].on('ping', (data) => {
+        rclient.hsetAsync("network:status:ping", server, data.time);
+      });
+      this.checkNetworkPings[server].on('fail', (data) => {
+        rclient.hsetAsync("network:status:ping", server, -1); // -1 as unreachable
+      });
+    }
+    for (const pingServer in this.checkNetworkPings) {
+      if (servers.indexOf(pingServer) == -1) {
+        const p = this.checkNetworkPings[pingServer];
+        p && p.stop();
+        delete this.checkNetworkPings[pingServer];
+        rclient.hdelAsync("network:status:ping", pingServer);
+      }
+    }
+    const dnsmasqServers = await rclient.hgetAsync("policy:system", "dnsmasq");
+    if (dnsmasqServers) {
+      const { secondaryDnsServers, alternativeDnsServers } = JSON.parse(dnsmasqServers)
+      secondaryDnsServers && dnses.push(secondaryDnsServers)
+      alternativeDnsServers && dnses.push(alternativeDnsServers)
+    }
+    let resultGroupByHost = {};
+    for (const internetTestHost of internetTestHosts) {
+      const resultGroupByDns = {}
+      for (const dns of dnses) {
+        try {
+          const result = await exec(`dig @${dns} +short ${internetTestHost}`);
+          resultGroupByDns[dns] = {
+            stdout: result.stdout ? result.stdout.split('\n').filter(x => x) : result.stdout,
+            stderr: result.stderr ? result.stderr.split('\n').filter(x => x) : result.stderr
+          }
+        } catch (err) {
+          resultGroupByDns[dns] = { err: err }
+        }
+      }
+      resultGroupByHost[internetTestHost] = resultGroupByDns
+    }
+    rclient.setAsync("network:status:dig", JSON.stringify(resultGroupByHost));
+  }
+  async runSpeedTest() {
+    this.cornJob && this.cornJob.stop();
+    this.cornJob = new CronJob("00 30 02 * * *", () => {
+      speedtest();
+    }, null, true, await sysManager.getTimezone())
+  }
+  stopSpeedTest() {
+    this.cornJob && this.cornJob.stop();
+    this.cornJob = null;
   }
 }
 

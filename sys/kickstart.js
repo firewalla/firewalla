@@ -150,16 +150,10 @@ diag.start()
 diag.iptablesRedirection()
 
 let eptcloud = new cloud(eptname, null);
-eptcloud.debug(false);
-let service = null;
 
 storage.initSync({
   'dir': dbPath
 });
-
-function pad(value, length) {
-  return (value.toString().length < length) ? pad("0" + value, length) : value;
-}
 
 function generateEncryptionKey(license) {
   // when there is no local license file, use default one
@@ -209,7 +203,7 @@ async function postAppLinked() {
   // only do this in production and always do after 15 seconds ...
   // the 15 seconds wait is for the process to wake up
   return new Promise((resolve, reject) => {
-    if (f.isProductionOrBeta() &&
+    if (f.isProductionOrBetaOrAlpha() &&
       // resetPassword by default unless resetPassword flag is explictly set to false
       (typeof fConfig.resetPassword === 'undefined' ||
         fConfig.resetPassword === true)) {
@@ -230,14 +224,10 @@ async function postAppLinked() {
   });
 }
 
-async function inviteFirstAdmin(gid) {
+async function inviteAdmin(gid) {
   log.forceInfo("Initializing first admin:", gid);
 
   const gidPrefix = gid.substring(0, 8);
-
-  process.on('SIGTERM', exitHandler.bind(null, {
-    terminated: true, cleanup: true, gid: gid, exit: true
-  }));
 
   const group = await eptcloud.groupFindAsync(gid)
 
@@ -332,7 +322,7 @@ async function launchService2(gid) {
   await writeFileAsync('/home/pi/.firewalla/ui.conf', JSON.stringify({gid:gid}), 'utf8');
 
   // don't start bro until app is linked
-  await exec("sudo systemctl is-active brofish").catch((err) => {
+  await exec("sudo systemctl is-active brofish").catch(() => {
     // need to restart brofish
     log.info("Restart brofish.service ...");
     return exec("sudo systemctl restart brofish").catch((err) => { // use restart instead. use 'start' may be trapped due to 'TimeoutStartSec' in brofish.service
@@ -377,17 +367,22 @@ function login() {
             token: eptcloud.token,
             gid: gid
           }, (err, data) => {
-            if (err) {
-            }
             log.info("Set sys:ept", err, data, eptcloud.eid, eptcloud.token, gid);
           });
 
-          await inviteFirstAdmin(gid)
+          process.on('SIGTERM', exitHandler.bind(null, {
+            terminated: true, cleanup: true, gid: gid, exit: true, event: "SIGTERM"
+          }));
 
-          await platform.turnOffPowerLED();
-          exec("sleep 2; sudo systemctl stop firekick").catch((err) => {
+          await inviteAdmin(gid)
+
+          await exitHandler({terminated: true, cleanup: true, gid: gid, exit: false, event: "NormalEnd"})
+
+          process.removeAllListeners('SIGTERM')
+
+          exec("sudo systemctl stop firekick").catch(() => {
             // this command will kill the program itself, catch this error silently
-          }) 
+          })
 
         } else {
           log.error("Invalid gid");
@@ -422,7 +417,7 @@ async function sendTerminatedInfoToDiagServer(gid) {
 }
 
 async function exitHandler(options, err) {
-  if (err) log.info(err.stack);
+  if (err) log.info("Exiting", options.event, err.message, err.stack);
   if (options.cleanup) {
     await diag.iptablesRedirection(false);
     await platform.turnOffPowerLED();
@@ -435,12 +430,12 @@ async function exitHandler(options, err) {
 
 //do something when app is closing
 process.on('beforeExit', exitHandler.bind(null, {
-  cleanup: true, exit: true
+  cleanup: true, exit: true, event: "beforeExit"
 }));
 
 //catches ctrl+c event
 process.on('SIGINT', exitHandler.bind(null, {
-  cleanup: true, exit: true
+  cleanup: true, exit: true, event: "SIGINT"
 }));
 
 process.on('uncaughtException',(err)=>{

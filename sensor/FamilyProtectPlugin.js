@@ -40,8 +40,8 @@ const fc = require('../net2/config.js');
 
 const spt = require('../net2/SystemPolicyTool')();
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const updateFeature = "family";
-const updateFlag = "2";
+
+const featureName = "family_protect";
 
 class FamilyProtectPlugin extends Sensor {
     async run() {
@@ -53,36 +53,9 @@ class FamilyProtectPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
-        if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
-            const isPolicyEnabled = await spt.isPolicyEnabled('family');
-            if (isPolicyEnabled) {
-                await fc.enableDynamicFeature("family");
-            }
-            await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
-        }
         await exec(`mkdir -p ${dnsmasqConfigFolder}`);
-        sem.once('IPTABLES_READY', async () => {
-            if (fc.isFeatureOn("family_protect")) {
-                await this.globalOn();
-            } else {
-                await this.globalOff();
-            }
-            fc.onFeature("family_protect", async (feature, status) => {
-                if (feature !== "family_protect") {
-                    return;
-                }
-                if (status) {
-                    await this.globalOn();
-                } else {
-                    await this.globalOff();
-                }
-            })
 
-            await this.job();
-            this.timer = setInterval(async () => {
-                return this.job();
-            }, this.config.refreshInterval || 3600 * 1000); // one hour by default
-        })
+        this.hookFeature(featureName);
     }
 
     async job() {

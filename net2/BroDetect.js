@@ -22,7 +22,6 @@ const Tail = require('always-tail');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const iptool = require("ip");
-const useragent = require('useragent');
 
 const SysManager = require('./SysManager.js');
 const sysManager = new SysManager('info');
@@ -57,6 +56,7 @@ const l2 = require('../util/Layer2.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fc = require('../net2/config.js')
 let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
@@ -256,7 +256,7 @@ module.exports = class {
       this.lastNTS = null;
     }
   }
-  
+
   async _activeMacHeartbeat() {
     for (let mac in this.activeMac) {
       let entry = this.activeMac[mac];
@@ -400,13 +400,14 @@ module.exports = class {
   //{"ts":1464066236.121734,"uid":"CnCRV73J3F0nhWtBPb","id.orig_h":"192.168.2.221","id.orig_p":5353,"id.resp_h":"224.0.0.251","id.resp_p":5353,"proto":"udp","trans_id":0,"query":"jianyu-chens-iphone-6.local","qclass":32769,"qclass_name":"qclass-32769","qtype":255,"qtype_name":"*","rcode":0,"rcode_name":"NOERROR","AA":true,"TC":false,"RD":false,"RA":false,"Z":0,"answers":["jianyu-chens-iphone-6.local","jianyu-chens-iphone-6.local","jianyu-chens-iphone-6.local","jianyu-chens-iphone-6.local"],"TTLs":[120.0,120.0,120.0,120.0],"rejected":false}
   //{"ts":1482189510.68758,"uid":"Cl7FVE1EnC0fBhL8l7","id.orig_h":"2601:646:9100:74e0:e43e:adc7:6d48:76da","id.orig_p":53559,"id.resp_h":"2001:558:feed::1","id.resp_p":53,"proto":"udp","trans_id":12231,"query":"log-rts01-iad01.devices.nest.com","rcode":0,"rcode_name":"NOERROR","AA":false,"TC":false,"RD":false,"RA":true,"Z":0,"answers":["devices-rts01-production-331095621.us-east-1.elb.amazonaws.com","107.22.178.96","50.16.214.117","184.73.190.206","23.21.51.61"],"TTLs":[2.0,30.0,30.0,30.0,30.0],"rejected":false}
 
-  processDnsData(data) {
+  async processDnsData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj == null || obj["id.resp_p"] != 53) {
         return;
       }
       if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
+        //await rclient.zaddAsync(`dns:`, Math.ceil(obj.ts), )
         if (this.lastDNS!=null) {
           if (this.lastDNS['query'] == obj['query']) {
             if (JSON.stringify(this.lastDNS['answers']) == JSON.stringify(obj["answers"])) {
@@ -417,48 +418,41 @@ module.exports = class {
         }
         this.lastDNS = obj;
         // record reverse dns as well for future reverse lookup
-        (async () => {
-          await dnsTool.addReverseDns(obj['query'], obj['answers'])
+        await dnsTool.addReverseDns(obj['query'], obj['answers'])
 
-          for (let i in obj['answers']) {
-            // answer can be an alias or ip address
-            const answer = obj['answers'][i];
-            if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
-              continue;
-  
-            if (!iptool.isV4Format(answer) && !iptool.isV6Format(answer))
-              // do not add domain alias to dns entry
-              continue;
-  
-            await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
-            sem.emitEvent({
-              type: 'DestIPFound',
-              ip: answer,
-              suppressEventLogging: true
-            });
-          }
-        })()
+        for (let i in obj['answers']) {
+          // answer can be an alias or ip address
+          const answer = obj['answers'][i];
+          if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
+            continue;
+
+          if (!iptool.isV4Format(answer) && !iptool.isV6Format(answer))
+            // do not add domain alias to dns entry
+            continue;
+
+          await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
+          sem.emitEvent({
+            type: 'DestIPFound',
+            ip: answer,
+            suppressEventLogging: true
+          });
+        }
       } else if (obj['id.orig_p'] == 5353 && obj['id.resp_p'] == 5353 && obj['answers'].length > 0) {
         let hostname = obj['answers'][0];
         let ip = obj['id.orig_p'];
         let key = "host:ip4:" + ip;
         log.debug("Dns:FindHostWithIP", key, ip, hostname);
 
-        dnsManager.resolveLocalHost(ip, (err, data) => {
-          if (err == null && data.mac != null && data != null && data.name == null && data.bname == null) {
-            let changeset = {
-              name: hostname,
-              bname: hostname
-            };
-            //changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
-            log.debug("Dns:Redis:Merge", key, changeset);
-            rclient.hmset("host:mac:" + data.mac, changeset, (err, result) => {
-              if (err) {
-                log.error("Discovery:Nmap:Update:Error", err);
-              }
-            });
-          }
-        });
+        const host = await dnsManager.resolveLocalHostAsync(ip);
+        if (host != null && host.mac != null && host.name == null && host.bname == null) {
+          let changeset = {
+            name: hostname,
+            bname: hostname
+          };
+          //changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
+          log.debug("Dns:Redis:Merge", key, changeset);
+          await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
+        }
       }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
@@ -743,19 +737,19 @@ module.exports = class {
       /*
        * the s flag is a short packet flag,
        * meaning the flow was not detect complete.  This can happen due to pcap runs before
-       * the firewall, and due to how spoof working, there are periods that packets may 
+       * the firewall, and due to how spoof working, there are periods that packets may
        * leak, which causes the strange detection.  This need to be look at later.
        *
        * this problem does not exist in DHCP mode.
        *
-       * when flag is set to 's', intel should ignore 
+       * when flag is set to 's', intel should ignore
        */
       let flag;
       if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
         // beware that OTH may occur in long lasting connections intermittently
         if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
           obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
-          obj.conn_state == "SH" || obj.conn_state == "SHR" || 
+          obj.conn_state == "SH" || obj.conn_state == "SHR" ||
           obj.conn_state == "S0") {
           log.debug("Conn:Drop:State:P1",obj.conn_state,JSON.stringify(obj));
           flag = 's';
@@ -843,16 +837,16 @@ module.exports = class {
         return;
       }
       localMac = localMac.toUpperCase();
-      
+
       // Mark all flows that are partially completed.
       // some of these flows may be valid
       //
-      //  flag == s 
+      //  flag == s
       if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
         if (obj.conn_state=="REJ" || obj.conn_state=="S2" || obj.conn_state=="S3" ||
           obj.conn_state=="RSTOS0" || obj.conn_state=="RSTRH" ||
-          obj.conn_state == "SH" || obj.conn_state == "SHR" || 
+          obj.conn_state == "SH" || obj.conn_state == "SHR" ||
           obj.conn_state == "S0") {
           log.debug("Conn:Drop:State:P2",obj.conn_state,JSON.stringify(obj));
           flag = 's';
@@ -906,7 +900,7 @@ module.exports = class {
         flowspec = {
           ts: obj.ts, // ts stands for start timestamp
           ets: obj.ts + obj.duration, // ets stands for end timestamp
-          _ts: now, // _ts is the last time updated 
+          _ts: now, // _ts is the last time updated
           __ts: obj.ts,  // __ts is the first time found
           sh: host, // source
           dh: dst, // dstination
@@ -939,7 +933,7 @@ module.exports = class {
           flowspec.ts = obj.ts;
         }
         if (flowspec.ets < obj.ts + obj.duration) {
-          // update end timestamp 
+          // update end timestamp
           flowspec.ets = obj.ts + obj.duration;
         }
         // update last time updated
@@ -961,7 +955,7 @@ module.exports = class {
         ts: obj.ts, // ts stands for start timestamp
         ets: obj.ts + obj.duration, // ets stands for end timestamp
         sh: host, // source
-        _ts: now, // _ts is the last time updated 
+        _ts: now, // _ts is the last time updated
         dh: dst, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes
         rb: Number(obj.resp_bytes),
@@ -1073,7 +1067,7 @@ module.exports = class {
 
 
         //let redisObj = [key, tmpspec.ts, strdata];
-        // beware that 'now' is used as score in flow:conn:* zset, since now is always monitonically increasing
+        // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
         let redisObj = [key, now, strdata];
         log.debug("Conn:Save:Temp", redisObj);
 
@@ -1138,9 +1132,6 @@ module.exports = class {
           let key = "flow:conn:" + spec.fd + ":" + spec.mac;
           let strdata = JSON.stringify(spec);
           let ts = spec._ts; // this is the last time when this flowspec is updated
-          if (spec.ts > this.flowstashExpires - FLOWSTASH_EXPIRES) {
-            ts = spec.ts;
-          }
           let redisObj = [key, ts, strdata];
           if (stashed[key]) {
             stashed[key].push(redisObj);
@@ -1162,7 +1153,7 @@ module.exports = class {
           } catch (e) {
             log.error("Conn:Save:Host:EXCEPTION", e);
           }
-            
+
         }
 
         let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
@@ -1277,7 +1268,7 @@ module.exports = class {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data 
+        rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
           rclient.hmset(key, xobj, (err, value) => {
             if (err == null) {
               if (this.config.bro.ssl.expires) {
@@ -1424,6 +1415,7 @@ module.exports = class {
 
 
   async processNoticeData(data) {
+    if(!fc.isFeatureOn("cyber_security")) return;
     try {
       let obj = JSON.parse(data);
       if (obj.note == null) {
@@ -1505,7 +1497,7 @@ module.exports = class {
 
       const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 
-      // lastNTS starts with null and assigned with normalizedTS every 10s 
+      // lastNTS starts with null and assigned with normalizedTS every 10s
       if (this.lastNTS != normalizedTS) {
         const toRecord = this.timeSeriesCache
 

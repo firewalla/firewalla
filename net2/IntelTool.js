@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,20 +14,22 @@
  */
 'use strict';
 
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-let bone = require('../lib/Bone.js');
+const bone = require('../lib/Bone.js');
 
-let util = require('util');
+const util = require('util');
 
-let flowUtil = require('../net2/FlowUtil.js');
+const flowUtil = require('../net2/FlowUtil.js');
 
 const firewalla = require('../net2/Firewalla.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
+
+const country = require('../extension/country/country.js');
 
 let instance = null;
 
@@ -180,7 +182,7 @@ class IntelTool {
     if (this.debugMode) {
       list.push({
         _alist:hashList,
-        alist:urlList,
+        alist:urlList.map(item => item[0]),
         flow:{ fd }
       });
     } else {
@@ -193,7 +195,7 @@ class IntelTool {
     let data = {flowlist:list, hashed:1};
 
     try {
-      const result = await bone.intelAsync("*", "", "check", data);
+      const result = await bone.intelAsync("*", "check", data);
       return result;
     } catch (err) {
       log.error("Failed to get intel for urls", urlList, "err:", err);
@@ -201,7 +203,7 @@ class IntelTool {
     }
   }
 
-  checkIntelFromCloud(ipList, domainList, fd, appList, flow) {
+  async checkIntelFromCloud(ipList, domainList, fd) {
     log.debug("Checking intel for",fd, ipList, domainList);
     if (fd == null) {
       fd = 'in';
@@ -210,9 +212,7 @@ class IntelTool {
     let flowList = [];
     let _ipList = [];
     let _aList = [];
-    let aList = [];
     let _hList = [];
-    let hList = [];
 
     ipList.forEach((ip)=>{
       _ipList = _ipList.concat(flowUtil.hashHost(ip));
@@ -257,26 +257,23 @@ class IntelTool {
 
     //    log.info(require('util').inspect(data, {depth: null}));
 
-    return new Promise((resolve, reject) => {
-      bone.intel("*","", "check", data, (err, data) => {
-        if(err) {
-          log.info("IntelCheck Result FAIL:",ipList, data);
-          reject(err)
-        } else {
-          if(Array.isArray(data)) {
-            data.forEach((result) => {
-              const ip = result.ip
-              if(hashCache[ip]) {
-                result.originIP = hashCache[ip]
-              }
-            })
+    try {
+      const results = await bone.intelAsync('*', 'check', data)
+      if(Array.isArray(results)) {
+        results.forEach((result) => {
+          const ip = result.ip
+          if(hashCache[ip]) {
+            result.originIP = hashCache[ip]
           }
-          log.debug("IntelCheck Result:",ipList, domainList, data);
-          resolve(data);
-        }
+        })
+      }
+      log.debug("IntelCheck Result:",ipList, domainList, data);
 
-      });
-    });
+      return results
+    } catch(err) {
+      log.error("IntelCheck Result FAIL:", ipList, data, err);
+      throw err;
+    }
   }
 
   getUserAgentKey(src, dst, dstPort) {
@@ -349,6 +346,11 @@ class IntelTool {
 
   async getDNS(ip) {
     return dnsTool.getDns(ip);
+  }
+
+  async getCountry(ip) {
+    const intel = await this.getIntel(ip)
+    return intel && intel.country || country.getCountry(ip);
   }
 }
 

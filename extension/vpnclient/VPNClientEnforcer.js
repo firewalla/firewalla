@@ -168,6 +168,31 @@ class VPNClientEnforcer {
     }
   }
 
+  async enforceStrictVPN(vpnIntf) {
+    if (!vpnIntf) {
+      throw "Interface is not specified";
+    }
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
+    await this._ensureCreateIpset(vpnClientIpset);
+    const cmd = wrapIptables(`sudo iptables -w -A FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to enforce strict vpn on ${vpnIntf}`, err);
+    });
+  }
+
+  async unenforceStrictVPN(vpnIntf) {
+    if (!vpnIntf) {
+      throw "Interface is not specified";
+    }
+    const vpnClientIpset = this._getVPNClientIPSetName(vpnIntf);
+    await this._ensureCreateIpset(vpnClientIpset);
+    const cmd = wrapIptables(`sudo iptables -w -D FORWARD -m set --match-set ${vpnClientIpset} src -m set ! --match-set trusted_ip_set dst ! -o ${vpnIntf} -j FW_DROP`);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to unenforce strict vpn on ${vpnIntf}`, err);
+      throw err;
+    });
+  }
+
   async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], overrideDefaultRoute = true) {
     if (!vpnIntf)
       throw "Interface is not specified";
@@ -340,7 +365,7 @@ class VPNClientEnforcer {
   }
 
   async _periodicalRefreshRule() {
-    await Promise.all(Object.keys(this.enabledHosts).map(async mac => {
+    for(const mac in this.enabledHosts) {
       const host = await hostTool.getMACEntry(mac);
       const oldHost = this.enabledHosts[mac];
       const enabledMode = oldHost.vpnClientMode;
@@ -375,7 +400,7 @@ class VPNClientEnforcer {
         default:
           log.error("Unsupported vpn client mode: " + enabledMode);
       }
-    }));
+    }
   }
 
   _isSecondaryInterfaceIP(ip) {

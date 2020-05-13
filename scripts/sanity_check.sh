@@ -36,6 +36,15 @@ check_file() {
     return 0
 }
 
+check_dmesg_ethernet() {
+    echo "----------------------- Ethernet Link Up/Down in dmesg ----------------------------"
+
+    dmesg | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
+
+    echo ""
+    echo ""
+}
+
 check_git() {
     _rc=0
     repo_dir=$1
@@ -178,7 +187,7 @@ check_policies() {
             RULE_ID="* $RULE_ID"
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
-        fi        
+        fi
         printf "%8s %30s %10s %25s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME"
     done
 
@@ -209,7 +218,7 @@ is_firewalla() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %35s %25s %25s %10s %10s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online"
+    printf "%35s %35s %25s %25s %10s %10s %10s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient"
     NOW=$(date +%s)
     for DEVICE in $DEVICES; do
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
@@ -235,10 +244,26 @@ check_hosts() {
 
         local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
         DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
-        if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
-            local DEVICE_ONLINE="yes"
-        else
-            local DEVICE_ONLINE="no"
+        if [[ ! -n $DEVICE_ONLINE_TS ]]; then
+            local DEVICE_ONLINE="N/A"
+            else
+                if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
+                    local DEVICE_ONLINE="yes"
+                else
+                    local DEVICE_ONLINE="no"
+                fi
+        fi
+
+        local DEVICE_VPN="N/A"
+        local DEVICE_VPN_INFO=$(redis-cli hget $POLICY_MAC vpnClient)
+        if [[ -n $DEVICE_VPN_INFO ]]; then
+            local DEVICE_VPN_TRUE=$(echo $DEVICE_VPN_INFO | grep '\"state\":true')
+            local DEVICE_VPN_FALSE=$(echo $DEVICE_VPN_INFO | grep '\"state\":false')
+            if [[ -n $DEVICE_VPN_TRUE ]]; then
+                DEVICE_VPN="true"
+            elif [[ -n $DEVICE_VPN_FALSE ]]; then
+                DEVICE_VPN="false"
+            fi
         fi
 
         local COLOR=""
@@ -248,7 +273,7 @@ check_hosts() {
             COLOR="\e[91m"
           fi
         fi
-        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s $UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE"
+        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s %10s $UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN"
     done
 
     echo ""
@@ -318,6 +343,7 @@ if [ "$FAST" == false ]; then
     check_systemctl_services
     check_rejection
     check_exception
+    check_dmesg_ethernet
     check_reboot
     check_system_config
     check_sys_features

@@ -22,6 +22,8 @@ const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
 
 const configServerKey = "ext.guardian.socketio.server";
+const configRegionKey = "ext.guardian.socketio.region";
+const configBizModeKey = "ext.guardian.business";
 const configAdminStatusKey = "ext.guardian.socketio.adminStatus";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -47,10 +49,32 @@ class GuardianSensor extends Sensor {
   async apiRun() {
     extensionManager.onGet("guardianSocketioServer", (msg) => {
       return this.getServer();
-    })
+    });
 
     extensionManager.onSet("guardianSocketioServer", (msg, data) => {
-      return this.setServer(data.server);
+      return this.setServer(data.server, data.region);
+    });
+
+    extensionManager.onGet("guardian.business", async (msg) => {
+      const data = await rclient.getAsync(configBizModeKey);
+      if(!data) {
+        return null;
+      }
+
+      try {
+        return JSON.parse(data);
+      } catch(err) {
+        log.error(`Failed to parse data, err: ${err}`);
+        return null;
+      }
+    });
+
+    extensionManager.onSet("guardian.business", async (msg, data) => {
+      await rclient.setAsync(configBizModeKey, JSON.stringify(data));
+    });
+
+    extensionManager.onGet("guardianSocketioRegion", (msg) => {
+      return this.getRegion();
     });
 
     extensionManager.onCmd("startGuardianSocketioServer", (msg, data) => {
@@ -66,10 +90,10 @@ class GuardianSensor extends Sensor {
       if(!socketioServer) {
         throw new Error("invalid guardian relay server");
       }
-
-      await this.setServer(socketioServer);
+      const forceRestart = !this.socket || (await this.getRegion() != data.region) || (await this.getServer() != socketioServer)
+      await this.setServer(socketioServer, data.region);
       
-      await this.start();
+      forceRestart && await this.start();
     });
 
     const adminStatusOn = await this.isAdminStatusOn();
@@ -78,17 +102,26 @@ class GuardianSensor extends Sensor {
     }
   }
 
-  async setServer(server) {
+  async setServer(server, region) {
     if(server) {
+      if(region) {
+        await rclient.setAsync(configRegionKey, region);
+      } else {
+        await rclient.delAsync(configRegionKey);
+      }
       return rclient.setAsync(configServerKey, server);
     } else {
       throw new Error("invalid server");
-    }
+    }    
   }
 
   async getServer() {
     const value = await rclient.getAsync(configServerKey);
     return value || "";
+  }
+
+  async getRegion() {
+    return rclient.getAsync(configRegionKey);
   }
 
   async isAdminStatusOn() {
@@ -114,12 +147,31 @@ class GuardianSensor extends Sensor {
 
     await this.adminStatusOn();
 
-    this.socket = io.connect(server);
+    const gid = await et.getGID();
+    const eid = await et.getEID();
+
+    const region = await this.getRegion();
+    const socketPath = region?`/${region}/socket.io`:'/socket.io'
+    this.socket = io(server, {
+      path: socketPath,
+      transports: ['websocket']
+    });
     if(!this.socket) {
       throw new Error("failed to init socket io");
     }
 
-    const gid = await et.getGID();
+    this.socket.on('connect', () => {
+      log.info(`Socket IO connection to ${server}, ${region} is connected.`);
+      this.socket.emit("box_registration", {
+        gid: gid,
+        eid: eid
+      });
+    });
+
+    this.socket.on('disconnect', () => {
+      log.info(`Socket IO connection to ${server}, ${region} is disconnected.`);
+    });
+
     const key = `send_to_box_${gid}`;
     this.socket.on(key, (message) => {
       if(message.gid === gid) {

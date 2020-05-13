@@ -44,12 +44,7 @@ const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 
-const features = require('../net2/features');
-
 const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
-
-const CategoryUpdater = require('../control/CategoryUpdater.js')
-const categoryUpdater = new CategoryUpdater()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -75,6 +70,13 @@ module.exports = class {
 
     await ip6table.flush()
     await iptable.flush()
+
+    // In case diag service is running, immediate adds redirection back to prevent pairing failure
+    sem.emitEvent({
+      type: 'DiagRedirectionRenew',
+      toProcess: 'FireKick',
+      message: 'Iptables flushed by FireMain'
+    })
 
     let defaultTable = config['iptables']['defaults'];
     let myip = sysManager.myIp();
@@ -133,17 +135,14 @@ module.exports = class {
   }
 
   async vpnClient(host, policy) {
-    const updatedPolicy = JSON.parse(JSON.stringify(policy));
-    const result = await host.vpnClient(policy);
-    if (policy.state === true && !result) {
-      updatedPolicy.state = false;
-      host.setPolicy("vpnClient", updatedPolicy);
-    }
+    const result = await host.vpnClient(policy); // result optionally contains value of state and running
+    const updatedPolicy = Object.assign({}, policy, result); // this may trigger an extra system policy apply but the result should be idempotent
+    host.setPolicy("vpnClient", updatedPolicy);
   }
 
   async ipAllocation(host, policy) {
-    if (host.constructor.name !== 'Host') {
-      log.error("ipAllocation only supports per device policy", host.o.mac);
+    if (!host || host.constructor.name !== 'Host') {
+      log.error("ipAllocation only supports per device policy", host && host.o && host.o.mac);
       return;
     }
     await host.ipAllocation(policy);
@@ -196,10 +195,10 @@ module.exports = class {
 
     if (config.state == true) {
       (async () => {
-        const client = await ssClientManager.getSSClient();
-        await client.start();
+        await ssClientManager.initSSClients();
+        await ssClientManager.startService();
         await delay(10000);
-        await client.redirectTraffic();
+        await ssClientManager.startRedirect();
         log.info("SciSurf feature is enabled successfully for traffic redirection");
       })().catch((err) => {
         log.error("Failed to start scisurf feature:", err);
@@ -207,10 +206,8 @@ module.exports = class {
 
     } else {
       (async () => {
-        const client = await ssClientManager.getSSClient();
-        if (!client) return
-        await client.unRedirectTraffic();
-        await client.stop();
+        await ssClientManager.stopRedirect();
+        await ssClientManager.stopService();
         log.info("SciSurf feature is disabled successfully for traffic redirection");
       })().catch((err) => {
         log.error("Failed to disable SciSurf feature: " + err);

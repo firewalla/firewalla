@@ -22,7 +22,7 @@ LOGGER=/usr/bin/logger
 err() {
     msg="$@"
     echo "ERROR: $msg" >&2
-    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
+    sudo -u pi /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
 get_value() {
@@ -132,7 +132,7 @@ dns_resolvable() {
 }
 
 github_api_ok() {
-    curl -L -m10 https://api.github.com/zen &> /dev/null
+    curl -L -m10 https://api.github.com/zen &> /dev/null || nc -z 1.1.1.1 443 &> /dev/null
 }
 
 reboot_if_needed() {
