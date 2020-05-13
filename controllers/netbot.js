@@ -3261,7 +3261,7 @@ class netBot extends ControllerBot {
             return name !== "fishboneVPN1" && name !== cn;
           }).length >= allowCustomizedProfiles) {
             // Only one customized VPN profile is supported currently besides default VPN profile fishboneVPN1
-            this.simpleTxData(msg, {}, { code: 401, msg: 'Only one customized VPN profile is supported.' }, callback);
+            this.simpleTxData(msg, {}, { code: 401, msg: `Only ${allowCustomizedProfiles} customized VPN profile${allowCustomizedProfiles > 1 ? 's are' : ' is'} supported.` }, callback);
           } else {
             const systemPolicy = await this.hostManager.loadPolicyAsync();
             const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
