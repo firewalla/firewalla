@@ -91,6 +91,19 @@ class DNSCrypt {
   }
 
   allServersToToml(servers, selectedServers) {
+    /*
+    servers from cloud: [
+      {name: string, stamp: string},
+      {
+        name:'nextdns',
+        hostName:'dns.nextdns.io',
+        ip:'45.90.28.0'
+      }
+    ]
+    selectedServers: [
+      string | object{name:'nextdns',id:'xyz'}
+    ]
+    */
     return servers.map((s) => {
       if (!s) return null;
       let stamp = s.stamp;
@@ -186,7 +199,7 @@ class DNSCrypt {
     return all.map((x) => x.name).filter(Boolean);
   }
 
-  // ['cloudflare',{name:'nextdns',id:'845ca9'}]
+  // ['cloudflare',{name:'nextdns',id:'xyz'}]
   async setAllServers(servers) {
     if(servers === null) {
       return rclient.delAsync(serverKey);
