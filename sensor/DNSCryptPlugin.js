@@ -40,6 +40,7 @@ const dnsmasq = new DNSMASQ();
 const exec = require('child-process-promise').exec;
 
 const featureName = "doh";
+const fc = require('../net2/config.js');
 
 const dc = require('../extension/dnscrypt/dnscrypt');
 
@@ -155,13 +156,16 @@ class DNSCryptPlugin extends Sensor {
   }
 
   async applyDoH(reCheckConfig = false) {
-    const result = await dc.prepareConfig({}, reCheckConfig);
-    if (result) {
-      await dc.restart();
+    if (!fc.isFeatureOn(featureName)) {
+      await dc.stop();
     } else {
-      await dc.start();
+      const result = await dc.prepareConfig({}, reCheckConfig);
+      if (result) {
+        await dc.restart();
+      } else {
+        await dc.start();
+      }
     }
-
     const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
     if (this.adminSystemSwitch) {
       const dnsmasqEntry = `server=${dc.getLocalServer()}$${featureName}`;
