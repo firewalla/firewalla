@@ -101,7 +101,7 @@ class DNSCrypt {
       }
     ]
     selectedServers: [
-      string | {name:'nextdns',id:'xyz'}
+      string | object{name:'nextdns',id:'xyz'}
     ]
     */
     return servers.map((s) => {
