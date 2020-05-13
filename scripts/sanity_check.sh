@@ -168,7 +168,7 @@ check_system_config() {
 check_policies() {
     echo "----------------------- Blocking Rules ------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
-    printf "%5s %30s %10s %25s %10s %15s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler"
+    printf "%5s %30s %10s %25s %10s %15s %15s %10s %15s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Direction" "Action"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
@@ -176,6 +176,19 @@ check_policies() {
         local SCOPE=$(redis-cli hget $RULE scope)
         local ALARM_ID=$(redis-cli hget $RULE aid)
         local FLOW_DESCRIPTION=$(redis-cli hget $RULE flowDescription)
+        local ACTION=$(redis-cli hget $RULE action)
+        if [[ "x$ACTION" == "x" ]]; then
+            ACTION="block"
+        fi
+        local DIRECTION=$(redis-cli hget $RULE direction)
+        if [[ "x$DIRECTION" == "x" || "x$DIRECTION" == "xbidirection" ]]; then
+            DIRECTION="both"
+        fi
+        local TAG=$(redis-cli hget $RULE tag)
+        if [[ "x$TAG" != "x" ]]; then
+            TAG="${TAG:2:13}"
+        fi
+        TAG="${TAG/\"]/}"
 
         if [[ ! -n $SCOPE ]]; then
             SCOPE="All Devices"
@@ -193,7 +206,7 @@ check_policies() {
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
         fi
-        printf "%8s %30s %10s %25s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME"
+        printf "%8s %30s %10s %25s %10s %15s %15s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION"
     done
 
     echo ""
@@ -223,7 +236,7 @@ is_firewalla() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %35s %25s %25s %10s %10s %10s %10s %12s %13s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount"
+    printf "%35s %35s %25s %25s %10s %10s %10s %10s %12s %13s %20s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount" "Group"
     NOW=$(date +%s)
     for DEVICE in $DEVICES; do
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
@@ -281,7 +294,13 @@ check_hosts() {
             COLOR="\e[91m"
           fi
         fi
-        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s %10s %12s %13s $UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT"
+        local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=\[==" | sed "s=\]==" | sed "s=,= =")
+        TAGNAMES=""
+        for tag in $TAGS; do
+            TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
+        done
+        TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
+        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s %10s %12s %13s %20s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES"
     done
 
     echo ""
@@ -367,6 +386,24 @@ check_conntrack() {
     echo ""
 }
 
+check_network() {
+    if [[ $(uname -m) != "x86_64" ]]; then
+        return
+    fi
+
+    echo "---------------------- Network ------------------"
+    curl localhost:8837/v1/config/interfaces -o /tmp/scc_interfaces &>/dev/null
+    INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
+
+    echo "Interface,Name,UUID,Enabled,IPv4,IPv6,Gateway,Gateway6,DNS" > /tmp/scc_csv
+    for INTF in $INTFS; do
+        cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | [\"$INTF\", .config.meta.name // \"\", .config.meta.uuid[0:8], .config.enabled, .state.ip4 // \"\", (.state.ip6 // [] | join(\",\")), .state.gateway // \"\", .state.gateway6 // \"\", (.state.dns // [] | join(\";\"))] | @csv" >> /tmp/scc_csv
+    done
+    cat /tmp/scc_csv | column -t -s, | sed 's=\"==g'
+    echo ""
+    echo ""
+}
+
 usage() {
     return
 }
@@ -394,11 +431,12 @@ if [ "$FAST" == false ]; then
     check_dmesg_ethernet
     check_reboot
     check_system_config
+    check_network
     check_sys_features
     check_sys_config
     check_policies
     check_iptables
     check_conntrack
-    check_speed
+    test -z $SPEED || check_speed
 fi
 check_hosts
