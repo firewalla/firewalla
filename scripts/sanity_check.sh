@@ -297,7 +297,7 @@ check_hosts() {
         local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=\[==" | sed "s=\]==" | sed "s=,= =")
         TAGNAMES=""
         for tag in $TAGS; do
-            TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n'),"
+            TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
         done
         TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
         printf "$COLOR %35s %35s %25s %25s %10s %10s %10s %10s %12s %13s %20s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES"
