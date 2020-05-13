@@ -173,12 +173,12 @@ class DNSCrypt {
         let servers = JSON.parse(serversString);
         servers = servers.filter((server) => (server && server.name && server.stamp));
         if (servers.length > 0)
-          return servers
+          return servers;
       } catch(err) {
         log.error("Failed to parse servers, err:", err);
       }
     }
-    return this.getDefaultAllServers()
+    return this.getDefaultAllServers();
   }
 
   async getAllServerNames() {
