@@ -147,6 +147,7 @@ storage.initSync({
 
 (async() => {
   await fireRouter.waitTillReady();
+  await sysManager.updateAsync();
   await rclient.delAsync("firekick:pairing:message");
   if (!platform.isFireRouterManaged()) {
     await interfaceDiscoverSensor.run()

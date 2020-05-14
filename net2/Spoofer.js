@@ -186,52 +186,8 @@ module.exports = class {
     });
   }
 
-    clean(ip) {
-        let cmdline = 'sudo pkill -f bitbridge4';
-        if (ip != null) {
-            cmdline = "sudo pkill -f 'bitbridge4 " + ip + "'";
-        }
-        log.info("Spoof:Clean:Running commandline: ", cmdline);
-
-      return new Promise((resolve, reject) => {
-        let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
-          if (err) {
-            log.error("Failed to clean up spoofing army: " + err);
-          }
-          resolve();
-        });
-      });
-    }
-
-    clean6(ip) {
-        let cmdline = 'sudo pkill -f bitbridge6a';
-        if (ip != null) {
-            cmdline = "sudo pkill -f 'bitbridge6a " + ip + "'";
-        }
-        log.info("Spoof:Clean:Running commandline: ", cmdline);
-
-        let p = require('child_process').exec(cmdline, (err, out, code) => {
-            log.info("Spoof:Clean up spoofing army", cmdline, err, out);
-        });
-    }
-
-  constructor(config, clean) {
-
-        // Warning, should not clean default ACL's applied to ip tables
-        // there is one applied for ip6 spoof, can't be deleted
-        if (clean == true) {
-            this.clean();
-            this.clean6();
-        }
+  constructor() {
         if (instance == null) {
-            this.config = config;
-            this.spoofers = {};
-
-            if (config == null || config.gateway == null) {
-                this.gateway = "192.168.1.1"
-            } else {
-                this.gateway = config.gateway;
-            }
             instance = this;
         } else {
             return instance;
