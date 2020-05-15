@@ -20,6 +20,7 @@ usage() {
     echo "Options:"
     echo "    -nu,  --no-update           skip apt-get update"
     echo "    -nr,  --no-reboot           no auto reboot after script execution"
+    echo "    -fr,  --force-reboot        force reboot after script execution"
     echo "    -pre, --exec-pre-upgrade    command* to run before upgrade"
     echo "    -pst, --exec-post-upgrade   command* to run after upgrade"
     echo ""
@@ -28,17 +29,26 @@ usage() {
     return
 }
 
+
+date
+echo "apt-get.sh $(printf -- '"%s" ' "$@")"
+logger "FIREWALLA: apt-get.sh $(printf -- '"%s" ' "$@")"
+
 PARAMS=""
 
 while [[ "$1" != "" ]]; do
     case $1 in
-    -nu | -no-update)
+    -nu | --no-update)
         shift
         NOUPDATE=1
         ;;
-    -nr | -no-reboot)
+    -nr | --no-reboot)
         shift
         NOREBOOT=1
+        ;;
+    -fr | --force-reboot)
+        shift
+        FORCE_REBOOT=1
         ;;
     -pre | --exec-pre-upgrade)
         shift
@@ -86,20 +96,23 @@ case "$UNAME" in
   ;;
 esac
 
-if [ $OVERLAYROOT != 1 ]; then
-  $PRE_EXEC
+$PRE_EXEC
 
-  if [ "$NOUPDATE" != 1 ]; then
-    sudo /usr/bin/apt-get update
-  fi
-  # Dpkg::Options
-  # confold: If a conffile has been modified and the version in the package
-  # did change, always keep the old version without prompting, unless the
-  # --force-confdef is also specified, in which case the default action is preferred.
-  sudo /usr/bin/apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" -y $PARAMS
+if [ "$NOUPDATE" != 1 ]; then
+  sudo /usr/bin/apt-get update
+fi
+# Dpkg::Options
+# confold: If a conffile has been modified and the version in the package
+# did change, always keep the old version without prompting, unless the
+# --force-confdef is also specified, in which case the default action is preferred.
+sudo /usr/bin/apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" -y $PARAMS
 
-  $POST_EXEC
-else
+$POST_EXEC
+
+
+# Install on both overlay and underlay fs for gold to avoid reboot
+if [ $OVERLAYROOT == 1 ]; then
+
   # Some directories do not exist in lower fs, e.g.
   # /var/log -> /log/system
   # /var/lib/apt -> /log/apt/lib
@@ -120,15 +133,16 @@ EOF
   sudo umount /media/root-ro/log
 fi
 
+
 # /etc/profile.d/armbian-check-first-login-reboot.sh
 # Gold -> /usr/lib/update-notifier/update-motd-reboot-require
 if [ "$NOREBOOT" != 1 ] && ([ -f "/var/run/.reboot_required" ] || [ -f "/var/run/reboot-required" ]); then
-    echo "Reboot required for newly added/upgraded packages, reboot in 10 seconds"
-    sudo shutdown -r -t 10
+    echo "Reboot required for newly added/upgraded packages, reboot in 30 seconds"
+    sudo shutdown -r -t 30
 fi
 
-if [ "$NOREBOOT" != 1 ] && [ $OVERLAYROOT == 1 ] && mount |grep " /media/root-ro "|grep ro &>/dev/null; then
-    echo "Root still in rw mode, reboot in 10 seconds"
-    sudo shutdown -r -t 10
+if [ "$FORCE_REBOOT" == 1 ]; then
+    echo "Forced reboot, start in 30 seconds"
+    sudo shutdown -r -t 30
 fi
 

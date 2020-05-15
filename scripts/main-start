@@ -201,7 +201,7 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      fi
      cat $FWPRODUCTION > /tmp/FWPRODUCTION
      mkdir -p /home/pi/.forever
-     sudo rm -r -f /home/pi/.forever/*
+     sudo rm -f /home/pi/.forever/{kickui,api,main,monitor}.log
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge{3,7} $FIREWALLA_HOME/bin/.

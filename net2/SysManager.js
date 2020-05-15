@@ -181,7 +181,10 @@ class SysManager {
         this.update(null);
       }, 1000 * 60 * 20);
     }
-    this.update(null);
+    this.update((err) => {
+      if (err)
+        log.error(`Failed to update SysManager in constructor`, err.message);
+    });
 
     return instance
   }
@@ -206,9 +209,9 @@ class SysManager {
     this.ept = bone.getSysept();
   }
 
-  // config loaded && interface discovered
+  // config loaded, sys:network:info loaded and interface discovered
   isConfigInitialized() {
-    return this.config != null && fireRouter.isReady();
+    return this.config != null && this.sysinfo && fireRouter.isReady();
   }
 
   delayedActions() {

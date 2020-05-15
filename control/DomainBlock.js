@@ -90,11 +90,9 @@ class DomainBlock {
     const blockSet = options.blockSet || "blocked_domain_set"
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      for (const addr of addresses) {
-        try {
-          await Block.block(addr, blockSet)
-        } catch (err) { }
-      }
+      await Block.batchBlock(addresses, blockSet).catch((err) => {
+        log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+      });
     }
   }
 
@@ -103,11 +101,9 @@ class DomainBlock {
 
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      for (const addr of addresses) {
-        try {
-          Block.unblock(addr, blockSet)
-        } catch (err) { }
-      }
+      await Block.batchUnblock(addresses, blockSet).catch((err) => {
+        log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
+      });
     }
   }
 

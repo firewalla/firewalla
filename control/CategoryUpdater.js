@@ -167,69 +167,41 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async getIncludedDomains(category) {
-    if (!this.isActivated(category))
-      return []
-
     return rclient.smembersAsync(this.getIncludeCategoryKey(category))
   }
 
   async addIncludedDomain(category, domain) {
-    if (!this.isActivated(category))
-      return
-
     return rclient.saddAsync(this.getIncludeCategoryKey(category), domain)
   }
 
   async removeIncludedDomain(category, domain) {
-    if (!this.isActivated(category))
-      return
-
     return rclient.sremAsync(this.getIncludeCategoryKey(category), domain)
   }
 
   async getExcludedDomains(category) {
-    if (!this.isActivated(category))
-      return []
-
     return rclient.smembersAsync(this.getExcludeCategoryKey(category))
   }
 
   async addExcludedDomain(category, domain) {
-    if (!this.isActivated(category))
-      return
-
     return rclient.saddAsync(this.getExcludeCategoryKey(category), domain)
   }
 
   async removeExcludedDomain(category, domain) {
-    if (!this.isActivated(category))
-      return
-
     return rclient.sremAsync(this.getExcludeCategoryKey(category), domain)
   }
 
   async includeDomainExists(category, domain) {
-    if (!this.isActivated(category))
-      return false
-
     return rclient.sismemberAsync(this.getIncludeCategoryKey(category), domain)
   }
 
   async excludeDomainExists(category, domain) {
-    if (!this.isActivated(category))
-      return false
-
     return rclient.sismemberAsync(this.getExcludeCategoryKey(category), domain)
   }
   async defaultDomainExists(category, domain) {
-    if (!this.isActivated(category))
-      return false
     const defaultDomains = await this.getDefaultDomains(category) || [];
     return defaultDomains.indexOf(domain) > -1
   }
   async dynamicCategoryDomainExists(category, domain) {
-    if (!this.isActivated(category))
-      return false
     const dynamicCategoryDomains = await this.getDomains(category) || [];
     return dynamicCategoryDomains.indexOf(domain) > -1
   }

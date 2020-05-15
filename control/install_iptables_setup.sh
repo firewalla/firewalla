@@ -12,30 +12,30 @@ BLUE_HOLE_IP="198.51.100.100"
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 
 # bidirection
-sudo ipset create block_ip_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
-sudo ipset create block_domain_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
-sudo ipset create block_net_set hash:net family inet hashsize 128 maxelem 65536 &>/dev/null
+sudo ipset create block_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create block_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create block_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
 # inbound
-sudo ipset create block_ib_ip_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
-sudo ipset create block_ib_domain_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
-sudo ipset create block_ib_net_set hash:net family inet hashsize 128 maxelem 65536 &>/dev/null
+sudo ipset create block_ib_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create block_ib_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create block_ib_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
 # outbound
-sudo ipset create block_ob_ip_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
-sudo ipset create block_ob_domain_set hash:ip family inet hashsize 128 maxelem 65536 &>/dev/null
-sudo ipset create block_ob_net_set hash:net family inet hashsize 128 maxelem 65536 &>/dev/null
+sudo ipset create block_ob_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create block_ob_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create block_ob_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
 
 # bidirection
-sudo ipset create allow_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
-sudo ipset create allow_domain_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
-sudo ipset create allow_net_set hash:net family inet hashsize 128 maxelem 65536 &> /dev/null
+sudo ipset create allow_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &> /dev/null
+sudo ipset create allow_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &> /dev/null
+sudo ipset create allow_net_set hash:net family inet hashsize 4096 maxelem 65536 &> /dev/null
 # inbound
-sudo ipset create allow_ib_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
-sudo ipset create allow_ib_domain_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
-sudo ipset create allow_ib_net_set hash:net family inet hashsize 128 maxelem 65536 &> /dev/null
+sudo ipset create allow_ib_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &> /dev/null
+sudo ipset create allow_ib_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &> /dev/null
+sudo ipset create allow_ib_net_set hash:net family inet hashsize 4096 maxelem 65536 &> /dev/null
 # outbound
-sudo ipset create allow_ob_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
-sudo ipset create allow_ob_domain_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
-sudo ipset create allow_ob_net_set hash:net family inet hashsize 128 maxelem 65536 &> /dev/null
+sudo ipset create allow_ob_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &> /dev/null
+sudo ipset create allow_ob_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &> /dev/null
+sudo ipset create allow_ob_net_set hash:net family inet hashsize 4096 maxelem 65536 &> /dev/null
 
 sudo ipset create monitoring_off_mac_set hash:mac &>/dev/null
 sudo ipset create monitoring_off_set list:set &>/dev/null
@@ -365,32 +365,32 @@ fi
 
 if [[ -e /sbin/ip6tables ]]; then
   # bidirection
-  sudo ipset create block_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create block_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create block_net_set6 hash:net family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create block_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create block_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create block_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
   # inbound
-  sudo ipset create block_ib_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create block_ib_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create block_ib_net_set6 hash:net family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create block_ib_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create block_ib_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create block_ib_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
   # outbound
-  sudo ipset create block_ob_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create block_ob_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create block_ob_net_set6 hash:net family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create block_ob_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create block_ob_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create block_ob_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
 
   # bidirection
-  sudo ipset create allow_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create allow_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create allow_net_set6 hash:net family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create allow_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create allow_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create allow_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
   # inbound
-  sudo ipset create allow_ib_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create allow_ib_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create allow_ib_net_set6 hash:net family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create allow_ib_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create allow_ib_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create allow_ib_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
   # outbound
-  sudo ipset create allow_ob_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create allow_ob_domain_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
-  sudo ipset create allow_ob_net_set6 hash:net family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create allow_ob_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create allow_ob_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create allow_ob_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
 
-  sudo ipset create monitored_ip_set6 hash:ip family inet6 hashsize 128 maxelem 65536 &>/dev/null
+  sudo ipset create monitored_ip_set6 hash:ip family inet6 hashsize 1024 maxelem 65536 &>/dev/null
 
   sudo ipset flush block_ip_set6
   sudo ipset flush block_domain_set6
