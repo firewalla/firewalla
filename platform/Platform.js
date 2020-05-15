@@ -145,6 +145,10 @@ class Platform {
     return false
   }
 
+  isBonjourBroadcastEnabled() {
+    return true;
+  }
+
 }
 
 module.exports = Platform;
