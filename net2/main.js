@@ -76,6 +76,7 @@ async function detectInterface() {
 
 async function run0() {
   const isModeConfigured = await mode.isModeConfigured();
+  await sysManager.waitTillInitialized();
 
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
