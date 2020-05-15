@@ -55,7 +55,8 @@ log.info("Waiting for cloud token...");
 
 run0();
 
-function run0() {
+async function run0() {
+  await sysManager.waitTillInitialized();
   if (bone.cloudready() &&
       bone.isAppConnected() &&
       fireRouter.isReady() &&

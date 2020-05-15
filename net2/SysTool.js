@@ -52,6 +52,10 @@ class SysTool {
     return exec("sleep 3; sudo shutdown -h now")
   }
 
+  cancelShutdown() {
+    return exec("sudo shutdown -c")
+  }
+
   restartFireKickService() {
     return exec("redis-cli del firekick:pairing:message; sudo systemctl restart firekick")
   }

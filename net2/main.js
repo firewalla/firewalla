@@ -47,7 +47,6 @@ const firewalla = require("./Firewalla.js");
 
 const ModeManager = require('./ModeManager.js')
 const mode = require('./Mode.js')
-const WifiInterface = require('./WifiInterface.js');
 
 const fireRouter = require('./FireRouter.js')
 
@@ -74,21 +73,22 @@ async function detectInterface() {
   interfaceDetected = true;
 }
 
-// Start recording network status whether cloud is ready or not
-fireRouter.waitTillReady().then(() => {
-  const NetworkStatsSensor = sensorLoader.initSingleSensor('NetworkStatsSensor');
-  NetworkStatsSensor.run()
-})
-
-const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
 
 async function run0() {
   const isModeConfigured = await mode.isModeConfigured();
+  await sysManager.waitTillInitialized();
 
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
       isModeConfigured &&
       sysManager.isConfigInitialized()) {
+    // do not touch any sensor until everything is ready, otherwise the sensor may require a chain of other objects, which needs to be executed after sysManager is initialized
+    fireRouter.waitTillReady().then(() => {
+      const NetworkStatsSensor = sensorLoader.initSingleSensor('NetworkStatsSensor');
+      NetworkStatsSensor.run()
+    });
+        
+    const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
     await boneSensor.checkIn().catch((err) => {
       log.error("Got error when checkin, err", err);
       // running firewalla in non-license mode if checkin failed, do not return, continue run()
@@ -252,8 +252,6 @@ async function run() {
 
     await mode.reloadSetupMode() // make sure get latest mode from redis
     await ModeManager.apply()
-
-    WifiInterface.listenOnChange();
 
     // when mode is changed by anyone else, reapply automatically
     ModeManager.listenOnChange();

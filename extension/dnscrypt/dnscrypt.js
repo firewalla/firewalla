@@ -38,6 +38,8 @@ const serverKey = "ext.dnscrypt.servers";
 const allServerKey = "ext.dnscrypt.allServers";
 
 const bone = require("../../lib/Bone");
+const { DNSStamp } = require("../../vendor_lib/DNSStamp.js");
+const _ = require('lodash');
 
 class DNSCrypt {
   constructor() {
@@ -66,11 +68,14 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
     const allServers = await this.getAllServers(); // get servers from cloud
-    const allServerNames = allServers.map((x) => x.name).filter(Boolean);
-    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
-
     let serverList = await this.getServers();
-    serverList = serverList.filter((n) => allServerNames.includes(n)); // valid server name
+    const allServerNames = allServers.map((x) => x.name).filter(Boolean);
+    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers, serverList));
+
+    serverList = serverList.map((server) => {
+      if (allServerNames.includes(server)) { return server }
+      if (allServerNames.includes(server.name)) { return `${server.name}_${server.id}` }
+    }).filter(Boolean)
     content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
 
     if (reCheckConfig) {
@@ -85,10 +90,47 @@ class DNSCrypt {
     return true;
   }
 
-  allServersToToml(servers) {
+  allServersToToml(servers, selectedServers) {
+    /*
+    servers from cloud: [
+      {name: string, stamp: string},
+      {
+        name:'nextdns',
+        hostName:'dns.nextdns.io',
+        ip:'45.90.28.0'
+      }
+    ]
+    selectedServers: [
+      string | object{name:'nextdns',id:'xyz'}
+    ]
+    */
     return servers.map((s) => {
-      if(!s) return null;
-      return `[static.'${s.name}']\n  stamp = '${s.stamp}'\n`;
+      if (!s) return null;
+      let stamp = s.stamp;
+      let name = s.name;
+      if (!stamp) {
+        const server = _.find(selectedServers, (item) => {
+          return item && item.name == s.name;
+        });
+        if (!server) return null;
+        switch (s.name) {
+          case 'nextdns':
+            if (s.ip && s.hostName) {
+              stamp = new DNSStamp.DOH(s.ip, {
+                "hostName": s.hostName,
+                "path": `/${server.id}`,
+                "props": new DNSStamp.Properties({
+                  nofilter: server.nofilter === undefined ? false : server.nofilter,
+                  nolog: server.nolog === undefined ? false : server.nolog,
+                  dnssec: server.nolog === undefined ? true : server.nolog,
+                }),
+              }).toString();
+              name = `${name}_${server.id}`
+            }
+        }
+      }
+      if (!stamp) return null;
+      return `[static.'${name}']\n  stamp = '${stamp}'\n`;
     }).filter(Boolean).join("\n");
   }
 
@@ -157,6 +199,7 @@ class DNSCrypt {
     return all.map((x) => x.name).filter(Boolean);
   }
 
+  // ['cloudflare',{name:'nextdns',id:'xyz'}]
   async setAllServers(servers) {
     if(servers === null) {
       return rclient.delAsync(serverKey);

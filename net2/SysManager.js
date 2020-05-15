@@ -29,6 +29,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
+const { delay } = require('../util/util.js')
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -181,8 +182,15 @@ class SysManager {
         this.update(null);
       }, 1000 * 60 * 20);
     }
-    this.update(null);
-
+    fireRouter.waitTillReady().then(() => {
+      this.update((err) => {
+        if (err)
+          log.error(`Failed to update SysManager after firerouter is ready`, err.message);
+        else
+          log.info("SysManager initialization complete");
+      });
+    });
+    
     return instance
   }
 
@@ -206,10 +214,17 @@ class SysManager {
     this.ept = bone.getSysept();
   }
 
-  // config loaded && interface discovered
+  // config loaded, sys:network:info loaded and interface discovered
   isConfigInitialized() {
-    return this.config != null && fireRouter.isReady();
+    return this.config != null && this.sysinfo && fireRouter.isReady();
   }
+
+  async waitTillInitialized() {
+    if (this.config != null && this.sysinfo && fireRouter.isReady())
+      return;
+    await delay(1);
+    return this.waitTillInitialized();
+  } 
 
   delayedActions() {
     setTimeout(() => {

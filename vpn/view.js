@@ -1,13 +1,17 @@
 'use strict';
 
-const UPNP = require('../extension/upnp/upnp.js');
-const upnp = new UPNP();
+const sysManager = require('../net2/SysManager.js');
 
-setInterval(() => {
-  upnp.getExternalIP().then((ip) => {
-    console.log(ip);
-  }).catch((err) => {});
-  upnp.getPortMappingsUPNP().then((results) => {
-    console.log(results);
-  })
-}, 5000);
+sysManager.waitTillInitialized().then(() => {
+  const UPNP = require('../extension/upnp/upnp.js');
+  const upnp = new UPNP();
+  
+  setInterval(() => {
+    upnp.getExternalIP().then((ip) => {
+      console.log(ip);
+    }).catch((err) => {});
+    upnp.getPortMappingsUPNP().then((results) => {
+      console.log(results);
+    })
+  }, 5000);
+});

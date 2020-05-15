@@ -338,14 +338,14 @@ class FireRouter {
       switch(mode) {
         case Mode.MODE_AUTO_SPOOF:
         case Mode.MODE_DHCP:
-        case Mode.MODE_NONE:
-          // monitor both wan and lan in simple mode
+          // monitor both wan and lan in simple/DHCP mode
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
             .filter(intf => intf.state && intf.state.ip4) // ignore interfaces without ip address, e.g., VPN that is currently not running
             .map(intf => intf.config.meta.intfName);
           break;
 
+        case Mode.MODE_NONE:
         case Mode.MODE_ROUTER:
           // only monitor lan in router mode
           monitoringIntfNames = Object.values(intfNameMap)
