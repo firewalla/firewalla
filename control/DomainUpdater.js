@@ -64,7 +64,7 @@ class DomainUpdater {
         addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
           return firewalla.isReservedBlockingIP(addr) != true;
         });
-        let blockSet = "blocked_domain_set";
+        let blockSet = "block_domain_set";
         const ipLevelBlockAddrs = [];
         if (options.blockSet)
           blockSet = options.blockSet;
@@ -72,9 +72,6 @@ class DomainUpdater {
           const address = addresses[i];
           if (!existingSet[address]) {
             await rclient.saddAsync(key, address);
-            let blockSet = "blocked_domain_set";
-            if (options.blockSet)
-              blockSet = options.blockSet;
             if (!options.ignoreApplyBlock){
               const BlockManager = require('./BlockManager.js');
               const blockManager = new BlockManager();

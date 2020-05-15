@@ -79,7 +79,7 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    const blockSet = options.blockSet || "blocked_domain_set";
+    const blockSet = options.blockSet || "block_domain_set";
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
       const ipLevelBlockAddrs = [];
@@ -98,7 +98,7 @@ class DomainBlock {
   }
 
   async unapplyBlock(domain, options) {
-    const blockSet = options.blockSet || "blocked_domain_set"
+    const blockSet = options.blockSet || "block_domain_set"
 
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
@@ -252,7 +252,7 @@ class DomainBlock {
     for (let addr in set) {
       if (!existingSet[addr]) {
         await rclient.saddAsync(key, addr);
-        let blockSet = "blocked_domain_set";
+        let blockSet = "block_domain_set";
         if (options.blockSet)
           blockSet = options.blockSet;
         await Block.block(addr, blockSet).catch((err) => undefined);

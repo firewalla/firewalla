@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla LLC
+/*    Copyright 2020 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -124,7 +124,7 @@ class BlockManager {
             await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
         })
     }
-    async updateIpBlockInfo(ip, domain, action, blockSet = 'blocked_domain_set') {
+    async updateIpBlockInfo(ip, domain, action, blockSet = 'block_domain_set') {
         if (!fc.isFeatureOn(featureName)) {
             return {
                 blockLevel: 'ip'
