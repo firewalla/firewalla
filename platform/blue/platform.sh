@@ -37,3 +37,7 @@ function get_brofish_service {
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
 }
+
+function map_target_branch {
+  echo "$1"
+}

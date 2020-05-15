@@ -234,6 +234,9 @@ class SS2 {
           await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`).catch((err) => {
             log.error("Failed to add ss2 network to wan_routable, err:", err);
           });
+          await exec(`sudo ip route add ${subnet} dev ${bridgeName} table lan_routable`).catch((err) => {
+            log.error("Failed to add ss2 network to lan_routable, err:", err);
+          });          
         } else {
           throw new Error("invalid docker network");
         }

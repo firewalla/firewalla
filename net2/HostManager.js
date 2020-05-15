@@ -118,31 +118,7 @@ module.exports = class HostManager {
       this.hosts.all = [];
       this.callbacks = {};
       this.policy = {};
-      sysManager.update((err) => {
-        if (err == null) {
-          log.info("System Manager Updated");
-          if(!f.isDocker()) {
-            spoofer = new Spoofer({}, false);
-          } else {
-            // for docker
-            spoofer = {
-              isSecondaryInterfaceIP: () => {},
-              newSpoof: () => new Promise(resolve => resolve()),
-              newUnspoof: () => new Promise(resolve => resolve()),
-              newSpoof6: () => new Promise(resolve => resolve()),
-              newUnspoof6: () => new Promise(resolve => resolve()),
-              spoof: () => {},
-              spoofMac6: () => {},
-              clean: () => {},
-              clean7: () => {},
-              clean6byIp: () => {},
-              clean6: () => {},
-              validateV6Spoofs: () => {},
-              validateV4Spoofs: () => {},
-            };
-          }
-        }
-      });
+      spoofer = new Spoofer({}, false);
 
       let c = require('./MessageBus.js');
       this.messageBus = new c("info");
@@ -305,6 +281,8 @@ module.exports = class HostManager {
     json.model = platform.getName();
     json.branch = f.getBranch();
     if(frp.started && f.isApi()) {
+      json.remoteSupportStartTime = frp.startTime;
+      json.remoteSupportEndTime = frp.endTime;
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
     }

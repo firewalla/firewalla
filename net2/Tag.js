@@ -245,11 +245,13 @@ class Tag {
         // set skbmark
         this._netFwMark = rtIdHex;
       }
-      if (state === false) {
+      // null means off
+      if (state === null) {
         // reset skbmark
         this._netFwMark = "0000";
       }
-      if (state === null) {
+      // false means N/A
+      if (state === false) {
         // do not change skbmark
       }
       if (this._netFwMark) {

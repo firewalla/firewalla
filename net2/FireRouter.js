@@ -195,8 +195,10 @@ async function generateNetworkInfo() {
       searchDomains: searchDomains
     }
 
-    await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
-    await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
+    if (f.isMain()) {
+      await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
+      await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
+    }
     networkInfos.push(redisIntf);
   }
   if (f.isMain()) {
@@ -299,7 +301,7 @@ class FireRouter {
       const mode = await rclient.getAsync('mode')
 
       const lastConfig = await this.loadLastConfigFromHistory();
-      if (!lastConfig || ! _.isEqual(lastConfig.config, routerConfig)) {
+      if (f.isMain() && (!lastConfig || ! _.isEqual(lastConfig.config, routerConfig))) {
         await this.saveConfigHistory(routerConfig);
       }
 
@@ -369,7 +371,8 @@ class FireRouter {
         },
         monitoringInterface: monitoringIntfNames[0]
       };
-      Config.updateUserConfigSync(updatedConfig);
+      if (f.isMain())
+        Config.updateUserConfigSync(updatedConfig);
       // update sys:network:info at the end so that all related variables and configs are already changed
       this.sysNetworkInfo = await generateNetworkInfo();
       // calculate minimal listen interfaces based on monitoring interfaces
