@@ -254,6 +254,9 @@ module.exports = class DNSMASQ {
     if (this.reloadDNSTask)
       clearTimeout(this.reloadDNSTask);
     this.reloadDNSTask = setTimeout(async () => {
+      const confChanged = await this.checkConfsChange("dnsmasq:hosts", [`${HOSTS_DIR}/*`]);
+      if (!confChanged)
+        return;
       this.counter.reloadDnsmasq++;
       log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
       await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
@@ -1450,11 +1453,10 @@ module.exports = class DNSMASQ {
     }, cooldown)
   }
 
-  async checkConfsChange() {
+  async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH]) {
     try {
-      const dnsmasqConfKey = "dnsmasq:conf";
       let md5sumNow = '';
-      for (const confs of [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH]) {
+      for (const confs of paths) {
         const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
