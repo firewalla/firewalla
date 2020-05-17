@@ -319,14 +319,7 @@ class FWInvitation {
       icOptions.interface = myIp;
     }
 
-    if (platform.isBonjourBroadcastEnabled()) {
-      this.intercomm = require('../lib/intercomm.js')(icOptions);
-
-      if (this.intercomm.bcapable()==false) {
-        txtfield.verifymode = "qr";
-      } else {
-        this.intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
-      }
+      txtfield.verifymode = "qr";
   
       if(this.firstTime) {
         txtfield.firsttime = '1'
@@ -354,16 +347,15 @@ class FWInvitation {
   
         log.info("TXT:", txtfield);
         const serial = platform.getBoardSerial();
-        this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
+        if (platform.isBonjourBroadcastEnabled()) {
+          this.intercomm = require('../lib/intercomm.js')(icOptions);
+          this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
+        }
+        
   //      this.displayBonjourMessage(txtfield);
         this.storeBonjourMessage(txtfield);
       });
   
-      if (this.intercomm.bcapable() != false) {
-        this.intercomm.bpublish(this.gid, obj.r, config.serviceType);
-      }
-    }
-
     const cmd = "awk '{print $1}' /proc/uptime";
     try {
       const result = await exec(cmd);
