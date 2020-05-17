@@ -448,7 +448,8 @@ module.exports = class {
     log.info(this._getServiceName(), "health checker started");
   }
 
-  async remoteSupportStart(timeout = supportTimeout) {
+  async remoteSupportStart(timeout) {
+    timeout = timeout || supportTimeout;
     let tryStartFrpCount = FRPTRYCOUNT,
       errMsg = [], config;
     do {

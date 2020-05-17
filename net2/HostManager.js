@@ -318,14 +318,7 @@ module.exports = class HostManager {
     const uploadStats = await getHitsAsync(uploadKey, "1hour", countHours);
     downloadStats.splice(downloadStats.length - todayHours);
     uploadStats.splice(uploadStats.length - todayHours);
-    let totalDownload = 0, totalUpload = 0;
-    downloadStats.forEach((item) => {
-      totalDownload = totalDownload + item[1] * 1
-    })
-    uploadStats.forEach((item) => {
-      totalUpload = totalUpload + item[1] * 1
-    })
-    json.yesterday = { upload: uploadStats, download: downloadStats, totalDownload: totalDownload, totalUpload: totalUpload };
+    json.yesterday = this.generateStats(downloadStats,uploadStats);
     return json;
   }
 
@@ -337,6 +330,19 @@ module.exports = class HostManager {
     json.last24 = { upload: u, download: d, now: Math.round(new Date() / 1000)};
 
     return json;
+  }
+  async newLast24StatsForInit(json, target) {
+    const subKey = target ? ':' + target : ''
+    let downloadStats = await getHitsAsync("download" + subKey, "1hour", 24)
+    let uploadStats = await getHitsAsync("upload" + subKey, "1hour", 24)
+    json.newLast24 = this.generateStats(downloadStats, uploadStats);
+  }
+
+  async last12MonthsStatsForInit(json, target) {
+    const subKey = target ? ':' + target : ''
+    let downloadStats = await getHitsAsync("download" + subKey, "1month", 12)
+    let uploadStats = await getHitsAsync("upload" + subKey, "1month", 12)
+    json.last12Months = this.generateStats(downloadStats,uploadStats);
   }
 
   async last60MinStats() {
@@ -372,21 +378,10 @@ module.exports = class HostManager {
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
     const downloadStats = await getHitsAsync(downloadKey, '1day', days) || [];
     const uploadStats = await getHitsAsync(uploadKey, '1day', days) || [];
-    let totalDownload = 0, totalUpload = 0;
-    downloadStats.forEach((item) => {
-      totalDownload = totalDownload + item[1] * 1
-    })
-    uploadStats.forEach((item) => {
-      totalUpload = totalUpload + item[1] * 1
-    })
-    return {
-      downloadStats: downloadStats,
-      uploadStats: uploadStats,
-      totalDownload: totalDownload,
-      totalUpload: totalUpload,
+    return Object.assign({
       monthlyBeginTs: monthlyBeginTs / 1000,
       monthlyEndTs: monthlyEndTs / 1000
-    }
+    }, this.generateStats(downloadStats, uploadStats))
   }
 
   async last60MinStatsForInit(json, target) {
@@ -404,23 +399,7 @@ module.exports = class HostManager {
     } else {
       uploadStats = uploadStats.slice(1)
     }
-
-    let totalDownload = 0
-    downloadStats.forEach((s) => {
-      totalDownload += s[1]
-    })
-
-    let totalUpload = 0
-    uploadStats.forEach((s) => {
-      totalUpload += s[1]
-    })
-
-    json.last60 = {
-      upload: uploadStats,
-      download: downloadStats,
-      totalUpload: totalUpload,
-      totalDownload: totalDownload
-    }
+    json.last60 = this.generateStats(downloadStats,uploadStats);
   }
 
   async last60MinTopTransferForInit(json) {
@@ -446,23 +425,7 @@ module.exports = class HostManager {
     const subKey = target ? ':' + target : ''
     let downloadStats = await getHitsAsync("download" + subKey, "1day", 30)
     let uploadStats = await getHitsAsync("upload" + subKey, "1day", 30)
-
-    let totalDownload = 0
-    downloadStats.forEach((s) => {
-      totalDownload += s[1]
-    })
-
-    let totalUpload = 0
-    uploadStats.forEach((s) => {
-      totalUpload += s[1]
-    })
-
-    json.last30 = {
-      upload: uploadStats,
-      download: downloadStats,
-      totalUpload: totalUpload,
-      totalDownload: totalDownload
-    }
+    json.last30 = this.generateStats(downloadStats,uploadStats);
   }
 
   policyDataForInit(json) {
@@ -944,10 +907,12 @@ module.exports = class HostManager {
         let requiredPromises = [
           this.yesterdayStatsForInit(json),
           this.last24StatsForInit(json),
+          this.newLast24StatsForInit(json),
           this.last60MinStatsForInit(json),
           //            this.last60MinTopTransferForInit(json),
           this.extensionDataForInit(json),
           this.last30daysStatsForInit(json),
+          this.last12MonthsStatsForInit(json),
           this.policyDataForInit(json),
           this.legacyHostsStats(json),
           this.modeForInit(json),
@@ -1792,6 +1757,21 @@ module.exports = class HostManager {
           delete h.oper
         }
       }
+    }
+  }
+  generateStats(downloadStats = [], uploadStats = []) {
+    let totalDownload = 0, totalUpload = 0;
+    downloadStats.forEach((s) => {
+      totalDownload = totalDownload + s[1] * 1;
+    })
+    uploadStats.forEach((s) => {
+      totalUpload = totalUpload + s[1] * 1;
+    })
+    return {
+      upload: uploadStats,
+      download: downloadStats,
+      totalUpload: totalUpload,
+      totalDownload: totalDownload
     }
   }
 }

@@ -319,47 +319,49 @@ class FWInvitation {
       icOptions.interface = myIp;
     }
 
-    this.intercomm = require('../lib/intercomm.js')(icOptions);
+    if (platform.isBonjourBroadcastEnabled()) {
+      this.intercomm = require('../lib/intercomm.js')(icOptions);
 
-    if (this.intercomm.bcapable()==false) {
-      txtfield.verifymode = "qr";
-    } else {
-      this.intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
-    }
-
-    if(this.firstTime) {
-      txtfield.firsttime = '1'
-    }
-
-    txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
-
-    txtfield.model = platform.getName();
-
-//    this.displayLicense(this.symmetrickey.license)
-//    this.displayKey(this.symmetrickey.userkey);
-    //    this.displayInvite(obj); // no need to display invite in firewalla any more
-
-    network.get_private_ip((err, ip) => {
-      txtfield.ipaddress = ip;
-      const ip2 = sysManager.myIp2();
-      const otherAddrs = [];
-      if (ip2 && iptool.isV4Format(ip2))
-        otherAddrs.push(ip2);
-      txtfield.ipaddresses = otherAddrs.join(",");
-
-      if(obj.r && obj.r.length > 4) {
-        txtfield.rr = obj.r.substring(0,4);
+      if (this.intercomm.bcapable()==false) {
+        txtfield.verifymode = "qr";
+      } else {
+        this.intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
       }
-
-      log.info("TXT:", txtfield);
-      const serial = platform.getBoardSerial();
-      this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
-//      this.displayBonjourMessage(txtfield);
-      this.storeBonjourMessage(txtfield);
-    });
-
-    if (this.intercomm.bcapable() != false) {
-      this.intercomm.bpublish(this.gid, obj.r, config.serviceType);
+  
+      if(this.firstTime) {
+        txtfield.firsttime = '1'
+      }
+  
+      txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
+  
+      txtfield.model = platform.getName();
+  
+  //    this.displayLicense(this.symmetrickey.license)
+  //    this.displayKey(this.symmetrickey.userkey);
+      //    this.displayInvite(obj); // no need to display invite in firewalla any more
+  
+      network.get_private_ip((err, ip) => {
+        txtfield.ipaddress = ip;
+        const ip2 = sysManager.myIp2();
+        const otherAddrs = [];
+        if (ip2 && iptool.isV4Format(ip2))
+          otherAddrs.push(ip2);
+        txtfield.ipaddresses = otherAddrs.join(",");
+  
+        if(obj.r && obj.r.length > 4) {
+          txtfield.rr = obj.r.substring(0,4);
+        }
+  
+        log.info("TXT:", txtfield);
+        const serial = platform.getBoardSerial();
+        this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
+  //      this.displayBonjourMessage(txtfield);
+        this.storeBonjourMessage(txtfield);
+      });
+  
+      if (this.intercomm.bcapable() != false) {
+        this.intercomm.bpublish(this.gid, obj.r, config.serviceType);
+      }
     }
 
     const cmd = "awk '{print $1}' /proc/uptime";
@@ -396,7 +398,7 @@ class FWInvitation {
   }
 
   stopBroadcast() {
-    if(this.intercomm) {
+    if(platform.isBonjourBroadcastEnabled() && this.intercomm) {
       this.service && this.intercomm.stop(this.service);
       this.intercomm.bcapable() && this.intercomm.bstop();
       this.intercomm.bye();
