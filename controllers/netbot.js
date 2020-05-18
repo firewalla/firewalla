@@ -2107,7 +2107,9 @@ class netBot extends ControllerBot {
       netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options),
       this.hostManager.yesterdayStatsForInit(jsonobj, 'intf:' + target),
       this.hostManager.last60MinStatsForInit(jsonobj, 'intf:' + target),
-      this.hostManager.last30daysStatsForInit(jsonobj, 'intf:' + target)
+      this.hostManager.last30daysStatsForInit(jsonobj, 'intf:' + target),
+      this.hostManager.newLast24StatsForInit(jsonobj, 'intf:' + target),
+      this.hostManager.last12MonthsStatsForInit(jsonobj, 'intf:' + target)
     ])
 
     if (!jsonobj.flows['appDetails']) { // fallback to old way
@@ -2170,7 +2172,9 @@ class netBot extends ControllerBot {
       netBotTool.prepareDetailedCategoryFlowsFromCache(jsonobj, options),
       this.hostManager.yesterdayStatsForInit(jsonobj, 'tag:' + target),
       this.hostManager.last60MinStatsForInit(jsonobj, 'tag:' + target),
-      this.hostManager.last30daysStatsForInit(jsonobj, 'tag:' + target)
+      this.hostManager.last30daysStatsForInit(jsonobj, 'tag:' + target),
+      this.hostManager.newLast24StatsForInit(jsonobj, 'tag:' + target),
+      this.hostManager.last12MonthsStatsForInit(jsonobj, 'tag:' + target)
     ])
 
     if (!jsonobj.flows['appDetails']) { // fallback to old way
@@ -2282,7 +2286,9 @@ class netBot extends ControllerBot {
         netBotTool.prepareDetailedCategoryFlowsForHostFromCache(jsonobj, mac, options),
         this.hostManager.yesterdayStatsForInit(jsonobj, mac),
         this.hostManager.last60MinStatsForInit(jsonobj, mac),
-        this.hostManager.last30daysStatsForInit(jsonobj, mac)
+        this.hostManager.last30daysStatsForInit(jsonobj, mac),
+        this.hostManager.newLast24StatsForInit(jsonobj, mac),
+        this.hostManager.last12MonthsStatsForInit(jsonobj, mac)
       ])
 
       if (!jsonobj.flows["appDetails"]) {

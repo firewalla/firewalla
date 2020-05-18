@@ -153,6 +153,10 @@ class GoldPlatform extends Platform {
   getAllowCustomizedProfiles(){
     return 10;
   }
+
+  isBonjourBroadcastEnabled() {
+    return false;
+  }
 }
 
 module.exports = GoldPlatform;

@@ -212,10 +212,14 @@ class GuardianSensor extends Sensor {
 
       const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
 
-      this.socket.emit("send_from_box", {
-        message: encryptedResponse,
-        gid: gid
-      });
+      try {
+        this.socket.emit("send_from_box", {
+          message: encryptedResponse,
+          gid: gid
+        });
+      } catch (err) {
+        log.error('Socket IO connection error',err);
+      }
     }
   }
 }
