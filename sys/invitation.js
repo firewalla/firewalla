@@ -394,8 +394,8 @@ class FWInvitation {
       this.service && this.intercomm.stop(this.service);
       this.intercomm.bcapable() && this.intercomm.bstop();
       this.intercomm.bye();
-      this.unsetBonjourMessage();
     }
+    this.unsetBonjourMessage();
   }
 }
 
