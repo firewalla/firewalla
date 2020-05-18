@@ -392,7 +392,6 @@ class FWInvitation {
   stopBroadcast() {
     if(platform.isBonjourBroadcastEnabled() && this.intercomm) {
       this.service && this.intercomm.stop(this.service);
-      this.intercomm.bcapable() && this.intercomm.bstop();
       this.intercomm.bye();
     }
     this.unsetBonjourMessage();
