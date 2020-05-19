@@ -306,12 +306,15 @@ class DestIPFoundHook extends Hook {
       const oldIntel = await intelTool.getIntel(ip);
       // when ip category changed should update old category ipset
       // it is no pure category ip
-      if(oldIntel && oldIntel.category &&oldIntel.category !=  aggrIntelInfo.category){
-        sem.emitEvent({
-          type: "UPDATE_CATEGORY_DOMAIN",
-          category: oldIntel.category,
-          toProcess: "FireMain"
-        });
+      if (oldIntel && oldIntel.category && oldIntel.category != aggrIntelInfo.category) {
+        const pureCategoryIps = await rclient.smembersAsync(`rdns:category:${oldIntel.category}`);
+        if (pureCategoryIps && pureCategoryIps.includes(ip)) {
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DOMAIN",
+            category: oldIntel.category,
+            toProcess: "FireMain"
+          });
+        }
       }
 
       // only set default action when cloud succeeded
