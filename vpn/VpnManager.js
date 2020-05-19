@@ -40,7 +40,6 @@ const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const UPNP = require('../extension/upnp/upnp.js');
 const Message = require('../net2/Message.js');
@@ -52,24 +51,16 @@ class VpnManager {
     if (instance == null) {
       this.upnp = new UPNP();
       if (firewalla.isMain()) {
-        sclient.on("message", async (channel, message) => {
-          switch (channel) {
-            case Message.MSG_SYS_NETWORK_INFO_RELOADED:
-              // update UPnP port mapping
-              try {
-                if (!this.started)
-                  return;
-                this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
-                  log.error("Failed to set Upnp port mapping", err);
-                });
-              } catch(err) {
-                log.error("Failed to set iptables", err);
-              }
-            default:
+        sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+          // update UPnP port mapping
+          try {
+            if (!this.started)
+              return;
+            this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN")
+          } catch(err) {
+            log.error("Failed to set Upnp port mapping", err);
           }
-        });
-
-        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+        })
       }
       instance = this;
       this.instanceName = "server"; // defautl value

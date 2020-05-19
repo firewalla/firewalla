@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,8 +16,6 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const util = require('util');
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -30,7 +28,6 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 const sysManager = require('../net2/SysManager.js')
 const networkTool = require('../net2/NetworkTool')();
 
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 
 const PlatformLoader = require('../platform/PlatformLoader.js');
@@ -193,13 +190,10 @@ class NmapSensor extends Sensor {
       this.checkAndRunOnce(true);
     }, 1000 * 60 * 5); // every 5 minutes, fast scan
 
-    sclient.on("message", (channel, message) => {
-      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-        log.info("Schedule reload NmapSensor since network info is reloaded");
-        this.scheduleReload();
-      }
-    });
-    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      log.info("Schedule reload NmapSensor since network info is reloaded");
+      this.scheduleReload();
+    })
   }
 
   checkAndRunOnce(fastMode) {

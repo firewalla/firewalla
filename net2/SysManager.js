@@ -130,7 +130,7 @@ class SysManager {
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             this.update(() => {
               if (f.isMain()) {
-                pclient.publish(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
+                sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
               }
             });
             break;

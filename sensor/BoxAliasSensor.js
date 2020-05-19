@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,12 +17,9 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
-
 const util = require('util');
 const fs = require('fs');
 const writeFileAsync = util.promisify(fs.writeFile);
-const unlinkFileAsync = util.promisify(fs.unlink);
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -36,6 +33,8 @@ const f = require('../net2/Firewalla.js');
 const generatedConfigFile = `${f.getUserConfigFolder()}/dnsmasq/box_alias.conf`;
 const Message = require('../net2/Message.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class BoxAliasSensor extends Sensor {
 
@@ -85,16 +84,9 @@ class BoxAliasSensor extends Sensor {
     run() {
         this.installBoxAliases();
 
-        sclient.on('message', (channel, message) => {
-            switch (channel) {
-                case Message.MSG_SYS_NETWORK_INFO_RELOADED:
-                    this.installBoxAliases();
-                    break;
-                default:
-                    break;
-            }
-        });
-        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+        sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+          this.installBoxAliases();
+        })
     }
 
 }

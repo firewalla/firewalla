@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,7 +29,6 @@ const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
 const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 
 const ipMacCache = {};
@@ -53,7 +52,7 @@ class BonjourSensor extends Sensor {
         clearTimeout(this.startTask);
       if (this.updateTask)
         clearInterval(this.updateTask);
-      
+
       for (const listener of this.bonjourListeners) {
         if (listener.tcpBrowser)
           listener.tcpBrowser.stop();
@@ -103,7 +102,7 @@ class BonjourSensor extends Sensor {
           listener.httpBrowser.update();
         }
       }, 1000 * 60 * 5);
-  
+
       this.startTask = setTimeout(() => {
         for (const listener of this.bonjourListeners) {
           listener.tcpBrowser.start();
@@ -118,14 +117,11 @@ class BonjourSensor extends Sensor {
     sem.once('IPTABLES_READY', () => {
       log.info("Bonjour Watch Starting");
       this.scheduleReload();
-  
-      sclient.on("message", (channel, message) => {
-        if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-          log.info("Schedule reload BonjourSensor since network info is reloaded");
-          this.scheduleReload();
-        }
-      });
-      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+        log.info("Schedule reload BonjourSensor since network info is reloaded");
+        this.scheduleReload();
+      })
     });
   }
 
