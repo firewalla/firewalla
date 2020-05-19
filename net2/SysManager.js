@@ -128,10 +128,9 @@ class SysManager {
             break;
           }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
+            log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
-              if (f.isMain()) {
-                sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
-              }
+              sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
             });
             break;
         }
