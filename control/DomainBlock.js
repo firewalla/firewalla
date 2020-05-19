@@ -285,6 +285,20 @@ class DomainBlock {
   async updateCategoryBlock(category) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    const PM2 = require('../alarm/PolicyManager2.js');	
+    const pm2 = new PM2();	
+    const policies = await pm2.loadActivePoliciesAsync();	
+    for (const policy of policies) {	
+      if (policy.type == "category" && policy.target == category) {	
+        sem.emitEvent({
+          type: 'ReloadDNSRule',
+          message: 'DNSMASQ filter rule is updated',
+          toProcess: 'FireMain',
+          suppressEventLogging: true
+        })
+        return;
+      }	
+    }
   }
 
   async getCategoryDomains(category) {
