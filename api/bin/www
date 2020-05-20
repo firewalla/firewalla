@@ -97,7 +97,6 @@ async function run() {
 
   sclient.on("message", (channel, message) => {
     switch (channel) {
-      case Message.MSG_SYS_NETWORK_INFO_RELOADED:
       case Message.MSG_SYS_API_INTERFACE_CHANGED:
         log.info('Message received', channel)
         refreshListeningInterfaces(app)
@@ -105,9 +104,12 @@ async function run() {
         break
     }
   });
-
-  sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED)
   sclient.subscribe(Message.MSG_SYS_API_INTERFACE_CHANGED)
+
+  sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+    refreshListeningInterfaces(app)
+    refreshListeningInterfaces(appLocal, true)
+  })
 }
 
 // policy:system => apiInterface has higher priority over firerouter interfaces change

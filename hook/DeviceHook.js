@@ -289,7 +289,7 @@ class DeviceHook extends Hook {
             if (err) {
               log.error("Failed to get host after it is detected.");
             }
-            if (!sysManager.isMyIP(host.ipv4Addr)) {
+            if (!sysManager.isMyMac(mac)) {
               host.spoof(true);
             }
           });
@@ -357,7 +357,7 @@ class DeviceHook extends Hook {
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
           let hostManager = new HostManager()
           hostManager.getHost(host.mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
               h.spoof(true);
             }
           });
@@ -436,7 +436,7 @@ class DeviceHook extends Hook {
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
           let hostManager = new HostManager();
           hostManager.getHost(host.mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
               h.spoof(true);
             }
           });
@@ -497,7 +497,7 @@ class DeviceHook extends Hook {
           await hostTool.updateMACKey(enrichedHost); // host:mac:.....
           let hostManager = new HostManager();
           hostManager.getHost(mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
               h.spoof(true);
             }
           });
