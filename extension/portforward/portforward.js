@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,7 +21,6 @@ const log = require('../../net2/logger.js')(__filename)
 const f = require('../../net2/Firewalla.js')
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
-const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const sysManager = require('../../net2/SysManager')
@@ -39,7 +38,7 @@ const configKey = 'extension.portforward.config'
 // Configure Port Forwarding
 // Example:
 // {
-//  maps: 
+//  maps:
 //   [
 //      description: "string"
 //      protocol: tcp/udp
@@ -48,8 +47,8 @@ const configKey = 'extension.portforward.config'
 //      toMAC: mac of the destination
 //      toPort: ip port
 //   ]
-// } 
- 
+// }
+
 class PortForward {
   constructor() {
     if(!instance) {
@@ -73,26 +72,20 @@ class PortForward {
               })();
             }
           });
-  
-          sclient.on("message", (channel, message) => {
-            switch (channel) {
-              case Message.MSG_SYS_NETWORK_INFO_RELOADED:
-                (async () => {
-                  if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
-                    this._wanIPs = sysManager.myWanIps();
-                    await this.updateExtIPChain(this._wanIPs);
-                  }
-                  await this.refreshConfig();
-                })().catch((err) => {
-                  log.error("Failed to refresh port forward rules", err);
-                })
-                break;
-              default:
+
+          sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+            try {
+              if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
+                this._wanIPs = sysManager.myWanIps();
+                await this.updateExtIPChain(this._wanIPs);
+              }
+              await this.refreshConfig();
+            } catch(err) {
+              log.error("Failed to refresh port forward rules", err);
             }
-          });
-          sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+          })
         }
-      })    
+      })
       instance = this;
     }
 
@@ -206,7 +199,7 @@ class PortForward {
   }
 
   // return -1 if not found
-  //        index if found 
+  //        index if found
   //        undefined, null, 0, false, '*' will be recognized as wildcards
 
   find(map) {
@@ -263,7 +256,7 @@ class PortForward {
   async removePort(map) {
     let old = this.find(map);
     while (old >= 0) {
-      this.config.maps[old].state = false;      
+      this.config.maps[old].state = false;
       log.info(`Remove port forward`, map);
       const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
       await iptable.portforwardAsync(dupMap);
