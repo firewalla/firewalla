@@ -263,23 +263,13 @@ class DomainBlock {
   async blockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.addPolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
-    sem.emitEvent({
-      type: 'ReloadDNSRule',
-      message: 'DNSMASQ filter rule is updated',
-      toProcess: 'FireMain',
-      suppressEventLogging: true
-    })
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async unblockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.removePolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
-    sem.emitEvent({
-      type: 'ReloadDNSRule',
-      message: 'DNSMASQ filter rule is updated',
-      toProcess: 'FireMain',
-      suppressEventLogging: true,
-    })
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async updateCategoryBlock(category) {
@@ -290,12 +280,7 @@ class DomainBlock {
     const policies = await pm2.loadActivePoliciesAsync();	
     for (const policy of policies) {	
       if (policy.type == "category" && policy.target == category) {	
-        sem.emitEvent({
-          type: 'ReloadDNSRule',
-          message: 'DNSMASQ filter rule is updated',
-          toProcess: 'FireMain',
-          suppressEventLogging: true
-        })
+        dnsmasq.scheduleRestartDNSService();
         return;
       }	
     }
