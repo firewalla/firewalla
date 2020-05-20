@@ -21,20 +21,13 @@ const log = require('../../net2/logger.js')(__filename);
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
-const rclient = require('../../util/redis_manager').getRedisClient();
-
 const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
-
-const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 
 const Message = require('../../net2/Message.js');
 
 const _ = require('lodash');
 
 const exec = require('child-process-promise').exec;
-
-const DNSMASQ = require('../dnsmasq/dnsmasq.js');
-const dnsmasq = new DNSMASQ();
 
 const { delay } = require('../../util/util.js');
 
@@ -65,21 +58,14 @@ class SS2 {
       this.ready = false;
       this.shouldRedirect = false;
 
-      sclient.on("message", async (channel, message) => {
-        switch (channel) {
-          case Message.MSG_SYS_NETWORK_INFO_RELOADED: {
-            if(this.shouldRedirect) {
-              (async () => {
-                log.info("sys:network:info is reloaded, re-adding ss2 network to wan_routable ...");
-                await this.allowDockerBridgeToAccessWan();
-                log.info("re-added");
-              })();
-            }
-          }
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+        if(this.shouldRedirect) {
+          log.info("sys:network:info is reloaded, re-adding ss2 network to wan_routable ...");
+          await this.allowDockerBridgeToAccessWan();
+          log.info("re-added");
         }
-      });
-      
-      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+      })
+
     }
     return instance;
   }

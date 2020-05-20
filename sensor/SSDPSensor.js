@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,7 +30,6 @@ const l2 = require('../util/Layer2.js');
 
 const URL = require('url').URL;
 const sm = require('../net2/SysManager.js');
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 
 class SSDPSensor extends Sensor {
@@ -73,7 +72,7 @@ class SSDPSensor extends Sensor {
 
   notify(ip, ssdpResult) {
     l2.getMAC(ip, (err, mac) => {
-      
+
       if(err) {
         // not found, ignore this host
         log.error("Not able to found mac address for host:", ip, mac, err);
@@ -91,16 +90,16 @@ class SSDPSensor extends Sensor {
       }
 
       log.info(`Found a device via ssdp: ${host.bname} (${ip} - ${host.mac})`)
-      
+
       sem.emitEvent({
         type: "DeviceUpdate",
         message: `Found a device via ssdp ${ip} ${mac}`,
         host: host
       })
-      
+
     });
   }
-  
+
   parseURL(ip, location, callback) {
     let options = {
       uri: location,
@@ -136,7 +135,7 @@ class SSDPSensor extends Sensor {
 
     return array && (array.constructor.name === 'Array') && array.length > 0 && array[0]
   }
-  
+
   parseContent(content) {
     let root = content && content.root
 
@@ -161,7 +160,7 @@ class SSDPSensor extends Sensor {
       modelName: modelName
     }
   }
-  
+
   scheduleReload() {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
@@ -190,13 +189,10 @@ class SSDPSensor extends Sensor {
     sem.once('IPTABLES_READY', () => {
       this.scheduleReload();
 
-      sclient.on("message", (channel, message) => {
-        if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-          log.info("Schedule reload SSDPSensor since network info is reloaded");
-          this.scheduleReload();
-        }
-      });
-      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+        log.info("Schedule reload SSDPSensor since network info is reloaded");
+        this.scheduleReload();
+      })
 
       setInterval(() => {
         if (this.ssdpClient)
