@@ -275,7 +275,7 @@ class DeviceHook extends Hook {
           if (err) {
             log.error("Failed to get host after it is detected.");
           }
-          if (host && host.ipv4Addr !== sysManager.myIp() && host.ipv4Addr !== sysManager.myIp2() && host.ipv4Addr !== sysManager.myWifiIp()) {
+          if (host && host.o && host.o.ipv4Addr !== sysManager.myIp() && host.o.ipv4Addr !== sysManager.myIp2() && host.o.ipv4Addr !== sysManager.myWifiIp()) {
             host.spoof(true);
           }
         });
