@@ -1836,7 +1836,7 @@ class PolicyManager2 {
   async unenforceAllPolicies() {
     const rules = await this.loadActivePoliciesAsync();
 
-    const unEnforcement = rules.map((rule) => {
+    const unEnforcement = rules.filter(rule => rule.direction !== "inbound").map((rule) => {
       return new Promise((resolve, reject) => {
         try {
           if (this.queue) {
