@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -947,7 +947,7 @@ let legoEptCloud = class {
             let msgcount = 0;
             if (err == null) {
               for (let i = 0; i < messages.length; i++) {
-                if (group.lastMsgs[messages[i].id] != null) {} else {
+                if (group.lastMsgs[messages[i].id] == null) {
                   if (group.attention == false) {
                     clearInterval(group.timer);
                     group.timer = setInterval(group.func, 1 * 1000);
