@@ -684,8 +684,8 @@
     "hiddenFolder": "/.router"
   },
   "ratelimit": {
-    "name": "default",
-    "max": 60,
+    "appMax": 60,
+    "webMax": 200,
     "duration": 60
   }
 }
