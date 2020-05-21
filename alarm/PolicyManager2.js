@@ -62,10 +62,14 @@ const Queue = require('bee-queue')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const policyCapacity = platform.getPolicyCapacity();
 
+const Accounting = require('../control/Accounting.js');
+const accounting = new Accounting();
+
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 const NetworkProfile = require('../net2/NetworkProfile.js');
+const TagManager = require('../net2/TagManager.js');
 const Tag = require('../net2/Tag.js');
 const ipset = require('../net2/Ipset.js');
 

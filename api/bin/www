@@ -94,10 +94,8 @@ async function run() {
   const appLocal = require('../app-local.js');
   appLocal.set('port', PORT_LOCAL_API);
 
-  sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
-    refreshListeningInterfaces(app)
-    refreshListeningInterfaces(appLocal, true)
-  })
+  refreshListeningInterfaces(app)
+  refreshListeningInterfaces(appLocal, true)
 
   sclient.on("message", (channel, message) => {
     switch (channel) {
@@ -110,8 +108,10 @@ async function run() {
   });
   sclient.subscribe(Message.MSG_SYS_API_INTERFACE_CHANGED)
 
-  refreshListeningInterfaces(app)
-  refreshListeningInterfaces(appLocal, true)
+  sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+    refreshListeningInterfaces(app)
+    refreshListeningInterfaces(appLocal, true)
+  })
 }
 
 // policy:system => apiInterface has higher priority over firerouter interfaces change
