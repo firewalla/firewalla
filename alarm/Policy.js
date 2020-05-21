@@ -194,6 +194,12 @@ class Policy {
 
   match(alarm) {
 
+    const shouldMatchAlarms = ['ALARM_PORN','ALARM_VIDEO','ALARM_GAME','ALARM_BRO_NOTICE','ALARM_INTEL','ALARM_VULNERABILITY','ALARM_INTEL_REPORT']
+
+    if (!shouldMatchAlarms.includes(alarm.type)) {
+      return false;
+    }
+
     if (this.action == 'allow') {
       return false;
     }
