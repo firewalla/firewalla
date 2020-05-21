@@ -194,7 +194,9 @@ class Policy {
 
   match(alarm) {
 
-    const shouldMatchAlarms = ['ALARM_PORN','ALARM_VIDEO','ALARM_GAME','ALARM_BRO_NOTICE','ALARM_INTEL','ALARM_VULNERABILITY','ALARM_INTEL_REPORT']
+    const shouldMatchAlarms = ['ALARM_PORN','ALARM_VIDEO','ALARM_GAME',
+        'ALARM_BRO_NOTICE','ALARM_INTEL','ALARM_VULNERABILITY','ALARM_INTEL_REPORT',
+        'ALARM_LARGE_UPLOAD','ALARM_ABNORMAL_BANDWIDTH_USAGE']
 
     if (!shouldMatchAlarms.includes(alarm.type)) {
       return false;
