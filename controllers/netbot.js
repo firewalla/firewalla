@@ -3166,7 +3166,7 @@ class netBot extends ControllerBot {
 
           await categoryUpdater.addIncludedDomain(category, domain)
           sem.emitEvent({
-            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            type: "UPDATE_CATEGORY_DOMAIN",
             category: category,
             domain: domain,
             action: "addIncludeDomain",
@@ -3184,7 +3184,7 @@ class netBot extends ControllerBot {
           const domain = value.domain
           await categoryUpdater.removeIncludedDomain(category, domain)
           sem.emitEvent({
-            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            type: "UPDATE_CATEGORY_DOMAIN",
             category: category,
             domain: domain,
             action: "removeIncludeDomain",
@@ -3202,7 +3202,7 @@ class netBot extends ControllerBot {
           const domain = value.domain
           await categoryUpdater.addExcludedDomain(category, domain)
           sem.emitEvent({
-            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            type: "UPDATE_CATEGORY_DOMAIN",
             domain: domain,
             action: "addExcludeDomain",
             category: category,
@@ -3220,7 +3220,7 @@ class netBot extends ControllerBot {
           const domain = value.domain
           await categoryUpdater.removeExcludedDomain(category, domain)
           sem.emitEvent({
-            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            type: "UPDATE_CATEGORY_DOMAIN",
             domain: domain,
             action: "removeExcludeDomain",
             category: category,

@@ -227,7 +227,7 @@ module.exports = class HostManager {
     }
 
     json.cpuid = platform.getBoardSerial();
-    json.uptime = process.uptime()
+    json.uptime = process.uptime();
 
     if(sysManager.language) {
       json.language = sysManager.language;
@@ -299,6 +299,7 @@ module.exports = class HostManager {
     }
     const sysInfo = SysInfo.getSysInfo();
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
+    json.osUptime = sysInfo.osUptime;
   }
 
 
