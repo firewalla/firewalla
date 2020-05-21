@@ -60,7 +60,7 @@ let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
-const NetworkProfileManager = require('../net2/NetworkProfileManager.js')
+const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 /*
  *
@@ -525,16 +525,31 @@ module.exports = class {
   */
 
   isMonitoring(ip) {
-    let hostObject = hostManager.getHostFast(ip);
-    if (!iptool.isV4Format(ip) && iptool.isV6Format(ip))
-      hostObject = hostManager.getHostFast6(ip);
+    if (!hostManager.isMonitoring())
+      return false;
+    let hostObject = null;
+    let networkProfile = null;
+    if (iptool.isV4Format(ip)) {
+      hostObject = hostManager.getHostFast(ip);
+      const iface = sysManager.getInterfaceViaIP4(ip);
+      const uuid = iface && iface.uuid;
+      networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+    } else {
+      if (iptool.isV6Format(ip)) {
+        hostObject = hostManager.getHostFast6(ip);
+        const iface = sysManager.getInterfaceViaIP6(ip);
+        const uuid = iface && iface.uuid;
+        networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      }
+    }
 
     if (hostObject && !hostObject.isMonitoring()) {
       return false;
-    } else {
-      return true;
     }
-
+    if (networkProfile && !networkProfile.isMonitoring()) {
+      return false;
+    }
+    return true;
   }
 
   // @TODO check according to multi interface
