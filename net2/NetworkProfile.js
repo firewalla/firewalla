@@ -51,6 +51,8 @@ class NetworkProfile {
       const c = require('./MessageBus.js');
       this.subscriber = new c("info");
       if (f.isMain()) {
+        // o.monitoring indicates if this is a monitoring interface, this.spoofing may be set to false even if it is a monitoring interface
+        this.spoofing = (o && o.monitoring) || false;
         if (o && o.uuid) {
           this.subscriber.subscribeOnce("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, (channel, type, id, obj) => {
             log.info(`Network policy is changed on ${this.o.intf}, uuid: ${this.o.uuid}`, obj);
@@ -150,10 +152,15 @@ class NetworkProfile {
     return this._policy;
   }
 
+  isMonitoring() {
+    return this.spoofing;
+  }
+
   // This actually incidates monitoring state. Old glossary used in PolicyManager.js
   async spoof(state) {
     const spoofModeOn = await Mode.isSpoofModeOn();
     const sm = new SpooferManager();
+    this.spoofing = state;
     if (state === true) {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);

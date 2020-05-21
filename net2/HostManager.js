@@ -123,6 +123,7 @@ module.exports = class HostManager {
       let c = require('./MessageBus.js');
       this.messageBus = new c("info");
       this.iptablesReady = false;
+      this.spoofing = true;
 
       // ONLY register for these events in FireMain process
       if(f.isMain()) {
@@ -1318,8 +1319,12 @@ module.exports = class HostManager {
     return obj
   }
 
+  isMonitoring() {
+    return this.spoofing;
+  }
+
   async spoof(state) {
-    log.debug("System:Spoof:", state, this.spoofing);
+    this.spoofing = state;
     const sm = new SpooferManager();
     if (state == false) {
       await iptables.switchMonitoringAsync(false);
