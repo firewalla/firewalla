@@ -16,7 +16,6 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const exec = require('child-process-promise').exec
 
@@ -88,7 +87,6 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const iptables = require('./Iptables.js');
-const ipset = require('./Ipset.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -101,10 +99,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const Message = require('./Message.js');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
-
-const {Rule} = require("./Iptables.js");
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -1138,7 +1133,7 @@ module.exports = class HostManager {
 
     // Only allow requests be executed in a frenquency lower than 1 every 5 mins
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
-    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {              
+    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
       log.info("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length>0){
         return this.hosts.all

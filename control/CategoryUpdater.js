@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -304,6 +304,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
 
     if (hasAny) {
+      // Existing sets and elements are not erased by restore unless specified so in the restore file.
+      // -! ignores error on entries already exists
       let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
       await exec(cmd4).catch((err) => {
