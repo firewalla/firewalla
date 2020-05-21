@@ -56,6 +56,8 @@ log.info("Waiting for cloud token...");
 run0();
 
 async function run0() {
+  log.forceInfo("Waiting for first app to connect...");
+  
   await sysManager.waitTillInitialized();
   if (bone.cloudready() &&
       bone.isAppConnected() &&
