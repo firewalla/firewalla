@@ -15,7 +15,6 @@ if [ -f  /bspool/tmp/post-term* ]; then
     $FIREWALLA_HOME/scripts/fire-reboot
 fi
 
-rm -r -f /blog/*
 rm -r -f /bspool/*
 umount -l /bspool
 mount -t tmpfs -o size=30m tmpfs /bspool
