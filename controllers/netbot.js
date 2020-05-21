@@ -4069,14 +4069,13 @@ class netBot extends ControllerBot {
     }
   }
 
-  msgHandlerAsync(gid, rawmsg) {
+  msgHandlerAsync(gid, rawmsg, skipRatelimit = false) {
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
-      this.rateLimiter.consume('msg_handler').then((rateLimiterRes) => {
+      if (skipRatelimit) {
         this.msgHandler(gid, rawmsg, (err, response) => {
           if (processed)
             return;
-
           processed = true;
           if (err) {
             reject(err);
@@ -4084,15 +4083,28 @@ class netBot extends ControllerBot {
             resolve(response);
           }
         })
-      }).catch((rateLimiterRes) => {
-        const error = {
-          "Retry-After": rateLimiterRes.msBeforeNext / 1000,
-          "X-RateLimit-Limit": this.rateLimiter.points,
-          "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
-        }
-        processed = true;
-        reject(error);
-      })
+      } else {
+        this.rateLimiter.consume('msg_handler').then((rateLimiterRes) => {
+          this.msgHandler(gid, rawmsg, (err, response) => {
+            if (processed)
+              return;
+            processed = true;
+            if (err) {
+              reject(err);
+            } else {
+              resolve(response);
+            }
+          })
+        }).catch((rateLimiterRes) => {
+          const error = {
+            "Retry-After": rateLimiterRes.msBeforeNext / 1000,
+            "X-RateLimit-Limit": this.rateLimiter.points,
+            "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
+          }
+          processed = true;
+          reject(error);
+        })
+      }
     })
   }
 
