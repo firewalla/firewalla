@@ -3815,7 +3815,7 @@ class netBot extends ControllerBot {
                 const secondaryInterface = config.secondaryInterface;
                 const secondaryIpSubnet = iptool.cidrSubnet(secondaryInterface.ip);
                 this.hostManager.loadPolicy((err, data) => {
-                  let secondaryDnsServers = sysManager.myDNS();
+                  let secondaryDnsServers = sysManager.myDefaultDns();
                   if (data.dnsmasq) {
                     const dnsmasq = JSON.parse(data.dnsmasq);
                     if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
@@ -3843,7 +3843,7 @@ class netBot extends ControllerBot {
                 const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
                 const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
                 this.hostManager.loadPolicy((err, data) => {
-                  let alternativeDnsServers = sysManager.myDNS();
+                  let alternativeDnsServers = sysManager.myDefaultDns();
                   if (data.dnsmasq) {
                     const dnsmasq = JSON.parse(data.dnsmasq);
                     if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
