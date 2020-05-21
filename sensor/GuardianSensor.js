@@ -199,7 +199,7 @@ class GuardianSensor extends Sensor {
       const encryptedMessage = message.message;
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
       decryptedMessage.mtype = decryptedMessage.message.mtype;
-      const response = await controller.msgHandlerAsync(gid, decryptedMessage, true);
+      const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
 
       const input = new Buffer(JSON.stringify(response), 'utf8');
       const output = await deflateAsync(input);

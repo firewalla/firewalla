@@ -360,11 +360,17 @@ class netBot extends ControllerBot {
     // Enhancement: need rate limit on the box api
     const currentConfig = fc.getConfig(true);
     const rateLimitOptions = currentConfig.ratelimit || {}
-    
-    this.rateLimiter = new RateLimiterRedis({
+    this.rateLimiter = {};
+    this.rateLimiter.app = new RateLimiterRedis({
       redis: rclient,
-      keyPrefix: `ratelimit:${rateLimitOptions.name}`,
-      points: rateLimitOptions.max || 60,
+      keyPrefix: `ratelimit:app`,
+      points: rateLimitOptions.appMax || 60,
+      duration: rateLimitOptions.duration || 60//per second
+    })
+    this.rateLimiter.web = new RateLimiterRedis({
+      redis: rclient,
+      keyPrefix: `ratelimit:web`,
+      points: rateLimitOptions.webMax || 200,
       duration: rateLimitOptions.duration || 60//per second
     })
 
@@ -4069,10 +4075,10 @@ class netBot extends ControllerBot {
     }
   }
 
-  msgHandlerAsync(gid, rawmsg, skipRatelimit = false) {
+  msgHandlerAsync(gid, rawmsg, from = 'app') {
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
-      if (skipRatelimit) {
+      this.rateLimiter[from].consume('msg_handler').then((rateLimiterRes) => {
         this.msgHandler(gid, rawmsg, (err, response) => {
           if (processed)
             return;
@@ -4083,28 +4089,15 @@ class netBot extends ControllerBot {
             resolve(response);
           }
         })
-      } else {
-        this.rateLimiter.consume('msg_handler').then((rateLimiterRes) => {
-          this.msgHandler(gid, rawmsg, (err, response) => {
-            if (processed)
-              return;
-            processed = true;
-            if (err) {
-              reject(err);
-            } else {
-              resolve(response);
-            }
-          })
-        }).catch((rateLimiterRes) => {
-          const error = {
-            "Retry-After": rateLimiterRes.msBeforeNext / 1000,
-            "X-RateLimit-Limit": this.rateLimiter.points,
-            "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
-          }
-          processed = true;
-          reject(error);
-        })
-      }
+      }).catch((rateLimiterRes) => {
+        const error = {
+          "Retry-After": rateLimiterRes.msBeforeNext / 1000,
+          "X-RateLimit-Limit": this.rateLimiter[from].points,
+          "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
+        }
+        processed = true;
+        reject(error);
+      })
     })
   }
 
