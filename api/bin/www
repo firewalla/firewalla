@@ -117,7 +117,7 @@ async function run() {
 // policy:system => apiInterface has higher priority over firerouter interfaces change
 // cloud socket should always be available whatever policy:system says
 async function refreshListeningInterfaces(app, local = false) {
-  log.info('refreshing listening interfaces')
+  log.info(`refreshing listening ${local?'local':''} interfaces`)
 
   const userInterfaces = await getUserInterfaces()
 
