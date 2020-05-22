@@ -127,12 +127,6 @@ class SysManager {
             });
             break;
           }
-          case Message.MSG_SYS_NETWORK_INFO_UPDATED:
-            log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
-            this.update(() => {
-              sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
-            });
-            break;
         }
       });
       sclient.subscribe("System:DebugChange");
@@ -140,7 +134,13 @@ class SysManager {
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
       sclient.subscribe("System:SSHPasswordChange");
-      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
+
+      sem.on(Message.MSG_SYS_NETWORK_INFO_UPDATED, () => {
+        log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
+        this.update(() => {
+          sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
+        });
+      });
 
       this.delayedActions();
       this.reloadTimezone();

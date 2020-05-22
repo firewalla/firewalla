@@ -46,13 +46,13 @@ const { delay } = require('../util/util.js')
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
+const Mode = require('./Mode.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
-const uuid = require('uuid');
 const _ = require('lodash');
-const Mode = require('./Mode.js');
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
@@ -201,9 +201,7 @@ async function generateNetworkInfo() {
     }
     networkInfos.push(redisIntf);
   }
-  if (f.isMain()) {
-    await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_UPDATED, "");
-  }
+  sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_UPDATED});
   return networkInfos;
 }
 
