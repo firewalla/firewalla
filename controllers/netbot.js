@@ -2841,6 +2841,15 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "acl:check": {
+        (async () => {
+          const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
+          this.simpleTxData(msg, {matchedRule: matchedRule}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
       case "intel:finger":
         (async () => {
           const target = value.target;
