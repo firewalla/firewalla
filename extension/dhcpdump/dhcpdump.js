@@ -146,6 +146,11 @@ module.exports = class {
   async rawStart(callback) {
     callback = callback || function () { }
     const interfaces = sysManager.getMonitoringInterfaces();
+    const textDecoder = new util.TextDecoder('utf8',{
+      fatal:true, // decoding failures are fatal
+    })
+    const StringDecoder = require('string_decoder').StringDecoder;
+    const decoder = new StringDecoder('utf8');
     for (const intf of interfaces) {
       if (!intf.name) continue;
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
@@ -153,19 +158,24 @@ module.exports = class {
       let spawn = require('child_process').spawn;
       let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', intf.name]);
       let pid = dhcpdumpSpawn.pid;
-      let StringDecoder = require('string_decoder').StringDecoder;
-      let decoder = new StringDecoder('utf8');
 
       log.info("DHCPDump started with PID: ", pid);
 
       dhcpdumpSpawn.stdout.on('data', (data) => {
         log.debug("Found a dhcpdiscover request");
         let message = decoder.write(data);
-
+        let ignoreName = false;
+        try {
+          const test = textDecoder.decode(data);
+        } catch (e) {
+          ignoreName = true;
+          log.error('The encoded data was not valid for encoding utf-8');
+        }
         this.parseEvents(message).map(e => {
           if (e) {
             e.intf_mac = intf.mac_address;
             e.intf_uuid = intf.uuid;
+            e.ignoreName = ignoreName;
           }
           callback(e)
         })
