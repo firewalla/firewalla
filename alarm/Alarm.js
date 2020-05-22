@@ -443,6 +443,10 @@ class VulnerabilityAlarm extends Alarm {
     this["p.vid"] = vulnerabilityID;
   }
 
+  needPolicyMatch(){
+    return true;
+  }
+
   getI18NCategory() {
     return util.format("%s_%s", this.type, this["p.vid"]);
   }
@@ -472,6 +476,10 @@ class BroNoticeAlarm extends Alarm {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
     this["p.noticeType"] = notice;
     this["p.message"] = message;
+  }
+
+  needPolicyMatch(){
+    return true;
   }
 
   keysToCompareForDedup() {
@@ -519,6 +527,10 @@ class IntelReportAlarm extends Alarm {
     super("ALARM_INTEL_REPORT", timestamp, device, info);
   }
 
+  needPolicyMatch(){
+    return true;
+  }
+
   getI18NCategory() {
     return "ALARM_INTEL_REPORT";
 
@@ -539,6 +551,9 @@ class IntelAlarm extends Alarm {
     super("ALARM_INTEL", timestamp, device, info);
     this["p.severity"] = severity;
     this["p.dest.readableName"] = this.getReadableDestination();
+  }
+  needPolicyMatch(){
+    return true;
   }
 
   getI18NCategory() {
@@ -628,6 +643,9 @@ class OutboundAlarm extends Alarm {
     if (this.timestamp) {
       this["p.timestampTimezone"] = moment(this.timestamp * 1000).format("LT")
     }
+  }
+  needPolicyMatch(){
+    return true;
   }
 
   requiredKeys() {
@@ -891,6 +909,10 @@ class OpenPortAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super('ALARM_OPENPORT', timestamp, device, info);
     this['p.showMap'] = false;
+  }
+
+  needPolicyMatch(){
+    return true;
   }
 
   keysToCompareForDedup() {
