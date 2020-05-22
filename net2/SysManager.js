@@ -689,6 +689,22 @@ class SysManager {
     return this.ddns;
   }
 
+  myResolver(intf) {
+    if (!intf)
+      return [];
+    const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
+    const resolver4 = resolver.filter(r => new Address4(r).isValid())
+    return resolver4;
+  }
+
+  myResolver6(intf) {
+    if (!intf)
+      return [];
+    const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
+    const resolver6 = resolver.filter(r => new Address6(r).isValid())
+    return resolver6;
+  }
+
   myDNS(intf = this.config.monitoringInterface) { // return array
     let _dns = (this.getInterface(intf) && this.getInterface(intf).dns) || [];
     let v4dns = [];

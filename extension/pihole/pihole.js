@@ -85,7 +85,7 @@ class PiHole {
     ];
     const tz = sysManager.getTimezone();
     config.environment["TZ"] = tz;
-    let dnses = sysManager.myDNS();
+    let dnses = sysManager.myDefaultDns();
     if(dnses.length > 0) {
       config.environment["DNS1"] = dnses[0];
     }

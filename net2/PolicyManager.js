@@ -409,6 +409,8 @@ module.exports = class {
         })();
       } else if (p === "monitor") {
         target.spoof(policy[p]);
+      } else if (p === "acl") {
+        target.acl(policy[p]);
       } else if (p === "vpnClient") {
         this.vpnClient(target, policy[p]);
       } else if (p === "vpn") {

@@ -98,7 +98,7 @@ async function macAddress() {
 }
 
 async function dns() {
-  const dns = sysManager.myDNS();
+  const dns = sysManager.myDefaultDns();
   return dns;
 }
 
