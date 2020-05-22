@@ -664,7 +664,8 @@
     "ipv6": false,
     "pihole": false,
     "adblock": false,
-    "family_protect": false
+    "family_protect": false,
+    "smart_block": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -680,8 +681,8 @@
     "hiddenFolder": "/.router"
   },
   "ratelimit": {
-    "name": "default",
-    "max": 60,
+    "appMax": 60,
+    "webMax": 200,
     "duration": 60
   }
 }

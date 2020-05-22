@@ -51,6 +51,8 @@ class NetworkProfile {
       const c = require('./MessageBus.js');
       this.subscriber = new c("info");
       if (f.isMain()) {
+        // o.monitoring indicates if this is a monitoring interface, this.spoofing may be set to false even if it is a monitoring interface
+        this.spoofing = (o && o.monitoring) || false;
         if (o && o.uuid) {
           this.subscriber.subscribeOnce("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, (channel, type, id, obj) => {
             log.info(`Network policy is changed on ${this.o.intf}, uuid: ${this.o.uuid}`, obj);
@@ -150,19 +152,37 @@ class NetworkProfile {
     return this._policy;
   }
 
-  // This actually incidates monitoring state. Old glossary used in PolicyManager.js
-  async spoof(state) {
-    const spoofModeOn = await Mode.isSpoofModeOn();
-    const sm = new SpooferManager();
+  isMonitoring() {
+    return this.spoofing;
+  }
+
+  async acl(state) {
     if (state === true) {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName}`).catch((err) => {
-        log.error(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
       });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName6}`).catch((err) => {
-        log.error(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${netIpsetName6}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
       });
+    } else {
+      const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+      const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${netIpsetName6}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName6} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+    }
+  }
+
+  async spoof(state) {
+    const spoofModeOn = await Mode.isSpoofModeOn();
+    const sm = new SpooferManager();
+    this.spoofing = state;
+    if (state === true) {
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway  && this.o.gateway.length > 0 
           && this.o.ipv4 && this.o.ipv4.length > 0
@@ -193,14 +213,6 @@ class NetworkProfile {
         }
       }
     } else {
-      const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
-      const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName}`).catch((err) => {
-        log.error(`Failed to add ${netIpsetName} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${netIpsetName6}`).catch((err) => {
-        log.error(`Failed to add ${netIpsetName6} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
-      });
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
         if (this.o.gateway) {
           await sm.deregisterSpoofInstance(this.o.intf, "*", false);

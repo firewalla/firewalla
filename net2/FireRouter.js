@@ -159,6 +159,23 @@ async function generateNetworkInfo() {
     let gateway = null;
     let gateway6 = null;
     let dns = null;
+    let resolver = null;
+    const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
+    if (resolverConfig) {
+      if (resolverConfig.useNameserversFromWAN) {
+        const routingConfig = (routerConfig && routerConfig.routing && (routerConfig.routing[intfName] || routerConfig.routing.global));
+        const defaultRoutingConfig = routingConfig && routingConfig.default;
+        if (defaultRoutingConfig) {
+          const viaIntf = defaultRoutingConfig.viaIntf;
+          if (intfNameMap[viaIntf]) {
+            resolver = intfNameMap[viaIntf].config.nameservers || intfNameMap[viaIntf].state.dns;
+          }
+        }
+      } else {
+        if (resolverConfig.nameservers)
+          resolver = resolverConfig.nameservers;
+      }
+    }
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
@@ -188,6 +205,7 @@ async function generateNetworkInfo() {
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
       dns:          dns,
+      resolver:     resolver,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type,

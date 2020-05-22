@@ -118,6 +118,7 @@ module.exports = class HostManager {
       let c = require('./MessageBus.js');
       this.messageBus = new c("info");
       this.iptablesReady = false;
+      this.spoofing = true;
 
       // ONLY register for these events in FireMain process
       if(f.isMain()) {
@@ -222,7 +223,7 @@ module.exports = class HostManager {
     }
 
     json.cpuid = platform.getBoardSerial();
-    json.uptime = process.uptime()
+    json.uptime = process.uptime();
 
     if(sysManager.language) {
       json.language = sysManager.language;
@@ -294,6 +295,7 @@ module.exports = class HostManager {
     }
     const sysInfo = SysInfo.getSysInfo();
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
+    json.osUptime = sysInfo.osUptime;
   }
 
 
@@ -1312,16 +1314,24 @@ module.exports = class HostManager {
     return obj
   }
 
+  isMonitoring() {
+    return this.spoofing;
+  }
+
+  async acl(state) {
+    if (state == false) {
+      await iptables.switchACLAsync(false);
+      await iptables.switchACLAsync(false, 6);
+    } else {
+      await iptables.switchACLAsync(true);
+      await iptables.switchACLAsync(true, 6);
+    }
+  }
+
   async spoof(state) {
-    log.debug("System:Spoof:", state, this.spoofing);
+    this.spoofing = state;
     const sm = new SpooferManager();
     if (state == false) {
-      await iptables.switchMonitoringAsync(false);
-      await iptables.switchMonitoringAsync(false, 6);
-      // flush all ip addresses
-      // log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-      // no need to empty spoof set since dev flag file is placed now
-      // await sm.emptySpoofSet();
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
@@ -1334,9 +1344,6 @@ module.exports = class HostManager {
       if (redisSpoofOff) {
         return;
       }
-
-      await iptables.switchMonitoringAsync(true);
-      await iptables.switchMonitoringAsync(true, 6);
       // remove dev flag file if it exists and restart bitbridge
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
         return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {

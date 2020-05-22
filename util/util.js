@@ -98,10 +98,25 @@ function argumentsToString(v) {
   return str;
 }
 
+function isSimilarHost(h1, h2) {
+  if (!h1 || !h2)
+    return false;
+  const h1Sections = h1.split('.').reverse();
+  const h2Sections = h2.split('.').reverse();
+  // compare at most last three sections
+  const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 2);
+  for (let i = 0; i <= limit; i++) {
+    if (h1Sections[i] !== h2Sections[i])
+      return false;
+  }
+  return true;
+}
+
 module.exports = {
   extend,
   getPreferredBName,
   getPreferredName,
   delay,
-  argumentsToString
+  argumentsToString,
+  isSimilarHost
 }
