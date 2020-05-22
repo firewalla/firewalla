@@ -202,7 +202,7 @@ async function generateNetworkInfo() {
     networkInfos.push(redisIntf);
   }
   if (f.isMain()) {
-    sem.sendEventToAll({type: Message.MSG_SYS_NETWORK_INFO_UPDATED});
+    await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_UPDATED, "");
   }
   return networkInfos;
 }
@@ -512,7 +512,7 @@ class FireRouter {
     }
 
     // this will ensure SysManger on each process will be updated with correct info
-    sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_UPDATED});
+    sem.emitLocalEvent({type: Message.MSG_FW_FR_RELOADED});
 
     log.info('FireRouter initialization complete')
     this.ready = true

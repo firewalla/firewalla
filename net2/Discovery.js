@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,7 @@ var instances = {};
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const sysManager = require('./SysManager.js');
 
@@ -267,8 +268,7 @@ module.exports = class {
       log.error("Discovery::Interfaces:Error", redisobjs, list, error);
     }
     if (publishUpdate)
-      await sem.sendEventToAll({type: Message.MSG_SYS_NETWORK_INFO_UPDATED});
-
+      await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_UPDATED, "");
     return list
   }
 
