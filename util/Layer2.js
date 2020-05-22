@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,13 +15,13 @@
 
 'use strict'
 
-const spawn = require('child_process').spawn;
-const log = require('../net2/logger.js')(__filename);
+let spawn = require('child_process').spawn;
+let log = require('../net2/logger.js')(__filename);
 
-const _SimpleCache = require('../util/SimpleCache.js')
-const SimpleCache = new _SimpleCache("macCache",60*10);
+let _SimpleCache = require('../util/SimpleCache.js')
+let SimpleCache = new _SimpleCache("macCache",60*10);
 
-const util = require('util')
+const Promise = require('bluebird')
 
 function getMAC(ipaddress, cb) {
 
@@ -60,12 +60,11 @@ function getMAC(ipaddress, cb) {
 
         if (l == 0) continue;
 
-        const [ ip, /* type */, flags, mac, /* mask */, /* intf */ ] = table[l].split(' ').filter(Boolean)
-
-        if (ip == ipaddress) {
-          if (flags == '0x0' || mac == "00:00:00:00:00:00") {
-            cb(false, null);
-            return;
+        if (table[l].indexOf(ipaddress + " ") == 0) {
+          let mac = table[l].substring(41, 58).toUpperCase().trim();
+          if (mac == "00:00:00:00:00:00") {
+             cb(false,null);
+             return;
           }
           SimpleCache.insert(ipaddress,mac);
           cb(false, mac);
@@ -73,11 +72,12 @@ function getMAC(ipaddress, cb) {
         }
       }
       cb(false, null)
+//      cb(true, "Count not find ip in arp table: " + ipaddress);
     });
   });
 }
 
 module.exports = {
   getMAC:getMAC,
-  getMACAsync: util.promisify(getMAC)
+  getMACAsync: Promise.promisify(getMAC)
 }
