@@ -17,7 +17,6 @@
 
 const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, 'info');
-const jsonfile = require('jsonfile');
 const util = require('util');
 
 const i18n = require('../util/i18n.js');
@@ -676,9 +675,6 @@ class OutboundAlarm extends Alarm {
     return this["p.dest.ip"];
   }
 
-  getSimpleOutboundTrafficSize() {
-    return formatBytes(this["p.transfer.outbound.size"]);
-  }
 
   keysToCompareForDedup() {
     return ["p.device.mac", "p.dest.id", "p.intf.id", "p.tag.ids"];
@@ -823,7 +819,7 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   // dedup implemented before generation @ FlowMonitor
-  isDup(alarm) {
+  isDup() {
     return false;
   }
 
@@ -934,13 +930,13 @@ class OpenPortAlarm extends Alarm {
   isDup(alarm) {
     if (alarm.type === this.type) {
       return super.isDup(alarm);
-    };
+    }
 
     if (['ALARM_OPENPORT', 'ALARM_UPNP'].includes(alarm.type)) {
       let compareValue = GetOpenPortAlarmCompareValue(alarm);
       let compareValue2 = GetOpenPortAlarmCompareValue(this);
       return (compareValue == compareValue2);
-    };
+    }
 
     return false;
   }
@@ -980,13 +976,13 @@ class UpnpAlarm extends Alarm {
   isDup(alarm) {
     if (alarm.type === this.type) {
       return super.isDup(alarm);
-    };
+    }
 
     if (['ALARM_OPENPORT', 'ALARM_UPNP'].includes(alarm.type)) {
       let compareValue = GetOpenPortAlarmCompareValue(alarm);
       let compareValue2 = GetOpenPortAlarmCompareValue(this);
       return (compareValue == compareValue2);
-    };
+    }
 
     return false;
   }

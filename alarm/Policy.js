@@ -132,7 +132,7 @@ class Policy {
     if (!policy) {
       return false
     }
-    if (!policy instanceof Policy)
+    if (!(policy instanceof Policy))
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
 
     if (
