@@ -189,7 +189,7 @@ class SysManager {
           log.info("SysManager initialization complete");
       });
     });
-    
+
     return instance
   }
 
@@ -223,7 +223,7 @@ class SysManager {
       return;
     await delay(1);
     return this.waitTillInitialized();
-  } 
+  }
 
   delayedActions() {
     setTimeout(() => {
@@ -373,7 +373,7 @@ class SysManager {
       await exec(`sudo timedatectl set-timezone ${timezone}`);
       await exec('sudo systemctl restart cron.service');
       await exec('sudo systemctl restart rsyslog');
-      
+
       return null;
     } catch (err) {
       log.error("Failed to set timezone:", err);
