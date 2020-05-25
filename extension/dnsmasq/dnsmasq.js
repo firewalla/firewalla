@@ -20,9 +20,7 @@ let log = null;
 
 const _ = require('lodash');
 const util = require('util');
-const spawn = require('child_process').spawn
 const f = require('../../net2/Firewalla.js');
-const ip = require('ip');
 const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
@@ -31,15 +29,12 @@ const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
-const HostTool = require('../../net2/HostTool.js');
-const hostTool = new HostTool();
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 const PlatformLoader = require('../../platform/PlatformLoader.js')
 const platform = PlatformLoader.getPlatform()
 const DNSTool = require('../../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const Message = require('../../net2/Message.js');
-const fc = require('../../net2/config.js')
 const { delay } = require('../../util/util.js');
 
 const { Rule } = require('../../net2/Iptables.js');
@@ -48,7 +43,6 @@ const ipset = require('../../net2/Ipset.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const LOCAL_FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq_local";
 const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
-const LOCAL_DOMAIN_KEY = "local:device:domain"
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const UPSTREAM_SERVER_FILE = FILTER_DIR + "/upstream_server.conf";
@@ -77,7 +71,6 @@ let fConfig = Config.getConfig(true);
 const bone = require("../../lib/Bone.js");
 
 const iptables = require('../../net2/Iptables');
-const ip6tables = require('../../net2/Ip6tables.js')
 
 const dnsmasqBinary = __dirname + "/dnsmasq";
 const startScriptFile = __dirname + "/dnsmasq.sh";
@@ -170,15 +163,16 @@ module.exports = class DNSMASQ {
             this.stop();
           });
 
+          sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+            const started = await this.isDNSServiceActive();
+            if (started) {
+              log.info("sys:network:info is reloaded, schedule refreshing dnsmasq and DNS redirect rules ...");
+              this.scheduleStart();
+            }
+          })
+
           sclient.on("message", (channel, message) => {
             switch (channel) {
-              case Message.MSG_SYS_NETWORK_INFO_RELOADED:
-                (async () => {
-                  const started = await this.isDNSServiceActive();
-                  if (started)
-                    await this.start(false); // raw restart dnsmasq to refresh all confs and iptables
-                })();
-                break;
               case "System:VPNSubnetChanged":
                 (async () => {
                   const newVpnSubnet = message;
@@ -191,13 +185,23 @@ module.exports = class DNSMASQ {
             }
           });
 
-          sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
           sclient.subscribe("System:VPNSubnetChanged");
         }
       })
     }
 
     return instance;
+  }
+
+  scheduleStart() {
+    if (this.startTask)
+      clearTimeout(this.startTask);
+    this.startTask = setTimeout(() => {
+      // raw restart dnsmasq to refresh all confs and iptables
+      this.start(false).catch((err) => {
+        log.error("Failed to start dnsmasq", err.message);
+      });
+    }, 5000);
   }
 
   async install() {
@@ -327,7 +331,7 @@ module.exports = class DNSMASQ {
     }
 
     // add local dns as a fallback in dnsmasq's resolv.conf
-    sysManager.myDNS().forEach((dns) => {
+    sysManager.myDefaultDns().forEach((dns) => {
       if (effectiveNameServers && !effectiveNameServers.includes(dns))
         effectiveNameServers.push(dns);
     })
@@ -479,7 +483,7 @@ module.exports = class DNSMASQ {
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
-          
+
           if (!_.isEmpty(options.intfs)) {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
             // use separate config file for each network configuration
@@ -489,11 +493,11 @@ module.exports = class DNSMASQ {
                 entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
               else
                 entries.push(`server=/${domain}/#$policy_${options.pid}`);
-              const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`; 
+              const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
               await fs.writeFileAsync(filePath, entries.join('\n'));
             }
-          } 
-          
+          }
+
           if (!_.isEmpty(options.tags)) {
             // use separate config file for each tag configuration
             for (const tag of options.tags) {
@@ -557,8 +561,8 @@ module.exports = class DNSMASQ {
           }
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.writeFileAsync(filePath, entries.join('\n'));
-        } 
-        
+        }
+
         if (!_.isEmpty(options.intfs)) {
           const NetworkProfile = require('../../net2/NetworkProfile.js');
           // use separate config file for each network configuration
@@ -571,8 +575,8 @@ module.exports = class DNSMASQ {
             const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
-        } 
-        
+        }
+
         if (!_.isEmpty(options.tags)) {
           // use separate config file for each tag configuration
           for (const tag of options.tags) {
@@ -611,15 +615,15 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     try {
       options = options || {};
-    
+
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
         if (options.scope && options.scope.length > 0) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
           });
-        } 
-        
+        }
+
         if (!_.isEmpty(options.intfs)) {
           const NetworkProfile = require('../../net2/NetworkProfile.js');
           for (const intf of options.intfs) {
@@ -628,8 +632,8 @@ module.exports = class DNSMASQ {
               log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
             });
           }
-        } 
-        
+        }
+
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
             const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
@@ -882,6 +886,44 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async _update_dns_fallback_rules() {
+    await execAsync(`sudo iptables -w -t nat -F FW_PREROUTING_DNS_FALLBACK`).catch((err) => {});
+    await execAsync(`sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_FALLBACK`).catch((err) => {});
+    const interfaces = sysManager.getMonitoringInterfaces();
+    const NetworkProfile = require('../../net2/NetworkProfile.js');
+    for (const intf of interfaces) {
+      const uuid = intf.uuid;
+      if (!uuid) {
+        log.error(`uuid is not defined for ${intf.name}`);
+        continue;
+      }
+      const resolver4 = sysManager.myResolver(intf.name);
+      const resolver6 = sysManager.myResolver6(intf.name);
+      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+      const netSet = NetworkProfile.getNetIpsetName(uuid);
+      if (resolver4 && resolver4.length > 0) {
+        const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
+          .mdl("set", `--match-set ${netSet} src,src`)
+          .mth(53, null, 'dport')
+          .jmp(`DNAT --to-destination ${resolver4[0]}:53`);
+        const redirectUDP = redirectTCP.clone().pro('udp');
+        await execAsync(redirectTCP.toCmd('-A'));
+        await execAsync(redirectUDP.toCmd('-A'));
+      }
+      if (resolver6 && resolver6.length > 0) {
+        const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
+          .mdl("set", `--match-set ${netSet} src,src`)
+          .mth(53, null, 'dport')
+          .jmp(`DNAT --to-destination ${resolver6[0]}:53`);
+        const redirectUDP = redirectTCP.clone().pro('udp');
+        await execAsync(redirectTCP.toCmd('-A'));
+        await execAsync(redirectUDP.toCmd('-A'));
+      }
+    }
+    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -j ACCEPT`)).catch((err) => {});
+  }
+
   async _add_all_iptables_rules() {
     if (this.vpnSubnet) {
       await this.updateVpnIptablesRules(this.vpnSubnet, true);
@@ -1021,13 +1063,8 @@ module.exports = class DNSMASQ {
   }
 
   onDHCPReservationChanged() {
-    if (this.mode === Mode.MODE_DHCP ||
-        this.mode === Mode.MODE_DHCP_SPOOF ||
-        this.mode === Mode.MODE_ROUTER
-    ) {
-      this._scheduleWriteHostsFile();
-      log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
-    }
+    this._scheduleWriteHostsFile();
+    log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
   }
 
   onSpoofChanged() {
@@ -1037,7 +1074,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  
+
   computeHash(content) {
     const crypto = require('crypto');
     return crypto.createHash('md5').update(content).digest("hex");
@@ -1176,7 +1213,7 @@ module.exports = class DNSMASQ {
     const secondaryRange = this.getDhcpRange("secondary");
     const secondaryRouterIp = sysManager.myIp2();
     const secondaryMask = sysManager.myIpMask2();
-    let secondaryDnsServers = sysManager.myDNS().join(',');
+    let secondaryDnsServers = sysManager.myDefaultDns().join(',');
     if (interfaceNameServers.secondary && interfaceNameServers.secondary.length != 0) {
       // if secondary dns server is set, use specified dns servers in dhcp response
       secondaryDnsServers = interfaceNameServers.secondary.join(',');
@@ -1185,7 +1222,7 @@ module.exports = class DNSMASQ {
     const alternativeRange = this.getDhcpRange("alternative");
     const alternativeRouterIp = sysManager.myGateway();
     const alternativeMask = sysManager.myIpMask();
-    let alternativeDnsServers = sysManager.myDNS().join(',');
+    let alternativeDnsServers = sysManager.myDefaultDns().join(',');
     if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {
       // if alternative dns server is set, use specified dns servers in dhcp response
       alternativeDnsServers = interfaceNameServers.alternative.join(',');
@@ -1230,7 +1267,7 @@ module.exports = class DNSMASQ {
     }
 
     if (this.mode === Mode.MODE_ROUTER) {
-      log.info("Router mode is enabled, firerouter will provide dhcp service.");      
+      log.info("Router mode is enabled, firerouter will provide dhcp service.");
     }
 
     if (this.mode === Mode.MODE_DHCP_SPOOF) {
@@ -1262,7 +1299,7 @@ module.exports = class DNSMASQ {
     // do not stop dnsmasq if it is managed by firerouter
     if (platform.isFireRouterManaged())
       return;
-    
+
     cmd = `sudo systemctl stop ${SERVICE_NAME}`;
 
     log.info(`Command to stop ${SERVICE_NAME}: ${cmd}`);
@@ -1293,6 +1330,7 @@ module.exports = class DNSMASQ {
       try {
         await this._remove_all_iptables_rules();
         await this._add_all_iptables_rules();
+        await this._update_dns_fallback_rules();
       } catch (err) {
         log.error('Error when add iptables rules', err);
         await this._remove_all_iptables_rules();
@@ -1519,7 +1557,7 @@ module.exports = class DNSMASQ {
                 }
               }
             }
-            
+
             if (match) {
               let featureName = filename;
               if (filename.startsWith("adblock_")) {

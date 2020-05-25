@@ -46,13 +46,13 @@ const { delay } = require('../util/util.js')
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
+const Mode = require('./Mode.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
-const uuid = require('uuid');
 const _ = require('lodash');
-const Mode = require('./Mode.js');
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
@@ -159,6 +159,23 @@ async function generateNetworkInfo() {
     let gateway = null;
     let gateway6 = null;
     let dns = null;
+    let resolver = null;
+    const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
+    if (resolverConfig) {
+      if (resolverConfig.useNameserversFromWAN) {
+        const routingConfig = (routerConfig && routerConfig.routing && (routerConfig.routing[intfName] || routerConfig.routing.global));
+        const defaultRoutingConfig = routingConfig && routingConfig.default;
+        if (defaultRoutingConfig) {
+          const viaIntf = defaultRoutingConfig.viaIntf;
+          if (intfNameMap[viaIntf]) {
+            resolver = intfNameMap[viaIntf].config.nameservers || intfNameMap[viaIntf].state.dns;
+          }
+        }
+      } else {
+        if (resolverConfig.nameservers)
+          resolver = resolverConfig.nameservers;
+      }
+    }
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
@@ -188,6 +205,7 @@ async function generateNetworkInfo() {
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
       dns:          dns,
+      resolver:     resolver,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type,
@@ -333,6 +351,8 @@ class FireRouter {
       if (!defaultWanIntfName )
         log.error("Default WAN interface is not defined in router config");
 
+
+      log.info("adopting firerouter network change according to mode", mode)
 
       switch(mode) {
         case Mode.MODE_AUTO_SPOOF:
@@ -510,6 +530,9 @@ class FireRouter {
         }
       }
     }
+
+    // this will ensure SysManger on each process will be updated with correct info
+    sem.emitLocalEvent({type: Message.MSG_FW_FR_RELOADED});
 
     log.info('FireRouter initialization complete')
     this.ready = true

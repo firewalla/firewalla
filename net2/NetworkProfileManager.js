@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const sysManager = require('./SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
@@ -68,16 +67,11 @@ class NetworkProfileManager {
       });
     }
 
-    sclient.on("message", async (channel, message) => {
-      switch (channel) {
-        case Message.MSG_SYS_NETWORK_INFO_RELOADED: {
-          log.info("sys:network:info is reloaded, refreshing network profiles and policies ...");
-          this.scheduleRefresh();
-        }
-      }
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      log.info("sys:network:info is reloaded, refreshing network profiles and policies ...");
+      this.scheduleRefresh();
     });
-    
-    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+
     return this;
   }
 

@@ -38,11 +38,12 @@ const natpmp = require('./nat-pmp');
 const natupnp = require('./nat-upnp');
 const natpmpTimeout = 86400;
 
-const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../../net2/Message.js');
 const f = require('../../net2/Firewalla.js');
 const ip = require('ip');
 const mode = require('../../net2/Mode.js');
+
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 let registeredUpnpMappings = [];
 const upnpCheckInterval = 15 * 60 * 1000 // 15 mins
@@ -97,13 +98,10 @@ module.exports = class {
           upnpCheckInterval
         );
 
-        sclient.on("message", (channel, message) => {
-          if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-            log.info("Schedule reload upnp clients since network info is reloaded");
-            this.scheduleReload();
-          }
-        });
-        sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+        sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+          log.info("Schedule reload upnp clients since network info is reloaded");
+          this.scheduleReload();
+        })
       }
     }
     return instance;

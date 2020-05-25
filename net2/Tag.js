@@ -207,6 +207,10 @@ class Tag {
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
   }
 
+  async acl(state) {
+    // do nothing for acl on tag
+  }
+
   async spoof(state) {
     // do nothing for spoof on tag
   }

@@ -638,11 +638,8 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "shadowsocks_server": false,
     "scisurf": false,
     "naughty_monkey": false,
-    "device_detection": false,
-    "porn_redirect": false,
     "redirect_httpd": false,
     "social_hour": true,
     "api_relay": false,
@@ -667,7 +664,8 @@
     "ipv6": false,
     "pihole": false,
     "adblock": false,
-    "family_protect": false
+    "family_protect": false,
+    "smart_block": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -683,8 +681,8 @@
     "hiddenFolder": "/.router"
   },
   "ratelimit": {
-    "name": "default",
-    "max": 60,
+    "appMax": 60,
+    "webMax": 200,
     "duration": 60
   }
 }

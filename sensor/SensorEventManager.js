@@ -36,7 +36,7 @@
  * StartDNS
  * StopDHCP
  * StopDNS
- * UPDATE_CATEGORY_DYNAMIC_DOMAIN
+ * UPDATE_CATEGORY_DOMAIN
  * VPNConnectionAccepted
  * Alarm:NewAlarm
  * Policy:AllInitialized

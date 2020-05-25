@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,7 +35,6 @@ const Sensor = require('./Sensor.js').Sensor;
 const sem = require('./SensorEventManager').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const UPNP = require('../extension/upnp/upnp.js');
 const upnp = new UPNP();
@@ -71,18 +70,13 @@ class UPNPSensor extends Sensor {
   }
 
   isExpired(mapping) {
-    const expireInterval = this.config.expireInterval || 3600; // one hour by default
-    return mapping.expire && mapping.expire < (Math.floor(new Date() / 1000) - expireInterval);
+    return mapping.expire && mapping.expire < Math.floor(Date.now() / 1000);
   }
 
   mergeResults(curMappings, preMappings) {
 
     curMappings.forEach((mapping) => {
-      mapping.expire = Math.floor(new Date() / 1000);
-    });
-
-    preMappings.forEach((mapping) => {
-      if (!mapping.expire) mapping.expire = Math.floor(new Date() / 1000);
+      mapping.expire = (mapping.ttl && mapping.ttl > 0) ? Math.floor(Date.now() / 1000) + mapping.ttl : null;
     });
 
     const fullMappings = [...curMappings, ...preMappings];
@@ -140,7 +134,7 @@ class UPNPSensor extends Sensor {
   }
 
   async _checkUpnpLeases() {
-    const results = await upnp.getPortMappingsUPNP().catch((err) => {
+    let results = await upnp.getPortMappingsUPNP().catch((err) => {
       log.error(`Failed to get UPnP mappings`, err);
       return [];
     });
@@ -181,6 +175,7 @@ class UPNPSensor extends Sensor {
                 'p.upnp.enabled': current.enabled.toString(),
                 'p.upnp.description': current.description,
                 'p.upnp.ttl': current.ttl.toString(),
+                'p.upnp.expire': current.expire ? current.expire.toString() : null,
                 'p.upnp.local': current.local.toString(),
                 'p.device.port': current.private.port.toString(),
                 'p.protocol': current.protocol
@@ -203,14 +198,11 @@ class UPNPSensor extends Sensor {
     sem.once('IPTABLES_READY', () => {
       this.scheduleReload();
 
-      sclient.on("message", (channel, message) => {
-        if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-          log.info("Schedule reload UPNPSensor since network info is reloaded");
-          this.scheduleReload();
-        }
-      });
-      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
-      
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+        log.info("Schedule reload UPNPSensor since network info is reloaded");
+        this.scheduleReload();
+      })
+
       setInterval(() => {
         this.scheduleCheckUPnPLeases();
       }, this.config.interval * 1000 || 60 * 10 * 1000); // default to 10 minutes

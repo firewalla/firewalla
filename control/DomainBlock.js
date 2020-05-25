@@ -41,23 +41,15 @@ const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
+
+const BlockManager = require('../control/BlockManager.js');
+const blockManager = new BlockManager();
+
+const _ = require('lodash');
 class DomainBlock {
 
   constructor() {
-    sem.once('IPTABLES_READY', async () => {
-      sem.on('UPDATE_CATEGORY_DEFAULT_DOMAIN', async (event) => {
-        if (event.category) {
-          const PM2 = require('../alarm/PolicyManager2.js');
-          const pm2 = new PM2();
-          const policies = await pm2.loadActivePoliciesAsync();
-          for (const policy of policies) {
-            if (policy.type == "category" && policy.target == event.category && policy.dnsmasq_entry) {
-              await pm2.tryPolicyEnforcement(policy, 'reenforce', policy)
-            }
-          }
-        }
-      })
-    })
+
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
@@ -87,20 +79,34 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    const blockSet = options.blockSet || "blocked_domain_set"
+    const blockSet = options.blockSet || "block_domain_set";
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      await Block.batchBlock(addresses, blockSet).catch((err) => {
+      const ipLevelBlockAddrs = [];
+      for (const addr of addresses) {
+        try {
+          const ipBlockInfo = await blockManager.updateIpBlockInfo(addr, domain, 'block', blockSet);
+          if (ipBlockInfo.blockLevel == 'ip') {
+            ipLevelBlockAddrs.push(addr);
+          }
+        } catch (err) { }
+      }
+      await Block.batchBlock(ipLevelBlockAddrs, blockSet).catch((err) => {
         log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
       });
     }
   }
 
   async unapplyBlock(domain, options) {
-    const blockSet = options.blockSet || "blocked_domain_set"
+    const blockSet = options.blockSet || "block_domain_set"
 
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
+      for (const addr of addresses) {
+        try {
+          await blockManager.updateIpBlockInfo(addr, domain, 'unblock', blockSet);
+        } catch (err) { }
+      }
       await Block.batchUnblock(addresses, blockSet).catch((err) => {
         log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
       });
@@ -246,7 +252,7 @@ class DomainBlock {
     for (let addr in set) {
       if (!existingSet[addr]) {
         await rclient.saddAsync(key, addr);
-        let blockSet = "blocked_domain_set";
+        let blockSet = "block_domain_set";
         if (options.blockSet)
           blockSet = options.blockSet;
         await Block.block(addr, blockSet).catch((err) => undefined);
@@ -257,28 +263,27 @@ class DomainBlock {
   async blockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.addPolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
-    sem.emitEvent({
-      type: 'ReloadDNSRule',
-      message: 'DNSMASQ filter rule is updated',
-      toProcess: 'FireMain',
-      suppressEventLogging: true
-    })
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async unblockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.removePolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
-    sem.emitEvent({
-      type: 'ReloadDNSRule',
-      message: 'DNSMASQ filter rule is updated',
-      toProcess: 'FireMain',
-      suppressEventLogging: true,
-    })
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async updateCategoryBlock(category) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    const PM2 = require('../alarm/PolicyManager2.js');	
+    const pm2 = new PM2();	
+    const policies = await pm2.loadActivePoliciesAsync();	
+    for (const policy of policies) {	
+      if (policy.type == "category" && policy.target == category) {	
+        dnsmasq.scheduleRestartDNSService();
+        return;
+      }	
+    }
   }
 
   async getCategoryDomains(category) {

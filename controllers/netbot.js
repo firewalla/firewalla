@@ -360,11 +360,17 @@ class netBot extends ControllerBot {
     // Enhancement: need rate limit on the box api
     const currentConfig = fc.getConfig(true);
     const rateLimitOptions = currentConfig.ratelimit || {}
-    
-    this.rateLimiter = new RateLimiterRedis({
+    this.rateLimiter = {};
+    this.rateLimiter.app = new RateLimiterRedis({
       redis: rclient,
-      keyPrefix: `ratelimit:${rateLimitOptions.name}`,
-      points: rateLimitOptions.max || 60,
+      keyPrefix: `ratelimit:app`,
+      points: rateLimitOptions.appMax || 60,
+      duration: rateLimitOptions.duration || 60//per second
+    })
+    this.rateLimiter.web = new RateLimiterRedis({
+      redis: rclient,
+      keyPrefix: `ratelimit:web`,
+      points: rateLimitOptions.webMax || 200,
       duration: rateLimitOptions.duration || 60//per second
     })
 
@@ -2835,6 +2841,15 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "acl:check": {
+        (async () => {
+          const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
+          this.simpleTxData(msg, {matchedRule: matchedRule}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
       case "intel:finger":
         (async () => {
           const target = value.target;
@@ -3166,7 +3181,7 @@ class netBot extends ControllerBot {
 
           await categoryUpdater.addIncludedDomain(category, domain)
           sem.emitEvent({
-            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            type: "UPDATE_CATEGORY_DOMAIN",
             category: category,
             domain: domain,
             action: "addIncludeDomain",
@@ -3184,7 +3199,7 @@ class netBot extends ControllerBot {
           const domain = value.domain
           await categoryUpdater.removeIncludedDomain(category, domain)
           sem.emitEvent({
-            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            type: "UPDATE_CATEGORY_DOMAIN",
             category: category,
             domain: domain,
             action: "removeIncludeDomain",
@@ -3202,7 +3217,7 @@ class netBot extends ControllerBot {
           const domain = value.domain
           await categoryUpdater.addExcludedDomain(category, domain)
           sem.emitEvent({
-            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            type: "UPDATE_CATEGORY_DOMAIN",
             domain: domain,
             action: "addExcludeDomain",
             category: category,
@@ -3220,7 +3235,7 @@ class netBot extends ControllerBot {
           const domain = value.domain
           await categoryUpdater.removeExcludedDomain(category, domain)
           sem.emitEvent({
-            type: "UPDATE_CATEGORY_DYNAMIC_DOMAIN",
+            type: "UPDATE_CATEGORY_DOMAIN",
             domain: domain,
             action: "removeExcludeDomain",
             category: category,
@@ -3815,7 +3830,7 @@ class netBot extends ControllerBot {
                 const secondaryInterface = config.secondaryInterface;
                 const secondaryIpSubnet = iptool.cidrSubnet(secondaryInterface.ip);
                 this.hostManager.loadPolicy((err, data) => {
-                  let secondaryDnsServers = sysManager.myDNS();
+                  let secondaryDnsServers = sysManager.myDefaultDns();
                   if (data.dnsmasq) {
                     const dnsmasq = JSON.parse(data.dnsmasq);
                     if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
@@ -3843,7 +3858,7 @@ class netBot extends ControllerBot {
                 const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
                 const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
                 this.hostManager.loadPolicy((err, data) => {
-                  let alternativeDnsServers = sysManager.myDNS();
+                  let alternativeDnsServers = sysManager.myDefaultDns();
                   if (data.dnsmasq) {
                     const dnsmasq = JSON.parse(data.dnsmasq);
                     if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
@@ -4069,14 +4084,13 @@ class netBot extends ControllerBot {
     }
   }
 
-  msgHandlerAsync(gid, rawmsg) {
+  msgHandlerAsync(gid, rawmsg, from = 'app') {
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
-      this.rateLimiter.consume('msg_handler').then((rateLimiterRes) => {
+      this.rateLimiter[from].consume('msg_handler').then((rateLimiterRes) => {
         this.msgHandler(gid, rawmsg, (err, response) => {
           if (processed)
             return;
-
           processed = true;
           if (err) {
             reject(err);
@@ -4087,7 +4101,7 @@ class netBot extends ControllerBot {
       }).catch((rateLimiterRes) => {
         const error = {
           "Retry-After": rateLimiterRes.msBeforeNext / 1000,
-          "X-RateLimit-Limit": this.rateLimiter.points,
+          "X-RateLimit-Limit": this.rateLimiter[from].points,
           "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
         }
         processed = true;

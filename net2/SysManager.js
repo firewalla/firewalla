@@ -128,10 +128,9 @@ class SysManager {
             break;
           }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
+            log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
-              if (f.isMain()) {
-                pclient.publish(Message.MSG_SYS_NETWORK_INFO_RELOADED, "");
-              }
+              sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
             });
             break;
         }
@@ -142,6 +141,12 @@ class SysManager {
       sclient.subscribe("System:Upgrade:Hard");
       sclient.subscribe("System:SSHPasswordChange");
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
+
+      sem.on(Message.MSG_FW_FR_RELOADED, () => {
+        this.update(() => {
+          sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
+        });
+      });
 
       this.delayedActions();
       this.reloadTimezone();
@@ -190,7 +195,7 @@ class SysManager {
           log.info("SysManager initialization complete");
       });
     });
-    
+
     return instance
   }
 
@@ -224,7 +229,7 @@ class SysManager {
       return;
     await delay(1);
     return this.waitTillInitialized();
-  } 
+  }
 
   delayedActions() {
     setTimeout(() => {
@@ -374,7 +379,7 @@ class SysManager {
       await exec(`sudo timedatectl set-timezone ${timezone}`);
       await exec('sudo systemctl restart cron.service');
       await exec('sudo systemctl restart rsyslog');
-      
+
       return null;
     } catch (err) {
       log.error("Failed to set timezone:", err);
@@ -688,6 +693,22 @@ class SysManager {
 
   myDDNS() {
     return this.ddns;
+  }
+
+  myResolver(intf) {
+    if (!intf)
+      return [];
+    const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
+    const resolver4 = resolver.filter(r => new Address4(r).isValid())
+    return resolver4;
+  }
+
+  myResolver6(intf) {
+    if (!intf)
+      return [];
+    const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
+    const resolver6 = resolver.filter(r => new Address6(r).isValid())
+    return resolver6;
   }
 
   myDNS(intf = this.config.monitoringInterface) { // return array

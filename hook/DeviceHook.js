@@ -289,7 +289,7 @@ class DeviceHook extends Hook {
             if (err) {
               log.error("Failed to get host after it is detected.");
             }
-            if (!sysManager.isMyIP(host.ipv4Addr)) {
+            if (!sysManager.isMyMac(mac)) {
               host.spoof(true);
             }
           });
@@ -357,7 +357,7 @@ class DeviceHook extends Hook {
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
           let hostManager = new HostManager()
           hostManager.getHost(host.mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
               h.spoof(true);
             }
           });
@@ -436,7 +436,7 @@ class DeviceHook extends Hook {
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
           let hostManager = new HostManager();
           hostManager.getHost(host.mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
               h.spoof(true);
             }
           });
@@ -497,7 +497,7 @@ class DeviceHook extends Hook {
           await hostTool.updateMACKey(enrichedHost); // host:mac:.....
           let hostManager = new HostManager();
           hostManager.getHost(mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyIP(host.ipv4Addr)) {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
               h.spoof(true);
             }
           });
@@ -603,7 +603,15 @@ class DeviceHook extends Hook {
   }
 
   getFirstIPv6(host) {
-    return (host.ipv6Addr && host.ipv6Addr.length > 0 && host.ipv6Addr[0]) || "";
+    let v6Addrs = host.ipv6Addr || [];
+    if (_.isString(v6Addrs)) {
+      try {
+        v6Addrs = JSON.parse(v6Addrs);
+      } catch (err) {
+        log.error(`Failed to parse v6 addrs: ${v6Addrs}`)
+      }
+    }
+    return v6Addrs[0] || "";
   }
 
   getPreferredName(host) {
