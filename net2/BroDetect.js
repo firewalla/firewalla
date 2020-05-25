@@ -17,7 +17,7 @@
 
 const log = require('./logger.js')(__filename);
 
-const Tail = require('always-tail');
+const Tail = require('../vendor_lib/always-tail.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
