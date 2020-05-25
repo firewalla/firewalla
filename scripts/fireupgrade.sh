@@ -70,7 +70,7 @@ fi
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
 
 function await_ip_assigned() {
-    for i in `seq 1 30`; do
+    for i in `seq 1 70`; do
         gw=$(ip route show | awk '/default/ {print $3; exit; }' | head -n 1)
         if [[ ! -n $gw ]]; then
             sleep 1

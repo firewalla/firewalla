@@ -352,6 +352,8 @@ class FireRouter {
         log.error("Default WAN interface is not defined in router config");
 
 
+      log.info("adopting firerouter network change according to mode", mode)
+
       switch(mode) {
         case Mode.MODE_AUTO_SPOOF:
         case Mode.MODE_DHCP:
