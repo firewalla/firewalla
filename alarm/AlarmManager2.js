@@ -1616,7 +1616,7 @@ module.exports = class {
         // not supported
         break;
     }
-    if (userInput && userInput.device && userInput.archiveAlarmByType) {
+    if (userInput && userInput.device && !userInput.archiveAlarmByType) {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
     log.info("Exception object:", e);
