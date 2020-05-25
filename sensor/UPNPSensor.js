@@ -175,6 +175,7 @@ class UPNPSensor extends Sensor {
                 'p.upnp.enabled': current.enabled.toString(),
                 'p.upnp.description': current.description,
                 'p.upnp.ttl': current.ttl.toString(),
+                'p.upnp.expire': current.expire ? current.expire.toString() : null,
                 'p.upnp.local': current.local.toString(),
                 'p.device.port': current.private.port.toString(),
                 'p.protocol': current.protocol
