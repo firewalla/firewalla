@@ -233,6 +233,15 @@ is_firewalla() {
     fi
 }
 
+is_simple_mode() {
+    MODE=$(redis-cli get mode)
+    if [[ $MODE == "spoof" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
@@ -290,7 +299,7 @@ check_hosts() {
         local COLOR=""
         local UNCOLOR="\e[0m"
         if [[ $DEVICE_ONLINE == "yes" && $DEVICE_B7_MONITORING == "false" ]]; then
-          if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP; then
+          if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
             COLOR="\e[91m"
           fi
         fi
