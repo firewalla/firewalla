@@ -235,7 +235,7 @@ class BlockManager {
             domainBlockInfo = {};
         }
         domainBlockInfo[ipBlockInfo.ip] = ipBlockInfo;
-        await rclient.setAsync(key, domainBlockInfo);
+        await rclient.setAsync(key, JSON.stringify(domainBlockInfo));
     }
     domainCovered(blockDomain, otherDomain) {
         // a.b.com covred x.a.b.com
