@@ -313,7 +313,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const categoryIps = await rclient.zrangeAsync(mapping,0,-1);
     const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
-    if(pureCategoryIps.length==0) return; 
+    if(pureCategoryIps.length==0) return;
     // Existing sets and elements are not erased by restore unless specified so in the restore file.
     // -! ignores error on entries already exists
     let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
