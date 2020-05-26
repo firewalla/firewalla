@@ -76,7 +76,7 @@ class BlockManager {
     getCategoryIpMapping(category) {
         return `rdns:category:${category}`
     }
-    async getPureCategoryIps(category, categoryIps, domain) {
+    async getPureCategoryIps(category, categoryIps, originDomain) {
         if (!fc.isFeatureOn(featureName)) {
             return categoryIps;
         }
@@ -113,7 +113,7 @@ class BlockManager {
             const categoryIpMappingKey = this.getCategoryIpMapping(category);
             mixupCategoryIps.length > 0 && await rclient.sremAsync(categoryIpMappingKey, mixupCategoryIps);
             pureCategoryIps.length > 0 && await rclient.saddAsync(categoryIpMappingKey, pureCategoryIps);
-            await rclient.setAsync(this.categoryDomainBlockInfoKey(domain), JSON.stringify({
+            await rclient.setAsync(this.categoryDomainBlockInfoKey(originDomain), JSON.stringify({
                 pureCategoryIps: pureCategoryIps,
                 mixupIpInfos: mixupIpInfos
             }))
