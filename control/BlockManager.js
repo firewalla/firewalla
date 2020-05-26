@@ -228,7 +228,12 @@ class BlockManager {
     }
     async updateDomainBlockInfo(domain, ipBlockInfo) {
         const key = this.domainBlockInfoKey(domain);
-        let domainBlockInfo = await rclient.getAsync(key) || {};
+        let domainBlockInfo = await rclient.getAsync(key);
+        try {
+            domainBlockInfo = JSON.parse(domainBlockInfo);
+        } catch (err) {
+            domainBlockInfo = {};
+        }
         domainBlockInfo[ipBlockInfo.ip] = ipBlockInfo;
         await rclient.setAsync(key, domainBlockInfo);
     }
