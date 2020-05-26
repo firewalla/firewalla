@@ -230,7 +230,7 @@ class BlockManager {
         const key = this.domainBlockInfoKey(domain);
         let domainBlockInfo = await rclient.getAsync(key) || {};
         domainBlockInfo[ipBlockInfo.ip] = ipBlockInfo;
-        await rclient.setAsync(domain, domainBlockInfo);
+        await rclient.setAsync(key, domainBlockInfo);
     }
     domainCovered(blockDomain, otherDomain) {
         // a.b.com covred x.a.b.com
