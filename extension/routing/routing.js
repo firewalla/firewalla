@@ -85,7 +85,10 @@ async function createPolicyRoutingRule(from, iif, tableName, priority, fwmark, a
   if (priority)
     rule = `${rule} priority ${priority}`;
   let cmd = `ip -${af} rule list ${rule}`;
-  let result = await exec(cmd).then(r => r.stdout);
+  let result = await exec(cmd).then(r => r.stdout).catch((err) => {
+    log.error(`Failed to list rule with command ${cmd}`, err.message);
+    return "";
+  });
   if (result.length > 0) {
     log.debug("Same policy routing rule already exists: ", rule);
     return;
@@ -118,7 +121,10 @@ async function removePolicyRoutingRule(from, iif, tableName, priority, fwmark, a
   if (priority)
     rule = `${rule} priority ${priority}`;
   let cmd = `ip -${af} rule list ${rule}`;
-  let result = await exec(cmd).then(r => r.stdout);
+  let result = await exec(cmd).then(r => r.stdout).catch((err) => {
+    log.error(`Failed to list rule with command ${cmd}`, err.message);
+    return "";
+  });
   if (result.length === 0) {
     log.debug("Policy routing rule does not exist: ", rule);
     return;
