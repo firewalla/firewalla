@@ -194,6 +194,10 @@ class Policy {
 
   match(alarm) {
 
+    if (this.action == 'allow') {
+      return false;
+    }
+
     if (this.isExpired()) {
       return false // always return unmatched if policy is already expired
     }

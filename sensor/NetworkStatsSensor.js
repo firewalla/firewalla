@@ -143,7 +143,7 @@ class NetworkStatsSensor extends Sensor {
   }
 
   testDNSServerPing() {
-    const dnses = sysManager.myDNS();
+    const dnses = sysManager.myDefaultDns();
     if (!_.isEmpty(dnses)) {
       this.testPingPerf("dns", dnses[0], "perf:ping:dns");
     }

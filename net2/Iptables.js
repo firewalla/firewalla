@@ -90,8 +90,8 @@ exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
 exports.dhcpSubnetChangeAsync = util.promisify(dhcpSubnetChange);
-exports.switchMonitoring = util.callbackify(switchMonitoringAsync);
-exports.switchMonitoringAsync = switchMonitoringAsync;
+exports.switchACL = util.callbackify(switchACLAsync);
+exports.switchACLAsync = switchACLAsync;
 exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
 exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
 
@@ -276,7 +276,7 @@ function iptables(rule, callback) {
         let cmdline = [];
 
         cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_PREROUTING_PORT_FORWARD -p ${protocol} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
-        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort} -j FW_POSTROUTING_HAIRPIN`));
+        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
 
         log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
         cp.exec(cmdline.join(";"), (err, stdout, stderr) => {
@@ -429,13 +429,22 @@ function flush() {
   });
 }
 
-async function switchMonitoringAsync(state, family = 4) {
-  const op = state ? '-D' : '-A'
+async function switchACLAsync(state, family = 4) {
+  const op = state ? '-D' : '-I'
 
-  const byPass = new Rule().chn('FW_BYPASS').jmp('ACCEPT').fam(family)
-  const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS').jmp('ACCEPT').fam(family)
+  const byPassOut = new Rule().chn('FW_DROP')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+    .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+    .mdl("conntrack", "--ctdir ORIGINAL").jmp('RETURN').fam(family);
+  const byPassIn = new Rule().chn('FW_DROP')
+  .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+  .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+  .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
+  const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`).jmp('FW_PREROUTING_DNS_FALLBACK').fam(family)
 
-  await execAsync(byPass.toCmd(op))
+  await execAsync(byPassIn.toCmd(op));
+  await execAsync(byPassOut.toCmd(op));
   await execAsync(byPassNat.toCmd(op))
 }
 

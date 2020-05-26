@@ -603,7 +603,15 @@ class DeviceHook extends Hook {
   }
 
   getFirstIPv6(host) {
-    return (host.ipv6Addr && host.ipv6Addr.length > 0 && host.ipv6Addr[0]) || "";
+    let v6Addrs = host.ipv6Addr || [];
+    if (_.isString(v6Addrs)) {
+      try {
+        v6Addrs = JSON.parse(v6Addrs);
+      } catch (err) {
+        log.error(`Failed to parse v6 addrs: ${v6Addrs}`)
+      }
+    }
+    return v6Addrs[0] || "";
   }
 
   getPreferredName(host) {

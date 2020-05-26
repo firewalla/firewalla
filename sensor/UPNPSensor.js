@@ -70,18 +70,15 @@ class UPNPSensor extends Sensor {
   }
 
   isExpired(mapping) {
-    const expireInterval = this.config.expireInterval || 3600; // one hour by default
-    return mapping.expire && mapping.expire < (Math.floor(new Date() / 1000) - expireInterval);
+    const retentionPeriod = this.config.expireInterval || 1800;
+    return !mapping.lastSeen || mapping.lastSeen < (Math.floor(Date.now() / 1000) - retentionPeriod) || (mapping.expire && mapping.expire < Math.floor(Date.now() / 1000));
   }
 
   mergeResults(curMappings, preMappings) {
 
     curMappings.forEach((mapping) => {
-      mapping.expire = Math.floor(new Date() / 1000);
-    });
-
-    preMappings.forEach((mapping) => {
-      if (!mapping.expire) mapping.expire = Math.floor(new Date() / 1000);
+      mapping.expire = (mapping.ttl && mapping.ttl > 0) ? Math.floor(Date.now() / 1000) + mapping.ttl : null;
+      mapping.lastSeen = Math.floor(Date.now() / 1000);
     });
 
     const fullMappings = [...curMappings, ...preMappings];
@@ -180,6 +177,7 @@ class UPNPSensor extends Sensor {
                 'p.upnp.enabled': current.enabled.toString(),
                 'p.upnp.description': current.description,
                 'p.upnp.ttl': current.ttl.toString(),
+                'p.upnp.expire': current.expire ? current.expire.toString() : null,
                 'p.upnp.local': current.local.toString(),
                 'p.device.port': current.private.port.toString(),
                 'p.protocol': current.protocol

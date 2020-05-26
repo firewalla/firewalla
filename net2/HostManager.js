@@ -16,7 +16,6 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const exec = require('child-process-promise').exec
 
@@ -88,7 +87,6 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const iptables = require('./Iptables.js');
-const ipset = require('./Ipset.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -101,10 +99,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const Message = require('./Message.js');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
-
-const {Rule} = require("./Iptables.js");
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -123,6 +118,7 @@ module.exports = class HostManager {
       let c = require('./MessageBus.js');
       this.messageBus = new c("info");
       this.iptablesReady = false;
+      this.spoofing = true;
 
       // ONLY register for these events in FireMain process
       if(f.isMain()) {
@@ -227,7 +223,7 @@ module.exports = class HostManager {
     }
 
     json.cpuid = platform.getBoardSerial();
-    json.uptime = process.uptime()
+    json.uptime = process.uptime();
 
     if(sysManager.language) {
       json.language = sysManager.language;
@@ -299,6 +295,7 @@ module.exports = class HostManager {
     }
     const sysInfo = SysInfo.getSysInfo();
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
+    json.osUptime = sysInfo.osUptime;
   }
 
 
@@ -1138,7 +1135,7 @@ module.exports = class HostManager {
 
     // Only allow requests be executed in a frenquency lower than 1 every 5 mins
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
-    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {              
+    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
       log.info("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length>0){
         return this.hosts.all
@@ -1317,16 +1314,24 @@ module.exports = class HostManager {
     return obj
   }
 
+  isMonitoring() {
+    return this.spoofing;
+  }
+
+  async acl(state) {
+    if (state == false) {
+      await iptables.switchACLAsync(false);
+      await iptables.switchACLAsync(false, 6);
+    } else {
+      await iptables.switchACLAsync(true);
+      await iptables.switchACLAsync(true, 6);
+    }
+  }
+
   async spoof(state) {
-    log.debug("System:Spoof:", state, this.spoofing);
+    this.spoofing = state;
     const sm = new SpooferManager();
     if (state == false) {
-      await iptables.switchMonitoringAsync(false);
-      await iptables.switchMonitoringAsync(false, 6);
-      // flush all ip addresses
-      // log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-      // no need to empty spoof set since dev flag file is placed now
-      // await sm.emptySpoofSet();
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
@@ -1339,9 +1344,6 @@ module.exports = class HostManager {
       if (redisSpoofOff) {
         return;
       }
-
-      await iptables.switchMonitoringAsync(true);
-      await iptables.switchMonitoringAsync(true, 6);
       // remove dev flag file if it exists and restart bitbridge
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
         return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {

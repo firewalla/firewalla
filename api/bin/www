@@ -56,6 +56,8 @@ log.info("Waiting for cloud token...");
 run0();
 
 async function run0() {
+  log.forceInfo("Waiting for first app to connect...");
+  
   await sysManager.waitTillInitialized();
   if (bone.cloudready() &&
       bone.isAppConnected() &&
@@ -92,8 +94,10 @@ async function run() {
   const appLocal = require('../app-local.js');
   appLocal.set('port', PORT_LOCAL_API);
 
-  refreshListeningInterfaces(app)
-  refreshListeningInterfaces(appLocal, true)
+  sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+    refreshListeningInterfaces(app)
+    refreshListeningInterfaces(appLocal, true)
+  })
 
   sclient.on("message", (channel, message) => {
     switch (channel) {
@@ -106,16 +110,14 @@ async function run() {
   });
   sclient.subscribe(Message.MSG_SYS_API_INTERFACE_CHANGED)
 
-  sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
-    refreshListeningInterfaces(app)
-    refreshListeningInterfaces(appLocal, true)
-  })
+  refreshListeningInterfaces(app)
+  refreshListeningInterfaces(appLocal, true)
 }
 
 // policy:system => apiInterface has higher priority over firerouter interfaces change
 // cloud socket should always be available whatever policy:system says
 async function refreshListeningInterfaces(app, local = false) {
-  log.info('refreshing listening interfaces')
+  log.info(`refreshing listening ${local?'local':''} interfaces`)
 
   const userInterfaces = await getUserInterfaces()
 
