@@ -230,7 +230,7 @@ class BlockManager {
         const key = this.domainBlockInfoKey(domain);
         let domainBlockInfo = await rclient.getAsync(key);
         try {
-            domainBlockInfo = JSON.parse(domainBlockInfo);
+            domainBlockInfo = JSON.parse(domainBlockInfo) || {};
         } catch (err) {
             domainBlockInfo = {};
         }
