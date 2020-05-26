@@ -112,7 +112,7 @@ class VPNClientEnforcer {
     const rtId = await routing.createCustomizedRoutingTable(tableName);
     await routing.flushRoutingTable(tableName);
     // remove policy based rule
-    await routing.removePolicyRoutingRule("all", null, tableName, `${rtId}/0xffff`);
+    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`);
   }
 
   _getVPNClientIPSetName(vpnIntf) {
