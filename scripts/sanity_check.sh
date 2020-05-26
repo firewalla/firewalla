@@ -310,10 +310,15 @@ check_hosts() {
 check_iptables() {
     echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
-    local IPSETS=$(sudo iptables -w -L -n | egrep -o "(\<c_[^ ]*\>|blocked_[^ ]*)" | sort | uniq)
+    local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
     for IPSET in $IPSETS; do
         local NUM=$(sudo ipset list $IPSET -terse | tail -n 1 | sed 's=Number of entries: ==')
-        printf "%25s %10s\n" $IPSET $NUM
+        local COLOR=""
+        local UNCOLOR="\e[0m"
+        if [[ $NUM > 0 ]]; then
+            COLOR="\e[91m"
+        fi
+        printf "%25s $COLOR%10s$UNCOLOR\n" $IPSET $NUM
     done
 
     echo ""
