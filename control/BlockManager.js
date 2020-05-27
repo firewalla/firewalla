@@ -26,7 +26,7 @@ const _ = require('lodash');
 const fc = require('../net2/config.js');
 const featureName = 'smart_block';
 let instance = null;
-const expiring = 24 * 60 * 60 * 7;  // seven days
+const expiring = 24 * 60 * 60 * 3;  // three days
 
 class BlockManager {
     constructor() {
