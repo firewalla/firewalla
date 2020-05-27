@@ -113,10 +113,13 @@ class BlockManager {
             const categoryIpMappingKey = this.getCategoryIpMapping(category);
             mixupCategoryIps.length > 0 && await rclient.sremAsync(categoryIpMappingKey, mixupCategoryIps);
             pureCategoryIps.length > 0 && await rclient.saddAsync(categoryIpMappingKey, pureCategoryIps);
-            await rclient.setAsync(this.categoryDomainBlockInfoKey(originDomain), JSON.stringify({
+            const categoryDomainBlockInfoKey = this.categoryDomainBlockInfoKey(originDomain);
+            await rclient.setAsync(categoryDomainBlockInfoKey, JSON.stringify({
                 pureCategoryIps: pureCategoryIps,
                 mixupIpInfos: mixupIpInfos
             }))
+            let expiring = 24 * 60 * 60 * 7;  // seven days
+            rclient.expireat(categoryDomainBlockInfoKey, parseInt((+new Date) / 1000) + expiring);
         } catch (e) {
             log.info("get pure category ips failed", e)
         }
@@ -223,19 +226,7 @@ class BlockManager {
                 }
             }
         }
-        await this.updateDomainBlockInfo(domain, ipBlockInfo);
         return ipBlockInfo;
-    }
-    async updateDomainBlockInfo(domain, ipBlockInfo) {
-        const key = this.domainBlockInfoKey(domain);
-        let domainBlockInfo = await rclient.getAsync(key);
-        try {
-            domainBlockInfo = JSON.parse(domainBlockInfo) || {};
-        } catch (err) {
-            domainBlockInfo = {};
-        }
-        domainBlockInfo[ipBlockInfo.ip] = ipBlockInfo;
-        await rclient.setAsync(key, JSON.stringify(domainBlockInfo));
     }
     domainCovered(blockDomain, otherDomain) {
         // a.b.com covred x.a.b.com
