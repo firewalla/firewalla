@@ -225,18 +225,20 @@ class BlockManager {
                 }
             }
         }
-        await this.updateDomainBlockInfo(domain, ipBlockInfo);
+        if (action == 'block' || action == 'unblock' || (action == 'newDomain' && exist)) {
+            await this.updateDomainBlockInfo(domain, ipBlockInfo);
+        }
         return ipBlockInfo;
     }
-    async updateDomainBlockInfo(domain, ipBlockInfo) {	
-        const key = this.domainBlockInfoKey(domain);	
-        let domainBlockInfo = await rclient.getAsync(key);	
-        try {	
-            domainBlockInfo = JSON.parse(domainBlockInfo) || {};	
-        } catch (err) {	
-            domainBlockInfo = {};	
-        }	
-        domainBlockInfo[ipBlockInfo.ip] = ipBlockInfo;	
+    async updateDomainBlockInfo(domain, ipBlockInfo) {
+        const key = this.domainBlockInfoKey(domain);
+        let domainBlockInfo = await rclient.getAsync(key);
+        try {
+            domainBlockInfo = JSON.parse(domainBlockInfo) || {};
+        } catch (err) {
+            domainBlockInfo = {};
+        }
+        domainBlockInfo[ipBlockInfo.ip] = ipBlockInfo;
         await rclient.setAsync(key, JSON.stringify(domainBlockInfo));
         rclient.expireat(key, parseInt((+new Date) / 1000) + expiring);
     }
