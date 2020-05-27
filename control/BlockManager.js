@@ -83,7 +83,6 @@ class BlockManager {
         }
         const pureCategoryIps = [], mixupCategoryIps = [], mixupIpInfos = [];
         try {
-            const now = new Date();
             for (const categoryIp of categoryIps) {
                 let pure = true;
                 let mixupDomain;
