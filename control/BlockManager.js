@@ -25,7 +25,8 @@ const intelTool = new IntelTool();
 const _ = require('lodash');
 const fc = require('../net2/config.js');
 const featureName = 'smart_block';
-let instance = null
+let instance = null;
+const expiring = 24 * 60 * 60 * 7;  // seven days
 
 class BlockManager {
     constructor() {
@@ -118,7 +119,6 @@ class BlockManager {
                 pureCategoryIps: pureCategoryIps,
                 mixupIpInfos: mixupIpInfos
             }))
-            let expiring = 24 * 60 * 60 * 7;  // seven days
             rclient.expireat(categoryDomainBlockInfoKey, parseInt((+new Date) / 1000) + expiring);
         } catch (e) {
             log.info("get pure category ips failed", e)
@@ -226,7 +226,20 @@ class BlockManager {
                 }
             }
         }
+        await this.updateDomainBlockInfo(domain, ipBlockInfo);
         return ipBlockInfo;
+    }
+    async updateDomainBlockInfo(domain, ipBlockInfo) {	
+        const key = this.domainBlockInfoKey(domain);	
+        let domainBlockInfo = await rclient.getAsync(key);	
+        try {	
+            domainBlockInfo = JSON.parse(domainBlockInfo) || {};	
+        } catch (err) {	
+            domainBlockInfo = {};	
+        }	
+        domainBlockInfo[ipBlockInfo.ip] = ipBlockInfo;	
+        await rclient.setAsync(key, JSON.stringify(domainBlockInfo));
+        rclient.expireat(key, parseInt((+new Date) / 1000) + expiring);
     }
     domainCovered(blockDomain, otherDomain) {
         // a.b.com covred x.a.b.com
