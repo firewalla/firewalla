@@ -863,6 +863,8 @@ module.exports = class HostManager {
   }
 
   async networkConfig(json, filterSensitive = false) {
+    if (!platform.isFireRouterManaged())
+      return;
     const config = FireRouter.getConfig();
     if (filterSensitive && config && config.interface && config.interface.pppoe) {
       for (const key in config.interface.pppoe) {
