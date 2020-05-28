@@ -1043,7 +1043,7 @@ module.exports = class FlowMonitor {
     }
 
     let severity = iobj.severityscore > 50 ? "major" : "minor";
-    let reason = iobj.reason;
+    let reason = _.isArray(iobj.category) && iobj.length > 0 && iobj.category[0];
 
     if (!fc.isFeatureOn("cyber_security")) {
       return;
