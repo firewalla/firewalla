@@ -4092,7 +4092,7 @@ class netBot extends ControllerBot {
         ignoreRate = rawmsg.message.obj.data.ignoreRate;
       }
       if (ignoreRate) {
-        log.info('ignore rate limite');
+        log.info('ignore rate limit');
         this.msgHandler(gid, rawmsg, (err, response) => {
           if (processed)
             return;
