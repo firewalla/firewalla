@@ -578,7 +578,7 @@ class Host {
       this.spoofing = false;
     }
 
-    const iface = sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
+    const iface = _.isString(this.o.ipv4Addr) && sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
     if (!iface || !iface.name) {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
       return;
