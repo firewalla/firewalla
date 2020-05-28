@@ -248,7 +248,7 @@ module.exports = class {
     intelObj.from = "firewalla";
     if (intel.cc) {
       try {
-        intelObj.tags = JSON.parse(intel.cc);
+        intelObj.category = JSON.parse(intel.cc);
       } catch (e) {
       }
     }
