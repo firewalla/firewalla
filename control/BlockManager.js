@@ -131,22 +131,27 @@ class BlockManager {
         const ipBlockKeys = await rclient.keysAsync("ip:block:info:*");
         log.info('schedule refresh block level for these ips:', ipBlockKeys)
         ipBlockKeys.map(async (key) => {
-            let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
-            const { targetDomains, ip, blockLevel, blockSet } = ipBlockInfo;
-            const allDomains = await dnsTool.getAllDns(ip);
-            const sharedDomains = _.differenceWith(allDomains, targetDomains, (a, b) => {
-                return this.domainCovered(b, a);
-            });
-            if (sharedDomains.length == 0 && blockLevel == 'domain') {
-                Block.block(ip, blockSet)
+            try {
+                let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
+                if (!ipBlockInfo) continue;
+                const { targetDomains, ip, blockLevel, blockSet } = ipBlockInfo;
+                const allDomains = await dnsTool.getAllDns(ip);
+                const sharedDomains = _.differenceWith(allDomains, targetDomains, (a, b) => {
+                    return this.domainCovered(b, a);
+                });
+                if (sharedDomains.length == 0 && blockLevel == 'domain') {
+                    Block.block(ip, blockSet)
+                }
+                if (sharedDomains.length > 0 && blockLevel == 'ip') {
+                    Block.unblock(ip, blockSet);
+                }
+                ipBlockInfo.ts = new Date() / 1000;
+                ipBlockInfo.sharedDomains = sharedDomains;
+                ipBlockInfo.allDomains = allDomains;
+                await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+            } catch (err) {
+                log.warn('parse error', err);
             }
-            if (sharedDomains.length > 0 && blockLevel == 'ip') {
-                Block.unblock(ip, blockSet);
-            }
-            ipBlockInfo.ts = new Date() / 1000;
-            ipBlockInfo.sharedDomains = sharedDomains;
-            ipBlockInfo.allDomains = allDomains;
-            await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
         })
     }
     async updateIpBlockInfo(ip, domain, action, blockSet = 'block_domain_set') {
