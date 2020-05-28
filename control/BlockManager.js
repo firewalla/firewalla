@@ -158,11 +158,12 @@ class BlockManager {
             allDomains: [],
             ts: new Date() / 1000
         }
+        let exist;
         if (!fc.isFeatureOn(featureName)) {
             ipBlockInfo.blockLevel = 'ip';
         } else {
             const key = this.ipBlockInfoKey(ip);
-            const exist = (await rclient.existsAsync(key) == 1);
+            exist = (await rclient.existsAsync(key) == 1);
             if (exist) {
                 ipBlockInfo = JSON.parse(await rclient.getAsync(key));
             }
