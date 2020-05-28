@@ -4087,7 +4087,12 @@ class netBot extends ControllerBot {
   msgHandlerAsync(gid, rawmsg, from = 'app') {
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
-      this.rateLimiter[from].consume('msg_handler').then((rateLimiterRes) => {
+      let ignoreRate = false;
+      if (rawmsg && rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data) {
+        ignoreRate = rawmsg.message.obj.data.ignoreRate;
+      }
+      if (ignoreRate) {
+        log.info('ignore rate limit');
         this.msgHandler(gid, rawmsg, (err, response) => {
           if (processed)
             return;
@@ -4098,15 +4103,28 @@ class netBot extends ControllerBot {
             resolve(response);
           }
         })
-      }).catch((rateLimiterRes) => {
-        const error = {
-          "Retry-After": rateLimiterRes.msBeforeNext / 1000,
-          "X-RateLimit-Limit": this.rateLimiter[from].points,
-          "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
-        }
-        processed = true;
-        reject(error);
-      })
+      } else {
+        this.rateLimiter[from].consume('msg_handler').then((rateLimiterRes) => {
+          this.msgHandler(gid, rawmsg, (err, response) => {
+            if (processed)
+              return;
+            processed = true;
+            if (err) {
+              reject(err);
+            } else {
+              resolve(response);
+            }
+          })
+        }).catch((rateLimiterRes) => {
+          const error = {
+            "Retry-After": rateLimiterRes.msBeforeNext / 1000,
+            "X-RateLimit-Limit": this.rateLimiter[from].points,
+            "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
+          }
+          processed = true;
+          reject(error);
+        })
+      }
     })
   }
 
