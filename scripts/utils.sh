@@ -7,8 +7,9 @@ function setup_folders() {
     mkdir -p ~/.firewalla/config/dnsmasq_local
     mkdir -p ~/.firewalla/run/docker
     mkdir -p ~/.forever
-    mkdir -p ~/logs    
+    mkdir -p ~/logs
     sudo chown -R pi ~/logs/
+    mkdir -p ~/.firewalla/run/ovpn_profile
     test -e ~/.firewalla/.sshpasswd && sudo chown pi ~/.firewalla/.sshpasswd
     # this is mainly for x86_64, /etc/openvpn will link to this directory
     if [[ $(uname -m) == "x86_64" ]]; then
