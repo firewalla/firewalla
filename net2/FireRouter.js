@@ -402,7 +402,7 @@ class FireRouter {
       // updates userConfig
       const intf = await networkTool.updateMonitoringInterface().catch((err) => {
         log.error('Error', err)
-      })
+      }) || "eth0"; // a fallback for red/blue
 
       const intf2 = intf + ':0'
 
