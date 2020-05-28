@@ -322,6 +322,13 @@ module.exports = class FlowMonitor {
               intelobj.pr = flow.pr;
             }
 
+            if (flow.intf && _.isString(flow.intf)) {
+              intelobj.intf = flow.intf;
+            }
+            if (flow.tags && _.isArray(flow.tags)) {
+              intelobj.tags = flow.tags;
+            }
+
             log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
 
             this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
@@ -1036,7 +1043,7 @@ module.exports = class FlowMonitor {
     }
 
     let severity = iobj.severityscore > 50 ? "major" : "minor";
-    let reason = iobj.reason;
+    let reason = _.isArray(iobj.category) && iobj.category.length > 0 && iobj.category[0];
 
     if (!fc.isFeatureOn("cyber_security")) {
       return;
