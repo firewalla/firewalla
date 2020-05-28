@@ -77,12 +77,12 @@ async function ipAddress() {
 }
 
 async function gateway() {
-  const gateway = sysManager.myGateway();
+  const gateway = sysManager.myDefaultGateway();
   return gateway;
 }
 
 async function gatewayLatency() {
-  const gateway = sysManager.myGateway();
+  const gateway = sysManager.myDefaultGateway();
   if (gateway) {
     const cmd = util.format("ping -n -c 10 -i 0.2 -w 3 %s | tail -n 1 | cut -d= -f2 | cut -d/ -f2", gateway);
     const result = await execAsync(cmd);
