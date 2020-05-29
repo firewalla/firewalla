@@ -88,7 +88,7 @@ class VPNClientEnforcer {
       // but need to grant access to wan_routable table for packets from vpn interface
       await routing.createPolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
     } else {
-      // copy all routes from main routing table on non-firerouter-managed rules
+      // copy all routes from main routing table on non-firerouter-managed platform
       let cmd = "ip route list";
       if (overrideDefaultRoute)
         // do not copy default route from main routing table
