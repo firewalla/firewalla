@@ -1221,7 +1221,7 @@ module.exports = class DNSMASQ {
     }
 
     const alternativeRange = this.getDhcpRange("alternative");
-    const alternativeRouterIp = sysManager.myGateway();
+    const alternativeRouterIp = sysManager.myDefaultGateway();
     const alternativeMask = sysManager.myIpMask();
     let alternativeDnsServers = sysManager.myDefaultDns().join(',');
     if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {

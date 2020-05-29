@@ -68,6 +68,8 @@ async function createCustomizedRoutingTable(tableName) {
 
 async function createPolicyRoutingRule(from, iif, tableName, priority, fwmark, af = 4) {
   from = from || "all";
+  let cmd = `ip -${af} rule list`;
+  let result = await exec(cmd);
   let rule = `from ${from} `;
   if (fwmark) {
     if (_.isString(fwmark) && fwmark.includes("/")) {
@@ -82,17 +84,13 @@ async function createPolicyRoutingRule(from, iif, tableName, priority, fwmark, a
   if (iif && iif !== "")
     rule = `${rule}iif ${iif} `;
   rule = `${rule}lookup ${tableName}`;
-  if (priority)
-    rule = `${rule} priority ${priority}`;
-  let cmd = `ip -${af} rule list ${rule}`;
-  let result = await exec(cmd).then(r => r.stdout).catch((err) => {
-    log.error(`Failed to list rule with command ${cmd}`, err.message);
-    return "";
-  });
-  if (result.length > 0) {
+  result = result.stdout.replace(/\[detached\] /g, "");
+  if (result.includes(rule)) {
     log.debug("Same policy routing rule already exists: ", rule);
     return;
   }
+  if (priority)
+    rule = `${rule} priority ${priority}`;
   cmd = `sudo ip -${af} rule add ${rule}`;
   log.info("Create new policy routing rule: ", cmd);
   result = await exec(cmd);
@@ -104,6 +102,9 @@ async function createPolicyRoutingRule(from, iif, tableName, priority, fwmark, a
 
 async function removePolicyRoutingRule(from, iif, tableName, priority, fwmark, af = 4) {
   from = from || "all";
+  let cmd = `ip -${af} rule list`;
+  let result = await exec(cmd);
+  result = result.stdout.replace(/\[detached\] /g, "");
   let rule = `from ${from} `;
   if (fwmark) {
     if (_.isString(fwmark) && fwmark.includes("/")) {
@@ -118,14 +119,7 @@ async function removePolicyRoutingRule(from, iif, tableName, priority, fwmark, a
   if (iif && iif !== "")
     rule = `${rule}iif ${iif} `;
   rule = `${rule}lookup ${tableName}`;
-  if (priority)
-    rule = `${rule} priority ${priority}`;
-  let cmd = `ip -${af} rule list ${rule}`;
-  let result = await exec(cmd).then(r => r.stdout).catch((err) => {
-    log.error(`Failed to list rule with command ${cmd}`, err.message);
-    return "";
-  });
-  if (result.length === 0) {
+  if (!result.includes(rule)) {
     log.debug("Policy routing rule does not exist: ", rule);
     return;
   }

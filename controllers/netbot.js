@@ -2350,7 +2350,7 @@ class netBot extends ControllerBot {
         const mode = require('../net2/Mode.js');
         const dhcp = require("../extension/dhcp/dhcp.js");
         await mode.reloadSetupMode();
-        const routerIP = sysManager.myGateway();
+        const routerIP = sysManager.myDefaultGateway();
         let DHCPDiscover = false;
         if (routerIP) {
           DHCPDiscover = await dhcp.dhcpServerStatus(routerIP);
@@ -3749,7 +3749,7 @@ class netBot extends ControllerBot {
               break;
             }
             case "alternative": {
-              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
+              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myDefaultGateway() }; // default value is current ip/subnet/gateway on monitoring interface
               const updatedAltConfig = { gateway: intf.gateway };
               const altIpAddress = intf.ipAddress;
               const altSubnetMask = intf.subnetMask;
@@ -3855,7 +3855,7 @@ class netBot extends ControllerBot {
               }
               case "alternative": {
                 // convert ip/subnet to ip address and subnet mask
-                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
+                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myDefaultGateway() }; // default value is current ip/subnet/gateway on monitoring interface
                 const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
                 this.hostManager.loadPolicy((err, data) => {
                   let alternativeDnsServers = sysManager.myDefaultDns();
