@@ -73,6 +73,7 @@ let legoEptCloud = class {
       this.info = null; // to be encrypted
       this.signature = "";
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
+      this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
       this.token = null;
       rclient.hgetAsync('sys:ept:me', 'eid').then(eid => this.eid = eid)
       this.groupCache = {};
@@ -857,7 +858,7 @@ let legoEptCloud = class {
       const group = this.groupCache[gid]
       if (this.socket == null) {
         this.notifyGids.push(gid);
-        this.socket = io2('https://firewalla.encipher.io',{path: '/socket',transports:['websocket'],'upgrade':false});
+        this.socket = io2(this.sioURL,{path: '/socket',transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
           // this.lastDisconnection = Date.now() / 1000
           this.notifySocket = false;
