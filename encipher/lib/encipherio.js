@@ -860,9 +860,8 @@ let legoEptCloud = class {
         this.notifyGids.push(gid);
         this.socket = io2(this.sioURL,{path: '/socket',transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
-          // this.lastDisconnection = Date.now() / 1000
           this.notifySocket = false;
-          log.error('Cloud disconnected')
+          log.forceInfo('Cloud disconnected')
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -899,7 +898,7 @@ let legoEptCloud = class {
         this.socket.on('connect', ()=>{
           this.notifySocket = true;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
-          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name);
+          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);
           if (this.notifyGids.length>0) {
             this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':group.group.name});
           }
