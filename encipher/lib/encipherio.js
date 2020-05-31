@@ -93,7 +93,7 @@ let legoEptCloud = class {
   }
 
   async keyReady() {
-    log.info("Checking whether key pair exists already");
+    log.forceInfo("Checking whether key pair exists already");
 
     try {
       await fs.accessAsync(this.getPublicKeyPath())
@@ -112,14 +112,14 @@ let legoEptCloud = class {
       await this.cleanupKeys()
       return null;
     } else {
-      log.info("Key pair exists");
+      log.forceInfo("Key pair exists");
       return {pub: pubFile, pri: priFile};
     }
 
   }
 
   async untilKeyReady() {
-    log.info('Wait until keys ready ...')
+    log.forceInfo('Wait until keys ready ...')
     let result = await this.keyReady()
     if (!result) {
       log.info("Keys not ready, wait ...");
