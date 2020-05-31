@@ -248,6 +248,8 @@ let legoEptCloud = class {
       assertion.assertion.info = this.info;
     }
 
+    log.info("Encipher URL:", this.endpoint);
+
     const options = {
       uri: this.endpoint + '/login/eptoken',
       family: 4,
