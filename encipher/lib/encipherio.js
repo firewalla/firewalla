@@ -21,6 +21,7 @@ const request = require('requestretry');
 const uuid = require("uuid");
 const io2 = require('socket.io-client');
 
+const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger')(__filename);
 
 const Promise = require('bluebird');
@@ -74,6 +75,11 @@ let legoEptCloud = class {
       this.signature = "";
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
       this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
+      this.sioPath = fConfig.SocketIOPath;
+      if(f.isDevelopmentVersion()) {
+        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv2";
+        this.sioPath = fConfig.SocketIODevPath;
+      }
       this.token = null;
       rclient.hgetAsync('sys:ept:me', 'eid').then(eid => this.eid = eid)
       this.groupCache = {};
@@ -858,7 +864,7 @@ let legoEptCloud = class {
       const group = this.groupCache[gid]
       if (this.socket == null) {
         this.notifyGids.push(gid);
-        this.socket = io2(this.sioURL,{path: '/socket',transports:['websocket'],'upgrade':false});
+        this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
           this.notifySocket = false;
           log.forceInfo('Cloud disconnected')
