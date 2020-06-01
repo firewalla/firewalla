@@ -409,7 +409,7 @@ module.exports = class {
         })();
       } else if (p === "monitor") {
         target.spoof(policy[p]);
-      } else if (p === "acl") {
+      } else if (p === "acl" || p === "ACL") { // resolve policy keyword conflict on app side
         target.acl(policy[p]);
       } else if (p === "vpnClient") {
         this.vpnClient(target, policy[p]);
