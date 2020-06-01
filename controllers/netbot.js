@@ -4176,7 +4176,7 @@ class netBot extends ControllerBot {
                 this.hostManager.toJson(true, options, (err, json) => {
 
                   // skip acl for old app for backward compatibility
-                  if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && "1.36" === rawmsg.message.appInfo.version) {
+                  if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
                     delete json.policy.acl;
 
                     for(const host of json.hosts) {
