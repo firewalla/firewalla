@@ -2064,12 +2064,17 @@ class PolicyManager2 {
             if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || rule.localPort || rule.remotePort) {
               remoteSet4 = Block.getDstSet(rule.pid);
               remoteSet6 = Block.getDstSet6(rule.pid);
+              if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
+                continue;
             } else {
               remoteSet4 = (rule.action === "allow" ? 'allow_' : 'block_') + (rule.direction === "inbound" ? "ib_" : (rule.direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[rule.type];
               remoteSet6 = remoteSet4 + "6";
+              const mappedAddresses = (await domainIPTool.getMappedIPAddresses(rule.target, {blockSet: remoteSet4})) || [];
+              if (!(_.intersection(mappedAddresses, remoteIpsToCheck).length > 0)
+                || !(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0)
+              )
+                continue;
             }
-            if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
-              continue;
           } else continue;
           break;
         }
