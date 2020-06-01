@@ -4177,10 +4177,16 @@ class netBot extends ControllerBot {
 
                   // skip acl for old app for backward compatibility
                   if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
-                    delete json.policy.acl;
+                    if(json && json.policy) {
+                      delete json.policy.acl;
+                    }
 
-                    for(const host of json.hosts) {
-                      delete host.policy.acl;
+                    if(json.hosts) {
+                      for (const host of json.hosts) {
+                        if(host && host.policy) {
+                          delete host.policy.acl;
+                        }
+                      }
                     }
                   }
 
