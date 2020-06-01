@@ -153,6 +153,7 @@ class BlockManager {
                 ipBlockInfo.allDomains = allDomains;
                 await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
             } catch (err) {
+                await rclient.delAsync(key);
                 log.warn('parse error', err);
             }
         })

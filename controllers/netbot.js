@@ -2625,14 +2625,7 @@ class netBot extends ControllerBot {
       case "alarm:delete":
         try {
           (async () => {
-            const alarmIDs = value.alarmIDs;
-            if (alarmIDs && _.isArray(alarmIDs)) {
-              for (const alarmID of alarmIDs) {
-                alarmID && await am2.removeAlarmAsync(alarmID);
-              }
-            } else {
-              await am2.removeAlarmAsync(value.alarmID);
-            }
+            await am2.removeAlarmAsync(value.alarmID);
             this.simpleTxData(msg, {}, null, callback)
           })()
         } catch (err) {
@@ -2691,6 +2684,22 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "alarm:batch":
+        (async () => {
+          /*
+            actions: {delete:[alarmID], archive:[alarmID]}
+          */
+          const actions = value.actions;
+          if (actions) {
+            const result = await am2.batchAlarm(actions)
+            this.simpleTxData(msg, result, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error("invalid actions"), callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
       case "policy:create": {
         let policy
         try {
@@ -2733,29 +2742,13 @@ class netBot extends ControllerBot {
         break;
       case "policy:delete":
         (async () => {
-          const policyIDs = value.policyIDs;
-          if (policyIDs && _.isArray(policyIDs)) {
-            let results={};
-            for (const policyID of policyIDs) {
-              let policy = await pm2.getPolicy(policyID);
-              if (policy) {
-                await pm2.disableAndDeletePolicy(policyID)
-                policy.deleted = true;
-                results[policyID] = policy;
-              } else {
-                results[policyID] = "invalid policy";
-              }
-            };
-            this.simpleTxData(msg, results, null, callback);
+          let policy = await pm2.getPolicy(value.policyID)
+          if (policy) {
+            await pm2.disableAndDeletePolicy(value.policyID)
+            policy.deleted = true // policy is marked ask deleted
+            this.simpleTxData(msg, policy, null, callback);
           } else {
-            let policy = await pm2.getPolicy(value.policyID)
-            if (policy) {
-              await pm2.disableAndDeletePolicy(value.policyID)
-              policy.deleted = true // policy is marked ask deleted
-              this.simpleTxData(msg, policy, null, callback);
-            } else {
-              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-            }
+            this.simpleTxData(msg, null, new Error("invalid policy"), callback);
           }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
@@ -2764,7 +2757,7 @@ class netBot extends ControllerBot {
       case "policy:batch":
         (async () => {
           /*
-            actions: {create: [policy instance], delete: [policy instance], update:[policyID]}
+            actions: {create: [policy instance], update: [policy instance], delete:[policyID], disable:[policyID], enable:[policyID] }
           */
           const actions = value.actions;
           if (actions) {
@@ -2897,6 +2890,22 @@ class netBot extends ControllerBot {
           }).catch((err) => {
             this.simpleTxData(msg, null, err, callback);
           });
+        break;
+      case "exception:batch":
+        (async () => {
+          /*
+            actions: {create: [exception instance], update: [exception instance], delete:[exceptionID]}
+          */
+          const actions = value.actions;
+          if (actions) {
+            const result = await em.batchException(actions)
+            this.simpleTxData(msg, result, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error("invalid actions"), callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
         break;
       case "reset":
         break;

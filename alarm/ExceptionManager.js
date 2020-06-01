@@ -487,4 +487,40 @@ module.exports = class {
 
     return _.uniqWith(matchedExceptions.map((exception) => exception.eid), _.isEqual);
   }
+
+  async batchException(actions) {
+    let results = {
+      'create': [],
+      'update': [],
+      'delete': []
+    };
+    for (const action in actions) {
+      const rawData = actions[action] || [];
+      switch (action) {
+        case 'create':
+        case 'update':
+          const emAction = action == 'create' ? 'createException' : 'updateException';
+          for (const rawException of rawData) {
+            try {
+              const exception = await this[emAction](rawException);
+              results[action].push(exception);
+            } catch (e) {
+              log.warn(`${action} expcetion error`, e);
+            }
+          }
+          break;
+        case 'delete':
+          for (const exceptionID of rawData) {
+            try {
+              await this.deleteException(exceptionID)
+              results[action].push(exceptionID);
+            } catch (e) {
+              log.warn(`${action} expcetion error`, e);
+            }
+          }
+          break;
+      }
+    }
+    return results;
+  }
 };

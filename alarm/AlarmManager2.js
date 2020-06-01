@@ -1581,4 +1581,33 @@ module.exports = class {
     log.info("Exception object:", e);
     return e;
   }
+
+  async batchAlarm(actions) {
+    let results = {
+      'delete': [],
+      'archive': []
+    };
+    for (const action in actions) {
+      const rawData = actions[action] || [];
+      switch (action) {
+        case 'delete':
+          for (const alarmID of rawData) {
+            await this.removeAlarmAsync(alarmID)
+            results[action].push(alarmID);
+          }
+          break;
+        case 'archive':
+          for (const alarmID of rawData) {
+            try {
+              const ids = await this.ignoreAlarm(alarmID, {})
+              results[action].concat(ids);
+            } catch (e) {
+              log.info(`${action} alarm error`, e);
+            }
+          }
+          break;
+      }
+    }
+    return results;
+  }
 }

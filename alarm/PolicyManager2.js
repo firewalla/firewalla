@@ -2099,35 +2099,37 @@ class PolicyManager2 {
 
   async batchPolicy(actions) {
     let results = {
-      'create':[],
-      'update':[],
-      'delete':[]
+      'create': [],
+      'update': [],
+      'delete': [],
+      'disable': [],
+      'enable': [],
     };
-    for(const action in actions){
+    for (const action in actions) {
       const rawData = actions[action] || [];
       switch (action) {
         case 'create':
-          for(const rawPolicy of rawData){
+          for (const rawPolicy of rawData) {
             const { policy, alreadyExists } = await this.checkAndSaveAsync(new Policy(rawPolicy));
             let result = policy;
             if (alreadyExists == 'duplicated') {
               result = 'duplicated'
             }
-            results.create.push(result);
+            results[action].push(result);
           }
           break;
         case 'update':
-          for(const rawPolicy of rawData){
+          for (const rawPolicy of rawData) {
             const pid = rawPolicy.pid;
             const oldPolicy = await this.getPolicy(pid);
             await this.updatePolicyAsync(rawPolicy);
             const newPolicy = await this.getPolicy(pid);
             this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);
-            results.update.push(newPolicy);
+            results[action].push(newPolicy);
           }
           break;
         case 'delete':
-          for(const policyID of rawData){
+          for (const policyID of rawData) {
             let policy = await this.getPolicy(policyID);
             let result;
             if (policy) {
@@ -2137,7 +2139,18 @@ class PolicyManager2 {
             } else {
               result = "invalid policy";
             }
-            results.delete.push(result);
+            results[action].push(result);
+          }
+          break;
+        case 'enable':
+        case 'disable':
+          const pmAction = action == 'enable' ? 'enablePolicy' : 'disablePolicy';
+          for (const policyID of rawData) {
+            let policy = await this.getPolicy(policyID);
+            if (policy) {
+              await this[pmAction](policy);
+              results[action].push(policy);
+            }
           }
           break;
       }
