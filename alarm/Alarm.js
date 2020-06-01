@@ -342,7 +342,7 @@ class VPNRestoreAlarm extends Alarm {
       this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
     }
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp * 1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
     }
   }
 
@@ -379,7 +379,7 @@ class VPNDisconnectAlarm extends Alarm {
       this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
     }
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp * 1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
     }
   }
 
@@ -626,7 +626,7 @@ class OutboundAlarm extends Alarm {
     super(type, timestamp, device, info);
     this["p.dest.id"] = destinationID;
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp * 1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
     }
   }
 
