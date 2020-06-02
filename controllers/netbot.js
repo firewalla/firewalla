@@ -1007,7 +1007,7 @@ class netBot extends ControllerBot {
         }
         (async () => {
           let result = this._setHost(data.value, msg.target);
-          if (result) {
+          if (!result) {
             this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
           } else {
             sem.emitEvent({
