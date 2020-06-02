@@ -967,17 +967,19 @@ class netBot extends ControllerBot {
       case "policy:batch":
         /*
           value:
-          [ policy:{ adblock: true,
-            family: false,
-            devicePresence: false,
-            safeSearch: { state: false },
-            ipAllocation: { type: 'dynamic' },
-            monitor: true,
-            deviceOffline: false,
-            doh: { state: true },
-            blockin: false,
-            tags: [] },
-            target: mac address | network | tag
+          [ {
+              policy:{ adblock: true,
+                family: false,
+                devicePresence: false,
+                safeSearch: { state: false },
+                ipAllocation: { type: 'dynamic' },
+                monitor: true,
+                deviceOffline: false,
+                doh: { state: true },
+                blockin: false,
+                tags: [] },
+              target: mac address | network | tag
+            }
           ]
         */
         (async () => {

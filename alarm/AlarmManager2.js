@@ -1600,7 +1600,7 @@ module.exports = class {
           for (const alarmID of rawData) {
             try {
               const ids = await this.ignoreAlarm(alarmID, {})
-              results[action].concat(ids);
+              results[action] = results[action].concat(ids);
             } catch (e) {
               log.info(`${action} alarm error`, e);
             }
