@@ -224,6 +224,40 @@ class netBot extends ControllerBot {
     return value;
   }
 
+  async _setHost(value, target) {
+    let ip = null;
+    if (hostTool.isMacAddress(target)) {
+      const macAddress = target
+      log.info("set host name alias by mac address", macAddress);
+      let macObject = {
+        mac: macAddress,
+        name: value.name
+      }
+      await hostTool.updateMACKey(macObject, true);
+      await hostTool.generateLocalDomain(macAddress);
+      return true;
+    } else {
+      ip = target
+    }
+    let host = await this.hostManager.getHostAsync(ip)
+    if (!host) {
+      return false;
+    }
+    if (value.name == host.o.name) {
+      return true;
+    }
+
+    host.o.name = value.name
+    log.info("Changing names", host.o.name);
+    try {
+      await host.saveAsync(null);
+      return true;
+    } catch (e) {
+      log.warn('Failed to save host name', e);
+      return false;
+    }
+  }
+
   _ipAllocation(ip, value, callback = () => { }) {
     if (ip === "0.0.0.0") {
       // ip allocation is only applied on device
@@ -966,72 +1000,58 @@ class netBot extends ControllerBot {
         //data.value = "{ name: " "}"
         let data = msg.data;
         log.info("Setting Host", msg);
-        let reply = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-        };
-        reply.code = 200;
 
         if (!data.value.name) {
           this.simpleTxData(msg, {}, new Error("host name required for setting name"), callback)
           return
         }
-
         (async () => {
-          let ip = null;
-          if (hostTool.isMacAddress(msg.target)) {
-            const macAddress = msg.target
-            log.info("set host name alias by mac address", macAddress);
-            let macObject = {
-              mac: macAddress,
-              name: data.value.name
-            }
-            await hostTool.updateMACKey(macObject, true);
-            await hostTool.generateLocalDomain(macAddress);
+          let result = this._setHost(data.value, msg.target);
+          if (result) {
+            this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
+          } else {
             sem.emitEvent({
               type: "LocalDomainUpdate",
-              message: `Update device:${macAddress} localDomain`,
-              macArr: [macAddress],
+              message: `Update device:${msg.target} localDomain`,
+              macArr: [msg.target],
               toProcess: 'FireMain'
             });
             this.simpleTxData(msg, {}, null, callback)
-            return
-
-          } else {
-            ip = msg.target
           }
-
-          let host = await this.hostManager.getHostAsync(ip)
-
-          if (!host) {
-            this.simpleTxData(msg, {}, new Error("invalid host"), callback)
-            return
-          }
-
-          if (data.value.name == host.o.name) {
-            this.simpleTxData(msg, {}, null, callback)
-            return
-          }
-
-          host.o.name = data.value.name
-          log.info("Changing names", host.o.name);
-          host.save(null, (err) => {
-            if (err) {
-              this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
-            } else {
-              this.simpleTxData(msg, {}, null, callback)
-            }
-          });
-
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
 
         break;
       }
+      case "host:batch":
+        /*
+          value:
+          [{name:string,target: mac | ip}]
+        */
+        (async()=>{
+          let results = [];
+          await Promise.all(data.value.map(async (item) => {
+            const result = await this._setHost({
+              name: item.name
+            }, item.target);
+            if (result) results.push(item.target);
+          }))
+          if (results.length > 0) {
+            sem.emitEvent({
+              type: "LocalDomainUpdate",
+              message: `Update device:${results.join(',')} localDomain`,
+              macArr: [results],
+              toProcess: 'FireMain'
+            });
+            this.simpleTxData(msg, results, null, callback);
+          } else {
+            this.simpleTxData(msg, {}, new Error("failed to save hosts name"), callback);
+          }
+        })().catch((err)=>{
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
       case "tag": {
         let data = msg.data;
         log.info("Setting tag", msg);
