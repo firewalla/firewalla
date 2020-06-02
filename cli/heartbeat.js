@@ -45,7 +45,6 @@ Promise.promisifyAll(fs);
 const cp = require('child_process');
 const mac =  getSignatureMac();
 const memory = getTotalMemory()
-const gatewayMac = getGatewayMac();
 
 function getSignatureMac() {
   try {
@@ -53,20 +52,6 @@ function getSignatureMac() {
     return mac && mac.trim().toUpperCase();
   } catch(err) {
     return "";
-  }
-}
-
-function getGatewayMac() {
-  const sysManager = require('../net2/SysManager.js');
-  const inter = sysManager.getDefaultWanInterface()
-  const gateway = inter.gateway_ip;
-  const arpCmd = `arp -a -n | grep ${gateway} -w | awk '{print $4}'`;
-  const result = cp.exec(arpCmd);
-  const mac = result.stdout;
-  if (mac) {
-    return mac.substring(0,11);
-  } else {
-    return null;
   }
 }
 
@@ -91,15 +76,22 @@ function isBooted() {
   }
 }
 
+function getEthernets() {
+    const ifs = require('os').networkInterfaces()
+    delete ifs['lo']
+    return ifs
+}
+
 function getTotalMemory() {
-  const result = cp.exec("free -m | awk '/Mem:/ {print $2}'");
-  return result && result.stdout && result.stdout.replace(/\n$/, '')
+  const result = cp.execSync("free -m | awk '/Mem:/ {print $2}'");
+  return result && result.toString() && result.toString().trim()
 }
 
 function getSysinfo(status) {
   const booted = isBooted();
   const uptime = require('os').uptime()
-  return {booted, gatewayMac, mac, memory, status, uptime};
+  const eths = getEthernets();
+  return {booted, eths, mac, memory, status, uptime};
 }
 
 function update(status) {
