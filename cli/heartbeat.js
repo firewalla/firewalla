@@ -78,8 +78,8 @@ function isBooted() {
 
 function getEthernets() {
     const ifs = require('os').networkInterfaces()
-    delete ifs['lo']
-    return ifs
+    const eths = Object.keys(ifs).filter(name => name.match(/^eth/));
+    return eths
 }
 
 function getTotalMemory() {
