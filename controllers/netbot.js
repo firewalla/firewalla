@@ -160,6 +160,69 @@ class netBot extends ControllerBot {
       this.hostManager.setPolicy("vpn", newValue, callback)
     });
   }
+  async _setPolicy(value, target){
+    // { adblock: true,
+    //   family: false,
+    //   devicePresence: false,
+    //   safeSearch: { state: false },
+    //   ipAllocation: { type: 'dynamic' },
+    //   monitor: true,
+    //   deviceOffline: false,
+    //   doh: { state: true },
+    //   blockin: false,
+    //   tags: [] }
+    const processorMap = {
+      "ipAllocation": this._ipAllocation,
+      "vpn": this._vpn,
+      "shadowsocks": this._shadowsocks,
+      "scisurf": this._scisurf,
+      "enhancedSpoof": this._enhancedSpoof,
+      "vulScan": this._vulScan,
+      "dnsmasq": this._dnsmasq,
+      "externalAccess": this._externalAccess,
+      "ssh": this._ssh,
+      "notify": this._notify,
+      "portforward": this._portforward,
+      "upstreamDns": this._upstreamDns,
+    }
+    for (const o of Object.keys(value)) {
+      if (processorMap[o]) {
+        await util.promisify(processorMap[o]).bind(this)(target, value[o])
+        continue
+      }
+      const policyData = value[o]
+      log.info(o, target, policyData)
+      if (target === "0.0.0.0") {
+        await this.hostManager.setPolicyAsync(o, policyData);
+        continue
+      }
+
+      if (target.startsWith("network:")) {
+        const uuid = target.substring(8);
+        const network = this.networkProfileManager.getNetworkProfile(uuid);
+        if (network) {
+          await network.loadPolicy();
+          await network.setPolicy(o, policyData);
+        }
+      } else if (target.startsWith("tag:")) {
+        const tagUid = target.substring(4);
+        const tag = await this.tagManager.getTagByUid(tagUid);
+        if (tag) {
+          await tag.loadPolicy();
+          await tag.setPolicy(o, policyData)
+        }
+      } else {
+        let host = await this.hostManager.getHostAsync(target)
+        if (host) {
+          await host.loadPolicyAsync()
+          await host.setPolicyAsync(o, policyData)
+        } else {
+          throw new Error('Invalid host')
+        }
+      }
+    }
+    return value;
+  }
 
   _ipAllocation(ip, value, callback = () => { }) {
     if (ip === "0.0.0.0") {
@@ -860,66 +923,44 @@ class netBot extends ControllerBot {
       case "policy":
         (async () => {
           // further policy enforcer should be implemented in Host.js or PolicyManager.js
-          const processorMap = {
-            "ipAllocation": this._ipAllocation,
-            "vpn": this._vpn,
-            "shadowsocks": this._shadowsocks,
-            "scisurf": this._scisurf,
-            "enhancedSpoof": this._enhancedSpoof,
-            "vulScan": this._vulScan,
-            "dnsmasq": this._dnsmasq,
-            "externalAccess": this._externalAccess,
-            "ssh": this._ssh,
-            "notify": this._notify,
-            "portforward": this._portforward,
-            "upstreamDns": this._upstreamDns,
-          }
-          for (const o of Object.keys(value)) {
-            if (processorMap[o]) {
-              await util.promisify(processorMap[o]).bind(this)(msg.target, value[o])
-              continue
-            }
-
-            const target = msg.target
-            const policyData = value[o]
-
-            log.info(o, target, policyData)
-
-            if (target === "0.0.0.0") {
-              await this.hostManager.setPolicyAsync(o, policyData);
-              continue
-            }
-
-            if (target.startsWith("network:")) {
-              const uuid = target.substring(8);
-              const network = this.networkProfileManager.getNetworkProfile(uuid);
-              if (network) {
-                await network.loadPolicy();
-                await network.setPolicy(o, policyData);
-              }
-            } else if (target.startsWith("tag:")) {
-              const tagUid = target.substring(4);
-              const tag = await this.tagManager.getTagByUid(tagUid);
-              if (tag) {
-                await tag.loadPolicy();
-                await tag.setPolicy(o, policyData)
-              }
-            } else {
-              let host = await this.hostManager.getHostAsync(target)
-              if (host) {
-                await host.loadPolicyAsync()
-                await host.setPolicyAsync(o, policyData)
-              } else {
-                throw new Error('Invalid host')
-              }
-            }
-          }
+          value = await this._setPolicy(value, msg.taregt);
           log.info("Repling ", value);
           this.simpleTxData(msg, value, null, callback);
         })().catch(err =>
           this.simpleTxData(msg, {}, err, callback)
           )
-        break
+        break;
+      case "policy:batch":
+        /*
+          value:
+          [ policy:{ adblock: true,
+            family: false,
+            devicePresence: false,
+            safeSearch: { state: false },
+            ipAllocation: { type: 'dynamic' },
+            monitor: true,
+            deviceOffline: false,
+            doh: { state: true },
+            blockin: false,
+            tags: [] },
+            target: mac address | network | tag
+          ]
+        */
+        (async () => {
+          let results = [];
+          await Promise.all(value.map(async (item) => {
+            const policy = await this._setPolicy(item.policy, item.target);
+            results.push({
+              policy: policy,
+              target: item.target
+            });
+          }))
+          log.info("Repling ", results);
+          this.simpleTxData(msg, results, null, callback);
+        })().catch(err =>
+          this.simpleTxData(msg, {}, err, callback)
+          )
+        break;
       case "host": {
         //data.item = "host" test
         //data.value = "{ name: " "}"
