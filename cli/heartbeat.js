@@ -11,6 +11,7 @@ Promise.promisifyAll(fs);
 
 const cp = require('child_process');
 const mac =  getSignatureMac();
+const memory = getTotalMemory()
 
 function getSignatureMac() {
   try {
@@ -42,10 +43,15 @@ function isBooted() {
   }
 }
 
+function getTotalMemory() {
+  const result = exec("free -m | awk '/Mem:/ {print $2}'");
+  return result && result.stdout && result.stdout.replace(/\n$/, '')
+}
+
 function getSysinfo(status) {
   const booted = isBooted();
   const uptime = require('os').uptime()
-  return {booted, mac, status, uptime};
+  return {booted, mac, memory, status, uptime};
 }
 
 function update(status) {
@@ -59,7 +65,6 @@ const job = setTimeout(() => {
 
 socket.on('connect', () => {
   log("Connected to heartbeat server.");
-  if ( )
   update('connect');
 });
 
