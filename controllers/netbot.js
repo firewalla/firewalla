@@ -1031,7 +1031,7 @@ class netBot extends ControllerBot {
         */
         (async()=>{
           let results = [];
-          await Promise.all(data.value.map(async (item) => {
+          await Promise.all(msg.data.value.map(async (item) => {
             const result = await this._setHost({
               name: item.name
             }, item.target);
