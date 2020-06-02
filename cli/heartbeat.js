@@ -1,3 +1,36 @@
+/*    Copyright 2020 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+ /*
+  * Box (collect the following info)
+  *   box states: just rebooted, this process crashed and connect, reconnected the socket io, scheduled update
+  *   memory size
+  *   mac addresses of ethX
+  *   speed of each ethX
+  *   Bluetooth mac address
+  *   uptime
+  *   uname -m
+  *   box eid (if have)
+  *   box license (8 char prefix only)
+  *   gateway mac address (the first three bytes)
+  *   cpu temp
+  *   current timestamp
+  *   hash of firerouter (if applicable)
+  *   hash of firewalla
+  */
+
 'use strict';
 
 const io2 = require('socket.io-client');
@@ -12,6 +45,7 @@ Promise.promisifyAll(fs);
 const cp = require('child_process');
 const mac =  getSignatureMac();
 const memory = getTotalMemory()
+const gatewayMac = getGatewayMac();
 
 function getSignatureMac() {
   try {
@@ -19,6 +53,20 @@ function getSignatureMac() {
     return mac && mac.trim().toUpperCase();
   } catch(err) {
     return "";
+  }
+}
+
+function getGatewayMac() {
+  const sysManager = require('../net2/SysManager.js');
+  const inter = sysManager.getDefaultWanInterface()
+  const gateway = inter.gateway_ip;
+  const arpCmd = `arp -a -n | grep ${gatewayIP} -w | awk '{print $4}'`;
+  const result = cp.exec(arpCmd);
+  const mac = result.stdout;
+  if (mac) {
+    return mac.substring(0,11);
+  } else {
+    return null;
   }
 }
 
@@ -44,14 +92,14 @@ function isBooted() {
 }
 
 function getTotalMemory() {
-  const result = exec("free -m | awk '/Mem:/ {print $2}'");
+  const result = cp.exec("free -m | awk '/Mem:/ {print $2}'");
   return result && result.stdout && result.stdout.replace(/\n$/, '')
 }
 
 function getSysinfo(status) {
   const booted = isBooted();
   const uptime = require('os').uptime()
-  return {booted, mac, memory, status, uptime};
+  return {booted, gatewayMac, mac, memory, status, uptime};
 }
 
 function update(status) {
