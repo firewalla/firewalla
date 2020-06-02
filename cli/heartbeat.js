@@ -30,11 +30,15 @@ function log(message) {
 function isBooted() {
   const fw_hb_file = '/dev/shm/fw_heartbeat';
   try{
-    await fs.accessAsync(fw_hb_file, fs.constants.F_OK);
-    return false;
+    if (fs.existsSync(fw_hb_file)) {
+      return false;
+    } else {
+      log("System was booted.");
+      cp.execSync(`touch ${fw_hb_file}`)
+      return true;
+    }
   } catch (err) {
-    cp.execSync(`touch ${fw_hb_file}`)
-    return true;
+    return false;
   }
 }
 
