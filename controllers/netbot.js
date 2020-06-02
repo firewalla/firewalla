@@ -957,7 +957,7 @@ class netBot extends ControllerBot {
       case "policy":
         (async () => {
           // further policy enforcer should be implemented in Host.js or PolicyManager.js
-          value = await this._setPolicy(value, msg.taregt);
+          value = await this._setPolicy(value, msg.target);
           log.info("Repling ", value);
           this.simpleTxData(msg, value, null, callback);
         })().catch(err =>
