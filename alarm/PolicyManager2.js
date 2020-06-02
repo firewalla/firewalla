@@ -1963,6 +1963,8 @@ class PolicyManager2 {
       case "domain":
         if (remoteVal) 
           remoteIpsToCheck = (await dnsTool.getIPsByDomain(remoteVal)) || [];
+          if (remoteIpsToCheck.length === 0) // domain exact match not found, try matching domain pattern
+            remoteIpsToCheck.push.apply(remoteIpsToCheck, (await dnsTool.getIPsByDomainPattern(removeVal)));
         break;
       default:
     }
