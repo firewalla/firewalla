@@ -21,6 +21,7 @@ const request = require('requestretry');
 const uuid = require("uuid");
 const io2 = require('socket.io-client');
 
+const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger')(__filename);
 
 const Promise = require('bluebird');
@@ -74,6 +75,11 @@ let legoEptCloud = class {
       this.signature = "";
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
       this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
+      this.sioPath = fConfig.SocketIOPath;
+      if(f.isDevelopmentVersion()) {
+        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv2";
+        this.sioPath = fConfig.SocketIODevPath;
+      }
       this.token = null;
       rclient.hgetAsync('sys:ept:me', 'eid').then(eid => this.eid = eid)
       this.groupCache = {};
@@ -93,7 +99,7 @@ let legoEptCloud = class {
   }
 
   async keyReady() {
-    log.info("Checking whether key pair exists already");
+    log.forceInfo("Checking whether key pair exists already");
 
     try {
       await fs.accessAsync(this.getPublicKeyPath())
@@ -112,14 +118,14 @@ let legoEptCloud = class {
       await this.cleanupKeys()
       return null;
     } else {
-      log.info("Key pair exists");
+      log.forceInfo("Key pair exists");
       return {pub: pubFile, pri: priFile};
     }
 
   }
 
   async untilKeyReady() {
-    log.info('Wait until keys ready ...')
+    log.forceInfo('Wait until keys ready ...')
     let result = await this.keyReady()
     if (!result) {
       log.info("Keys not ready, wait ...");
@@ -241,6 +247,8 @@ let legoEptCloud = class {
     if (this.info) {
       assertion.assertion.info = this.info;
     }
+
+    log.info("Encipher URL:", this.endpoint);
 
     const options = {
       uri: this.endpoint + '/login/eptoken',
@@ -858,11 +866,10 @@ let legoEptCloud = class {
       const group = this.groupCache[gid]
       if (this.socket == null) {
         this.notifyGids.push(gid);
-        this.socket = io2(this.sioURL,{path: '/socket',transports:['websocket'],'upgrade':false});
+        this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
-          // this.lastDisconnection = Date.now() / 1000
           this.notifySocket = false;
-          log.error('Cloud disconnected')
+          log.forceInfo('Cloud disconnected')
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -899,7 +906,7 @@ let legoEptCloud = class {
         this.socket.on('connect', ()=>{
           this.notifySocket = true;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
-          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name);
+          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);
           if (this.notifyGids.length>0) {
             this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':group.group.name});
           }
