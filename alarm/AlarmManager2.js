@@ -1598,12 +1598,8 @@ module.exports = class {
           break;
         case 'archive':
           for (const alarmID of rawData) {
-            try {
-              const ids = await this.ignoreAlarm(alarmID, {})
-              results[action] = results[action].concat(ids);
-            } catch (e) {
-              log.info(`${action} alarm error`, e);
-            }
+            const ids = await this.ignoreAlarm(alarmID, {})
+            results[action] = results[action].concat(ids);
           }
           break;
       }
