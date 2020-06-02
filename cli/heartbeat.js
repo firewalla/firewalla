@@ -1,9 +1,13 @@
 'use strict';
 
 const io2 = require('socket.io-client');
-const url = "https://firewalla.encipher.io";
-const path = "/socket.v0";
-const file = '/dev/shm/fw_heartbeat';
+const url = "https://api.firewalla.com";
+const path = "/socket";
+
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
 
 const cp = require('child_process');
 const mac =  getSignatureMac();
@@ -23,8 +27,21 @@ function log(message) {
   console.log(new Date(), message);
 }
 
+function isBooted() {
+  const fw_hb_file = '/dev/shm/fw_heartbeat';
+  try{
+    await fs.accessAsync(fw_hb_file, fs.constants.F_OK);
+    return false;
+  } catch (err) {
+    cp.execSync(`touch ${fw_hb_file}`)
+    return true;
+  }
+}
+
 function getSysinfo(status) {
-  return {mac, status};
+  const booted = isBooted();
+  const uptime = require('os').uptime()
+  return {booted, mac, status, uptime};
 }
 
 function update(status) {
@@ -38,6 +55,7 @@ const job = setTimeout(() => {
 
 socket.on('connect', () => {
   log("Connected to heartbeat server.");
+  if ( )
   update('connect');
 });
 
