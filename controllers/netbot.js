@@ -161,16 +161,17 @@ class netBot extends ControllerBot {
     });
   }
   async _setPolicy(value, target){
-    // { adblock: true,
-    //   family: false,
-    //   devicePresence: false,
-    //   safeSearch: { state: false },
-    //   ipAllocation: { type: 'dynamic' },
-    //   monitor: true,
-    //   deviceOffline: false,
-    //   doh: { state: true },
-    //   blockin: false,
-    //   tags: [] }
+    /* value: { adblock: true,
+        family: false,
+        devicePresence: false,
+        safeSearch: { state: false },
+        ipAllocation: { type: 'dynamic' },
+        monitor: true,
+        deviceOffline: false,
+        doh: { state: true },
+        blockin: false,
+        tags: [] }
+      */
     const processorMap = {
       "ipAllocation": this._ipAllocation,
       "vpn": this._vpn,
