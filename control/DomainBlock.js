@@ -327,4 +327,4 @@ class DomainBlock {
   }
 }
 
-module.exports = () => new DomainBlock()
+module.exports = new DomainBlock()
