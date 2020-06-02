@@ -60,7 +60,7 @@ function getGatewayMac() {
   const sysManager = require('../net2/SysManager.js');
   const inter = sysManager.getDefaultWanInterface()
   const gateway = inter.gateway_ip;
-  const arpCmd = `arp -a -n | grep ${gatewayIP} -w | awk '{print $4}'`;
+  const arpCmd = `arp -a -n | grep ${gateway} -w | awk '{print $4}'`;
   const result = cp.exec(arpCmd);
   const mac = result.stdout;
   if (mac) {
