@@ -46,10 +46,14 @@ const BlockManager = require('../control/BlockManager.js');
 const blockManager = new BlockManager();
 
 const _ = require('lodash');
+let instance;
 class DomainBlock {
 
   constructor() {
-
+    if (instance == null) {
+      instance = this;
+    }
+    return instance;
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
