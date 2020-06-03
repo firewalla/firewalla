@@ -131,8 +131,9 @@ class BlockManager {
         const ipBlockKeys = await rclient.keysAsync("ip:block:info:*");
         log.info('schedule refresh block level for these ips:', ipBlockKeys)
         ipBlockKeys.map(async (key) => {
+            const ipBlockInfoString = await rclient.getAsync(key);
             try {
-                let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
+                let ipBlockInfo = JSON.parse(ipBlockInfoString);
                 if (!ipBlockInfo) {
                     await rclient.delAsync(key);
                     return;
@@ -153,8 +154,8 @@ class BlockManager {
                 ipBlockInfo.allDomains = allDomains;
                 await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
             } catch (err) {
+                log.warn(`refresh block level for ${ipBlockInfoString} error`, err);
                 await rclient.delAsync(key);
-                log.warn('parse error', err);
             }
         })
     }
