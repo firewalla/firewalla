@@ -87,7 +87,7 @@ function getEthernets() {
 function getEthernetSpeed(ethsNames) {
     const ethspeed = {}
     ethsNames.forEach( eth => {
-      const result = cp.execSync(`ethtool ${eth}| awk '/Speed:/ {print $2}'`);
+      const result = cp.execSync(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
       ethspeed[eth] = result.toString().trim();
     })
     return ethspeed
@@ -108,7 +108,7 @@ function getSysinfo(status) {
 
 function update(status) {
   const info = getSysinfo(status);
-  log(`DEBUG: ${JSON.stringify(info,null,2)}`)
+  log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
 }
 
