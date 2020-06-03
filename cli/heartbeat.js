@@ -84,6 +84,14 @@ function isBooted() {
   }
 }
 
+function getCpuTemperature() {
+    try {
+      return platform.getCpuTemperature()
+    } catch(err) {
+      return -1;
+    }
+}
+
 function getEthernets() {
     const ifs = os.networkInterfaces()
     const eths = {}
@@ -110,6 +118,7 @@ function getLicenseInfo() {
 
 function getSysinfo(status) {
   const booted = isBooted();
+  const cputemp = this.getCpuTemperature();
   const eths = getEthernets();
   const ethspeed = getEthernetSpeed(Object.keys(eths));
   const licenseInfo = getLicenseInfo();
@@ -119,6 +128,7 @@ function getSysinfo(status) {
     arch,
     booted,
     btmac,
+    cputemp,
     eths,
     ethspeed,
     licenseInfo,
