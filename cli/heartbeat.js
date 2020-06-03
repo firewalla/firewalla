@@ -80,12 +80,21 @@ function getEthernets() {
     const ifs = require('os').networkInterfaces()
     const eths = {}
     const ethsNames = Object.keys(ifs).filter(name => name.match(/^eth/));
-    ethsNames.forEach(e => eths[e]=ifs[e])
-    return eths
+    ethsNames.forEach(e => eth[e]=ifs[e])
+    return eth
+}
+
+function getEthernetSpeed(ethsNames) {
+    const ethspeed = {}
+    ethsNames.forEach( eth => {
+      const result = cp.execSync(`ethtool ${eth}| awk '/Speed:/ {print $2}'`);
+      ethspeed[eth] = result.toString().trim();
+    })
+    return ethspeed
 }
 
 function getTotalMemory() {
-  const result = cp.execSync("free -m | awk '/Mem:/ {print $2}'");
+  const result = cp.execSync("free -h | awk '/Mem:/ {print $2}'");
   return result && result.toString() && result.toString().trim()
 }
 
@@ -93,11 +102,13 @@ function getSysinfo(status) {
   const booted = isBooted();
   const uptime = require('os').uptime()
   const eths = getEthernets();
-  return {booted, eths, mac, memory, status, uptime};
+  const ethspeed = getEthernetSpeed(Object.keys(eths));
+  return {booted, eths, ethspeed, mac, memory, status, uptime};
 }
 
 function update(status) {
   const info = getSysinfo(status);
+  log(`DEBUG: ${JSON.stringify(info,null,2)}`)
   socket.emit('update', info);
 }
 
