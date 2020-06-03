@@ -106,7 +106,7 @@ function getEthernetSpeed(ethsNames) {
 
 function getLatestCommitHash(cwd) {
   try {
-    const result = cp.execSync("get rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
+    const result = cp.execSync("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
     return result && result.trim();
   } catch(err) {
     return null;
