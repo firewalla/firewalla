@@ -170,8 +170,12 @@ class DomainBlock {
     if (fc.isFeatureOn('doh')) {
       const server = `127.0.0.1:${dc.getLocalPort()}`;
       if (!this.setUpServers) {
-        resolver.setServers([server]);
-        this.setUpServers = true;
+        try {
+          resolver.setServers([server]);
+          this.setUpServers = true;
+        } catch (err) {
+          log.warn('set resolver servers error', err);
+        }
       }
       resolve4Async = util.promisify(resolver.resolve4.bind(resolver));
       resolve6Async = util.promisify(resolver.resolve6.bind(resolver));
