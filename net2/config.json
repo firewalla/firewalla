@@ -5,9 +5,13 @@
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
+  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
+  "firewallaSocketIOURL": "https://firewalla.encipher.io",
+  "SocketIOPath": "/socket",
+  "SocketIODevPath": "/socket.v0",
   "cacheInit": true,
   "discovery": {
     "networkInterfaces": [

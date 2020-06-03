@@ -4247,6 +4247,22 @@ class netBot extends ControllerBot {
               }
               sysManager.update((err) => {
                 this.hostManager.toJson(true, options, (err, json) => {
+
+                  // skip acl for old app for backward compatibility
+                  if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
+                    if(json && json.policy) {
+                      delete json.policy.acl;
+                    }
+
+                    if(json.hosts) {
+                      for (const host of json.hosts) {
+                        if(host && host.policy) {
+                          delete host.policy.acl;
+                        }
+                      }
+                    }
+                  }
+
                   let datamodel = {
                     type: 'jsonmsg',
                     mtype: 'init',
