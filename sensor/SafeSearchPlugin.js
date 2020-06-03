@@ -31,7 +31,7 @@ const configKey = "ext.safeSearch.config";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
-const domainBlock = require('../control/DomainBlock.js')();
+const domainBlock = require('../control/DomainBlock.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
