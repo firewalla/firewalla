@@ -85,11 +85,7 @@ function isBooted() {
 }
 
 function getCpuTemperature() {
-    try {
-      return platform.getCpuTemperature()
-    } catch(err) {
-      return -1;
-    }
+  return getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
 }
 
 function getEthernets() {
