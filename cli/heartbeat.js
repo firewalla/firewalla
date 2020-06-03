@@ -80,8 +80,8 @@ function getEthernets() {
     const ifs = require('os').networkInterfaces()
     const eths = {}
     const ethsNames = Object.keys(ifs).filter(name => name.match(/^eth/));
-    ethsNames.forEach(e => eth[e]=ifs[e])
-    return eth
+    ethsNames.forEach(e => eths[e]=ifs[e])
+    return eths
 }
 
 function getEthernetSpeed(ethsNames) {
