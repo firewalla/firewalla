@@ -45,10 +45,11 @@ const socket = io2(
 );
 
 // private modules
+const licenseUtil = require('../util/license.js');
 const platformLoader = require('../platform/PlatformLoader.js');
 
 // persistent system info
-const arch = os.arch();
+const arch = getShellOutput("uname -m");
 const btmac = getShellOutput("hcitool dev  | awk '/hci0/ {print $2}'");
 const mac = getShellOutput("cat /sys/class/net/eth0/address").toUpperCase();
 const memory = os.totalmem()
@@ -99,12 +100,35 @@ function getEthernetSpeed(ethsNames) {
     return ethspeed
 }
 
+function getLicenseInfo() {
+  const licenseData = licenseUtil.getLicenseLicense();
+  const licenseInfo = {};
+  const licenseFields = ['EID','SUUID'];
+  licenseFields.forEach(field => licenseInfo[field] = licenseData[field]);
+  return licenseInfo;
+}
+
 function getSysinfo(status) {
   const booted = isBooted();
   const eths = getEthernets();
   const ethspeed = getEthernetSpeed(Object.keys(eths));
+  const licenseInfo = getLicenseInfo();
+  const timestamp = Date.now();
   const uptime = os.uptime()
-  return {arch, booted, btmac, eths, ethspeed, mac, memory, model, status, uptime};
+  return {
+    arch,
+    booted,
+    btmac,
+    eths,
+    ethspeed,
+    licenseInfo,
+    mac,
+    memory,
+    model,
+    status,
+    timestamp,
+    uptime
+  };
 }
 
 function update(status) {
