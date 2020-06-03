@@ -46,9 +46,6 @@ const socket = io2(
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-// private modules
-const licenseUtil = require('../util/license.js');
-
 function log(message) {
   console.log(new Date(), message);
 }
@@ -105,21 +102,19 @@ async function getLatestCommitHash(cwd) {
   }
 }
 
-function getLicenseInfo() {
-  const licenseData = licenseUtil.getLicenseLicense();
-  const licenseInfo = {};
-  const licenseFields = ['EID','SUUID'];
-  licenseFields.forEach(field => licenseInfo[field] = licenseData[field]);
-  return licenseInfo;
+async function getLicenseInfo() {
+  const licenseFile = "/home/pi/.firewalla/license";
+  const SUUID = (await getShellOutput(`awk '/SUUID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+  const EID = (await getShellOutput(`awk '/EID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+  return { SUUID,EID };
 }
 
 async function getSysinfo(status) {
   const eths = getEthernets();
-  const licenseInfo = getLicenseInfo();
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btmac, cpuTemp, ethSpeed, hashRouter, hashWalla, mac] =
+  const [arch, booted, btmac, cpuTemp, ethSpeed, hashRouter, hashWalla, licenseInfo, mac] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
@@ -128,6 +123,7 @@ async function getSysinfo(status) {
       getEthernetSpeed(Object.keys(eths)),
       getLatestCommitHash("/home/pi/firerouter"),
       getLatestCommitHash("/home/pi/firewalla"),
+      getLicenseInfo(),
       getShellOutput("cat /sys/class/net/eth0/address")
     ]);
   return {
