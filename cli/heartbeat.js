@@ -46,15 +46,12 @@ const socket = io2(
 
 // private modules
 const licenseUtil = require('../util/license.js');
-const platformLoader = require('../platform/PlatformLoader.js');
 
 // persistent system info
 const arch = getShellOutput("uname -m");
 const btmac = getShellOutput("hcitool dev  | awk '/hci0/ {print $2}'");
 const mac = getShellOutput("cat /sys/class/net/eth0/address").toUpperCase();
 const memory = os.totalmem()
-const platform = platformLoader.getPlatform();
-const model = platform.getName();
 
 function log(message) {
   console.log(new Date(), message);
@@ -109,7 +106,7 @@ function getLatestCommitHash(cwd) {
     const result = cp.execSync("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
     return result && result.trim();
   } catch(err) {
-    return null;
+    return '';
   }
 }
 
@@ -143,7 +140,6 @@ function getSysinfo(status) {
     hashWalla,
     mac,
     memory,
-    model,
     status,
     timestamp,
     uptime
@@ -152,7 +148,7 @@ function getSysinfo(status) {
 
 function update(status) {
   const info = getSysinfo(status);
-  log(`DEBUG: ${JSON.stringify(info,null,2)}`);
+  //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
 }
 
