@@ -47,7 +47,7 @@ const ht = new HostTool()
 const DomainIPTool = require('../control/DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 
-const domainBlock = require('../control/DomainBlock.js')();
+const domainBlock = require('../control/DomainBlock.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
