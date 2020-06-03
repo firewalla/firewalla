@@ -92,6 +92,16 @@ async function getEthernetSpeed(ethsNames) {
     return ethSpeed;
 }
 
+async function getGatewayMac() {
+  const gwIP = await getShellOutput("route -n | awk '$1 == \"0.0.0.0\" {print $2}'");
+  if ( gwIP ) {
+    const gwMac = await getShellOutput(`arp -a -n | grep ${gwIP} -w | awk '{print $4}'`);
+    return gwMac;
+  } else {
+    return '';
+  }
+}
+
 async function getLatestCommitHash(cwd) {
   try {
     const result = await exec("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
@@ -114,13 +124,14 @@ async function getSysinfo(status) {
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btmac, cpuTemp, ethSpeed, hashRouter, hashWalla, licenseInfo, mac] =
+  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMac, hashRouter, hashWalla, licenseInfo, mac] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
       getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
       getCpuTemperature(),
       getEthernetSpeed(Object.keys(eths)),
+      getGatewayMac(),
       getLatestCommitHash("/home/pi/firerouter"),
       getLatestCommitHash("/home/pi/firewalla"),
       getLicenseInfo(),
@@ -129,11 +140,12 @@ async function getSysinfo(status) {
   return {
     arch,
     booted,
-    btmac,
+    btMac,
     cpuTemp,
     eths,
     ethSpeed,
     licenseInfo,
+    gatewayMac,
     hashRouter,
     hashWalla,
     mac,
