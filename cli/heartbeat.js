@@ -104,6 +104,15 @@ function getEthernetSpeed(ethsNames) {
     return ethspeed
 }
 
+function getLatestCommitHash(cwd) {
+  try {
+    const result = cp.execSync("get rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
+    return result && result.trim();
+  } catch(err) {
+    return null;
+  }
+}
+
 function getLicenseInfo() {
   const licenseData = licenseUtil.getLicenseLicense();
   const licenseInfo = {};
@@ -117,6 +126,8 @@ function getSysinfo(status) {
   const cputemp = getCpuTemperature();
   const eths = getEthernets();
   const ethspeed = getEthernetSpeed(Object.keys(eths));
+  const hashRouter = getLatestCommitHash("/home/pi/firerouter");
+  const hashWalla = getLatestCommitHash("/home/pi/firewalla");
   const licenseInfo = getLicenseInfo();
   const timestamp = Date.now();
   const uptime = os.uptime()
@@ -128,6 +139,8 @@ function getSysinfo(status) {
     eths,
     ethspeed,
     licenseInfo,
+    hashRouter,
+    hashWalla,
     mac,
     memory,
     model,
