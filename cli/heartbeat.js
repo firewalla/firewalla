@@ -38,18 +38,14 @@ const url = "https://api.firewalla.com";
 const path = "/socket";
 
 const fs = require('fs');
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
-
-
 const cp = require('child_process');
-const mac =  getSignatureMac();
-const memory = getTotalMemory()
+const mac = getShellOutput("cat /sys/class/net/eth0/address").toUpperCase();
+const memory = getShellOutput("free -h | awk '/Mem:/ {print $2}'");
 
-function getSignatureMac() {
+function getShellOutput(cmd) {
   try {
-    const mac = cp.execSync("cat /sys/class/net/eth0/address", { encoding: 'utf8' });
-    return mac && mac.trim().toUpperCase();
+    const result = cp.execSync(cmd, { encoding: 'utf8' });
+    return result && result.trim();
   } catch(err) {
     return "";
   }
@@ -87,15 +83,9 @@ function getEthernets() {
 function getEthernetSpeed(ethsNames) {
     const ethspeed = {}
     ethsNames.forEach( eth => {
-      const result = cp.execSync(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
-      ethspeed[eth] = result.toString().trim();
+      ethspeed[eth] = getShellOutput(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
     })
     return ethspeed
-}
-
-function getTotalMemory() {
-  const result = cp.execSync("free -h | awk '/Mem:/ {print $2}'");
-  return result && result.toString() && result.toString().trim()
 }
 
 function getSysinfo(status) {
