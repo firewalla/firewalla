@@ -118,7 +118,7 @@ function getLicenseInfo() {
 
 function getSysinfo(status) {
   const booted = isBooted();
-  const cputemp = this.getCpuTemperature();
+  const cputemp = getCpuTemperature();
   const eths = getEthernets();
   const ethspeed = getEthernetSpeed(Object.keys(eths));
   const licenseInfo = getLicenseInfo();
