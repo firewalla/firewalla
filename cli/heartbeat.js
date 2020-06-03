@@ -43,15 +43,11 @@ const socket = io2(
     transports: ['websocket'],
     'upgrade': false }
 );
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
 
 // private modules
 const licenseUtil = require('../util/license.js');
-
-// persistent system info
-const arch = getShellOutput("uname -m");
-const btmac = getShellOutput("hcitool dev | awk '/hci0/ {print $2}'");
-const mac = getShellOutput("cat /sys/class/net/eth0/address").toUpperCase();
-const memory = os.totalmem()
 
 function log(message) {
   console.log(new Date(), message);
@@ -70,7 +66,7 @@ async function getShellOutput(cmd) {
 async function isBooted() {
   const fwHeartbeatFile = '/dev/shm/fw_heartbeat';
   try{
-    await fs.access(fwHeartbeatFile, fs.constants.F_OK);
+    await fs.accessAsync(fwHeartbeatFile, fs.constants.F_OK);
     return false;
   } catch (err) {
     log("System was booted.");
@@ -84,19 +80,19 @@ async function getCpuTemperature() {
 }
 
 function getEthernets() {
-    const ifs = os.networkInterfaces()
-    const eths = {}
+    const ifs = os.networkInterfaces();
+    const eths = {};
     const ethsNames = Object.keys(ifs).filter(name => name.match(/^eth/));
-    ethsNames.forEach(e => eths[e]=ifs[e])
-    return eths
+    ethsNames.forEach(e => eths[e]=ifs[e]);
+    return eths;
 }
 
 async function getEthernetSpeed(ethsNames) {
-    const ethspeed = {}
-    ethsNames.forEach( eth => {
-      ethspeed[eth] = await getShellOutput(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
-    })
-    return ethspeed
+    const ethSpeed = {};
+    for (const eth of ethsNames) {
+      ethSpeed[eth] = await getShellOutput(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
+    }
+    return ethSpeed;
 }
 
 async function getLatestCommitHash(cwd) {
@@ -120,23 +116,27 @@ function getLicenseInfo() {
 async function getSysinfo(status) {
   const eths = getEthernets();
   const licenseInfo = getLicenseInfo();
+  const memory = os.totalmem()
   const timestamp = Date.now();
-  const uptime = os.uptime()
-  const [booted, cputemp, ethspeed, hashRouter, hashWalla] =
+  const uptime = os.uptime();
+  const [arch, booted, btmac, cpuTemp, ethSpeed, hashRouter, hashWalla, mac] =
     await Promise.all([
-      this.isBooted(),
-      this.getCpuTemperature(),
-      this.getEthernetSpeed(Object.keys(eths)),
-      this.getLatestCommitHash("/home/pi/firerouter"),
-      this.getLatestCommitHash("/home/pi/firewalla")
+      getShellOutput("uname -m"),
+      isBooted(),
+      getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
+      getCpuTemperature(),
+      getEthernetSpeed(Object.keys(eths)),
+      getLatestCommitHash("/home/pi/firerouter"),
+      getLatestCommitHash("/home/pi/firewalla"),
+      getShellOutput("cat /sys/class/net/eth0/address")
     ]);
   return {
     arch,
     booted,
     btmac,
-    cputemp,
+    cpuTemp,
     eths,
-    ethspeed,
+    ethSpeed,
     licenseInfo,
     hashRouter,
     hashWalla,
@@ -148,8 +148,8 @@ async function getSysinfo(status) {
   };
 }
 
-function update(status) {
-  const info = getSysinfo(status);
+async function update(status) {
+  const info = await getSysinfo(status);
   log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
 }
