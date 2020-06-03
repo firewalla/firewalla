@@ -33,7 +33,7 @@
 
 'use strict';
 
-const cp = require('child_process');
+const exec = require('child-process-promise').exec;
 const fs = require('fs');
 const io2 = require('socket.io-client');
 const os = require('os');
@@ -49,7 +49,7 @@ const licenseUtil = require('../util/license.js');
 
 // persistent system info
 const arch = getShellOutput("uname -m");
-const btmac = getShellOutput("hcitool dev  | awk '/hci0/ {print $2}'");
+const btmac = getShellOutput("hcitool dev | awk '/hci0/ {print $2}'");
 const mac = getShellOutput("cat /sys/class/net/eth0/address").toUpperCase();
 const memory = os.totalmem()
 
@@ -57,32 +57,30 @@ function log(message) {
   console.log(new Date(), message);
 }
 
-function getShellOutput(cmd) {
+async function getShellOutput(cmd) {
   try {
-    const result = cp.execSync(cmd, { encoding: 'utf8' });
-    return result && result.trim();
+    const result = await exec(cmd, { encoding: 'utf8' });
+    return result && result.stdout && result.stdout.replace(/\n$/,'');
   } catch(err) {
+    log("ERROR: "+err);
     return "";
   }
 }
 
-function isBooted() {
+async function isBooted() {
   const fwHeartbeatFile = '/dev/shm/fw_heartbeat';
   try{
-    if (fs.existsSync(fwHeartbeatFile)) {
-      return false;
-    } else {
-      log("System was booted.");
-      cp.execSync(`touch ${fwHeartbeatFile}`)
-      return true;
-    }
-  } catch (err) {
+    await fs.access(fwHeartbeatFile, fs.constants.F_OK);
     return false;
+  } catch (err) {
+    log("System was booted.");
+    await exec(`touch ${fwHeartbeatFile}`);
+    return true;
   }
 }
 
-function getCpuTemperature() {
-  return getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
+async function getCpuTemperature() {
+  return await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
 }
 
 function getEthernets() {
@@ -93,19 +91,20 @@ function getEthernets() {
     return eths
 }
 
-function getEthernetSpeed(ethsNames) {
+async function getEthernetSpeed(ethsNames) {
     const ethspeed = {}
     ethsNames.forEach( eth => {
-      ethspeed[eth] = getShellOutput(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
+      ethspeed[eth] = await getShellOutput(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
     })
     return ethspeed
 }
 
-function getLatestCommitHash(cwd) {
+async function getLatestCommitHash(cwd) {
   try {
-    const result = cp.execSync("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
-    return result && result.trim();
+    const result = await exec("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
+    return result && result.stdout && result.stdout.trim();
   } catch(err) {
+    log(`ERROR: failed to get latest commit hash in ${cwd}`+err);
     return '';
   }
 }
@@ -118,16 +117,19 @@ function getLicenseInfo() {
   return licenseInfo;
 }
 
-function getSysinfo(status) {
-  const booted = isBooted();
-  const cputemp = getCpuTemperature();
+async function getSysinfo(status) {
   const eths = getEthernets();
-  const ethspeed = getEthernetSpeed(Object.keys(eths));
-  const hashRouter = getLatestCommitHash("/home/pi/firerouter");
-  const hashWalla = getLatestCommitHash("/home/pi/firewalla");
   const licenseInfo = getLicenseInfo();
   const timestamp = Date.now();
   const uptime = os.uptime()
+  const [booted, cputemp, ethspeed, hashRouter, hashWalla] =
+    await Promise.all([
+      this.isBooted(),
+      this.getCpuTemperature(),
+      this.getEthernetSpeed(Object.keys(eths)),
+      this.getLatestCommitHash("/home/pi/firerouter"),
+      this.getLatestCommitHash("/home/pi/firewalla")
+    ]);
   return {
     arch,
     booted,
@@ -148,7 +150,7 @@ function getSysinfo(status) {
 
 function update(status) {
   const info = getSysinfo(status);
-  //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
+  log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
 }
 
