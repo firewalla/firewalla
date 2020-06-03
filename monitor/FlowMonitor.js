@@ -222,7 +222,8 @@ module.exports = class FlowMonitor {
       log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
         log.debug("######## flowIntel Processing", JSON.stringify(flow));
-        if (this.isFlowIntelInClass(flow['intel'], "av")) {
+        if (this.isFlowIntelInClass(flow['intel'], "av") &&
+          flow.fd === 'in') {
           if ((flow.du && Number(flow.du) > 60) && (flow.rb && Number(flow.rb) > 5000000)) {
             let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
               alarmBootstrap(flow)
@@ -233,6 +234,7 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "porn") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 20) && (flow.rb && Number(flow.rb) > 1000000) ||
             this.flowIntelRecordFlow(flow, 3)
@@ -340,6 +342,7 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "games") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) ||
             this.flowIntelRecordFlow(flow, 3)
@@ -353,6 +356,7 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "vpn") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 120) && (flow.rb && Number(flow.rb) > 10000) ||
             this.flowIntelRecordFlow(flow, 3)
