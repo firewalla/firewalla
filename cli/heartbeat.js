@@ -33,14 +33,31 @@
 
 'use strict';
 
-const io2 = require('socket.io-client');
-const url = "https://api.firewalla.com";
-const path = "/socket";
-
-const fs = require('fs');
 const cp = require('child_process');
+const fs = require('fs');
+const io2 = require('socket.io-client');
+const os = require('os');
+const socket = io2(
+  "https://api.firewalla.com",
+  { path: "/socket",
+    transports: ['websocket'],
+    'upgrade': false }
+);
+
+// private modules
+const platformLoader = require('../platform/PlatformLoader.js');
+
+// persistent system info
+const arch = os.arch();
+const btmac = getShellOutput("hcitool dev  | awk '/hci0/ {print $2}'");
 const mac = getShellOutput("cat /sys/class/net/eth0/address").toUpperCase();
-const memory = getShellOutput("free -h | awk '/Mem:/ {print $2}'");
+const memory = os.totalmem()
+const platform = platformLoader.getPlatform();
+const model = platform.getName();
+
+function log(message) {
+  console.log(new Date(), message);
+}
 
 function getShellOutput(cmd) {
   try {
@@ -49,12 +66,6 @@ function getShellOutput(cmd) {
   } catch(err) {
     return "";
   }
-}
-
-const socket = io2(url, { path: path, transports: ['websocket'], 'upgrade': false });
-
-function log(message) {
-  console.log(new Date(), message);
 }
 
 function isBooted() {
@@ -73,7 +84,7 @@ function isBooted() {
 }
 
 function getEthernets() {
-    const ifs = require('os').networkInterfaces()
+    const ifs = os.networkInterfaces()
     const eths = {}
     const ethsNames = Object.keys(ifs).filter(name => name.match(/^eth/));
     ethsNames.forEach(e => eths[e]=ifs[e])
@@ -90,10 +101,10 @@ function getEthernetSpeed(ethsNames) {
 
 function getSysinfo(status) {
   const booted = isBooted();
-  const uptime = require('os').uptime()
   const eths = getEthernets();
   const ethspeed = getEthernetSpeed(Object.keys(eths));
-  return {booted, eths, ethspeed, mac, memory, status, uptime};
+  const uptime = os.uptime()
+  return {arch, booted, btmac, eths, ethspeed, mac, memory, model, status, uptime};
 }
 
 function update(status) {
