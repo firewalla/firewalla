@@ -146,7 +146,7 @@ async function getSysinfo(status) {
 
 async function update(status) {
   const info = await getSysinfo(status);
-  log(`DEBUG: ${JSON.stringify(info,null,2)}`);
+  //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
 }
 
