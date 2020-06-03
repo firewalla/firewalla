@@ -62,13 +62,13 @@ function log(message) {
 }
 
 function isBooted() {
-  const fw_hb_file = '/dev/shm/fw_heartbeat';
+  const fwHeartbeatFile = '/dev/shm/fw_heartbeat';
   try{
-    if (fs.existsSync(fw_hb_file)) {
+    if (fs.existsSync(fwHeartbeatFile)) {
       return false;
     } else {
       log("System was booted.");
-      cp.execSync(`touch ${fw_hb_file}`)
+      cp.execSync(`touch ${fwHeartbeatFile}`)
       return true;
     }
   } catch (err) {
@@ -78,7 +78,9 @@ function isBooted() {
 
 function getEthernets() {
     const ifs = require('os').networkInterfaces()
-    const eths = Object.keys(ifs).filter(name => name.match(/^eth/));
+    const eths = {}
+    const ethsNames = Object.keys(ifs).filter(name => name.match(/^eth/));
+    ethsNames.forEach(e => eths[e]=ifs[e])
     return eths
 }
 
