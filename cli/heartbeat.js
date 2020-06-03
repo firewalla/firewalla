@@ -107,7 +107,7 @@ async function getLatestCommitHash(cwd) {
     const result = await exec("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
     return result && result.stdout && result.stdout.trim();
   } catch(err) {
-    log(`ERROR: failed to get latest commit hash in ${cwd}`+err);
+    //log(`ERROR: failed to get latest commit hash in ${cwd}`+err);
     return '';
   }
 }
