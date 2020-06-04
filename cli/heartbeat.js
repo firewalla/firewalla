@@ -48,6 +48,8 @@ Promise.promisifyAll(fs);
 
 const launchTime = Math.floor(new Date() / 1000);
 
+let uid = null;
+
 function getUniqueID(info) {
   const randomNumber = Math.floor(Math.random(1000000));
   if(info.mac) {
@@ -167,10 +169,10 @@ async function getSysinfo(status) {
   };
 }
 
-async function update(status, id) {
+function update(status) {
   const info = await getSysinfo(status);
-  if(id) {
-    info.id = id;
+  if(uid) {
+    info.id = uid;
   }
   //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
@@ -183,18 +185,16 @@ const job = setTimeout(() => {
 
 socket.on('connect', async () => {
   log("Connected to heartbeat server.");
-  const info = await getSysinfo(status);
-  const id = getUniqueID(info);
-  info.id = id;
-  socket.emit('update', info);
-  const key = `update_${id}`;
-  socket.on(key, () => { // listen on a special id that is unique to this process on this box;
-    update("cloud", id);
-  });
+  uid = getUniqueID(info);
+  update('connect');
 });
 
 socket.on('disconnect', () => {
   log("Disconnected from heartbeat server.");
+});
+
+socket.on('update', () => {
+  update("cloud");
 });
 
 socket.on('reconnect', () => {
