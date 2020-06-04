@@ -672,7 +672,7 @@
     "adblock": false,
     "family_protect": false,
     "smart_block": true,
-    "internal_scan": true
+    "internal_scan": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
