@@ -1094,9 +1094,12 @@ module.exports = class DNSMASQ {
 
     hosts.forEach(h => {
       try {
-        if (h.intfIp) h.intfIp = JSON.parse(h.intfIp)
+        if (h.intfIp)
+          h.intfIp = JSON.parse(h.intfIp);
+        if (h.dhcpIgnore)
+          h.dhcpIgnore = JSON.parse(h.dhcpIgnore);
       } catch(err) {
-        log.error('Invalid host:mac->intfIp', h.intfIp, err)
+        log.error('Failed to convert intfIp or dhcpIgnore', h.intfIp, h.dhcpIgnore, err)
         delete h.intfIp
       }
     })
@@ -1115,6 +1118,10 @@ module.exports = class DNSMASQ {
     let hostsList = []
 
     for (const h of hosts) {
+      if (h.dhcpIgnore === true) {
+        hostsList.push(`${h.mac},ignore`);
+        continue;
+      }
       const monitor = h.spoofing === 'true' ? 'monitor' : 'unmonitor';
       let reserved = false;
       for (const intf of sysManager.getMonitoringInterfaces()) {
