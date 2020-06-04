@@ -181,7 +181,7 @@ async function update(status) {
 
 const job = setTimeout(() => {
   update("schedule");
-}, 30 * 3600 * 1000);
+}, 24 * 3600 * 1000); // every day
 
 socket.on('connect', () => {
   log("Connected to heartbeat server.");
