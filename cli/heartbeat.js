@@ -169,7 +169,7 @@ async function getSysinfo(status) {
   };
 }
 
-function update(status) {
+async function update(status) {
   const info = await getSysinfo(status);
   if(uid) {
     info.id = uid;
