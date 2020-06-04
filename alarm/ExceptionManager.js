@@ -499,24 +499,33 @@ module.exports = class {
       switch (action) {
         case 'create':
         case 'update':
-          const emAction = action == 'create' ? 'createException' : 'updateException';
+          const emAction = action == 'create' ? this.createException : this.updateException;
           for (const rawException of rawData) {
+            let exception;
             try {
-              const exception = await this[emAction](rawException);
-              results[action].push(exception);
+              exception = await emAction.bind(this)(rawException);
             } catch (e) {
               log.warn(`${action} expcetion error`, e);
             }
+            results[action].push({
+              exception:exception,
+              error:!exception
+            });
           }
           break;
         case 'delete':
           for (const exceptionID of rawData) {
+            let error = false;
             try {
               await this.deleteException(exceptionID)
-              results[action].push(exceptionID);
             } catch (e) {
+              error = true;
               log.warn(`${action} expcetion error`, e);
             }
+            results[action].push({
+              exception: {eid:exceptionID},
+              error: error
+            });
           }
           break;
       }
