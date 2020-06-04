@@ -183,7 +183,7 @@ const job = setTimeout(() => {
   update("schedule");
 }, 30 * 3600 * 1000);
 
-socket.on('connect', async () => {
+socket.on('connect', () => {
   log("Connected to heartbeat server.");
   uid = getUniqueID(info);
   update('connect');
