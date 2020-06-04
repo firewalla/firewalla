@@ -28,6 +28,8 @@ const featureName = 'smart_block';
 let instance = null;
 const expiring = 24 * 60 * 60 * 3;  // three days
 
+const asyncNative = require('../util/asyncNative.js');
+
 class BlockManager {
     constructor() {
         if (instance == null) {
@@ -129,10 +131,11 @@ class BlockManager {
     }
     async scheduleRefreshBlockLevel() {
         const ipBlockKeys = await rclient.keysAsync("ip:block:info:*");
-        log.info('schedule refresh block level for these ips:', ipBlockKeys)
-        ipBlockKeys.map(async (key) => {
+        log.info('schedule refresh block level for these ips:', ipBlockKeys);
+        await asyncNative.eachLimit(ipBlockKeys, 10, async (key) => {
+            const ipBlockInfoString = await rclient.getAsync(key);
             try {
-                let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
+                let ipBlockInfo = JSON.parse(ipBlockInfoString);
                 if (!ipBlockInfo) {
                     await rclient.delAsync(key);
                     return;
@@ -153,9 +156,10 @@ class BlockManager {
                 ipBlockInfo.allDomains = allDomains;
                 await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
             } catch (err) {
-                log.warn('parse error', err);
+                log.warn(`refresh block level for ${ipBlockInfoString} error`, err);
+                await rclient.delAsync(key);
             }
-        })
+        });
     }
     async updateIpBlockInfo(ip, domain, action, blockSet = 'block_domain_set') {
         let ipBlockInfo = {
