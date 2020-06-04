@@ -133,7 +133,10 @@ class BlockManager {
         ipBlockKeys.map(async (key) => {
             try {
                 let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
-                if (!ipBlockInfo) continue;
+                if (!ipBlockInfo) {
+                    await rclient.delAsync(key);
+                    return;
+                }
                 const { targetDomains, ip, blockLevel, blockSet } = ipBlockInfo;
                 const allDomains = await dnsTool.getAllDns(ip);
                 const sharedDomains = _.differenceWith(allDomains, targetDomains, (a, b) => {

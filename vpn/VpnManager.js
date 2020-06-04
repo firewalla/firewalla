@@ -515,10 +515,13 @@ class VpnManager {
   }
 
   generateNetwork() {
-    // random segment from 20 to 199
-    const seg1 = Math.floor(Math.random() * 180 + 20);
-    const seg2 = Math.floor(Math.random() * 180 + 20);
-    return "10." + seg1 + "." + seg2 + ".0";
+    while (true) {
+      // random segment from 20 to 199
+      const seg1 = Math.floor(Math.random() * 180 + 20);
+      const seg2 = Math.floor(Math.random() * 180 + 20);
+      if (!sysManager.inMySubnets4(`10.${seg1}.${seg2}.1`))
+        return "10." + seg1 + "." + seg2 + ".0";
+    }
   }
 
   static getSettingsDirectoryPath(commonName) {

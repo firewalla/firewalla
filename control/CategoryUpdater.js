@@ -24,7 +24,7 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
-const domainBlock = require('../control/DomainBlock.js')();
+const domainBlock = require('../control/DomainBlock.js');
 const BlockManager = require('../control/BlockManager.js');
 const blockManager = new BlockManager();
 const exec = require('child-process-promise').exec
