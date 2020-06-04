@@ -46,6 +46,17 @@ const socket = io2(
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
+const launchTime = Math.floor(new Date() / 1000);
+
+function getUniqueID(info) {
+  const randomNumber = Math.floor(Math.random(1000000));
+  if(info.mac) {
+    return `${info.mac.toUpperCase()}-${launchTime}-${randomNumber}`;
+  } else {
+    return `INVALID_MAC-${launchTime}-${randomNumber}`;
+  }
+}
+
 function log(message) {
   console.log(new Date(), message);
 }
@@ -156,27 +167,34 @@ async function getSysinfo(status) {
   };
 }
 
-async function update(status) {
+async function update(status, id) {
   const info = await getSysinfo(status);
+  if(id) {
+    info.id = id;
+  }
   //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
+  return info;
 }
 
 const job = setTimeout(() => {
   update("schedule");
 }, 30 * 3600 * 1000);
 
-socket.on('connect', () => {
+socket.on('connect', async () => {
   log("Connected to heartbeat server.");
-  update('connect');
+  const info = await getSysinfo(status);
+  const id = getUniqueID(info);
+  info.id = id;
+  socket.emit('update', info);
+  const key = `update_${id}`;
+  socket.on(key, () => { // listen on a special id that is unique to this process on this box;
+    update("cloud", id);
+  });
 });
 
 socket.on('disconnect', () => {
   log("Disconnected from heartbeat server.");
-});
-
-socket.on("update", (data) => {
-  update("cloud");
 });
 
 socket.on('reconnect', () => {
