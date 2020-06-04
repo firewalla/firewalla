@@ -156,7 +156,7 @@ class BlockManager {
                 ipBlockInfo.allDomains = allDomains;
                 await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
             } catch (err) {
-                log.warn(`refresh block level for ${ipBlockInfoString} error`, err);
+                log.warn(`refresh block level ${ipBlockInfoString} error`, err);
                 await rclient.delAsync(key);
             }
         });
