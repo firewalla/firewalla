@@ -146,10 +146,10 @@ class BlockManager {
                     return this.domainCovered(b, a);
                 });
                 if (sharedDomains.length == 0 && blockLevel == 'domain') {
-                    Block.block(ip, blockSet)
+                    await Block.block(ip, blockSet)
                 }
                 if (sharedDomains.length > 0 && blockLevel == 'ip') {
-                    Block.unblock(ip, blockSet);
+                    await Block.unblock(ip, blockSet);
                 }
                 ipBlockInfo.ts = new Date() / 1000;
                 ipBlockInfo.sharedDomains = sharedDomains;
@@ -226,7 +226,7 @@ class BlockManager {
                             if (ipBlockInfo.blockLevel == 'ip') {
                                 log.info('ip block level change when new doamin comming', ip, domain)
                                 ipBlockInfo.blockLevel = 'domain';
-                                Block.unblock(ip, blockSet);
+                                await Block.unblock(ip, blockSet);
                             }
                             ipBlockInfo.sharedDomains.push(domain);
                             ipBlockInfo.allDomains = await dnsTool.getAllDns(ip);
