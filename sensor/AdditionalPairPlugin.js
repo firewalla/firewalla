@@ -39,15 +39,16 @@ function delay(t) {
 class AdditionalPairPlugin extends Sensor {
 
   apiRun() {
-    extensionManager.onGet("pairingPayload", async () => {
-      return this.getPayload();
+    extensionManager.onGet("pairingPayload", async (msg, data) => {
+      const ttl = data.ttl || 20;
+      return this.getPayload(ttl);
     })
   }
 
-  async getPayload() {
+  async getPayload(ttl) {
     return Promise.any([
       delay(totalTimeout), 
-      this.waitingForPayload(20)
+      this.waitingForPayload(ttl)
     ]);
   }
 
@@ -66,7 +67,9 @@ class AdditionalPairPlugin extends Sensor {
           return null;
         }        
       } else {
-        await delay(3000);
+        if (ttl > 1) {
+          await delay(3000);
+        }
       }
     }
     return null;
