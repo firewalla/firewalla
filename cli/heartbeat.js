@@ -151,6 +151,11 @@ async function getSysinfo(status) {
       getLicenseInfo(),
       getShellOutput("cat /sys/class/net/eth0/address")
     ]);
+
+  if(!uid) {
+    uid = getUniqueID({mac});
+  }
+
   return {
     arch,
     booted,
@@ -166,15 +171,13 @@ async function getSysinfo(status) {
     memory,
     status,
     timestamp,
-    uptime
+    uptime,
+    uid
   };
 }
 
 async function update(status, extra) {
   let info = await getSysinfo(status);
-  if(uid) {
-    info.id = uid;
-  }
   if(extra) {
     info = Object.assign({}, info, extra);
   }
@@ -189,8 +192,6 @@ const job = setTimeout(() => {
 
 socket.on('connect', async () => {
   log("Connected to heartbeat server.");
-  const info = await getSysinfo('connect');
-  uid = getUniqueID(info);
   update('connect');
 });
 
