@@ -37,6 +37,7 @@ const exec = require('child-process-promise').exec;
 const fs = require('fs');
 const io2 = require('socket.io-client');
 const os = require('os');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const socket = io2(
   "https://api.firewalla.com",
   { path: "/socket",
@@ -51,7 +52,7 @@ const launchTime = Math.floor(new Date() / 1000);
 let uid = null;
 
 function getUniqueID(info) {
-  const randomNumber = Math.floor(Math.random(1000000));
+  const randomNumber = Math.floor(Math.random() * 1000000);
   if(info.mac) {
     return `${info.mac.toUpperCase()}-${launchTime}-${randomNumber}`;
   } else {
@@ -169,10 +170,13 @@ async function getSysinfo(status) {
   };
 }
 
-async function update(status) {
-  const info = await getSysinfo(status);
+async function update(status, extra) {
+  let info = await getSysinfo(status);
   if(uid) {
     info.id = uid;
+  }
+  if(extra) {
+    info = Object.assign({}, info, extra);
   }
   //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
@@ -183,8 +187,9 @@ const job = setTimeout(() => {
   update("schedule");
 }, 24 * 3600 * 1000); // every day
 
-socket.on('connect', () => {
+socket.on('connect', async () => {
   log("Connected to heartbeat server.");
+  const info = await getSysinfo('connect');
   uid = getUniqueID(info);
   update('connect');
 });
@@ -199,5 +204,18 @@ socket.on('update', () => {
 
 socket.on('reconnect', () => {
   log("Reconnected to heartbeat server.");
-  update('reconnect');
+  //update('reconnect');
 });
+
+const eventName = "FIREWALLA:HEARTBEAT:UPDATE";
+sclient.on("message", (channel, message) => {
+  if(channel === eventName) {
+    try {
+      const object = JSON.parse(message);
+      update('redis', object);
+    } catch(err) {
+      log("Failed to parse redis message.");
+    }
+  }
+});
+sclient.subscribe(eventName);
