@@ -1,42 +1,196 @@
+/*    Copyright 2020 Firewalla INC
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+ /*
+  * Box (collect the following info)
+  *   box states: just rebooted, this process crashed and connect, reconnected the socket io, scheduled update
+  *   memory size
+  *   mac addresses of ethX
+  *   speed of each ethX
+  *   Bluetooth mac address
+  *   uptime
+  *   uname -m
+  *   box eid (if have)
+  *   box license (8 char prefix only)
+  *   gateway mac address (the first three bytes)
+  *   cpu temp
+  *   current timestamp
+  *   hash of firerouter (if applicable)
+  *   hash of firewalla
+  */
+
 'use strict';
 
+const exec = require('child-process-promise').exec;
+const fs = require('fs');
 const io2 = require('socket.io-client');
-const url = "https://firewalla.encipher.io";
-const path = "/socket.v0";
-const file = '/dev/shm/fw_heartbeat';
+const os = require('os');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const socket = io2(
+  "https://api.firewalla.com",
+  { path: "/socket",
+    transports: ['websocket'],
+    'upgrade': false }
+);
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
 
-const cp = require('child_process');
-const mac =  getSignatureMac();
+const launchTime = Math.floor(new Date() / 1000);
 
-function getSignatureMac() {
-  try {
-    const mac = cp.execSync("cat /sys/class/net/eth0/address", { encoding: 'utf8' });
-    return mac && mac.trim().toUpperCase();
-  } catch(err) {
-    return "";
+let uid = null;
+
+function getUniqueID(info) {
+  const randomNumber = Math.floor(Math.random() * 1000000);
+  if(info.mac) {
+    return `${info.mac.toUpperCase()}-${launchTime}-${randomNumber}`;
+  } else {
+    return `INVALID_MAC-${launchTime}-${randomNumber}`;
   }
 }
-
-const socket = io2(url, { path: path, transports: ['websocket'], 'upgrade': false });
 
 function log(message) {
   console.log(new Date(), message);
 }
 
-function getSysinfo(status) {
-  return {mac, status};
+async function getShellOutput(cmd) {
+  try {
+    const result = await exec(cmd, { encoding: 'utf8' });
+    return result && result.stdout && result.stdout.replace(/\n$/,'');
+  } catch(err) {
+    log("ERROR: "+err);
+    return "";
+  }
 }
 
-function update(status) {
-  const info = getSysinfo(status);
+async function isBooted() {
+  const fwHeartbeatFile = '/dev/shm/fw_heartbeat';
+  try{
+    await fs.accessAsync(fwHeartbeatFile, fs.constants.F_OK);
+    return false;
+  } catch (err) {
+    log("System was booted.");
+    await exec(`touch ${fwHeartbeatFile}`);
+    return true;
+  }
+}
+
+async function getCpuTemperature() {
+  return await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
+}
+
+function getEthernets() {
+    const ifs = os.networkInterfaces();
+    const eths = {};
+    const ethsNames = Object.keys(ifs).filter(name => name.match(/^eth/));
+    ethsNames.forEach(e => eths[e]=ifs[e]);
+    return eths;
+}
+
+async function getEthernetSpeed(ethsNames) {
+    const ethSpeed = {};
+    for (const eth of ethsNames) {
+      ethSpeed[eth] = await getShellOutput(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
+    }
+    return ethSpeed;
+}
+
+async function getGatewayMac() {
+  const gwIP = await getShellOutput("route -n | awk '$1 == \"0.0.0.0\" {print $2}'");
+  if ( gwIP ) {
+    const gwMac = await getShellOutput(`arp -a -n | grep ${gwIP} -w | awk '{print $4}'`);
+    return gwMac;
+  } else {
+    return '';
+  }
+}
+
+async function getLatestCommitHash(cwd) {
+  try {
+    const result = await exec("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
+    return result && result.stdout && result.stdout.trim();
+  } catch(err) {
+    //log(`ERROR: failed to get latest commit hash in ${cwd}`+err);
+    return '';
+  }
+}
+
+async function getLicenseInfo() {
+  const licenseFile = "/home/pi/.firewalla/license";
+  const SUUID = (await getShellOutput(`awk '/SUUID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+  const EID = (await getShellOutput(`awk '/EID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+  return { SUUID,EID };
+}
+
+async function getSysinfo(status) {
+  const eths = getEthernets();
+  const memory = os.totalmem()
+  const timestamp = Date.now();
+  const uptime = os.uptime();
+  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMac, hashRouter, hashWalla, licenseInfo, mac] =
+    await Promise.all([
+      getShellOutput("uname -m"),
+      isBooted(),
+      getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
+      getCpuTemperature(),
+      getEthernetSpeed(Object.keys(eths)),
+      getGatewayMac(),
+      getLatestCommitHash("/home/pi/firerouter"),
+      getLatestCommitHash("/home/pi/firewalla"),
+      getLicenseInfo(),
+      getShellOutput("cat /sys/class/net/eth0/address")
+    ]);
+
+  if(!uid) {
+    uid = getUniqueID({mac});
+  }
+
+  return {
+    arch,
+    booted,
+    btMac,
+    cpuTemp,
+    eths,
+    ethSpeed,
+    licenseInfo,
+    gatewayMac,
+    hashRouter,
+    hashWalla,
+    mac,
+    memory,
+    status,
+    timestamp,
+    uptime,
+    uid
+  };
+}
+
+async function update(status, extra) {
+  let info = await getSysinfo(status);
+  if(extra) {
+    info = Object.assign({}, info, extra);
+  }
+  //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
+  return info;
 }
 
 const job = setTimeout(() => {
   update("schedule");
-}, 30 * 3600 * 1000);
+}, 24 * 3600 * 1000); // every day
 
-socket.on('connect', () => {
+socket.on('connect', async () => {
   log("Connected to heartbeat server.");
   update('connect');
 });
@@ -45,11 +199,24 @@ socket.on('disconnect', () => {
   log("Disconnected from heartbeat server.");
 });
 
-socket.on("update", (data) => {
+socket.on('update', () => {
   update("cloud");
 });
 
 socket.on('reconnect', () => {
   log("Reconnected to heartbeat server.");
-  update('reconnect');
+  //update('reconnect');
 });
+
+const eventName = "FIREWALLA:HEARTBEAT:UPDATE";
+sclient.on("message", (channel, message) => {
+  if(channel === eventName) {
+    try {
+      const object = JSON.parse(message);
+      update('redis', object);
+    } catch(err) {
+      log("Failed to parse redis message.");
+    }
+  }
+});
+sclient.subscribe(eventName);

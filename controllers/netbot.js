@@ -2082,6 +2082,8 @@ class netBot extends ControllerBot {
   }
 
   async validateFlowAppIntel(json) {
+    return;
+
     // await bone.flowgraphAsync(...)
     let flows = json.flows
 
@@ -2106,6 +2108,8 @@ class netBot extends ControllerBot {
   }
 
   async validateFlowCategoryIntel(json) {
+    return;
+
     // await bone.flowgraphAsync(...)
     let flows = json.flows
 
@@ -4222,7 +4226,7 @@ class netBot extends ControllerBot {
 
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
-        
+          
           if (rawmsg.message.appInfo) {
             this.processAppInfo(rawmsg.message.appInfo)
           }

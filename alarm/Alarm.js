@@ -17,7 +17,6 @@
 
 const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, 'info');
-const jsonfile = require('jsonfile');
 const util = require('util');
 
 const i18n = require('../util/i18n.js');
@@ -169,7 +168,7 @@ class Alarm {
   // }
 
   requiredKeys() {
-    return ["p.device.name", "p.device.id"];
+    return ["p.device.name", "p.device.id", "p.device.mac"];
   }
 
 
@@ -443,6 +442,10 @@ class VulnerabilityAlarm extends Alarm {
     this["p.vid"] = vulnerabilityID;
   }
 
+  needPolicyMatch(){
+    return true;
+  }
+
   getI18NCategory() {
     return util.format("%s_%s", this.type, this["p.vid"]);
   }
@@ -472,6 +475,10 @@ class BroNoticeAlarm extends Alarm {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
     this["p.noticeType"] = notice;
     this["p.message"] = message;
+  }
+
+  needPolicyMatch(){
+    return true;
   }
 
   keysToCompareForDedup() {
@@ -519,6 +526,10 @@ class IntelReportAlarm extends Alarm {
     super("ALARM_INTEL_REPORT", timestamp, device, info);
   }
 
+  needPolicyMatch(){
+    return true;
+  }
+
   getI18NCategory() {
     return "ALARM_INTEL_REPORT";
 
@@ -539,6 +550,9 @@ class IntelAlarm extends Alarm {
     super("ALARM_INTEL", timestamp, device, info);
     this["p.severity"] = severity;
     this["p.dest.readableName"] = this.getReadableDestination();
+  }
+  needPolicyMatch(){
+    return true;
   }
 
   getI18NCategory() {
@@ -629,6 +643,9 @@ class OutboundAlarm extends Alarm {
       this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
     }
   }
+  needPolicyMatch(){
+    return true;
+  }
 
   requiredKeys() {
     return super.requiredKeys().concat(["p.dest.id"]);
@@ -658,9 +675,6 @@ class OutboundAlarm extends Alarm {
     return this["p.dest.ip"];
   }
 
-  getSimpleOutboundTrafficSize() {
-    return formatBytes(this["p.transfer.outbound.size"]);
-  }
 
   keysToCompareForDedup() {
     return ["p.device.mac", "p.dest.id", "p.intf.id", "p.tag.ids"];
@@ -805,7 +819,7 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   // dedup implemented before generation @ FlowMonitor
-  isDup(alarm) {
+  isDup() {
     return false;
   }
 
@@ -893,6 +907,10 @@ class OpenPortAlarm extends Alarm {
     this['p.showMap'] = false;
   }
 
+  needPolicyMatch(){
+    return true;
+  }
+
   keysToCompareForDedup() {
     return ['p.device.ip', 'p.open.protocol', 'p.open.port'];
   }
@@ -912,13 +930,13 @@ class OpenPortAlarm extends Alarm {
   isDup(alarm) {
     if (alarm.type === this.type) {
       return super.isDup(alarm);
-    };
+    }
 
     if (['ALARM_OPENPORT', 'ALARM_UPNP'].includes(alarm.type)) {
       let compareValue = GetOpenPortAlarmCompareValue(alarm);
       let compareValue2 = GetOpenPortAlarmCompareValue(this);
       return (compareValue == compareValue2);
-    };
+    }
 
     return false;
   }
@@ -958,13 +976,13 @@ class UpnpAlarm extends Alarm {
   isDup(alarm) {
     if (alarm.type === this.type) {
       return super.isDup(alarm);
-    };
+    }
 
     if (['ALARM_OPENPORT', 'ALARM_UPNP'].includes(alarm.type)) {
       let compareValue = GetOpenPortAlarmCompareValue(alarm);
       let compareValue2 = GetOpenPortAlarmCompareValue(this);
       return (compareValue == compareValue2);
-    };
+    }
 
     return false;
   }
