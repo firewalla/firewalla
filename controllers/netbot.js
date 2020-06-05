@@ -2018,6 +2018,8 @@ class netBot extends ControllerBot {
   }
 
   async validateFlowAppIntel(json) {
+    return;
+
     // await bone.flowgraphAsync(...)
     let flows = json.flows
 
@@ -2042,6 +2044,8 @@ class netBot extends ControllerBot {
   }
 
   async validateFlowCategoryIntel(json) {
+    return;
+
     // await bone.flowgraphAsync(...)
     let flows = json.flows
 

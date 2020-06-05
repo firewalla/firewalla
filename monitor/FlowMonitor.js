@@ -64,8 +64,8 @@ function getDomain(ip) {
   return ip;
 }
 
-function alarmBootstrap(flow) {
-  return {
+function alarmBootstrap(flow, mac) {
+  const obj = {
     "p.device.id": flow.shname,
     "p.device.name": flow.shname,
     "p.device.ip": flow.sh,
@@ -76,6 +76,12 @@ function alarmBootstrap(flow) {
     "p.intf.id": flow.intf,
     "p.tag.ids": flow.tags
   }
+
+  if(mac) {
+    obj["p.dest.ip.device.mac"] = mac;
+  }
+
+  return obj;
 }
 
 module.exports = class FlowMonitor {
@@ -217,15 +223,16 @@ module.exports = class FlowMonitor {
     return false;
   }
 
-  flowIntel(flows) {
+  flowIntel(flows, mac) {
     for (const flow of flows) {
       log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
         log.debug("######## flowIntel Processing", JSON.stringify(flow));
-        if (this.isFlowIntelInClass(flow['intel'], "av")) {
+        if (this.isFlowIntelInClass(flow['intel'], "av") &&
+          flow.fd === 'in') {
           if ((flow.du && Number(flow.du) > 60) && (flow.rb && Number(flow.rb) > 5000000)) {
             let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-              alarmBootstrap(flow)
+              alarmBootstrap(flow, mac)
             );
 
             alarmManager2.enqueueAlarm(alarm);
@@ -233,6 +240,7 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "porn") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 20) && (flow.rb && Number(flow.rb) > 1000000) ||
             this.flowIntelRecordFlow(flow, 3)
@@ -242,7 +250,7 @@ module.exports = class FlowMonitor {
           // there should be a unique ID between pi and cloud on websites
 
           let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow)
+            alarmBootstrap(flow, mac)
           );
 
           alarmManager2.enqueueAlarm(alarm);
@@ -340,26 +348,28 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "games") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) ||
             this.flowIntelRecordFlow(flow, 3)
           )
         ) {
           let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow)
+            alarmBootstrap(flow, mac)
           );
 
           alarmManager2.enqueueAlarm(alarm);
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "vpn") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 120) && (flow.rb && Number(flow.rb) > 10000) ||
             this.flowIntelRecordFlow(flow, 3)
           )
         ) {
           let alarm = new Alarm.VpnAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow)
+            alarmBootstrap(flow, mac)
           );
 
           alarmManager2.enqueueAlarm(alarm);
@@ -517,7 +527,7 @@ module.exports = class FlowMonitor {
       });
     }
 
-    this.flowIntel(result.connections);
+    this.flowIntel(result.connections, mac);
     this.summarizeNeighbors(host, result.connections);
     if (result.activities != null) {
       /*
@@ -543,7 +553,7 @@ module.exports = class FlowMonitor {
         this.updateIntelFromHTTP(conn);
       });
     }
-    this.flowIntel(result.connections);
+    this.flowIntel(result.connections, mac);
     this.summarizeNeighbors(host, result.connections);
   }
 

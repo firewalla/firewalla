@@ -168,7 +168,7 @@ class Alarm {
   // }
 
   requiredKeys() {
-    return ["p.device.name", "p.device.id"];
+    return ["p.device.name", "p.device.id", "p.device.mac"];
   }
 
 
