@@ -181,7 +181,7 @@ async function update(status, extra) {
   if(extra) {
     info = Object.assign({}, info, extra);
   }
-  log(`DEBUG: ${JSON.stringify(info,null,2)}`);
+  //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
   return info;
 }
@@ -190,10 +190,11 @@ const job = setTimeout(() => {
   update("schedule");
 }, 24 * 3600 * 1000); // every day
 
-// DEBUG
+/* DEBUG
 const job2 = setTimeout(() => {
   update("schedule");
 }, 3000); // every 3 sec
+ */
 
 socket.on('connect', async () => {
   log("Connected to heartbeat server.");
