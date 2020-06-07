@@ -91,10 +91,8 @@ async function getCpuTemperature() {
 }
 
 function getEthernets() {
-    const ifs = os.networkInterfaces();
-    const eths = {};
-    const ethsNames = Object.keys(ifs).filter(name => name.match(/^eth/));
-    ethsNames.forEach(e => eths[e]=ifs[e]);
+    const eths = os.networkInterfaces();
+    delete eths['lo'];
     return eths;
 }
 
@@ -106,11 +104,11 @@ async function getEthernetSpeed(ethsNames) {
     return ethSpeed;
 }
 
-async function getGatewayMac() {
+async function getGatewayMacPrefix() {
   const gwIP = await getShellOutput("route -n | awk '$1 == \"0.0.0.0\" {print $2}'");
   if ( gwIP ) {
-    const gwMac = await getShellOutput(`arp -a -n | grep ${gwIP} -w | awk '{print $4}'`);
-    return gwMac;
+    const gwMacPrefix = await getShellOutput(`arp -a -n | grep ${gwIP} -w | awk '{print $4}' | cut -d: -f1-3`);
+    return gwMacPrefix;
   } else {
     return '';
   }
@@ -138,18 +136,19 @@ async function getSysinfo(status) {
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMac, hashRouter, hashWalla, licenseInfo, mac] =
+  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, hashRouter, hashWalla, licenseInfo, mac, redisEid] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
       getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
       getCpuTemperature(),
       getEthernetSpeed(Object.keys(eths)),
-      getGatewayMac(),
+      getGatewayMacPrefix(),
       getLatestCommitHash("/home/pi/firerouter"),
       getLatestCommitHash("/home/pi/firewalla"),
       getLicenseInfo(),
-      getShellOutput("cat /sys/class/net/eth0/address")
+      getShellOutput("cat /sys/class/net/eth0/address"),
+      getShellOutput("redis-cli hget sys:ept eid")
     ]);
 
   if(!uid) {
@@ -164,11 +163,12 @@ async function getSysinfo(status) {
     eths,
     ethSpeed,
     licenseInfo,
-    gatewayMac,
+    gatewayMacPrefix,
     hashRouter,
     hashWalla,
     mac,
     memory,
+    redisEid,
     status,
     timestamp,
     uptime,
@@ -181,7 +181,7 @@ async function update(status, extra) {
   if(extra) {
     info = Object.assign({}, info, extra);
   }
-  //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
+  log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
   return info;
 }
@@ -189,6 +189,11 @@ async function update(status, extra) {
 const job = setTimeout(() => {
   update("schedule");
 }, 24 * 3600 * 1000); // every day
+
+// DEBUG
+const job2 = setTimeout(() => {
+  update("schedule");
+}, 3000); // every 3 sec
 
 socket.on('connect', async () => {
   log("Connected to heartbeat server.");
