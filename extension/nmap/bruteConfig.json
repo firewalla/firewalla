@@ -42,7 +42,7 @@
         "scriptName": "http-brute"
       },
       {
-        "scriptArgs": "unpwdb.timelimit=10m",
+        "scriptArgs": "unpwdb.timelimit=30m",
         "scriptName": "http-form-brute"
       }
     ]

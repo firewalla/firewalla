@@ -38,6 +38,7 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const featureName = "internal_scan";
 
 class InternalScanSensor extends Sensor {
   constructor() {
@@ -45,6 +46,7 @@ class InternalScanSensor extends Sensor {
   }
 
   async run() {
+    this.running = false;
     this.supportPorts = ["tcp_23", "tcp_80", "tcp_21", "tcp_3306", "tcp_6379"]; // default support: telnet http ftp mysql redis
     if (platform.getName() === 'gold') {
       this.supportPorts.push("tcp_22"); // gold: ssh
@@ -53,31 +55,41 @@ class InternalScanSensor extends Sensor {
     sem.once("DeviceServiceScanComplete", async (event) => {
       await this.checkAndRunOnce();
     });
+
+    fc.onFeature(featureName, (feature, status) => {
+      if (feature != featureName)
+        return
+      if (status) {
+        this.checkAndRunOnce();
+      }
+    })
   }
 
   async checkAndRunOnce() {
     await this.runOnce();
 
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+    }
     const interval = this.config.interval * 1000 || 7 * 24 * 60 * 60 * 1000; // one week
-    setTimeout(async () => {
+    this.timeoutId = setTimeout(async () => {
       await this.checkAndRunOnce();
     }, interval);
   }
 
   async runOnce() {
     const result = await this.isSensorEnable();
-    if (!result) {
+    if (!result || this.running) {
       return;
     }
 
-    await this.checkDictionary();
-    log.info('Scan start...');
-    let results = await hostManager.getHostsAsync();
-    if (!results)
-      throw new Error('Failed to scan.');
-
+    this.running = true;
     try {
-      results = results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && host.o.openports);
+      log.info('Scan start...');
+      await this.checkDictionary();
+
+      let results = await hostManager.getHostsAsync();
+      results = results && results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && host.o.openports);
       for (const host of results) {
         let openPorts = JSON.parse(host.o.openports);
         log.info(host.o.ipv4Addr, openPorts);
@@ -100,11 +112,12 @@ class InternalScanSensor extends Sensor {
     } catch (err) {
      log.error("Failed to scan: " + err);
     }
+    this.running = false;
     log.info('Scan end');
   }
 
   isSensorEnable() {
-    return fc.isFeatureOn("internal_scan");
+    return fc.isFeatureOn(featureName);
   }
 
   async checkDictionary() {
@@ -221,6 +234,11 @@ class InternalScanSensor extends Sensor {
         log.error("Failed to nmap scan:", err);
       }
       log.info("used Time: ", Date.now() / 1000 - startTime);
+
+      const result = await this.isSensorEnable();
+      if (!result) {
+        return;
+      }
     }
 
     if (weakPasswords.length > 0) {
