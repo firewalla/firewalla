@@ -40,7 +40,10 @@ class AdditionalPairPlugin extends Sensor {
 
   apiRun() {
     extensionManager.onGet("pairingPayload", async (msg, data) => {
-      const ttl = data.ttl || 20;
+      let ttl = 20;
+      if (data && data.ttl) {
+        ttl = data.ttl
+      }
       return this.getPayload(ttl);
     })
   }
