@@ -96,7 +96,7 @@ async function getIPLinks() {
 }
 
 async function getEthernetSpeed() {
-    const eths = await getShellOutput("cd /sys/class/net; ls -1d eth*");
+    const eths = await getShellOutput("cd /sys/class/net; ls -1d eth* | fgrep -v .");
     if (!eths) return "";
     const ethSpeed = {};
     for (const eth of eths.split("\n")) {
@@ -133,10 +133,11 @@ async function getLicenseInfo() {
 }
 
 async function getSysinfo(status) {
+  const ifs = os.networkInterfaces();
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, hashRouter, hashWalla, ipLinks, licenseInfo, mac, redisEid] =
+  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, hashRouter, hashWalla, licenseInfo, mac, redisEid] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
@@ -146,7 +147,6 @@ async function getSysinfo(status) {
       getGatewayMacPrefix(),
       getLatestCommitHash("/home/pi/firerouter"),
       getLatestCommitHash("/home/pi/firewalla"),
-      getIPLinks(),
       getLicenseInfo(),
       getShellOutput("cat /sys/class/net/eth0/address"),
       getShellOutput("redis-cli hget sys:ept eid")
@@ -161,7 +161,7 @@ async function getSysinfo(status) {
     booted,
     btMac,
     cpuTemp,
-    ipLinks,
+    ifs,
     ethSpeed,
     licenseInfo,
     gatewayMacPrefix,
