@@ -90,15 +90,16 @@ async function getCpuTemperature() {
   return await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
 }
 
-function getEthernets() {
-    const eths = os.networkInterfaces();
-    delete eths['lo'];
-    return eths;
+async function getIPLinks() {
+  const ipLinks = await getShellOutput("ip link show");
+  return ipLinks.split("\n");
 }
 
-async function getEthernetSpeed(ethsNames) {
+async function getEthernetSpeed() {
+    const eths = await getShellOutput("cd /sys/class/net; ls -1d eth*");
+    if (!eths) return "";
     const ethSpeed = {};
-    for (const eth of ethsNames) {
+    for (const eth of eths.split("\n")) {
       ethSpeed[eth] = await getShellOutput(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
     }
     return ethSpeed;
@@ -132,20 +133,20 @@ async function getLicenseInfo() {
 }
 
 async function getSysinfo(status) {
-  const eths = getEthernets();
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, hashRouter, hashWalla, licenseInfo, mac, redisEid] =
+  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, hashRouter, hashWalla, ipLinks, licenseInfo, mac, redisEid] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
       getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
       getCpuTemperature(),
-      getEthernetSpeed(Object.keys(eths)),
+      getEthernetSpeed(),
       getGatewayMacPrefix(),
       getLatestCommitHash("/home/pi/firerouter"),
       getLatestCommitHash("/home/pi/firewalla"),
+      getIPLinks(),
       getLicenseInfo(),
       getShellOutput("cat /sys/class/net/eth0/address"),
       getShellOutput("redis-cli hget sys:ept eid")
@@ -160,7 +161,7 @@ async function getSysinfo(status) {
     booted,
     btMac,
     cpuTemp,
-    eths,
+    ipLinks,
     ethSpeed,
     licenseInfo,
     gatewayMacPrefix,
