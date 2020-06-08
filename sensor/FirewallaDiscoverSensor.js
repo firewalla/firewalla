@@ -18,8 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const dgram = require('dgram');
 const ip = require('ip');
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const Sensor = require('./Sensor.js').Sensor;
 

@@ -1,15 +1,15 @@
-var nat = require('../nat-upnp');
-var async = require('async');
+const nat = require('../nat-upnp');
+const util = require('util')
 
 var client = exports;
 
-function Client() {
-  this.ssdp = nat.ssdp.create();
+function Client(opts) {
+  this.ssdp = nat.ssdp.create(opts);
   this.timeout = 1800;
 }
 
-client.create = function create() {
-  return new Client();
+client.create = function create(opts) {
+  return new Client(opts);
 };
 
 function normalizeOptions(options) {
@@ -83,68 +83,65 @@ Client.prototype.getMappings = function getMappings(options, callback) {
     var end = false;
     var results = [];
 
-    async.whilst(function() {
-      return !end;
-    }, function(callback) {
-      gateway.run('GetGenericPortMappingEntry', [
-        [ 'NewPortMappingIndex', i++ ]
-      ], function(err, data) {
-        if (err) {
+    const asyncGatewayRun = util.promisify(gateway.run).bind(gateway);
+
+    (async () => {
+      while (!end) {
+
+        let data
+        try {
+          data = await asyncGatewayRun('GetGenericPortMappingEntry', [
+            [ 'NewPortMappingIndex', i++ ]
+          ])
+        } catch(err) {
           // If we got an error on index 0, ignore it in case this router starts indicies on 1
           if (i !== 1) {
             end = true;
           }
-          return callback(null);
+          break
         }
 
         if(data === null || data === undefined) {
-          callback(null);
-          return;
+          continue
         }
 
         try {
+          var key;
+          var match = Object.keys(data).some(function(k) {
+            if (!/:GetGenericPortMappingEntryResponse/.test(k)) return false;
 
-        var key;
-        var match = Object.keys(data).some(function(k) {
-          if (!/:GetGenericPortMappingEntryResponse/.test(k)) return false;
+            key = k;
+            return true;
+          });
 
-          key = k;
-          return true;
-        });
+          // skip if there is no response in the payload
+          if(!match) {
+            continue
+          }
 
-        // skip if there is no response in the payload
-        if(!match) {
-            callback(null)
-            return
+          data = data[key];
+
+          var result = {
+            public: {
+              host: typeof data.NewRemoteHost === 'string' &&
+              data.NewRemoteHost || '',
+              port: parseInt(data.NewExternalPort, 10)
+            },
+            private: {
+              host: data.NewInternalClient,
+              port: parseInt(data.NewInternalPort, 10)
+            },
+            protocol: data.NewProtocol.toLowerCase(),
+            enabled: data.NewEnabled === '1',
+            description: data.NewPortMappingDescription,
+            ttl: parseInt(data.NewLeaseDuration, 10)
+          };
+          result.local = result.private.host === address;
+
+          results.push(result);
+        } catch(e) {
         }
-
-        data = data[key];
-
-        var result = {
-          public: {
-            host: typeof data.NewRemoteHost === 'string' &&
-                  data.NewRemoteHost || '',
-            port: parseInt(data.NewExternalPort, 10)
-          },
-          private: {
-            host: data.NewInternalClient,
-            port: parseInt(data.NewInternalPort, 10)
-          },
-          protocol: data.NewProtocol.toLowerCase(),
-          enabled: data.NewEnabled === '1',
-          description: data.NewPortMappingDescription,
-          ttl: parseInt(data.NewLeaseDuration, 10)
-        };
-        result.local = result.private.host === address;
-
-        results.push(result);
-     } catch(e) {
-     }
-
-        callback(null);
-      });
-    }, function(err) {
-      if (err) return callback(err);
+      }
 
       if (options.local) {
         results = results.filter(function(item) {
@@ -165,8 +162,10 @@ Client.prototype.getMappings = function getMappings(options, callback) {
         });
       }
 
-      callback(null, results);
-    });
+      callback(null, results)
+    })().catch(err => {
+      callback(err);
+    })
   });
 };
 

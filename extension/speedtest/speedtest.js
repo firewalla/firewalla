@@ -34,7 +34,8 @@ async function speedtest() {
             return stdout
         }
     } catch (err) {
-        log.error('speedtest error', err)
+        log.error('speedtest error', err);
+        return {};
     }
 }
 

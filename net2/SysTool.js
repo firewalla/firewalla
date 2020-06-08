@@ -16,7 +16,8 @@
 
 const log = require('./logger.js')(__filename);
 
-const exec = require('child-process-promise').exec
+const { exec } = require('child-process-promise')
+const { delay } = require('../util/util.js')
 
 let firewalla = require('../net2/Firewalla.js');
 
@@ -35,16 +36,24 @@ class SysTool {
   }
 
   // call main-run
-  restartServices() {
+  async restartServices(time = 0) {
+    log.warn(`All services restart in ${time} seconds`)
+    await delay(time * 1000)
     return exec(`NO_MGIT_RECOVER=1 NO_FIREKICK_RESTART=1 ${firewalla.getFirewallaHome()}/scripts/main-run`)
   }
 
-  rebootServices() {
+  async rebootSystem(time = 0) {
+    log.warn(`======= System Reboot in ${time} seconds =======`)
+    await delay(time * 1000)
     return exec("sync & /home/pi/firewalla/scripts/fire-reboot-normal")
   }
 
   shutdownServices() {
     return exec("sleep 3; sudo shutdown -h now")
+  }
+
+  cancelShutdown() {
+    return exec("sudo shutdown -c")
   }
 
   restartFireKickService() {
@@ -75,7 +84,10 @@ class SysTool {
   async cleanIntel() {
     await exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
     await exec("redis-cli keys 'rdns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+    await exec("redis-cli keys 'rdns:dns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
     await exec("redis-cli del intel:security:tracking").catch(() => undefined);
+    await exec("redis-cli keys 'dynamicCategoryDomain:*' | xargs redis-cli del").catch(() => undefined);
+    await exec("sudo ipset list -name | grep c_bd | xargs -n 1 sudo ipset flush").catch(() => undefined);
   }
 }
 

@@ -26,12 +26,13 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 
 const cp = require('child_process');
 
-const rclient = require('../../util/redis_manager.js').getRedisClient()
-const pclient = require('../../util/redis_manager.js').getPublishClient();
-
+const execAsync = require('child-process-promise').exec;
+const Config = require('../../net2/config.js');
+const _ = require('lodash');
 
 async function dhcpDiscover(intf) {
-  intf = intf || "eth0";
+  const config = Config.getConfig(true);
+  intf = intf || config.monitoringInterface;
   log.info("Broadcasting DHCP discover on ", intf);
   
   let cmd = util.format('sudo nmap --script broadcast-dhcp-discover -e %s -oX - | %s', intf, xml2jsonBinary);
@@ -89,18 +90,25 @@ async function dhcpDiscover(intf) {
   });  
 }
 
-module.exports = {
-  dhcpDiscover: dhcpDiscover
+async function dhcpServerStatus(serverIp) {
+  let result = false;
+  let cmd = util.format('sudo nmap -sU -p 67 --script=dhcp-discover %s -oX - | %s', serverIp, xml2jsonBinary);
+  log.info("Running command:", cmd);
+  try {
+    const cmdresult = await execAsync(cmd);
+    let output = JSON.parse(cmdresult.stdout);
+    let kvs = _.get(output, `nmaprun.host.ports.port.script.elem`, []);
+    if (Array.isArray(kvs) && kvs.length > 0) {
+      result = true;
+    }
+  } catch(err) {
+    log.error("Failed to nmap scan:", err);
+  }
+
+  return result
 }
 
-/*
-dhcpDiscover("eth0").then((found) => {
-  if (found) {
-    console.log("DHCP service is found via eth0.");
-  } else {
-    console.log("DHCP service is not found via eth0.");
-  }
-}).catch((err) => {
-  console.log("Failed to do DHCP discover", err);
-});
-*/
+module.exports = {
+  dhcpDiscover: dhcpDiscover,
+  dhcpServerStatus: dhcpServerStatus
+}

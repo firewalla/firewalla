@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,8 +21,7 @@ const cp = require('child_process');
 
 const execAsync = util.promisify(cp.exec);
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 const fConfig = require('../net2/config.js').getConfig();
 
 const ERROR_STR = "ERROR";
@@ -40,7 +39,6 @@ const checkList = {
 }
 
 async function check() {
-  await sysManager.setConfig(fConfig);
   const result = {};
   await Promise.all(Object.keys(checkList).map(async item => {
     try {
@@ -52,7 +50,7 @@ async function check() {
       result[item] = ERROR_STR;
     }
   }));
-  return result;  
+  return result;
 }
 
 async function piVersion() {
@@ -74,17 +72,17 @@ async function piVersion() {
 }
 
 async function ipAddress() {
-  const ip = sysManager.myIp();
+  const ip = sysManager.myDefaultWanIp();
   return ip;
 }
 
 async function gateway() {
-  const gateway = sysManager.myGateway();
+  const gateway = sysManager.myDefaultGateway();
   return gateway;
 }
 
 async function gatewayLatency() {
-  const gateway = sysManager.myGateway();
+  const gateway = sysManager.myDefaultGateway();
   if (gateway) {
     const cmd = util.format("ping -n -c 10 -i 0.2 -w 3 %s | tail -n 1 | cut -d= -f2 | cut -d/ -f2", gateway);
     const result = await execAsync(cmd);
@@ -100,7 +98,7 @@ async function macAddress() {
 }
 
 async function dns() {
-  const dns = sysManager.myDNS();
+  const dns = sysManager.myDefaultDns();
   return dns;
 }
 

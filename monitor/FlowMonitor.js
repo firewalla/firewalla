@@ -33,7 +33,7 @@ const hostTool = new HostTool()
 
 let instance = null;
 const HostManager = require("../net2/HostManager.js");
-const hostManager = new HostManager("cli", 'client', 'info');
+const hostManager = new HostManager();
 
 const default_stddev_limit = 8;
 const default_inbound_min_length = 1000000;
@@ -42,8 +42,7 @@ const deafult_outbound_min_length = 500000;
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 const fConfig = require('../net2/config.js').getConfig();
 
@@ -58,23 +57,31 @@ const _ = require('lodash');
 function getDomain(ip) {
   if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
     let splited = ip.split(".");
-    if (splited.length>=3) {
-      return (splited[splited.length-2]+"."+splited[splited.length-1]);
+    if (splited.length >= 3) {
+      return (splited[splited.length - 2] + "." + splited[splited.length - 1]);
     }
   }
   return ip;
 }
 
-function alarmBootstrap(flow) {
-  return {
+function alarmBootstrap(flow, mac) {
+  const obj = {
     "p.device.id": flow.shname,
     "p.device.name": flow.shname,
     "p.device.ip": flow.sh,
     "p.protocol": flow.pr,
     "p.dest.name": flowUtil.dhnameFlow(flow),
     "p.dest.ip": flow.dh,
-    "p.dest.port": flow.dp
+    "p.dest.port": flow.dp,
+    "p.intf.id": flow.intf,
+    "p.tag.ids": flow.tags
   }
+
+  if(mac) {
+    obj["p.dest.ip.device.mac"] = mac;
+  }
+
+  return obj;
 }
 
 module.exports = class FlowMonitor {
@@ -101,25 +108,25 @@ module.exports = class FlowMonitor {
   // if 'av' for example, shows up too many times ... likely to be
   // av
 
-  flowIntelRecordFlow(flow,limit) {
+  flowIntelRecordFlow(flow, limit) {
     let key = flow.dh;
     if (flow["dhname"] != null) {
       key = getDomain(flow["dhname"]);
     }
     let record = this.recordedFlows[key];
     if (record) {
-      record.ts = Date.now()/1000;
+      record.ts = Date.now() / 1000;
       record.count += flow.ct;
     } else {
       record = {}
-      record.ts = Date.now()/1000;
+      record.ts = Date.now() / 1000;
       record.count = flow.ct;
       this.recordedFlows[key] = record;
     }
     // clean  up
     let oldrecords = [];
     for (let k in this.recordedFlows) {
-      if (this.recordedFlows[k].ts < Date.now()/1000-60*5) {
+      if (this.recordedFlows[k].ts < Date.now() / 1000 - 60 * 5) {
         oldrecords.push(k);
       }
     }
@@ -128,9 +135,9 @@ module.exports = class FlowMonitor {
       delete this.recordedFlows[oldrecords[i]];
     }
 
-    log.info("FLOW:INTEL:RECORD", key,record);
-    if (record.count>limit) {
-      record.count = 0-limit;
+    log.info("FLOW:INTEL:RECORD", key, record);
+    if (record.count > limit) {
+      record.count = 0 - limit;
       return true;
     }
     return false;
@@ -141,7 +148,7 @@ module.exports = class FlowMonitor {
       if (global.gc) {
         global.gc();
       }
-    } catch(e) {
+    } catch (e) {
     }
   }
 
@@ -185,7 +192,7 @@ module.exports = class FlowMonitor {
     if (classes.includes(intel.category)) {
       return true;
     } else {
-      if(classes.includes("intel")) { // for security alarm, category must equal to 'intel'
+      if (classes.includes("intel")) { // for security alarm, category must equal to 'intel'
         return false;
       }
     }
@@ -216,15 +223,16 @@ module.exports = class FlowMonitor {
     return false;
   }
 
-  flowIntel(flows) {
+  flowIntel(flows, mac) {
     for (const flow of flows) {
       log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
         log.debug("######## flowIntel Processing", JSON.stringify(flow));
-        if (this.isFlowIntelInClass(flow['intel'], "av")) {
+        if (this.isFlowIntelInClass(flow['intel'], "av") &&
+          flow.fd === 'in') {
           if ((flow.du && Number(flow.du) > 60) && (flow.rb && Number(flow.rb) > 5000000)) {
             let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-              alarmBootstrap(flow)
+              alarmBootstrap(flow, mac)
             );
 
             alarmManager2.enqueueAlarm(alarm);
@@ -232,6 +240,7 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "porn") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 20) && (flow.rb && Number(flow.rb) > 1000000) ||
             this.flowIntelRecordFlow(flow, 3)
@@ -241,7 +250,7 @@ module.exports = class FlowMonitor {
           // there should be a unique ID between pi and cloud on websites
 
           let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow)
+            alarmBootstrap(flow, mac)
           );
 
           alarmManager2.enqueueAlarm(alarm);
@@ -321,6 +330,13 @@ module.exports = class FlowMonitor {
               intelobj.pr = flow.pr;
             }
 
+            if (flow.intf && _.isString(flow.intf)) {
+              intelobj.intf = flow.intf;
+            }
+            if (flow.tags && _.isArray(flow.tags)) {
+              intelobj.tags = flow.tags;
+            }
+
             log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
 
             this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
@@ -332,13 +348,28 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "games") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) ||
             this.flowIntelRecordFlow(flow, 3)
           )
         ) {
           let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow)
+            alarmBootstrap(flow, mac)
+          );
+
+          alarmManager2.enqueueAlarm(alarm);
+        }
+        else if (
+          this.isFlowIntelInClass(flow['intel'], "vpn") &&
+          flow.fd === 'in' &&
+          (
+            (flow.du && Number(flow.du) > 120) && (flow.rb && Number(flow.rb) > 10000) ||
+            this.flowIntelRecordFlow(flow, 3)
+          )
+        ) {
+          let alarm = new Alarm.VpnAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
+            alarmBootstrap(flow, mac)
           );
 
           alarmManager2.enqueueAlarm(alarm);
@@ -359,12 +390,12 @@ module.exports = class FlowMonitor {
 
   //   '17.253.4.125': '{"neighbor":"17.253.4.125","cts":1481438191.098,"ts":1481990573.168,"count":356,"rb":33984,"ob":33504,"du":27.038723000000005,"name":"time-ios.apple.com"}',
   //  '17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}',
-  summarizeNeighbors(host,flows) {
-    let key = "neighbor:"+host.o.mac;
-    log.debug("Summarizing Neighbors ",flows.length,key);
+  summarizeNeighbors(host, flows) {
+    let key = "neighbor:" + host.o.mac;
+    log.debug("Summarizing Neighbors ", flows.length, key);
 
 
-    rclient.hgetall(key,(err,data)=> {
+    rclient.hgetall(key, (err, data) => {
       let neighborArray = [];
       if (data == null) {
         data = {};
@@ -375,7 +406,7 @@ module.exports = class FlowMonitor {
           neighborArray.push(data[n]);
         }
       }
-      let now = Date.now()/1000;
+      let now = Date.now() / 1000;
       for (let f in flows) {
         let flow = flows[f];
         let neighbor = flow.dh;
@@ -389,22 +420,22 @@ module.exports = class FlowMonitor {
           rb = flow.ob;
           name = flow.shname;
         }
-        if (data[neighbor]!=null) {
+        if (data[neighbor] != null) {
           data[neighbor]['ts'] = now;
-          data[neighbor]['count'] +=1;
-          data[neighbor]['rb'] +=rb;
-          data[neighbor]['ob'] +=ob;
-          data[neighbor]['du'] +=du;
-          data[neighbor]['neighbor']=neighbor;
+          data[neighbor]['count'] += 1;
+          data[neighbor]['rb'] += rb;
+          data[neighbor]['ob'] += ob;
+          data[neighbor]['du'] += du;
+          data[neighbor]['neighbor'] = neighbor;
         } else {
           data[neighbor] = {};
-          data[neighbor]['neighbor']=neighbor;
+          data[neighbor]['neighbor'] = neighbor;
           data[neighbor]['cts'] = now;
           data[neighbor]['ts'] = now;
-          data[neighbor]['count'] =1;
-          data[neighbor]['rb'] =rb;
-          data[neighbor]['ob'] =ob;
-          data[neighbor]['du'] =du;
+          data[neighbor]['count'] = 1;
+          data[neighbor]['rb'] = rb;
+          data[neighbor]['ob'] = ob;
+          data[neighbor]['du'] = du;
           neighborArray.push(data[neighbor]);
         }
         if (name) {
@@ -419,20 +450,20 @@ module.exports = class FlowMonitor {
       })
       let max = 20;
 
-      let deletedArrayCount = neighborArray.slice(max+1);
-      let neighborArrayCount = neighborArray.slice(0,max);
+      let deletedArrayCount = neighborArray.slice(max + 1);
+      let neighborArrayCount = neighborArray.slice(0, max);
 
       neighborArray.sort(function (a, b) {
         return Number(b.ts) - Number(a.ts);
       })
 
-      let deletedArrayTs = neighborArray.slice(max+1);
-      let neighborArrayTs = neighborArray.slice(0,max);
+      let deletedArrayTs = neighborArray.slice(max + 1);
+      let neighborArrayTs = neighborArray.slice(0, max);
 
-      deletedArrayCount = deletedArrayCount.filter((val)=>{
+      deletedArrayCount = deletedArrayCount.filter((val) => {
         return neighborArrayTs.indexOf(val) == -1;
       });
-      deletedArrayTs = deletedArrayTs.filter((val)=>{
+      deletedArrayTs = deletedArrayTs.filter((val) => {
         return neighborArrayCount.indexOf(val) == -1;
       });
 
@@ -442,10 +473,10 @@ module.exports = class FlowMonitor {
 
       let addedArray = neighborArrayCount.concat(neighborArrayTs);
 
-      log.debug("Neighbor:Summary",key, deletedArray.length, addedArray.length, deletedArrayTs.length, neighborArrayTs.length,deletedArrayCount.length, neighborArrayCount.length);
+      log.debug("Neighbor:Summary", key, deletedArray.length, addedArray.length, deletedArrayTs.length, neighborArrayTs.length, deletedArrayCount.length, neighborArrayCount.length);
 
       for (let i in deletedArray) {
-        rclient.hdel(key,deletedArray[i].neighbor);
+        rclient.hdel(key, deletedArray[i].neighbor);
       }
 
       for (let i in addedArray) {
@@ -456,9 +487,9 @@ module.exports = class FlowMonitor {
       for (let i in savedData) {
         savedData[i] = JSON.stringify(data[i]);
       }
-      rclient.hmset(key,savedData,(err,d)=>{
-        log.debug("Set Host Summary",key,savedData,d);
-        let expiring = fConfig.sensors.OldDataCleanSensor.neighbor.expires || 24*60*60*7;  // seven days
+      rclient.hmset(key, savedData, (err, d) => {
+        log.debug("Set Host Summary", key, savedData, d);
+        let expiring = fConfig.sensors.OldDataCleanSensor.neighbor.expires || 24 * 60 * 60 * 7;  // seven days
         rclient.expireat(key, parseInt((+new Date) / 1000) + expiring);
       });
     });
@@ -467,14 +498,14 @@ module.exports = class FlowMonitor {
   updateIntelFromHTTP(conn) {
     delete conn.uids;
     const urls = conn.urls;
-    if(!_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
-      for(const url of urls) {
-        if(url && url.category === 'intel') {
-          for(const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
+    if (!_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
+      for (const url of urls) {
+        if (url && url.category === 'intel') {
+          for (const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
             conn.intel[key] = url[key];
           }
           const parsedInfo = URL.parse(url.url);
-          if(parsedInfo && parsedInfo.hostname) {
+          if (parsedInfo && parsedInfo.hostname) {
             conn.intel.host = parsedInfo.hostname;
           }
           conn.intel.fromURL = "1";
@@ -488,17 +519,17 @@ module.exports = class FlowMonitor {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime/60.0/60.0, true, true);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
-    if(!_.isEmpty(result.connections)) {
+    if (!_.isEmpty(result.connections)) {
       result.connections.forEach((conn) => {
         this.updateIntelFromHTTP(conn);
       });
     }
 
-    this.flowIntel(result.connections);
-    this.summarizeNeighbors(host,result.connections);
-    if (result.activities !=null) {
+    this.flowIntel(result.connections, mac);
+    this.summarizeNeighbors(host, result.connections);
+    if (result.activities != null) {
       /*
       if (host.activities!=null) {
           if (host.activities.app && host.activities.app.length >0) {
@@ -513,17 +544,17 @@ module.exports = class FlowMonitor {
       host.save("activities",null);
       */
       host.activities = result.activities;
-      host.save("activities",null);
+      host.save("activities", null);
     }
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime/60.0/60.0, true, true);
+    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
-    if(!_.isEmpty(result.connections)) {
+    if (!_.isEmpty(result.connections)) {
       result.connections.forEach((conn) => {
         this.updateIntelFromHTTP(conn);
       });
     }
-    this.flowIntel(result.connections);
-    this.summarizeNeighbors(host,result.connections);
+    this.flowIntel(result.connections, mac);
+    this.summarizeNeighbors(host, result.connections);
   }
 
 
@@ -653,7 +684,7 @@ module.exports = class FlowMonitor {
         if (!service || service === "dlp") {
           log.info("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
-          const {inSpec, outSpec} = await this.getFlowSpecs(host);
+          const { inSpec, outSpec } = await this.getFlowSpecs(host);
           log.debug("monitor:flow:", host.toShortString());
           log.debug("inspec", inSpec);
           log.debug("outspec", outSpec);
@@ -677,7 +708,7 @@ module.exports = class FlowMonitor {
           await this.detect(mac, period, host);
         }
       }
-    } catch(e) {
+    } catch (e) {
       log.error('Error in run', service, period, runid, e);
     } finally {
       const endTime = new Date() / 1000
@@ -694,16 +725,16 @@ module.exports = class FlowMonitor {
     let copy = JSON.parse(JSON.stringify(flow));
 
     if (direction === 'out') {
-      copy.sh     = flow.dh;
+      copy.sh = flow.dh;
       copy.shname = flow.dhname;
-      copy.sp     = flow.dp;
+      copy.sp = flow.dp;
 
-      copy.dh     = flow.sh;
+      copy.dh = flow.sh;
       copy.dhname = flow.shname;
-      copy.dp     = flow.sp;
+      copy.dp = flow.sp;
 
-      copy.ob     = flow.rb;
-      copy.rb     = flow.ob;
+      copy.ob = flow.rb;
+      copy.rb = flow.ob;
     }
 
     let msg = "Warning: " + flowManager.toStringShortShort2(flow, direction, 'txdata');
@@ -746,7 +777,9 @@ module.exports = class FlowMonitor {
         "p.transfer.inbound.size": copy.rb,
         "p.transfer.duration": copy.du,
         "p.local_is_client": direction == 'in' ? "1" : "0", // connection is initiated from local
-        "p.flow": JSON.stringify(flow)
+        "p.flow": JSON.stringify(flow),
+        "p.intf.id": flow.intf,
+        "p.tag.ids": flow.tags
       });
 
       // ideally each destination should have a unique ID, now just use hostname as a workaround
@@ -757,7 +790,7 @@ module.exports = class FlowMonitor {
   }
 
   getDeviceIP(obj) {
-    if(sysManager.isLocalIP(obj['id.orig_h'])) {
+    if (sysManager.isLocalIP(obj['id.orig_h'])) {
       return obj['id.orig_h'];
     } else {
       return obj['id.resp_h'];
@@ -765,7 +798,7 @@ module.exports = class FlowMonitor {
   }
 
   getRemoteIP(obj) {
-    if(!sysManager.isLocalIP(obj['id.orig_h'])) {
+    if (!sysManager.isLocalIP(obj['id.orig_h'])) {
       return obj['id.orig_h'];
     } else {
       return obj['id.resp_h'];
@@ -774,12 +807,12 @@ module.exports = class FlowMonitor {
 
   getDevicePort(obj) {
     let port = null;
-    if(sysManager.isLocalIP(obj['id.orig_h'])) {
+    if (sysManager.isLocalIP(obj['id.orig_h'])) {
       port = obj['id.orig_p'];
     } else {
       port = obj['id.resp_p'];
     }
-    if(port.constructor.name === 'Array' && port.length > 0) {
+    if (port.constructor.name === 'Array' && port.length > 0) {
       return port[0];
     } else {
       return port;
@@ -787,7 +820,7 @@ module.exports = class FlowMonitor {
   }
 
   getDevicePorts(obj) {
-    if(sysManager.isLocalIP(obj['id.orig_h'])) {
+    if (sysManager.isLocalIP(obj['id.orig_h'])) {
       return obj['sp_array'];
     } else {
       return [obj['id.resp_p']];
@@ -797,13 +830,13 @@ module.exports = class FlowMonitor {
   getRemotePort(obj) {
     let port = null;
 
-    if(!sysManager.isLocalIP(obj['id.orig_h'])) {
+    if (!sysManager.isLocalIP(obj['id.orig_h'])) {
       port = obj['id.orig_p'];
     } else {
       port = obj['id.resp_p'];
     }
 
-    if(port.constructor.name === 'Array' && port.length > 0) {
+    if (port.constructor.name === 'Array' && port.length > 0) {
       return port[0];
     } else {
       return port;
@@ -831,7 +864,7 @@ module.exports = class FlowMonitor {
     let success;
     try {
       success = await this.checkDomainAlarm(remoteIP, deviceIP, flowObj);
-    } catch(err) {
+    } catch (err) {
       log.error("Error when check domain alarm", err);
     }
 
@@ -842,24 +875,24 @@ module.exports = class FlowMonitor {
 
     try {
       await this.checkIpAlarm(remoteIP, deviceIP, flowObj);
-    } catch(err) {
+    } catch (err) {
       log.error("Error when check IP alarm", err);
     }
   }
 
 
   updateURLPart(alarmPayload, flowObj) {
-    if("urls" in flowObj) {
-      if(flowObj.fd === 'in' ) {
+    if ("urls" in flowObj) {
+      if (flowObj.fd === 'in') {
         alarmPayload["p.dest.urls"] = flowObj.urls;
 
-        if(!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
+        if (!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
           alarmPayload["p.dest.url"] = `http://${flowObj.urls[0].url}`;
         }
       } else {
 
         alarmPayload["p.device.urls"] = flowObj.urls;
-        if(!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
+        if (!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
           alarmPayload["p.device.url"] = `http://${flowObj.urls[0].url}`;
         }
       }
@@ -875,7 +908,7 @@ module.exports = class FlowMonitor {
     log.info("Start check domain alarm for:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
 
-    if(!domain) {
+    if (!domain) {
       return; // directly return if it's not a valid domain
     }
 
@@ -907,7 +940,7 @@ module.exports = class FlowMonitor {
       return;
     }
 
-    if(intelObj.severityscore && Number(intelObj.severityscore) === 0) {
+    if (intelObj.severityscore && Number(intelObj.severityscore) === 0) {
       log.info("Intel ignored, severity score is zero", intelObj);
       return;
     }
@@ -960,7 +993,9 @@ module.exports = class FlowMonitor {
       "r.dest.whois": JSON.stringify(intelObj.whois),
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
-      "p.from": intelObj.from
+      "p.from": intelObj.from,
+      "p.intf.id": flowObj.intf,
+      "p.tag.ids": flowObj.tags
     };
 
     this.updateURLPart(alarmPayload, flowObj);
@@ -973,7 +1008,7 @@ module.exports = class FlowMonitor {
       alarm["p.action.block"] = true;
     }
 
-    if(flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
+    if (flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
       alarm["p.action.block"] = true;
     }
 
@@ -1018,7 +1053,8 @@ module.exports = class FlowMonitor {
     }
 
     let severity = iobj.severityscore > 50 ? "major" : "minor";
-    let reason = iobj.reason;
+    const reason = (_.isArray(iobj.category) && iobj.category.join(",")) || "";
+    const primaryReason = (_.isArray(iobj.category) && iobj.category.length > 0 && iobj.category[0]) || "";
 
     if (!fc.isFeatureOn("cyber_security")) {
       return;
@@ -1033,13 +1069,16 @@ module.exports = class FlowMonitor {
       "p.dest.name": domain || remoteIP,
       "p.dest.port": this.getRemotePort(flowObj),
       "p.security.reason": reason,
+      "p.security.primaryReason": primaryReason,
       "p.security.numOfReportSources": iobj.count,
       "p.local_is_client": (flowObj.fd === 'in' ? "1" : "0"),
       // "p.dest.whois": JSON.stringify(iobj.whois),
       "p.severity.score": iobj.severityscore,
       "p.from": iobj.from,
       "e.device.ports": this.getDevicePorts(flowObj),
-      "e.dest.ports": this.getRemotePorts(flowObj)
+      "e.dest.ports": this.getRemotePorts(flowObj),
+      "p.intf.id": flowObj.intf,
+      "p.tag.ids": flowObj.tags
     };
 
     this.updateURLPart(alarmPayload, flowObj);
@@ -1050,7 +1089,7 @@ module.exports = class FlowMonitor {
       alarm["p.action.block"] = true
     }
 
-    if(flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
+    if (flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
       alarm["p.action.block"] = true;
     }
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2020 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,13 +16,17 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+if [[ $(uname -m) == "x86_64" ]]; then
+    exit 0
+fi
+
 SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
 LOGGER=/usr/bin/logger
 
 err() {
     msg="$@"
     echo "ERROR: $msg" >&2
-    sudo -u pi /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
+    sudo -u pi  /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
 get_value() {
@@ -121,7 +125,8 @@ ethernet_ip() {
 gateway_pingable() {
     gw=$(ip route show dev eth0 | awk '/default/ {print $3; exit; }')
     if [[ -n "$gw" ]]; then
-        ping -c1 -w3 $gw >/dev/null
+        # some router might not reply to ping
+        ping -c1 -w3 $gw >/dev/null || sudo nmap -sP -PR $gw |grep "Host is up" &> /dev/null
     else
         return 1
     fi
@@ -132,7 +137,7 @@ dns_resolvable() {
 }
 
 github_api_ok() {
-    curl -L -m10 https://api.github.com/zen &> /dev/null || nc -z 1.1.1.1 443 &> /dev/null
+    curl -L -m10 https://api.github.com/zen &> /dev/null || nc -w 5 -z 1.1.1.1 443 &> /dev/null
 }
 
 reboot_if_needed() {
@@ -190,90 +195,52 @@ while ! ethernet_ip ; do
 done
 echo OK
 
+function check_with_timeout() {
+  message=$1
+  action=$2
+  reboot=$3
+
+  echo -n "Trying to $message ... "
+  tmout=15
+  while ! $action; do
+    if [[ $tmout -gt 0 ]]; then
+      (( tmout-- ))
+    else
+      if [[ $restored -eq $NOT_RESTORED ]]; then
+        echo "fail - restore"
+        $LOGGER "failed to $message, restore network configurations"
+        restore_values
+        restored=$RESTORED_AND_NEED_START_OVER
+        break;
+      else
+        skip=$([ ! -z "$reboot" ] && 'skipped')
+        echo "fail - reboot $skip"
+        $LOGGER "FIREWALLA:FIX_NETWORK:failed to $message, even after restore, reboot $skip"
+        if [ -z "$reboot" ]; then reboot_if_needed; fi
+      fi
+    fi
+    sleep 1
+  done
+  if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
+    restored=$RESTORED
+    return 1
+  fi
+  echo OK
+  return 0
+}
+
 : ${CHECK_FIX_NETWORK_RETRY:='yes'}
 while [[ -n $CHECK_FIX_NETWORK_RETRY ]]; do
     # only run once if requires NO retry
     test $CHECK_FIX_NETWORK_RETRY == 'no' && unset CHECK_FIX_NETWORK_RETRY
-    echo -n "checking gateway ... "
-    tmout=15
-    while ! gateway_pingable; do
-        if [[ $tmout -gt 0 ]]; then
-            (( tmout-- ))
-        else
-            if [[ $restored -eq $NOT_RESTORED ]]; then
-                echo "fail - restore"
-                $LOGGER "failed to ping gateway, restore network configurations"
-                restore_values
-                restored=$RESTORED_AND_NEED_START_OVER
-                break;
-            else
-                echo "fail - reboot"
-                $LOGGER "FIREWALLA:FIX_NETWORK:failed to ping gateway, even after restore, reboot"
-                reboot_if_needed
-            fi
-        fi
-        sleep 1
-    done
-    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
-      restored=$RESTORED
-      continue
-    fi
-    echo OK
 
-    echo -n "checking DNS ... "
-    tmout=15
-    while ! dns_resolvable; do
-        if [[ $tmout -gt 0 ]]; then
-            (( tmout-- ))
-        else
-            if [[ $restored -eq $NOT_RESTORED ]]; then
-                echo "fail - restore"
-                $LOGGER "failed to resolve DNS, restore network configurations"
-                restore_values
-                restored=$RESTORED_AND_NEED_START_OVER
-                break
-            else
-                echo "fail - reboot"
-                $LOGGER "FIREWALLA:FIX_NETWORK:failed to resolve DNS, even after restore, reboot"
-                reboot_if_needed
-            fi
-        fi
-        sleep 1
-    done
-    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
-      restored=$RESTORED
-      continue
-    fi
-    echo OK
+    if ! check_with_timeout "ping gateway" gateway_pingable 0; then continue; fi
 
-    echo -n "checking github REST API ... "
-    tmout=15
-    while ! github_api_ok; do
-        if [[ $tmout -gt 0 ]]; then
-            (( tmout-- ))
-        else
-            if [[ $restored -eq $NOT_RESTORED ]]; then
-                echo "fail - restore"
-                $LOGGER "failed to reach github API, restore network configurations"
-                restore_values
-                restored=$RESTORED_AND_NEED_START_OVER
-                break
-            else
-                $LOGGER "FIREWALLA:FIX_NETWORK:failed to reach github API, even after restore, reboot"
-                echo "fail - reboot"
-# comment out on purpose                reboot_if_needed
-            fi
-        fi
-        sleep 1
-    done
-    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
-      restored=$RESTORED
-      continue
-    fi
-    echo OK
+    if ! check_with_timeout "resolve DNS" dns_resolvable 0; then continue; fi
+
+    if ! check_with_timeout "test github API" github_api_ok 1; then continue; fi
 
     break
-
 done
 
 $LOGGER "FIRE_CHECK DONE ... "
