@@ -2117,11 +2117,18 @@ class PolicyManager2 {
       switch (action) {
         case 'create':
           for (const rawPolicy of rawData) {
-            const { policy, alreadyExists } = await this.checkAndSaveAsync(new Policy(rawPolicy));
-            results[action].push({
-              policy: policy,
-              error: alreadyExists == 'duplicated'
-            });
+            try {
+              const { policy, alreadyExists } = await this.checkAndSaveAsync(new Policy(rawPolicy));
+              results[action].push({
+                policy: policy,
+                error: alreadyExists == 'duplicated'
+              });
+            } catch (err) {
+              results[action].push({
+                policy: undefined,
+                error: true
+              });
+            }
           }
           break;
         case 'update':
@@ -2144,16 +2151,22 @@ class PolicyManager2 {
           break;
         case 'delete':
           for (const policyID of rawData) {
+            let error = false;
             let policy = await this.getPolicy(policyID);
             if (policy) {
-              await this.disableAndDeletePolicy(policyID);
-              policy.deleted = true;
+              try {
+                await this.disableAndDeletePolicy(policyID);
+                policy.deleted = true;
+              } catch (e) {
+                error = true;
+              }
             } else {
+              error = true;
               log.warn(`invalid policy ${policyID}`);
             }
             results[action].push({
               policy: policy,
-              error: !policy
+              error: error
             });
           }
           break;
@@ -2161,13 +2174,20 @@ class PolicyManager2 {
         case 'disable':
           const pmAction = action == 'enable' ? this.enablePolicy : this.disablePolicy;
           for (const policyID of rawData) {
+            let error = false;
             let policy = await this.getPolicy(policyID);
             if (policy) {
-              await pmAction.bind(this)(policy);
+              try {
+                await pmAction.bind(this)(policy);
+              } catch (e) {
+                error = true;
+              }
+            } else {
+              error = true;
             }
             results[action].push({
-              policy:policy,
-              error:!policy
+              policy: policy,
+              error: error
             });
           }
           break;

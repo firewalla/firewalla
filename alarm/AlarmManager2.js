@@ -1592,14 +1592,30 @@ module.exports = class {
       switch (action) {
         case 'delete':
           for (const alarmID of rawData) {
-            await this.removeAlarmAsync(alarmID)
-            results[action].push(alarmID);
+            let error = false;
+            try {
+              await this.removeAlarmAsync(alarmID)
+            } catch (e) {
+              error = true;
+            }
+            results[action].push({
+              alarmID: alarmID,
+              error: error
+            });
           }
           break;
         case 'archive':
           for (const alarmID of rawData) {
-            const ids = await this.ignoreAlarm(alarmID, {})
-            results[action] = results[action].concat(ids);
+            let error = false, ids = [];
+            try {
+              ids = await this.ignoreAlarm(alarmID, {})
+            } catch (e) {
+              error = true;
+            }
+            results[action].push({
+              alarmIDs: ids,
+              error: error
+            });
           }
           break;
       }
