@@ -308,6 +308,9 @@ class SpoofingDeviceAlarm extends Alarm {
   localizedNotificationContentArray() {
     return [this["p.device.name"], this["p.device.ip"]];
   }
+  isSecurityAlarm(){
+    return true;
+  }
 }
 
 class VPNClientConnectionAlarm extends Alarm {
@@ -445,6 +448,9 @@ class VulnerabilityAlarm extends Alarm {
   needPolicyMatch(){
     return true;
   }
+  isSecurityAlarm(){
+    return true;
+  }
 
   getI18NCategory() {
     return util.format("%s_%s", this.type, this["p.vid"]);
@@ -478,6 +484,9 @@ class BroNoticeAlarm extends Alarm {
   }
 
   needPolicyMatch(){
+    return true;
+  }
+  isSecurityAlarm(){
     return true;
   }
 
@@ -552,6 +561,9 @@ class IntelAlarm extends Alarm {
     this["p.dest.readableName"] = this.getReadableDestination();
   }
   needPolicyMatch(){
+    return true;
+  }
+  isSecurityAlarm(){
     return true;
   }
 

@@ -309,6 +309,17 @@ module.exports = class {
       log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
     })
 
+    // record security alarm count on hostInfo
+    if (alarm['p.device.mac'] && alarm.isSecurityAlarm()) {
+      const mac = alarm['p.device.mac'].toUpperCase();
+      try {
+        await rclient.hincrbyAsync(`host:mac:${mac}`, 'security_alarm', 1)
+      } catch (err) {
+        log.warn(`Faied to count security alarm ${alarm['p.device.mac']}`, err);
+      }
+    }
+    
+
     return alarm.aid;
   }
 
