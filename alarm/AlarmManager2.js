@@ -66,6 +66,9 @@ const fConfig = require('../net2/config.js').getConfig();
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+
 const Queue = require('bee-queue')
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -312,8 +315,9 @@ module.exports = class {
     // record security alarm count on hostInfo
     if (alarm['p.device.mac'] && alarm.isSecurityAlarm()) {
       const mac = alarm['p.device.mac'].toUpperCase();
+      const macKey = hostTool.getMacKey(mac);
       try {
-        await rclient.hincrbyAsync(`host:mac:${mac}`, 'security_alarm', 1)
+        await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
       } catch (err) {
         log.warn(`Faied to count security alarm ${alarm['p.device.mac']}`, err);
       }
