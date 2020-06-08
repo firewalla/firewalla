@@ -80,6 +80,12 @@ class Alarm {
     //    this.validate(type);
 
   }
+  needPolicyMatch() {
+    return false;
+  }
+  isSecurityAlarm() {
+    return false;
+  }
 
   getManagementType() {
     return "";
