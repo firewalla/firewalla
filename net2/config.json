@@ -5,9 +5,13 @@
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
+  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
+  "firewallaSocketIOURL": "https://firewalla.encipher.io",
+  "SocketIOPath": "/socket",
+  "SocketIODevPath": "/socket.v0",
   "cacheInit": true,
   "discovery": {
     "networkInterfaces": [
@@ -97,7 +101,7 @@
     "DHCPSensor": {},
     "UPNPSensor": {
       "interval": 600,
-      "expireInterval": 3600
+      "expireInterval": 1800
     },
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
@@ -430,7 +434,7 @@
         "count": 10000
       },
       "dns": {
-        "expires": 100000,
+        "expires": 86400,
         "count": 100
       },
       "software": {

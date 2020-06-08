@@ -668,6 +668,7 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
+    domains = domains.sort();
     for (const domain of domains) {
       blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
@@ -1093,9 +1094,12 @@ module.exports = class DNSMASQ {
 
     hosts.forEach(h => {
       try {
-        if (h.intfIp) h.intfIp = JSON.parse(h.intfIp)
+        if (h.intfIp)
+          h.intfIp = JSON.parse(h.intfIp);
+        if (h.dhcpIgnore)
+          h.dhcpIgnore = JSON.parse(h.dhcpIgnore);
       } catch(err) {
-        log.error('Invalid host:mac->intfIp', h.intfIp, err)
+        log.error('Failed to convert intfIp or dhcpIgnore', h.intfIp, h.dhcpIgnore, err)
         delete h.intfIp
       }
     })
@@ -1114,6 +1118,10 @@ module.exports = class DNSMASQ {
     let hostsList = []
 
     for (const h of hosts) {
+      if (h.dhcpIgnore === true) {
+        hostsList.push(`${h.mac},ignore`);
+        continue;
+      }
       const monitor = h.spoofing === 'true' ? 'monitor' : 'unmonitor';
       let reserved = false;
       for (const intf of sysManager.getMonitoringInterfaces()) {
@@ -1220,7 +1228,7 @@ module.exports = class DNSMASQ {
     }
 
     const alternativeRange = this.getDhcpRange("alternative");
-    const alternativeRouterIp = sysManager.myGateway();
+    const alternativeRouterIp = sysManager.myDefaultGateway();
     const alternativeMask = sysManager.myIpMask();
     let alternativeDnsServers = sysManager.myDefaultDns().join(',');
     if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {
@@ -1495,7 +1503,7 @@ module.exports = class DNSMASQ {
     try {
       let md5sumNow = '';
       for (const confs of paths) {
-        const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
+        const stdout = await execAsync(`find ${confs} -type f | xargs cat | sort | md5sum | awk '{print $1}'`).then(r => r.stdout).catch((err) => null);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);

@@ -23,7 +23,7 @@ const cronParser = require('cron-parser');
 
 const _ = require('lodash');
 const flat = require('flat');
-
+const iptool = require('ip');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
 function arraysEqual(a, b) {
@@ -132,7 +132,7 @@ class Policy {
     if (!policy) {
       return false
     }
-    if (!policy instanceof Policy)
+    if (!(policy instanceof Policy))
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
 
     if (
@@ -194,6 +194,10 @@ class Policy {
 
   match(alarm) {
 
+    if (!alarm.needPolicyMatch()) {
+      return false;
+    }
+
     if (this.action == 'allow') {
       return false;
     }
@@ -245,11 +249,28 @@ class Policy {
       }
     }
 
+    if (this.localPort && alarm['p.device.port']) {
+      const notInRange = this.portInRange(this.localPort, alarm['p.device.port']);
+      if (!notInRange) return false;
+    }
+
+    if (this.remotePort && alarm['p.dest.port']) {
+      const notInRange = this.portInRange(this.remotePort, alarm['p.dest.port']);
+      if (!notInRange) return false;
+    }
+
     // for each policy type
     switch (this.type) {
       case "ip":
         if (alarm['p.dest.ip']) {
           return this.target === alarm['p.dest.ip']
+        } else {
+          return false
+        }
+        break
+      case "net":
+        if (alarm['p.dest.ip']) {
+          return iptool.cidrSubnet(this.target).contains(alarm['p.dest.ip'])
         } else {
           return false
         }
@@ -308,6 +329,20 @@ class Policy {
 
         return false;
         break
+      case "remotePort":
+        if (alarm['p.dest.port']) {
+          return this.portInRange(this.target, alarm['p.dest.port'])
+        } else {
+          return false;
+        }
+        break;
+      case 'country':
+        if (alarm['p.dest.country']) {
+          return alarm['p.dest.country'] == this.target;
+        } else {
+          return false;
+        }
+        break;
       default:
         return false
         break
@@ -342,6 +377,29 @@ class Policy {
     }
 
     return flat.flatten(p);
+  }
+
+  portInRange(portRange, port) {
+    // portRange 555 || 555-666
+    // port '600' || '[52492,61734]'
+    portRange = (portRange || '').split('-');
+    if (portRange.length == 1) portRange.push(portRange[0]); // [555,555]
+    if (_.isString(port)) {
+      try {
+        port = JSON.parse(port);
+      } catch (e) {
+        port = (port || 0) * 1;
+      }
+    }
+    if (_.isArray(port)) {
+      let allInRange = true;
+      for (const p of port) {
+        allInRange = allInRange && portRange[0] * 1 <= p && p <= portRange[1] * 1;
+        if (!allInRange) return false;
+      }
+    } else {
+      return portRange[0] * 1 <= port && port <= portRange[1] * 1;
+    }
   }
 }
 

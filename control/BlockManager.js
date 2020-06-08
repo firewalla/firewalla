@@ -25,7 +25,10 @@ const intelTool = new IntelTool();
 const _ = require('lodash');
 const fc = require('../net2/config.js');
 const featureName = 'smart_block';
-let instance = null
+let instance = null;
+const expiring = 24 * 60 * 60 * 3;  // three days
+
+const asyncNative = require('../util/asyncNative.js');
 
 class BlockManager {
     constructor() {
@@ -67,33 +70,57 @@ class BlockManager {
     ipBlockInfoKey(ip) {
         return `ip:block:info:${ip}`
     }
+    domainBlockInfoKey(domain) {
+        return `domain:block:info:${domain}`
+    }
+    categoryDomainBlockInfoKey(domain) {
+        return `category:block:info:${domain}`
+    }
     getCategoryIpMapping(category) {
         return `rdns:category:${category}`
     }
-    async getPureCategoryIps(category, categoryIps) {
+    async getPureCategoryIps(category, categoryIps, originDomain) {
         if (!fc.isFeatureOn(featureName)) {
             return categoryIps;
         }
-        const pureCategoryIps = [], mixupCategoryIps = [];
+        const pureCategoryIps = [], mixupCategoryIps = [], mixupIpInfos = [];
         try {
-            const now = new Date();
             for (const categoryIp of categoryIps) {
                 let pure = true;
+                let mixupDomain;
+                let mixupCategory;
                 const domains = await dnsTool.getAllDns(categoryIp);
                 for (const domain of domains) {
+                    mixupDomain = domain;
                     const ips = await dnsTool.getIPsByDomain(domain);
                     for (const ip of ips) {
-                        const intel = await intelTool.getIntel(ip);
-                        pure = pure && intel && intel.category == category;
+                        const intel = (await intelTool.getIntel(ip)) || {};
+                        mixupCategory = intel.category;
+                        pure = pure && intel.category == category;
                         if (!pure) break;
                     }
                     if (!pure) break;
                 }
-                pure ? pureCategoryIps.push(categoryIp) : mixupCategoryIps.push(categoryIp);
+                if (pure) {
+                    pureCategoryIps.push(categoryIp)
+                } else {
+                    mixupCategoryIps.push(categoryIp);
+                    mixupIpInfos.push({
+                        ip: categoryIp,
+                        mixupDomain: mixupDomain,
+                        mixupCategory: mixupCategory
+                    })
+                }
             }
             const categoryIpMappingKey = this.getCategoryIpMapping(category);
             mixupCategoryIps.length > 0 && await rclient.sremAsync(categoryIpMappingKey, mixupCategoryIps);
             pureCategoryIps.length > 0 && await rclient.saddAsync(categoryIpMappingKey, pureCategoryIps);
+            const categoryDomainBlockInfoKey = this.categoryDomainBlockInfoKey(originDomain);
+            await rclient.setAsync(categoryDomainBlockInfoKey, JSON.stringify({
+                pureCategoryIps: pureCategoryIps,
+                mixupIpInfos: mixupIpInfos
+            }))
+            rclient.expireat(categoryDomainBlockInfoKey, parseInt((+new Date) / 1000) + expiring);
         } catch (e) {
             log.info("get pure category ips failed", e)
         }
@@ -104,34 +131,37 @@ class BlockManager {
     }
     async scheduleRefreshBlockLevel() {
         const ipBlockKeys = await rclient.keysAsync("ip:block:info:*");
-        log.info('schedule refresh block level for these ips:', ipBlockKeys)
-        ipBlockKeys.map(async (key) => {
-            let ipBlockInfo = JSON.parse(await rclient.getAsync(key));
-            const { targetDomains, ip, blockLevel, blockSet } = ipBlockInfo;
-            const allDomains = await dnsTool.getAllDns(ip);
-            const sharedDomains = _.differenceWith(allDomains, targetDomains, (a, b) => {
-                return this.domainCovered(b, a);
-            });
-            if (sharedDomains.length == 0 && blockLevel == 'domain') {
-                Block.block(ip, blockSet)
+        log.info('schedule refresh block level for these ips:', ipBlockKeys);
+        await asyncNative.eachLimit(ipBlockKeys, 10, async (key) => {
+            const ipBlockInfoString = await rclient.getAsync(key);
+            try {
+                let ipBlockInfo = JSON.parse(ipBlockInfoString);
+                if (!ipBlockInfo) {
+                    await rclient.delAsync(key);
+                    return;
+                }
+                const { targetDomains, ip, blockLevel, blockSet } = ipBlockInfo;
+                const allDomains = await dnsTool.getAllDns(ip);
+                const sharedDomains = _.differenceWith(allDomains, targetDomains, (a, b) => {
+                    return this.domainCovered(b, a);
+                });
+                if (sharedDomains.length == 0 && blockLevel == 'domain') {
+                    await Block.block(ip, blockSet)
+                }
+                if (sharedDomains.length > 0 && blockLevel == 'ip') {
+                    await Block.unblock(ip, blockSet);
+                }
+                ipBlockInfo.ts = new Date() / 1000;
+                ipBlockInfo.sharedDomains = sharedDomains;
+                ipBlockInfo.allDomains = allDomains;
+                await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+            } catch (err) {
+                log.warn(`refresh block level ${ipBlockInfoString} error`, err);
+                await rclient.delAsync(key);
             }
-            if (sharedDomains.length > 0 && blockLevel == 'ip') {
-                Block.unblock(ip, blockSet);
-            }
-            ipBlockInfo.ts = new Date() / 1000;
-            ipBlockInfo.sharedDomains = sharedDomains;
-            ipBlockInfo.allDomains = allDomains;
-            await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
-        })
+        });
     }
     async updateIpBlockInfo(ip, domain, action, blockSet = 'block_domain_set') {
-        if (!fc.isFeatureOn(featureName)) {
-            return {
-                blockLevel: 'ip'
-            };
-        }
-        const key = this.ipBlockInfoKey(ip);
-        const exist = (await rclient.existsAsync(key) == 1);
         let ipBlockInfo = {
             blockSet: blockSet,
             ip: ip,
@@ -140,68 +170,90 @@ class BlockManager {
             allDomains: [],
             ts: new Date() / 1000
         }
-        if (exist) {
-            ipBlockInfo = JSON.parse(await rclient.getAsync(key));
-        }
-        switch (action) {
-            case 'block': {
-                // if the ip shared with other domain, should not apply ip level block
-                // if a.com and b.com share ip and one of them block, it should be domain level
-                // if both block, should update to ip level
-                !ipBlockInfo.targetDomains.includes(domain) && ipBlockInfo.targetDomains.push(domain);
-                const allDomains = await dnsTool.getAllDns(ip);
-                const sharedDomains = _.differenceWith(allDomains, ipBlockInfo.targetDomains, (a, b) => {
-                    return this.domainCovered(b, a);
-                });
-                sharedDomains.length > 0 && log.info(`${ipBlockInfo.targetDomains.join(',')} ip ${ip} shared with domains ${sharedDomains.join(',')}`)
-                if (sharedDomains.length == 0) {
-                    ipBlockInfo.blockLevel = 'ip';
-                } else {
-                    ipBlockInfo.blockLevel = 'domain';
-                }
-                ipBlockInfo.sharedDomains = sharedDomains;
-                ipBlockInfo.allDomains = allDomains;
-                ipBlockInfo.ts = new Date() / 1000;
-                await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
-                break;
+        let exist;
+        if (!fc.isFeatureOn(featureName)) {
+            ipBlockInfo.blockLevel = 'ip';
+        } else {
+            const key = this.ipBlockInfoKey(ip);
+            exist = (await rclient.existsAsync(key) == 1);
+            if (exist) {
+                ipBlockInfo = JSON.parse(await rclient.getAsync(key));
             }
-            case 'unblock': {
-                !ipBlockInfo.sharedDomains.includes(domain) && ipBlockInfo.sharedDomains.push(domain);
-                ipBlockInfo.targetDomains = _.filter(ipBlockInfo.targetDomains, (a) => {
-                    return a != domain;
-                })
-                if (ipBlockInfo.targetDomains.length == 0) {
-                    await rclient.delAsync(key);
-                } else {
+            switch (action) {
+                case 'block': {
+                    // if the ip shared with other domain, should not apply ip level block
+                    // if a.com and b.com share ip and one of them block, it should be domain level
+                    // if both block, should update to ip level
+                    !ipBlockInfo.targetDomains.includes(domain) && ipBlockInfo.targetDomains.push(domain);
+                    const allDomains = await dnsTool.getAllDns(ip);
+                    const sharedDomains = _.differenceWith(allDomains, ipBlockInfo.targetDomains, (a, b) => {
+                        return this.domainCovered(b, a);
+                    });
+                    sharedDomains.length > 0 && log.info(`${ipBlockInfo.targetDomains.join(',')} ip ${ip} shared with domains ${sharedDomains.join(',')}`)
+                    if (sharedDomains.length == 0) {
+                        ipBlockInfo.blockLevel = 'ip';
+                    } else {
+                        ipBlockInfo.blockLevel = 'domain';
+                    }
+                    ipBlockInfo.sharedDomains = sharedDomains;
+                    ipBlockInfo.allDomains = allDomains;
                     ipBlockInfo.ts = new Date() / 1000;
-                    ipBlockInfo.blockLevel = 'domain';
                     await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+                    break;
                 }
-                break;
-            }
-            case 'newDomain': {
-                if (exist) {
-                    // it is old ip and new domain
-                    const { blockSet, targetDomains } = ipBlockInfo;
-                    const alreayExistInTargetDomains = _.find(targetDomains, (targetDomain) => {
-                        return this.domainCovered(targetDomain, domain);
+                case 'unblock': {
+                    !ipBlockInfo.sharedDomains.includes(domain) && ipBlockInfo.sharedDomains.push(domain);
+                    ipBlockInfo.targetDomains = _.filter(ipBlockInfo.targetDomains, (a) => {
+                        return a != domain;
                     })
-                    if (!alreayExistInTargetDomains) {
-                        if (ipBlockInfo.blockLevel == 'ip') {
-                            log.info('ip block level change when new doamin comming', ip, domain)
-                            ipBlockInfo.blockLevel = 'domain';
-                            Block.unblock(ip, blockSet);
-                        }
-                        ipBlockInfo.sharedDomains.push(domain);
-                        ipBlockInfo.allDomains = await dnsTool.getAllDns(ip);
+                    if (ipBlockInfo.targetDomains.length == 0) {
+                        await rclient.delAsync(key);
+                    } else {
                         ipBlockInfo.ts = new Date() / 1000;
+                        ipBlockInfo.blockLevel = 'domain';
                         await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
                     }
+                    break;
                 }
-                break;
+                case 'newDomain': {
+                    if (exist) {
+                        // it is old ip and new domain
+                        const { blockSet, targetDomains } = ipBlockInfo;
+                        const alreayExistInTargetDomains = _.find(targetDomains, (targetDomain) => {
+                            return this.domainCovered(targetDomain, domain);
+                        })
+                        if (!alreayExistInTargetDomains) {
+                            if (ipBlockInfo.blockLevel == 'ip') {
+                                log.info('ip block level change when new doamin comming', ip, domain)
+                                ipBlockInfo.blockLevel = 'domain';
+                                await Block.unblock(ip, blockSet);
+                            }
+                            ipBlockInfo.sharedDomains.push(domain);
+                            ipBlockInfo.allDomains = await dnsTool.getAllDns(ip);
+                            ipBlockInfo.ts = new Date() / 1000;
+                            await rclient.setAsync(key, JSON.stringify(ipBlockInfo));
+                        }
+                    }
+                    break;
+                }
             }
         }
+        if (action == 'block' || action == 'unblock' || (action == 'newDomain' && exist)) {
+            await this.updateDomainBlockInfo(domain, ipBlockInfo);
+        }
         return ipBlockInfo;
+    }
+    async updateDomainBlockInfo(domain, ipBlockInfo) {
+        const key = this.domainBlockInfoKey(domain);
+        let domainBlockInfo = await rclient.getAsync(key);
+        try {
+            domainBlockInfo = JSON.parse(domainBlockInfo) || {};
+        } catch (err) {
+            domainBlockInfo = {};
+        }
+        domainBlockInfo[ipBlockInfo.ip] = ipBlockInfo;
+        await rclient.setAsync(key, JSON.stringify(domainBlockInfo));
+        rclient.expireat(key, parseInt((+new Date) / 1000) + expiring);
     }
     domainCovered(blockDomain, otherDomain) {
         // a.b.com covred x.a.b.com

@@ -68,7 +68,7 @@ async function createCustomizedRoutingTable(tableName) {
 
 async function createPolicyRoutingRule(from, iif, tableName, priority, fwmark, af = 4) {
   from = from || "all";
-  let cmd = `ip -${af} rule list`; 
+  let cmd = `ip -${af} rule list`;
   let result = await exec(cmd);
   let rule = `from ${from} `;
   if (fwmark) {
@@ -100,7 +100,7 @@ async function createPolicyRoutingRule(from, iif, tableName, priority, fwmark, a
   }
 }
 
-async function removePolicyRoutingRule(from, iif, tableName, fwmark, af = 4) {
+async function removePolicyRoutingRule(from, iif, tableName, priority, fwmark, af = 4) {
   from = from || "all";
   let cmd = `ip -${af} rule list`;
   let result = await exec(cmd);

@@ -77,19 +77,26 @@ sudo ipset flush monitored_net_set
 
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
+if [[ $(uname -m) != "x86_64" ]]; then
+  sudo iptables -w -F FORWARD
+  sudo iptables -w -t nat -F PREROUTING
+  sudo ip6tables -w -F FORWARD
+  sudo ip6tables -w -t nat -F PREROUTING
+fi
+
 # destroy chains in previous version, these should be removed in next release
-sudo iptables -F FW_BLOCK &>/dev/null && sudo iptables -X FW_BLOCK
-sudo iptables -F FW_NAT_BLOCK &>/dev/null && sudo iptables -X FW_NAT_BLOCK
-sudo iptables -F FW_WHITELIST_PREROUTE &>/dev/null && sudo iptables -X FW_WHITELIST_PREROUTE
-sudo iptables -F FW_WHITELIST &>/dev/null && sudo iptables -X FW_WHITELIST
-sudo iptables -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo iptables -X FW_NAT_WHITELIST_PREROUTE
-sudo iptables -F FW_NAT_WHITELIST &>/dev/null && sudo iptables -X FW_NAT_WHITELIST
-sudo ip6tables -F FW_BLOCK &>/dev/null && sudo ip6tables -X FW_BLOCK
-sudo ip6tables -F FW_NAT_BLOCK &>/dev/null && sudo ip6tables -X FW_NAT_BLOCK
-sudo ip6tables -F FW_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -X FW_WHITELIST_PREROUTE
-sudo ip6tables -F FW_WHITELIST &>/dev/null && sudo ip6tables -X FW_WHITELIST
-sudo ip6tables -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -X FW_NAT_WHITELIST_PREROUTE
-sudo ip6tables -F FW_NAT_WHITELIST &>/dev/null && sudo ip6tables -X FW_NAT_WHITELIST
+sudo iptables -w -F FW_BLOCK &>/dev/null && sudo iptables -w -X FW_BLOCK
+sudo iptables -w -t nat -F FW_NAT_BLOCK &>/dev/null && sudo iptables -w -t nat -X FW_NAT_BLOCK
+sudo iptables -w -F FW_WHITELIST_PREROUTE &>/dev/null && sudo iptables -w -X FW_WHITELIST_PREROUTE
+sudo iptables -w -F FW_WHITELIST &>/dev/null && sudo iptables -w -X FW_WHITELIST
+sudo iptables -w -t nat -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo iptables -w -t nat -X FW_NAT_WHITELIST_PREROUTE
+sudo iptables -w -t nat -F FW_NAT_WHITELIST &>/dev/null && sudo iptables -w -t nat -X FW_NAT_WHITELIST
+sudo ip6tables -w -F FW_BLOCK &>/dev/null && sudo ip6tables -w -X FW_BLOCK
+sudo ip6tables -w -t nat -F FW_NAT_BLOCK &>/dev/null && sudo ip6tables -w -t nat -X FW_NAT_BLOCK
+sudo ip6tables -w -F FW_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -w -X FW_WHITELIST_PREROUTE
+sudo ip6tables -w -F FW_WHITELIST &>/dev/null && sudo ip6tables -w -X FW_WHITELIST
+sudo ip6tables -w -t nat -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -w -t nat -X FW_NAT_WHITELIST_PREROUTE
+sudo ip6tables -w -t nat -F FW_NAT_WHITELIST &>/dev/null && sudo ip6tables -w -t nat -X FW_NAT_WHITELIST
 
 
 rules_to_remove=`ip rule list | grep -v -e "^501:" | grep -v -e "^1001:" | grep -v -e "^2001:" | grep -v -e "^3000:" | grep -v -e "^3001:" | grep -v -e "^4001:" | grep -v -e "^5001:" | grep -v -e "^5002:" | grep -v -e "^6001:" | grep -v -e "^7001:" | grep -v -e "^8001:" | grep -v -e "^9001:" | grep -v -e "^10001:" | cut -d: -f2-`;

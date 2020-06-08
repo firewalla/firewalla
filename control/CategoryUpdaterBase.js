@@ -154,7 +154,7 @@ class CategoryUpdaterBase {
     const categoryIps = await rclient.smembersAsync(key);
     const BlockManager = require('./BlockManager.js');
     const blockManager = new BlockManager();
-    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
+    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, category);
     if(pureCategoryIps.length==0)return;
     let cmd4 = `echo "${pureCategoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     await exec(cmd4).catch((err) => {

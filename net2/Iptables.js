@@ -276,7 +276,7 @@ function iptables(rule, callback) {
         let cmdline = [];
 
         cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_PREROUTING_PORT_FORWARD -p ${protocol} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
-        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort} -j FW_POSTROUTING_HAIRPIN`));
+        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
 
         log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
         cp.exec(cmdline.join(";"), (err, stdout, stderr) => {

@@ -44,12 +44,6 @@ module.exports = class SpooferManager {
     if (!instance) {
       this.spoofStarted = false;
       this.registeredSpoofInstances = {};
-      /*
-      (async () => {
-        const gatewayIp = sysManager.myGateway();
-        this.gatewayMac = await hostTool.getMacByIP(gatewayIp);
-      })();
-      */
 
       if (firewalla.isMain()) {
         // feature change listener

@@ -133,7 +133,7 @@ async function batchSetupIpset(elements, ipset, remove = false) {
   const v4Set = ipset;
   const v6Set = ipset + '6';
   const gateway6 = sysManager.myGateway6();
-  const gateway = sysManager.myGateway();
+  const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = remove ? 'del' : 'add';
   
@@ -174,7 +174,7 @@ function setupIpset(element, ipset, remove = false) {
     ipset = ipset + '6';
   }
   const gateway6 = sysManager.myGateway6()
-  const gateway = sysManager.myGateway()
+  const gateway = sysManager.myDefaultGateway()
   //Prevent gateway IP from being added into blocking IP set dynamically
   if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {
     return

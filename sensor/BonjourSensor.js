@@ -140,13 +140,13 @@ class BonjourSensor extends Sensor {
       return new Promise((resolve, reject) => {
         l2.getMAC(ipAddr, (err, mac) => {
           if (err) {
-            log.error("Not able to find mac address for host:", ipAddr, mac);
+            log.warn("Not able to find mac address for host:", ipAddr, mac);
             resolve(null);
           } else {
             if (!mac) {
               const myMac = sysManager.myMACViaIP4(ipAddr) || null;
               if (!myMac)
-                log.error("Not able to find mac address for host:", ipAddr, mac);
+                log.warn("Not able to find mac address for host:", ipAddr, mac);
               resolve(myMac);
             } else {
               ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
@@ -157,7 +157,7 @@ class BonjourSensor extends Sensor {
       })
     } else if (new Address6(ipAddr).isValid()) {
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
-        log.error("Not able to find mac address for host:", ipAddr, err);
+        log.warn("Not able to find mac address for host:", ipAddr, err);
         return null;
       })
       if (mac && sysManager.isMyMac(mac))
@@ -166,7 +166,7 @@ class BonjourSensor extends Sensor {
       if (!mac) {
         const myMac = sysManager.myMACViaIP6(ipAddr) || null;
         if (!myMac)
-          log.error("Not able to find mac address for host:", ipAddr, mac);
+          log.warn("Not able to find mac address for host:", ipAddr, mac);
         return myMac
       } else {
         ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };

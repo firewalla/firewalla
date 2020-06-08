@@ -70,13 +70,15 @@ class UPNPSensor extends Sensor {
   }
 
   isExpired(mapping) {
-    return mapping.expire && mapping.expire < Math.floor(Date.now() / 1000);
+    const retentionPeriod = this.config.expireInterval || 1800;
+    return !mapping.lastSeen || mapping.lastSeen < (Math.floor(Date.now() / 1000) - retentionPeriod) || (mapping.expire && mapping.expire < Math.floor(Date.now() / 1000));
   }
 
   mergeResults(curMappings, preMappings) {
 
     curMappings.forEach((mapping) => {
       mapping.expire = (mapping.ttl && mapping.ttl > 0) ? Math.floor(Date.now() / 1000) + mapping.ttl : null;
+      mapping.lastSeen = Math.floor(Date.now() / 1000);
     });
 
     const fullMappings = [...curMappings, ...preMappings];

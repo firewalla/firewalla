@@ -649,7 +649,7 @@ class FlowAggregationSensor extends Sensor {
 
         // change after store
         flowUtil.hashIntelFlows(allFlows, hashCache)
-        await bone.flowgraphAsync('summarizeApp', allFlows)
+//        await bone.flowgraphAsync('summarizeApp', allFlows)
 //        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
       } else {
         await flowAggrTool.setCleanedAppActivity(begin, end, {}, options) // if no data, set an empty {}
@@ -736,7 +736,7 @@ class FlowAggregationSensor extends Sensor {
 
         // change after store
         flowUtil.hashIntelFlows(allFlows, hashCache);
-        await bone.flowgraphAsync('summarizeActivity', allFlows);
+//        await bone.flowgraphAsync('summarizeActivity', allFlows);
 //        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
       } else {
         await flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options) // if no data, set an empty {}
