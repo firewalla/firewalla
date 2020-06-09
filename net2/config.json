@@ -435,7 +435,7 @@
         "count": 10000
       },
       "dns": {
-        "expires": 100000,
+        "expires": 86400,
         "count": 100
       },
       "software": {

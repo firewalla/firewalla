@@ -493,6 +493,11 @@ class Host {
     await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
+
+    if (policy.dhcpIgnore === true) {
+      await rclient.hsetAsync("host:mac:" + this.o.mac, "dhcpIgnore", "true");
+    }
 
     if (policy.allocations) {
       const intfIp = {}

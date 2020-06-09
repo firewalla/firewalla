@@ -1948,11 +1948,11 @@ class netBot extends ControllerBot {
           } else {
             target = target.toUpperCase();
           }
-          const { downloadStats, uploadStats, totalDownload, totalUpload,
+          const { download, upload, totalDownload, totalUpload,
             monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
           this.simpleTxData(msg, {
-            downloadStats: downloadStats,
-            uploadStats: uploadStats,
+            download: download,
+            upload: upload,
             totalDownload: totalDownload,
             totalUpload: totalUpload,
             monthlyBeginTs: monthlyBeginTs,
@@ -2018,6 +2018,8 @@ class netBot extends ControllerBot {
   }
 
   async validateFlowAppIntel(json) {
+    return;
+
     // await bone.flowgraphAsync(...)
     let flows = json.flows
 
@@ -2042,6 +2044,8 @@ class netBot extends ControllerBot {
   }
 
   async validateFlowCategoryIntel(json) {
+    return;
+
     // await bone.flowgraphAsync(...)
     let flows = json.flows
 

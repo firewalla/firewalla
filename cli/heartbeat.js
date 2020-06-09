@@ -37,6 +37,7 @@ const exec = require('child-process-promise').exec;
 const fs = require('fs');
 const io2 = require('socket.io-client');
 const os = require('os');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const socket = io2(
   "https://api.firewalla.com",
   { path: "/socket",
@@ -45,6 +46,19 @@ const socket = io2(
 );
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
+
+const launchTime = Math.floor(new Date() / 1000);
+
+let uid = null;
+
+function getUniqueID(info) {
+  const randomNumber = Math.floor(Math.random() * 1000000);
+  if(info.mac) {
+    return `${info.mac.toUpperCase()}-${launchTime}-${randomNumber}`;
+  } else {
+    return `INVALID_MAC-${launchTime}-${randomNumber}`;
+  }
+}
 
 function log(message) {
   console.log(new Date(), message);
@@ -76,27 +90,26 @@ async function getCpuTemperature() {
   return await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
 }
 
-function getEthernets() {
-    const ifs = os.networkInterfaces();
-    const eths = {};
-    const ethsNames = Object.keys(ifs).filter(name => name.match(/^eth/));
-    ethsNames.forEach(e => eths[e]=ifs[e]);
-    return eths;
+async function getIPLinks() {
+  const ipLinks = await getShellOutput("ip link show");
+  return ipLinks.split("\n");
 }
 
-async function getEthernetSpeed(ethsNames) {
+async function getEthernetSpeed() {
+    const eths = await getShellOutput("cd /sys/class/net; ls -1d eth* | fgrep -v .");
+    if (!eths) return "";
     const ethSpeed = {};
-    for (const eth of ethsNames) {
+    for (const eth of eths.split("\n")) {
       ethSpeed[eth] = await getShellOutput(`sudo ethtool ${eth} | awk '/Speed:/ {print $2}'`);
     }
     return ethSpeed;
 }
 
-async function getGatewayMac() {
+async function getGatewayMacPrefix() {
   const gwIP = await getShellOutput("route -n | awk '$1 == \"0.0.0.0\" {print $2}'");
   if ( gwIP ) {
-    const gwMac = await getShellOutput(`arp -a -n | grep ${gwIP} -w | awk '{print $4}'`);
-    return gwMac;
+    const gwMacPrefix = await getShellOutput(`arp -a -n | grep ${gwIP} -w | awk '{print $4}' | cut -d: -f1-3`);
+    return gwMacPrefix;
   } else {
     return '';
   }
@@ -120,53 +133,71 @@ async function getLicenseInfo() {
 }
 
 async function getSysinfo(status) {
-  const eths = getEthernets();
+  const ifs = os.networkInterfaces();
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMac, hashRouter, hashWalla, licenseInfo, mac] =
+  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, hashRouter, hashWalla, licenseInfo, mac, redisEid] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
       getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
       getCpuTemperature(),
-      getEthernetSpeed(Object.keys(eths)),
-      getGatewayMac(),
+      getEthernetSpeed(),
+      getGatewayMacPrefix(),
       getLatestCommitHash("/home/pi/firerouter"),
       getLatestCommitHash("/home/pi/firewalla"),
       getLicenseInfo(),
-      getShellOutput("cat /sys/class/net/eth0/address")
+      getShellOutput("cat /sys/class/net/eth0/address"),
+      getShellOutput("redis-cli hget sys:ept eid")
     ]);
+
+  if(!uid) {
+    uid = getUniqueID({mac});
+  }
+
   return {
     arch,
     booted,
     btMac,
     cpuTemp,
-    eths,
+    ifs,
     ethSpeed,
     licenseInfo,
-    gatewayMac,
+    gatewayMacPrefix,
     hashRouter,
     hashWalla,
     mac,
     memory,
+    redisEid,
     status,
     timestamp,
-    uptime
+    uptime,
+    uid
   };
 }
 
-async function update(status) {
-  const info = await getSysinfo(status);
+async function update(status, extra) {
+  let info = await getSysinfo(status);
+  if(extra) {
+    info = Object.assign({}, info, extra);
+  }
   //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
   socket.emit('update', info);
+  return info;
 }
 
 const job = setTimeout(() => {
   update("schedule");
-}, 30 * 3600 * 1000);
+}, 24 * 3600 * 1000); // every day
 
-socket.on('connect', () => {
+/* DEBUG
+const job2 = setTimeout(() => {
+  update("schedule");
+}, 3000); // every 3 sec
+ */
+
+socket.on('connect', async () => {
   log("Connected to heartbeat server.");
   update('connect');
 });
@@ -175,11 +206,24 @@ socket.on('disconnect', () => {
   log("Disconnected from heartbeat server.");
 });
 
-socket.on("update", (data) => {
+socket.on('update', () => {
   update("cloud");
 });
 
 socket.on('reconnect', () => {
   log("Reconnected to heartbeat server.");
-  update('reconnect');
+  //update('reconnect');
 });
+
+const eventName = "FIREWALLA:HEARTBEAT:UPDATE";
+sclient.on("message", (channel, message) => {
+  if(channel === eventName) {
+    try {
+      const object = JSON.parse(message);
+      update('redis', object);
+    } catch(err) {
+      log("Failed to parse redis message.");
+    }
+  }
+});
+sclient.subscribe(eventName);
