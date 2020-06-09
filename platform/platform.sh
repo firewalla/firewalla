@@ -27,6 +27,7 @@ case "$UNAME" in
         BRO_PROC_NAME="zeek"
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         ;;
+    esac
     ;;
   "armv7l")
     source $FW_PLATFORM_DIR/red/platform.sh
