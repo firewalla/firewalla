@@ -36,6 +36,13 @@ class PlatformLoader {
     return this.platformName;
   }
 
+  getBoardName() {
+    if (!this.boardName) {
+      this.boardName = execSync("awk -F= '/BOARD=/ {print $2}' /etc/armbian-release",{encoding:'utf8'}).trim();
+    }
+    return this.boardName
+  }
+
   getPlatform() {
     if (this.platform) {
       return this.platform;
@@ -44,23 +51,36 @@ class PlatformLoader {
     const uname = this.getPlatformName();
 
     switch (uname) {
-    case "aarch64": {
-      const BluePlatform = require('./blue/BluePlatform.js');
-      this.platform = new BluePlatform();
-      break;
-    }
-    case "armv7l": {
-      const RedPlatform = require('./red/RedPlatform.js');
-      this.platform = new RedPlatform();
-      break;
-    }
-    case "x86_64": {
-      const GoldPlatform = require('./gold/GoldPlatform.js');
-      this.platform = new GoldPlatform();
-      break;
-    }
-    default:
-      return null;
+      case "aarch64": {
+        const boardName = this.getBoardName();
+        switch (boardName) {
+          case "nanopi-r2s": {
+            const NavyPlatform = require('./navy/NavyPlatform.js');
+            this.platform = new NavyPlatform();
+            break;
+          }
+          case "nanopineo2": {
+            const BluePlatform = require('./blue/BluePlatform.js');
+            this.platform = new BluePlatform();
+            break;
+          }
+          default:
+            return null;
+        }
+        break;
+      }
+      case "armv7l": {
+        const RedPlatform = require('./red/RedPlatform.js');
+        this.platform = new RedPlatform();
+        break;
+      }
+      case "x86_64": {
+        const GoldPlatform = require('./gold/GoldPlatform.js');
+        this.platform = new GoldPlatform();
+        break;
+      }
+      default:
+        return null;
     }
 
     return this.platform;
