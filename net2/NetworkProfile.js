@@ -549,6 +549,7 @@ async createEnv() {
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {
+        await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName}`).then(() => {
           return exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName6}`);
         }).catch((err) => {
@@ -569,6 +570,7 @@ async createEnv() {
     for (let uid of tags) {
       const tag = TagManager.getTagByUid(uid);
       if (tag) {
+        await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName}`).then(() => {
           return exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName6}`);
         }).catch((err) => {
