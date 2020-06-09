@@ -24,7 +24,7 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
-const domainBlock = require('../control/DomainBlock.js')();
+const domainBlock = require('../control/DomainBlock.js');
 const BlockManager = require('../control/BlockManager.js');
 const blockManager = new BlockManager();
 const exec = require('child-process-promise').exec
@@ -312,8 +312,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     const categoryIps = await rclient.zrangeAsync(mapping,0,-1);
-    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
-    if(pureCategoryIps.length==0) return; 
+    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
+    if(pureCategoryIps.length==0) return;
     // Existing sets and elements are not erased by restore unless specified so in the restore file.
     // -! ignores error on entries already exists
     let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
@@ -462,7 +462,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
       const categoryIps = await rclient.zrangeAsync(smappings,0,-1);
-      const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps);
+      const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
       if(pureCategoryIps.length==0)return;
       let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`

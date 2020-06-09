@@ -32,6 +32,8 @@ const hostTool = new HostTool();
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
 
+const Promise = require('bluebird');
+
 const _ = require('lodash');
 
 let instance = null;
@@ -487,7 +489,7 @@ class FlowTool {
   }
 
   async enrichWithIntel(flows) {
-    return await Promise.all(flows.map(async f => {
+    return await Promise.map(flows, async f => {
       // get intel from redis. if failed, create a new one
       const intel = await intelTool.getIntel(f.ip);
 
@@ -509,7 +511,7 @@ class FlowTool {
       }
 
       return f;
-    }));
+    }, {concurrency: 10}); // limit to 10
   }
 
   async getGlobalRecentConns(options) {

@@ -520,6 +520,7 @@ class SysManager {
   }
 
   getInterfaceViaIP4(ip) {
+    if(!ip) return null;
     const ipAddress = new Address4(ip)
     return this.getMonitoringInterfaces().find(i => i.subnetAddress4 && ipAddress.isInSubnet(i.subnetAddress4))
   }

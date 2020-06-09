@@ -52,6 +52,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
+const ip = require('ip')
 const _ = require('lodash');
 
 // not exposing these methods/properties
@@ -361,6 +362,7 @@ class FireRouter {
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
             .filter(intf => intf.state && intf.state.ip4) // ignore interfaces without ip address, e.g., VPN that is currently not running
+            .filter(intf => intf.state && intf.state.ip4 && ip.isPrivate(intf.state.ip4.split('/')[0]))
             .map(intf => intf.config.meta.intfName);
           break;
 
@@ -402,7 +404,7 @@ class FireRouter {
       // updates userConfig
       const intf = await networkTool.updateMonitoringInterface().catch((err) => {
         log.error('Error', err)
-      })
+      }) || "eth0"; // a fallback for red/blue
 
       const intf2 = intf + ':0'
 
@@ -506,13 +508,14 @@ class FireRouter {
         }
       }
 
-      monitoringIntfNames = [ intf ];
+      const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
+      monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
       logicIntfNames = [ intf ];
 
       const intf2Obj = intfList.find(i => i.name == intf2)
       if (intf2Obj && intf2Obj.ip_address) {
 
-        monitoringIntfNames.push(intf2);
+        if (wanOnPrivateIP) monitoringIntfNames.push(intf2);
         logicIntfNames.push(intf2);
         const subnet2 = intf2Obj.subnet
         intfNameMap[intf2] = {

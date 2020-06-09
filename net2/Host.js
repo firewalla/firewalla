@@ -493,6 +493,11 @@ class Host {
     await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
+
+    if (policy.dhcpIgnore === true) {
+      await rclient.hsetAsync("host:mac:" + this.o.mac, "dhcpIgnore", "true");
+    }
 
     if (policy.allocations) {
       const intfIp = {}
@@ -578,7 +583,7 @@ class Host {
       this.spoofing = false;
     }
 
-    const iface = sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
+    const iface = _.isString(this.o.ipv4Addr) && sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
     if (!iface || !iface.name) {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
       return;

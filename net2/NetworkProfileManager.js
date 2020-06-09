@@ -52,7 +52,7 @@ class NetworkProfileManager {
           return;
         if (_.isString(host.ipv4)) {
           const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
-          if (host.ipv4 !== intfInfo.gateway)
+          if (intfInfo && host.ipv4 !== intfInfo.gateway)
             return;
           const uuid = intfInfo && intfInfo.uuid
           if (!uuid)

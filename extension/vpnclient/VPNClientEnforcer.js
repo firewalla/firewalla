@@ -24,7 +24,8 @@ const routing = require('../routing/routing.js');
 const iptables = require('../../net2/Iptables.js');
 const wrapIptables = iptables.wrapIptables;
 const ipset = require('../../net2/Ipset.js');
-
+const platformLoader = require('../../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 const execAsync = util.promisify(cp.exec);
 
@@ -82,17 +83,24 @@ class VPNClientEnforcer {
     await routing.flushRoutingTable(tableName);
     // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
     await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`);
-    let cmd = "ip route list";
-    if (overrideDefaultRoute)
-      // do not copy default route from main routing table
-      cmd = "ip route list | grep -v default";
-    const routes = await execAsync(cmd);
-    await Promise.all(routes.stdout.split('\n').map(async route => {
-      if (route.length > 0) {
-        cmd = util.format("sudo ip route add %s table %s", route, tableName);
-        await execAsync(cmd).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
-      }
-    }));
+    if (platform.isFireRouterManaged()) {
+      // on firerouter-managed platform, no need to copy main routing table to the vpn client routing table
+      // but need to grant access to wan_routable table for packets from vpn interface
+      await routing.createPolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
+    } else {
+      // copy all routes from main routing table on non-firerouter-managed platform
+      let cmd = "ip route list";
+      if (overrideDefaultRoute)
+        // do not copy default route from main routing table
+        cmd = "ip route list | grep -v default";
+      const routes = await execAsync(cmd);
+      await Promise.all(routes.stdout.split('\n').map(async route => {
+        if (route.length > 0) {
+          cmd = util.format("sudo ip route add %s table %s", route, tableName);
+          await execAsync(cmd).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+        }
+      }));
+    }
     for (let routedSubnet of routedSubnets) {
       const cidr = ipTool.cidrSubnet(routedSubnet);
       // change subnet to ip route acceptable format
@@ -112,7 +120,8 @@ class VPNClientEnforcer {
     const rtId = await routing.createCustomizedRoutingTable(tableName);
     await routing.flushRoutingTable(tableName);
     // remove policy based rule
-    await routing.removePolicyRoutingRule("all", null, tableName, `${rtId}/0xffff`);
+    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`);
+    await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
   }
 
   _getVPNClientIPSetName(vpnIntf) {

@@ -149,6 +149,10 @@ class Platform {
     return true;
   }
 
+  defaultPassword() {
+    return null;
+  }
+
 }
 
 module.exports = Platform;

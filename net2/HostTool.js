@@ -414,7 +414,7 @@ class HostTool {
   }
 
   async linkMacWithIPv6(v6addr, mac, intf) {
-    await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr)
+    await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr).catch((err) => {});
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;

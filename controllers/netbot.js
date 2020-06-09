@@ -1948,11 +1948,11 @@ class netBot extends ControllerBot {
           } else {
             target = target.toUpperCase();
           }
-          const { downloadStats, uploadStats, totalDownload, totalUpload,
+          const { download, upload, totalDownload, totalUpload,
             monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
           this.simpleTxData(msg, {
-            downloadStats: downloadStats,
-            uploadStats: uploadStats,
+            download: download,
+            upload: upload,
             totalDownload: totalDownload,
             totalUpload: totalUpload,
             monthlyBeginTs: monthlyBeginTs,
@@ -2018,6 +2018,8 @@ class netBot extends ControllerBot {
   }
 
   async validateFlowAppIntel(json) {
+    return;
+
     // await bone.flowgraphAsync(...)
     let flows = json.flows
 
@@ -2042,6 +2044,8 @@ class netBot extends ControllerBot {
   }
 
   async validateFlowCategoryIntel(json) {
+    return;
+
     // await bone.flowgraphAsync(...)
     let flows = json.flows
 
@@ -2350,7 +2354,7 @@ class netBot extends ControllerBot {
         const mode = require('../net2/Mode.js');
         const dhcp = require("../extension/dhcp/dhcp.js");
         await mode.reloadSetupMode();
-        const routerIP = sysManager.myGateway();
+        const routerIP = sysManager.myDefaultGateway();
         let DHCPDiscover = false;
         if (routerIP) {
           DHCPDiscover = await dhcp.dhcpServerStatus(routerIP);
@@ -3749,7 +3753,7 @@ class netBot extends ControllerBot {
               break;
             }
             case "alternative": {
-              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
+              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myDefaultGateway() }; // default value is current ip/subnet/gateway on monitoring interface
               const updatedAltConfig = { gateway: intf.gateway };
               const altIpAddress = intf.ipAddress;
               const altSubnetMask = intf.subnetMask;
@@ -3855,7 +3859,7 @@ class netBot extends ControllerBot {
               }
               case "alternative": {
                 // convert ip/subnet to ip address and subnet mask
-                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myGateway() }; // default value is current ip/subnet/gateway on monitoring interface
+                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myDefaultGateway() }; // default value is current ip/subnet/gateway on monitoring interface
                 const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
                 this.hostManager.loadPolicy((err, data) => {
                   let alternativeDnsServers = sysManager.myDefaultDns();
@@ -4087,7 +4091,12 @@ class netBot extends ControllerBot {
   msgHandlerAsync(gid, rawmsg, from = 'app') {
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
-      this.rateLimiter[from].consume('msg_handler').then((rateLimiterRes) => {
+      let ignoreRate = false;
+      if (rawmsg && rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data) {
+        ignoreRate = rawmsg.message.obj.data.ignoreRate;
+      }
+      if (ignoreRate) {
+        log.info('ignore rate limit');
         this.msgHandler(gid, rawmsg, (err, response) => {
           if (processed)
             return;
@@ -4098,15 +4107,28 @@ class netBot extends ControllerBot {
             resolve(response);
           }
         })
-      }).catch((rateLimiterRes) => {
-        const error = {
-          "Retry-After": rateLimiterRes.msBeforeNext / 1000,
-          "X-RateLimit-Limit": this.rateLimiter[from].points,
-          "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
-        }
-        processed = true;
-        reject(error);
-      })
+      } else {
+        this.rateLimiter[from].consume('msg_handler').then((rateLimiterRes) => {
+          this.msgHandler(gid, rawmsg, (err, response) => {
+            if (processed)
+              return;
+            processed = true;
+            if (err) {
+              reject(err);
+            } else {
+              resolve(response);
+            }
+          })
+        }).catch((rateLimiterRes) => {
+          const error = {
+            "Retry-After": rateLimiterRes.msBeforeNext / 1000,
+            "X-RateLimit-Limit": this.rateLimiter[from].points,
+            "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
+          }
+          processed = true;
+          reject(error);
+        })
+      }
     })
   }
 
@@ -4131,7 +4153,7 @@ class netBot extends ControllerBot {
 
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
-        
+          
           if (rawmsg.message.appInfo) {
             this.processAppInfo(rawmsg.message.appInfo)
           }
@@ -4156,6 +4178,22 @@ class netBot extends ControllerBot {
               }
               sysManager.update((err) => {
                 this.hostManager.toJson(true, options, (err, json) => {
+
+                  // skip acl for old app for backward compatibility
+                  if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
+                    if(json && json.policy) {
+                      delete json.policy.acl;
+                    }
+
+                    if(json.hosts) {
+                      for (const host of json.hosts) {
+                        if(host && host.policy) {
+                          delete host.policy.acl;
+                        }
+                      }
+                    }
+                  }
+
                   let datamodel = {
                     type: 'jsonmsg',
                     mtype: 'init',

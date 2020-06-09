@@ -91,7 +91,7 @@ async function changeToAlternativeIpSubnet() {
     return;
   const altIpSubnet = fConfig.alternativeInterface.ip;
   const altGateway = fConfig.alternativeInterface.gateway;
-  const oldGateway = sysManager.myGateway();
+  const oldGateway = sysManager.myDefaultGateway();
   const oldIpSubnet = sysManager.mySubnet();
   // check if is same subnet
   const currIpSubnet = iptool.cidrSubnet(oldIpSubnet);

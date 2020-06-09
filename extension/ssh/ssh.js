@@ -32,6 +32,8 @@ var fileRSAPubKey = f.getUserHome() + "/.ssh/id_rsa.firewalla.pub";
 var RSAComment = "firewalla";
 var tempSSHPasswordLocation = f.getHiddenFolder() + "/.sshpasswd"
 
+const platform = require('../../platform/PlatformLoader.js').getPlatform();
+
 const execAsync = util.promisify(cp.exec);
 const readFileAsync = util.promisify(fs.readFile);
 
@@ -72,7 +74,12 @@ module.exports = class {
     jsonfile.readFile(tempSSHPasswordLocation, (err, obj) => {
       if(err) {
         if(err.code === 'ENOENT') {
-          callback(null, 'firewalla')
+          const defaultPassword = platform.defaultPassword();
+          if(defaultPassword) {
+            callback(null, defaultPassword);
+          } else {
+            callback(null, "")
+          }
         } else {
           callback(err);
         }
