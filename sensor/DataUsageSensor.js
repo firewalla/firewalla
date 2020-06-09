@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const HostManager = require("../net2/HostManager.js");
-const hostManager = new HostManager("cli", 'server', 'info');
+const hostManager = new HostManager();
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
 const FlowAggrTool = require('../net2/FlowAggrTool');
@@ -201,7 +201,7 @@ class DataUsageSensor extends Sensor {
         dataPlan = JSON.parse(dataPlan);
         const { date, total } = dataPlan;
         const { totalDownload, totalUpload, monthlyBeginTs, 
-                monthlyEndTs, downloadStats, uploadStats
+                monthlyEndTs, download, upload
             } = await hostManager.monthlyDataStats(null, date);
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
@@ -219,8 +219,8 @@ class DataUsageSensor extends Sensor {
                 "p.planUsage": total,
                 "p.alarm.level": level,
                 "e.transfers": {
-                    download: downloadStats,
-                    upload: uploadStats
+                    download: download,
+                    upload: upload
                 }
             });
             await alarmManager2.enqueueAlarm(alarm);

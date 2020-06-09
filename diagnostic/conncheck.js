@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC / Firewalla LLC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,9 +16,8 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const util = require('util');
-const ip = require('ip');
 const readline = require('readline');
+const Config = require('../net2/config.js');
 
 const cp = require('child-process-promise');
 
@@ -35,13 +34,13 @@ const hardTimeout = 30;
 async function getDestToCheck() {
   for (let i in availableTestDomains) {
     const testDomain = availableTestDomains[i];
-    let cmd = `dig -4 +short ${testDomain}`;
+    let cmd = `dig -4 +short +time=3 +tries=2 ${testDomain}`;
     try {
       const result = await cp.exec(cmd);
       const ips = result.stdout.split('\n').filter(ip => ip.length !== 0);
       for (let j in ips) {
         const ip = ips[j];
-        cmd = `nc -z ${ip} 443`;
+        cmd = `nc -w 5 -z ${ip} 443`;
         await cp.exec(cmd);
         // connection attempt succeeded, return this ip as dst ip
         return {
@@ -69,11 +68,12 @@ async function startConnCheck(src, dst, duration) {
     duration = hardTimeout;
   if (duration > 60)
     duration = 60; // test lasts at most 1 minute
+  const config = Config.getConfig(true);
   const srcIp = src.ip;
   const dstIp = dst.ip;
   const dstPort = dst.port;
   // src->dst with SYN flag, or dst->src with SYN-ACK flag
-  const tcpdumpSpawn = cp.spawn('sudo', ['timeout', duration, 'tcpdump', '-i', 'eth0', '-en', `port ${dstPort} && ((src ${srcIp} && dst ${dstIp} && tcp[13] & 2 != 0) || (src ${dstIp} && dst ${srcIp} && tcp[13] & 18 != 0))`]);
+  const tcpdumpSpawn = cp.spawn('sudo', ['timeout', duration, 'tcpdump', '-i', config.monitoringInterface, '-en', `port ${dstPort} && ((src ${srcIp} && dst ${dstIp} && tcp[13] & 2 != 0) || (src ${dstIp} && dst ${srcIp} && tcp[13] & 18 != 0))`]);
   tcpdumpSpawn.catch((err) => {}); // killed by timeout
   const tcpdump = tcpdumpSpawn.childProcess;
   const pid = tcpdump.pid;

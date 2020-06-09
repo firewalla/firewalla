@@ -1,4 +1,4 @@
-/*    Copyright 2018-2019 Firewalla INC
+/*    Copyright 2018-2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,36 +18,33 @@
  */
 'use strict';
 
-var express = require('express');
-var path = require('path');
-var logger = require('morgan');
-var cookieParser = require('cookie-parser');
-var bodyParser = require('body-parser');
-var argv = require('minimist')(process.argv.slice(2));
-var swagger = require("swagger-node-express");
-const passport = require('passport');
-//var Strategy = require('passport-http-bearer').Strategy;
-//var db = require('./db');
+const express = require('express');
+const path = require('path');
+const logger = require('morgan');
+const cookieParser = require('cookie-parser');
+const bodyParser = require('body-parser');
+const argv = require('minimist')(process.argv.slice(2));
+const swagger = require("swagger-node-express");
 
-let firewalla = require('../net2/Firewalla.js');
-let log = require('../net2/logger.js')(__filename, 'info')
+const firewalla = require('../net2/Firewalla.js');
+const log = require('../net2/logger.js')(__filename, 'info')
 
-var system = require('./routes/system');
-var message = require('./routes/message');
-var shadowsocks = require('./routes/shadowsocks');
-let dnsmasq = require('./routes/dnsmasq');
-let alarm = require('./routes/alarm');
-let flow = require('./routes/flow');
-let host = require('./routes/host');
-let mode = require('./routes/mode');
-let test = require('./routes/test');
-let policy = require('./routes/policy');
+const message = require('./routes/message');
+const shadowsocks = require('./routes/shadowsocks');
+const dnsmasq = require('./routes/dnsmasq');
+const alarm = require('./routes/alarm');
+const flow = require('./routes/flow');
+const host = require('./routes/host');
+const mode = require('./routes/mode');
+const test = require('./routes/test');
 
 // periodically update cpu usage, so that latest info can be pulled at any time
-let si = require('../extension/sysinfo/SysInfo.js');
+const si = require('../extension/sysinfo/SysInfo.js');
 si.startUpdating();
 
-var app = express();
+const app = express();
+
+app.set('title', 'FireAPI Local')
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
@@ -65,8 +62,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
-subpath_v1.use(passport.initialize());
-subpath_v1.use(passport.session());
 subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 

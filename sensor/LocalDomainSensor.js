@@ -17,63 +17,72 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const HostManager = require("../net2/HostManager.js");
-const hostManager = new HostManager("cli", 'client', 'info');
+const hostManager = new HostManager();
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const dnsmasq = new DNSMASQ();
 const featureName = 'local_domain';
 const f = require('../net2/Firewalla.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
-const LOCAL_DOMAIN_FILE = FILTER_DIR + "/local_device_domain.conf";
-const util = require('util');
+const ADDN_HOSTS_CONF = FILTER_DIR + "/addn_hosts.conf";
+const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 const fs = require('fs');
-const unlinkAsync = util.promisify(fs.unlink);
-const HostTool = require('../net2/HostTool.js')
-const hostTool = new HostTool();
-const updateFlag = "1";
-const rclient = require('../util/redis_manager.js').getRedisClient();
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+const exec = require('child-process-promise').exec;
 
 class LocalDomainSensor extends Sensor {
     constructor() {
         super();
-        this.newFeature = false;
     }
     async run() {
-        if (await rclient.hgetAsync("sys:upgrade", featureName) != updateFlag) {
-            this.newFeature = true;
-            await rclient.hsetAsync("sys:upgrade", featureName, updateFlag)
-        }
         this.hookFeature(featureName);
         sem.on('LocalDomainUpdate', async (event) => {
-            const macArr = event.macArr;
-            await dnsmasq.setupLocalDeviceDomain(macArr, true);
+            const macArr = event.macArr || [];
+            if (macArr.includes('0.0.0.0')) {
+                await this.localDomainSuffixUpdate();
+                return;
+            }
+            for (const mac of macArr) {
+                const host = await hostManager.getHostAsync(mac);
+                await host.updateHostsFile().catch((err) => {
+                    log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                });
+            }
         });
     }
     async globalOn() {
+        await exec(`mkdir -p ${HOSTS_DIR}`);
+        await fs.writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
+        dnsmasq.scheduleRestartDNSService();
         const hosts = await hostManager.getHostsAsync();
-        let macArr = [];
         for (const host of hosts) {
             if (host && host.o && host.o.mac) {
-                macArr.push(host.o.mac)
+                await host.updateHostsFile().catch((err) => {
+                    log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                });
             }
         }
-        if (this.newFeature) {
-            const promises = macArr.map(async (mac) => {
-                await hostTool.generateLocalDomain(mac);
-            })
-            await Promise.all(promises);
-        }
-        await dnsmasq.setupLocalDeviceDomain(macArr, true);
     }
     async globalOff() {
         try {
-            await unlinkAsync(LOCAL_DOMAIN_FILE);
-            dnsmasq.restartDnsmasq();
+            await fs.unlinkAsync(ADDN_HOSTS_CONF);
+            dnsmasq.scheduleRestartDNSService();
         } catch (err) {
             if (err.code === 'ENOENT') {
-                log.info(`Dnsmasq: No ${LOCAL_DOMAIN_FILE}, skip remove`);
+                log.info(`Dnsmasq: No ${ADDN_HOSTS_CONF}, skip remove`);
             } else {
-                log.warn(`Dnsmasq: Error when remove ${LOCAL_DOMAIN_FILE}`, err);
+                log.warn(`Dnsmasq: Error when remove ${ADDN_HOSTS_CONF}`, err);
+            }
+        }
+    }
+    async localDomainSuffixUpdate() {
+        const hosts = await hostManager.getHostsAsync();
+        for (const host of hosts) {
+            if (host && host.o && host.o.mac) {
+                await host.updateHostsFile().catch((err) => {
+                    log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
+                });
             }
         }
     }

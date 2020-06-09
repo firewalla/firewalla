@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla INC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -40,7 +40,7 @@ class DNSMASQSensor extends Sensor {
         throw err;
       })
       .then(async () => {
-        dnsmasq.start(false)
+        dnsmasq.scheduleStart();
       })
       .catch(err => log.error("Failed to start dnsmasq: " + err))
       .then(() => log.info("dnsmasq service is started successfully"));

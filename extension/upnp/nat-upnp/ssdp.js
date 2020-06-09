@@ -15,14 +15,16 @@ function Ssdp(opts) {
   this._boundCount = 0;
   this._closed = false;
   this._queue = [];
+  this.listenAddr = this._opts.listenAddr || null;
+  this.type = this._opts.type || 'udp4';
 
   // Create sockets on all external interfaces
   this.createSockets();
 }
 util.inherits(Ssdp, EventEmitter);
 
-ssdp.create = function create() {
-  return new Ssdp();
+ssdp.create = function create(opts) {
+  return new Ssdp(opts);
 };
 
 Ssdp.parseMimeHeader = function (headerStr) {
@@ -41,13 +43,19 @@ Ssdp.prototype.createSockets = function createSockets() {
   var self = this;
   var interfaces = os.networkInterfaces();
 
-  this.sockets = Object.keys(interfaces).reduce(function(a, key) {
-    return a.concat(interfaces[key].filter(function(item) {
-      return !item.internal;
-    }).map(function(item) {
-      return self.createSocket(item);
-    }));
-  }, []);
+  if (this.listenAddr) {
+    // os.networkInterfaces() will not return interface without carrier, even with an address configured on it
+    const socket = self.createSocket(this.listenAddr, this.type);
+    this.sockets = [socket];
+  } else {
+    this.sockets = Object.keys(interfaces).reduce(function(a, key) {
+      return a.concat(interfaces[key].filter(function(item) {
+        return !item.internal;
+      }).map(function(item) {
+        return self.createSocket(item.address, item.family === "IPv4" ? 'udp4' : 'udp6');
+      }));
+    }, []);
+  }
 };
 
 Ssdp.prototype.search = function search(device, promise) {
@@ -96,10 +104,12 @@ Ssdp.prototype.search = function search(device, promise) {
   return promise;
 };
 
-Ssdp.prototype.createSocket = function createSocket(interface) {
+Ssdp.prototype.createSocket = function createSocket(address, type = "udp4") {
   var self = this;
-  var socket = dgram.createSocket(interface.family === 'IPv4' ?
-                                  'udp4' : 'udp6');
+  var socket = dgram.createSocket({
+    type: type,
+    reuseAddr: true
+  });
 
   socket.on('message', function (message, info) {
     // Ignore messages after closing sockets
@@ -132,8 +142,8 @@ Ssdp.prototype.createSocket = function createSocket(interface) {
       onready();
     });
 
-    socket.address = interface.address;
-    socket.bind(self._sourcePort, interface.address);
+    socket.address = address;
+    socket.bind(self._sourcePort, address);
   });
 
   return socket;

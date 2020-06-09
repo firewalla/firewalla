@@ -35,7 +35,7 @@ class MonitoringOnAction extends CloudAction {
     }
 
     const HostManager = require('../../net2/HostManager.js');
-    const hm = new HostManager('cli', 'client');
+    const hm = new HostManager();
     const host = await hm.getHostAsync(mac);
     if(!host) {
       log.error(`Host not found for mac ${mac}`);

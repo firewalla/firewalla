@@ -4,52 +4,37 @@
 source ${FIREWALLA_HOME}/platform/platform.sh
 
 logger 'FIREWALLA.BROFISH Start '
-mkdir /firewalla
+mkdir -p /firewalla
 chmod 777 /firewalla
-
-sudo -u pi /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.BRO.DATE.SYNC"
-/home/pi/firewalla/scripts/fire-time.sh
-logger "FIREWALLA.BRO.DATE.SYNC.DONE"
 
 if [ -f  /bspool/tmp/post-term* ]; then
     echo "bro crashed, reboot"
     logger 'FIREWALLA: restart due to bro crashed'
     rm -r -f /bspool/*
     sync
-    /home/pi/firewalla/scripts/fire-reboot
+    $FIREWALLA_HOME/scripts/fire-reboot
 fi
-GITHUB_STATUS_API=https://status.github.com/api.json
-for i in `seq 1 10`; do
-    HTTP_STATUS_CODE=`curl -L -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
-    if [[ $HTTP_STATUS_CODE == "200" ]]; then
-      break
-    fi
-    sudo -u pi /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.BRO NO Network"
-    sleep 1
-done
 
-
-rm -r -f /blog/*
 rm -r -f /bspool/*
-umount /bspool
+umount -l /bspool
 mount -t tmpfs -o size=30m tmpfs /bspool
-cd /home/pi/firewalla
-sudo chown -R pi /home/pi/firewalla/.git
-branch=$(git rev-parse --abbrev-ref HEAD)
 
 sleep 3
 
-sudo cp etc/bro-cron /etc/cron.hourly/.
-
-sudo cp /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro
-sync
+sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourly/.
 
 before_bro
 
-/usr/local/bro/bin/broctl deploy & echo $! > /firewalla/bro.pid
+/usr/local/bro/bin/broctl deploy
 logger "FIREWALLA: Deployed BRO using BROCTL"
-sudo cp /home/pi/firewalla/etc/sysctl.conf /etc/sysctl.conf
+sudo cp $(get_sysctl_conf_path) /etc/sysctl.conf
 sudo sysctl -p
 
+cd $FIREWALLA_HOME
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $branch = "master" ]]; then
+  # enable core_dump for development branch
+  sudo sysctl -w kernel.core_pattern="/home/pi/core.%e"
+fi
+
 logger "FIREWALLA: BRO-RUN Finished"
-#(sleep 20; sudo -u pi crontab -r ; sudo -u pi crontab /home/pi/firewalla/etc/brotab)&

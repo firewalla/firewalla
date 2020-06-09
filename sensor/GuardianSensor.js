@@ -199,7 +199,7 @@ class GuardianSensor extends Sensor {
       const encryptedMessage = message.message;
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
       decryptedMessage.mtype = decryptedMessage.message.mtype;
-      const response = await controller.msgHandlerAsync(gid, decryptedMessage);
+      const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
 
       const input = new Buffer(JSON.stringify(response), 'utf8');
       const output = await deflateAsync(input);
@@ -212,10 +212,14 @@ class GuardianSensor extends Sensor {
 
       const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
 
-      this.socket.emit("send_from_box", {
-        message: encryptedResponse,
-        gid: gid
-      });
+      try {
+        this.socket.emit("send_from_box", {
+          message: encryptedResponse,
+          gid: gid
+        });
+      } catch (err) {
+        log.error('Socket IO connection error',err);
+      }
     }
   }
 }

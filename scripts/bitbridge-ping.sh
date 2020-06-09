@@ -17,7 +17,8 @@ bitbridge7_ping () {
 
 is_spoof_mode () {
     MODE=$(redis-cli get mode)
-    if [[ $MODE == "spoof" ]]; then
+    BONE_SPOOFOFF=$(redis-cli get sys:bone:spoofOff)
+    if [[ $MODE == "spoof" && -z $BONE_SPOOFOFF ]]; then
         return 0
     else
         return 1

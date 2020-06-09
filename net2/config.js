@@ -15,10 +15,11 @@
 
 'use strict'
 
-let log = require("./logger.js")(__filename, "info");
+const log = require("./logger.js")(__filename);
 
-let fs = require('fs');
-let f = require('./Firewalla.js');
+const fs = require('fs');
+const f = require('./Firewalla.js');
+const cp = require('child_process');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -45,12 +46,21 @@ async function updateUserConfig(updatedPart) {
   getConfig(true);
 }
 
+function updateUserConfigSync(updatedPart) {
+  getConfig(true);
+  userConfig = Object.assign({}, userConfig, updatedPart);
+  let userConfigFile = f.getUserConfigFolder() + "/config.json";
+  fs.writeFileSync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
+  getConfig(true);
+}
+
 async function removeUserNetworkConfig() {
   await getUserConfig(true);
   
   delete userConfig.alternativeInterface;
   delete userConfig.secondaryInterface;
   delete userConfig.wifiInterface;
+  delete userConfig.dhcpLeaseTime;
   
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
@@ -72,12 +82,19 @@ function getConfig(reload) {
     let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
-    try {
-      if(fs.existsSync(userConfigFile)) {
-        userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+    for (let i = 0; i !== 5; i++) {
+      try {
+        if (fs.existsSync(userConfigFile)) {
+          // let fileJson = fs.readFileSync(userConfigFile, 'utf8');
+          // log.info(`getConfig fileJson:${fileJson}` + new Error("").stack);
+          // userConfig = JSON.parse(fileJson);
+          userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+          break;
+        }
+      } catch (err) {
+        log.error(`Error parsing user config, retry count ${i}`, err);
+        cp.execSync('sleep 1');
       }
-    } catch(err) {
-      log.error("Error parsing user config");
     }
 
     let testConfig = {};
@@ -139,6 +156,11 @@ function isFeatureHidden(featureName) {
 }
 
 function isFeatureOn(featureName, defaultValue) {
+  // only enable smart_block on dev version temporarily
+  if(featureName == 'smart_block' && !f.isDevelopmentVersion()){
+    return false;
+  }
+
   if(isFeatureHidden(featureName)) {
     return false;
   }
@@ -279,6 +301,7 @@ function getSimpleVersion() {
 
 module.exports = {
   updateUserConfig: updateUserConfig,
+  updateUserConfigSync: updateUserConfigSync,
   getConfig: getConfig,
   getSimpleVersion: getSimpleVersion,
   getUserConfig: getUserConfig,

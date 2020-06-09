@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,11 +18,12 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
+
+const Config = require('./config.js');
 
 const Hashes = require('../util/Hashes.js');
 
@@ -34,7 +35,7 @@ const asyncNative = require('../util/asyncNative.js');
 
 const iptool = require('ip');
 
-const getPreferredBName = require('../util/util.js').getPreferredBName
+const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
 class HostTool {
@@ -43,8 +44,10 @@ class HostTool {
       instance = this;
 
       this.ipMacMapping = {};
+      this.config = Config.getConfig(true);
       setInterval(() => {
         this._flushIPMacMapping();
+        this.config = Config.getConfig(true);
       }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
     }
     return instance;
@@ -215,9 +218,12 @@ class HostTool {
 
   async getMacByIP(ip) {
     let host = null
-    if (ip === sysManager.myIp() || ip === sysManager.myIp2() || (sysManager.myIp6() && sysManager.myIp6().includes(ip)))
+    if (sysManager.isMyIP(ip) || sysManager.isMyIP6(ip)) {
       // shortcut for Firewalla's self IP
-      return sysManager.myMAC();
+      const myMac = sysManager.myMACViaIP4(ip) || sysManager.myMACViaIP6(ip);
+      if (myMac)
+        return myMac;
+    }
 
     if (iptool.isV4Format(ip)) {
       host = await this.getIPv4Entry(ip);
@@ -407,8 +413,8 @@ class HostTool {
     }
   }
 
-  async linkMacWithIPv6(v6addr, mac) {
-    await require('child-process-promise').exec("ping6 -c 3 -I eth0 " + v6addr)
+  async linkMacWithIPv6(v6addr, mac, intf) {
+    await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr).catch((err) => {});
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;
@@ -537,22 +543,25 @@ class HostTool {
       }
     }
 
-    return Object.values(activeHosts).map(h => h.mac).filter((mac, index, array) => array.indexOf(mac) == index)
+    return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
+  
   async generateLocalDomain(mac) {
-    const key = this.getMacKey(mac);
-    let customizeDomainName = await rclient.hgetAsync(key, "customizeDomainName");
-    let ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
-    let name = await rclient.hgetAsync(key, "name");
-    let bname = await rclient.hgetAsync(key, "bname")
-    if (!ipv4Addr || (!bname && !name && !customizeDomainName)) return;
+    if(!this.isMacAddress(mac)) {
+      return;
+    }
+    const macEntry = await this.getMACEntry(mac);
+    // customizeDomainName actually specifies hostname, domain corresponds to suffix
+    let customizedHostname = macEntry.customizeDomainName;
+    let ipv4Addr = macEntry.ipv4Addr;
+    let name = getPreferredName(macEntry);
+    if (!ipv4Addr || (!name && !customizedHostname)) return;
     name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
-    bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
-    name = name || bname;
-    customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
+    customizedHostname = customizedHostname && getCanonicalizedDomainname(customizedHostname.replace(/\s+/g, "."));
+    //const suffix = (await rclient.getAsync('local:domain:suffix')) || '.lan';
     await this.updateMACKey({
-      localDomain: name ? `${name}.lan` : '',
-      userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
+      localDomain: name || "",
+      userLocalDomain: customizedHostname || "",
       mac: mac
     }, true);
   }

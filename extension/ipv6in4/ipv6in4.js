@@ -27,8 +27,7 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird')
 
-const SysManager = require('../../net2/SysManager')
-const sysManager = new SysManager()
+const sysManager = require('../../net2/SysManager')
 
 const rp = require('request-promise')
 
@@ -121,7 +120,7 @@ class IPV6In4 {
 
   async enableTunnel() {
     log.info("Enabling tunnel...")
-    let myip = sysManager.myIp()
+    let myip = sysManager.myDefaultWanIp();
     let intf = fConfig.monitoringInterface || "eth0"
 
     try {

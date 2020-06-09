@@ -401,8 +401,10 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
       await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
-      await this.regularClean("dns", "rdns:ip:*");
+      await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
+      await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
+      await this.regularClean("networkConfigHistory", "history:networkConfig*")
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
@@ -452,8 +454,8 @@ class OldDataCleanSensor extends Sensor {
               target_name: hostInfo.name || hostInfo.bname || hostInfo.ipv4Addr,
               target_ip: hostInfo.ipv4Addr // target_name and target ip are necessary for old app display
             })
-            const result = await pm2.checkAndSaveAsync(newRule);
-            if (result) {
+            const { policy } = await pm2.checkAndSaveAsync(newRule);
+            if (policy) {
               await rclient.hsetAsync(key, "blockin", false);
               log.info("Migrated successfully")
             } else {

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,8 +42,7 @@ const clientMgmt = require('../mgmt/ClientMgmt.js');
 
 const config = require('../net2/config.js').getConfig();
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
+const sysManager = require('../net2/SysManager.js');
 
 const FW_SERVICE = "Firewalla";
 const FW_SERVICE_TYPE = "fb";
@@ -135,10 +134,19 @@ class FWInvitation {
       return null;
     }
 
-    await rclient.delAsync(key); // this should always be used only once
-
     try {
       const invite = JSON.parse(payload);
+      if(invite.ts) {
+        const procStartTime = Math.floor(new Date() / 1000) - process.uptime();
+        if (Number(invite.ts) >= procStartTime) {
+          // Only process local payload if the generation time of the payload is older than firekick process
+          // this is to ensure the existing running firekick won't process the payload
+          return null;
+        }
+      }
+
+      await rclient.delAsync(key); // this should always be used only once
+
       if(invite.eid && invite.license) {
         log.info("Going to pair through local:", invite.eid);
         return {
@@ -152,6 +160,7 @@ class FWInvitation {
       }
     } catch(err) {
       log.forceInfo("Invalid local payload:", payload)
+      await rclient.delAsync(key); // this should always be used only once
       return null
     }
   }
@@ -162,7 +171,7 @@ class FWInvitation {
       this.leftCheckCount--;
       let rinfo = await this.checkLocalInvitation();
       if(rinfo === null) {
-        rinfo = await this.cloud.eptinviteGroupByRidAsync(this.gid, rid);
+        rinfo = await this.cloud.eptinviteGroupByRid(this.gid, rid);
       }
       if(!rinfo || !rinfo.value) {
         throw new Error("Invalid rinfo");
@@ -190,38 +199,53 @@ class FWInvitation {
       if(userInfo && userInfo.license && userInfo.license.length != 8) {
         // validate license first
         await bone.waitUntilCloudReadyAsync();
-        let infs = await networkTool.getLocalNetworkInterface()
-        if(infs.length > 0) {
-          let mac = infs[0].mac_address;
+        const mac = await networkTool.getIdentifierMAC();
+        if (!mac)
+          return {
+            status: "pending"
+          };
+        try {
+          let lic = await bone.getLicenseAsync(userInfo.license, mac);
+          if (lic) {
+            const types = platform.getLicenseTypes();
+            if (types && lic.DATA && lic.DATA.LICENSE &&
+              lic.DATA.LICENSE.constructor.name === 'String' &&
+              !types.includes(lic.DATA.LICENSE.toLowerCase())) {
+              // invalid license
+              log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
 
-          try {
-            let lic = await bone.getLicenseAsync(userInfo.license, mac);
-            if(lic) {
-              const types = platform.getLicenseTypes();
-              if(types && lic.DATA && lic.DATA.LICENSE &&
-                lic.DATA.LICENSE.constructor.name === 'String' &&
-                !types.includes(lic.DATA.LICENSE.toLowerCase())) {
-                // invalid license
-                log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
-                return {
-                  status: "pending"
-                };
-              } else {
-                log.forceInfo("Got a new license");
-                log.info("Got a new license:", lic && lic.DATA && lic.DATA.UUID && lic.DATA.UUID.substring(0, 8));
-                await license.writeLicense(lic);
-              }
-            }
-          } catch(err) {
-            log.error("Invalid license");
-            return {
-              status : "pending"
+              // remove license record in redis
+              await rclient.delAsync("firereset:license");
+
+              // record license error
+              await rclient.setAsync("firereset:error", "invalid_license_type");
+
+              return {
+                status: "pending"
+              };
+            } else {
+              log.forceInfo("Got a new license");
+              log.info("Got a new license:", lic && lic.DATA && lic.DATA.UUID && lic.DATA.UUID.substring(0, 8));
+              await license.writeLicense(lic);
             }
           }
+        } catch (err) {
+          log.error("Invalid license", err);
+
+          // remove license record in redis
+          await rclient.delAsync("firereset:license");
+
+          // record license error
+          await rclient.setAsync("firereset:error", "invalid_license");
+          
+          return {
+            status: "pending"
+          }
         }
+
       }
 
-      let inviteResult = await this.cloud.eptinviteGroupAsync(this.gid, eid);
+      let inviteResult = await this.cloud.eptInviteGroup(this.gid, eid);
 
       // Record first binding time
       if(this.recordFirstBinding) {
@@ -243,7 +267,7 @@ class FWInvitation {
       };
 
     } catch(err) {
-      if(err != "404") {
+      if(err.statusCode != "404") {
         log.error(err);
       }
 
@@ -267,12 +291,12 @@ class FWInvitation {
 
     this.leftCheckCount = this.checkCount;
 
-    let obj = this.cloud.eptGenerateInvite(this.gid);
+    let obj = this.cloud.eptGenerateInvite();
 
     let txtfield = {
       'gid': this.gid,
       'seed': this.symmetrickey.seed,
-      'keyhint': 'You will find the key on the back of your device',
+      'keyhint': '',
       'service': FW_SERVICE,
       'type': FW_SERVICE_TYPE,
       'mid': uuid.v4(),
@@ -290,46 +314,44 @@ class FWInvitation {
     if(myIp) {
       icOptions.interface = myIp;
     }
-    
-    this.intercomm = require('../lib/intercomm.js')(icOptions);
-    
-    if (this.intercomm.bcapable()==false) {
+
       txtfield.verifymode = "qr";
-    } else {
-      this.intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
-    }
-
-    if(this.firstTime) {
-      txtfield.firsttime = '1'
-    }
-
-    txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
-
-    txtfield.model = platform.getName();
-
-    this.displayLicense(this.symmetrickey.license)
-    this.displayKey(this.symmetrickey.userkey);
-    //    this.displayInvite(obj); // no need to display invite in firewalla any more
-
-    network.get_private_ip((err, ip) => {
-      txtfield.ipaddress = ip;
-      const ip2 = sysManager.myIp2();
-      const otherAddrs = [];
-      if (ip2 && iptool.isV4Format(ip2))
-        otherAddrs.push(ip2);
-      txtfield.ipaddresses = otherAddrs.join(",");
-
-      log.info("TXT:", txtfield);
-      const serial = platform.getBoardSerial();
-      this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
-      this.displayBonjourMessage(txtfield);
-      this.storeBonjourMessage(txtfield);
-    });
-
-    if (this.intercomm.bcapable() != false) {
-      this.intercomm.bpublish(this.gid, obj.r, config.serviceType);
-    }
-
+  
+      if(this.firstTime) {
+        txtfield.firsttime = '1'
+      }
+  
+      txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
+  
+      txtfield.model = platform.getName();
+  
+  //    this.displayLicense(this.symmetrickey.license)
+  //    this.displayKey(this.symmetrickey.userkey);
+      //    this.displayInvite(obj); // no need to display invite in firewalla any more
+  
+      network.get_private_ip((err, ip) => {
+        txtfield.ipaddress = ip;
+        const ip2 = sysManager.myIp2();
+        const otherAddrs = [];
+        if (ip2 && iptool.isV4Format(ip2))
+          otherAddrs.push(ip2);
+        txtfield.ipaddresses = otherAddrs.join(",");
+  
+        if(obj.r && obj.r.length > 4) {
+          txtfield.rr = obj.r.substring(0,4);
+        }
+  
+        log.info("TXT:", txtfield);
+        const serial = platform.getBoardSerial();
+        if (platform.isBonjourBroadcastEnabled()) {
+          this.intercomm = require('../lib/intercomm.js')(icOptions);
+          this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
+        }
+        
+  //      this.displayBonjourMessage(txtfield);
+        this.storeBonjourMessage(txtfield);
+      });
+  
     const cmd = "awk '{print $1}' /proc/uptime";
     try {
       const result = await exec(cmd);
@@ -364,12 +386,11 @@ class FWInvitation {
   }
 
   stopBroadcast() {
-    if(this.intercomm) {
+    if(platform.isBonjourBroadcastEnabled() && this.intercomm) {
       this.service && this.intercomm.stop(this.service);
-      this.intercomm.bcapable() && this.intercomm.bstop();
       this.intercomm.bye();
-      this.unsetBonjourMessage();      
-    }    
+    }
+    this.unsetBonjourMessage();
   }
 }
 
