@@ -42,11 +42,11 @@ class NavyPlatform extends Platform {
   }
 
   getB4Binary() {
-    return `${f.getFirewallaHome()}/bin/real.aarch64/bitbridge7`;
+    return `${f.getFirewallaHome()}/bin/real.navy/bitbridge7`;
   }
 
   getB6Binary() {
-    return `${f.getFirewallaHome()}/bin/real.aarch64/bitbridge6`;
+    return `${f.getFirewallaHome()}/bin/real.navy/bitbridge6`;
   }
 
   getGCMemoryForMain() {
