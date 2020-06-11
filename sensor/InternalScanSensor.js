@@ -100,12 +100,13 @@ class InternalScanSensor extends Sensor {
         if (openPorts.udp && openPorts.udp.length > 0) {
           mergePorts = mergePorts.concat(openPorts.udp.map((port) => "udp_" + port));
         }
+        const hostName = host.name();
         const waitPorts = this.supportPorts.filter((portid) => mergePorts.includes(portid));
         log.info("Scanning device: ", host.o.ipv4Addr, waitPorts);
         for (const portid of waitPorts) {
           const nmapBrute = bruteConfig[portid];
           if (nmapBrute) {
-            await this.nmapGuessPassword(host.o.ipv4Addr, nmapBrute);
+            await this.nmapGuessPassword(host.o.ipv4Addr, hostName, nmapBrute);
           }
         }
       };
@@ -167,7 +168,7 @@ class InternalScanSensor extends Sensor {
     }
   }
 
-  async nmapGuessPassword(ipAddr, nmapBrute) {
+  async nmapGuessPassword(ipAddr, hostName, nmapBrute) {
     const { port, serviceName, protocol, scripts } = nmapBrute;
     let weakPasswords = [];
     for (const bruteScript of scripts) {
@@ -245,7 +246,7 @@ class InternalScanSensor extends Sensor {
       log.info(ipAddr, serviceName, protocol, port, weakPasswords);
       let alarm = new Alarm.WeakPasswordAlarm(
         Date.now() / 1000,
-        serviceName,
+        hostName,
         {
           'p.source': 'InternalScanSensor',
           'p.device.ip': ipAddr,
