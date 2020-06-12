@@ -4089,6 +4089,8 @@ class netBot extends ControllerBot {
   }
 
   msgHandlerAsync(gid, rawmsg, from = 'app') {
+    // msgHandlerAsync is direct callback mode
+    // will return value directly, not send to cloud
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
       let ignoreRate = false;
