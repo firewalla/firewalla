@@ -4089,6 +4089,8 @@ class netBot extends ControllerBot {
   }
 
   msgHandlerAsync(gid, rawmsg, from = 'app') {
+    // msgHandlerAsync is direct callback mode
+    // will return value directly, not send to cloud
     return new Promise((resolve, reject) => {
       let processed = false; // only callback once
       let ignoreRate = false;
@@ -4252,7 +4254,11 @@ class netBot extends ControllerBot {
           let appInfo = appTool.getAppInfo(rawmsg.message);
           this.getHandler(gid, msg, appInfo, callback);
         } else if (rawmsg.message.obj.mtype === "cmd") {
-          this.cmdHandler(gid, msg, callback);
+          if (msg.data.item == 'batchAction') {
+            this.batchHandler(gid, rawmsg, callback);
+          } else {
+            this.cmdHandler(gid, msg, callback);
+          }
         }
       }
     } else {
@@ -4270,6 +4276,50 @@ class netBot extends ControllerBot {
       });
     }
 
+  }
+
+  /*
+  value:[
+    strict single api message obj  {
+      "mtype": "cmd",
+      "data": {
+        "value": {
+          "featureName": "adblock"
+        },
+        "item": "enableFeature"
+      },
+      "type": "jsonmsg",
+      "target": "0.0.0.0"
+		}
+  ]
+
+  */
+  batchHandler(gid, rawmsg, callback) {
+    (async () => {
+      const batchActionObjArr = rawmsg.message.obj.data.value;
+      const copyRawmsg = JSON.parse(JSON.stringify(rawmsg));
+      const results = [];
+      for (const obj of batchActionObjArr) {
+        obj.type = "jsonmsg"
+        obj.data.ignoreRate = true;
+        copyRawmsg.message.obj = obj;
+        let result, error;
+        try {
+          result = await this.msgHandlerAsync(gid, copyRawmsg);
+        } catch (err) {
+          error = err;
+          log.info(`batch handler error`, obj, err);
+        }
+        results.push({
+          msg: obj,
+          result: result,
+          error: error
+        })
+      }
+      this.simpleTxData(rawmsg.message.obj, results, null, callback);
+    })().catch((err) => {
+      this.simpleTxData(rawmsg.message.obj, {}, err, callback);
+    });
   }
 
   helpString() {
