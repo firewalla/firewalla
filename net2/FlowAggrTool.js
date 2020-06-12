@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -306,7 +306,7 @@ class FlowAggrTool {
 
   setLastSumFlow(target, trafficDirection, keyName) {
     let key = "";
-    
+
     if(target) {
       key = util.format("lastsumflow:%s:%s", target, trafficDirection);
     } else {
@@ -345,7 +345,7 @@ class FlowAggrTool {
             const ports = json.port;
             if(!dest) {
               continue;
-            }  
+            }
             if(results[dest]) {
               results[dest] += count
             } else {
@@ -428,7 +428,7 @@ class FlowAggrTool {
             const key = json[xy];
             if(!key) {
               continue;
-            }            
+            }
             if(results[key]) {
               results[key] += count
             } else {
@@ -440,7 +440,7 @@ class FlowAggrTool {
         }
       }
     }
-    
+
     let array = [];
     for(const category in results) {
       const count = Math.floor(results[category]);
@@ -666,7 +666,7 @@ class FlowAggrTool {
     let key = util.format("lastcategory:host:%s", mac);
     return rclient.getAsync(key);
   }
-  
+
   async removeAggrFlowsAllTag(tag) {
     let keys = [];
 

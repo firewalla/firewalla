@@ -35,6 +35,8 @@ const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
 const FlowManager = require('./FlowManager.js');
 const flowManager = new FlowManager('debug');
+const FlowAggrTool = require('./FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
 
 const FireRouter = require('./FireRouter.js');
 
@@ -54,9 +56,6 @@ const policyManager2 = new PolicyManager2();
 
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
-
-const NetBotTool = require('../net2/NetBotTool');
-const netBotTool = new NetBotTool();
 
 const SpooferManager = require('./SpooferManager.js')
 
@@ -155,9 +154,9 @@ module.exports = class HostManager {
               log.warn("Iptables is not ready yet");
               return;
             }
-  
+
             this.scheduleExecPolicy();
-  
+
             /*
             this.loadPolicy((err,data)=> {
                 log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
@@ -306,6 +305,7 @@ module.exports = class HostManager {
     }
     json.hosts = _hosts;
   }
+
   async yesterdayStatsForInit(json, target) {
     const downloadKey = `download${target ? ':' + target : ''}`;
     const uploadKey = `upload${target ? ':' + target : ''}`;
@@ -328,6 +328,7 @@ module.exports = class HostManager {
 
     return json;
   }
+
   async newLast24StatsForInit(json, target) {
     const subKey = target ? ':' + target : ''
     let downloadStats = await getHitsAsync("download" + subKey, "1hour", 24)
@@ -354,8 +355,7 @@ module.exports = class HostManager {
     let days = now.getDate();
     const month = now.getMonth(),
       year = now.getFullYear(),
-      lastMonthDays = new Date(year, month, 0).getDate(),
-      currentMonthDays = new Date(year, month + 1, 0).getDate();
+      lastMonthDays = new Date(year, month, 0).getDate();
     let monthlyBeginTs, monthlyEndTs;
     if (date && date != 1) {
       if (days < date) {
@@ -525,10 +525,11 @@ module.exports = class HostManager {
   async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
-    let promises = this.hosts.all.map((host) => flowManager.getStats2(host));
-    await Promise.all(promises);
+    for (const host of this.hosts.all) {
+      host.flowsummary = await flowManager.getTargetStats(host.o.mac)
+    }
     await this.loadHostsPolicyRules();
-    await this.hostsInfoForInit(json);
+    this.hostsInfoForInit(json);
     return json;
   }
 
@@ -933,7 +934,7 @@ module.exports = class HostManager {
           this.networkProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
-          netBotTool.loadSystemStats(json)
+          this.loadSystemStats(json)
         ];
 
         this.basicDataForInit(json, options);
@@ -1034,7 +1035,7 @@ module.exports = class HostManager {
         return host;
       }
 
-      
+
     } else {
       o = await dnsManager.resolveLocalHostAsync(target)
 
@@ -1219,7 +1220,7 @@ module.exports = class HostManager {
             this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
           }
         }
-        
+
         hostbymac.update(o);
       }
       hostbymac._mark = true;
@@ -1361,7 +1362,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    
+
   }
 
   async getVpnActiveDeviceCount(profileId) {
@@ -1546,7 +1547,7 @@ module.exports = class HostManager {
             await this.setPolicyAsync("vpnClient", updatedPolicy);
           });
           await ovpnClient.stop();
-          // will do no harm to unenforce strict VPN even if strict VPN is not set  
+          // will do no harm to unenforce strict VPN even if strict VPN is not set
           await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
           return {running: false, reconnecting: 0};
         }
@@ -1663,7 +1664,7 @@ module.exports = class HostManager {
         inftMap[host.intf] = [host.mac];
       }
     });
-    
+
     return _.map(inftMap, (macs, intf) => {
       return {intf, macs: _.uniq(macs)};
     });
@@ -1764,6 +1765,7 @@ module.exports = class HostManager {
       }
     }
   }
+
   generateStats(downloadStats = [], uploadStats = []) {
     let totalDownload = 0, totalUpload = 0;
     downloadStats.forEach((s) => {
@@ -1778,5 +1780,72 @@ module.exports = class HostManager {
       totalUpload: totalUpload,
       totalDownload: totalDownload
     }
+  }
+
+  async loadSystemStats(json) {
+    const systemFlows = {};
+
+    const keys = ['upload', 'download'];
+
+    for(const key of keys) {
+      const lastSumKey = `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+
+      const elements = realSumKey.split(":")
+      if(elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+
+      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, 50);
+
+      const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        flows: enriched
+      }
+    }
+
+    const actitivityKeys = ['app', 'category'];
+
+    for(const key of actitivityKeys) {
+
+      const lastSumKey = `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+
+      const elements = realSumKey.split(":")
+      if(elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+
+      const traffic = await flowAggrTool.getXYActivitySumFlowByKey(realSumKey, key, 50);
+
+      traffic.sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        activities: traffic
+      }
+    }
+
+    json.systemFlows = systemFlows;
   }
 }
