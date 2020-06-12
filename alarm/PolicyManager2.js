@@ -112,6 +112,7 @@ class PolicyManager2 {
       this.disableAllTimer = null;
 
       this.ipsetCache= null;
+      this.ipsetCacheUpdateTime = null;
       this.sortedActiveRulesCache = null;
     }
     return instance;
@@ -1871,8 +1872,10 @@ class PolicyManager2 {
   }
 
   async checkACL(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
-    if (!this.ipsetCache)
+    if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
       this.ipsetCache = await ipset.readAllIpsets() || {};
+      this.ipsetCacheUpdateTime = Date.now() / 1000
+    }
     if (!this.sortedActiveRulesCache) {
       const activeRules = await this.loadActivePoliciesAsync() || [];
       this.sortedActiveRulesCache = activeRules.map(rule => {
@@ -2081,6 +2084,9 @@ class PolicyManager2 {
           break;
         }
         case "category": {
+          const domains = await domainBlock.getCategoryDomains(rule.target);
+          if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
+            return rule;
           const remoteSet4 = categoryUpdater.getIPSetName(rule.target);
           const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target);
           if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
