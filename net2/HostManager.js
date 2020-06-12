@@ -978,7 +978,8 @@ module.exports = class HostManager {
           json.isBindingOpen = 0;
         }
 
-        json.localDomainSuffix = (await rclient.get('local:domain:suffix')) || '.lan';
+        const suffix = await rclient.get('local:domain:suffix');
+        json.localDomainSuffix = suffix ? suffix : 'lan';
         callback(null, json);
       } catch(err) {
         log.error("Caught error when preparing init data: " + err);
