@@ -919,6 +919,29 @@ class SubnetAlarm extends Alarm {
   }
 }
 
+class WeakPasswordAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_WEAK_PASSWORD', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return ['p.device.ip', 'p.open.protocol', 'p.open.port', 'p.weakpasswords'];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup();
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.weak_password.cooldown') || super.getExpirationTime();
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.device.name"], this["p.open.protocol"], this["p.open.port"], this["p.open.servicename"], this["p.weakpasswords"]];
+  }
+}
+
 class OpenPortAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super('ALARM_OPENPORT', timestamp, device, info);
@@ -1026,6 +1049,7 @@ let classMapping = {
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
   ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
   ALARM_SUBNET: SubnetAlarm.prototype,
+  ALARM_WEAK_PASSWORD: WeakPasswordAlarm.prototype,
   ALARM_OPENPORT: OpenPortAlarm.prototype,
   ALARM_UPNP: UpnpAlarm.prototype
 }
@@ -1052,6 +1076,7 @@ module.exports = {
   VulnerabilityAlarm: VulnerabilityAlarm,
   IntelReportAlarm: IntelReportAlarm,
   SubnetAlarm: SubnetAlarm,
+  WeakPasswordAlarm: WeakPasswordAlarm,
   OpenPortAlarm: OpenPortAlarm,
   UpnpAlarm: UpnpAlarm,
   mapping: classMapping
