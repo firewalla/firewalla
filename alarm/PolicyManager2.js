@@ -865,6 +865,7 @@ class PolicyManager2 {
   isFirewallaOrCloud(policy) {
     const target = policy.target
     
+    // allow rule always return false
     return policy.action != 'allow' && target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
       sysManager.isMyIP(target) ||
