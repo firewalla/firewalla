@@ -152,10 +152,8 @@ class PortForward {
         const ipv4Addr = macEntry.ipv4Addr;
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
-          if (map.toIP) {
-            log.info("IP address has changed, remove old rule: ", map);
-            await this.removePort(map);
-          }
+          log.info("IP address has changed, remove old rule: ", map);
+          await this.removePort(map);
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
@@ -272,9 +270,11 @@ class PortForward {
     let old = this.find(map);
     while (old >= 0) {
       this.config.maps[old].state = false;
-      log.info(`Remove port forward`, map);
-      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
-      await iptable.portforwardAsync(dupMap);
+      if (this.config.maps[old].active !== false) {
+        log.info(`Remove port forward`, this.config.maps[old]);
+        const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
+        await iptable.portforwardAsync(dupMap);
+      }
 
       this.config.maps.splice(old, 1);
       old = this.find(map);
