@@ -150,12 +150,20 @@ class PortForward {
         const ipv4Addr = macEntry.ipv4Addr;
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
-          log.info("IP address has changed, remove old rule: ", map);
-          await this.removePort(map);
+          if (map.toIP) {
+            log.info("IP address has changed, remove old rule: ", map);
+            await this.removePort(map);
+          }
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
+            map.active = true;
             log.info("IP address has changed, add new rule: ", map);
+            await this.addPort(map);
+          } else {
+            map.toIP = null;
+            map.active = false;
+            log.info("IP address is not available, deactivating rule: ", map);
             await this.addPort(map);
           }
         }
@@ -236,6 +244,11 @@ class PortForward {
         } else {
           this.config.maps.push(map);
         }
+      }
+
+      if (map.active === false) {
+        log.info("Port forward is not active now", map);
+        return;
       }
 
       if (!this._isLANInterfaceIP(map.toIP)) {
