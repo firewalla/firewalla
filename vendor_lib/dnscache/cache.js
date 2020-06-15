@@ -14,7 +14,7 @@ var CacheObject = function (conf) {
 
     this.count = 0;
     this.data = {};
-    var next = require('asap');
+    var next = require('../asap.js');
 
     this.set = function (key, value, callback) {
         var self = this;
