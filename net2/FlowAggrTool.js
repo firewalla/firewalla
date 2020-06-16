@@ -683,7 +683,7 @@ class FlowAggrTool {
     );
 
     return Promise.all([
-      rclient.delAsync(keys),
+      rclient.delAsync(keys).catch((err) => {}),
       // this.removeAllFlowKeys(tag),
       this.removeAllSumFlows('tag:' + tag),
     ]);
