@@ -450,7 +450,10 @@ module.exports = class HostManager {
       rclient.get("extension.portforward.config",(err,data)=>{
         try {
           if (data != null) {
-            extdata['portforward'] = JSON.parse(data);
+            portforwardConfig = JSON.parse(data);
+            if (portforwardConfig.maps && _.isArray(portforwardConfig.maps))
+              portforwardConfig.maps = portforwardConfig.maps.filter(map => map.active !== false);
+            extdata['portforward'] = portforwardConfig;
           }
         } catch (e) {
           log.error("ExtensionData:Unable to parse data",e,data);
@@ -978,7 +981,8 @@ module.exports = class HostManager {
           json.isBindingOpen = 0;
         }
 
-        json.localDomainSuffix = (await rclient.get('local:domain:suffix')) || '.lan';
+        const suffix = await rclient.get('local:domain:suffix');
+        json.localDomainSuffix = suffix ? suffix : 'lan';
         callback(null, json);
       } catch(err) {
         log.error("Caught error when preparing init data: " + err);

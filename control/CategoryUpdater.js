@@ -82,6 +82,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
           sem.on('UPDATE_CATEGORY_DOMAIN', (event) => {
             if (event.category) {
+              if (!this.isActivated(event.category)) {
+                return;
+              }
               this.recycleIPSet(event.category);
               domainBlock.updateCategoryBlock(event.category);
             }
@@ -134,23 +137,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async getDomains(category) {
-    if (!this.isActivated(category))
-      return []
-
     return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
   }
 
   async getDefaultDomains(category) {
-    if (!this.isActivated(category))
-      return []
-
     return rclient.smembersAsync(this.getDefaultCategoryKey(category))
   }
 
   async addDefaultDomains(category, domains) {
-    if (!this.isActivated(category))
-      return []
-
     if (domains.length === 0) {
       return []
     }
@@ -167,9 +161,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async flushDefaultDomains(category) {
-    if (!this.isActivated(category))
-      return [];
-
     return rclient.delAsync(this.getDefaultCategoryKey(category));
   }
 
