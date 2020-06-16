@@ -74,6 +74,8 @@ class PortForward {
           });
 
           sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+            if (!this._started)
+              return;
             try {
               if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
                 this._wanIPs = sysManager.myWanIps();
@@ -304,6 +306,7 @@ class PortForward {
         this.refreshConfig();
       }, 60000); // refresh config once every minute
     }
+    this._started = true;
   }
 
   async stop() {
