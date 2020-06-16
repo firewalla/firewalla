@@ -110,7 +110,7 @@ class FWDiag {
 
     const ip = inter.ip_address;
     const gateway = inter.gateway_ip;
-    const mac = inter.mac_address;
+    const mac = platform.getSignatureMac();
 
     const gatewayMac = await this.getGatewayMac(gateway);
     const gatewayName = await this.getGatewayName(gateway);
@@ -163,7 +163,7 @@ class FWDiag {
     const inter = sysManager.getDefaultWanInterface()
 
     const firewallaIP = inter.ip_address;
-    const mac = inter.mac_address;
+    const mac = platform.getSignatureMac();
     const gateway = inter.gateway_ip;
 
     const version = this.getVersion();
