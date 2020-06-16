@@ -287,7 +287,8 @@ class FlowAggregationSensor extends Sensor {
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
 
-      optionsCopy.intf = intf;
+      optionsCopy.intf = intf.intf;
+      optionsCopy.macs = intf.macs;
       await flowAggrTool.addSumFlow("download", optionsCopy);
       await flowAggrTool.addSumFlow("upload", optionsCopy);
       await flowAggrTool.addSumFlow("app", optionsCopy);
@@ -307,7 +308,8 @@ class FlowAggregationSensor extends Sensor {
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
 
-      optionsCopy.tag = tag;
+      optionsCopy.tag = tag.tag;
+      optionsCopy.macs = tag.macs;
       await flowAggrTool.addSumFlow("download", optionsCopy);
       await flowAggrTool.addSumFlow("upload", optionsCopy);
       await flowAggrTool.addSumFlow("app", optionsCopy);
@@ -520,10 +522,8 @@ class FlowAggregationSensor extends Sensor {
 
     let macs = []
 
-    if (options.intf) {
-      macs = options.intf.macs;
-    } else if (options.tag) {
-      macs = options.tag.macs;
+    if (options.intf || options.tag) {
+      macs = options.macs;
     } else if (options.mac) {
       macs = [options.mac]
     } else {

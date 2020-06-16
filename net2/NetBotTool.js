@@ -122,7 +122,7 @@ class NetBotTool {
       json.flows = {};
     }
 
-    if (!(dimension in ['app', 'category'])) throw new Error('Dimension not supported')
+    if (!['app', 'category'].includes(dimension)) throw new Error(`Dimension not supported, ${dimension}`)
 
     const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     const end = options.end || (begin + 3600);
@@ -135,9 +135,9 @@ class NetBotTool {
     const key = dimension + 'Details'
 
     let flows = null
-    if (options.queryall) {
+    if (options.queryall && options.mac) {
       // need to support queryall too
-      let lastAppActivityKey = await flowAggrTool.getLastAppActivity(mac)
+      let lastAppActivityKey = await flowAggrTool.getLastAppActivity(options.mac)
       if (lastAppActivityKey) {
         flows = await flowAggrTool.getCleanedAppActivityByKey(lastAppActivityKey)
       }
@@ -157,13 +157,13 @@ class NetBotTool {
       json.flows = {};
     }
 
-    if (!(dimension in ['app', 'category'])) throw new Error('dimension not supported')
+    if (!['app', 'category'].includes(dimension)) throw new Error(`Dimension not supported, ${dimension}`)
 
     const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     const end = options.end || (begin + 3600);
 
-    const endString = new Date(end * 1000).toLocaconstimeString();
-    const beginString = new Date(begin * 1000).toLocaconstimeString();
+    const endString = new Date(end * 1000).toLocaleTimeString();
+    const beginString = new Date(begin * 1000).toLocaleTimeString();
 
     log.info(`Getting ${dimension} detail flows between ${beginString} and ${endString}, options:${JSON.stringify(options)} options:`, options);
 
@@ -197,7 +197,7 @@ class NetBotTool {
       allFlows[type] = []
 
       for (const mac of allMacs) {
-        let typeFlows = await typeFlowTool.getTypeFlow(mac, type, options)
+        const typeFlows = await typeFlowTool.getTypeFlow(mac, type, options)
         allFlows[type].push(... typeFlows)
       }
 
@@ -206,9 +206,12 @@ class NetBotTool {
         .sort((a, b) => {
           return b.ts - a.ts;
         });
+
+      if (!allFlows[type].length) delete allFlows[type]
     }
 
     json.flows[key] = allFlows
+    return allFlows
   }
 
 
@@ -252,11 +255,11 @@ class NetBotTool {
 
   // "sumflow:8C:29:37:BF:4A:86:upload:1505073000:1505159400"
   _getTimestamps(sumFlowKey) {
-    let pattern = /:([^:]*):([^:]*)$/
-    let result = sumFlowKey.match(pattern)
-    if(!result) {
-      return null
-    }
+    if(!sumFlowKey) return null
+
+    const pattern = /:([^:]*):([^:]*)$/
+    const result = sumFlowKey.match(pattern)
+    if(!result) return null
 
     return {
       begin: toInt(result[1]),

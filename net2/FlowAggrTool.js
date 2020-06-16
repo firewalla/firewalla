@@ -317,7 +317,7 @@ class FlowAggrTool {
   }
 
   getLastSumFlow(mac, trafficDirection) {
-    let key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+    const key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
     return rclient.getAsync(key);
   }
 
@@ -539,9 +539,9 @@ class FlowAggrTool {
 
   getCleanedAppKey(begin, end, options) {
     if (options.intf) {
-      return `app:intf:${options.intf.intf}:${begin}:${end}`;
+      return `app:intf:${options.intf}:${begin}:${end}`;
     } else if (options.tag) {
-      return `app:tag:${options.tag.tag}:${begin}:${end}`;
+      return `app:tag:${options.tag}:${begin}:${end}`;
     } else if(options.mac) {
       return `app:host:${options.mac}:${begin}:${end}`
     } else {
@@ -587,7 +587,7 @@ class FlowAggrTool {
   getCleanedAppActivity(begin, end, options) {
     options = options || {}
 
-    let key = this.getCleanedAppKey(begin, end, options)
+    const key = this.getCleanedAppKey(begin, end, options)
     return this.getCleanedAppActivityByKey(key, options)
   }
 

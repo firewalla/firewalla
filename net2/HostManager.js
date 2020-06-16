@@ -516,7 +516,7 @@ module.exports = class HostManager {
 
   legacyStats(json) {
     log.debug("Reading legacy stats");
-    return flowManager.getSystemStats()
+    return flowManager.getTargetStats()
       .then((flowsummary) => {
         json.flowsummary = flowsummary;
       });

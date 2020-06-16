@@ -23,7 +23,7 @@ const instance = []
 class TypeFlowTool {
   // type should be either 'app' or 'category'
   constructor(dimension) {
-    if (!(dimension in ['app', 'category'])) throw new Error('Dimension not supported')
+    if (!['app', 'category'].includes(dimension)) throw new Error(`Dimension not supported, ${dimension}`)
 
     if(!instance[dimension]) {
       instance[dimension] = this
@@ -109,7 +109,9 @@ class TypeFlowTool {
     const results = await rclient.zrevrangebyscoreAsync(key, end, begin)
     return results.map(jsonString => {
       try {
-        return JSON.parse(jsonString)
+        const obj = JSON.parse(jsonString)
+        obj.device = mac
+        return obj
       } catch (err) {
         log.error("Failed to parse JSON String:", jsonString);
         return null;

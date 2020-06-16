@@ -38,7 +38,8 @@ class RedisManager {
         do {
           const result = await this.rclient.scanAsync(cursor, 'MATCH', pattern, 'COUNT', count);
           cursor = result[0]
-          await handler(result[1])
+          if (result[1].length)
+            await handler(result[1])
         } while (cursor != 0)
       }
 
@@ -47,6 +48,7 @@ class RedisManager {
         await this.rclient.scanAll(pattern, async (results) => {
           allResults.push(...results)
         }, count)
+        return allResults
       }
     }
 

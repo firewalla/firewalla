@@ -96,7 +96,6 @@ router.post('/simple', (req, res, next) => {
   const item = req.query.item || ""
   const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
-  const start = req.query.start
 
   let body = {
     "message": {
@@ -131,8 +130,7 @@ router.post('/simple', (req, res, next) => {
   body.message.obj.target = target
   body.message.obj.data.start = parseInt(req.query.start)
   body.message.obj.data.end = parseInt(req.query.end)
-  body.message.obj.data.hourblock = req.query.hourblock
-  body.message.obj.data.alarmduration= req.query.alarmduration
+  body.message.obj.data.hourblock = parseInt(req.query.hourblock)
   body.message.obj.data.direction = req.query.direction
 
 

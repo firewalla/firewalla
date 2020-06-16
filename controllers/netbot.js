@@ -35,8 +35,8 @@ const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
-const CategoryFlowTool = require('../flow/CategoryFlowTool.js')
-const categoryFlowTool = new CategoryFlowTool()
+const TypeFlowTool = require('../flow/TypeFlowTool.js')
+const categoryFlowTool = new TypeFlowTool('category')
 
 const HostManager = require('../net2/HostManager.js');
 const sysManager = require('../net2/SysManager.js');
@@ -2043,10 +2043,10 @@ class netBot extends ControllerBot {
   }
 
   async flowHandler(msg, type) {
-    log.info("Getting info on", type, target);
     let { target } = msg
+    log.info("Getting info on", type, target);
 
-    let begin = msg.data && msg.data.begin;
+    let begin = msg.data && (msg.data.begin || msg.data.start);
     let end = (msg.data && msg.data.end) || begin + 3600 * 24;
 
     // A backward compatibility fix for query host network stats for 'NOW'
@@ -2089,6 +2089,8 @@ class netBot extends ControllerBot {
         break
       }
       case 'host': {
+        if (target == '0.0.0.0') break;
+
         const host = await this.hostManager.getHostAsync(target);
         if (!host || !host.o.mac) {
           let error = new Error("Invalid Host");
@@ -2097,7 +2099,10 @@ class netBot extends ControllerBot {
         }
         options.mac = host.o.mac;
         jsonobj = host.toJson();
+        break
       }
+      default:
+        throw new Error('Invalid target type', type)
     }
 
     // load 24 hours download/upload trend
