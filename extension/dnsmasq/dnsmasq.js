@@ -1438,7 +1438,7 @@ module.exports = class DNSMASQ {
       await this._remove_all_iptables_rules();
       if ((this.failCount & (this.failCount - 1)) === 0) { // do not send error log to cloud unless fail count is power of 2
         bone.logAsync("error", {
-          type: 'DNS UNAVAILABLE',
+          type: 'DNSMASQ UNREPLIED',
           msg: `dnsmasq does not respond after ${this.failCount} restarts`,
         });
       }
