@@ -1878,7 +1878,8 @@ class PolicyManager2 {
       this.ipsetCacheUpdateTime = Date.now() / 1000
     }
     if (!this.sortedActiveRulesCache) {
-      const activeRules = await this.loadActivePoliciesAsync() || [];
+      let activeRules = await this.loadActivePoliciesAsync() || [];
+      activeRules = activeRules.filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
       this.sortedActiveRulesCache = activeRules.map(rule => {
         let {scope, target, action = "block", tag} = rule;
         rule.type = rule["i.type"] || rule["type"];
