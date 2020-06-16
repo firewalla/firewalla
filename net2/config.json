@@ -107,7 +107,7 @@
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "DeviceServiceScanSensor": {
-      "interval": 1800,
+      "interval": 10800,
       "firstScan": 120
     },
     "ExternalScanSensor": {
