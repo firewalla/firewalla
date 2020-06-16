@@ -1436,10 +1436,12 @@ module.exports = class DNSMASQ {
       }
       // simply removes dns redirect rules, no need to stop dns service
       await this._remove_all_iptables_rules();
-      bone.logAsync("error", {
-        type: 'DNSMASQ CRASH',
-        msg: `dnsmasq failed to restart after ${this.failCount} retries`,
-      });
+      if ((this.failCount & (this.failCount - 1)) === 0) { // do not send error log to cloud unless fail count is power of 2
+        bone.logAsync("error", {
+          type: 'DNSMASQ UNREPLIED',
+          msg: `dnsmasq does not respond after ${this.failCount} restarts`,
+        });
+      }
     }
     this.scheduleRestartDNSService(true);
   }
