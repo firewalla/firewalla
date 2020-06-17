@@ -2062,7 +2062,7 @@ class PolicyManager2 {
         }
         case "domain":
         case "dns": {
-          if (remoteVal && remoteVal.endsWith(rule.target))
+          if (remoteVal && (remoteVal === rule.target || remoteVal.endsWith(`.${rule.target}`)))
             return rule;
           // matching ipset elements
           if (!rule.dnsmasq_only) {
