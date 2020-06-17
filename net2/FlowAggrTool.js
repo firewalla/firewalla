@@ -31,7 +31,7 @@ const MAX_FLOW_PER_HOUR = 7000
 const MIN_AGGR_TRAFFIC = 256
 const MIN_SUM_TRAFFIC = 1024
 
-function toInt(n){ return Math.floor(Number(n)); };
+function toInt(n){ return Math.floor(Number(n)) }
 
 class FlowAggrTool {
   constructor() {
@@ -198,7 +198,7 @@ class FlowAggrTool {
     let intf = options.intf;
     let tag = options.tag;
     let mac = options.mac;
-    let target = intf && ('intf:' + intf.intf) || tag && ('tag:' + tag.tag) || mac;
+    let target = intf && ('intf:' + intf) || tag && ('tag:' + tag) || mac;
 
     let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
@@ -230,7 +230,7 @@ class FlowAggrTool {
     let intf = options.intf;
     let tag = options.tag;
     let mac = options.mac;
-    let target = intf && ('intf:' + intf.intf) || tag && ('tag:' + tag.tag) || mac;
+    let target = intf && ('intf:' + intf) || tag && ('tag:' + tag) || mac;
 
     let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
@@ -253,12 +253,10 @@ class FlowAggrTool {
     let ticks = this.getTicks(begin, end, interval);
     let tickKeys = null
 
-    if (intf) {
-      tickKeys = _.flatten(intf.macs.map((mac) => ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick))));
-    } else if (tag) {
-      tickKeys = _.flatten(tag.macs.map((mac) => ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick))));
-    } else if(mac) {
-      tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
+    if (intf || tag) {
+      tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick))));
+    } else if (mac) {
+      tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick));
     } else {
       // only call keys once to improve performance
       const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
@@ -604,9 +602,9 @@ class FlowAggrTool {
 
   getCleanedCategoryKey(begin, end, options) {
     if (options.intf) {
-      return `category:intf:${_.isString(options.intf) ? options.intf : options.intf.intf}:${begin}:${end}`
+      return `category:intf:${options.intf}:${begin}:${end}`
     } else if (options.tag) {
-      return `category:tag:${_.isString(options.tag) ? options.tag : options.tag.tag}:${begin}:${end}`
+      return `category:tag:${options.tag}:${begin}:${end}`
     } else if(options.mac) {
       return `category:host:${options.mac}:${begin}:${end}`
     } else {
