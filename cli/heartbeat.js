@@ -127,9 +127,10 @@ async function getLatestCommitHash(cwd) {
 
 async function getLicenseInfo() {
   const licenseFile = "/home/pi/.firewalla/license";
-  const SUUID = (await getShellOutput(`awk '/"UUID"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+  const SUUID = (await getShellOutput(`awk '/SUUID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+  const UUID = (await getShellOutput(`awk '/"UUID"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
   const EID = (await getShellOutput(`awk '/EID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
-  return { SUUID,EID };
+  return { SUUID, UUID, EID };
 }
 
 async function getSysinfo(status) {
