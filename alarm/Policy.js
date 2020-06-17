@@ -85,6 +85,10 @@ class Policy {
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
 
+    this.dnsmasq_only = false;
+    if (raw.dnsmasq_only)
+      this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
+
     if (raw.expire === "") {
       delete this.expire;
     } else if (raw.expire && _.isString(raw.expire)) {
