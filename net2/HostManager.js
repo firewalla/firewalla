@@ -450,7 +450,7 @@ module.exports = class HostManager {
       rclient.get("extension.portforward.config",(err,data)=>{
         try {
           if (data != null) {
-            portforwardConfig = JSON.parse(data);
+            const portforwardConfig = JSON.parse(data);
             if (portforwardConfig.maps && _.isArray(portforwardConfig.maps))
               portforwardConfig.maps = portforwardConfig.maps.filter(map => map.active !== false);
             extdata['portforward'] = portforwardConfig;
