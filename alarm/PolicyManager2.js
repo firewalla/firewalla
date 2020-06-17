@@ -1202,7 +1202,7 @@ class PolicyManager2 {
           scope: scope,
           category: target,
           intfs,
-          action: 'block',
+          action: action,
           tags
         });
         if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
