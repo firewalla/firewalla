@@ -256,6 +256,8 @@ class FireRouter {
     this.retryUntilInitComplete()
 
     sclient.on("message", (channel, message) => {
+      if (!this.ready)
+        return;
       let reloadNeeded = false;
       switch (channel) {
         case Message.MSG_FR_IFACE_CHANGE_APPLIED : {
@@ -303,7 +305,9 @@ class FireRouter {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
-      this.init();
+      this.init().catch((err) => {
+        log.error("Failed to reload init", err.message);
+      });
     }, 3000);
   }
 
