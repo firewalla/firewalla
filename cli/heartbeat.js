@@ -23,7 +23,7 @@
   *   uptime
   *   uname -m
   *   box eid (if have)
-  *   box license (8 char prefix only)
+  *   box license
   *   gateway mac address (the first three bytes)
   *   cpu temp
   *   current timestamp
@@ -127,7 +127,7 @@ async function getLatestCommitHash(cwd) {
 
 async function getLicenseInfo() {
   const licenseFile = "/home/pi/.firewalla/license";
-  const SUUID = (await getShellOutput(`awk '/SUUID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+  const SUUID = (await getShellOutput(`awk '/"UUID"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
   const EID = (await getShellOutput(`awk '/EID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
   return { SUUID,EID };
 }
