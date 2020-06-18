@@ -4,11 +4,9 @@ FW_PLATFORM_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 UNAME=$(uname -m)
 
-GOLD=gold
-
 case "$UNAME" in
   "x86_64")
-    source $FW_PLATFORM_DIR/$GOLD/platform.sh
+    source $FW_PLATFORM_DIR/gold/platform.sh
     FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/gold
     BRO_PROC_NAME="zeek"
     BRO_PROC_COUNT=6
@@ -49,8 +47,4 @@ function before_bro {
       $script
     done
   fi
-}
-
-function bro_proc_name {
-  echo $BRO_PROC_NAME
 }
