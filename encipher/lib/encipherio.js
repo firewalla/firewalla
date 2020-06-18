@@ -76,7 +76,7 @@ let legoEptCloud = class {
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
       this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
       this.sioPath = fConfig.SocketIOPath;
-      if(f.isDevelopmentVersion()) {
+      if(f.isDevelopmentVersion() || f.isAlpha()) {
         this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv2";
         this.sioPath = fConfig.SocketIODevPath;
       }
