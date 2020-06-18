@@ -89,6 +89,12 @@ class Policy {
     if (raw.dnsmasq_only)
       this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
 
+    if (!raw.direction)
+      this.direction = "bidirection";
+    
+    if (!raw.action)
+      this.action = "block";
+
     if (raw.expire === "") {
       delete this.expire;
     } else if (raw.expire && _.isString(raw.expire)) {
@@ -149,7 +155,8 @@ class Policy {
       this.protocol === policy.protocol &&
       this.direction === policy.direction &&
       this.action === policy.action &&
-      this.upnp === policy.upnp
+      this.upnp === policy.upnp &&
+      this.dnsmasq_only === policy.dnsmasq_only
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {
