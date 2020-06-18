@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -642,7 +642,7 @@ module.exports = class FlowMonitor {
       }
 
       try {
-        await this.genLargeTransferAlarm(direction, flow);
+        this.genLargeTransferAlarm(direction, flow);
       } catch (err) {
         log.error('Failed to generate alarm', fullkey, err);
       }
@@ -719,7 +719,7 @@ module.exports = class FlowMonitor {
   // Reslve v6 or v4 address into a local host
 
 
-  async genLargeTransferAlarm(direction, flow) {
+  genLargeTransferAlarm(direction, flow) {
     if (!flow) return;
 
     let copy = JSON.parse(JSON.stringify(flow));
@@ -785,7 +785,7 @@ module.exports = class FlowMonitor {
       // ideally each destination should have a unique ID, now just use hostname as a workaround
       // so destionationName, destionationHostname, destionationID are the same for now
 
-      await alarmManager2.enqueueAlarm(alarm);
+      alarmManager2.enqueueAlarm(alarm);
     }
   }
 

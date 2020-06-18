@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,7 +31,7 @@ const MAX_FLOW_PER_HOUR = 7000
 const MIN_AGGR_TRAFFIC = 256
 const MIN_SUM_TRAFFIC = 1024
 
-function toInt(n){ return Math.floor(Number(n)); };
+function toInt(n){ return Math.floor(Number(n)) }
 
 class FlowAggrTool {
   constructor() {
@@ -198,7 +198,7 @@ class FlowAggrTool {
     let intf = options.intf;
     let tag = options.tag;
     let mac = options.mac;
-    let target = intf && ('intf:' + intf.intf) || tag && ('tag:' + tag.tag) || mac;
+    let target = intf && ('intf:' + intf) || tag && ('tag:' + tag) || mac;
 
     let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
@@ -230,7 +230,7 @@ class FlowAggrTool {
     let intf = options.intf;
     let tag = options.tag;
     let mac = options.mac;
-    let target = intf && ('intf:' + intf.intf) || tag && ('tag:' + tag.tag) || mac;
+    let target = intf && ('intf:' + intf) || tag && ('tag:' + tag) || mac;
 
     let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
@@ -253,12 +253,10 @@ class FlowAggrTool {
     let ticks = this.getTicks(begin, end, interval);
     let tickKeys = null
 
-    if (intf) {
-      tickKeys = _.flatten(intf.macs.map((mac) => ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick))));
-    } else if (tag) {
-      tickKeys = _.flatten(tag.macs.map((mac) => ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick))));
-    } else if(mac) {
-      tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
+    if (intf || tag) {
+      tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick))));
+    } else if (mac) {
+      tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick));
     } else {
       // only call keys once to improve performance
       const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
@@ -306,7 +304,7 @@ class FlowAggrTool {
 
   setLastSumFlow(target, trafficDirection, keyName) {
     let key = "";
-    
+
     if(target) {
       key = util.format("lastsumflow:%s:%s", target, trafficDirection);
     } else {
@@ -317,7 +315,7 @@ class FlowAggrTool {
   }
 
   getLastSumFlow(mac, trafficDirection) {
-    let key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+    const key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
     return rclient.getAsync(key);
   }
 
@@ -345,7 +343,7 @@ class FlowAggrTool {
             const ports = json.port;
             if(!dest) {
               continue;
-            }  
+            }
             if(results[dest]) {
               results[dest] += count
             } else {
@@ -428,7 +426,7 @@ class FlowAggrTool {
             const key = json[xy];
             if(!key) {
               continue;
-            }            
+            }
             if(results[key]) {
               results[key] += count
             } else {
@@ -440,7 +438,7 @@ class FlowAggrTool {
         }
       }
     }
-    
+
     let array = [];
     for(const category in results) {
       const count = Math.floor(results[category]);
@@ -539,9 +537,9 @@ class FlowAggrTool {
 
   getCleanedAppKey(begin, end, options) {
     if (options.intf) {
-      return `app:intf:${options.intf.intf}:${begin}:${end}`;
+      return `app:intf:${options.intf}:${begin}:${end}`;
     } else if (options.tag) {
-      return `app:tag:${options.tag.tag}:${begin}:${end}`;
+      return `app:tag:${options.tag}:${begin}:${end}`;
     } else if(options.mac) {
       return `app:host:${options.mac}:${begin}:${end}`
     } else {
@@ -587,7 +585,7 @@ class FlowAggrTool {
   getCleanedAppActivity(begin, end, options) {
     options = options || {}
 
-    let key = this.getCleanedAppKey(begin, end, options)
+    const key = this.getCleanedAppKey(begin, end, options)
     return this.getCleanedAppActivityByKey(key, options)
   }
 
@@ -604,9 +602,9 @@ class FlowAggrTool {
 
   getCleanedCategoryKey(begin, end, options) {
     if (options.intf) {
-      return `category:intf:${_.isString(options.intf) ? options.intf : options.intf.intf}:${begin}:${end}`
+      return `category:intf:${options.intf}:${begin}:${end}`
     } else if (options.tag) {
-      return `category:tag:${_.isString(options.tag) ? options.tag : options.tag.tag}:${begin}:${end}`
+      return `category:tag:${options.tag}:${begin}:${end}`
     } else if(options.mac) {
       return `category:host:${options.mac}:${begin}:${end}`
     } else {
@@ -666,7 +664,7 @@ class FlowAggrTool {
     let key = util.format("lastcategory:host:%s", mac);
     return rclient.getAsync(key);
   }
-  
+
   async removeAggrFlowsAllTag(tag) {
     let keys = [];
 
