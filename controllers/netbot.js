@@ -949,14 +949,15 @@ class netBot extends ControllerBot {
               name: data.value.name
             }
             await hostTool.updateMACKey(macObject, true);
-            await hostTool.generateLocalDomain(macAddress);
+            const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
+            const localDomain = generateResult.localDomain;
             sem.emitEvent({
               type: "LocalDomainUpdate",
               message: `Update device:${macAddress} localDomain`,
               macArr: [macAddress],
               toProcess: 'FireMain'
             });
-            this.simpleTxData(msg, {}, null, callback)
+            this.simpleTxData(msg, {localDomain}, null, callback)
             return
 
           } else {
@@ -1044,8 +1045,10 @@ class netBot extends ControllerBot {
             if (suffix && macAddress == '0.0.0.0') {
               await rclient.setAsync('local:domain:suffix', suffix);
             }
+            let userLocalDomain;
             if (hostTool.isMacAddress(macAddress)) {
-              await hostTool.generateLocalDomain(macAddress);
+              const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
+              userLocalDomain = generateResult.userLocalDomain;
             }
             sem.emitEvent({
               type: "LocalDomainUpdate",
@@ -1053,7 +1056,7 @@ class netBot extends ControllerBot {
               macArr: [macAddress],
               toProcess: 'FireMain'
             });
-            this.simpleTxData(msg, {}, null, callback)
+            this.simpleTxData(msg, {userLocalDomain}, null, callback)
           } else {
             this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);
           }

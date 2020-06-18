@@ -564,6 +564,10 @@ class HostTool {
       userLocalDomain: customizedHostname || "",
       mac: mac
     }, true);
+    return {
+      localDomain: name,
+      userLocalDomain: customizedHostname
+    }
   }
 }
 
