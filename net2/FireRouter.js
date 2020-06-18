@@ -462,12 +462,15 @@ class FireRouter {
       const d = new Discovery("nmap");
 
       // regenerate stub sys:network:uuid
-      await rclient.delAsync("sys:network:uuid");
+      const previousUUID = await rclient.hgetallAsync("sys:network:uuid") || {};
       const stubNetworkUUID = {
         "00000000-0000-0000-0000-000000000000": JSON.stringify({name: intf}),
         "11111111-1111-1111-1111-111111111111": JSON.stringify({name: intf2})
       };
       await rclient.hmset("sys:network:uuid", stubNetworkUUID);
+      for (let key of Object.keys(previousUUID).filter(uuid => !Object.keys(stubNetworkUUID).includes(uuid))) {
+        await rclient.hdel("sys:network:uuid", key).catch((err) => {});
+      }
       // updates sys:network:info
       const intfList = await d.discoverInterfacesAsync()
       if (!intfList.length) {

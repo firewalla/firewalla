@@ -112,6 +112,7 @@ class PolicyManager2 {
       this.disableAllTimer = null;
 
       this.ipsetCache= null;
+      this.ipsetCacheUpdateTime = null;
       this.sortedActiveRulesCache = null;
     }
     return instance;
@@ -864,8 +865,9 @@ class PolicyManager2 {
 
   isFirewallaOrCloud(policy) {
     const target = policy.target
-
-    return target && (sysManager.isMyServer(target) ||
+    
+    // allow rule always return false
+    return policy.action != 'allow' && target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
       sysManager.isMyIP(target) ||
       sysManager.isMyMac(target) ||
@@ -1200,7 +1202,7 @@ class PolicyManager2 {
           scope: scope,
           category: target,
           intfs,
-          action: 'block',
+          action: action,
           tags
         });
         if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
@@ -1505,14 +1507,18 @@ class PolicyManager2 {
     }
     if (remoteSet4) {
       if (type === "ip" || type === "net" || type === "remoteIpPort" || type === "remoteNetPort" || type === "domain" || type === "dns") {
-        await ipset.flush(remoteSet4);
-        await ipset.destroy(remoteSet4);
+        if (!policy.dnsmasq_only) {
+          await ipset.flush(remoteSet4);
+          await ipset.destroy(remoteSet4);
+        }
       }
     }
     if (remoteSet6) {
       if (type === "ip" || type === "net" || type === "remoteIpPort" || type === "remoteNetPort" || type === "domain" || type === "dns") {
-        await ipset.flush(remoteSet6);
-        await ipset.destroy(remoteSet6);
+        if (!policy.dnsmasq_only) {
+          await ipset.flush(remoteSet6);
+          await ipset.destroy(remoteSet6);
+        }
       }
     }
   }
@@ -1871,10 +1877,13 @@ class PolicyManager2 {
   }
 
   async checkACL(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
-    if (!this.ipsetCache)
+    if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
       this.ipsetCache = await ipset.readAllIpsets() || {};
+      this.ipsetCacheUpdateTime = Date.now() / 1000
+    }
     if (!this.sortedActiveRulesCache) {
-      const activeRules = await this.loadActivePoliciesAsync() || [];
+      let activeRules = await this.loadActivePoliciesAsync() || [];
+      activeRules = activeRules.filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
       this.sortedActiveRulesCache = activeRules.map(rule => {
         let {scope, target, action = "block", tag} = rule;
         rule.type = rule["i.type"] || rule["type"];
@@ -1964,7 +1973,7 @@ class PolicyManager2 {
         if (remoteVal) 
           remoteIpsToCheck = (await dnsTool.getIPsByDomain(remoteVal)) || [];
           if (remoteIpsToCheck.length === 0) // domain exact match not found, try matching domain pattern
-            remoteIpsToCheck.push.apply(remoteIpsToCheck, (await dnsTool.getIPsByDomainPattern(removeVal)));
+            remoteIpsToCheck.push.apply(remoteIpsToCheck, (await dnsTool.getIPsByDomainPattern(remoteVal)));
         break;
       default:
     }
@@ -2081,10 +2090,15 @@ class PolicyManager2 {
           break;
         }
         case "category": {
-          const remoteSet4 = categoryUpdater.getIPSetName(rule.target);
-          const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target);
-          if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
-            continue;
+          const domains = await domainBlock.getCategoryDomains(rule.target);
+          if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
+            return rule;
+          if (!rule.dnsmasq_only) {
+            const remoteSet4 = categoryUpdater.getIPSetName(rule.target);
+            const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target);
+            if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
+              continue;
+          } else continue;
           break;
         }
         case "country": {

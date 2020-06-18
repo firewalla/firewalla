@@ -1296,6 +1296,7 @@ class Host {
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {
+        await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
@@ -1311,6 +1312,7 @@ class Host {
     for (let uid of tags) {
       const tag = TagManager.getTagByUid(uid);
       if (tag) {
+        await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         });
