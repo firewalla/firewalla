@@ -98,7 +98,7 @@ check_systemctl_services() {
 check_rejection() {
     echo "----------------------- Node Rejections ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec grep -a "Possibly Unhandled Rejection" -A 10 {} \;
+    find /home/pi/logs/ -type f -mtime -2 -exec grep -a "Possibly Unhandled Rejection" -A 10 -B 2 {} \;
 
     echo ""
     echo ""
