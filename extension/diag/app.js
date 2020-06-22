@@ -396,8 +396,9 @@ class App {
     for (const ip of IPv4List) {
       if (!ip) continue;
 
+      // should use primitive chains here, since it needs to be working before install_iptables.sh
       log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${port} on ${ip}`);
-      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} FW_PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
       await exec(cmd);
     }
   }
