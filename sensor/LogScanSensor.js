@@ -20,6 +20,7 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js');
+const PlatformLoader = require('../platform/PlatformLoader.js')
 
 const { delay } = require('../util/util.js')
 const Tail = require('../vendor_lib/always-tail.js');
@@ -30,11 +31,12 @@ class LogScanSensor extends Sensor {
 
   constructor() {
     super()
+    this.platform = PlatformLoader.getPlatform()
   }
 
   async run() {
     try {
-      if (this.config.fireResetBluetooth) {
+      if (this.config.fireResetBluetooth && this.platform.isBluetoothAvailable()) {
         if (!this.tailFireReset) this.tailFireReset = new Tail(LOG_FIRERESET)
         if (!this.logFireReset) this.logFireReset = {}
 

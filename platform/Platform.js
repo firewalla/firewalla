@@ -153,6 +153,9 @@ class Platform {
     return null;
   }
 
+  isBluetoothAvailable() {
+    return true
+  }
 }
 
 module.exports = Platform;
