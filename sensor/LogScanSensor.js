@@ -70,6 +70,15 @@ class LogScanSensor extends Sensor {
       ) {
         try {
           await exec('sudo hciconfig | grep hci0')
+
+          // check again after async operation to avoid multiple alarms being sent
+          if (this.logFireReset.lastInitHci &&
+            new Date() - this.logFireReset.lastInitHci < this.config.bonelogInterval * 1000
+          ) {
+            log.debug('Log ignored', data)
+            return
+          }
+
           this.logFireReset.lastInitHci = + new Date()
           sendLine = true
         } catch(e) { }
