@@ -534,7 +534,11 @@
     "SS2Plugin": {},
     "WireGuardPlugin": {},
     "PiHolePlugin": {},
-    "InternalScanSensor": {}
+    "InternalScanSensor": {},
+    "LogScanSensor": {
+      "fireResetBluetooth": true,
+      "bonelogInterval": 900
+    }
   },
   "hooks": {
     "NewDeviceHook": {},

@@ -110,7 +110,7 @@ function getConfig(reload) {
     // user config will override system default config file
     config = Object.assign({}, defaultConfig, userConfig, testConfig);
 
-    // 1 more level of Object.assign gives more flexibility to feature configurations
+    // 1 more level of Object.assign grants more flexibility to feature configurations
     for (const key of featureNodes) {
       config[key] = Object.assign({}, defaultConfig[key], userConfig[key], testConfig[key])
     }
