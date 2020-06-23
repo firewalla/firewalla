@@ -135,7 +135,7 @@ Client.prototype.request = function (op, obj, cb) {
         ttl = 7200;
       }
       size = 12;
-      buf = new Buffer(size);
+      buf = Buffer.alloc(size);
       buf.writeUInt8(0, pos); pos++;  // Vers = 0
       buf.writeUInt8(op, pos); pos++; // OP = x
       buf.writeUInt16BE(0, pos); pos+=2; // Reserved (MUST be zero)
@@ -149,7 +149,7 @@ Client.prototype.request = function (op, obj, cb) {
         debug('WARN: invalid opcode given', op);
       }
       size = 2;
-      buf = new Buffer(size);
+      buf = Buffer.alloc(size);
       buf.writeUInt8(0, pos); pos++; // Vers = 0
       buf.writeUInt8(op, pos); pos++; // OP = x
   }

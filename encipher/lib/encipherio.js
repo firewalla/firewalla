@@ -564,9 +564,9 @@ let legoEptCloud = class {
   }
 
   encrypt(text, key) {
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
     let crypted = cipher.update(text, 'utf8', 'base64');
     crypted += cipher.final('base64');
@@ -579,9 +579,9 @@ let legoEptCloud = class {
       return;
     }
     log.debug('encryting data with size', data.length, data.constructor.name);
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
     let crypted = cipher.update(data);
 
@@ -591,9 +591,9 @@ let legoEptCloud = class {
   }
 
   decrypt(text, key) {
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
     let dec = decipher.update(text, 'base64', 'utf8');
     dec += decipher.final('utf8');
@@ -729,7 +729,7 @@ let legoEptCloud = class {
 
     if(msg.data && msg.data.compressMode) {
       // compress before encrypt
-      let input = new Buffer(msgstr, 'utf8');
+      let input = Buffer.from(msgstr, 'utf8');
       zlib.deflate(input, (err, output) => {
         if(err) {
           log.error("Failed to compress payload:", err);
