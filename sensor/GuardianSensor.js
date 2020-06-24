@@ -161,7 +161,7 @@ class GuardianSensor extends Sensor {
     }
 
     this.socket.on('connect', () => {
-      log.info(`Socket IO connection to ${server}, ${region} is connected.`);
+      log.forceInfo(`Socket IO connection to ${server}, ${region} is connected.`);
       this.socket.emit("box_registration", {
         gid: gid,
         eid: eid
@@ -169,7 +169,7 @@ class GuardianSensor extends Sensor {
     });
 
     this.socket.on('disconnect', () => {
-      log.info(`Socket IO connection to ${server}, ${region} is disconnected.`);
+      log.forceInfo(`Socket IO connection to ${server}, ${region} is disconnected.`);
     });
 
     const key = `send_to_box_${gid}`;
