@@ -1988,6 +1988,20 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "eptGroup": {
+        (async () => {
+          const { group } = await this.eptcloud.groupFind(this.primarygid);
+          // write members to sys:ept:members
+          await this.eptCloudExtension.recordAllRegisteredClients(this.primarygid)
+          const resp = { groupName: group.name }
+          // read from sys:ept:members
+          await this.hostManager.encipherMembersForInit(resp)
+          this.simpleTxData(msg, resp, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }

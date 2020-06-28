@@ -387,9 +387,11 @@ let legoEptCloud = class {
     return resp.body
   }
 
-  async eptGroupList(eid) {
+  async eptGroupList() {
+    if (!this.eid) throw new Error('Invalid Instance Eid')
+
     let options = {
-      uri: this.endpoint + '/ept/' + encodeURIComponent(eid) + '/groups',
+      uri: this.endpoint + '/ept/' + encodeURIComponent(this.eid) + '/groups',
       family: 4,
       method: 'GET',
       json: true,
@@ -406,10 +408,7 @@ let legoEptCloud = class {
     for (const group of resp.body.groups) {
       group.gid = group._id;
       if (group["xname"]) {
-        let gg = this.parseGroup(group);
-        if (gg && gg.key) {
-          group['name'] = this.decrypt(group['xname'], gg.key);
-        }
+        this.parseGroup(group);
       }
     }
     return resp.body.groups; // "groups":groups
@@ -493,7 +492,7 @@ let legoEptCloud = class {
     }
 
     this.groupCache[gid] = this.parseGroup(resp.body);
-    return resp.body
+    return this.groupCache[gid]
   }
 
   parseGroup(group) {
@@ -509,7 +508,7 @@ let legoEptCloud = class {
     let symmetricKey = this.privateDecrypt(this.myPrivateKey, sk.key);
     this.groupCache[group._id] = {
       'group': group,
-      'symanttricKey': sk,
+      'symmetricKey': sk,
       'key': symmetricKey,
       'lastfetch': 0,
       'pullIntervalInSeconds': 0,
@@ -523,6 +522,9 @@ let legoEptCloud = class {
       if (skey.eid == this.eid) {
         group.me = skey;
       }
+    }
+    if (group.xname) {
+      group.name = this.decrypt(group.xname, symmetricKey);
     }
 
     return this.groupCache[group._id];
@@ -540,11 +542,8 @@ let legoEptCloud = class {
 
     try {
       const group = await this.groupFind(gid)
-      if (group) {
-        this.groupCache[gid] = this.parseGroup(group);
-        if (this.groupCache[gid]) {
-          return this.groupCache[gid]['key'];
-        }
+      if (group && group.key) {
+        group.key
       }
     } catch(err) {
       log.error(err)
