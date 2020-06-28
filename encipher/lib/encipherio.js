@@ -543,7 +543,7 @@ let legoEptCloud = class {
     try {
       const group = await this.groupFind(gid)
       if (group && group.key) {
-        group.key
+        return group.key
       }
     } catch(err) {
       log.error(err)
