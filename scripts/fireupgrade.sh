@@ -83,38 +83,9 @@ function await_ip_assigned() {
     return 1
 }
 
-set_value() {
-    kind=$1
-    saved_value=$2
-    case ${kind} in
-        ip)
-            sudo /sbin/ip addr replace ${saved_value} dev eth0
-            ;;
-        gw)
-            sudo /sbin/route add default gw ${saved_value} eth0
-            ;;
-    esac
-}
-
-restore_values() {
-    r=0
-    logger "Restore saved values of ip/gw/dns"
-    for kind in ip gw
-    do
-        file=/home/pi/.firewalla/run/saved_${kind}
-        [[ -e "$file" ]] || continue
-        saved_value=$(cat $file)
-        [[ -n "$saved_value" ]] || continue
-        set_value $kind $saved_value || r=1
-    done
-    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
-        sudo /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
-    else
-        r=1
-    fi
-    sleep 3
-    return $r
-}
+LOGGER=logger
+ERR=logger
+source ${FIREWALLA_HOME}/scripts/network_settings.sh
 
 await_ip_assigned || restore_values
 

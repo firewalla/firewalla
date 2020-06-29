@@ -29,82 +29,13 @@ err() {
     sudo -u pi  /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
-get_value() {
-    kind=$1
-    case $kind in
-        ip)
-            /sbin/ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255 | head -n 1
-            ;;
-        gw)
-            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
-            ;;
-    esac
-}
+ERR=err
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/scripts/network_settings.sh
 
 set_timeout() {
     [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
-}
-
-save_values() {
-    r=0
-    $LOGGER "Save working values of ip/gw/dns"
-    for kind in ip gw
-    do
-        value=$(get_value $kind)
-        test -n "$value" || { r=1; break; }
-        file=/home/pi/.firewalla/run/saved_${kind}
-        rm -f $file
-        echo "$value" > $file || { r=1; break; }
-    done
-
-    if [[ -f /etc/resolv.conf ]]
-    then
-        /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf || r=1
-    else
-        r=1
-    fi
-
-    if [[ $r -eq 1 ]]
-    then
-        err "Invalid value in IP/GW/DNS detected, save nothing"
-        rm -rf /home/pi/.firewalla/run/saved_*
-    fi
-
-    return $r
-}
-
-set_value() {
-    kind=$1
-    saved_value=$2
-    case ${kind} in
-        ip)
-            /sbin/ip addr flush dev eth0 # flush legacy ips on eth0
-            /sbin/ip addr replace ${saved_value} dev eth0
-            ;;
-        gw)
-            /sbin/ip route replace default via ${saved_value} dev eth0 # upsert current default route
-            ;;
-    esac
-}
-
-restore_values() {
-    r=0
-    $LOGGER "Restore saved values of ip/gw/dns"
-    for kind in ip gw
-    do
-        file=/home/pi/.firewalla/run/saved_${kind}
-        [[ -e "$file" ]] || continue
-        saved_value=$(cat $file)
-        [[ -n "$saved_value" ]] || continue
-        set_value $kind $saved_value || r=1
-    done
-    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
-        /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
-    else
-        r=1
-    fi
-    sleep 3
-    return $r
 }
 
 ethernet_connected() {
