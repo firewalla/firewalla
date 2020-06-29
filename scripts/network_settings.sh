@@ -31,12 +31,14 @@ save_values() {
     test -n "$value" || { r=1; break; }
     file=/home/pi/.firewalla/run/saved_${kind}
     rm -f $file
+    $LOGGER "Current $kind is $value"
     echo "$value" > $file || { r=1; break; }
   done
 
   if [[ -f /etc/resolv.conf ]]
   then
-    $LOGGER ""
+    $LOGGER "Current dns is ..."
+    cat /etc/resolv.conf |$LOGGER
     sudo /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf || r=1
   else
     r=1

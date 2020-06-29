@@ -131,7 +131,7 @@ function check_with_timeout() {
   action=$2
   reboot=$3
 
-  echo -n "Trying to $message ... "
+  $LOGGER -n "Trying to $message ... "
   tmout=15
   while ! $action; do
     if [[ $tmout -gt 0 ]]; then
@@ -174,7 +174,7 @@ while [[ -n $CHECK_FIX_NETWORK_RETRY ]]; do
     break
 done
 
-$LOGGER "FIRE_CHECK DONE ... "
+$LOGGER "FIRE_CHECK DONE"
 
 save_values
 
