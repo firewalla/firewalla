@@ -33,7 +33,7 @@ class NavyPlatform extends Platform {
   }
 
   getLicenseTypes() {
-    return ["a2"];
+    return ["a3"];
   }
 
   getBoardSerial() {

@@ -98,8 +98,7 @@ check_systemctl_services() {
 check_rejection() {
     echo "----------------------- Node Rejections ----------------------------"
 
-    # 10 errors maximum for each file
-    find /home/pi/logs/ -type f -mtime -2| xargs -i sh -c "echo {}; (grep -a 'Possibly Unhandled Rejection' -A 10 {}| tail -n 120)"
+    find /home/pi/logs/ -type f -mtime -2 -exec bash -c 'grep -a "Possibly Unhandled Rejection" -A 10 -B 2 {} | tail -n 300' \;
 
     echo ""
     echo ""
@@ -108,8 +107,7 @@ check_rejection() {
 check_exception() {
     echo "----------------------- Node Exceptions ----------------------------"
 
-    # 10 errors maximum for each file
-    find /home/pi/logs/ -type f -mtime -2| xargs -i sh -c "echo {}; (grep -a '##### CRASH #####' -A 20 {}| tail -n 240)"
+    find /home/pi/logs/ -type f -mtime -2 -exec bash -c "egrep -a -H -i '##### CRASH #####' -A 20 {} | tail -n 300" \;
 
     echo ""
     echo ""
