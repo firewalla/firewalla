@@ -4014,7 +4014,7 @@ class netBot extends ControllerBot {
                       delete json.policy.acl;
                     }
 
-                    if(json.hosts) {
+                    if(json && json.hosts) {
                       for (const host of json.hosts) {
                         if(host && host.policy) {
                           delete host.policy.acl;
