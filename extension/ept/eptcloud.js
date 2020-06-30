@@ -58,6 +58,8 @@ class EptCloudExtension {
       eid: deviceEID,
       key: groupInfo.me.key
     })
+
+    await rclient.setAsync("groupName", groupInfo.name);
   }
 
 

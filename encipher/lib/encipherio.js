@@ -304,7 +304,7 @@ let legoEptCloud = class {
       if (err.statusCode == 401) {
         // throw errors out here
         await this.eptRelogin();
-        return this.rrWithErrHandling(
+        return rrWithErrHandling(
           Object.assign({}, options, { auth: { bearer: this.token }})
         )
       }
@@ -335,7 +335,15 @@ let legoEptCloud = class {
     }
 
     log.info("Setting box name to", name);
-    return this.rrWithEptRelogin(options);
+    await this.rrWithEptRelogin(options);
+
+    this.groupCache[gid].xname = cryptedXNAME;
+    this.groupCache[gid].updatedAt = new Date().toISOString()
+    this.groupCache[gid].name = name;
+
+    await rclient.setAsync("groupName", name);
+
+    return name
   }
 
   async eptCreateGroup(name, info, alias) {
