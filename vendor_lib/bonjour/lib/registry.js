@@ -145,6 +145,12 @@ function announce (server, service) {
         service.emit('up')
       }
       delay = delay * REANNOUNCE_FACTOR
+
+      var REANNOUNCE_MAX_DELAY = 1000 * 40 // set max delay as 40 seconds
+      if (delay > REANNOUNCE_MAX_DELAY) {
+        delay = REANNOUNCE_MAX_DELAY
+      }
+
       if (delay < REANNOUNCE_MAX_MS && !service._destroyed) {
         setTimeout(broadcast, delay).unref()
       }
