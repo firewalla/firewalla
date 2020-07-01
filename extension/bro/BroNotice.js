@@ -193,7 +193,7 @@ class BroNotice {
         // do nothing
         break;
     }
-
+    return alarm;
   }
 
   getBlockTarget(alarm) {
