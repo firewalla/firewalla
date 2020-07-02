@@ -273,12 +273,13 @@ async function inviteAdmin(gid) {
     }
   }
 
-  const expireDate = Math.floor(new Date() / 1000) + 600;
+  const expireDate = Math.floor(new Date() / 1000) + fwInvitation.totalTimeout;
   diag.expireDate = expireDate;
 
   await fwDiag.submitInfo({
     event: "PAIRSTART",
     msg:"Pairing Ready",
+    firstTime: count <= 1,
     expire: expireDate,
     gidPrefix: gidPrefix
   }).catch((err) => {
