@@ -132,7 +132,8 @@ function check_with_timeout() {
   action=$2
   reboot=$3
 
-  $LOGGER -n "Trying to $message ... "
+  echo -n "Trying to $message ... "
+  $LOGGER "Trying to $message ... "
   tmout=15
   while ! $action; do
     if [[ $tmout -gt 0 ]]; then
