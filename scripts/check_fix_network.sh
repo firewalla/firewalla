@@ -32,7 +32,8 @@ err() {
 ERR=err
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-source ${FIREWALLA_HOME}/scripts/network_settings.sh
+[ -s /home/pi/scripts/network_settings.sh ] && source /home/pi/scripts/network_settings.sh ||
+    source $FIREWALLA_HOME/scripts/network_settings.sh
 
 set_timeout() {
     [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
