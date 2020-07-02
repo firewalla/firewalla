@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,6 +21,7 @@ const request = require('requestretry');
 const uuid = require("uuid");
 const io2 = require('socket.io-client');
 
+const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger')(__filename);
 
 const Promise = require('bluebird');
@@ -73,6 +74,12 @@ let legoEptCloud = class {
       this.info = null; // to be encrypted
       this.signature = "";
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
+      this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
+      this.sioPath = fConfig.SocketIOPath;
+      if(f.isDevelopmentVersion() || f.isAlpha()) {
+        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv2";
+        this.sioPath = fConfig.SocketIODevPath;
+      }
       this.token = null;
       rclient.hgetAsync('sys:ept:me', 'eid').then(eid => this.eid = eid)
       this.groupCache = {};
@@ -92,7 +99,7 @@ let legoEptCloud = class {
   }
 
   async keyReady() {
-    log.info("Checking whether key pair exists already");
+    log.forceInfo("Checking whether key pair exists already");
 
     try {
       await fs.accessAsync(this.getPublicKeyPath())
@@ -111,14 +118,14 @@ let legoEptCloud = class {
       await this.cleanupKeys()
       return null;
     } else {
-      log.info("Key pair exists");
+      log.forceInfo("Key pair exists");
       return {pub: pubFile, pri: priFile};
     }
 
   }
 
   async untilKeyReady() {
-    log.info('Wait until keys ready ...')
+    log.forceInfo('Wait until keys ready ...')
     let result = await this.keyReady()
     if (!result) {
       log.info("Keys not ready, wait ...");
@@ -241,6 +248,8 @@ let legoEptCloud = class {
       assertion.assertion.info = this.info;
     }
 
+    log.info("Encipher URL:", this.endpoint);
+
     const options = {
       uri: this.endpoint + '/login/eptoken',
       family: 4,
@@ -295,7 +304,7 @@ let legoEptCloud = class {
       if (err.statusCode == 401) {
         // throw errors out here
         await this.eptRelogin();
-        return this.rrWithErrHandling(
+        return rrWithErrHandling(
           Object.assign({}, options, { auth: { bearer: this.token }})
         )
       }
@@ -326,7 +335,15 @@ let legoEptCloud = class {
     }
 
     log.info("Setting box name to", name);
-    return this.rrWithEptRelogin(options);
+    await this.rrWithEptRelogin(options);
+
+    this.groupCache[gid].xname = cryptedXNAME;
+    this.groupCache[gid].updatedAt = new Date().toISOString()
+    this.groupCache[gid].name = name;
+
+    await rclient.setAsync("groupName", name);
+
+    return name
   }
 
   async eptCreateGroup(name, info, alias) {
@@ -378,9 +395,11 @@ let legoEptCloud = class {
     return resp.body
   }
 
-  async eptGroupList(eid) {
+  async eptGroupList() {
+    if (!this.eid) throw new Error('Invalid Instance Eid')
+
     let options = {
-      uri: this.endpoint + '/ept/' + encodeURIComponent(eid) + '/groups',
+      uri: this.endpoint + '/ept/' + encodeURIComponent(this.eid) + '/groups',
       family: 4,
       method: 'GET',
       json: true,
@@ -397,10 +416,7 @@ let legoEptCloud = class {
     for (const group of resp.body.groups) {
       group.gid = group._id;
       if (group["xname"]) {
-        let gg = this.parseGroup(group);
-        if (gg && gg.key) {
-          group['name'] = this.decrypt(group['xname'], gg.key);
-        }
+        this.parseGroup(group);
       }
     }
     return resp.body.groups; // "groups":groups
@@ -484,7 +500,7 @@ let legoEptCloud = class {
     }
 
     this.groupCache[gid] = this.parseGroup(resp.body);
-    return resp.body
+    return this.groupCache[gid]
   }
 
   parseGroup(group) {
@@ -500,7 +516,7 @@ let legoEptCloud = class {
     let symmetricKey = this.privateDecrypt(this.myPrivateKey, sk.key);
     this.groupCache[group._id] = {
       'group': group,
-      'symanttricKey': sk,
+      'symmetricKey': sk,
       'key': symmetricKey,
       'lastfetch': 0,
       'pullIntervalInSeconds': 0,
@@ -514,6 +530,9 @@ let legoEptCloud = class {
       if (skey.eid == this.eid) {
         group.me = skey;
       }
+    }
+    if (group.xname) {
+      group.name = this.decrypt(group.xname, symmetricKey);
     }
 
     return this.groupCache[group._id];
@@ -531,11 +550,8 @@ let legoEptCloud = class {
 
     try {
       const group = await this.groupFind(gid)
-      if (group) {
-        this.groupCache[gid] = this.parseGroup(group);
-        if (this.groupCache[gid]) {
-          return this.groupCache[gid]['key'];
-        }
+      if (group && group.key) {
+        return group.key
       }
     } catch(err) {
       log.error(err)
@@ -555,9 +571,9 @@ let legoEptCloud = class {
   }
 
   encrypt(text, key) {
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
     let crypted = cipher.update(text, 'utf8', 'base64');
     crypted += cipher.final('base64');
@@ -570,9 +586,9 @@ let legoEptCloud = class {
       return;
     }
     log.debug('encryting data with size', data.length, data.constructor.name);
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
     let crypted = cipher.update(data);
 
@@ -582,9 +598,9 @@ let legoEptCloud = class {
   }
 
   decrypt(text, key) {
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
     let dec = decipher.update(text, 'base64', 'utf8');
     dec += decipher.final('utf8');
@@ -720,7 +736,7 @@ let legoEptCloud = class {
 
     if(msg.data && msg.data.compressMode) {
       // compress before encrypt
-      let input = new Buffer(msgstr, 'utf8');
+      let input = Buffer.from(msgstr, 'utf8');
       zlib.deflate(input, (err, output) => {
         if(err) {
           log.error("Failed to compress payload:", err);
@@ -857,11 +873,10 @@ let legoEptCloud = class {
       const group = this.groupCache[gid]
       if (this.socket == null) {
         this.notifyGids.push(gid);
-        this.socket = io2('https://firewalla.encipher.io',{path: '/socket',transports:['websocket'],'upgrade':false});
+        this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
-          // this.lastDisconnection = Date.now() / 1000
           this.notifySocket = false;
-          log.error('Cloud disconnected')
+          log.forceInfo('Cloud disconnected')
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -898,7 +913,7 @@ let legoEptCloud = class {
         this.socket.on('connect', ()=>{
           this.notifySocket = true;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
-          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name);
+          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);
           if (this.notifyGids.length>0) {
             this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':group.group.name});
           }
@@ -947,7 +962,7 @@ let legoEptCloud = class {
             let msgcount = 0;
             if (err == null) {
               for (let i = 0; i < messages.length; i++) {
-                if (group.lastMsgs[messages[i].id] != null) {} else {
+                if (group.lastMsgs[messages[i].id] == null) {
                   if (group.attention == false) {
                     clearInterval(group.timer);
                     group.timer = setInterval(group.func, 1 * 1000);

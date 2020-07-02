@@ -165,8 +165,10 @@ module.exports = class DNSMASQ {
 
           sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
             const started = await this.isDNSServiceActive();
-            if (started)
-              await this.start(false); // raw restart dnsmasq to refresh all confs and iptables
+            if (started) {
+              log.info("sys:network:info is reloaded, schedule refreshing dnsmasq and DNS redirect rules ...");
+              this.scheduleStart();
+            }
           })
 
           sclient.on("message", (channel, message) => {
@@ -189,6 +191,17 @@ module.exports = class DNSMASQ {
     }
 
     return instance;
+  }
+
+  scheduleStart() {
+    if (this.startTask)
+      clearTimeout(this.startTask);
+    this.startTask = setTimeout(() => {
+      // raw restart dnsmasq to refresh all confs and iptables
+      this.start(false).catch((err) => {
+        log.error("Failed to start dnsmasq", err.message);
+      });
+    }, 5000);
   }
 
   async install() {
@@ -318,7 +331,7 @@ module.exports = class DNSMASQ {
     }
 
     // add local dns as a fallback in dnsmasq's resolv.conf
-    sysManager.myDNS().forEach((dns) => {
+    sysManager.myDefaultDns().forEach((dns) => {
       if (effectiveNameServers && !effectiveNameServers.includes(dns))
         effectiveNameServers.push(dns);
     })
@@ -655,6 +668,7 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
+    domains = domains.sort();
     for (const domain of domains) {
       blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
@@ -873,6 +887,44 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async _update_dns_fallback_rules() {
+    await execAsync(`sudo iptables -w -t nat -F FW_PREROUTING_DNS_FALLBACK`).catch((err) => {});
+    await execAsync(`sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_FALLBACK`).catch((err) => {});
+    const interfaces = sysManager.getMonitoringInterfaces();
+    const NetworkProfile = require('../../net2/NetworkProfile.js');
+    for (const intf of interfaces) {
+      const uuid = intf.uuid;
+      if (!uuid) {
+        log.error(`uuid is not defined for ${intf.name}`);
+        continue;
+      }
+      const resolver4 = sysManager.myResolver(intf.name);
+      const resolver6 = sysManager.myResolver6(intf.name);
+      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+      const netSet = NetworkProfile.getNetIpsetName(uuid);
+      if (resolver4 && resolver4.length > 0) {
+        const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
+          .mdl("set", `--match-set ${netSet} src,src`)
+          .mth(53, null, 'dport')
+          .jmp(`DNAT --to-destination ${resolver4[0]}:53`);
+        const redirectUDP = redirectTCP.clone().pro('udp');
+        await execAsync(redirectTCP.toCmd('-A'));
+        await execAsync(redirectUDP.toCmd('-A'));
+      }
+      if (resolver6 && resolver6.length > 0) {
+        const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
+          .mdl("set", `--match-set ${netSet} src,src`)
+          .mth(53, null, 'dport')
+          .jmp(`DNAT --to-destination ${resolver6[0]}:53`);
+        const redirectUDP = redirectTCP.clone().pro('udp');
+        await execAsync(redirectTCP.toCmd('-A'));
+        await execAsync(redirectUDP.toCmd('-A'));
+      }
+    }
+    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -j ACCEPT`)).catch((err) => {});
+  }
+
   async _add_all_iptables_rules() {
     if (this.vpnSubnet) {
       await this.updateVpnIptablesRules(this.vpnSubnet, true);
@@ -1012,13 +1064,8 @@ module.exports = class DNSMASQ {
   }
 
   onDHCPReservationChanged() {
-    if (this.mode === Mode.MODE_DHCP ||
-        this.mode === Mode.MODE_DHCP_SPOOF ||
-        this.mode === Mode.MODE_ROUTER
-    ) {
-      this._scheduleWriteHostsFile();
-      log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
-    }
+    this._scheduleWriteHostsFile();
+    log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
   }
 
   onSpoofChanged() {
@@ -1047,9 +1094,12 @@ module.exports = class DNSMASQ {
 
     hosts.forEach(h => {
       try {
-        if (h.intfIp) h.intfIp = JSON.parse(h.intfIp)
+        if (h.intfIp)
+          h.intfIp = JSON.parse(h.intfIp);
+        if (h.dhcpIgnore)
+          h.dhcpIgnore = JSON.parse(h.dhcpIgnore);
       } catch(err) {
-        log.error('Invalid host:mac->intfIp', h.intfIp, err)
+        log.error('Failed to convert intfIp or dhcpIgnore', h.intfIp, h.dhcpIgnore, err)
         delete h.intfIp
       }
     })
@@ -1068,6 +1118,10 @@ module.exports = class DNSMASQ {
     let hostsList = []
 
     for (const h of hosts) {
+      if (h.dhcpIgnore === true) {
+        hostsList.push(`${h.mac},ignore`);
+        continue;
+      }
       const monitor = h.spoofing === 'true' ? 'monitor' : 'unmonitor';
       let reserved = false;
       for (const intf of sysManager.getMonitoringInterfaces()) {
@@ -1167,16 +1221,16 @@ module.exports = class DNSMASQ {
     const secondaryRange = this.getDhcpRange("secondary");
     const secondaryRouterIp = sysManager.myIp2();
     const secondaryMask = sysManager.myIpMask2();
-    let secondaryDnsServers = sysManager.myDNS().join(',');
+    let secondaryDnsServers = sysManager.myDefaultDns().join(',');
     if (interfaceNameServers.secondary && interfaceNameServers.secondary.length != 0) {
       // if secondary dns server is set, use specified dns servers in dhcp response
       secondaryDnsServers = interfaceNameServers.secondary.join(',');
     }
 
     const alternativeRange = this.getDhcpRange("alternative");
-    const alternativeRouterIp = sysManager.myGateway();
+    const alternativeRouterIp = sysManager.myDefaultGateway();
     const alternativeMask = sysManager.myIpMask();
-    let alternativeDnsServers = sysManager.myDNS().join(',');
+    let alternativeDnsServers = sysManager.myDefaultDns().join(',');
     if (interfaceNameServers.alternative && interfaceNameServers.alternative.length != 0) {
       // if alternative dns server is set, use specified dns servers in dhcp response
       alternativeDnsServers = interfaceNameServers.alternative.join(',');
@@ -1284,6 +1338,7 @@ module.exports = class DNSMASQ {
       try {
         await this._remove_all_iptables_rules();
         await this._add_all_iptables_rules();
+        await this._update_dns_fallback_rules();
       } catch (err) {
         log.error('Error when add iptables rules', err);
         await this._remove_all_iptables_rules();
@@ -1381,10 +1436,12 @@ module.exports = class DNSMASQ {
       }
       // simply removes dns redirect rules, no need to stop dns service
       await this._remove_all_iptables_rules();
-      bone.logAsync("error", {
-        type: 'DNSMASQ CRASH',
-        msg: `dnsmasq failed to restart after ${this.failCount} retries`,
-      });
+      if ((this.failCount & (this.failCount - 1)) === 0) { // do not send error log to cloud unless fail count is power of 2
+        bone.logAsync("error", {
+          type: 'DNSMASQ UNREPLIED',
+          msg: `dnsmasq does not respond after ${this.failCount} restarts`,
+        });
+      }
     }
     this.scheduleRestartDNSService(true);
   }
@@ -1448,7 +1505,7 @@ module.exports = class DNSMASQ {
     try {
       let md5sumNow = '';
       for (const confs of paths) {
-        const { stdout } = await execAsync(`find ${confs} -type f | sort | xargs cat | md5sum | awk '{print $1}'`);
+        const stdout = await execAsync(`find ${confs} -type f | xargs cat | sort | md5sum | awk '{print $1}'`).then(r => r.stdout).catch((err) => null);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);

@@ -72,6 +72,12 @@ const f = require('../net2/Firewalla.js');
 const i18n = require('../util/i18n.js');
 
 const dns = require('dns');
+// dnscache will override functions in dns
+const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
+  enable: true,
+  ttl: 300,
+  cachesize: 1000
+});
 
 class SysManager {
   constructor() { // loglevel is already ignored
@@ -142,6 +148,12 @@ class SysManager {
       sclient.subscribe("System:SSHPasswordChange");
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
+      sem.on(Message.MSG_FW_FR_RELOADED, () => {
+        this.update(() => {
+          sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
+        });
+      });
+
       this.delayedActions();
       this.reloadTimezone();
 
@@ -189,7 +201,7 @@ class SysManager {
           log.info("SysManager initialization complete");
       });
     });
-    
+
     return instance
   }
 
@@ -223,7 +235,7 @@ class SysManager {
       return;
     await delay(1);
     return this.waitTillInitialized();
-  } 
+  }
 
   delayedActions() {
     setTimeout(() => {
@@ -373,7 +385,7 @@ class SysManager {
       await exec(`sudo timedatectl set-timezone ${timezone}`);
       await exec('sudo systemctl restart cron.service');
       await exec('sudo systemctl restart rsyslog');
-      
+
       return null;
     } catch (err) {
       log.error("Failed to set timezone:", err);
@@ -514,6 +526,7 @@ class SysManager {
   }
 
   getInterfaceViaIP4(ip) {
+    if(!ip) return null;
     const ipAddress = new Address4(ip)
     return this.getMonitoringInterfaces().find(i => i.subnetAddress4 && ipAddress.isInSubnet(i.subnetAddress4))
   }
@@ -687,6 +700,22 @@ class SysManager {
 
   myDDNS() {
     return this.ddns;
+  }
+
+  myResolver(intf) {
+    if (!intf)
+      return [];
+    const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
+    const resolver4 = resolver.filter(r => new Address4(r).isValid())
+    return resolver4;
+  }
+
+  myResolver6(intf) {
+    if (!intf)
+      return [];
+    const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
+    const resolver6 = resolver.filter(r => new Address6(r).isValid())
+    return resolver6;
   }
 
   myDNS(intf = this.config.monitoringInterface) { // return array

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -64,8 +64,8 @@ function getDomain(ip) {
   return ip;
 }
 
-function alarmBootstrap(flow) {
-  return {
+function alarmBootstrap(flow, mac) {
+  const obj = {
     "p.device.id": flow.shname,
     "p.device.name": flow.shname,
     "p.device.ip": flow.sh,
@@ -76,6 +76,12 @@ function alarmBootstrap(flow) {
     "p.intf.id": flow.intf,
     "p.tag.ids": flow.tags
   }
+
+  if(mac) {
+    obj["p.dest.ip.device.mac"] = mac;
+  }
+
+  return obj;
 }
 
 module.exports = class FlowMonitor {
@@ -217,15 +223,16 @@ module.exports = class FlowMonitor {
     return false;
   }
 
-  flowIntel(flows) {
+  flowIntel(flows, mac) {
     for (const flow of flows) {
       log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
         log.debug("######## flowIntel Processing", JSON.stringify(flow));
-        if (this.isFlowIntelInClass(flow['intel'], "av")) {
+        if (this.isFlowIntelInClass(flow['intel'], "av") &&
+          flow.fd === 'in') {
           if ((flow.du && Number(flow.du) > 60) && (flow.rb && Number(flow.rb) > 5000000)) {
             let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-              alarmBootstrap(flow)
+              alarmBootstrap(flow, mac)
             );
 
             alarmManager2.enqueueAlarm(alarm);
@@ -233,6 +240,7 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "porn") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 20) && (flow.rb && Number(flow.rb) > 1000000) ||
             this.flowIntelRecordFlow(flow, 3)
@@ -242,7 +250,7 @@ module.exports = class FlowMonitor {
           // there should be a unique ID between pi and cloud on websites
 
           let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow)
+            alarmBootstrap(flow, mac)
           );
 
           alarmManager2.enqueueAlarm(alarm);
@@ -322,6 +330,13 @@ module.exports = class FlowMonitor {
               intelobj.pr = flow.pr;
             }
 
+            if (flow.intf && _.isString(flow.intf)) {
+              intelobj.intf = flow.intf;
+            }
+            if (flow.tags && _.isArray(flow.tags)) {
+              intelobj.tags = flow.tags;
+            }
+
             log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
 
             this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
@@ -333,26 +348,28 @@ module.exports = class FlowMonitor {
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "games") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) ||
             this.flowIntelRecordFlow(flow, 3)
           )
         ) {
           let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow)
+            alarmBootstrap(flow, mac)
           );
 
           alarmManager2.enqueueAlarm(alarm);
         }
         else if (
           this.isFlowIntelInClass(flow['intel'], "vpn") &&
+          flow.fd === 'in' &&
           (
             (flow.du && Number(flow.du) > 120) && (flow.rb && Number(flow.rb) > 10000) ||
             this.flowIntelRecordFlow(flow, 3)
           )
         ) {
           let alarm = new Alarm.VpnAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow)
+            alarmBootstrap(flow, mac)
           );
 
           alarmManager2.enqueueAlarm(alarm);
@@ -510,7 +527,7 @@ module.exports = class FlowMonitor {
       });
     }
 
-    this.flowIntel(result.connections);
+    this.flowIntel(result.connections, mac);
     this.summarizeNeighbors(host, result.connections);
     if (result.activities != null) {
       /*
@@ -536,7 +553,7 @@ module.exports = class FlowMonitor {
         this.updateIntelFromHTTP(conn);
       });
     }
-    this.flowIntel(result.connections);
+    this.flowIntel(result.connections, mac);
     this.summarizeNeighbors(host, result.connections);
   }
 
@@ -625,7 +642,7 @@ module.exports = class FlowMonitor {
       }
 
       try {
-        await this.genLargeTransferAlarm(direction, flow);
+        this.genLargeTransferAlarm(direction, flow);
       } catch (err) {
         log.error('Failed to generate alarm', fullkey, err);
       }
@@ -702,7 +719,7 @@ module.exports = class FlowMonitor {
   // Reslve v6 or v4 address into a local host
 
 
-  async genLargeTransferAlarm(direction, flow) {
+  genLargeTransferAlarm(direction, flow) {
     if (!flow) return;
 
     let copy = JSON.parse(JSON.stringify(flow));
@@ -768,7 +785,7 @@ module.exports = class FlowMonitor {
       // ideally each destination should have a unique ID, now just use hostname as a workaround
       // so destionationName, destionationHostname, destionationID are the same for now
 
-      await alarmManager2.enqueueAlarm(alarm);
+      alarmManager2.enqueueAlarm(alarm);
     }
   }
 
@@ -1036,7 +1053,8 @@ module.exports = class FlowMonitor {
     }
 
     let severity = iobj.severityscore > 50 ? "major" : "minor";
-    let reason = iobj.reason;
+    const reason = (_.isArray(iobj.category) && iobj.category.join(",")) || "";
+    const primaryReason = (_.isArray(iobj.category) && iobj.category.length > 0 && iobj.category[0]) || "";
 
     if (!fc.isFeatureOn("cyber_security")) {
       return;
@@ -1051,6 +1069,7 @@ module.exports = class FlowMonitor {
       "p.dest.name": domain || remoteIP,
       "p.dest.port": this.getRemotePort(flowObj),
       "p.security.reason": reason,
+      "p.security.primaryReason": primaryReason,
       "p.security.numOfReportSources": iobj.count,
       "p.local_is_client": (flowObj.fd === 'in' ? "1" : "0"),
       // "p.dest.whois": JSON.stringify(iobj.whois),

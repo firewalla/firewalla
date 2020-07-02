@@ -199,7 +199,7 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      else
          cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
      fi
-     cat $FWPRODUCTION > /tmp/FWPRODUCTION
+     echo $FWPRODUCTION > /tmp/FWPRODUCTION
      mkdir -p /home/pi/.forever
      sudo rm -f /home/pi/.forever/{kickui,api,main,monitor}.log
     else
@@ -278,6 +278,7 @@ function create_bootstrap_scripts_folder() {
     [ -s /home/pi/firewalla/scripts/fireupgrade.sh ] && cp /home/pi/firewalla/scripts/fireupgrade.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.
+    [ -s /home/pi/firewalla/scripts/network_settings.sh ] && cp /home/pi/firewalla/scripts/network_settings.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/fire-ping.sh ] && cp /home/pi/firewalla/scripts/fire-ping.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/mgit ] && cp /home/pi/firewalla/scripts/mgit $PI_HOME/scripts/.
     if [[ ! -f /.dockerenv ]]; then
@@ -304,6 +305,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/firehb.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/dnscrypt/dnscrypt.service /etc/systemd/system/.
@@ -315,6 +317,8 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo systemctl daemon-reload
+    sudo systemctl enable firehb
+    sudo systemctl restart firehb # start if not started
 fi
 
 # it is no longer used since 1.965

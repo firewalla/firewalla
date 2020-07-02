@@ -37,8 +37,8 @@ sudo ipset create allow_ob_ip_set hash:ip family inet hashsize 16384 maxelem 655
 sudo ipset create allow_ob_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &> /dev/null
 sudo ipset create allow_ob_net_set hash:net family inet hashsize 4096 maxelem 65536 &> /dev/null
 
-sudo ipset create monitoring_off_mac_set hash:mac &>/dev/null
-sudo ipset create monitoring_off_set list:set &>/dev/null
+sudo ipset create acl_off_mac_set hash:mac &>/dev/null
+sudo ipset create acl_off_set list:set &>/dev/null
 sudo ipset create monitored_ip_set hash:ip family inet hashsize 128 maxelem 65536 &> /dev/null
 sudo ipset create no_dns_caching_mac_set hash:mac &>/dev/null
 sudo ipset create no_dns_caching_set list:set &>/dev/null
@@ -64,9 +64,9 @@ sudo ipset flush allow_ob_ip_set
 sudo ipset flush allow_ob_domain_set
 sudo ipset flush allow_ob_net_set
 
-sudo ipset flush monitoring_off_mac_set
-sudo ipset flush monitoring_off_set
-sudo ipset add -! monitoring_off_set monitoring_off_mac_set
+sudo ipset flush acl_off_mac_set
+sudo ipset flush acl_off_set
+sudo ipset add -! acl_off_set acl_off_mac_set
 
 sudo ipset flush monitored_ip_set
 
@@ -77,19 +77,26 @@ sudo ipset flush monitored_net_set
 
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
+if [[ $(uname -m) != "x86_64" ]]; then
+  sudo iptables -w -F FORWARD
+  sudo iptables -w -t nat -F PREROUTING
+  sudo ip6tables -w -F FORWARD
+  sudo ip6tables -w -t nat -F PREROUTING
+fi
+
 # destroy chains in previous version, these should be removed in next release
-sudo iptables -F FW_BLOCK &>/dev/null && sudo iptables -X FW_BLOCK
-sudo iptables -F FW_NAT_BLOCK &>/dev/null && sudo iptables -X FW_NAT_BLOCK
-sudo iptables -F FW_WHITELIST_PREROUTE &>/dev/null && sudo iptables -X FW_WHITELIST_PREROUTE
-sudo iptables -F FW_WHITELIST &>/dev/null && sudo iptables -X FW_WHITELIST
-sudo iptables -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo iptables -X FW_NAT_WHITELIST_PREROUTE
-sudo iptables -F FW_NAT_WHITELIST &>/dev/null && sudo iptables -X FW_NAT_WHITELIST
-sudo ip6tables -F FW_BLOCK &>/dev/null && sudo ip6tables -X FW_BLOCK
-sudo ip6tables -F FW_NAT_BLOCK &>/dev/null && sudo ip6tables -X FW_NAT_BLOCK
-sudo ip6tables -F FW_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -X FW_WHITELIST_PREROUTE
-sudo ip6tables -F FW_WHITELIST &>/dev/null && sudo ip6tables -X FW_WHITELIST
-sudo ip6tables -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -X FW_NAT_WHITELIST_PREROUTE
-sudo ip6tables -F FW_NAT_WHITELIST &>/dev/null && sudo ip6tables -X FW_NAT_WHITELIST
+sudo iptables -w -F FW_BLOCK &>/dev/null && sudo iptables -w -X FW_BLOCK
+sudo iptables -w -t nat -F FW_NAT_BLOCK &>/dev/null && sudo iptables -w -t nat -X FW_NAT_BLOCK
+sudo iptables -w -F FW_WHITELIST_PREROUTE &>/dev/null && sudo iptables -w -X FW_WHITELIST_PREROUTE
+sudo iptables -w -F FW_WHITELIST &>/dev/null && sudo iptables -w -X FW_WHITELIST
+sudo iptables -w -t nat -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo iptables -w -t nat -X FW_NAT_WHITELIST_PREROUTE
+sudo iptables -w -t nat -F FW_NAT_WHITELIST &>/dev/null && sudo iptables -w -t nat -X FW_NAT_WHITELIST
+sudo ip6tables -w -F FW_BLOCK &>/dev/null && sudo ip6tables -w -X FW_BLOCK
+sudo ip6tables -w -t nat -F FW_NAT_BLOCK &>/dev/null && sudo ip6tables -w -t nat -X FW_NAT_BLOCK
+sudo ip6tables -w -F FW_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -w -X FW_WHITELIST_PREROUTE
+sudo ip6tables -w -F FW_WHITELIST &>/dev/null && sudo ip6tables -w -X FW_WHITELIST
+sudo ip6tables -w -t nat -F FW_NAT_WHITELIST_PREROUTE &>/dev/null && sudo ip6tables -w -t nat -X FW_NAT_WHITELIST_PREROUTE
+sudo ip6tables -w -t nat -F FW_NAT_WHITELIST &>/dev/null && sudo ip6tables -w -t nat -X FW_NAT_WHITELIST
 
 
 rules_to_remove=`ip rule list | grep -v -e "^501:" | grep -v -e "^1001:" | grep -v -e "^2001:" | grep -v -e "^3000:" | grep -v -e "^3001:" | grep -v -e "^4001:" | grep -v -e "^5001:" | grep -v -e "^5002:" | grep -v -e "^6001:" | grep -v -e "^7001:" | grep -v -e "^8001:" | grep -v -e "^9001:" | grep -v -e "^10001:" | cut -d: -f2-`;
@@ -117,6 +124,9 @@ sudo iptables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo iptables -w -A IN
 # multi protocol block chain
 sudo iptables -w -N FW_DROP &>/dev/null
 sudo iptables -w -F FW_DROP
+# do not apply ACL enforcement for outbound connections of acl off devices/networks
+sudo iptables -w -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+sudo iptables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
 sudo iptables -w -A FW_DROP -p tcp -j REJECT
 sudo iptables -w -A FW_DROP -j DROP
 
@@ -126,14 +136,6 @@ sudo iptables -w -F FW_ACCEPT
 sudo iptables -w -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
 sudo iptables -w -A FW_ACCEPT -j ACCEPT
 sudo iptables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo iptables -w -A FORWARD -j FW_ACCEPT
-
-# initialize bypass chain
-sudo iptables -w -N FW_BYPASS &> /dev/null
-sudo iptables -w -F FW_BYPASS
-sudo iptables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_BYPASS
-# directly accept for monitoring off devices/networks
-sudo iptables -w -A FW_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
-sudo iptables -w -A FW_BYPASS -m set --match-set monitoring_off_set dst,dst -j ACCEPT
 
 # initialize vpn client kill switch chain
 sudo iptables -w -N FW_VPN_CLIENT &>/dev/null
@@ -258,16 +260,23 @@ sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_EXT_IP &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_EXT_IP
 sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
-# initialize nat bypass chain
-sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
-sudo iptables -w -t nat -F FW_NAT_BYPASS
-sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
-# directly accept for monitoring off devices/networks
-sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
-# create dns redirect chain in PREROUTING
+# create vpn client dns redirect chain in FW_PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
+
+# initialize nat dns fallback chain, which is traversed if acl is off
+sudo iptables -w -t nat -N FW_PREROUTING_DNS_FALLBACK &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_DNS_FALLBACK
+
+# initialize nat bypass chain after port forward and vpn client
+sudo iptables -w -t nat -N FW_NAT_BYPASS &> /dev/null
+sudo iptables -w -t nat -F FW_NAT_BYPASS
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
+# jump to DNS_FALLBACK for acl off devices/networks
+sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set acl_off_set src,src -j FW_PREROUTING_DNS_FALLBACK
+
+# create regular dns redirect chain in FW_PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
@@ -430,6 +439,9 @@ if [[ -e /sbin/ip6tables ]]; then
   # multi protocol block chain
   sudo ip6tables -w -N FW_DROP &>/dev/null
   sudo ip6tables -w -F FW_DROP
+  # do not apply ACL enforcement for outbound connections of acl off devices/networks
+  sudo ip6tables -w -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+  sudo ip6tables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
   sudo ip6tables -w -C FW_DROP -p tcp -j REJECT &>/dev/null || sudo ip6tables -w -A FW_DROP -p tcp -j REJECT
   sudo ip6tables -w -C FW_DROP -j DROP &>/dev/null || sudo ip6tables -w -A FW_DROP -j DROP
 
@@ -439,15 +451,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
   sudo ip6tables -w -A FW_ACCEPT -j ACCEPT
   sudo ip6tables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_ACCEPT
-
-  # initialize bypass chain
-  sudo ip6tables -w -N FW_BYPASS &> /dev/null
-  sudo ip6tables -w -F FW_BYPASS
-  sudo ip6tables -w -C FW_FORWARD -j FW_BYPASS &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_BYPASS
-  # directly accept for not monitored devices
-  sudo ip6tables -w -A FW_BYPASS -m set --match-set monitoring_off_set src,src -j FW_ACCEPT
-  sudo ip6tables -w -A FW_BYPASS -m set --match-set monitoring_off_set dst,dst -j FW_ACCEPT
-
 
   # initialize firewall chain
   sudo ip6tables -w -N FW_FIREWALL &> /dev/null
@@ -552,23 +555,29 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
   sudo ip6tables -w -t nat -A FW_NAT_HOLE -j RETURN
 
-  # initialize nat bypass chain
-  sudo ip6tables -w -t nat -N FW_NAT_BYPASS &> /dev/null
-  sudo ip6tables -w -t nat -F FW_NAT_BYPASS
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &> /dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
-  # directly accept for not monitored devices
-  sudo ip6tables -w -t nat -A FW_NAT_BYPASS -m set --match-set monitoring_off_set src,src -j ACCEPT
-
-  # DNAT related chain comes first
+  # create vpn client dns redirect chain in FW_PREROUTING
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
-  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT  
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
+
+  # initialize nat dns fallback chain, which is traversed if acl is off
+  sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_FALLBACK &> /dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_FALLBACK
+
+  # initialize nat bypass chain after vpn client
+  sudo ip6tables -w -t nat -N FW_NAT_BYPASS &> /dev/null
+  sudo ip6tables -w -t nat -F FW_NAT_BYPASS
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
+  # jump to DNS_FALLBACK for acl off devices/networks
+  sudo ip6tables -w -t nat -A FW_NAT_BYPASS -m set --match-set acl_off_set src,src -j FW_PREROUTING_DNS_FALLBACK
+
+  # create regular dns redirect chain in FW_PREROUTING
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
-  sudo ip6tables -w -t nat -C FW_REROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
 
   # initialize nat firewall chain
   sudo ip6tables -w -t nat -N FW_NAT_FIREWALL &> /dev/null

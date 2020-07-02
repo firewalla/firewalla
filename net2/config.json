@@ -5,9 +5,13 @@
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
+  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
+  "firewallaSocketIOURL": "https://firewalla.encipher.io",
+  "SocketIOPath": "/socket",
+  "SocketIODevPath": "/socket.v0",
   "cacheInit": true,
   "discovery": {
     "networkInterfaces": [
@@ -27,6 +31,7 @@
     "alarm.data_plan.cooldown": 2592000,
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
+    "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
     "notification.box_online.cooldown": 900
@@ -97,13 +102,13 @@
     "DHCPSensor": {},
     "UPNPSensor": {
       "interval": 600,
-      "expireInterval": 3600
+      "expireInterval": 1800
     },
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "DeviceServiceScanSensor": {
-      "interval": 1800,
+      "interval": 10800,
       "firstScan": 120
     },
     "ExternalScanSensor": {
@@ -430,7 +435,7 @@
         "count": 10000
       },
       "dns": {
-        "expires": 100000,
+        "expires": 86400,
         "count": 100
       },
       "software": {
@@ -528,7 +533,12 @@
     "LocalDomainSensor": {},
     "SS2Plugin": {},
     "WireGuardPlugin": {},
-    "PiHolePlugin": {}
+    "PiHolePlugin": {},
+    "InternalScanSensor": {},
+    "LogScanSensor": {
+      "fireResetBluetooth": true,
+      "bonelogInterval": 900
+    }
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -638,11 +648,8 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "shadowsocks_server": false,
     "scisurf": false,
     "naughty_monkey": false,
-    "device_detection": false,
-    "porn_redirect": false,
     "redirect_httpd": false,
     "social_hour": true,
     "api_relay": false,
@@ -667,7 +674,9 @@
     "ipv6": false,
     "pihole": false,
     "adblock": false,
-    "family_protect": false
+    "family_protect": false,
+    "smart_block": true,
+    "internal_scan": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -683,8 +692,8 @@
     "hiddenFolder": "/.router"
   },
   "ratelimit": {
-    "name": "default",
-    "max": 60,
+    "appMax": 60,
+    "webMax": 200,
     "duration": 60
   }
 }

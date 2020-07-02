@@ -200,7 +200,7 @@ module.exports = class {
     }
     if (!list.length) {
       log.warn('No interface')
-      return
+      return list;
     }
 
     // add consistent uuid to interfaces

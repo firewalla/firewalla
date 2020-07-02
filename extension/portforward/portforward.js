@@ -74,6 +74,8 @@ class PortForward {
           });
 
           sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+            if (!this._started)
+              return;
             try {
               if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
                 this._wanIPs = sysManager.myWanIps();
@@ -155,7 +157,13 @@ class PortForward {
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
+            map.active = true;
             log.info("IP address has changed, add new rule: ", map);
+            await this.addPort(map);
+          } else {
+            map.toIP = null;
+            map.active = false;
+            log.info("IP address is not available, deactivating rule: ", map);
             await this.addPort(map);
           }
         }
@@ -238,6 +246,11 @@ class PortForward {
         }
       }
 
+      if (map.active === false) {
+        log.info("Port forward is not active now", map);
+        return;
+      }
+
       if (!this._isLANInterfaceIP(map.toIP)) {
         log.warn("IP is not in secondary network, port forward will not be applied: ", map);
         return;
@@ -257,9 +270,11 @@ class PortForward {
     let old = this.find(map);
     while (old >= 0) {
       this.config.maps[old].state = false;
-      log.info(`Remove port forward`, map);
-      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
-      await iptable.portforwardAsync(dupMap);
+      if (this.config.maps[old].active !== false) {
+        log.info(`Remove port forward`, this.config.maps[old]);
+        const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
+        await iptable.portforwardAsync(dupMap);
+      }
 
       this.config.maps.splice(old, 1);
       old = this.find(map);
@@ -291,6 +306,7 @@ class PortForward {
         this.refreshConfig();
       }, 60000); // refresh config once every minute
     }
+    this._started = true;
   }
 
   async stop() {

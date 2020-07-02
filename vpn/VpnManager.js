@@ -280,7 +280,7 @@ class VpnManager {
     // statistics include client lists and rx/tx bytes
     let cmd = `systemctl is-active openvpn@${this.instanceName}`;
     return await execAsync(cmd).then(async () => {
-      cmd = `echo "status" | nc -w 5 -q 2 localhost 5194 | tail -n +2`;
+      cmd = `echo "status" | nc -w 5 -q 0 localhost 5194 | tail -n +2`;
       /*
       OpenVPN CLIENT LIST
       Updated,Fri Aug  9 12:08:18 2019
@@ -515,10 +515,13 @@ class VpnManager {
   }
 
   generateNetwork() {
-    // random segment from 20 to 199
-    const seg1 = Math.floor(Math.random() * 180 + 20);
-    const seg2 = Math.floor(Math.random() * 180 + 20);
-    return "10." + seg1 + "." + seg2 + ".0";
+    while (true) {
+      // random segment from 20 to 199
+      const seg1 = Math.floor(Math.random() * 180 + 20);
+      const seg2 = Math.floor(Math.random() * 180 + 20);
+      if (!sysManager.inMySubnets4(`10.${seg1}.${seg2}.1`))
+        return "10." + seg1 + "." + seg2 + ".0";
+    }
   }
 
   static getSettingsDirectoryPath(commonName) {

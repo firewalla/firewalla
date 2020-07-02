@@ -149,6 +149,13 @@ class Platform {
     return true;
   }
 
+  defaultPassword() {
+    return null;
+  }
+
+  isBluetoothAvailable() {
+    return true
+  }
 }
 
 module.exports = Platform;

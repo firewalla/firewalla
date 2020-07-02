@@ -34,7 +34,7 @@ const f = require('../../net2/Firewalla.js');
 
 Promise.promisifyAll(fs);
 
-const rp = require('request-promise');
+const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 
 class FWDiag {
   constructor() {
@@ -110,7 +110,7 @@ class FWDiag {
 
     const ip = inter.ip_address;
     const gateway = inter.gateway_ip;
-    const mac = inter.mac_address;
+    const mac = platform.getSignatureMac();
 
     const gatewayMac = await this.getGatewayMac(gateway);
     const gatewayName = await this.getGatewayName(gateway);
@@ -136,9 +136,11 @@ class FWDiag {
       const options = {
         uri:  this.getEndpoint() + data.gw,
         method: 'POST',
-        json: data
+        json: data,
+        maxAttempts: 2,
+        timeout: 10000
       }
-      const result = await rp(options);
+      const result = await rrWithErrHandling(options);
       if(result && result.mode) {
         await rclient.setAsync("recommend_firewalla_mode", result.mode);
       }
@@ -163,7 +165,7 @@ class FWDiag {
     const inter = sysManager.getDefaultWanInterface()
 
     const firewallaIP = inter.ip_address;
-    const mac = inter.mac_address;
+    const mac = platform.getSignatureMac();
     const gateway = inter.gateway_ip;
 
     const version = this.getVersion();
@@ -202,9 +204,11 @@ class FWDiag {
     const options = {
       uri: this.getEndpoint() + 'hello',
       method: 'POST',
-      json: data
+      json: data,
+      maxAttempts: 2,
+      timeout: 10000
     }
-    await rp(options);
+    await rrWithErrHandling(options);
     log.info("said hello to Firewalla Cloud");
   }
 
@@ -213,10 +217,12 @@ class FWDiag {
     const options = {
       uri: this.getEndpoint() + 'log/' + level,
       method: 'POST',
-      json: Object.assign({}, data, sysData)
+      json: Object.assign({}, data, sysData),
+      maxAttempts: 2,
+      timeout: 10000
     }
     log.info(`Sending diag log, [${level}] ${JSON.stringify(data)}`);
-    await rp(options);
+    await rrWithErrHandling(options);
   }
 }
 

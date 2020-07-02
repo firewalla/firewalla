@@ -129,7 +129,7 @@ class NetworkStatsSensor extends Sensor {
       delete this.pings[type];
     }
 
-    this.pings[type] = new Ping(sysManager.myGateway());
+    this.pings[type] = new Ping(sysManager.myDefaultGateway());
     this.pings[type].on('ping', (data) => {
       rclient.zadd(redisKey, Math.floor(new Date() / 1000), data.time);
     });
@@ -139,11 +139,11 @@ class NetworkStatsSensor extends Sensor {
   }
 
   testGateway() {
-    this.testPingPerf("gateway", sysManager.myGateway(), "perf:ping:gateway");
+    this.testPingPerf("gateway", sysManager.myDefaultGateway(), "perf:ping:gateway");
   }
 
   testDNSServerPing() {
-    const dnses = sysManager.myDNS();
+    const dnses = sysManager.myDefaultDns();
     if (!_.isEmpty(dnses)) {
       this.testPingPerf("dns", dnses[0], "perf:ping:dns");
     }

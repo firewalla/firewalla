@@ -76,12 +76,12 @@ Ssdp.prototype.search = function search(device, promise) {
   if (promise._ended) return;
 
   var self = this;
-  var query = new Buffer('M-SEARCH * HTTP/1.1\r\n' +
-                         'HOST: ' + this.multicast + ':' + this.port + '\r\n' +
-                         'MAN: "ssdp:discover"\r\n' +
-                         'MX: 1\r\n' +
-                         'ST: ' + device + '\r\n' +
-                         '\r\n');
+  var query = Buffer.from('M-SEARCH * HTTP/1.1\r\n' +
+                          'HOST: ' + this.multicast + ':' + this.port + '\r\n' +
+                          'MAN: "ssdp:discover"\r\n' +
+                          'MX: 1\r\n' +
+                          'ST: ' + device + '\r\n' +
+                          '\r\n');
 
   // Send query on each socket
   this.sockets.forEach(function(socket) {

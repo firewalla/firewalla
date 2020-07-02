@@ -201,7 +201,7 @@ class DataUsageSensor extends Sensor {
         dataPlan = JSON.parse(dataPlan);
         const { date, total } = dataPlan;
         const { totalDownload, totalUpload, monthlyBeginTs, 
-                monthlyEndTs, downloadStats, uploadStats
+                monthlyEndTs, download, upload
             } = await hostManager.monthlyDataStats(null, date);
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
@@ -219,8 +219,8 @@ class DataUsageSensor extends Sensor {
                 "p.planUsage": total,
                 "p.alarm.level": level,
                 "e.transfers": {
-                    download: downloadStats,
-                    upload: uploadStats
+                    download: download,
+                    upload: upload
                 }
             });
             await alarmManager2.enqueueAlarm(alarm);

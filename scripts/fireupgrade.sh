@@ -57,20 +57,20 @@ timeout_check() {
     return 1
 }
 
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"+`date`
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"
 if [ -s /home/pi/scripts/check_reset.sh ]
 then
     sudo /home/pi/scripts/check_reset.sh
 else
     sudo /home/pi/firewalla/scripts/check_reset.sh
 fi
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"+`date`
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"
 
 
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
+/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST"
 
 function await_ip_assigned() {
-    for i in `seq 1 30`; do
+    for i in `seq 1 70`; do
         gw=$(ip route show | awk '/default/ {print $3; exit; }' | head -n 1)
         if [[ ! -n $gw ]]; then
             sleep 1
@@ -83,38 +83,9 @@ function await_ip_assigned() {
     return 1
 }
 
-set_value() {
-    kind=$1
-    saved_value=$2
-    case ${kind} in
-        ip)
-            sudo /sbin/ip addr replace ${saved_value} dev eth0
-            ;;
-        gw)
-            sudo /sbin/route add default gw ${saved_value} eth0
-            ;;
-    esac
-}
-
-restore_values() {
-    r=0
-    logger "Restore saved values of ip/gw/dns"
-    for kind in ip gw
-    do
-        file=/home/pi/.firewalla/run/saved_${kind}
-        [[ -e "$file" ]] || continue
-        saved_value=$(cat $file)
-        [[ -n "$saved_value" ]] || continue
-        set_value $kind $saved_value || r=1
-    done
-    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
-        sudo /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
-    else
-        r=1
-    fi
-    sleep 3
-    return $r
-}
+LOGGER=logger
+ERR=logger
+source ${FIREWALLA_HOME}/scripts/network_settings.sh
 
 await_ip_assigned || restore_values
 
@@ -122,7 +93,7 @@ $FIREWALLA_HOME/scripts/fire-time.sh
 
 GITHUB_STATUS_API=https://api.github.com
 
-logger `date`
+logger "$(date)"
 rc=1
 for i in `seq 1 5`; do
     HTTP_STATUS_CODE=`curl -m10 -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
@@ -136,7 +107,7 @@ done
 
 if [[ $rc -ne 0 ]]
 then
-    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK "+`date`
+    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK"
     external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
     if [ -s /home/pi/scripts/check_fix_network.sh ]
     then
@@ -145,12 +116,12 @@ then
         external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
     fi
     $external_script &>/dev/null &
-    timeout_check || /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"+`date`
-    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK "+`date`
+    timeout_check || /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"
+    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK"
 fi
 
 
-/usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
+/usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE"
 
 
 cd /home/pi/firewalla

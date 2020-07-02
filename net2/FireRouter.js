@@ -46,13 +46,14 @@ const { delay } = require('../util/util.js')
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
+const Mode = require('./Mode.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
-const uuid = require('uuid');
+const ip = require('ip')
 const _ = require('lodash');
-const Mode = require('./Mode.js');
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
@@ -159,6 +160,23 @@ async function generateNetworkInfo() {
     let gateway = null;
     let gateway6 = null;
     let dns = null;
+    let resolver = null;
+    const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
+    if (resolverConfig) {
+      if (resolverConfig.useNameserversFromWAN) {
+        const routingConfig = (routerConfig && routerConfig.routing && (routerConfig.routing[intfName] || routerConfig.routing.global));
+        const defaultRoutingConfig = routingConfig && routingConfig.default;
+        if (defaultRoutingConfig) {
+          const viaIntf = defaultRoutingConfig.viaIntf;
+          if (intfNameMap[viaIntf]) {
+            resolver = intfNameMap[viaIntf].config.nameservers || intfNameMap[viaIntf].state.dns;
+          }
+        }
+      } else {
+        if (resolverConfig.nameservers)
+          resolver = resolverConfig.nameservers;
+      }
+    }
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
@@ -188,6 +206,7 @@ async function generateNetworkInfo() {
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
       dns:          dns,
+      resolver:     resolver,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
       type:         intf.config.meta.type,
@@ -237,6 +256,8 @@ class FireRouter {
     this.retryUntilInitComplete()
 
     sclient.on("message", (channel, message) => {
+      if (!this.ready)
+        return;
       let reloadNeeded = false;
       switch (channel) {
         case Message.MSG_FR_IFACE_CHANGE_APPLIED : {
@@ -284,7 +305,9 @@ class FireRouter {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
-      this.init();
+      this.init().catch((err) => {
+        log.error("Failed to reload init", err.message);
+      });
     }, 3000);
   }
 
@@ -334,6 +357,8 @@ class FireRouter {
         log.error("Default WAN interface is not defined in router config");
 
 
+      log.info("adopting firerouter network change according to mode", mode)
+
       switch(mode) {
         case Mode.MODE_AUTO_SPOOF:
         case Mode.MODE_DHCP:
@@ -341,6 +366,7 @@ class FireRouter {
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
             .filter(intf => intf.state && intf.state.ip4) // ignore interfaces without ip address, e.g., VPN that is currently not running
+            .filter(intf => intf.state && intf.state.ip4 && ip.isPrivate(intf.state.ip4.split('/')[0]))
             .map(intf => intf.config.meta.intfName);
           break;
 
@@ -382,7 +408,7 @@ class FireRouter {
       // updates userConfig
       const intf = await networkTool.updateMonitoringInterface().catch((err) => {
         log.error('Error', err)
-      })
+      }) || "eth0"; // a fallback for red/blue
 
       const intf2 = intf + ':0'
 
@@ -440,12 +466,15 @@ class FireRouter {
       const d = new Discovery("nmap");
 
       // regenerate stub sys:network:uuid
-      await rclient.delAsync("sys:network:uuid");
+      const previousUUID = await rclient.hgetallAsync("sys:network:uuid") || {};
       const stubNetworkUUID = {
         "00000000-0000-0000-0000-000000000000": JSON.stringify({name: intf}),
         "11111111-1111-1111-1111-111111111111": JSON.stringify({name: intf2})
       };
       await rclient.hmset("sys:network:uuid", stubNetworkUUID);
+      for (let key of Object.keys(previousUUID).filter(uuid => !Object.keys(stubNetworkUUID).includes(uuid))) {
+        await rclient.hdel("sys:network:uuid", key).catch((err) => {});
+      }
       // updates sys:network:info
       const intfList = await d.discoverInterfacesAsync()
       if (!intfList.length) {
@@ -486,13 +515,14 @@ class FireRouter {
         }
       }
 
-      monitoringIntfNames = [ intf ];
+      const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
+      monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
       logicIntfNames = [ intf ];
 
       const intf2Obj = intfList.find(i => i.name == intf2)
       if (intf2Obj && intf2Obj.ip_address) {
 
-        monitoringIntfNames.push(intf2);
+        if (wanOnPrivateIP) monitoringIntfNames.push(intf2);
         logicIntfNames.push(intf2);
         const subnet2 = intf2Obj.subnet
         intfNameMap[intf2] = {
@@ -510,6 +540,9 @@ class FireRouter {
         }
       }
     }
+
+    // this will ensure SysManger on each process will be updated with correct info
+    sem.emitLocalEvent({type: Message.MSG_FW_FR_RELOADED});
 
     log.info('FireRouter initialization complete')
     this.ready = true

@@ -493,6 +493,11 @@ class Host {
     await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
+
+    if (policy.dhcpIgnore === true) {
+      await rclient.hsetAsync("host:mac:" + this.o.mac, "dhcpIgnore", "true");
+    }
 
     if (policy.allocations) {
       const intfIp = {}
@@ -531,6 +536,29 @@ class Host {
     return this.spoofing;
   }
 
+  async acl(state) {
+    if (state === true) {
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 4)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 6)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+    } else {
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC}`, err);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+    }
+  }
 
   async spoof(state) {
     log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
@@ -548,32 +576,14 @@ class Host {
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = state;
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC} ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
-        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 4)} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
-        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 6)} from ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
-      });
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = false;
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC} ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF_MAC}`, err);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
-        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_MONITORING_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
-        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to ${ipset.CONSTANTS.IPSET_MONITORING_OFF}`, err.message);
-      });
     }
 
-    const iface = sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
+    const iface = _.isString(this.o.ipv4Addr) && sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
     if (!iface || !iface.name) {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
       return;
@@ -1286,6 +1296,7 @@ class Host {
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {
+        await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
@@ -1301,6 +1312,7 @@ class Host {
     for (let uid of tags) {
       const tag = TagManager.getTagByUid(uid);
       if (tag) {
+        await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         });

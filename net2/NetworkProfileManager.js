@@ -52,7 +52,7 @@ class NetworkProfileManager {
           return;
         if (_.isString(host.ipv4)) {
           const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
-          if (host.ipv4 !== intfInfo.gateway)
+          if (intfInfo && host.ipv4 !== intfInfo.gateway)
             return;
           const uuid = intfInfo && intfInfo.uuid
           if (!uuid)
@@ -179,6 +179,8 @@ class NetworkProfileManager {
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
       const redisProfile = await rclient.hgetallAsync(key);
+      if (!redisProfile) // just in case
+        continue;
       const o = this.parse(redisProfile);
       const uuid = key.substring(13);
       if (!uuid) {

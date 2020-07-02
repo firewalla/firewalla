@@ -34,6 +34,7 @@ const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 
 const sysManager = require('../net2/SysManager.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class DeviceServiceScanSensor extends Sensor {
   constructor() {
@@ -42,8 +43,12 @@ class DeviceServiceScanSensor extends Sensor {
 
   run() {
     let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
-    setTimeout(() => {
-      this.checkAndRunOnce();
+    setTimeout(async() => {
+      await this.checkAndRunOnce();
+      sem.emitEvent({
+        type: "DeviceServiceScanComplete",
+        message: ""
+      });
     }, firstScanTime);
 
     let interval = this.config.interval * 1000 || 30 * 60 * 1000; // 30 minutes
@@ -89,12 +94,12 @@ class DeviceServiceScanSensor extends Sensor {
     } catch(err) {
       log.error("Failed to scan: " + err);
     }
-
+    log.info('Scan finished...');
     return hosts;
   }
 
   _scan(ipAddr, callback) {
-    let cmd = util.format('sudo nmap -Pn %s -oX - | %s', ipAddr, xml2jsonBinary);
+    let cmd = util.format('sudo nmap -Pn --top-ports 3000 %s -oX - | %s', ipAddr, xml2jsonBinary);
 
     log.info("Running command:", cmd);
     return new Promise((resolve, reject) => {

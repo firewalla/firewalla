@@ -17,7 +17,7 @@
 
 const log = require('./logger.js')(__filename);
 
-const Tail = require('always-tail');
+const Tail = require('../vendor_lib/always-tail.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -60,7 +60,7 @@ let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
-const NetworkProfileManager = require('../net2/NetworkProfileManager.js')
+const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 /*
  *
@@ -525,16 +525,31 @@ module.exports = class {
   */
 
   isMonitoring(ip) {
-    let hostObject = hostManager.getHostFast(ip);
-    if (!iptool.isV4Format(ip) && iptool.isV6Format(ip))
-      hostObject = hostManager.getHostFast6(ip);
+    if (!hostManager.isMonitoring())
+      return false;
+    let hostObject = null;
+    let networkProfile = null;
+    if (iptool.isV4Format(ip)) {
+      hostObject = hostManager.getHostFast(ip);
+      const iface = sysManager.getInterfaceViaIP4(ip);
+      const uuid = iface && iface.uuid;
+      networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+    } else {
+      if (iptool.isV6Format(ip)) {
+        hostObject = hostManager.getHostFast6(ip);
+        const iface = sysManager.getInterfaceViaIP6(ip);
+        const uuid = iface && iface.uuid;
+        networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      }
+    }
 
     if (hostObject && !hostObject.isMonitoring()) {
       return false;
-    } else {
-      return true;
     }
-
+    if (networkProfile && !networkProfile.isMonitoring()) {
+      return false;
+    }
+    return true;
   }
 
   // @TODO check according to multi interface
@@ -797,6 +812,14 @@ module.exports = class {
         return;
       }
 
+      const intfInfo = sysManager.getInterfaceViaIP4(lhost);
+      if (intfInfo && intfInfo.uuid) {
+        intfId = intfInfo.uuid;
+      } else {
+        log.error(`Unable to find nif uuid, ${intfId}`);
+        intfId = '';
+      }
+
       if (localMac && sysManager.isMyMac(localMac)) {
         // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
         if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
@@ -804,7 +827,7 @@ module.exports = class {
           localMac = null; // discard local mac from bro log since it is not correct
         }
       }
-      if (!localMac) {
+      if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn") { // no need to query IP from unrecognized interface, otherwise it will spawn many 'cat' processes in Layer2.js
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
           localMac = await l2.getMACAsync(lhost).catch((err) => {
@@ -821,14 +844,6 @@ module.exports = class {
       }
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
-      }
-
-      const intfInfo = sysManager.getInterfaceViaIP4(lhost);
-      if (intfInfo && intfInfo.uuid) {
-        intfId = intfInfo.uuid;
-      } else {
-        log.error(`Unable to find nif uuid, ${intfId}`);
-        intfId = '';
       }
 
       let tags = [];

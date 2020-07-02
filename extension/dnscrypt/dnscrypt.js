@@ -67,7 +67,7 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
-    const allServers = await this.getAllServers(); // get servers from cloud
+    const allServers = await this.getAllServersFromCloud(); // get servers from cloud
     let serverList = await this.getServers();
     const allServerNames = allServers.map((x) => x.name).filter(Boolean);
     content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers, serverList));
@@ -178,9 +178,25 @@ class DNSCrypt {
     return result && result.servers;
   }
 
+  async getAllServersFromCloud() {
+    try {
+      const serversString = await bone.hashsetAsync("doh");
+      if (serversString) {
+        let servers = JSON.parse(serversString);
+        servers = servers.filter((server) => (server && server.name && server.stamp));
+        if (servers.length > 0) {
+          await this.setAllServers(servers);
+          return servers;
+        }
+      }
+    } catch(err) {
+      log.error("Failed to parse servers, err:", err);
+    }
+    return this.getDefaultAllServers();
+  }
+
   async getAllServers() {
-    //const serversString = await rclient.getAsync(allServerKey);
-    const serversString = await bone.hashsetAsync("doh");
+    const serversString = await rclient.getAsync(allServerKey);
     if (serversString) {
       try {
         let servers = JSON.parse(serversString);
@@ -199,13 +215,12 @@ class DNSCrypt {
     return all.map((x) => x.name).filter(Boolean);
   }
 
-  // ['cloudflare',{name:'nextdns',id:'xyz'}]
   async setAllServers(servers) {
     if(servers === null) {
-      return rclient.delAsync(serverKey);
+      return rclient.delAsync(allServerKey);
     }
 
-    return rclient.setAsync(serverKey, JSON.stringify(servers));
+    return rclient.setAsync(allServerKey, JSON.stringify(servers));
   }
 }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,12 +21,6 @@ const Sensor = require('./Sensor.js').Sensor;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-const pclient = require('../util/redis_manager.js').getPublishClient()
-
-const Promise = require('bluebird');
-
-const CronJob = require('cron').CronJob;
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
@@ -61,7 +55,7 @@ class IntelReportSensor extends Sensor {
       })
 
       await alarmManager2.enrichDeviceInfo(alarm);
-      await alarmManager2.enqueueAlarm(alarm);
+      alarmManager2.enqueueAlarm(alarm);
     }
   }
 
@@ -79,7 +73,7 @@ class IntelReportSensor extends Sensor {
       "p.firstDomain": top10[0].domain
     })
 
-    await alarmManager2.enqueueAlarm(alarm);
+    alarmManager2.enqueueAlarm(alarm);
   }
   
   async blackHoleHistory() {

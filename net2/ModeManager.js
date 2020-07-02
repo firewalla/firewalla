@@ -91,7 +91,7 @@ async function changeToAlternativeIpSubnet() {
     return;
   const altIpSubnet = fConfig.alternativeInterface.ip;
   const altGateway = fConfig.alternativeInterface.gateway;
-  const oldGateway = sysManager.myGateway();
+  const oldGateway = sysManager.myDefaultGateway();
   const oldIpSubnet = sysManager.mySubnet();
   // check if is same subnet
   const currIpSubnet = iptool.cidrSubnet(oldIpSubnet);
@@ -154,16 +154,15 @@ async function enableSecondaryInterface() {
 
     let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");
-    if (legacyIpSubnet) { // secondary ip is changed
-      try {
-        // legacyIpSubnet should be like 192.168.218.0/24
-        // dns change is done in dnsmasq.js
-        await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false); // remove old DHCP MASQUERADE rule
-        await iptables.dhcpSubnetChangeAsync(secondaryIpSubnet, true); // add new DHCP MASQUERADE rule
-      } catch (err) {
-        log.error("Failed to update nat for legacy IP subnet: " + legacyIpSubnet, err);
-        throw err;
-      }
+    if (legacyIpSubnet) {
+      await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false).catch((err) => {
+        log.error(`Failed to remove old SNAT rule for ${legacyIpSubnet}`, err.message);
+      });
+    }
+    if (secondaryIpSubnet) {
+      await iptables.dhcpSubnetChangeAsync(secondaryIpSubnet, true).catch((err) => {
+        log.error(`Failed to add new SNAT rule for ${secondaryIpSubnet}`, err.message);
+      });
     }
   } catch (err) {
     log.error("Failed to enable secondary interface, err:", err);

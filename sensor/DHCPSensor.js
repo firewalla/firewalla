@@ -46,16 +46,19 @@ class DHCPSensor extends Sensor {
           }, 60 * 1000); // cache for one minute
 
           log.info(util.format("New Device Found: %s (%s)", obj.name, obj.mac));
-          sem.emitEvent({
+          let eventMessage = {
             type: "NewDeviceWithMacOnly",
             mac: obj.mac,
             intf_mac: obj.intf_mac,
             intf_uuid: obj.intf_uuid,
-            name: obj.name,
             mtype: obj.mtype,
             from: 'dhcp',
             message: "may found a new device by dhcp"
-          });
+          }
+          if (!obj.ignoreName) {
+            eventMessage.name = obj.name;
+          }
+          sem.emitEvent(eventMessage);
         }
       });
     }, 5000);

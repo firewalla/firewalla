@@ -230,7 +230,7 @@ class DeviceHook extends Hook {
           // v4
           if (enrichedHost.ipv4Addr) {
             let previousEntry = await hostTool.getIPv4Entry(enrichedHost.ipv4Addr)
-            if (previousEntry && enrichedHost.ipv4Addr === sysManager.myGateway()) {
+            if (previousEntry && enrichedHost.ipv4Addr === sysManager.myDefaultGateway()) {
               // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
               log.info("Suspected spoofing device detected: " + enrichedHost.mac);
               this.createAlarm(enrichedHost, 'spoofing_device');
@@ -389,7 +389,7 @@ class DeviceHook extends Hook {
             lastActiveTimestamp: currentTimestamp
           });
   
-          if (enrichedHost.ipv4Addr === sysManager.myGateway()) {
+          if (enrichedHost.ipv4Addr === sysManager.myDefaultGateway()) {
             // ip address of gateway is taken over, handle it separately
             log.info("Suspected spoofing device detected: " + enrichedHost.mac);
             this.createAlarm(enrichedHost, 'spoofing_device');
@@ -603,11 +603,13 @@ class DeviceHook extends Hook {
   }
 
   getFirstIPv6(host) {
-    let v6Addrs = [];
-    try {
-      v6Addrs = JSON.parse(host.ipv6Addr)
-    } catch(err) {
-      log.error(`Failed to parse v6 addrs: ${host.ipv6Addr}`)
+    let v6Addrs = host.ipv6Addr || [];
+    if (_.isString(v6Addrs)) {
+      try {
+        v6Addrs = JSON.parse(v6Addrs);
+      } catch (err) {
+        log.error(`Failed to parse v6 addrs: ${v6Addrs}`)
+      }
     }
     return v6Addrs[0] || "";
   }

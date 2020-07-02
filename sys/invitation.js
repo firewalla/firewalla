@@ -218,9 +218,7 @@ class FWInvitation {
               await rclient.delAsync("firereset:license");
 
               // record license error
-              await rclient.setAsync("firereset:error", JSON.stringify({
-                "error_code": "invalid_license_type"
-              }));
+              await rclient.setAsync("firereset:error", "invalid_license_type");
 
               return {
                 status: "pending"
@@ -238,9 +236,7 @@ class FWInvitation {
           await rclient.delAsync("firereset:license");
 
           // record license error
-          await rclient.setAsync("firereset:error", JSON.stringify({
-            "error_code": "invalid_license"
-          }));
+          await rclient.setAsync("firereset:error", "invalid_license");
           
           return {
             status: "pending"

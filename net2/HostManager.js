@@ -16,7 +16,6 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const exec = require('child-process-promise').exec
 
@@ -36,6 +35,8 @@ const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
 const FlowManager = require('./FlowManager.js');
 const flowManager = new FlowManager('debug');
+const FlowAggrTool = require('./FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
 
 const FireRouter = require('./FireRouter.js');
 
@@ -55,9 +56,6 @@ const policyManager2 = new PolicyManager2();
 
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
-
-const NetBotTool = require('../net2/NetBotTool');
-const netBotTool = new NetBotTool();
 
 const SpooferManager = require('./SpooferManager.js')
 
@@ -88,7 +86,6 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const iptables = require('./Iptables.js');
-const ipset = require('./Ipset.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -101,10 +98,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const Message = require('./Message.js');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
-
-const {Rule} = require("./Iptables.js");
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
@@ -123,6 +117,7 @@ module.exports = class HostManager {
       let c = require('./MessageBus.js');
       this.messageBus = new c("info");
       this.iptablesReady = false;
+      this.spoofing = true;
 
       // ONLY register for these events in FireMain process
       if(f.isMain()) {
@@ -159,9 +154,9 @@ module.exports = class HostManager {
               log.warn("Iptables is not ready yet");
               return;
             }
-  
+
             this.scheduleExecPolicy();
-  
+
             /*
             this.loadPolicy((err,data)=> {
                 log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
@@ -227,7 +222,7 @@ module.exports = class HostManager {
     }
 
     json.cpuid = platform.getBoardSerial();
-    json.uptime = process.uptime()
+    json.uptime = process.uptime();
 
     if(sysManager.language) {
       json.language = sysManager.language;
@@ -299,6 +294,7 @@ module.exports = class HostManager {
     }
     const sysInfo = SysInfo.getSysInfo();
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
+    json.osUptime = sysInfo.osUptime;
   }
 
 
@@ -309,6 +305,7 @@ module.exports = class HostManager {
     }
     json.hosts = _hosts;
   }
+
   async yesterdayStatsForInit(json, target) {
     const downloadKey = `download${target ? ':' + target : ''}`;
     const uploadKey = `upload${target ? ':' + target : ''}`;
@@ -331,6 +328,7 @@ module.exports = class HostManager {
 
     return json;
   }
+
   async newLast24StatsForInit(json, target) {
     const subKey = target ? ':' + target : ''
     let downloadStats = await getHitsAsync("download" + subKey, "1hour", 24)
@@ -357,8 +355,7 @@ module.exports = class HostManager {
     let days = now.getDate();
     const month = now.getMonth(),
       year = now.getFullYear(),
-      lastMonthDays = new Date(year, month, 0).getDate(),
-      currentMonthDays = new Date(year, month + 1, 0).getDate();
+      lastMonthDays = new Date(year, month, 0).getDate();
     let monthlyBeginTs, monthlyEndTs;
     if (date && date != 1) {
       if (days < date) {
@@ -453,7 +450,10 @@ module.exports = class HostManager {
       rclient.get("extension.portforward.config",(err,data)=>{
         try {
           if (data != null) {
-            extdata['portforward'] = JSON.parse(data);
+            const portforwardConfig = JSON.parse(data);
+            if (portforwardConfig.maps && _.isArray(portforwardConfig.maps))
+              portforwardConfig.maps = portforwardConfig.maps.filter(map => map.active !== false);
+            extdata['portforward'] = portforwardConfig;
           }
         } catch (e) {
           log.error("ExtensionData:Unable to parse data",e,data);
@@ -519,7 +519,7 @@ module.exports = class HostManager {
 
   legacyStats(json) {
     log.debug("Reading legacy stats");
-    return flowManager.getSystemStats()
+    return flowManager.getTargetStats()
       .then((flowsummary) => {
         json.flowsummary = flowsummary;
       });
@@ -528,10 +528,11 @@ module.exports = class HostManager {
   async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
-    let promises = this.hosts.all.map((host) => flowManager.getStats2(host));
-    await Promise.all(promises);
+    for (const host of this.hosts.all) {
+      host.flowsummary = await flowManager.getTargetStats(host.o.mac)
+    }
     await this.loadHostsPolicyRules();
-    await this.hostsInfoForInit(json);
+    this.hostsInfoForInit(json);
     return json;
   }
 
@@ -866,6 +867,8 @@ module.exports = class HostManager {
   }
 
   async networkConfig(json, filterSensitive = false) {
+    if (!platform.isFireRouterManaged())
+      return;
     const config = FireRouter.getConfig();
     if (filterSensitive && config && config.interface && config.interface.pppoe) {
       for (const key in config.interface.pppoe) {
@@ -934,7 +937,7 @@ module.exports = class HostManager {
           this.networkProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
-          netBotTool.loadSystemStats(json)
+          this.loadSystemStats(json)
         ];
 
         this.basicDataForInit(json, options);
@@ -979,7 +982,8 @@ module.exports = class HostManager {
           json.isBindingOpen = 0;
         }
 
-        json.localDomainSuffix = (await rclient.get('local:domain:suffix')) || '.lan';
+        const suffix = await rclient.get('local:domain:suffix');
+        json.localDomainSuffix = suffix ? suffix : 'lan';
         callback(null, json);
       } catch(err) {
         log.error("Caught error when preparing init data: " + err);
@@ -1034,7 +1038,7 @@ module.exports = class HostManager {
         return host;
       }
 
-      
+
     } else {
       o = await dnsManager.resolveLocalHostAsync(target)
 
@@ -1138,7 +1142,7 @@ module.exports = class HostManager {
 
     // Only allow requests be executed in a frenquency lower than 1 every 5 mins
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
-    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {              
+    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
       log.info("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length>0){
         return this.hosts.all
@@ -1219,7 +1223,7 @@ module.exports = class HostManager {
             this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
           }
         }
-        
+
         hostbymac.update(o);
       }
       hostbymac._mark = true;
@@ -1317,16 +1321,24 @@ module.exports = class HostManager {
     return obj
   }
 
+  isMonitoring() {
+    return this.spoofing;
+  }
+
+  async acl(state) {
+    if (state == false) {
+      await iptables.switchACLAsync(false);
+      await iptables.switchACLAsync(false, 6);
+    } else {
+      await iptables.switchACLAsync(true);
+      await iptables.switchACLAsync(true, 6);
+    }
+  }
+
   async spoof(state) {
-    log.debug("System:Spoof:", state, this.spoofing);
+    this.spoofing = state;
     const sm = new SpooferManager();
     if (state == false) {
-      await iptables.switchMonitoringAsync(false);
-      await iptables.switchMonitoringAsync(false, 6);
-      // flush all ip addresses
-      // log.info("Flushing all ip addresses from monitoredKeys since monitoring is switched off")
-      // no need to empty spoof set since dev flag file is placed now
-      // await sm.emptySpoofSet();
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
@@ -1339,9 +1351,6 @@ module.exports = class HostManager {
       if (redisSpoofOff) {
         return;
       }
-
-      await iptables.switchMonitoringAsync(true);
-      await iptables.switchMonitoringAsync(true, 6);
       // remove dev flag file if it exists and restart bitbridge
       await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
         return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {
@@ -1356,7 +1365,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    
+
   }
 
   async getVpnActiveDeviceCount(profileId) {
@@ -1541,7 +1550,7 @@ module.exports = class HostManager {
             await this.setPolicyAsync("vpnClient", updatedPolicy);
           });
           await ovpnClient.stop();
-          // will do no harm to unenforce strict VPN even if strict VPN is not set  
+          // will do no harm to unenforce strict VPN even if strict VPN is not set
           await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
           return {running: false, reconnecting: 0};
         }
@@ -1658,7 +1667,7 @@ module.exports = class HostManager {
         inftMap[host.intf] = [host.mac];
       }
     });
-    
+
     return _.map(inftMap, (macs, intf) => {
       return {intf, macs: _.uniq(macs)};
     });
@@ -1759,6 +1768,7 @@ module.exports = class HostManager {
       }
     }
   }
+
   generateStats(downloadStats = [], uploadStats = []) {
     let totalDownload = 0, totalUpload = 0;
     downloadStats.forEach((s) => {
@@ -1773,5 +1783,72 @@ module.exports = class HostManager {
       totalUpload: totalUpload,
       totalDownload: totalDownload
     }
+  }
+
+  async loadSystemStats(json) {
+    const systemFlows = {};
+
+    const keys = ['upload', 'download'];
+
+    for(const key of keys) {
+      const lastSumKey = `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+
+      const elements = realSumKey.split(":")
+      if(elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+
+      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, 50);
+
+      const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        flows: enriched
+      }
+    }
+
+    const actitivityKeys = ['app', 'category'];
+
+    for(const key of actitivityKeys) {
+
+      const lastSumKey = `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if(!realSumKey) {
+        continue;
+      }
+
+      const elements = realSumKey.split(":")
+      if(elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+
+      const traffic = await flowAggrTool.getXYActivitySumFlowByKey(realSumKey, key, 50);
+
+      traffic.sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        activities: traffic
+      }
+    }
+
+    json.systemFlows = systemFlows;
   }
 }
