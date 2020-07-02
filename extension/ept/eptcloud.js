@@ -15,8 +15,6 @@
 'use strict';
 const log = require('../../net2/logger.js')(__filename);
 
-const Promise = require('bluebird');
-
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
 class EptCloudExtension {
@@ -40,9 +38,9 @@ class EptCloudExtension {
 
     const clients = groupInfo.symmetricKeys.filter((client) => client.eid != deviceEID)
 
-    const clientInfos = clients.map((client) => {
-      return JSON.stringify({ name: client.displayName, eid: client.eid })
-    });
+    const clientInfos = clients.map(client =>
+      JSON.stringify({ name: client.displayName, eid: client.eid })
+    );
 
     const keyName = "sys:ept:members";
 
@@ -56,10 +54,12 @@ class EptCloudExtension {
       await rclient.saddAsync(cmd)
     }
 
-    await rclient.hmset('sys:ept:me', {
+    await rclient.hmsetAsync('sys:ept:me', {
       eid: deviceEID,
       key: groupInfo.me.key
     })
+
+    await rclient.setAsync("groupName", groupInfo.name);
   }
 
 

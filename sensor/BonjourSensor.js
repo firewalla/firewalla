@@ -20,7 +20,7 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const sem = require('./SensorEventManager.js').getInstance();
 
-const Bonjour = require('bonjour');
+const Bonjour = require('../vendor_lib/bonjour');
 const Promise = require('bluebird');
 
 const sysManager = require('../net2/SysManager.js')

@@ -304,7 +304,7 @@ let legoEptCloud = class {
       if (err.statusCode == 401) {
         // throw errors out here
         await this.eptRelogin();
-        return this.rrWithErrHandling(
+        return rrWithErrHandling(
           Object.assign({}, options, { auth: { bearer: this.token }})
         )
       }
@@ -335,7 +335,15 @@ let legoEptCloud = class {
     }
 
     log.info("Setting box name to", name);
-    return this.rrWithEptRelogin(options);
+    await this.rrWithEptRelogin(options);
+
+    this.groupCache[gid].xname = cryptedXNAME;
+    this.groupCache[gid].updatedAt = new Date().toISOString()
+    this.groupCache[gid].name = name;
+
+    await rclient.setAsync("groupName", name);
+
+    return name
   }
 
   async eptCreateGroup(name, info, alias) {
@@ -387,9 +395,11 @@ let legoEptCloud = class {
     return resp.body
   }
 
-  async eptGroupList(eid) {
+  async eptGroupList() {
+    if (!this.eid) throw new Error('Invalid Instance Eid')
+
     let options = {
-      uri: this.endpoint + '/ept/' + encodeURIComponent(eid) + '/groups',
+      uri: this.endpoint + '/ept/' + encodeURIComponent(this.eid) + '/groups',
       family: 4,
       method: 'GET',
       json: true,
@@ -406,10 +416,7 @@ let legoEptCloud = class {
     for (const group of resp.body.groups) {
       group.gid = group._id;
       if (group["xname"]) {
-        let gg = this.parseGroup(group);
-        if (gg && gg.key) {
-          group['name'] = this.decrypt(group['xname'], gg.key);
-        }
+        this.parseGroup(group);
       }
     }
     return resp.body.groups; // "groups":groups
@@ -493,7 +500,7 @@ let legoEptCloud = class {
     }
 
     this.groupCache[gid] = this.parseGroup(resp.body);
-    return resp.body
+    return this.groupCache[gid]
   }
 
   parseGroup(group) {
@@ -509,7 +516,7 @@ let legoEptCloud = class {
     let symmetricKey = this.privateDecrypt(this.myPrivateKey, sk.key);
     this.groupCache[group._id] = {
       'group': group,
-      'symanttricKey': sk,
+      'symmetricKey': sk,
       'key': symmetricKey,
       'lastfetch': 0,
       'pullIntervalInSeconds': 0,
@@ -523,6 +530,9 @@ let legoEptCloud = class {
       if (skey.eid == this.eid) {
         group.me = skey;
       }
+    }
+    if (group.xname) {
+      group.name = this.decrypt(group.xname, symmetricKey);
     }
 
     return this.groupCache[group._id];
@@ -540,11 +550,8 @@ let legoEptCloud = class {
 
     try {
       const group = await this.groupFind(gid)
-      if (group) {
-        this.groupCache[gid] = this.parseGroup(group);
-        if (this.groupCache[gid]) {
-          return this.groupCache[gid]['key'];
-        }
+      if (group && group.key) {
+        return group.key
       }
     } catch(err) {
       log.error(err)
@@ -564,9 +571,9 @@ let legoEptCloud = class {
   }
 
   encrypt(text, key) {
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
     let crypted = cipher.update(text, 'utf8', 'base64');
     crypted += cipher.final('base64');
@@ -579,9 +586,9 @@ let legoEptCloud = class {
       return;
     }
     log.debug('encryting data with size', data.length, data.constructor.name);
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
     let crypted = cipher.update(data);
 
@@ -591,9 +598,9 @@ let legoEptCloud = class {
   }
 
   decrypt(text, key) {
-    let iv = new Buffer(16);
+    let iv = Buffer.alloc(16);
     iv.fill(0);
-    let bkey = new Buffer(key.substring(0, 32), "utf8");
+    let bkey = Buffer.from(key.substring(0, 32), "utf8");
     let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
     let dec = decipher.update(text, 'base64', 'utf8');
     dec += decipher.final('utf8');
@@ -729,7 +736,7 @@ let legoEptCloud = class {
 
     if(msg.data && msg.data.compressMode) {
       // compress before encrypt
-      let input = new Buffer(msgstr, 'utf8');
+      let input = Buffer.from(msgstr, 'utf8');
       zlib.deflate(input, (err, output) => {
         if(err) {
           log.error("Failed to compress payload:", err);
@@ -1142,31 +1149,17 @@ let legoEptCloud = class {
 
     if (ept.publicKey == null) return
 
-    const grp = await this.groupFind(gid)
-    log.debug("finding group my eid", this.eid, " inviting ", eid, "grp", grp);
-    if (grp == null) {
+    const result = await this.groupFind(gid)
+    if (result == null) {
       throw new Error("Failed to invite: group not found");
     }
+    log.debug("finding group my eid", this.eid, " inviting ", eid, "grp", result.group);
 
-    let mykey = null;
-    for (let key in grp.symmetricKeys) {
-      let sym = grp.symmetricKeys[key];
-      log.debug("searching keys ", key, " sym ", sym);
-      if (sym.eid === this.eid) {
-        log.debug("found my key ", this.eid);
-        mykey = sym;
-      }
-    }
-
-    if (mykey == null) {
-      throw new Error('Failed to invite: key not found')
-    }
-
-    const peerKey = this.reKeyForEpt(mykey, eid, ept);
+    const peerKey = this.reKeyForEpt(result.symmetricKey, eid, ept);
     if (peerKey == null) return
 
     const options = {
-      uri: this.endpoint + '/group/' + this.appId + "/" + grp._id + "/" + encodeURIComponent(eid),
+      uri: this.endpoint + '/group/' + this.appId + "/" + result.group._id + "/" + encodeURIComponent(eid),
       family: 4,
       method: 'POST',
       json: {

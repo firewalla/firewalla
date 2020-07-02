@@ -239,15 +239,15 @@ async function inviteAdmin(gid) {
 
   const gidPrefix = gid.substring(0, 8);
 
-  const group = await eptcloud.groupFind(gid)
+  const findResult = await eptcloud.groupFind(gid)
 
-  if (!group || !group.symmetricKeys) {
+  if (!findResult) {
     return false;
   }
 
   // number of key sym keys equals to number of members in this group
   // set this number to redis so that other js processes get this info
-  let count = group.symmetricKeys.length;
+  let count = findResult.group.symmetricKeys.length;
 
   await rclient.hsetAsync("sys:ept", "group_member_cnt", count);
 
@@ -273,12 +273,13 @@ async function inviteAdmin(gid) {
     }
   }
 
-  const expireDate = Math.floor(new Date() / 1000) + 600;
+  const expireDate = Math.floor(new Date() / 1000) + fwInvitation.totalTimeout;
   diag.expireDate = expireDate;
 
   await fwDiag.submitInfo({
     event: "PAIRSTART",
     msg:"Pairing Ready",
+    firstTime: count <= 1,
     expire: expireDate,
     gidPrefix: gidPrefix
   }).catch((err) => {

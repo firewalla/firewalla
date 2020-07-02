@@ -949,14 +949,15 @@ class netBot extends ControllerBot {
               name: data.value.name
             }
             await hostTool.updateMACKey(macObject, true);
-            await hostTool.generateLocalDomain(macAddress);
+            const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
+            const localDomain = generateResult.localDomain;
             sem.emitEvent({
               type: "LocalDomainUpdate",
               message: `Update device:${macAddress} localDomain`,
               macArr: [macAddress],
               toProcess: 'FireMain'
             });
-            this.simpleTxData(msg, {}, null, callback)
+            this.simpleTxData(msg, {localDomain}, null, callback)
             return
 
           } else {
@@ -1044,8 +1045,10 @@ class netBot extends ControllerBot {
             if (suffix && macAddress == '0.0.0.0') {
               await rclient.setAsync('local:domain:suffix', suffix);
             }
+            let userLocalDomain;
             if (hostTool.isMacAddress(macAddress)) {
-              await hostTool.generateLocalDomain(macAddress);
+              const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
+              userLocalDomain = generateResult.userLocalDomain;
             }
             sem.emitEvent({
               type: "LocalDomainUpdate",
@@ -1053,7 +1056,7 @@ class netBot extends ControllerBot {
               macArr: [macAddress],
               toProcess: 'FireMain'
             });
-            this.simpleTxData(msg, {}, null, callback)
+            this.simpleTxData(msg, {userLocalDomain}, null, callback)
           } else {
             this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);
           }
@@ -1182,7 +1185,7 @@ class netBot extends ControllerBot {
           let oldPlan = {};
           try {
             oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan")) || {};
-          } catch (e) { 
+          } catch (e) {
           }
           const featureName = 'data_plan';
           oldPlan.enable = fc.isFeatureOn(featureName);
@@ -1211,6 +1214,16 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
+        break;
+      }
+      case "eptGroupName": {
+        (async () => {
+          const { name } = value;
+          await this.eptcloud.rename(this.primarygid, name);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       default:
@@ -1980,6 +1993,22 @@ class netBot extends ControllerBot {
         (async () => {
           const networks = await FireRouter.getInterfaceAll();
           this.simpleTxData(msg, networks, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "eptGroup": {
+        (async () => {
+          const result = await this.eptcloud.groupFind(this.primarygid);
+          if (!result) throw new Error('Group not found!')
+
+          // write members to sys:ept:members
+          await this.eptCloudExtension.recordAllRegisteredClients(this.primarygid)
+          const resp = { groupName: result.group.name }
+          // read from sys:ept:members
+          await this.hostManager.encipherMembersForInit(resp)
+          this.simpleTxData(msg, resp, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
@@ -3484,7 +3513,7 @@ class netBot extends ControllerBot {
             await em.deleteMacRelatedExceptions(hostMac);
             await am2.deleteMacRelatedAlarms(hostMac);
 
-            await categoryFlowTool.delAllCategories(hostMac);
+            await categoryFlowTool.delAllTypes(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);
             await flowManager.removeFlowsAll(hostMac);
 
@@ -3979,7 +4008,7 @@ class netBot extends ControllerBot {
 
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
-          
+
           if (rawmsg.message.appInfo) {
             this.processAppInfo(rawmsg.message.appInfo)
           }
@@ -4011,7 +4040,7 @@ class netBot extends ControllerBot {
                       delete json.policy.acl;
                     }
 
-                    if(json.hosts) {
+                    if(json && json.hosts) {
                       for (const host of json.hosts) {
                         if(host && host.policy) {
                           delete host.policy.acl;

@@ -64,7 +64,7 @@ function _getPartitionKeyFilePath(partition) {
 }
 
 function _encryptAES(key, buffer) {
-  const iv = new Buffer(16);
+  const iv = Buffer.alloc(16);
   iv.fill(0);
   const cipher = crypto.createCipheriv("aes-256-cbc", Buffer.from(key), iv);
   let crypted = cipher.update(buffer);
@@ -73,14 +73,14 @@ function _encryptAES(key, buffer) {
 }
 
 function _encryptAESStream(key) {
-  const iv = new Buffer(16);
+  const iv = Buffer.alloc(16);
   iv.fill(0);
   const cipher = crypto.createCipheriv("aes-256-cbc", Buffer.from(key), iv);
   return cipher;
 }
 
 function _decryptAES(key, buffer) {
-  const iv = new Buffer(16);
+  const iv = Buffer.alloc(16);
   iv.fill(0);
   const decipher = crypto.createDecipheriv("aes-256-cbc", Buffer.from(key), iv);
   let decrypted = decipher.update(buffer);
@@ -89,7 +89,7 @@ function _decryptAES(key, buffer) {
 }
 
 function _decryptAESStream(key) {
-  const iv = new Buffer(16);
+  const iv = Buffer.alloc(16);
   iv.fill(0);
   const decipher = crypto.createDecipheriv("aes-256-cbc", Buffer.from(key), iv);
   return decipher;
