@@ -8,6 +8,7 @@ MAX_NUM_OF_PROCESSES=6000
 MAX_NUM_OF_THREADS=40000
 NODE_VERSION=10.16.3
 USB_DEV=/dev/sdb1
+MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 
 function get_openssl_cnf_file {

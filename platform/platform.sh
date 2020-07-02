@@ -4,6 +4,9 @@ FW_PLATFORM_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 UNAME=$(uname -m)
 
+# by default no
+MANAGED_BY_FIREBOOT=no
+
 case "$UNAME" in
   "x86_64")
     source $FW_PLATFORM_DIR/gold/platform.sh
