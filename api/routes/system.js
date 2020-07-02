@@ -63,7 +63,7 @@ router.get('/status',
 
                if(compressed) {
                  let jsonString = JSON.stringify(json);
-                 zlib.deflate(new Buffer(jsonString, 'utf8'), (err, output) => {
+                 zlib.deflate(Buffer.from(jsonString, 'utf8'), (err, output) => {
                    if(err) {
                      res.status(500).send({error: err});
                      return;

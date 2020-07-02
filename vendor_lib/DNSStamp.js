@@ -35,7 +35,7 @@ const URLSafeBase64 = {
       .replace(/\-/g, '+') // Convert '-' to '+'
       .replace(/\_/g, '/'); // Convert '_' to '/'
 
-    return new Buffer(base64, 'base64');
+    return Buffer.from(base64, 'base64');
   }
 }
 

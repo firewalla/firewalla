@@ -1185,7 +1185,7 @@ class netBot extends ControllerBot {
           let oldPlan = {};
           try {
             oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan")) || {};
-          } catch (e) { 
+          } catch (e) {
           }
           const featureName = 'data_plan';
           oldPlan.enable = fc.isFeatureOn(featureName);
@@ -1214,6 +1214,16 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
+        break;
+      }
+      case "eptGroupName": {
+        (async () => {
+          const { name } = value;
+          await this.eptcloud.rename(this.primarygid, name);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       default:
@@ -1983,6 +1993,20 @@ class netBot extends ControllerBot {
         (async () => {
           const networks = await FireRouter.getInterfaceAll();
           this.simpleTxData(msg, networks, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "eptGroup": {
+        (async () => {
+          const { group } = await this.eptcloud.groupFind(this.primarygid);
+          // write members to sys:ept:members
+          await this.eptCloudExtension.recordAllRegisteredClients(this.primarygid)
+          const resp = { groupName: group.name }
+          // read from sys:ept:members
+          await this.hostManager.encipherMembersForInit(resp)
+          this.simpleTxData(msg, resp, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
@@ -3982,7 +4006,7 @@ class netBot extends ControllerBot {
 
       if (rawmsg.message.obj.type === "jsonmsg") {
         if (rawmsg.message.obj.mtype === "init") {
-          
+
           if (rawmsg.message.appInfo) {
             this.processAppInfo(rawmsg.message.appInfo)
           }
