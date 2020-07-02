@@ -34,11 +34,6 @@ class BroNotice {
   //  sub: target
   //  dst: no presence
   async processSSHScan(alarm, broObj) {
-    if (sysManager.isMyIP(broObj.src)) {
-      log.info("Ignoring bro notice", broObj.msg)
-      return null;
-    }
-
     const subMessage = broObj.sub
     // sub message:
     //   Sampled servers:  10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182, 10.0.1.182
@@ -79,11 +74,6 @@ class BroNotice {
   //  dst: target
   //  sub: "local" || "remote"
   async processPortScan(alarm, broObj) {
-    if (sysManager.isMyIP(broObj.src)) {
-      log.info("Ignoring bro notice", broObj.msg)
-      return null;
-    }
-
     if (alarm["p.device.ip"] == broObj.src) {
       alarm["p.local_is_client"] = "1";
     } else {
@@ -92,11 +82,6 @@ class BroNotice {
   }
 
   async processHeartbleed(alarm, broObj) {
-    if (sysManager.isMyIP(broObj.src)) {
-      log.info("Ignoring bro notice", broObj.msg)
-      return null;
-    }
-
     if (sysManager.isLocalIP(broObj["src"])) {
       alarm["p.local_is_client"] = "1";
     } else {
@@ -158,6 +143,12 @@ class BroNotice {
 
     if (!noticeType || !broObj) {
       log.warn('Invalid bro notice', broObj)
+      return null;
+    }
+
+    // ignore notice triggered by Firewalla itself
+    if (sysManager.isMyIP(broObj.src)) {
+      log.info("Ignoring bro notice", broObj)
       return null;
     }
 
