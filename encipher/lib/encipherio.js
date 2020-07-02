@@ -1149,31 +1149,17 @@ let legoEptCloud = class {
 
     if (ept.publicKey == null) return
 
-    const grp = await this.groupFind(gid)
-    log.debug("finding group my eid", this.eid, " inviting ", eid, "grp", grp);
-    if (grp == null) {
+    const result = await this.groupFind(gid)
+    if (result == null) {
       throw new Error("Failed to invite: group not found");
     }
+    log.debug("finding group my eid", this.eid, " inviting ", eid, "grp", result.group);
 
-    let mykey = null;
-    for (let key in grp.symmetricKeys) {
-      let sym = grp.symmetricKeys[key];
-      log.debug("searching keys ", key, " sym ", sym);
-      if (sym.eid === this.eid) {
-        log.debug("found my key ", this.eid);
-        mykey = sym;
-      }
-    }
-
-    if (mykey == null) {
-      throw new Error('Failed to invite: key not found')
-    }
-
-    const peerKey = this.reKeyForEpt(mykey, eid, ept);
+    const peerKey = this.reKeyForEpt(result.symmetricKey, eid, ept);
     if (peerKey == null) return
 
     const options = {
-      uri: this.endpoint + '/group/' + this.appId + "/" + grp._id + "/" + encodeURIComponent(eid),
+      uri: this.endpoint + '/group/' + this.appId + "/" + result.group._id + "/" + encodeURIComponent(eid),
       family: 4,
       method: 'POST',
       json: {

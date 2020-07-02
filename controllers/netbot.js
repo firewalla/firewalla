@@ -2000,10 +2000,12 @@ class netBot extends ControllerBot {
       }
       case "eptGroup": {
         (async () => {
-          const { group } = await this.eptcloud.groupFind(this.primarygid);
+          const result = await this.eptcloud.groupFind(this.primarygid);
+          if (!result) throw new Error('Group not found!')
+
           // write members to sys:ept:members
           await this.eptCloudExtension.recordAllRegisteredClients(this.primarygid)
-          const resp = { groupName: group.name }
+          const resp = { groupName: result.group.name }
           // read from sys:ept:members
           await this.hostManager.encipherMembersForInit(resp)
           this.simpleTxData(msg, resp, null, callback);

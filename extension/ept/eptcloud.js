@@ -54,7 +54,7 @@ class EptCloudExtension {
       await rclient.saddAsync(cmd)
     }
 
-    await rclient.hmset('sys:ept:me', {
+    await rclient.hmsetAsync('sys:ept:me', {
       eid: deviceEID,
       key: groupInfo.me.key
     })
