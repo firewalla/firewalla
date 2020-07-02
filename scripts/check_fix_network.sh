@@ -32,7 +32,8 @@ err() {
 ERR=err
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-source ${FIREWALLA_HOME}/scripts/network_settings.sh
+[ -s /home/pi/scripts/network_settings.sh ] && source /home/pi/scripts/network_settings.sh ||
+    source $FIREWALLA_HOME/scripts/network_settings.sh
 
 set_timeout() {
     [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
@@ -131,7 +132,8 @@ function check_with_timeout() {
   action=$2
   reboot=$3
 
-  $LOGGER -n "Trying to $message ... "
+  echo -n "Trying to $message ... "
+  $LOGGER "Trying to $message ... "
   tmout=15
   while ! $action; do
     if [[ $tmout -gt 0 ]]; then
