@@ -681,7 +681,8 @@
     "adblock": false,
     "family_protect": false,
     "smart_block": true,
-    "internal_scan": false
+    "internal_scan": false,
+    "acl_audit": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
