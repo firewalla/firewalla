@@ -2100,10 +2100,22 @@ class netBot extends ControllerBot {
         to = Math.min(now, from + 900);
       }
     }
-    const records = await rclient.zrevrangebyscoreAsync(this._getAuditDropKey(mac), to, from).catch((err) => {
+    const results = await rclient.zrevrangebyscoreAsync(this._getAuditDropKey(mac), to, from, "withscores").catch((err) => {
       log.error(`Failed to get audit drop log for ${mac} from ${from} to ${to}`, err.message);
       return [];
     });
+    const records = [];
+    for (let i = 0; i < results.length; i++) {
+      if (i % 2 === 1) {
+        try {
+          const record = JSON.parse(results[i - 1]);
+          record.timestamp = Math.floor(Number(results[i]));
+          records.push(record);
+        } catch (err) {
+          log.error("Failed to parse JSON", results[i - 1]);
+        }
+      }
+    }
     return records;
   }
 
