@@ -812,7 +812,7 @@ module.exports = class {
         return;
       }
 
-      const intfInfo = sysManager.getInterfaceViaIP4(lhost);
+      const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
       } else {
