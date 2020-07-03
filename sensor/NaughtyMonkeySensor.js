@@ -197,7 +197,7 @@ class NaughtyMonkeySensor extends Sensor {
 
   async port_scan() {
     const ip = await this.randomFindDevice();
-    const remoteIP = "116.62.163.55";
+    const remoteIP = "192.168.120.194";
 
     const payload = {
       "ts": new Date() / 1000,

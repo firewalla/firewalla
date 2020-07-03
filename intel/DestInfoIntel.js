@@ -24,6 +24,11 @@ const intelTool = new IntelTool()
 const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager();
 
+const sysManager = require('../net2/SysManager.js');
+const DNSManager = require('../net2/DNSManager.js');
+const dnsManager = new DNSManager('info');
+const getPreferredName = require('../util/util.js').getPreferredName
+
 function formatBytes(bytes, decimals) {
   if (bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -53,6 +58,21 @@ class DestInfoIntel extends Intel {
     let destIP = alarm["p.dest.ip"];
 
     if (!destIP) {
+      return alarm;
+    }
+    if (sysManager.isLocalIP(destIP)) {
+      try {
+        const result = await dnsManager.resolveLocalHostAsync(destIP);
+        Object.assign(alarm, {
+          "p.dest.name": getPreferredName(result),
+          "p.dest.id": result.mac,
+          "p.dest.mac": result.mac,
+          "p.dest.macVendor": result.macVendor || "Unknown",
+          "p.dest.isLocal": "1"
+        });
+      } catch (err) {
+        log.error("Failed to find host " + destIP + " in database: " + err);
+      }
       return alarm;
     }
 
