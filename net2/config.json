@@ -538,7 +538,8 @@
     "LogScanSensor": {
       "fireResetBluetooth": true,
       "bonelogInterval": 900
-    }
+    },
+    "ACLAuditLogPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
