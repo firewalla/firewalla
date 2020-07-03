@@ -2014,6 +2014,20 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "aclAuditLog": {
+        (async () => {
+          const mac = hostTool.isMacAddress(msg.target) && msg.target;
+          if (!mac) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "MAC address is not specified in target."}, callback);
+          } else {
+            const records = await this.getACLAuditLogs(mac, value.from, value.to);
+            this.simpleTxData(msg, {records: records}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2069,6 +2083,32 @@ class netBot extends ControllerBot {
         flows.categoryDetails = flowUtil.unhashIntelFlows(data, hashCache)
       }
     }
+  }
+
+  async getACLAuditLogs(mac, from, to) {
+    if (!mac)
+      return null;
+    const now = Date.now() / 1000;
+    if (!from) {
+      if (!to)
+        to = now;
+      from = to - 900;
+    } else {
+      if (!to) {
+        if (!from)
+          from = now - 900;
+        to = Math.min(now, from + 900);
+      }
+    }
+    const records = await rclient.zrevrangebyscoreAsync(this._getAuditDropKey(mac), to, from).catch((err) => {
+      log.error(`Failed to get audit drop log for ${mac} from ${from} to ${to}`, err.message);
+      return [];
+    });
+    return records;
+  }
+
+  _getAuditDropKey(mac) {
+    return `audit:drop:${mac}`;
   }
 
   async flowHandler(msg, type) {

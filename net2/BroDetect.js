@@ -465,16 +465,18 @@ module.exports = class {
       if (fc.isFeatureOn("acl_audit")) {
         // detect DNS level block (NXDOMAIN) in dns log
         if (obj["rcode_name"] === "NXDOMAIN" && (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") && obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["query"] != null && obj["query"].length > 0) {
-          const record = {
-            src: obj["id.orig_h"],
-            domain: obj["query"],
-            qtype: obj["qtype_name"]
-          };
-          sem.emitEvent({
-            type: Message.MSG_ACL_DNS_NXDOMAIN,
-            record: record,
-            suppressEventLogging: true
-          });
+          if (!sysManager.isMyIP(obj["id.orig_h"]) && !sysManager.isMyIP6(obj["id.orig_h"])) {
+            const record = {
+              src: obj["id.orig_h"],
+              domain: obj["query"],
+              qtype: obj["qtype_name"]
+            };
+            sem.emitEvent({
+              type: Message.MSG_ACL_DNS_NXDOMAIN,
+              record: record,
+              suppressEventLogging: true
+            });
+          }
         }
       }
     } catch (e) {
