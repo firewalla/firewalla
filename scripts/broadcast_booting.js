@@ -17,7 +17,7 @@
 
 process.title = "FWBroadcastBooting";
 
-const bonjour = require('bonjour')()
+const bonjour = require('../vendor_lib/bonjour')()
 const cp = require('child_process')
 
 const fConfig = require('../net2/config.js').getConfig(true);
