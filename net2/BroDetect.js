@@ -62,6 +62,7 @@ let FLOWSTASH_EXPIRES;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
 /*
  *
  *  config.bro.notice.path {
@@ -459,6 +460,23 @@ module.exports = class {
           //changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
           log.debug("Dns:Redis:Merge", key, changeset);
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
+        }
+      }
+      if (fc.isFeatureOn("acl_audit")) {
+        // detect DNS level block (NXDOMAIN) in dns log
+        if (obj["rcode_name"] === "NXDOMAIN" && (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") && obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["query"] != null && obj["query"].length > 0) {
+          if (!sysManager.isMyIP(obj["id.orig_h"]) && !sysManager.isMyIP6(obj["id.orig_h"])) {
+            const record = {
+              src: obj["id.orig_h"],
+              domain: obj["query"],
+              qtype: obj["qtype_name"]
+            };
+            sem.emitEvent({
+              type: Message.MSG_ACL_DNS_NXDOMAIN,
+              record: record,
+              suppressEventLogging: true
+            });
+          }
         }
       }
     } catch (e) {

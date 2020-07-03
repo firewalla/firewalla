@@ -497,6 +497,10 @@
       "networkConfigHistory": {
         "expires": -1,
         "count": 32
+      },
+      "acl_audit": {
+        "expires": 1800,
+        "count": 4000
       }
     },
     "DeviceOfflineSensor": {
@@ -538,7 +542,8 @@
     "LogScanSensor": {
       "fireResetBluetooth": true,
       "bonelogInterval": 900
-    }
+    },
+    "ACLAuditLogPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
