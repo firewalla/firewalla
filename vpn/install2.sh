@@ -18,7 +18,7 @@ if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ca.key ]; then
 fi
 
 # Ask user for desired level of encryption
-ENCRYPT="1024"
+: ${ENCRYPT:="1024"}
 # Copy the easy-rsa files to a directory inside the new openvpn directory
 
 if [[ ${KEYS_FOLDER} == "keys" ]]; then

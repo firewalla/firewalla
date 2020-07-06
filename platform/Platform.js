@@ -63,6 +63,10 @@ class Platform {
     }
   }
 
+  getDHKeySize() {
+    return 1024;
+  }
+
   getLedPaths() {
     return []
   }
