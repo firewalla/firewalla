@@ -63,7 +63,7 @@ chmod 644 /etc/openvpn/crl.pem
 chmod 644 /etc/openvpn/client_conf/*
 
 # Ask user for desired level of encryption
-ENCRYPT="1024"
+: ${ENCRYPT:="1024"}
 
 # Write config file for server using the template .txt file
 sed 's/LOCAL_IP/'$LOCAL_IP'/' < $FIREWALLA_HOME/vpn/server_config.txt > /etc/openvpn/$INSTANCE_NAME.conf
