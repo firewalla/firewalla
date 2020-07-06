@@ -62,6 +62,7 @@ let FLOWSTASH_EXPIRES;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
 /*
  *
  *  config.bro.notice.path {
@@ -461,6 +462,23 @@ module.exports = class {
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
         }
       }
+      if (fc.isFeatureOn("acl_audit")) {
+        // detect DNS level block (NXDOMAIN) in dns log
+        if (obj["rcode_name"] === "NXDOMAIN" && (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") && obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["query"] != null && obj["query"].length > 0) {
+          if (!sysManager.isMyIP(obj["id.orig_h"]) && !sysManager.isMyIP6(obj["id.orig_h"])) {
+            const record = {
+              src: obj["id.orig_h"],
+              domain: obj["query"],
+              qtype: obj["qtype_name"]
+            };
+            sem.emitEvent({
+              type: Message.MSG_ACL_DNS_NXDOMAIN,
+              record: record,
+              suppressEventLogging: true
+            });
+          }
+        }
+      }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
     }
@@ -812,7 +830,7 @@ module.exports = class {
         return;
       }
 
-      const intfInfo = sysManager.getInterfaceViaIP4(lhost);
+      const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
       } else {
@@ -1294,6 +1312,9 @@ module.exports = class {
         log.error("SSL:Drop", obj);
         return;
       }
+      // do not process ssl log that does not pass the certificate validation
+      if (obj["validation_status"] && obj["validation_status"] !== "ok")
+        return;
       let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
