@@ -53,6 +53,10 @@ class NavyPlatform extends Platform {
     return 200;
   }
 
+  getDHKeySize() {
+    return 2048;
+  }
+
   getLedPaths() {
     return [
       "/sys/devices/platform/gpio-leds/leds/status_led"

@@ -172,11 +172,9 @@ async function removeRouteFromTable(dest, gateway, intf, tableName, af = 4) {
 async function flushRoutingTable(tableName) {
   const cmds = [`sudo ip route flush table ${tableName}`, `sudo ip -6 route flush table ${tableName}`];
   for (const cmd of cmds) {
-    let result = await exec(cmd);
-    if (result.stderr !== "") {
-      log.error("Failed to flush routing table.", result.stderr);
-      throw result.stderr;
-    }
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to flush routing table ${tableName}`, err.message);
+    });
   }
 }
 
