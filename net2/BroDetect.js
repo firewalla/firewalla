@@ -812,6 +812,14 @@ module.exports = class {
         return;
       }
 
+      const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
+      if (intfInfo && intfInfo.uuid) {
+        intfId = intfInfo.uuid;
+      } else {
+        log.error(`Unable to find nif uuid, ${intfId}`);
+        intfId = '';
+      }
+
       if (localMac && sysManager.isMyMac(localMac)) {
         // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
         if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
@@ -819,7 +827,7 @@ module.exports = class {
           localMac = null; // discard local mac from bro log since it is not correct
         }
       }
-      if (!localMac) {
+      if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn") { // no need to query IP from unrecognized interface, otherwise it will spawn many 'cat' processes in Layer2.js
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
           localMac = await l2.getMACAsync(lhost).catch((err) => {
@@ -836,14 +844,6 @@ module.exports = class {
       }
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
-      }
-
-      const intfInfo = sysManager.getInterfaceViaIP4(lhost);
-      if (intfInfo && intfInfo.uuid) {
-        intfId = intfInfo.uuid;
-      } else {
-        log.error(`Unable to find nif uuid, ${intfId}`);
-        intfId = '';
       }
 
       let tags = [];
@@ -1294,6 +1294,9 @@ module.exports = class {
         log.error("SSL:Drop", obj);
         return;
       }
+      // do not process ssl log that does not pass the certificate validation
+      if (obj["validation_status"] && obj["validation_status"] !== "ok")
+        return;
       let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
