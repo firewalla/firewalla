@@ -1294,6 +1294,9 @@ module.exports = class {
         log.error("SSL:Drop", obj);
         return;
       }
+      // do not process ssl log that does not pass the certificate validation
+      if (obj["validation_status"] && obj["validation_status"] !== "ok")
+        return;
       let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
