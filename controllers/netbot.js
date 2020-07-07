@@ -1354,7 +1354,7 @@ class netBot extends ControllerBot {
           //  count: tox x flows
           //  target: mac address || intf:uuid || tag:tagId
           const count = msg.data ? (msg.data.count || 50) : 50;
-          const flows = await this.hostManager.loadStats({}, target, count);
+          const flows = await this.hostManager.loadStats({}, msg.target, count);
           this.simpleTxData(msg, { flows: flows }, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
