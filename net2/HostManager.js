@@ -1786,6 +1786,7 @@ module.exports = class HostManager {
   }
 
   async loadStats(json={}, target='', count=50) {
+    target = target == '0.0.0.0' ? '' : target;
     const systemFlows = {};
 
     const keys = ['upload', 'download'];
@@ -1797,7 +1798,7 @@ module.exports = class HostManager {
         continue;
       }
 
-      const elements = realSumKey.split(":")
+      const elements = target ? realSumKey.replace(`${target}:`,'').split(":") : realSumKey.split(":");
       if (elements.length !== 4) {
         continue;
       }
@@ -1828,7 +1829,7 @@ module.exports = class HostManager {
         continue;
       }
 
-      const elements = realSumKey.split(":")
+      const elements = target ? realSumKey.replace(`${target}:`,'').split(":") : realSumKey.split(":");
       if (elements.length !== 4) {
         continue;
       }
