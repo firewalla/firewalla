@@ -82,7 +82,7 @@ class DeviceMgmtTool {
     if(Firewalla.isOverlayFS()) {
       log.info("OverlayFS is enabled");
       return new Promise((resolve, reject) => {
-        let cmd = Firewalla.getFirewallaHome() + "/scripts/system-reset-all-overlayfs.sh";
+        let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/system-reset-all-overlayfs.sh";
 
         cp.exec(cmd, (err) => {
           if(err) {
@@ -94,9 +94,9 @@ class DeviceMgmtTool {
       });      
     } else {
       log.info("Regular filesystem without OverlayFS");
-      let script = Firewalla.getFirewallaHome() + "/scripts/system-reset-all";
+      let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/system-reset-all";
       return new Promise((resolve, reject) => {
-        cp.exec(script, (err, stdout, stderr) => {
+        cp.exec(cmd, (err, stdout, stderr) => {
           if(err) {
             reject(err);
             return;

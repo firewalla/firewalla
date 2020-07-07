@@ -15,7 +15,7 @@ done
 tracelog(){
     if [[ $(whoami) == "pi" ]]; 
     then
-        echo "FIREWALLA:("$DEBUG"): "$MESSAGE >> /home/pi/logs/Trace.log
+        echo "$(date +'%b %d %H:%M:%S') FIREWALLA:("$DEBUG"): "$MESSAGE >> /home/pi/logs/Trace.log
     fi
 }
 
