@@ -213,10 +213,10 @@ function check_with_timeout() {
         restored=$RESTORED_AND_NEED_START_OVER
         break;
       else
-        skip=$([ ! -z "$reboot" ] && 'skipped')
+        [ 0 = "$reboot" ] && skip='skipped' || skip=''
         echo "fail - reboot $skip"
         $LOGGER "FIREWALLA:FIX_NETWORK:failed to $message, even after restore, reboot $skip"
-        if [ -z "$reboot" ]; then reboot_if_needed; fi
+        if [ 1 = "$reboot" ]; then reboot_if_needed; fi
       fi
     fi
     sleep 1
