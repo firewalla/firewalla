@@ -213,10 +213,12 @@ function check_with_timeout() {
         restored=$RESTORED_AND_NEED_START_OVER
         break;
       else
-        [ 0 = "$reboot" ] && skip='skipped' || skip=''
+        # default to non-reboot, but it should always be explicitly assigned
+        skip='skipped'
+        [ 1 -eq $reboot ] && skip=''
         echo "fail - reboot $skip"
         $LOGGER "FIREWALLA:FIX_NETWORK:failed to $message, even after restore, reboot $skip"
-        if [ 1 = "$reboot" ]; then reboot_if_needed; fi
+        if [ 1 -eq $reboot ]; then reboot_if_needed; fi
       fi
     fi
     sleep 1
