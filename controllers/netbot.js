@@ -1349,6 +1349,17 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback);
         })
         break;
+      case "topFlows":
+        (async () => {
+          //  count: tox x flows
+          //  target: mac address || intf:uuid || tag:tagId
+          const count = msg.data ? (msg.data.count || 50) : 50;
+          const flows = await this.hostManager.loadStats({}, target, count);
+          this.simpleTxData(msg, { flows: flows }, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
       case "vpn":
       case "vpnreset": {
         let regenerate = false

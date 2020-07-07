@@ -937,7 +937,7 @@ module.exports = class HostManager {
           this.networkProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
-          this.loadSystemStats(json)
+          this.loadStats(json)
         ];
 
         this.basicDataForInit(json, options);
@@ -1785,27 +1785,27 @@ module.exports = class HostManager {
     }
   }
 
-  async loadSystemStats(json) {
+  async loadStats(json={}, target='', count=50) {
     const systemFlows = {};
 
     const keys = ['upload', 'download'];
 
-    for(const key of keys) {
-      const lastSumKey = `lastsumflow:${key}`;
+    for (const key of keys) {
+      const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;
       const realSumKey = await rclient.getAsync(lastSumKey);
-      if(!realSumKey) {
+      if (!realSumKey) {
         continue;
       }
 
       const elements = realSumKey.split(":")
-      if(elements.length !== 4) {
+      if (elements.length !== 4) {
         continue;
       }
 
       const begin = elements[2];
       const end = elements[3];
 
-      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, 50);
+      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, count);
 
       const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
         return b.count - a.count;
@@ -1820,23 +1820,23 @@ module.exports = class HostManager {
 
     const actitivityKeys = ['app', 'category'];
 
-    for(const key of actitivityKeys) {
+    for (const key of actitivityKeys) {
 
-      const lastSumKey = `lastsumflow:${key}`;
+      const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;
       const realSumKey = await rclient.getAsync(lastSumKey);
-      if(!realSumKey) {
+      if (!realSumKey) {
         continue;
       }
 
       const elements = realSumKey.split(":")
-      if(elements.length !== 4) {
+      if (elements.length !== 4) {
         continue;
       }
 
       const begin = elements[2];
       const end = elements[3];
 
-      const traffic = await flowAggrTool.getXYActivitySumFlowByKey(realSumKey, key, 50);
+      const traffic = await flowAggrTool.getXYActivitySumFlowByKey(realSumKey, key, count);
 
       traffic.sort((a, b) => {
         return b.count - a.count;
@@ -1850,5 +1850,6 @@ module.exports = class HostManager {
     }
 
     json.systemFlows = systemFlows;
+    return systemFlows;
   }
 }
