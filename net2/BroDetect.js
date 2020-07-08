@@ -830,6 +830,9 @@ module.exports = class {
         return;
       }
 
+      if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
+        return;
+
       const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
