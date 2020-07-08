@@ -1342,9 +1342,21 @@ class netBot extends ControllerBot {
           let data = {
             count: flows.length,
             flows,
-            nextTs: flows.length ? flows[flows.length - 1].ts : null
+            nextTs: flows.length ? flows[flows.length - 1].score : null
           }
           this.simpleTxData(msg, data, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      case "topFlows":
+        (async () => {
+          //  count: tox x flows
+          //  target: mac address || intf:uuid || tag:tagId
+          const value = msg.data.value;
+          const count = value ? (value.count || 50) : 50;
+          const flows = await this.hostManager.loadStats({}, msg.target, count);
+          this.simpleTxData(msg, { flows: flows }, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
