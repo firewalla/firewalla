@@ -68,11 +68,16 @@ class DeviceHook extends Hook {
       return;
     }
 
-    let monInterfaces = await sysManager.getMonitoringInterfaces();
-    let foundInterface = Object.keys(monInterfaces).find(e => e.bcast_address === ipv4Addr)
-    if (foundInterface) {
-      log.warn(`Ignore IP address ${ipv4Addr} as broadcast address of interface ${foundInterface}:`, event);
-      return;
+    /*
+     * Filter out IPv4 broadcast address for any monitoring interface
+     */
+    if (ipv4Addr) {
+      let monInterfaces = sysManager.getMonitoringInterfaces();
+      let foundInterface = monInterfaces.find(e => e.bcast_address === ipv4Addr)
+      if (foundInterface) {
+        log.warn(`Ignore IP address ${ipv4Addr} as broadcast address of interface ${foundInterface.name}:`, event);
+        return;
+      }
     }
 
     /*
