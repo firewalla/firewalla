@@ -87,6 +87,11 @@ exports.gateway_ip_for = function(nic_name) {
   return trim_exec_async("ip r | grep " + nic_name + " | grep default | cut -d ' ' -f 3 | sed -n '1p'");
 };
 
+exports.bcast_address_for = function(nic_name) {
+  var cmd = "ifconfig " + nic_name + " 2> /dev/null | fgrep 'Bcast:' | awk '{print $3}' |awk -F: '{print $2}'";
+  return trim_exec_async(cmd);
+};
+
 exports.netmask_for = function(nic_name) {
   var cmd = "ifconfig " + nic_name + " 2> /dev/null | egrep 'netmask|Mask:' | awk '{print $4}'";
   return trim_exec_async(cmd);
@@ -106,6 +111,7 @@ exports.gateway_ip6_sync = function() {
 [ { name: 'ethx',
     ip_address: '192.168.10.4',
     mac_address: '02:81:05:84:b0:5d',
+    bcast_address: '192.168.10.255',
     ip6_addresses: [ 'fe80::81:5ff:fe84:b05d' ],
     ip6_masks: [ 'ffff:ffff:ffff:ffff::' ],
     gateway_ip: '192.168.10.1',
@@ -114,6 +120,7 @@ exports.gateway_ip6_sync = function() {
   { name: 'ethx:0',
     ip_address: '192.168.218.1',
     mac_address: '02:81:05:84:b0:5d',
+    bcast_address: '192.168.218.255',
     netmask: 'Mask:255.255.255.0',
     gateway_ip: '192.168.218.1',
     conn_type: 'Wired' } ]
@@ -155,14 +162,16 @@ exports.get_network_interfaces_list = async function() {
       const results = await Promise.all([
         exports.mac_address_for(obj.name),
         exports.gateway_ip_for(obj.name),
+        exports.bcast_address_for(obj.name),
         exports.netmask_for(obj.name),
         exports.interface_type_for(obj.name)
       ])
       if (results[0]) obj.mac_address = results[0];
       // if there is no default router on this interface, set gateway_ip to null
       if (results[1]) obj.gateway_ip  = results[1]; else obj.gateway_ip = null;
-      if (results[2]) obj.netmask     = results[2];
-      if (results[3]) obj.conn_type   = results[3];
+      if (results[2]) obj.bcast_address = results[2];
+      if (results[3]) obj.netmask     = results[3];
+      if (results[4]) obj.conn_type   = results[4];
 
       list.push(obj);
     }
