@@ -19,10 +19,11 @@ const log = require('../net2/logger.js')(__filename);
 
 const util = require('util');
 const minimatch = require("minimatch");
+const cronParser = require('cron-parser');
 
 const _ = require('lodash');
 const flat = require('flat');
-
+const iptool = require('ip');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
 function arraysEqual(a, b) {
@@ -43,6 +44,7 @@ class Policy {
   constructor(raw) {
     if (!raw) throw new Error("Empty policy payload");
     if (!raw.type && !raw['i.type']) throw new Error("Invalid policy payload");
+    if (raw.type == 'internet') throw new Error(`Invalid policy type ${raw.type}`);
 
     Object.assign(this, raw);
 
@@ -79,6 +81,19 @@ class Policy {
       if (!_.isArray(this.tag) || _.isEmpty(this.tag))
         delete this.tag;
     }
+    this.upnp = false;
+    if (raw.upnp)
+      this.upnp = JSON.parse(raw.upnp);
+
+    this.dnsmasq_only = false;
+    if (raw.dnsmasq_only)
+      this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
+
+    if (!raw.direction)
+      this.direction = "bidirection";
+    
+    if (!raw.action)
+      this.action = "block";
 
     if (raw.expire === "") {
       delete this.expire;
@@ -127,7 +142,7 @@ class Policy {
     if (!policy) {
       return false
     }
-    if (!policy instanceof Policy)
+    if (!(policy instanceof Policy))
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
 
     if (
@@ -135,13 +150,13 @@ class Policy {
       this.target === policy.target &&
       this.expire === policy.expire &&
       this.cronTime === policy.cronTime &&
-      this.remote === policy.remote &&
-      this.remoteType === policy.remoteType &&
-      this.local == policy.local &&
-      this.localType === policy.localType &&
       this.remotePort === policy.remotePort &&
       this.localPort === policy.localPort &&
-      this.proto === policy.proto
+      this.protocol === policy.protocol &&
+      this.direction === policy.direction &&
+      this.action === policy.action &&
+      this.upnp === policy.upnp &&
+      this.dnsmasq_only === policy.dnsmasq_only
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {
@@ -174,11 +189,35 @@ class Policy {
   isDisabled() {
     return this.disabled && this.disabled == '1'
   }
+  inSchedule(alarmTimestamp) {
+    const cronTime = this.cronTime;
+    const duration = parseFloat(this.duration); // in seconds
+    const interval = cronParser.parseExpression(cronTime);
+    const lastDate = interval.prev().getTime() / 1000;
+    log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
+
+    if (alarmTimestamp > lastDate && alarmTimestamp < lastDate + duration) {
+      return true
+    } else {
+      return false
+    }
+  }
 
   match(alarm) {
 
+    if (!alarm.needPolicyMatch()) {
+      return false;
+    }
+
+    if (this.action == 'allow') {
+      return false;
+    }
+
     if (this.isExpired()) {
       return false // always return unmatched if policy is already expired
+    }
+    if (this.cronTime && this.duration && !this.inSchedule(alarm.alarmTimestamp)) {
+      return false;
     }
 
     if (
@@ -221,11 +260,28 @@ class Policy {
       }
     }
 
+    if (this.localPort && alarm['p.device.port']) {
+      const notInRange = this.portInRange(this.localPort, alarm['p.device.port']);
+      if (!notInRange) return false;
+    }
+
+    if (this.remotePort && alarm['p.dest.port']) {
+      const notInRange = this.portInRange(this.remotePort, alarm['p.dest.port']);
+      if (!notInRange) return false;
+    }
+
     // for each policy type
     switch (this.type) {
       case "ip":
         if (alarm['p.dest.ip']) {
           return this.target === alarm['p.dest.ip']
+        } else {
+          return false
+        }
+        break
+      case "net":
+        if (alarm['p.dest.ip']) {
+          return iptool.cidrSubnet(this.target).contains(alarm['p.dest.ip'])
         } else {
           return false
         }
@@ -284,6 +340,20 @@ class Policy {
 
         return false;
         break
+      case "remotePort":
+        if (alarm['p.dest.port']) {
+          return this.portInRange(this.target, alarm['p.dest.port'])
+        } else {
+          return false;
+        }
+        break;
+      case 'country':
+        if (alarm['p.dest.country']) {
+          return alarm['p.dest.country'] == this.target;
+        } else {
+          return false;
+        }
+        break;
       default:
         return false
         break
@@ -318,6 +388,29 @@ class Policy {
     }
 
     return flat.flatten(p);
+  }
+
+  portInRange(portRange, port) {
+    // portRange 555 || 555-666
+    // port '600' || '[52492,61734]'
+    portRange = (portRange || '').split('-');
+    if (portRange.length == 1) portRange.push(portRange[0]); // [555,555]
+    if (_.isString(port)) {
+      try {
+        port = JSON.parse(port);
+      } catch (e) {
+        port = (port || 0) * 1;
+      }
+    }
+    if (_.isArray(port)) {
+      let allInRange = true;
+      for (const p of port) {
+        allInRange = allInRange && portRange[0] * 1 <= p && p <= portRange[1] * 1;
+        if (!allInRange) return false;
+      }
+    } else {
+      return portRange[0] * 1 <= port && port <= portRange[1] * 1;
+    }
   }
 }
 

@@ -64,17 +64,28 @@ class DomainUpdater {
         addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
           return firewalla.isReservedBlockingIP(addr) != true;
         });
+        let blockSet = "block_domain_set";
+        const ipLevelBlockAddrs = [];
+        if (options.blockSet)
+          blockSet = options.blockSet;
         for (let i in addresses) {
           const address = addresses[i];
           if (!existingSet[address]) {
             await rclient.saddAsync(key, address);
-            let blockSet = "blocked_domain_set";
-            if (options.blockSet)
-              blockSet = options.blockSet;
-            if (!options.ignoreApplyBlock)
-              await Block.block(address, blockSet);
+            if (!options.ignoreApplyBlock){
+              const BlockManager = require('./BlockManager.js');
+              const blockManager = new BlockManager();
+              const ipBlockInfo = await blockManager.updateIpBlockInfo(address, config.domain, 'block', blockSet);
+              if (ipBlockInfo.blockLevel == 'ip') {
+                ipLevelBlockAddrs.push(address);
+              }
+            }
           }
         }
+        if (!options.ignoreApplyBlock)
+          await Block.batchBlock(ipLevelBlockAddrs, blockSet).catch((err) => {
+            log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
+          });
       }
     }
   }

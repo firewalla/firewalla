@@ -35,6 +35,7 @@ const exceptionPrefix = "exception:";
 const flat = require('flat');
 
 const _ = require('lodash');
+const Alarm = require('../alarm/Alarm.js');
 
 module.exports = class {
   constructor() {
@@ -425,27 +426,16 @@ module.exports = class {
     // TODO: might need to add static ip address here
   }
 
-  match(alarm, callback) {
+  async match(alarm) {
 
-    if(this.isFirewallaCloud(alarm)) {
-      callback(null, true, [])
-      return
+    const results = await this.loadExceptionsAsync()
+
+    let matches = results.filter((e) => e.match(alarm));
+    if (matches.length > 0) {
+      log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
     }
 
-    this.loadExceptions((err, results) => {
-      if(err) {
-        callback(err);
-        return;
-      }
-
-      let matches = results.filter((e) => e.match(alarm));
-      if(matches.length > 0) {
-        log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
-        callback(null, true, matches);
-      } else {
-        callback(null, false);
-      }
-    });
+    return matches
   }
 
   // incr by 1 to count how many times this exception matches alarms
@@ -470,4 +460,31 @@ module.exports = class {
     }
   }
 
+  async searchException(target) {
+    let matchedExceptions = [];
+    const addrPort = target.split(":");
+    const val2 = addrPort[0];
+    const exceptions = await this.loadExceptionsAsync();
+    for (const exception of exceptions) {
+      let match = false;
+      for (var key in exception) {
+        if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+          continue;
+        }
+
+        let payload = Object.assign({}, exception);
+        payload[key] = val2;
+        let alarm = new Alarm.Alarm("", Date.now(), "", payload);
+        if (exception.match(alarm)) {
+          match = true;
+          break;
+        }
+      }
+      if (match) {
+        matchedExceptions.push(exception);
+      }
+    }
+
+    return _.uniqWith(matchedExceptions.map((exception) => exception.eid), _.isEqual);
+  }
 };

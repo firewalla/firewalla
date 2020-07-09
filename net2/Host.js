@@ -46,8 +46,13 @@ const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js')
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 
+const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
+
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
+
+const {Rule} = require('./Iptables.js');
+const ipset = require('./Ipset.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -57,9 +62,11 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 
-const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once. 
+const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
+
+const envCreatedMap = {};
 
 class Host {
   constructor(obj, mgr, callback) {
@@ -93,7 +100,7 @@ class Host {
 
         this.loadPolicy(callback);
 
-        Host.ensureCreateTrackingIpset(this.o.mac).then(() => {
+        Host.ensureCreateDeviceIpset(this.o.mac).then(() => {
           this.subscribe(this.o.mac, "Device:Updated");
         }).catch((err) => {
           log.error(`Failed to create tracking ipset for ${this.o.mac}`, err.message);
@@ -125,13 +132,30 @@ class Host {
     this.parse();
   }
 
-  static getTrackingIpsetPrefix(mac) {
-    return `c_${mac}_ip`;
+  static getIpSetName(mac, af = 4) {
+    return `c_${mac}_ip${af}`;
   }
 
-  static async ensureCreateTrackingIpset(mac) {
-    await exec(`sudo ipset create -! ${Host.getTrackingIpsetPrefix(mac)}4 hash:ip family inet maxelem 10 timeout 900`);
-    await exec(`sudo ipset create -! ${Host.getTrackingIpsetPrefix(mac)}6 hash:ip family inet6 maxelem 30 timeout 900`);
+  static getMacSetName(mac) {
+    return `c_${mac}_mac_set`;
+  }
+
+  static getDeviceSetName(mac) {
+    return `c_${mac}_set`;
+  }
+
+  static async ensureCreateDeviceIpset(mac) {
+    if (envCreatedMap[mac])
+      return;
+    await exec(`sudo ipset create -! ${Host.getIpSetName(mac, 4)} hash:ip family inet maxelem 10 timeout 900`);
+    await exec(`sudo ipset create -! ${Host.getIpSetName(mac, 6)} hash:ip family inet6 maxelem 30 timeout 900`);
+    await exec(`sudo ipset create -! ${Host.getMacSetName(mac)} hash:mac maxelem 1`);
+    await exec(`sudo ipset add -! ${Host.getMacSetName(mac)} ${mac}`);
+    await exec(`sudo ipset create -! ${Host.getDeviceSetName(mac)} list:set`);
+    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getMacSetName(mac)}`);
+    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getIpSetName(mac, 4)}`);
+    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getIpSetName(mac, 6)}`);
+    envCreatedMap[mac] = 1;
   }
 
   /* example of ipv6Host
@@ -427,17 +451,19 @@ class Host {
       const rtIdHex = Number(rtId).toString(16);
       if (state === true) {
         // set skbmark
-        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_wan_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
+        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
       }
-      if (state === false) {
-        // clear skbmark
-        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_wan_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
-      }
+      // null means off
       if (state === null) {
+        // clear skbmark
+        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
+      }
+      // false means N/A
+      if (state === false) {
         // do not change skbmark
-        await exec(`sudo ipset -! del c_wan_m_set ${this.o.mac}`);
+        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
       }
       return true;
     } catch (err) {
@@ -450,10 +476,10 @@ class Host {
     try {
       const dnsCaching = policy.dnsCaching;
       if (dnsCaching === true) {
-        const cmd = `sudo ipset del -! no_dns_caching_mac_set ${this.o.mac}`;
+        const cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC} ${this.o.mac}`;
         await exec(cmd);
       } else {
-        const cmd = `sudo ipset add -! no_dns_caching_mac_set ${this.o.mac}`;
+        const cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC} ${this.o.mac}`;
         await exec(cmd);
       }
     } catch (err) {
@@ -467,6 +493,11 @@ class Host {
     await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
+    await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
+
+    if (policy.dhcpIgnore === true) {
+      await rclient.hsetAsync("host:mac:" + this.o.mac, "dhcpIgnore", "true");
+    }
 
     if (policy.allocations) {
       const intfIp = {}
@@ -505,6 +536,29 @@ class Host {
     return this.spoofing;
   }
 
+  async acl(state) {
+    if (state === true) {
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 4)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 6)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+    } else {
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC}`, err);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+    }
+  }
 
   async spoof(state) {
     log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
@@ -512,41 +566,36 @@ class Host {
       log.info("Host:Spoof:NoIP", this.o);
       return;
     }
-    log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac}, current spoof state: ${this.spoofing}, new spoof state: ${state}`);
+    if (this.spoofing != state) {
+      log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac},`
+        + ` current spoof state: ${this.spoofing}, new spoof state: ${state}`)
+    }
     // set spoofing data in redis and trigger dnsmasq reload hosts
     if (state === true) {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = state;
-      const cmd = `sudo ipset del -! not_monitored_mac_set ${this.o.mac}`;
-      await exec(cmd).catch((err) => {
-        log.error("Failed to delete from not_monitored_mac_set " + this.o.mac, err);
-      });
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = false;
-      const cmd = `sudo ipset add -! not_monitored_mac_set ${this.o.mac}`;
-      await exec(cmd).catch((err) => {
-        log.error("Failed to add to not_monitored_mac_set " + this.o.mac, err);
-      });
     }
-    
-    const iface = sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
+
+    const iface = _.isString(this.o.ipv4Addr) && sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
     if (!iface || !iface.name) {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
       return;
     }
     if (iface.type !== "wan" || !sysManager.myGateway(iface.name)) {
       // a relative tight condition to check if it is a WAN interface
-      log.info(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr} ${this.o.mac}`);
+      log.debug(`${iface.name} is not a WAN interface, no need to spoof ${this.o.ipv4Addr} ${this.o.mac}`);
       return;
     }
     const gateway = sysManager.myGateway(iface.name);
     const gateway6 = sysManager.myGateway6(iface.name);
-    
+
     const spoofer = new Spoofer({}, false);
 
     if (this.o.ipv4Addr === gateway || this.o.mac == null || sysManager.isMyIP(this.o.ipv4Addr)) {
@@ -614,7 +663,6 @@ class Host {
   }
 
   async shield(policy) {
-    
   }
 
   // Notice
@@ -641,16 +689,15 @@ class Host {
       } else if (type === "Intel:Detected") {
         // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && f.isMain()) {
-        this.applyPolicy((err)=>{
-        });
+        this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
         // update tracking ipset
         const macEntry = await hostTool.getMACEntry(this.o.mac);
         const ipv4Addr = macEntry && macEntry.ipv4Addr;
         if (ipv4Addr) {
-          await exec(`sudo ipset -exist add -! c_${this.o.mac}_ip4 ${ipv4Addr}`).catch((err) => {
-            log.error(`Failed to add ${ipv4Addr} to c_${this.o.mac}_ip4`, err.message);
+          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
+            log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
           });
         }
         let ipv6Addr = null;
@@ -659,14 +706,97 @@ class Host {
         } catch (err) {}
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
-            await exec(`sudo ipset -exist add -! c_${this.o.mac}_ip6 ${addr}`).catch((err) => {
-              log.error(`Failed to add ${addr} to c_${this.o.mac}_ip6`, err.message);
+            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
+              log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
             });
           }
         }
+        await this.updateHostsFile();
       }
     });
   }
+
+  async updateHostsFile() {
+    const macEntry = await hostTool.getMACEntry(this.o.mac);
+    const ipv4Addr = macEntry && macEntry.ipv4Addr;
+    // update hosts file in dnsmasq
+    const hostsFile = Host.getHostsFilePath(this.o.mac);
+    const suffix = await rclient.getAsync('local:domain:suffix') || "lan";
+    const localDomain = macEntry.localDomain || "";
+    const userLocalDomain = macEntry.userLocalDomain || "";
+    const lastActiveTimestamp = Number(macEntry.lastActiveTimestamp || 0);
+    if (Date.now() / 1000 - lastActiveTimestamp > 1800) {
+      // remove hosts file if it is not active in the last 30 minutes
+      await fs.unlinkAsync(hostsFile).catch((err) => { });
+      dnsmasq.scheduleReloadDNSService();
+      return;
+    }
+    if (!ipv4Addr) {
+      await fs.unlinkAsync(hostsFile).catch((err) => { });
+      dnsmasq.scheduleReloadDNSService();
+      return;
+    }
+    let ipv6Addr = null;
+    try {
+      ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+    } catch (err) {}
+    const aliases = [localDomain, userLocalDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
+      return a.indexOf(v) === i;
+    })
+    const iface = sysManager.getInterfaceViaIP4(ipv4Addr);
+    if (!iface) {
+      await fs.unlinkAsync(hostsFile).catch((err) => { });
+      dnsmasq.scheduleReloadDNSService();
+      return;
+    }
+    const suffixes = (iface.searchDomains || []).concat([suffix]).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
+      return a.indexOf(v) === i;
+    });
+    const entries = [];
+    for (const suffix of suffixes) {
+      for (const alias of aliases) {
+        const fqdn = `${alias}.${suffix}`;
+        entries.push(`${ipv4Addr} ${fqdn}`);
+        if (_.isArray(ipv6Addr)) {
+          for (const addr of ipv6Addr) {
+            entries.push(`${addr} ${fqdn}`);
+          }
+        }
+      }
+    }
+    if (entries.length !== 0) {
+      await fs.writeFileAsync(hostsFile, entries.join("\n"));
+      dnsmasq.scheduleReloadDNSService();
+    } else {
+      await fs.unlinkAsync(hostsFile).catch((err) => { });
+      dnsmasq.scheduleReloadDNSService();
+    }
+    this.scheduleInvalidateHostsFile();
+  }
+
+  scheduleInvalidateHostsFile() {
+    if (this.invalidateHostsFileTask)
+      clearTimeout(this.invalidateHostsFileTask);
+    this.invalidateHostsFileTask = setTimeout(() => {
+      const hostsFile = Host.getHostsFilePath(this.o.mac);
+      log.info(`Host ${this.o.mac} remains inactive for 30 minutes, removing hosts file ${hostsFile} ...`);
+      fs.unlinkAsync(hostsFile).then(() => {
+        dnsmasq.scheduleReloadDNSService();
+      }).catch((err) => {});
+    }, 1800 * 1000);
+  }
+
+  static getHostsFilePath(mac) {
+    return `${f.getRuntimeInfoFolder()}/hosts/${mac}`;
+  }
+
+  scheduleApplyPolicy() {
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
+    this.applyPolicyTask = setTimeout(() => {
+      this.applyPolicy();
+    }, 3000);
+  }  
 
   async applyPolicyAsync() {
     await this.loadPolicyAsync()
@@ -820,7 +950,9 @@ class Host {
       let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr)
 
       if (!results) return obj;
-
+      if (this.ipv6Addr) {
+        obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
+      }
       obj.agents = results;
       let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
@@ -985,9 +1117,17 @@ class Host {
 
     if (this.o.tags) {
       try {
-        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags) : [] 
+        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags) : []
       } catch (err) {
         log.error("Failed to parse tags:", err)
+      }
+    }
+
+    if(this.o.openports) {
+      try {
+        json.openports = JSON.parse(this.o.openports);
+      } catch(err) {
+        log.error("Failed to parse openports:", err);
       }
     }
 
@@ -1065,9 +1205,7 @@ class Host {
     const obj = {};
     obj[name] = data;
     if (this.subscriber) {
-      setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
-      }, 2000); // 2 seconds buffer for concurrent policy data change to be persisted
+      this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
     }
     return obj
   }
@@ -1130,7 +1268,7 @@ class Host {
     return util.promisify(this.loadPolicy).bind(this)()
   }
 
-  // this only gets updated when 
+  // this only gets updated when
   isInternetAllowed() {
     if (this.policy && this.policy.blockin == true) {
       return false;
@@ -1140,7 +1278,7 @@ class Host {
 
   getTags() {
     if (_.isEmpty(this._tags)) {
-      return []; 
+      return [];
     }
 
     return this._tags;
@@ -1158,9 +1296,12 @@ class Host {
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {
-        await exec(`sudo ipset del -! ${Tag.getTagMacIpsetName(removedTag)} ${this.o.mac}`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagIpsetName(removedTag)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {});
+        await Tag.ensureCreateEnforcementEnv(removedTag);
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
@@ -1171,14 +1312,21 @@ class Host {
     for (let uid of tags) {
       const tag = TagManager.getTagByUid(uid);
       if (tag) {
-        await exec(`sudo ipset add -! ${Tag.getTagMacIpsetName(uid)} ${this.o.mac}`).catch((err) => {
+        await Tag.ensureCreateEnforcementEnv(uid);
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
         });
-        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}4`).catch((err) => {
-          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}4 to tag ipset ${Tag.getTagIpsetName(uid)}`, err.message);
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
         });
-        await exec(`sudo ipset add -! ${Tag.getTagIpsetName(uid)} ${Host.getTrackingIpsetPrefix(this.o.mac)}6`).catch((err) => {
-          log.error(`Failed to add ${Host.getTrackingIpsetPrefix(this.o.mac)}6 to tag ipset ${Tag.getTagIpsetName(uid)}`, err.message);
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to tag ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
         });
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
@@ -1191,7 +1339,7 @@ class Host {
     }
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
-    await dnsmasq.restartDnsmasq();
+    dnsmasq.scheduleRestartDNSService();
     this.save("tags", null);
   }
 }

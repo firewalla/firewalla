@@ -5,9 +5,13 @@
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
+  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
+  "firewallaSocketIOURL": "https://firewalla.encipher.io",
+  "SocketIOPath": "/socket",
+  "SocketIODevPath": "/socket.v0",
   "cacheInit": true,
   "discovery": {
     "networkInterfaces": [
@@ -27,6 +31,7 @@
     "alarm.data_plan.cooldown": 2592000,
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
+    "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
     "notification.box_online.cooldown": 900
@@ -77,7 +82,8 @@
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
-    "RemoteNotificationSensor": {}
+    "RemoteNotificationSensor": {},
+    "WireGuardPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -96,13 +102,13 @@
     "DHCPSensor": {},
     "UPNPSensor": {
       "interval": 600,
-      "expireInterval": 3600
+      "expireInterval": 1800
     },
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "DeviceServiceScanSensor": {
-      "interval": 1800,
+      "interval": 10800,
       "firstScan": 120
     },
     "ExternalScanSensor": {
@@ -111,7 +117,6 @@
     },
     "OpenPortByInboundFlowSensor": {},
     "BoneSensor": {},
-    "APISensor": {},
     "DNSCryptPlugin": {
       "refreshInterval": 1440
     },
@@ -377,7 +382,7 @@
         }
       },
       "defaultConfig": {
-        "youtube": "strict",
+        "youtube": "off",
         "google": "on",
         "bing": "on",
         "duckduckgo": "on"
@@ -430,7 +435,7 @@
         "count": 10000
       },
       "dns": {
-        "expires": 100000,
+        "expires": 86400,
         "count": 100
       },
       "software": {
@@ -492,6 +497,10 @@
       "networkConfigHistory": {
         "expires": -1,
         "count": 32
+      },
+      "acl_audit": {
+        "expires": 1800,
+        "count": 4000
       }
     },
     "DeviceOfflineSensor": {
@@ -507,7 +516,6 @@
         "bipartite_graph"
       ]
     },
-    "WirelessInterfaceSensor": {},
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,
@@ -524,10 +532,18 @@
       "firstScan": 120
     },
     "DnsmasqDhcpSensor": {},
-    "BlockRuleCheckSensor": {},
+    "RuleCheckSensor": {},
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
-    "SS2Plugin": {}
+    "SS2Plugin": {},
+    "WireGuardPlugin": {},
+    "PiHolePlugin": {},
+    "InternalScanSensor": {},
+    "LogScanSensor": {
+      "fireResetBluetooth": true,
+      "bonelogInterval": 900
+    },
+    "ACLAuditLogPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -615,15 +631,13 @@
     ]
   },
   "app": {
-    "exclude": [
-
-    ]
+    "exclude": []
   },
   "userFeatures": {
     "porn": true,
     "video": true,
     "game": true,
-    "vpn": true,
+    "vpn": false,
     "large_upload": true,
     "abnormal_bandwidth_usage": true,
     "data_plan": true,
@@ -639,11 +653,8 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "shadowsocks_server": false,
     "scisurf": false,
     "naughty_monkey": false,
-    "device_detection": false,
-    "porn_redirect": false,
     "redirect_httpd": false,
     "social_hour": true,
     "api_relay": false,
@@ -663,13 +674,20 @@
     "local_domain": true,
     "external_scan": false,
     "alarm_openport": false,
-    "device_service_scan": true
+    "device_service_scan": true,
+    "wireguard": false,
+    "ipv6": false,
+    "pihole": false,
+    "adblock": false,
+    "family_protect": false,
+    "smart_block": true,
+    "internal_scan": false,
+    "acl_audit": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
   ],
   "pubKeys": [],
-  "allowCustomizedProfiles": 1,
   "firerouter": {
     "interface": {
       "host": "localhost",
@@ -678,5 +696,10 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
+  },
+  "ratelimit": {
+    "appMax": 60,
+    "webMax": 200,
+    "duration": 60
   }
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,11 +19,13 @@ const log = require("./logger.js")(__filename);
 
 const fs = require('fs');
 const f = require('./Firewalla.js');
+const cp = require('child_process');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const featureNodes = [ 'sensors', 'apiSensors', 'features', 'userFeatures' ]
 const dynamicConfigKey = "sys:features"
 
 var dynamicConfigs = {}
@@ -55,11 +57,12 @@ function updateUserConfigSync(updatedPart) {
 
 async function removeUserNetworkConfig() {
   await getUserConfig(true);
-  
+
   delete userConfig.alternativeInterface;
   delete userConfig.secondaryInterface;
   delete userConfig.wifiInterface;
-  
+  delete userConfig.dhcpLeaseTime;
+
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
 }
@@ -80,15 +83,19 @@ function getConfig(reload) {
     let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
-    try {
-      if(fs.existsSync(userConfigFile)) {
-        // let fileJson = fs.readFileSync(userConfigFile, 'utf8');
-        // log.info(`getConfig fileJson:${fileJson}` + new Error("").stack);
-        // userConfig = JSON.parse(fileJson);
-        userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+    for (let i = 0; i !== 5; i++) {
+      try {
+        if (fs.existsSync(userConfigFile)) {
+          // let fileJson = fs.readFileSync(userConfigFile, 'utf8');
+          // log.info(`getConfig fileJson:${fileJson}` + new Error("").stack);
+          // userConfig = JSON.parse(fileJson);
+          userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
+          break;
+        }
+      } catch (err) {
+        log.error(`Error parsing user config, retry count ${i}`, err);
+        cp.execSync('sleep 1');
       }
-    } catch(err) {
-      log.error("Error parsing user config:" + err.message);
     }
 
     let testConfig = {};
@@ -102,6 +109,11 @@ function getConfig(reload) {
 
     // user config will override system default config file
     config = Object.assign({}, defaultConfig, userConfig, testConfig);
+
+    // 1 more level of Object.assign grants more flexibility to feature configurations
+    for (const key of featureNodes) {
+      config[key] = Object.assign({}, defaultConfig[key], userConfig[key], testConfig[key])
+    }
   }
   return config;
 }
@@ -138,10 +150,10 @@ function isFeatureHidden(featureName) {
   if(!f.isProductionOrBeta()) {
     return false; // for dev mode, never hide features
   }
-  
+
   const config = getConfig();
-  if(config.hiddenFeatures && 
-    Array.isArray(config.hiddenFeatures) && 
+  if(config.hiddenFeatures &&
+    Array.isArray(config.hiddenFeatures) &&
     config.hiddenFeatures.includes(featureName)) {
     return true;
   } else {
@@ -150,6 +162,11 @@ function isFeatureHidden(featureName) {
 }
 
 function isFeatureOn(featureName, defaultValue) {
+  // only enable smart_block on dev version temporarily
+  if(featureName == 'smart_block' && !f.isDevelopmentVersion()){
+    return false;
+  }
+
   if(isFeatureHidden(featureName)) {
     return false;
   }
@@ -226,7 +243,7 @@ function getFeatures() {
         }
       });
     }
-  }  
+  }
 
   return merged
 }
@@ -258,7 +275,7 @@ sclient.on("message", (channel, message) => {
   case "config:feature:dynamic:clear":
     delete dynamicConfigs[theFeature]
     break
-  }  
+  }
 });
 
 syncDynamicFeaturesConfigs()

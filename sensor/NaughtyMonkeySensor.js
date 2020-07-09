@@ -286,7 +286,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async subnet() {
-    const gateway = sysManager.myGateway();
+    const gateway = sysManager.myDefaultGateway();
 
     let alarm = new Alarm.SubnetAlarm(
       new Date() / 1000,

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const sysManager = require('./SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
@@ -53,7 +52,7 @@ class NetworkProfileManager {
           return;
         if (_.isString(host.ipv4)) {
           const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
-          if (host.ipv4 !== intfInfo.gateway)
+          if (intfInfo && host.ipv4 !== intfInfo.gateway)
             return;
           const uuid = intfInfo && intfInfo.uuid
           if (!uuid)
@@ -68,17 +67,11 @@ class NetworkProfileManager {
       });
     }
 
-    sclient.on("message", async (channel, message) => {
-      switch (channel) {
-        case Message.MSG_SYS_NETWORK_INFO_RELOADED: {
-          log.info("sys:network:info is reloaded, refreshing network profiles and policies ...");
-          this.scheduleRefresh();
-        }
-      }
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      log.info("sys:network:info is reloaded, refreshing network profiles and policies ...");
+      this.scheduleRefresh();
     });
-    
-    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
-    this.refreshNetworkProfiles();
+
     return this;
   }
 
@@ -95,7 +88,7 @@ class NetworkProfileManager {
           }
         }
       }
-    }, 5000);
+    }, 3000);
   }
 
   redisfy(obj) {
@@ -117,6 +110,13 @@ class NetworkProfileManager {
           obj[key] = JSON.parse(redisObj[key]);
         } catch (err) {}
     }
+    const numberKeys = ["rtid"];
+    for (const key of numberKeys) {
+      if (redisObj[key])
+        try {
+          obj[key] = Number(redisObj[key]);
+        } catch (err) {}
+    }
     return obj;
   }
 
@@ -133,17 +133,21 @@ class NetworkProfileManager {
     return this.networkProfiles[uuid];
   }
 
-  async scheduleCreateEnv(networkProfile, destroyBeforeCreate = false) {
+  async scheduleUpdateEnv(networkProfile, updatedProfileObject) {
     if (this.iptablesReady) {
+      // use old network profile config to destroy old environment
+      log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
+      await networkProfile.destroyEnv();
+      networkProfile.update(updatedProfileObject);
+      // use new network profile config to create new environment
       log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
-      if (destroyBeforeCreate)
-        await networkProfile.destroyEnv();
       await networkProfile.createEnv();
     } else {
       sem.once('IPTABLES_READY', async () => {
+        log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
+        await networkProfile.destroyEnv();
+        networkProfile.update(updatedProfileObject);
         log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
-        if (destroyBeforeCreate)
-          await networkProfile.destroyEnv();
         await networkProfile.createEnv();
       });
     }
@@ -160,7 +164,8 @@ class NetworkProfileManager {
       if (_.isArray(nowCopy[key]))
       nowCopy[key] = nowCopy[key].sort();
     }
-    const excludedKeys = ["carrier"];
+    // in case there is any key to exclude in future
+    const excludedKeys = [];
     for (const excludedKey of excludedKeys) {
       if (thenCopy[excludedKey])
         delete thenCopy[excludedKey];
@@ -174,6 +179,8 @@ class NetworkProfileManager {
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
       const redisProfile = await rclient.hgetallAsync(key);
+      if (!redisProfile) // just in case
+        continue;
       const o = this.parse(redisProfile);
       const uuid = key.substring(13);
       if (!uuid) {
@@ -184,24 +191,18 @@ class NetworkProfileManager {
       if (this.networkProfiles[uuid]) {
         const networkProfile = this.networkProfiles[uuid];
         const changed = this._isNetworkProfileChanged(networkProfile.o, o);
-        networkProfile.update(o);
         if (changed) {
           // network profile changed, need to reapply createEnv
           if (f.isMain()) {
             log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, o);
-            if (networkProfile.o.monitoring)
-              await this.scheduleCreateEnv(networkProfile);
-            else
-              await networkProfile.destroyEnv();
+            await this.scheduleUpdateEnv(networkProfile, o);
           }
         }
+        networkProfile.update(o);
       } else {
         this.networkProfiles[uuid] = new NetworkProfile(o);
         if (f.isMain()) {
-          if (this.networkProfiles[uuid].o.monitoring)
-            await this.scheduleCreateEnv(this.networkProfiles[uuid], true);
-          else
-            await this.networkProfiles[uuid].destroyEnv();
+          await this.scheduleUpdateEnv(this.networkProfiles[uuid], o);
         }
       }
       this.networkProfiles[uuid].active = false;
@@ -226,32 +227,26 @@ class NetworkProfileManager {
         dns: intf.dns || [],
         gateway: intf.gateway_ip || "",
         gateway6: intf.gateway6 || "",
-        // carrier: intf.carrier ? 1 : 0, need to find a better place to put this
         monitoring: monitoring,
-        type: intf.type || ""
+        type: intf.type || "",
+        rtid: intf.rtid || 0
       };
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
         if (f.isMain()) {
-          if (monitoring)
-            await this.scheduleCreateEnv(this.networkProfiles[uuid], true);
-          else
-            await this.networkProfiles[uuid].destroyEnv();
+          await this.scheduleUpdateEnv(this.networkProfiles[uuid], updatedProfile);
         }
       } else {
         const networkProfile = this.networkProfiles[uuid];
         const changed = this._isNetworkProfileChanged(networkProfile.o, updatedProfile);
-        networkProfile.update(updatedProfile);
         if (changed) {
           // network profile changed, need to reapply createEnv
           if (f.isMain()) {
             log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, updatedProfile);
-            if (monitoring)
-              await this.scheduleCreateEnv(networkProfile);
-            else
-              await networkProfile.destroyEnv();
+            await this.scheduleUpdateEnv(networkProfile, updatedProfile);
           }
         }
+        networkProfile.update(updatedProfile);
       }
       this.networkProfiles[uuid].active = true;
     }

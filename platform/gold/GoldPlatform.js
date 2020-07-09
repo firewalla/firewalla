@@ -18,9 +18,7 @@
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
-const fs = require('fs');
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
+const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
@@ -38,6 +36,14 @@ class GoldPlatform extends Platform {
   getAllNicNames() {
     // there are for NICs on gold
     return ["eth0", "eth1", "eth2", "eth3"];
+  }
+
+  getDHCPServiceName() {
+    return "firerouter_dhcp";
+  }
+
+  getDNSServiceName() {
+    return "firerouter_dns";
   }
 
   getBoardSerial() {
@@ -107,11 +113,26 @@ class GoldPlatform extends Platform {
     return 18;
   }
 
-  // via /etc/update-motd.d/30-armbian-sysinfo
-  getCpuTemperature() {
-//    const source = '/etc/armbianmonitor/datasources/soctemp';
-//    return Number(fs.readFileSync(source)) / 1000;
-    return 30;
+  hasMultipleCPUs() {
+    return true
+  }
+
+  async getCpuTemperature() {
+    try {
+      const path = '/sys/class/hwmon/hwmon1/'
+      const tempList = []
+      const dir = await fs.opendir(path)
+      for await (const dirent of dir) {
+        if (dirent.name.match(/temp(\d+)_input/)) {
+          const input = await fs.readFile(path + dirent.name, 'utf8')
+          tempList.push(Number(input) / 1000)
+        }
+      }
+      return tempList
+    } catch(err) {
+      log.error("Failed to get cpu temperature, use 0 as default, err:", err);
+      return 0;
+    }
   }
 
   getPolicyCapacity() {
@@ -128,6 +149,13 @@ class GoldPlatform extends Platform {
 
   getBroTabFile() {
     return `${f.getFirewallaHome()}/etc/brotab.gold`;
+  }
+  getAllowCustomizedProfiles(){
+    return 10;
+  }
+
+  isBonjourBroadcastEnabled() {
+    return false;
   }
 }
 

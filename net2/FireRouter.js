@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc.
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -46,13 +46,14 @@ const { delay } = require('../util/util.js')
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
+const Mode = require('./Mode.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
-const uuid = require('uuid');
+const ip = require('ip')
 const _ = require('lodash');
-const Mode = require('./Mode.js');
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
@@ -103,7 +104,7 @@ async function calculateZeekOptions(monitoringInterfaces) {
     if (!monitoringInterfaces.includes(intfName))
       continue;
     const intf = intfNameMap[intfName];
-    const subIntfs = intf.intf;
+    const subIntfs = intf.config && intf.config.intf;
     if (!subIntfs) {
       parentInterfaces[intfName] = 1;
     } else {
@@ -115,7 +116,7 @@ async function calculateZeekOptions(monitoringInterfaces) {
         }
       }
       if (typeof subIntfs === 'string') {
-        const rawIntf = subIntf.split('.')[0];
+        const rawIntf = subIntfs.split('.')[0];
         parentInterfaces[rawIntf] = 1;
       }
     }
@@ -142,6 +143,7 @@ async function generateNetworkInfo() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
+    const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
     let ip6s = [];
     let ip6Masks = [];
     let ip6Subnets = [];
@@ -158,6 +160,23 @@ async function generateNetworkInfo() {
     let gateway = null;
     let gateway6 = null;
     let dns = null;
+    let resolver = null;
+    const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
+    if (resolverConfig) {
+      if (resolverConfig.useNameserversFromWAN) {
+        const routingConfig = (routerConfig && routerConfig.routing && (routerConfig.routing[intfName] || routerConfig.routing.global));
+        const defaultRoutingConfig = routingConfig && routingConfig.default;
+        if (defaultRoutingConfig) {
+          const viaIntf = defaultRoutingConfig.viaIntf;
+          if (intfNameMap[viaIntf]) {
+            resolver = intfNameMap[viaIntf].config.nameservers || intfNameMap[viaIntf].state.dns;
+          }
+        }
+      } else {
+        if (resolverConfig.nameservers)
+          resolver = resolverConfig.nameservers;
+      }
+    }
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
@@ -187,13 +206,18 @@ async function generateNetworkInfo() {
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
       dns:          dns,
+      resolver:     resolver,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
-      type:         intf.config.meta.type
+      type:         intf.config.meta.type,
+      rtid:         intf.state.rtid || 0,
+      searchDomains: searchDomains
     }
 
-    await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
-    await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
+    if (f.isMain()) {
+      await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
+      await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
+    }
     networkInfos.push(redisIntf);
   }
   if (f.isMain()) {
@@ -202,6 +226,7 @@ async function generateNetworkInfo() {
   return networkInfos;
 }
 
+// internal properties
 let routerInterface = null
 let routerConfig = null
 let monitoringIntfNames = [];
@@ -224,40 +249,68 @@ class FireRouter {
     const intf = fwConfig.firerouter.interface;
     routerInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
-    
+
     this.ready = false
     this.sysNetworkInfo = [];
 
-    this.init(true).catch(err => {
-      log.error('FireRouter failed to initialize', err)
-      process.exit(1);
-    })
+    this.retryUntilInitComplete()
 
     sclient.on("message", (channel, message) => {
+      if (!this.ready)
+        return;
+      let reloadNeeded = false;
       switch (channel) {
+        case Message.MSG_FR_IFACE_CHANGE_APPLIED : {
+          log.info("Interface config is changed, schedule reload from FireRouter and restart Brofish ...");
+          reloadNeeded = true;
+          this.broRestartNeeded = true;
+          break;
+        }
+        case Message.MSG_SECONDARY_IFACE_UP: {
+          // this message should only be triggered on red/blue
+          log.info("Secondary interface is up, schedule reload from FireRouter ...");
+          reloadNeeded = true;
+          break;
+        }
         case Message.MSG_FR_CHANGE_APPLIED:
         case Message.MSG_NETWORK_CHANGED: {
           // these two message types should cover all proactive and reactive network changes
           log.info("Network is changed, schedule reload from FireRouter ...");
-          this.scheduleReload();
+          reloadNeeded = true;
+          break;
         }
-        break;
+        default:
       }
+      if (reloadNeeded)
+        this.scheduleReload();
     });
 
+    sclient.subscribe(Message.MSG_SECONDARY_IFACE_UP);
     sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
+    sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
+  }
+
+  async retryUntilInitComplete() {
+    try {
+      await this.init(true)
+    } catch(err) {
+      log.error('FireRouter failed to initialize', err)
+      await delay(5000)
+      this.retryUntilInitComplete()
+    }
   }
 
   scheduleReload() {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
-      this.init();
+      this.init().catch((err) => {
+        log.error("Failed to reload init", err.message);
+      });
     }, 3000);
   }
 
-  // let it crash
   async init(first = false) {
     let zeekOptions = {
       listenInterfaces: [],
@@ -270,7 +323,7 @@ class FireRouter {
       const mode = await rclient.getAsync('mode')
 
       const lastConfig = await this.loadLastConfigFromHistory();
-      if (!lastConfig || ! _.isEqual(lastConfig.config, routerConfig)) {
+      if (f.isMain() && (!lastConfig || ! _.isEqual(lastConfig.config, routerConfig))) {
         await this.saveConfigHistory(routerConfig);
       }
 
@@ -302,19 +355,22 @@ class FireRouter {
       }
       if (!defaultWanIntfName )
         log.error("Default WAN interface is not defined in router config");
-      
+
+
+      log.info("adopting firerouter network change according to mode", mode)
 
       switch(mode) {
         case Mode.MODE_AUTO_SPOOF:
         case Mode.MODE_DHCP:
-        case Mode.MODE_NONE:
-          // monitor both wan and lan in simple mode
+          // monitor both wan and lan in simple/DHCP mode
           monitoringIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
             .filter(intf => intf.state && intf.state.ip4) // ignore interfaces without ip address, e.g., VPN that is currently not running
+            .filter(intf => intf.state && intf.state.ip4 && ip.isPrivate(intf.state.ip4.split('/')[0]))
             .map(intf => intf.config.meta.intfName);
           break;
 
+        case Mode.MODE_NONE:
         case Mode.MODE_ROUTER:
           // only monitor lan in router mode
           monitoringIntfNames = Object.values(intfNameMap)
@@ -340,7 +396,8 @@ class FireRouter {
         },
         monitoringInterface: monitoringIntfNames[0]
       };
-      Config.updateUserConfigSync(updatedConfig);
+      if (f.isMain())
+        Config.updateUserConfigSync(updatedConfig);
       // update sys:network:info at the end so that all related variables and configs are already changed
       this.sysNetworkInfo = await generateNetworkInfo();
       // calculate minimal listen interfaces based on monitoring interfaces
@@ -351,7 +408,9 @@ class FireRouter {
       // updates userConfig
       const intf = await networkTool.updateMonitoringInterface().catch((err) => {
         log.error('Error', err)
-      })
+      }) || "eth0"; // a fallback for red/blue
+
+      const intf2 = intf + ':0'
 
       routerConfig = {
         "interface": {
@@ -395,70 +454,102 @@ class FireRouter {
         // }
       }
 
-      const sysinfo = await rclient.hgetallAsync("sys:network:info")
-      const mac = _.get(sysinfo, `${intf}.mac.mac_address`, '').toUpperCase();
-      const ip = _.get(sysinfo, `${intf}.ip_address`, '');
-      const gateway = _.get(sysinfo, `${intf}.gateway`, '');
-      const _dns = _.get(sysinfo, `${intf}.dns`, []); 
-      let v4dns = [];
-      for (let i in _dns) {
-        if (new Address4(_dns[i]).isValid()) {
-          v4dns.push(_dns[i]);
-        }
-      }
-
-      intfNameMap = {
-        eth0: {
-          config: {
-            enabled: true,
-            meta: {
-              name: 'eth0',
-              uuid: uuid.v4(),
-            }
-          },
-          state: {
-            mac: mac,
-            ip4: ip,
-            gateway: gateway,
-            dns: v4dns
-          }
-        }
-      }
-
-      monitoringIntfNames = [ 'eth0', 'eth0:0' ];
-      logicIntfNames = ['eth0', 'eth0:0'];
       zeekOptions = {
-        listenInterfaces: ["eth0"],
+        listenInterfaces: [intf],
         restrictFilters: {}
       };
 
-      wanIntfNames = ['eth0'];
-      defaultWanIntfName = "eth0";
+      wanIntfNames = [intf];
+      defaultWanIntfName = intf;
 
       const Discovery = require('./Discovery.js');
       const d = new Discovery("nmap");
 
       // regenerate stub sys:network:uuid
-      await rclient.delAsync("sys:network:uuid");
+      const previousUUID = await rclient.hgetallAsync("sys:network:uuid") || {};
       const stubNetworkUUID = {
-        "00000000-0000-0000-0000-000000000000": JSON.stringify({name: "eth0"}),
-        "11111111-1111-1111-1111-111111111111": JSON.stringify({name: "eth0:0"})
+        "00000000-0000-0000-0000-000000000000": JSON.stringify({name: intf}),
+        "11111111-1111-1111-1111-111111111111": JSON.stringify({name: intf2})
       };
       await rclient.hmset("sys:network:uuid", stubNetworkUUID);
+      for (let key of Object.keys(previousUUID).filter(uuid => !Object.keys(stubNetworkUUID).includes(uuid))) {
+        await rclient.hdel("sys:network:uuid", key).catch((err) => {});
+      }
       // updates sys:network:info
       const intfList = await d.discoverInterfacesAsync()
       if (!intfList.length) {
         throw new Error('No active ethernet!')
       }
+
       this.sysNetworkInfo = intfList;
+
+      const intfObj = intfList.find(i => i.name == intf)
+
+      if (!intfObj) {
+        throw new Error('Interface name not match')
+      }
+
+      const { mac_address, subnet, gateway, dns } = intfObj
+      const mac = mac_address.toUpperCase();
+      const v4dns = [];
+      for (const dip of dns) {
+        if (new Address4(dip).isValid()) {
+          v4dns.push(dip);
+        }
+      }
+
+      intfNameMap = { }
+      intfNameMap[intf] = {
+        config: {
+          enabled: true,
+          meta: {
+            name: intf,
+            uuid: '00000000-0000-0000-0000-000000000000'
+          }
+        },
+        state: {
+          mac: mac,
+          ip4: subnet,
+          gateway: gateway,
+          dns: v4dns
+        }
+      }
+
+      const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
+      monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
+      logicIntfNames = [ intf ];
+
+      const intf2Obj = intfList.find(i => i.name == intf2)
+      if (intf2Obj && intf2Obj.ip_address) {
+
+        if (wanOnPrivateIP) monitoringIntfNames.push(intf2);
+        logicIntfNames.push(intf2);
+        const subnet2 = intf2Obj.subnet
+        intfNameMap[intf2] = {
+          config: {
+            enabled: true,
+            meta: {
+              name: intf2,
+              uuid: '11111111-1111-1111-1111-111111111111'
+            }
+          },
+          state: {
+            mac: mac,
+            ip4: subnet2
+          }
+        }
+      }
     }
+
+    // this will ensure SysManger on each process will be updated with correct info
+    sem.emitLocalEvent({type: Message.MSG_FW_FR_RELOADED});
 
     log.info('FireRouter initialization complete')
     this.ready = true
 
     if (f.isMain() && (
       // zeek used to be bro
-      this.platform.isFireRouterManaged() && broControl.optionsChanged(zeekOptions) ||
+      this.platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions) || this.broRestartNeeded) ||
       !this.platform.isFireRouterManaged() && first
     )) {
       this.broReady = false;
@@ -470,6 +561,7 @@ class FireRouter {
         .then(() => broControl.addCronJobs())
         .then(() => {
           log.info('Bro restarted');
+          this.broRestartNeeded = false;
           this.broReady = true;
         });
     } else {
@@ -516,6 +608,7 @@ class FireRouter {
     return JSON.parse(JSON.stringify(logicIntfNames));
   }
 
+  // should always be an array
   getMonitoringIntfNames() {
     return JSON.parse(JSON.stringify(monitoringIntfNames))
   }
@@ -540,7 +633,6 @@ class FireRouter {
     }
   }
 
-  // call checkConfig() for the impact before actually commit it
   async setConfig(config) {
     const options = {
       method: "POST",
@@ -571,6 +663,10 @@ class FireRouter {
     // await this.init()
     // init of FireRouter should be triggered by published message
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+    if (f.isApi()) {
+      // reload config from lower layer to reflect change immediately in FireAPI
+      routerConfig = await getConfig();
+    }
 
     return resp.body
   }
@@ -626,6 +722,7 @@ class FireRouter {
       const ModeManager = require('./ModeManager.js');
       await ModeManager.changeToAlternativeIpSubnet();
       await ModeManager.enableSecondaryInterface();
+      await pclient.publishAsync(Message.MSG_SECONDARY_IFACE_UP, "");
     }
     // publish message to trigger firerouter init
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");

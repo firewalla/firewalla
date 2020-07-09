@@ -44,7 +44,8 @@ require('../net2/config.js').syncDynamicFeaturesConfigs()
 
 run0();
 
-function run0() {
+async function run0() {
+  await sysManager.waitTillInitialized();
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       fireRouter.isReady() &&

@@ -40,7 +40,7 @@ class DNSMASQSensor extends Sensor {
         throw err;
       })
       .then(async () => {
-        dnsmasq.start(false)
+        dnsmasq.scheduleStart();
       })
       .catch(err => log.error("Failed to start dnsmasq: " + err))
       .then(() => log.info("dnsmasq service is started successfully"));

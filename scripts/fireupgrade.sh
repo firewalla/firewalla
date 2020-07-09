@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2020 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,8 +26,11 @@
 #   0 - process exits before timeout
 #   1 - process killed due to timeout
 
+: ${SCRIPTS_DIR:=/home/pi/scripts}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
+MGIT=$(PATH=$SCRIPTS_DIR:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
+
+[ -s $FIREWALLA_HOME/scripts/firelog ] && FIRELOG=$FIREWALLA_HOME/scripts/firelog || FIRELOG=/usr/bin/logger
 
 # ensure that run directory already exists
 mkdir -p /home/pi/.firewalla/run
@@ -56,20 +59,20 @@ timeout_check() {
     return 1
 }
 
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"+`date`
-if [ -s /home/pi/scripts/check_reset.sh ]
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"
+if [ -s $SCRIPTS_DIR/check_reset.sh ]
 then
-    sudo /home/pi/scripts/check_reset.sh
+    sudo $SCRIPTS_DIR/check_reset.sh
 else
-    sudo /home/pi/firewalla/scripts/check_reset.sh
+    sudo $FIREWALLA_HOME/scripts/check_reset.sh
 fi
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"+`date`
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"
 
 
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST"
 
 function await_ip_assigned() {
-    for i in `seq 1 30`; do
+    for i in `seq 1 70`; do
         gw=$(ip route show | awk '/default/ {print $3; exit; }' | head -n 1)
         if [[ ! -n $gw ]]; then
             sleep 1
@@ -82,113 +85,75 @@ function await_ip_assigned() {
     return 1
 }
 
-set_value() {
-    kind=$1
-    saved_value=$2
-    case ${kind} in
-        ip)
-            sudo /sbin/ip addr replace ${saved_value} dev eth0
-            ;;
-        gw)
-            sudo /sbin/route add default gw ${saved_value} eth0
-            ;;
-    esac
-}
-
-restore_values() {
-    r=0
-    logger "Restore saved values of ip/gw/dns"
-    for kind in ip gw
-    do
-        file=/home/pi/.firewalla/run/saved_${kind}
-        [[ -e "$file" ]] || continue
-        saved_value=$(cat $file)
-        [[ -n "$saved_value" ]] || continue
-        set_value $kind $saved_value || r=1
-    done
-    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
-        sudo /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
-    else
-        r=1
-    fi
-    sleep 3
-    return $r
-}
+LOGGER=logger
+ERR=logger
+[ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
 await_ip_assigned || restore_values
 
-
-TIME_THRESHOLD="2019-10-14"
-
-function sync_time() {
-    time_website=$1
-    time=$(curl -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
-    if [[ "x$time" == "x" ]]; then
-        logger "ERROR: Failed to load date info from website: $time_website"
-        return 1
-    else
-        # compare website time against threshold to prevent it goes bad in some rare cases
-        tsWebsite=$(date -d "$time" +%s)
-        tsThreshold=$(date -d "$TIME_THRESHOLD" +%s)
-        if [ $tsWebsite -ge $tsThreshold ];
-        then
-          sudo date -s "$time";
-        else
-          return 1
-        fi
-    fi
-}
-
-if [[ ! -f /.dockerenv ]]; then
-    logger "FIREWALLA.UPGRADE.DATE.SYNC"
-    sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
-    ret=$?
-    if [[ $ret -ne 0 ]]; then
-        sudo systemctl stop ntp
-        sudo date -s "$TIME_THRESHOLD" # set minimal date here to prevent SSL failure on undergoing HTTPS calls
-        sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
-        sudo systemctl start ntp
-    fi
-    logger "FIREWALLA.UPGRADE.DATE.SYNC.DONE"
-    sync
-fi
+[ -s $SCRIPTS_DIR/fire-time.sh ] && $SCRIPTS_DIR/fire-time.sh || $FIREWALLA_HOME/scripts/fire-time.sh
 
 GITHUB_STATUS_API=https://api.github.com
 
-logger `date`
+$FIRELOG "$(date)"
 rc=1
-for i in `seq 1 10`; do
-    HTTP_STATUS_CODE=`curl -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
+for i in `seq 1 5`; do
+    HTTP_STATUS_CODE=`curl -m10 -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
     if [[ $HTTP_STATUS_CODE == "200" ]]; then
       rc=0
       break
     fi
-    /usr/bin/logger "ERROR: FIREWALLA.UPGRADE NO Network $i"
+    $FIRELOG "ERROR: FIREWALLA.UPGRADE NO Network $i"
     sleep 1
 done
 
 if [[ $rc -ne 0 ]]
 then
-    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK "+`date`
-    external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
-    if [ -s /home/pi/scripts/check_fix_network.sh ]
+    $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK"
+    if [ -s $SCRIPTS_DIR/check_fix_network.sh ]
     then
-        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/scripts/check_fix_network.sh'
+        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no $SCRIPTS_DIR/check_fix_network.sh'
     else
-        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
+        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no $FIREWALLA_HOME/scripts/check_fix_network.sh'
     fi
     $external_script &>/dev/null &
-    timeout_check || /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"+`date`
-    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK "+`date`
+    timeout_check || $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"
+    $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK"
 fi
 
 
-/usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
+$FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
 
-cd /home/pi/firewalla
-sudo chown -R pi /home/pi/firewalla/.git
+# gold branch mapping, don't source platform.sh here as depencencies will be massive
+function map_target_branch {
+  if [ "$(uname -m)" = "x86_64" ]; then
+    case "$1" in
+      "release_6_0")
+        echo "release_7_0"
+        ;;
+      "beta_6_0")
+        echo "beta_8_0"
+        ;;
+      "beta_7_0")
+        echo "beta_8_0"
+        ;;
+      "master")
+        echo "master"
+        ;;
+      *)
+        echo $1
+        ;;
+    esac
+  else
+    echo $1
+  fi
+}
+
+cd $FIREWALLA_HOME
+sudo chown -R pi $FIREWALLA_HOME/.git
 branch=$(git rev-parse --abbrev-ref HEAD)
+remote_branch=$(map_target_branch $branch)
 
 # continue to try upgrade even github api is not successfully.
 # very likely to fail
@@ -203,14 +168,14 @@ echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
-  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
   echo '======= SKIP UPGRADING BECAUSE OF FLAG /home/pi/.firewalla/config/.no_auto_upgrade ======='
   exit 0
 fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
-sudo rm -f /home/pi/firewalla/.git/*.lock
-GIT_COMMAND="(sudo -u pi $MGIT fetch origin $branch && sudo -u pi $MGIT reset --hard FETCH_HEAD)"
+sudo rm -f $FIREWALLA_HOME/.git/*.lock
+GIT_COMMAND="(sudo -u pi $MGIT fetch origin $remote_branch && sudo -u pi $MGIT reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
   (sleep 3; eval $GIT_COMMAND) ||
   (sleep 3; eval $GIT_COMMAND) ||
@@ -223,17 +188,17 @@ echo $commit_after > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 
 
-/home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE Done $branch"
+$FIRELOG -t debug -m  "FIREWALLA.UPGRADE Done $branch"
 
 # in case there is some upgrade change on firewalla.service
 # all the rest services will be updated (in case) via firewalla.service
 
-sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
-#[ -s /home/pi/firewalla/etc/fireupgrade.service ]  && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
-sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
+sudo cp $FIREWALLA_HOME/etc/firewalla.service /etc/systemd/system/.
+#[ -s $FIREWALLA_HOME/etc/fireupgrade.service ]  && sudo cp $FIREWALLA_HOME/etc/fireupgrade.service /etc/systemd/system/.
+sudo cp $FIREWALLA_HOME/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
 
-if [[ $(uname -m) == "x86_64" ]]; then
+if [[ $MANAGED_BY_FIREBOOT == "yes" ]]; then
     sudo systemctl disable firewalla
     sudo systemctl disable fireupgrade
     sudo systemctl disable brofish
@@ -246,12 +211,12 @@ fi
 
 case $mode in
     normal)
-        /home/pi/firewalla/scripts/fireupgrade_normal.sh
+        $FIREWALLA_HOME/scripts/fireupgrade_normal.sh
         ;;
     hard)
-        /home/pi/firewalla/scripts/fireupgrade_hard.sh
+        $FIREWALLA_HOME/scripts/fireupgrade_hard.sh
         ;;
     soft)
-        /home/pi/firewalla/scripts/fireupgrade_soft.sh
+        $FIREWALLA_HOME/scripts/fireupgrade_soft.sh
         ;;
 esac

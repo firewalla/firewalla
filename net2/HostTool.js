@@ -35,7 +35,7 @@ const asyncNative = require('../util/asyncNative.js');
 
 const iptool = require('ip');
 
-const getPreferredBName = require('../util/util.js').getPreferredBName
+const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
 class HostTool {
@@ -414,7 +414,7 @@ class HostTool {
   }
 
   async linkMacWithIPv6(v6addr, mac, intf) {
-    await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr)
+    await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr).catch((err) => {});
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;
@@ -545,22 +545,29 @@ class HostTool {
 
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
+  
   async generateLocalDomain(mac) {
-    const key = this.getMacKey(mac);
-    let customizeDomainName = await rclient.hgetAsync(key, "customizeDomainName");
-    let ipv4Addr = await rclient.hgetAsync(key, "ipv4Addr");
-    let name = await rclient.hgetAsync(key, "name");
-    let bname = await rclient.hgetAsync(key, "bname")
-    if (!ipv4Addr || (!bname && !name && !customizeDomainName)) return;
+    if(!this.isMacAddress(mac)) {
+      return;
+    }
+    const macEntry = await this.getMACEntry(mac);
+    // customizeDomainName actually specifies hostname, domain corresponds to suffix
+    let customizedHostname = macEntry.customizeDomainName;
+    let ipv4Addr = macEntry.ipv4Addr;
+    let name = getPreferredName(macEntry);
+    if (!ipv4Addr || (!name && !customizedHostname)) return;
     name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
-    bname = bname && getCanonicalizedDomainname(bname.replace(/\s+/g, "."));
-    name = name || bname;
-    customizeDomainName = customizeDomainName && getCanonicalizedDomainname(customizeDomainName.replace(/\s+/g, "."));
+    customizedHostname = customizedHostname && getCanonicalizedDomainname(customizedHostname.replace(/\s+/g, "."));
+    //const suffix = (await rclient.getAsync('local:domain:suffix')) || '.lan';
     await this.updateMACKey({
-      localDomain: name ? `${name}.lan` : '',
-      userLocalDomain: customizeDomainName ? `${customizeDomainName}.lan` : '',
+      localDomain: name || "",
+      userLocalDomain: customizedHostname || "",
       mac: mac
     }, true);
+    return {
+      localDomain: name,
+      userLocalDomain: customizedHostname
+    }
   }
 }
 

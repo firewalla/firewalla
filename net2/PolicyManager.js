@@ -237,52 +237,6 @@ module.exports = class {
   }
 
   async whitelist(host, config) {
-    if (host.constructor.name == 'HostManager') {
-      if (iptablesReady)
-        return Block.setupGlobalLockDown(config.state);
-      else
-        // wait until basic ipables are all set
-        return new Promise((resolve, reject) => {
-          sem.once('IPTABLES_READY', () => {
-            Block.setupGlobalLockDown(config.state)
-              .then(resolve).catch(reject)
-          })
-        })
-    }
-
-    if (host.constructor.name === "Tag") {
-      if (iptablesReady)
-        return Block.setupTagLockDown(config.state, host.o && host.o.uid);
-      else {
-        // wait until basic iptables are all set
-        return new Promise((resolve, reject) => {
-          sem.once('IPTABLES_READY', () => {
-            Block.setupTagLockDown(config.state, host.o && host.o.uid)
-              .then(resolve).catch(reject);
-          });
-        })
-      }
-    }
-
-    if (host.constructor.name == "NetworkProfile") {
-      if (iptablesReady) {
-        return Block.setupNetworkLockDown(config.state, host.o && host.o.uuid);
-      } else {
-        return new Promise((resolve, reject) => {
-          sem.once('IPTABLES_READY', () => {
-            Block.setupNetworkLockDown(config.state, host.o && host.o.uuid)
-              .then(resolve).catch(reject);
-          })
-        });
-      }
-    }
-
-    if (!host.o.mac) throw new Error('Invalid host MAC');
-
-    if (config.state)
-      return Block.addMacToSet([host.o.mac], 'device_whitelist_set')
-    else
-      return Block.delMacFromSet([host.o.mac], 'device_whitelist_set')
   }
 
   shadowsocks(host, config) {
@@ -334,12 +288,6 @@ module.exports = class {
     if (config.alternativeDnsServers && Array.isArray(config.alternativeDnsServers)) {
       dnsmasq.setInterfaceNameServers("alternative", config.alternativeDnsServers);
       needUpdate = true;
-      needRestart = true;
-    }
-    if (config.wifiDnsServers && Array.isArray(config.wifiDnsServers)) {
-      dnsmasq.setInterfaceNameServers("wifi", config.wifiDnsServers);
-      needUpdate = true;
-      needRestart = true;
     }
     if (config.secondaryDhcpRange) {
       dnsmasq.setDhcpRange("secondary", config.secondaryDhcpRange.begin, config.secondaryDhcpRange.end);
@@ -347,10 +295,6 @@ module.exports = class {
     }
     if (config.alternativeDhcpRange) {
       dnsmasq.setDhcpRange("alternative", config.alternativeDhcpRange.begin, config.alternativeDhcpRange.end);
-      needRestart = true;
-    }
-    if (config.wifiDhcpRange) {
-      dnsmasq.setDhcpRange("wifi", config.wifiDhcpRange.begin, config.wifiDhcpRange.end);
       needRestart = true;
     }
     if (needUpdate)
@@ -465,6 +409,8 @@ module.exports = class {
         })();
       } else if (p === "monitor") {
         target.spoof(policy[p]);
+      } else if (p === "acl") {
+        target.acl(policy[p]);
       } else if (p === "vpnClient") {
         this.vpnClient(target, policy[p]);
       } else if (p === "vpn") {

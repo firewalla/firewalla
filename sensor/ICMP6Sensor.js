@@ -27,7 +27,6 @@ const sysManager = require('../net2/SysManager.js');
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 
 class ICMP6Sensor extends Sensor {
@@ -79,13 +78,10 @@ class ICMP6Sensor extends Sensor {
 
   run() {
     this.scheduleReload();
-    sclient.on("message", (channel, message) => {
-      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-        log.info("Schedule reload ICMP6Sensor since network info is reloaded");
-        this.scheduleReload();
-      }
-    });
-    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      log.info("Schedule reload ICMP6Sensor since network info is reloaded");
+      this.scheduleReload();
+    })
   }
 
   processNeighborAdvertisement(line, intf) {
@@ -105,7 +101,6 @@ class ICMP6Sensor extends Sensor {
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `A new ipv6 is found @ ICMP6Sensor ${tgtIp} ${dstMac}`,
-          suppressAlarm: true,
           host: {
             ipv6Addr: [tgtIp],
             mac: dstMac.toUpperCase(),

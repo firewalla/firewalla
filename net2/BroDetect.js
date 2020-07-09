@@ -17,7 +17,7 @@
 
 const log = require('./logger.js')(__filename);
 
-const Tail = require('always-tail');
+const Tail = require('../vendor_lib/always-tail.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -60,8 +60,9 @@ let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
-const NetworkProfileManager = require('../net2/NetworkProfileManager.js')
+const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
 /*
  *
  *  config.bro.notice.path {
@@ -461,6 +462,23 @@ module.exports = class {
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
         }
       }
+      if (fc.isFeatureOn("acl_audit")) {
+        // detect DNS level block (NXDOMAIN) in dns log
+        if (obj["rcode_name"] === "NXDOMAIN" && (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") && obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["query"] != null && obj["query"].length > 0) {
+          if (!sysManager.isMyIP(obj["id.orig_h"]) && !sysManager.isMyIP6(obj["id.orig_h"])) {
+            const record = {
+              src: obj["id.orig_h"],
+              domain: obj["query"],
+              qtype: obj["qtype_name"]
+            };
+            sem.emitEvent({
+              type: Message.MSG_ACL_DNS_NXDOMAIN,
+              record: record,
+              suppressEventLogging: true
+            });
+          }
+        }
+      }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
     }
@@ -525,16 +543,31 @@ module.exports = class {
   */
 
   isMonitoring(ip) {
-    let hostObject = hostManager.getHostFast(ip);
-    if (!iptool.isV4Format(ip) && iptool.isV6Format(ip))
-      hostObject = hostManager.getHostFast6(ip);
+    if (!hostManager.isMonitoring())
+      return false;
+    let hostObject = null;
+    let networkProfile = null;
+    if (iptool.isV4Format(ip)) {
+      hostObject = hostManager.getHostFast(ip);
+      const iface = sysManager.getInterfaceViaIP4(ip);
+      const uuid = iface && iface.uuid;
+      networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+    } else {
+      if (iptool.isV6Format(ip)) {
+        hostObject = hostManager.getHostFast6(ip);
+        const iface = sysManager.getInterfaceViaIP6(ip);
+        const uuid = iface && iface.uuid;
+        networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      }
+    }
 
     if (hostObject && !hostObject.isMonitoring()) {
       return false;
-    } else {
-      return true;
     }
-
+    if (networkProfile && !networkProfile.isMonitoring()) {
+      return false;
+    }
+    return true;
   }
 
   // @TODO check according to multi interface
@@ -797,6 +830,14 @@ module.exports = class {
         return;
       }
 
+      const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
+      if (intfInfo && intfInfo.uuid) {
+        intfId = intfInfo.uuid;
+      } else {
+        log.error(`Unable to find nif uuid, ${intfId}`);
+        intfId = '';
+      }
+
       if (localMac && sysManager.isMyMac(localMac)) {
         // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
         if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
@@ -804,7 +845,7 @@ module.exports = class {
           localMac = null; // discard local mac from bro log since it is not correct
         }
       }
-      if (!localMac) {
+      if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn") { // no need to query IP from unrecognized interface, otherwise it will spawn many 'cat' processes in Layer2.js
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
           localMac = await l2.getMACAsync(lhost).catch((err) => {
@@ -820,20 +861,15 @@ module.exports = class {
         }
       }
       if (!localMac || localMac.constructor.name !== "String") {
-        return;
+        localMac = null;
       }
 
-      const intfInfo = sysManager.getInterfaceViaIP4(lhost);
-      if (intfInfo && intfInfo.uuid) {
-        intfId = intfInfo.uuid;
-      } else {
-        log.error(`Unable to find nif uuid, ${intfId}`);
-        intfId = '';
+      let tags = [];
+      if (localMac) {
+        localMac = localMac.toUpperCase();
+        const hostInfo = hostManager.getHostFastByMAC(localMac);
+        tags = hostInfo ? hostInfo.getTags() : [];
       }
-
-      localMac = localMac.toUpperCase();
-      const hostInfo = hostManager.getHostFastByMAC(localMac);
-      let tags = hostInfo ? hostInfo.getTags() : [];
 
       if (intfId !== '') {
         const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
@@ -1049,7 +1085,7 @@ module.exports = class {
 
       // Single flow is written to redis first to prevent data loss, will be removed in most cases
       if (tmpspec) {
-        if (tmpspec.lh === tmpspec.sh) {
+        if (tmpspec.lh === tmpspec.sh && localMac) {
           // record device as active if and only if device originates the connection
           let macIPEntry = this.activeMac[localMac];
           if (!macIPEntry)
@@ -1063,8 +1099,6 @@ module.exports = class {
           }
           this.activeMac[localMac] = macIPEntry;
         }
-        let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
-        let strdata = JSON.stringify(tmpspec);
 
         if (tmpspec.fd == 'in') {
           // use now instead of the start time of this flow
@@ -1091,42 +1125,46 @@ module.exports = class {
           }
         }
 
-
-        //let redisObj = [key, tmpspec.ts, strdata];
-        // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
-        let redisObj = [key, now, strdata];
-        log.debug("Conn:Save:Temp", redisObj);
-
-        sem.sendEventToFireMain({
-          type: "NewGlobalFlow",
-          flow: tmpspec,
-          suppressEventLogging: true
-        });
-
-        if (tmpspec.fd == 'out') {
-          this.recordOutPort(tmpspec);
-        }
-
-        rclient.zadd(redisObj, (err, response) => {
-          if (err == null) {
-
-            let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-
-            setTimeout(() => {
-              sem.emitEvent({
-                type: 'DestIPFound',
-                ip: remoteIPAddress,
-                fd: tmpspec.fd,
-                ob: tmpspec.ob,
-                rb: tmpspec.rb,
-                suppressEventLogging: true
-              });
-            }, 1 * 1000); // make it a little slower so that dns record will be handled first
-
-          } else {
-            log.error("Failed to save tmpspec: ", tmpspec, err);
+        if (localMac) {
+          let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
+          let strdata = JSON.stringify(tmpspec);
+  
+          //let redisObj = [key, tmpspec.ts, strdata];
+          // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
+          let redisObj = [key, now, strdata];
+          log.debug("Conn:Save:Temp", redisObj);
+  
+          sem.sendEventToFireMain({
+            type: "NewGlobalFlow",
+            flow: tmpspec,
+            suppressEventLogging: true
+          });
+  
+          if (tmpspec.fd == 'out') {
+            this.recordOutPort(tmpspec);
           }
-        });
+  
+          rclient.zadd(redisObj, (err, response) => {
+            if (err == null) {
+  
+              let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+  
+              setTimeout(() => {
+                sem.emitEvent({
+                  type: 'DestIPFound',
+                  ip: remoteIPAddress,
+                  fd: tmpspec.fd,
+                  ob: tmpspec.ob,
+                  rb: tmpspec.rb,
+                  suppressEventLogging: true
+                });
+              }, 1 * 1000); // make it a little slower so that dns record will be handled first
+  
+            } else {
+              log.error("Failed to save tmpspec: ", tmpspec, err);
+            }
+          });
+        }
       }
 
       // TODO: Need to write code take care to ensure orig host is us ...
@@ -1138,6 +1176,8 @@ module.exports = class {
         log.info("Processing Flow Stash");
         for (let i in this.flowstash) {
           let spec = this.flowstash[i];
+          if (!spec.mac)
+            continue;
           try {
             if (spec._afmap && Object.keys(spec._afmap).length > 0) {
               for (let i in spec._afmap) {
@@ -1272,6 +1312,9 @@ module.exports = class {
         log.error("SSL:Drop", obj);
         return;
       }
+      // do not process ssl log that does not pass the certificate validation
+      if (obj["validation_status"] && obj["validation_status"] !== "ok")
+        return;
       let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
@@ -1456,12 +1499,10 @@ module.exports = class {
       if (obj.note == null) {
         return;
       }
+
       // TODO: on DHCP mode, notice could be generated on ethx or ethx:0 first
       // and the other one will be suppressed. And we'll lost either device/dest info
-      if (obj.src != null && sysManager.isMyIP(obj.src) ||
-        obj.dst != null && sysManager.isMyIP(obj.dst)) {
-        return;
-      }
+
       log.debug("Notice:Processing", obj);
       if (this.config.bro.notice.ignore[obj.note] == null) {
         let strdata = JSON.stringify(obj);
@@ -1504,9 +1545,9 @@ module.exports = class {
           "p.dest.ip": dh
         });
 
-        await broNotice.processNotice(alarm, obj);
+        alarm = await broNotice.processNotice(alarm, obj);
 
-        am2.enqueueAlarm(alarm);
+        alarm && am2.enqueueAlarm(alarm);
       }
     } catch (e) {
       log.error("Notice:Error Unable to save", e, data);

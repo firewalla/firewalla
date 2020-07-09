@@ -27,7 +27,7 @@ brofish_ping() {
 
 brofish_cpu() {
   # Get CPU% from top
-  RESULT=$(top -bn1 -p$(cat /blog/current/.pid) |grep $(bro_proc_name)|awk '{print $9}')
+  RESULT=$(top -bn1 -p$(cat /blog/current/.pid) |grep $BRO_PROC_NAME|awk '{print $9}')
 
   if [[ ${RESULT%%.*} -ge $CPU_THRESHOLD ]]; then
     echo ${RESULT%%.*}

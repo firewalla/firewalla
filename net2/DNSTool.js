@@ -33,9 +33,9 @@ const domainUpdater = new DomainUpdater();
 class DNSTool {
 
   constructor() {
-    if(!instance) {
+    if (!instance) {
       instance = this;
-      if(firewalla.isProduction()) {
+      if (firewalla.isProduction()) {
         this.debugMode = false;
       } else {
         this.debugMode = true;
@@ -117,6 +117,9 @@ class DNSTool {
     const now = Math.ceil(Date.now() / 1000);
     await rclient.zaddAsync(key, now, domain);
     await rclient.expireAsync(key, expire);
+    const BlockManager = require('../control/BlockManager.js');
+    const blockManager = new BlockManager();
+    blockManager.applyNewDomain(ip, domain);
   }
 
   // doesn't have to keep it long, it's only used for instant blocking
@@ -136,18 +139,18 @@ class DNSTool {
     let updated = false
     const validAddresses = [];
 
-    for (let i = 0; i < addresses.length; i++) {  
+    for (let i = 0; i < addresses.length; i++) {
       const addr = addresses[i];
 
-      if(iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
+      if (iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
         await rclient.zaddAsync(key, new Date() / 1000, addr)
         validAddresses.push(addr);
         updated = true
       }
     }
     await domainUpdater.updateDomainMapping(domain, validAddresses);
-    
-    if(updated === false && existing === false) {
+
+    if (updated === false && existing === false) {
       await rclient.zaddAsync(key, new Date() / 1000, firewalla.getRedHoleIP()); // red hole is a placeholder ip for non-existing domain
     }
 
@@ -161,18 +164,18 @@ class DNSTool {
 
   async getIPsByDomainPattern(dnsPattern) {
     let pattern = `rdns:domain:*.${dnsPattern}`
-    
+
     let keys = await rclient.keysAsync(pattern)
-    
+
     let list = []
-    if(keys) {
+    if (keys) {
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
         let l = await rclient.zrangeAsync(key, "0", "-1")
         list.push.apply(list, l)
       }
     }
-    
+
     return list
   }
 

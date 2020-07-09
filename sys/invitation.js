@@ -213,6 +213,13 @@ class FWInvitation {
               !types.includes(lic.DATA.LICENSE.toLowerCase())) {
               // invalid license
               log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
+
+              // remove license record in redis
+              await rclient.delAsync("firereset:license");
+
+              // record license error
+              await rclient.setAsync("firereset:error", "invalid_license_type");
+
               return {
                 status: "pending"
               };
@@ -224,11 +231,18 @@ class FWInvitation {
           }
         } catch (err) {
           log.error("Invalid license", err);
+
+          // remove license record in redis
+          await rclient.delAsync("firereset:license");
+
+          // record license error
+          await rclient.setAsync("firereset:error", "invalid_license");
+          
           return {
             status: "pending"
           }
         }
-        
+
       }
 
       let inviteResult = await this.cloud.eptInviteGroup(this.gid, eid);
@@ -253,7 +267,7 @@ class FWInvitation {
       };
 
     } catch(err) {
-      if(err != "404") {
+      if(err.statusCode != "404") {
         log.error(err);
       }
 
@@ -282,7 +296,7 @@ class FWInvitation {
     let txtfield = {
       'gid': this.gid,
       'seed': this.symmetrickey.seed,
-      'keyhint': 'You will find the key on the back of your device',
+      'keyhint': '',
       'service': FW_SERVICE,
       'type': FW_SERVICE_TYPE,
       'mid': uuid.v4(),
@@ -300,46 +314,44 @@ class FWInvitation {
     if(myIp) {
       icOptions.interface = myIp;
     }
-    
-    this.intercomm = require('../lib/intercomm.js')(icOptions);
-    
-    if (this.intercomm.bcapable()==false) {
+
       txtfield.verifymode = "qr";
-    } else {
-      this.intercomm.bpublish(this.gid, obj.r, FW_SERVICE_TYPE);
-    }
-
-    if(this.firstTime) {
-      txtfield.firsttime = '1'
-    }
-
-    txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
-
-    txtfield.model = platform.getName();
-
-    this.displayLicense(this.symmetrickey.license)
-    this.displayKey(this.symmetrickey.userkey);
-    //    this.displayInvite(obj); // no need to display invite in firewalla any more
-
-    network.get_private_ip((err, ip) => {
-      txtfield.ipaddress = ip;
-      const ip2 = sysManager.myIp2();
-      const otherAddrs = [];
-      if (ip2 && iptool.isV4Format(ip2))
-        otherAddrs.push(ip2);
-      txtfield.ipaddresses = otherAddrs.join(",");
-
-      log.info("TXT:", txtfield);
-      const serial = platform.getBoardSerial();
-      this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
-      this.displayBonjourMessage(txtfield);
-      this.storeBonjourMessage(txtfield);
-    });
-
-    if (this.intercomm.bcapable() != false) {
-      this.intercomm.bpublish(this.gid, obj.r, config.serviceType);
-    }
-
+  
+      if(this.firstTime) {
+        txtfield.firsttime = '1'
+      }
+  
+      txtfield.ek = this.cloud.encrypt(obj.r, this.symmetrickey.key);
+  
+      txtfield.model = platform.getName();
+  
+  //    this.displayLicense(this.symmetrickey.license)
+  //    this.displayKey(this.symmetrickey.userkey);
+      //    this.displayInvite(obj); // no need to display invite in firewalla any more
+  
+      network.get_private_ip((err, ip) => {
+        txtfield.ipaddress = ip;
+        const ip2 = sysManager.myIp2();
+        const otherAddrs = [];
+        if (ip2 && iptool.isV4Format(ip2))
+          otherAddrs.push(ip2);
+        txtfield.ipaddresses = otherAddrs.join(",");
+  
+        if(obj.r && obj.r.length > 4) {
+          txtfield.rr = obj.r.substring(0,4);
+        }
+  
+        log.info("TXT:", txtfield);
+        const serial = platform.getBoardSerial();
+        if (platform.isBonjourBroadcastEnabled()) {
+          this.intercomm = require('../lib/intercomm.js')(icOptions);
+          this.service = this.intercomm.publish(null, FW_ENDPOINT_NAME + serial, 'devhi', 8833, 'tcp', txtfield);
+        }
+        
+  //      this.displayBonjourMessage(txtfield);
+        this.storeBonjourMessage(txtfield);
+      });
+  
     const cmd = "awk '{print $1}' /proc/uptime";
     try {
       const result = await exec(cmd);
@@ -374,12 +386,11 @@ class FWInvitation {
   }
 
   stopBroadcast() {
-    if(this.intercomm) {
+    if(platform.isBonjourBroadcastEnabled() && this.intercomm) {
       this.service && this.intercomm.stop(this.service);
-      this.intercomm.bcapable() && this.intercomm.bstop();
       this.intercomm.bye();
-      this.unsetBonjourMessage();      
-    }    
+    }
+    this.unsetBonjourMessage();
   }
 }
 

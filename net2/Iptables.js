@@ -19,6 +19,7 @@ const log = require('./logger.js')(__filename);
 const cp = require('child_process');
 const spawn = cp.spawn;
 const execAsync = require('util').promisify(cp.exec)
+const ipset = require('./Ipset.js');
 
 const util = require('util');
 
@@ -89,8 +90,8 @@ exports.flush = flush;
 exports.run = run;
 exports.dhcpSubnetChange = dhcpSubnetChange;
 exports.dhcpSubnetChangeAsync = util.promisify(dhcpSubnetChange);
-exports.switchMonitoring = util.callbackify(switchMonitoringAsync);
-exports.switchMonitoringAsync = switchMonitoringAsync;
+exports.switchACL = util.callbackify(switchACLAsync);
+exports.switchACLAsync = switchACLAsync;
 exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
 exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
 
@@ -217,7 +218,7 @@ function iptables(rule, callback) {
         let cmdline = "";
 
         let getCommand = function(action, src, dns, protocol) {
-          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination ${dns}`
+          return `sudo iptables -w -t nat ${action} ${chain} -p ${protocol} ${src} -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ${dns}`
         }
 
         switch(action) {
@@ -231,7 +232,7 @@ function iptables(rule, callback) {
             cmdline += ` ; true` // delete always return true FIXME
           break;
           default:
-            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + " -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination " + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + " -m set ! --match-set no_dns_caching_set src,src --dport 53 -j DNAT --to-destination " + dns;
+            cmdline = "sudo iptables -w -t nat " + action + "  FW_PREROUTING -p tcp " + _src + ` -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ` + dns + "  && sudo iptables -w -t nat " + action + " FW_PREROUTING -p udp " + _src + ` -m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src --dport 53 -j DNAT --to-destination ` + dns;
           break;
         }
 
@@ -267,30 +268,18 @@ function iptables(rule, callback) {
         let dport = rule.dport;
         let toIP = rule.toIP;
         let toPort = rule.toPort;
-        const destIP = rule.destIP
         let action = "-A";
         if (state == false || state == null) {
             action = "-D";
         }
 
-        let cmdline = "";
+        let cmdline = [];
 
-        let getCommand = function(action, protocol, destIP, dport, toIP, toPort) {
-          return `sudo iptables -w -t nat ${action} FW_PREROUTING_PORT_FORWARD -p ${protocol} --destination ${destIP} --dport ${dport} -j DNAT --to ${toIP}:${toPort}`
-        }
-
-        switch(action) {
-          case "-A":
-            cmdline += `(${getCommand("-C", protocol, destIP, dport,toIP,toPort)} || ${getCommand(action, protocol, destIP, dport, toIP, toPort)})`
-          break;
-          case "-D":
-            cmdline += `(${getCommand("-C", protocol, destIP, dport, toIP, toPort)} && ${getCommand(action, protocol, destIP, dport, toIP, toPort)})`
-            cmdline += ` ; true` // delete always return true FIXME
-          break;
-        }
+        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_PREROUTING_PORT_FORWARD -p ${protocol} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
+        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
 
         log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
-        cp.exec(cmdline, (err, out, code) => {
+        cp.exec(cmdline.join(";"), (err, stdout, stderr) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:PORTFORWARD:Error unable to set", cmdline, err);
             }
@@ -440,13 +429,22 @@ function flush() {
   });
 }
 
-async function switchMonitoringAsync(state, family = 4) {
-  const op = state ? '-D' : '-A'
+async function switchACLAsync(state, family = 4) {
+  const op = state ? '-D' : '-I'
 
-  const byPass = new Rule().chn('FW_BYPASS').jmp('ACCEPT').fam(family)
-  const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS').jmp('ACCEPT').fam(family)
+  const byPassOut = new Rule().chn('FW_DROP')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+    .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+    .mdl("conntrack", "--ctdir ORIGINAL").jmp('RETURN').fam(family);
+  const byPassIn = new Rule().chn('FW_DROP')
+  .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+  .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+  .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
+  const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`).jmp('FW_PREROUTING_DNS_FALLBACK').fam(family)
 
-  await execAsync(byPass.toCmd(op))
+  await execAsync(byPassIn.toCmd(op));
+  await execAsync(byPassOut.toCmd(op));
   await execAsync(byPassNat.toCmd(op))
 }
 
@@ -483,6 +481,7 @@ class Rule {
     this.family = 4;
     this.table = table;
     this.match = [];
+    this.modules = [];
     this.params = null;
     this.cmt = null;
   }
@@ -491,14 +490,18 @@ class Rule {
   tab(t) { this.tables = t; return this }
   pro(p) { this.proto = p; return this }
   chn(c) { this.chain = c; return this }
-  mth(name, spec, type = "set") {
-    this.match.push({ name, spec, type })
+  mth(name, spec, type = "set", positive = true) {
+    this.match.push({ name, spec, type, positive })
     return this
+  }
+  mdl(module, expr) {
+    this.modules.push({module, expr});
+    return this;
   }
   jmp(j) { this.jump = j; return this }
 
   pam(p) { this.params = p; return this }
-  comment(c) { this.cmt = c; return this;}
+  comment(c) { return this.mdl("comment", `--comment ${c}`)}
 
   clone() {
     return Object.assign(Object.create(Rule.prototype), this)
@@ -519,10 +522,17 @@ class Rule {
 
     this.proto && cmd.push('-p', this.proto)
 
+    this.modules.forEach((m) => {
+      cmd.push(`-m ${m.module} ${m.expr}`);
+    });
+
     this.match.forEach((match) => {
       switch(match.type) {
         case 'set':
-          cmd.push('-m set --match-set', match.name)
+          cmd.push('-m set');
+          if (!match.positive)
+            cmd.push('!');
+          cmd.push('--match-set', match.name)
           if (match.spec === 'both')
             cmd.push('src,dst')
           else
@@ -530,26 +540,38 @@ class Rule {
           break;
 
         case 'iif':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-i', match.name);
           break;
 
         case 'oif':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-o', match.name);
           break;
 
         case 'src':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-s', match.name);
           break;
 
         case 'dst':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('-d', match.name);
           break;
 
         case 'sport':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('--sport', match.name);
           break;
 
         case 'dport':
+          if (!match.positive)
+            cmd.push('!');
           cmd.push('--dport', match.name);
           break;
 

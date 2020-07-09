@@ -32,7 +32,15 @@ fi
 today=`date '+%Y_%m_%d__%H_%M_%S'`
 
 cd $FIREWALLA_TMP
-gpg  --passphrase $2 --decrypt $1 | tar -zxvf -
+
+GPG_VERSION=$(gpg --version | head -n 1 | awk '{print $3}' | awk -F. '{print $1}')
+
+if [[ $GPG_VERSION == "1" ]]; then
+  gpg  --passphrase $2 --decrypt $1 | tar -zxvf -
+else
+  echo $2 | gpg --batch --yes --passphrase-fd 0 --decrypt $1 | tar -zxvf -
+fi
+
 cd firebackup
 sudo chown redis dump.rdb
 

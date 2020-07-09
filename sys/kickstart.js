@@ -84,15 +84,9 @@ const fwDiag = require('../extension/install/diag.js');
 const FWInvitation = require('./invitation.js');
 
 const Diag = require('../extension/diag/app.js');
+const diag = new Diag()
 
 let terminated = false;
-
-(async() => {
-  await fireRouter.waitTillReady();
-  await rclient.delAsync("firekick:pairing:message");
-  if (!platform.isFireRouterManaged())
-    await interfaceDiscoverSensor.run()
-})();
 
 const license = require('../util/license.js');
 
@@ -128,6 +122,8 @@ if (config.endpoint_name != null) {
 } else if (program.endpoint_name != null) {
   eptname = program.endpoint_name;
 }
+const eptcloud = new cloud(eptname, null);
+
 
 function getUserHome() {
   return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
@@ -145,16 +141,25 @@ if (!fs.existsSync(dbPath)) {
 
 let symmetrickey = generateEncryptionKey(_license);
 
-// start a diagnostic page for people to access during first binding process
-const diag = new Diag()
-diag.start()
-diag.iptablesRedirection()
-
-let eptcloud = new cloud(eptname, null);
-
 storage.initSync({
   'dir': dbPath
 });
+
+(async() => {
+  await fireRouter.waitTillReady();
+  await sysManager.waitTillInitialized();
+  await rclient.delAsync("firekick:pairing:message");
+  if (!platform.isFireRouterManaged()) {
+    await interfaceDiscoverSensor.run()
+  }
+
+  // start a diagnostic page for people to access during first binding process
+  diag.start()
+  diag.iptablesRedirection()
+
+  await eptcloud.loadKeys()
+  await login()
+})();
 
 function generateEncryptionKey(license) {
   // when there is no local license file, use default one
@@ -195,6 +200,11 @@ async function initializeGroup() {
 
 
 async function postAppLinked() {
+  
+  if(platform.getName() == 'gold') { // no post action on Gold
+    return;
+  }
+
   await platform.turnOffPowerLED();
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
@@ -229,15 +239,15 @@ async function inviteAdmin(gid) {
 
   const gidPrefix = gid.substring(0, 8);
 
-  const group = await eptcloud.groupFind(gid)
+  const findResult = await eptcloud.groupFind(gid)
 
-  if (!group || !group.symmetricKeys) {
+  if (!findResult) {
     return false;
   }
 
   // number of key sym keys equals to number of members in this group
   // set this number to redis so that other js processes get this info
-  let count = group.symmetricKeys.length;
+  let count = findResult.group.symmetricKeys.length;
 
   await rclient.hsetAsync("sys:ept", "group_member_cnt", count);
 
@@ -263,12 +273,13 @@ async function inviteAdmin(gid) {
     }
   }
 
-  const expireDate = Math.floor(new Date() / 1000) + 600;
+  const expireDate = Math.floor(new Date() / 1000) + fwInvitation.totalTimeout;
   diag.expireDate = expireDate;
 
   await fwDiag.submitInfo({
     event: "PAIRSTART",
     msg:"Pairing Ready",
+    firstTime: count <= 1,
     expire: expireDate,
     gidPrefix: gidPrefix
   }).catch((err) => {
@@ -396,9 +407,6 @@ async function login() {
   })
 
 }
-
-eptcloud.loadKeys()
-  .then(login)
 
 process.stdin.resume();
 

@@ -29,6 +29,7 @@ const fs = require('fs')
 Promise.promisifyAll(fs)
 
 const Config = require('../../net2/config.js');
+const sysManager = require('../../net2/SysManager.js');
 
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
@@ -36,6 +37,8 @@ const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 const { wrapIptables } = require('../../net2/Iptables.js')
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
+
+const Mode = require('../../net2/Mode.js');
 
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
@@ -380,18 +383,22 @@ class App {
   }
 
   async iptablesRedirection(create = true) {
-    const config = Config.getConfig(true);
-    const findInf = await exec(`ip addr show dev ${config.monitoringInterface} | awk '/inet / {print $2}'|cut -f1 -d/`);
-    const ips = findInf.stdout.split('\n')
-	  log.info("XXXX", ips);
+    let interfaces = sysManager.getLogicInterfaces()
+    if (await Mode.isRouterModeOn()) {
+      interfaces = interfaces.filter(intf => intf.type != 'wan')
+    }
+    const IPv4List = interfaces.map(intf => intf.ip_address)
 
-    const action = create ? '-A' : '-D';
+    log.info("", IPv4List);
 
-    for (const ip of ips) {
+    const action = create ? '-I' : '-D';
+
+    for (const ip of IPv4List) {
       if (!ip) continue;
 
+      // should use primitive chains here, since it needs to be working before install_iptables.sh
       log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${port} on ${ip}`);
-      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} FW_PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
       await exec(cmd);
     }
   }

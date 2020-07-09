@@ -92,7 +92,6 @@ module.exports = class {
   }
 
   async discoverMac(mac) {
-    await this.discoverInterfacesAsync(false);
     const list = sysManager.getMonitoringInterfaces();
     log.info("Discovery::DiscoverMAC", list);
     let found = null;
@@ -201,7 +200,7 @@ module.exports = class {
     }
     if (!list.length) {
       log.warn('No interface')
-      return
+      return list;
     }
 
     // add consistent uuid to interfaces
@@ -245,6 +244,7 @@ module.exports = class {
         sem.emitEvent({
           type: "DeviceUpdate",
           message: "Firewalla self discovery",
+          suppressAlarm: true,
           host: {
             name: "Firewalla",
             uid: intf.ip_address,

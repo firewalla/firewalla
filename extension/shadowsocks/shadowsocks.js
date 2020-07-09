@@ -19,7 +19,7 @@ const log = require("../../net2/logger.js")(__filename);
 
 const sysManager = require('../../net2/SysManager.js');
 const UPNP = require('../../extension/upnp/upnp');
-const upnp = new UPNP(sysManager.myGateway());
+const upnp = new UPNP();
 const firewalla = require('../../net2/Firewalla.js');
 //TODO: support real config file for Firewalla class
 const key = require('../common/key.js');
@@ -194,7 +194,7 @@ module.exports = class {
     generateEncodedURI(ssConfig, publicServerName) {
         let uri = util.format("%s:%s@%s:%d",ssConfig.method, ssConfig.password, publicServerName, ssConfig.server_port);
         log.debug("uri is: " + uri);
-        let encodedURI = new Buffer(uri).toString('base64');
+        let encodedURI = Buffer.from(uri).toString('base64');
         log.debug("encoded uri is: " + encodedURI);
 
         return encodedURI

@@ -166,7 +166,9 @@ class DeviceHook extends Hook {
       sem.on("DeviceUpdate", (event) => {
         let host = event.host
         let mac = host.mac;
-  
+        let ip = host.ipv4 || host.ipv4Addr;
+        host.ipv4 = ip;
+        host.ipv4Addr = ip;
         if (_.isString(host.ipv4)) {
           const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
   
@@ -228,7 +230,7 @@ class DeviceHook extends Hook {
           // v4
           if (enrichedHost.ipv4Addr) {
             let previousEntry = await hostTool.getIPv4Entry(enrichedHost.ipv4Addr)
-            if (previousEntry && enrichedHost.ipv4Addr === sysManager.myGateway()) {
+            if (previousEntry && enrichedHost.ipv4Addr === sysManager.myDefaultGateway()) {
               // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
               log.info("Suspected spoofing device detected: " + enrichedHost.mac);
               this.createAlarm(enrichedHost, 'spoofing_device');
@@ -287,11 +289,11 @@ class DeviceHook extends Hook {
             if (err) {
               log.error("Failed to get host after it is detected.");
             }
-            if (!sysManager.isMyIP(host.ipv4Addr) && host.ipv4Addr !== sysManager.myWifiIp()) {
+            if (!sysManager.isMyMac(mac)) {
               host.spoof(true);
             }
           });
-          this.setupLocalDeviceDomain(host.mac, 'new_device');
+          await this.setupLocalDeviceDomain(host.mac, 'new_device');
   
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
         })().catch((err) => {
@@ -354,8 +356,12 @@ class DeviceHook extends Hook {
   
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
           let hostManager = new HostManager()
-          hostManager.getHost(host.mac);
-          this.setupLocalDeviceDomain(host.mac, 'ip_change');
+          hostManager.getHost(host.mac, (err, h) => {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
+              h.spoof(true);
+            }
+          });
+          await this.setupLocalDeviceDomain(host.mac, 'ip_change');
   
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
         })().catch((err) => {
@@ -383,7 +389,7 @@ class DeviceHook extends Hook {
             lastActiveTimestamp: currentTimestamp
           });
   
-          if (enrichedHost.ipv4Addr === sysManager.myGateway()) {
+          if (enrichedHost.ipv4Addr === sysManager.myDefaultGateway()) {
             // ip address of gateway is taken over, handle it separately
             log.info("Suspected spoofing device detected: " + enrichedHost.mac);
             this.createAlarm(enrichedHost, 'spoofing_device');
@@ -429,8 +435,12 @@ class DeviceHook extends Hook {
   
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
           let hostManager = new HostManager();
-          hostManager.getHost(host.mac);
-          this.setupLocalDeviceDomain(host.mac, 'ip_change');
+          hostManager.getHost(host.mac, (err, h) => {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
+              h.spoof(true);
+            }
+          });
+          await this.setupLocalDeviceDomain(host.mac, 'ip_change');
   
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
         })().catch((err) => {
@@ -485,9 +495,15 @@ class DeviceHook extends Hook {
           }
   
           await hostTool.updateMACKey(enrichedHost); // host:mac:.....
+          let hostManager = new HostManager();
+          hostManager.getHost(mac, (err, h) => {
+            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
+              h.spoof(true);
+            }
+          });
           // publish device updated event to trigger 
+          await this.setupLocalDeviceDomain(host.mac, 'info_change');
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
-  
           // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
           // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
           //         return;
@@ -587,7 +603,15 @@ class DeviceHook extends Hook {
   }
 
   getFirstIPv6(host) {
-    return host.ipv6Addr && host.ipv6Addr.length > 0 && host.ipv6Addr[0]
+    let v6Addrs = host.ipv6Addr || [];
+    if (_.isString(v6Addrs)) {
+      try {
+        v6Addrs = JSON.parse(v6Addrs);
+      } catch (err) {
+        log.error(`Failed to parse v6 addrs: ${v6Addrs}`)
+      }
+    }
+    return v6Addrs[0] || "";
   }
 
   getPreferredName(host) {
@@ -729,13 +753,10 @@ class DeviceHook extends Hook {
   }
   async setupLocalDeviceDomain(mac, type) {
     if (!mac) return;
-    if (type == 'new_device') {
+    if (type == 'new_device' || type == 'info_change') {
       await hostTool.generateLocalDomain(mac);
     }
-    await dnsmasq.setupLocalDeviceDomain([mac]);
   }
-
-
 }
 
 module.exports = DeviceHook;

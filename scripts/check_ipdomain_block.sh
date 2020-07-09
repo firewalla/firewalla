@@ -4,7 +4,7 @@
 # -d <domain>
 #
 
-GETOPT_ARGS=`getopt -o i:d:m: --long ip:,domain:,mac: -- "$@"`
+GETOPT_ARGS=`getopt -o i:d:m:s --long ip:,domain:,mac:,subdomain -- "$@"`
 if [ $? != 0 ] ; then
   exit 1
 fi
@@ -16,6 +16,7 @@ do
     -i|--ip) IP=$2; shift 2;;
     -d|--domain) DOMAIN=$2; shift 2;;
     -m|--mac) MAC=$2; shift 2;;
+    -s|--subdomain) SUBDOMAIN=true; shift;;
     --) break ;;
     *) break ;;
   esac
@@ -96,8 +97,12 @@ function print_block_rule {
   printf "%25s %8s %30s %10s %25s %10s %15s\n" "$1" "$rule_id" "$target" "$ptype" "$scope" "$expire" "$crontime"
 }
 
+function print_block_target {
+  printf "%25s %8s %30s %10s %25s %10s %15s\n" "" "" "$1" "" "" "" ""
+}
+
 function check_ip {
-  local ip_ret ipsets rule_id policy_ret
+  local ip_ret ipsets rule_id rule_category rule_country policy_ret ipset_content set_type set_compare set_exists
 
   if [[ -z $2 ]]; then
     echo "Start check ip: $1 "
@@ -110,14 +115,28 @@ function check_ip {
 
   # default
   ip_ret=1
-  ipsets=`sudo ipset -S | grep create | cut -d ' ' -f 2`
-  while read setName; do
-    if [[ -z $setName ]]; then
+  ipsets=`sudo ipset -S | grep create | awk '{print $2, $3}'`
+  ipset_content=`sudo ipset -S | grep add`
+  while read set_line; do
+    if [[ -z $set_line ]]; then
       continue
     fi
-    sudo ipset test $setName $1 &>/dev/null;
-    if [[ $? -eq 0 ]]; then
+    read setName set_type <<< "${set_line}"
+    set_compare="add $setName $1"
+    set_exists=1
+    if [[ "$set_type" == "hash:net" ]]; then
+      sudo ipset test $setName $1 &>/dev/null;
+      if [[ $? -eq 0 ]]; then
+        set_exists=0
+      fi
+    elif [[ $ipset_content == *$set_compare* ]]; then
+      set_exists=0
+    fi
+    if [[ $set_exists -eq 0 ]]; then
       rule_id=$(echo $setName | sed 's/.*_\([0-9]\+\)_.*/\1/')
+      rule_category=$(echo $setName | sed 's/c_bd_\([a-zA-Z_]\+\)_set/\1/')
+      rule_country=$(echo $setName | sed 's/c_bd_country:\([a-zA-Z]\+\)_set/\1/')
+      block_set=$(echo $setName | egrep -o "^block[^ ]*(_ip_set|_net_set|_domain_set)$")
       if [[ $rule_id != $setName ]]; then
         if echo $REDISRULES | grep "policy:$rule_id" &>/dev/null; then
           policy_ret=1
@@ -132,8 +151,18 @@ function check_ip {
             ip_ret=0
           fi
         fi
-      elif [[ "$setName" == "blocked_ip_set" || "$setName" == "blocked_domain_set" || "$setName" == "blocked_net_set" ]]; then
-        check_redis_rule $setName $1 $2
+      elif [[ -n $block_set ]]; then
+        check_redis_rule $setName $1 $1 $2
+        if [[ $? -eq 0 ]]; then
+          ip_ret=0
+        fi
+      elif [[ $rule_category != $setName ]]; then
+        check_redis_rule $setName $rule_category $1 $2
+        if [[ $? -eq 0 ]]; then
+          ip_ret=0
+        fi
+      elif [[ $rule_country != $setName ]]; then
+        check_redis_rule $setName $rule_country $1 $2
         if [[ $? -eq 0 ]]; then
           ip_ret=0
         fi
@@ -163,10 +192,10 @@ function check_redis_rule {
     fi
 
     mac_ret=1
-    if [[ -z $3 ]]; then
+    if [[ -z $4 ]]; then
       mac_ret=0
     else
-      if [[ $(check_redis_rule_mac $policyKey $3) -eq 0 ]]; then
+      if [[ $(check_redis_rule_mac $policyKey $4) -eq 0 ]]; then
         mac_ret=0
       fi
     fi
@@ -177,12 +206,29 @@ function check_redis_rule {
       print_block_rule $setName $policyKey
       rule_ret=0
     elif [[ $ptype == "dns" ]]; then
-      redis-cli zrange "rdns:domain:$target" 0 -1 | grep $2 &> /dev/null
+      check_redis_rule_domain $target $2
       if [[ $? -eq 0 && $mac_ret -eq 0 ]]; then
         print_block_rule $setName $policyKey
         rule_ret=0
       fi
     elif [[ $ptype == "net" && $(in_subnet $target $2) -eq 0 && $mac_ret -eq 0 ]]; then
+      print_block_rule $setName $policyKey
+      rule_ret=0
+    elif [[ $ptype == "category" && $target == *$2* && $mac_ret -eq 0 && -n $3 ]]; then
+      domain_name=""
+      category_domain=`redis-cli zrange "dynamicCategoryDomain:$target" 0 -1`
+      while read domain; do
+        redis-cli zrange "rdns:domain:$domain" 0 -1 | grep $3 &> /dev/null
+        if [[ $? -eq 0 ]]; then
+          domain_name="$domain_name $domain"
+        fi
+      done <<< "$category_domain"
+      print_block_rule $setName $policyKey 
+      if [[ $domain_name != "" ]]; then
+        print_block_target "$domain_name"
+      fi
+      rule_ret=0
+    elif [[ $ptype == "country" && $target == *$2* && $mac_ret -eq 0 ]]; then
       print_block_rule $setName $policyKey
       rule_ret=0
     fi
@@ -203,27 +249,49 @@ function check_redis_rule_mac {
   return $mac_ret
 }
 
-function check_domain {
-  local domain_ret domains
+function check_redis_rule_domain {
+  local domain_ret=1
+  local domain_rules=`redis-cli keys rdns:domain:*$1`
+  while read domain_key; do
+    redis-cli zrange "$domain_key" 0 -1 | grep $2 &> /dev/null
+    if [[ $? -eq 0 ]]; then
+      domain_ret=0
+      return $domain_ret
+    fi
+  done <<< "$domain_rules"
 
-  if [[ -z $2 ]]; then
-    echo "Start check domain: $1 "
-  else
-    echo "Start check domain: $1 mac: $2"
-  fi
+  return $domain_ret
+}
+
+function check_domain {
+  local domain_ret domains domain_ips
 
   # default
   domain_ret=1
-  domains=`redis-cli zrange "rdns:domain:$1" 0 -1`
-  while read ip; do
-    if [[ -z $ip ]]; then
-      continue
+  if [[ "$SUBDOMAIN" == "true" ]]; then
+    domains=`redis-cli keys rdns:domain:*$1`
+  else
+    domains=`redis-cli keys rdns:domain:$1`
+  fi
+  while read domain_key; do
+    domain_name=${domain_key/rdns:domain:/};
+    if [[ -z $2 ]]; then
+      echo "Start check domain: $domain_name "
+    else
+      echo "Start check domain: $domain_name mac: $2"
     fi
-    
-    check_ip $ip $2
-    if [[ $? -eq 0 ]]; then
-      domain_ret=0
-    fi
+
+    domain_ip=`redis-cli zrange "$domain_key" 0 -1`
+    while read ip; do
+      if [[ -z $ip ]]; then
+        continue
+      fi
+      
+      check_ip $ip $2
+      if [[ $? -eq 0 ]]; then
+        domain_ret=0
+      fi
+    done <<< "$domain_ip"
   done <<< "$domains"
 
   if [[ $domain_ret -eq 1 ]]; then

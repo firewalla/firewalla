@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2020 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,7 +17,7 @@
 #
 
 if [[ $(uname -m) == "x86_64" ]]; then
-	exit 0
+    exit 0
 fi
 
 SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
@@ -29,82 +29,14 @@ err() {
     sudo -u pi  /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
-get_value() {
-    kind=$1
-    case $kind in
-        ip)
-            /sbin/ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255 | head -n 1
-            ;;
-        gw)
-            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
-            ;;
-    esac
-}
+ERR=err
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+[ -s /home/pi/scripts/network_settings.sh ] && source /home/pi/scripts/network_settings.sh ||
+    source $FIREWALLA_HOME/scripts/network_settings.sh
 
 set_timeout() {
     [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
-}
-
-save_values() {
-    r=0
-    $LOGGER "Save working values of ip/gw/dns"
-    for kind in ip gw
-    do
-        value=$(get_value $kind)
-        test -n "$value" || { r=1; break; }
-        file=/home/pi/.firewalla/run/saved_${kind}
-        rm -f $file
-        echo "$value" > $file || { r=1; break; }
-    done
-
-    if [[ -f /etc/resolv.conf ]]
-    then
-        /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf || r=1
-    else
-        r=1
-    fi
-
-    if [[ $r -eq 1 ]]
-    then
-        err "Invalid value in IP/GW/DNS detected, save nothing"
-        rm -rf /home/pi/.firewalla/run/saved_*
-    fi
-
-    return $r
-}
-
-set_value() {
-    kind=$1
-    saved_value=$2
-    case ${kind} in
-        ip)
-            /sbin/ip addr flush dev eth0 # flush legacy ips on eth0
-            /sbin/ip addr replace ${saved_value} dev eth0
-            ;;
-        gw)
-            /sbin/ip route replace default via ${saved_value} dev eth0 # upsert current default route
-            ;;
-    esac
-}
-
-restore_values() {
-    r=0
-    $LOGGER "Restore saved values of ip/gw/dns"
-    for kind in ip gw
-    do
-        file=/home/pi/.firewalla/run/saved_${kind}
-        [[ -e "$file" ]] || continue
-        saved_value=$(cat $file)
-        [[ -n "$saved_value" ]] || continue
-        set_value $kind $saved_value || r=1
-    done
-    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
-        /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
-    else
-        r=1
-    fi
-    sleep 3
-    return $r
 }
 
 ethernet_connected() {
@@ -125,7 +57,8 @@ ethernet_ip() {
 gateway_pingable() {
     gw=$(ip route show dev eth0 | awk '/default/ {print $3; exit; }')
     if [[ -n "$gw" ]]; then
-        ping -c1 -w3 $gw >/dev/null
+        # some router might not reply to ping
+        ping -c1 -w3 $gw >/dev/null || sudo nmap -sP -PR $gw |grep "Host is up" &> /dev/null
     else
         return 1
     fi
@@ -136,7 +69,7 @@ dns_resolvable() {
 }
 
 github_api_ok() {
-    curl -L -m10 https://api.github.com/zen &> /dev/null || nc -z 1.1.1.1 443 &> /dev/null
+    curl -L -m10 https://api.github.com/zen &> /dev/null || nc -w 5 -z 1.1.1.1 443 &> /dev/null
 }
 
 reboot_if_needed() {
@@ -194,93 +127,56 @@ while ! ethernet_ip ; do
 done
 echo OK
 
+function check_with_timeout() {
+  message=$1
+  action=$2
+  reboot=$3
+
+  echo -n "Trying to $message ... "
+  $LOGGER "Trying to $message ... "
+  tmout=15
+  while ! $action; do
+    if [[ $tmout -gt 0 ]]; then
+      (( tmout-- ))
+    else
+      if [[ $restored -eq $NOT_RESTORED ]]; then
+        echo "fail - restore"
+        $LOGGER "failed to $message, restore network configurations"
+        restore_values
+        restored=$RESTORED_AND_NEED_START_OVER
+        break;
+      else
+        skip=$([ ! -z "$reboot" ] && 'skipped')
+        echo "fail - reboot $skip"
+        $LOGGER "FIREWALLA:FIX_NETWORK:failed to $message, even after restore, reboot $skip"
+        if [ -z "$reboot" ]; then reboot_if_needed; fi
+      fi
+    fi
+    sleep 1
+  done
+  if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
+    restored=$RESTORED
+    return 1
+  fi
+  echo OK
+  return 0
+}
+
 : ${CHECK_FIX_NETWORK_RETRY:='yes'}
 while [[ -n $CHECK_FIX_NETWORK_RETRY ]]; do
     # only run once if requires NO retry
     test $CHECK_FIX_NETWORK_RETRY == 'no' && unset CHECK_FIX_NETWORK_RETRY
-    echo -n "checking gateway ... "
-    tmout=15
-    while ! gateway_pingable; do
-        if [[ $tmout -gt 0 ]]; then
-            (( tmout-- ))
-        else
-            if [[ $restored -eq $NOT_RESTORED ]]; then
-                echo "fail - restore"
-                $LOGGER "failed to ping gateway, restore network configurations"
-                restore_values
-                restored=$RESTORED_AND_NEED_START_OVER
-                break;
-            else
-                echo "fail - reboot"
-                $LOGGER "FIREWALLA:FIX_NETWORK:failed to ping gateway, even after restore, reboot"
-                reboot_if_needed
-            fi
-        fi
-        sleep 1
-    done
-    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
-      restored=$RESTORED
-      continue
-    fi
-    echo OK
 
-    echo -n "checking DNS ... "
-    tmout=15
-    while ! dns_resolvable; do
-        if [[ $tmout -gt 0 ]]; then
-            (( tmout-- ))
-        else
-            if [[ $restored -eq $NOT_RESTORED ]]; then
-                echo "fail - restore"
-                $LOGGER "failed to resolve DNS, restore network configurations"
-                restore_values
-                restored=$RESTORED_AND_NEED_START_OVER
-                break
-            else
-                echo "fail - reboot"
-                $LOGGER "FIREWALLA:FIX_NETWORK:failed to resolve DNS, even after restore, reboot"
-                reboot_if_needed
-            fi
-        fi
-        sleep 1
-    done
-    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
-      restored=$RESTORED
-      continue
-    fi
-    echo OK
+    if ! check_with_timeout "ping gateway" gateway_pingable 0; then continue; fi
 
-    echo -n "checking github REST API ... "
-    tmout=15
-    while ! github_api_ok; do
-        if [[ $tmout -gt 0 ]]; then
-            (( tmout-- ))
-        else
-            if [[ $restored -eq $NOT_RESTORED ]]; then
-                echo "fail - restore"
-                $LOGGER "failed to reach github API, restore network configurations"
-                restore_values
-                restored=$RESTORED_AND_NEED_START_OVER
-                break
-            else
-                $LOGGER "FIREWALLA:FIX_NETWORK:failed to reach github API, even after restore, reboot"
-                echo "fail - reboot"
-# comment out on purpose                reboot_if_needed
-            fi
-        fi
-        sleep 1
-    done
-    if [[ $restored -eq $RESTORED_AND_NEED_START_OVER ]]; then
-      restored=$RESTORED
-      continue
-    fi
-    echo OK
+    if ! check_with_timeout "resolve DNS" dns_resolvable 0; then continue; fi
+
+    if ! check_with_timeout "test github API" github_api_ok 1; then continue; fi
 
     break
-
 done
 
-$LOGGER "FIRE_CHECK DONE ... "
+$LOGGER "FIRE_CHECK DONE"
 
 save_values
 

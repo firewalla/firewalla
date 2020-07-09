@@ -21,26 +21,22 @@ const log = require('../../net2/logger.js')(__filename);
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
-const rclient = require('../../util/redis_manager').getRedisClient();
-
 const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
+
+const Message = require('../../net2/Message.js');
 
 const _ = require('lodash');
 
 const exec = require('child-process-promise').exec;
-
-const DNSMASQ = require('../dnsmasq/dnsmasq.js');
-const dnsmasq = new DNSMASQ();
 
 const { delay } = require('../../util/util.js');
 
 const f = require('../../net2/Firewalla.js');
 const yaml = require('../../api/dist/lib/js-yaml.min.js');
 
-const configKey = "ext.ss2.config";
-
 const CountryUpdater = require('../../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
+const ipset = require('../../net2/Ipset.js');
 
 const fs = require('fs');
 
@@ -60,6 +56,16 @@ class SS2 {
       instance = this;
       this.config = {};
       this.ready = false;
+      this.shouldRedirect = false;
+
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+        if(this.shouldRedirect) {
+          log.info("sys:network:info is reloaded, re-adding ss2 network to wan_routable ...");
+          await this.allowDockerBridgeToAccessWan();
+          log.info("re-added");
+        }
+      })
+
     }
     return instance;
   }
@@ -171,7 +177,7 @@ class SS2 {
   }
 
   async rawStop() {
-    return exec("sudo systemctl stop docker-compose@ss2")
+    return exec("sudo systemctl stop docker-compose@ss2").catch(() => {})
   }
 
   async postStart(config = {}) {
@@ -181,7 +187,7 @@ class SS2 {
 
   async isListening() {
     try {
-      await exec("nc -z localhost 9954 && nc -z localhost 9955 && netstat -an  | egrep -q ':::9953'");
+      await exec("nc -w 5 -z localhost 9954 && nc -w 5 -z localhost 9955 && netstat -an  | egrep -q ':::9953'");
       return true;
     } catch(err) {
       return false;
@@ -211,7 +217,12 @@ class SS2 {
         const bridgeName = `br-${network1.Id && network1.Id.substring(0, 12)}`;
         const subnet = network1.IPAM && network1.IPAM.Config && network1.IPAM.Config[0] && network1.IPAM.Config[0].Subnet;
         if(bridgeName && subnet) {
-          await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`);
+          await exec(`sudo ip route add ${subnet} dev ${bridgeName} table wan_routable`).catch((err) => {
+            log.error("Failed to add ss2 network to wan_routable, err:", err);
+          });
+          await exec(`sudo ip route add ${subnet} dev ${bridgeName} table lan_routable`).catch((err) => {
+            log.error("Failed to add ss2 network to lan_routable, err:", err);
+          });          
         } else {
           throw new Error("invalid docker network");
         }
@@ -236,12 +247,13 @@ class SS2 {
   async redirectTraffic() {
     await this.allowDockerBridgeToAccessWan();
     await this.prepareCHNRoute();
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set monitored_net_set src,src -p tcp -j ${this.getChainName()}`));
-    
+    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j ${this.getChainName()}`));
+    this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set monitored_net_set src,src -p tcp -j ${this.getChainName()}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j ${this.getChainName()}`));
+    this.shouldRedirect = false;
   }
 
   getDNSPort() {

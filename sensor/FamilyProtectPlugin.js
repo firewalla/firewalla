@@ -39,10 +39,6 @@ const dnsmasq = new DNSMASQ();
 
 const fc = require('../net2/config.js');
 
-const spt = require('../net2/SystemPolicyTool')();
-const rclient = require('../util/redis_manager.js').getRedisClient();
-const updateFeature = "family";
-const updateFlag = "2";
 
 const featureName = "family_protect";
 const policyKeyName = "family";
@@ -59,13 +55,6 @@ class FamilyProtectPlugin extends Sensor {
             start: this.start,
             stop: this.stop
         });
-        if (await rclient.hgetAsync("sys:upgrade", updateFeature) != updateFlag) {
-            const isPolicyEnabled = await spt.isPolicyEnabled(policyKeyName);
-            if (isPolicyEnabled) {
-                await fc.enableDynamicFeature(featureName);
-            }
-            await rclient.hsetAsync("sys:upgrade", updateFeature, updateFlag)
-        }
 
         this.hookFeature(featureName);
     }
@@ -100,10 +89,12 @@ class FamilyProtectPlugin extends Sensor {
                     if (tagUid) {
                       if (policy === true)
                         this.tagSettings[tagUid] = 1;
+                      // false means unset, this is for backward compatibility
                       if (policy === false)
-                        this.tagSettings[tagUid] = -1;
-                      if (policy === null)
                         this.tagSettings[tagUid] = 0;
+                      // null means disabled, this is for backward compatibility
+                      if (policy === null)
+                        this.tagSettings[tagUid] = -1;
                       await this.applyTagFamilyProtect(tagUid);
                     }
                     break;
@@ -114,9 +105,9 @@ class FamilyProtectPlugin extends Sensor {
                       if (policy === true)
                         this.networkSettings[uuid] = 1;
                       if (policy === false)
-                        this.networkSettings[uuid] = -1;
-                      if (policy === null)
                         this.networkSettings[uuid] = 0;
+                      if (policy === null)
+                        this.networkSettings[uuid] = -1;
                       await this.applyNetworkFamilyProtect(uuid);
                     }
                     break;
@@ -127,9 +118,9 @@ class FamilyProtectPlugin extends Sensor {
                       if (policy === true)
                         this.macAddressSettings[macAddress] = 1;
                       if (policy === false)
-                        this.macAddressSettings[macAddress] = -1;
-                      if (policy === null)
                         this.macAddressSettings[macAddress] = 0;
+                      if (policy === null)
+                        this.macAddressSettings[macAddress] = -1;
                       await this.applyDeviceFamilyProtect(macAddress);
                     }
                     break;
@@ -211,34 +202,34 @@ class FamilyProtectPlugin extends Sensor {
         const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
         const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
-        await dnsmasq.restartDnsmasq();
+        dnsmasq.scheduleRestartDNSService();
     }
 
     async systemStop() {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perTagStart(tagUid) {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perTagStop(tagUid) {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\n`; // match negative tag
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perTagReset(tagUid) {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       await fs.unlinkAsync(configFile).catch((err) => {});
-      await dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perNetworkStart(uuid) {
@@ -251,7 +242,7 @@ class FamilyProtectPlugin extends Sensor {
       const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perNetworkStop(uuid) {
@@ -265,7 +256,7 @@ class FamilyProtectPlugin extends Sensor {
       // explicit disable family protect
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perNetworkReset(uuid) {
@@ -278,28 +269,28 @@ class FamilyProtectPlugin extends Sensor {
       const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perDeviceStart(macAddress) {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perDeviceStop(macAddress) {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     async perDeviceReset(macAddress) {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
-      dnsmasq.restartDnsmasq();
+      dnsmasq.scheduleRestartDNSService();
     }
 
     // global on/off

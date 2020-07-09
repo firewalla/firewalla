@@ -52,6 +52,10 @@ class SysTool {
     return exec("sleep 3; sudo shutdown -h now")
   }
 
+  cancelShutdown() {
+    return exec("sudo shutdown -c")
+  }
+
   restartFireKickService() {
     return exec("redis-cli del firekick:pairing:message; sudo systemctl restart firekick")
   }
@@ -80,7 +84,10 @@ class SysTool {
   async cleanIntel() {
     await exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
     await exec("redis-cli keys 'rdns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+    await exec("redis-cli keys 'rdns:dns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
     await exec("redis-cli del intel:security:tracking").catch(() => undefined);
+    await exec("redis-cli keys 'dynamicCategoryDomain:*' | xargs redis-cli del").catch(() => undefined);
+    await exec("sudo ipset list -name | grep c_bd | xargs -n 1 sudo ipset flush").catch(() => undefined);
   }
 }
 

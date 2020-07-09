@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,9 +18,9 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('./SensorEventManager.js').getInstance();
 
-const Bonjour = require('bonjour');
+const Bonjour = require('../vendor_lib/bonjour');
 const Promise = require('bluebird');
 
 const sysManager = require('../net2/SysManager.js')
@@ -29,7 +29,6 @@ const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
 const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 
 const ipMacCache = {};
@@ -41,8 +40,7 @@ const ipMacCache = {};
 class BonjourSensor extends Sensor {
   constructor() {
     super();
-    this.interfaces = null;
-    this.hostCache = {};
+    this.bonjourListeners = [];
   }
 
   scheduleReload() {
@@ -54,92 +52,77 @@ class BonjourSensor extends Sensor {
         clearTimeout(this.startTask);
       if (this.updateTask)
         clearInterval(this.updateTask);
-      if (this.bonjourBrowserTCP)
-        this.bonjourBrowserTCP.stop();
-      if (this.bonjourBrowserUDP)
-        this.bonjourBrowserUDP.stop();
-      if (this.bonjourBrowserHTTP)
-        this.bonjourBrowserHTTP.stop();
-      if (this.bonjour)
-        this.bonjour.destroy();
+
+      for (const listener of this.bonjourListeners) {
+        if (listener.tcpBrowser)
+          listener.tcpBrowser.stop();
+        if (listener.udpBrowser)
+          listener.udpBrowser.stop();
+        if (listener.httpBrowser)
+          listener.httpBrowser.stop();
+        if (listener.instance)
+          listener.instance.destroy();
+      }
+      this.bonjourListeners = [];
+
       // do not initialize bonjour if there is no interface with IP address
       // otherwise dgram.addMembership will emit error and crash the process
       if (sysManager.getMonitoringInterfaces().filter(i => i.ip_address).length == 0)
         return;
+      let bound = false;
       // create new bonjour listeners
-      this.bonjour = Bonjour();
-      this.bonjour._server.mdns.on('warning', (err) => log.warn("Warning on mdns server", err));
-      this.bonjour._server.mdns.on('error', (err) => log.error("Error on mdns server", err));
-      this.interfaces = sysManager.getMonitoringInterfaces();
-      this.bonjourBrowserTCP = this.bonjour.find({
-        protocol: 'tcp'
-      }, (service) => {
-        this.bonjourParse(service);
-      });
-      this.bonjourBrowserUDP = this.bonjour.find({
-        protocol: 'udp'
-      }, (service) => {
-        this.bonjourParse(service);
-      });
-      // why http?? because sometime http service can't be found via { protocol: 'tcp' }
-      // maybe it's bonjour lib's bug
-      this.bonjourBrowserHTTP = this.bonjour.find({
-        type: 'http'
-      }, (service) => {
-        this.bonjourParse(service);
-      });
-
+      for (const iface of sysManager.getMonitoringInterfaces().filter(i => i.ip_address)) {
+        const opts = {interface: iface.ip_address};
+        if (!bound) {
+          // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
+          opts.bind = "0.0.0.0";
+          bound = true;
+        } else {
+          // no need to bind on any address, multicast query can still be sent via interface in opts
+          opts.bind = false;
+        }
+        const instance = Bonjour(opts);
+        instance._server.mdns.on('warning', (err) => log.warn(`Warning from mDNS server on ${iface.ip_address}`, err));
+        instance._server.mdns.on('error', (err) => log.error(`Error from mDNS server on ${iface.ip_address}`, err));
+        const tcpBrowser = instance.find({protocol: 'tcp'}, (service) => this.bonjourParse(service));
+        const udpBrowser = instance.find({protocol: 'udp'}, (service) => this.bonjourParse(service));
+        const httpBrowser = instance.find({type: 'http'}, (service) => this.bonjourParse(service));
+        this.bonjourListeners.push({tcpBrowser, udpBrowser, httpBrowser, instance});
+      }
 
       this.updateTask = setInterval(() => {
         log.info("Bonjour Watch Updating");
         // remove all detected servcies in bonjour browser internally, otherwise BonjourBrowser would do dedup based on service name, and ip changes would be ignored
-        Object.keys(this.bonjourBrowserTCP._serviceMap).forEach(fqdn => this.bonjourBrowserTCP._removeService(fqdn));
-        Object.keys(this.bonjourBrowserUDP._serviceMap).forEach(fqdn => this.bonjourBrowserUDP._removeService(fqdn));
-        Object.keys(this.bonjourBrowserHTTP._serviceMap).forEach(fqdn => this.bonjourBrowserHTTP._removeService(fqdn));
-        this.bonjourBrowserTCP.update();
-        this.bonjourBrowserUDP.update();
-        this.bonjourBrowserHTTP.update();
+        for (const listener of this.bonjourListeners) {
+          Object.keys(listener.tcpBrowser._serviceMap).forEach(fqdn => listener.tcpBrowser._removeService(fqdn));
+          Object.keys(listener.udpBrowser._serviceMap).forEach(fqdn => listener.udpBrowser._removeService(fqdn));
+          Object.keys(listener.httpBrowser._serviceMap).forEach(fqdn => listener.httpBrowser._removeService(fqdn));
+          listener.tcpBrowser.update();
+          listener.udpBrowser.update();
+          listener.httpBrowser.update();
+        }
       }, 1000 * 60 * 5);
-  
+
       this.startTask = setTimeout(() => {
-        this.bonjourBrowserTCP.start();
-        this.bonjourBrowserUDP.start();
-        this.bonjourBrowserHTTP.start();
+        for (const listener of this.bonjourListeners) {
+          listener.tcpBrowser.start();
+          listener.udpBrowser.start();
+          listener.httpBrowser.start();
+        }
       }, 1000 * 10);
     }, 5000);
   }
 
   run() {
-    log.info("Bonjour Watch Starting");
-    this.scheduleReload();
+    sem.once('IPTABLES_READY', () => {
+      log.info("Bonjour Watch Starting");
+      this.scheduleReload();
 
-    sclient.on("message", (channel, message) => {
-      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
         log.info("Schedule reload BonjourSensor since network info is reloaded");
         this.scheduleReload();
-      }
+      })
     });
-    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
-  }
-
-  // do not process same host in a short time
-  isDup(service) {
-    let key = service.ipv4Addr;
-    if (!key) {
-      return true;
-    }
-
-    if (this.hostCache[key]) {
-      log.debug("Ignoring duplicated bonjour services from same ip:", key);
-      return true;
-    }
-
-    this.hostCache[key] = 1;
-    setTimeout(() => {
-      delete this.hostCache[key];
-    }, 5 * 1000 * 60); // 5 mins
-
-    return false;
   }
 
   async _getMacFromIP(ipAddr) {
@@ -157,13 +140,13 @@ class BonjourSensor extends Sensor {
       return new Promise((resolve, reject) => {
         l2.getMAC(ipAddr, (err, mac) => {
           if (err) {
-            log.error("Not able to find mac address for host:", ipAddr, mac);
+            log.warn("Not able to find mac address for host:", ipAddr, mac);
             resolve(null);
           } else {
             if (!mac) {
               const myMac = sysManager.myMACViaIP4(ipAddr) || null;
               if (!myMac)
-                log.error("Not able to find mac address for host:", ipAddr, mac);
+                log.warn("Not able to find mac address for host:", ipAddr, mac);
               resolve(myMac);
             } else {
               ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
@@ -174,7 +157,7 @@ class BonjourSensor extends Sensor {
       })
     } else if (new Address6(ipAddr).isValid()) {
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
-        log.error("Not able to find mac address for host:", ipAddr, err);
+        log.warn("Not able to find mac address for host:", ipAddr, err);
         return null;
       })
       if (mac && sysManager.isMyMac(mac))
@@ -183,7 +166,7 @@ class BonjourSensor extends Sensor {
       if (!mac) {
         const myMac = sysManager.myMACViaIP6(ipAddr) || null;
         if (!myMac)
-          log.error("Not able to find mac address for host:", ipAddr, mac);
+          log.warn("Not able to find mac address for host:", ipAddr, mac);
         return myMac
       } else {
         ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
@@ -294,10 +277,7 @@ class BonjourSensor extends Sensor {
       host: service.host
     };
 
-    // do not dedup since it is only run once every 5 minutes
-    //if(!this.isDup(s)) {
     this.processService(s);
-    //}
   }
 }
 

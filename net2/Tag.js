@@ -24,10 +24,12 @@ const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const wrapIptables = require('./Iptables').wrapIptables;
+const {Rule, wrapIptables} = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
+
+const envCreatedMap = {};
 
 
 class Tag {
@@ -40,7 +42,7 @@ class Tag {
       if (o && o.uid) {
         this.subscriber.subscribeOnce("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, (channel, type, id, obj) => {
           log.info(`Tag policy is changed on ${this.o.uid} ${this.o.name}`, obj);
-          this.applyPolicy();
+          this.scheduleApplyPolicy();
         });
       }
     }
@@ -70,6 +72,14 @@ class Tag {
 
   _getPolicyKey() {
     return `policy:tag:${this.o.uid}`;
+  }
+
+  scheduleApplyPolicy() {
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
+    this.applyPolicyTask = setTimeout(() => {
+      this.applyPolicy();
+    }, 3000);
   }
 
   async applyPolicy() {
@@ -107,79 +117,98 @@ class Tag {
     this._policy[name] = data;
     await this.savePolicy();
     if (this.subscriber) {
-      setTimeout(() => {
-        this.subscriber.publish("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, {name, data});
-      }, 2000); // 2 seconds buffer for concurrent policy dta change to be persisted
+      this.subscriber.publish("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, {name, data});
     }
   }
 
   // this can be used to match everything on this tag, including device and network
-  static getTagIpsetName(uid) {
+  static getTagSetName(uid) {
     return `c_tag_${uid}_set`;
   }
 
   // this can be used to match device alone on this tag
-  static getTagMacIpsetName(uid) {
-    return `c_tag_${uid}_m_set`
+  static getTagDeviceMacSetName(uid) {
+    return `c_tag_${uid}_dev_mac_set`
   }
 
   // this can be used to match network alone on this tag
-  static getTagNetIpsetName(uid) {
-    return `c_tag_${uid}_n_set`;
+  static getTagNetSetName(uid) {
+    return `c_tag_${uid}_net_set`;
   }
 
-  async createEnv() {
+  // this can be used to match mac as well as IP of device on this tag
+  static getTagDeviceSetName(uid) {
+    return `c_tag_${uid}_dev_set`;
+  }
+
+  static async ensureCreateEnforcementEnv(uid) {
+    if (envCreatedMap[uid])
+      return;
     // create related ipsets
-    await exec(`sudo ipset create -! ${Tag.getTagIpsetName(this.o.uid)} list:set`).catch((err) => {
-      log.error(`Failed to create tag ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset create -! ${Tag.getTagSetName(uid)} list:set`).catch((err) => {
+      log.error(`Failed to create tag ipset ${Tag.getTagSetName(uid)}`, err.message);
     });
-    await exec(`sudo ipset create -! ${Tag.getTagMacIpsetName(this.o.uid)} hash:mac`).catch((err) => {
-      log.error(`Failed to create tag mac ipset ${Tag.getTagMacIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset create -! ${Tag.getTagDeviceMacSetName(uid)} hash:mac`).catch((err) => {
+      log.error(`Failed to create tag mac ipset ${Tag.getTagDeviceMacSetName(uid)}`, err.message);
     });
-    await exec(`sudo ipset add -! ${Tag.getTagIpsetName(this.o.uid)} ${Tag.getTagMacIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to add ${Tag.getTagMacIpsetName(this.o.uid)} to ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Tag.getTagDeviceMacSetName(uid)}`).catch((err) => {
+      log.error(`Failed to add ${Tag.getTagDeviceMacSetName(uid)} to ipset ${Tag.getTagSetName(uid)}`, err.message);
     });
     // you may think this tag net set is redundant? 
     // it is needed to apply fine-grained policy on tag level. e.g., customized wan, QoS
-    await exec(`sudo ipset create -! ${Tag.getTagNetIpsetName(this.o.uid)} list:set`).catch((err) => {
-      log.error(`Failed to create tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset create -! ${Tag.getTagNetSetName(uid)} list:set`).catch((err) => {
+      log.error(`Failed to create tag net ipset ${Tag.getTagNetSetName(uid)}`, err.message);
     });
-    // tag dnsmasq entry can be referred by domain blocking rules
-    const dnsmasqEntry = `group-tag=@${this.o.uid}$tag_${this.o.uid}`;
-    await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_${this.o.uid}.conf`, dnsmasqEntry).catch((err) => {
-      log.error(`Failed to create dnsmasq entry for tag ${this.o.uid}`, err.message);
+    // it can be used to match src,dst on devices in the group
+    await exec(`sudo ipset create -! ${Tag.getTagDeviceSetName(uid)} list:set`).catch((err) => {
+      log.error(`Failed to create tag mac tracking ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
     });
+    await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Tag.getTagDeviceMacSetName(uid)}`).catch((err) => {
+      log.error(`Failed to add ${Tag.getTagDeviceMacSetName(uid)} to ${Tag.getTagDeviceSetName(uid)}`, err.message);
+    });
+    envCreatedMap[uid] = 1;
+  }
+
+  async createEnv() {
+    await Tag.ensureCreateEnforcementEnv(this.o.uid);
   }
 
   async destroyEnv() {
     const PM2 = require('../alarm/PolicyManager2.js');
     const pm2 = new PM2();
-    await pm2.deleteTagRelatedPolicies(uid);
+    await pm2.deleteTagRelatedPolicies(this.o.uid);
     const EM = require('../alarm/ExceptionManager.js');
     const em = new EM();
-    await em.deleteTagRelatedExceptions(uid);
+    await em.deleteTagRelatedExceptions(this.o.uid);
 
     const FlowAggrTool = require('../net2/FlowAggrTool');
     const flowAggrTool = new FlowAggrTool();
     const FlowManager = require('../net2/FlowManager.js');
     const flowManager = new FlowManager('info');
 
-    await flowAggrTool.removeAggrFlowsAllTag(uid);
-    await flowManager.removeFlowTag(uid);
+    await flowAggrTool.removeAggrFlowsAllTag(this.o.uid);
+    await flowManager.removeFlowTag(this.o.uid);
 
     // flush related ipsets
-    await exec(`sudo ipset flush -! ${Tag.getTagIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to flush tag ipset ${Tag.getTagIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset flush -! ${Tag.getTagSetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag ipset ${Tag.getTagSetName(this.o.uid)}`, err.message);
     });
-    await exec(`sudo ipset flush -! ${Tag.getTagMacIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to flush tag mac ipset ${Tag.getTagMacIpsetName(this.o.uid)}`, err.message);
+    await exec(`sudo ipset flush -! ${Tag.getTagDeviceMacSetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag mac ipset ${Tag.getTagDeviceMacSetName(this.o.uid)}`, err.message);
     });
-    await exec(`sudo ipset flush -! ${Tag.getTagNetIpsetName(this.o.uid)}`).catch((err) => {
-      log.error(`Failed to flush tag net ipset ${Tag.getTagNetIpsetName(this.o.uid)}`, err.message);
-    })
+    await exec(`sudo ipset flush -! ${Tag.getTagNetSetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag net ipset ${Tag.getTagNetSetName(this.o.uid)}`, err.message);
+    });
+    await exec(`sudo ipset flush -! ${Tag.getTagDeviceSetName(this.o.uid)}`).catch((err) => {
+      log.error(`Failed to flush tag mac tracking ipset ${Tag.getTagDeviceSetName(this.o.uid)}`, err.message);
+    });
     // delete related dnsmasq config files
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
+  }
+
+  async acl(state) {
+    // do nothing for acl on tag
   }
 
   async spoof(state) {
@@ -188,6 +217,9 @@ class Tag {
 
   async _dnsmasq(config) {
     // do nothing for dnsmasq on tag
+  }
+
+  async shield(policy) {
   }
 
   async vpnClient(policy) {
@@ -205,11 +237,11 @@ class Tag {
         return false;
       const rtIdHex = Number(rtId).toString(16);
       // remove old mark first
-      await exec(`sudo ipset -! del c_wan_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)}`);
+      await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)}`);
       if (this._netFwMark) {
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
       }
       this._netFwMark = null;
@@ -217,18 +249,21 @@ class Tag {
         // set skbmark
         this._netFwMark = rtIdHex;
       }
-      if (state === false) {
+      // null means off
+      if (state === null) {
         // reset skbmark
         this._netFwMark = "0000";
       }
-      if (state === null) {
+      // false means N/A
+      if (state === false) {
         // do not change skbmark
       }
       if (this._netFwMark) {
-        await exec(`sudo ipset -! add c_wan_tag_m_set ${Tag.getTagMacIpsetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
+        // add to the beginning of the chain so that it has the lowest priority and can be overriden by the subsequent rules 
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -A FW_PREROUTING_WAN_TAG_N -m set --match-set ${Tag.getTagNetIpsetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
         await exec(cmd).catch((err) => {});
       }
       return true;

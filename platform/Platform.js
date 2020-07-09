@@ -104,6 +104,18 @@ class Platform {
     }
   }
 
+  getDNSServiceName() {
+    return "firemasq";
+  }
+
+  getDHCPServiceName() {
+    return "firemasq";
+  }
+
+  getVPNServerDefaultProtocol() {
+    return "udp";
+  }
+
   getName() {}
 
   getBoardSerial() {}
@@ -112,9 +124,11 @@ class Platform {
 
   getSubnetCapacity() {}
 
-  getCpuTemperature() {}
+  async getCpuTemperature() {}
 
   getPolicyCapacity() {}
+
+  getAllowCustomizedProfiles(){}
 
   getDHCPCapacity() {
     return true
@@ -125,6 +139,22 @@ class Platform {
 
   getBroTabFile() {
     return `${f.getFirewallaHome()}/etc/brotab`;
+  }
+
+  hasMultipleCPUs() {
+    return false
+  }
+
+  isBonjourBroadcastEnabled() {
+    return true;
+  }
+
+  defaultPassword() {
+    return null;
+  }
+
+  isBluetoothAvailable() {
+    return true
   }
 }
 

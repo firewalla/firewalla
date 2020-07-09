@@ -129,7 +129,7 @@ class NetworkStatsSensor extends Sensor {
       delete this.pings[type];
     }
 
-    this.pings[type] = new Ping(sysManager.myGateway());
+    this.pings[type] = new Ping(sysManager.myDefaultGateway());
     this.pings[type].on('ping', (data) => {
       rclient.zadd(redisKey, Math.floor(new Date() / 1000), data.time);
     });
@@ -139,11 +139,11 @@ class NetworkStatsSensor extends Sensor {
   }
 
   testGateway() {
-    this.testPingPerf("gateway", sysManager.myGateway(), "perf:ping:gateway");
+    this.testPingPerf("gateway", sysManager.myDefaultGateway(), "perf:ping:gateway");
   }
 
   testDNSServerPing() {
-    const dnses = sysManager.myDNS();
+    const dnses = sysManager.myDefaultDns();
     if (!_.isEmpty(dnses)) {
       this.testPingPerf("dns", dnses[0], "perf:ping:dns");
     }
@@ -280,7 +280,7 @@ class NetworkStatsSensor extends Sensor {
       const resultGroupByDns = {}
       for (const dns of dnses) {
         try {
-          const result = await exec(`dig @${dns} +short ${internetTestHost}`);
+          const result = await exec(`dig +time=3 +tries=2 @${dns} +short ${internetTestHost}`);
           resultGroupByDns[dns] = {
             stdout: result.stdout ? result.stdout.split('\n').filter(x => x) : result.stdout,
             stderr: result.stderr ? result.stderr.split('\n').filter(x => x) : result.stderr
@@ -298,7 +298,7 @@ class NetworkStatsSensor extends Sensor {
     this.cornJob && this.cornJob.stop();
     this.cornJob = new CronJob("00 30 02 * * *", () => {
       speedtest();
-    }, null, true, await sysManager.getTimezone())
+    }, null, true, sysManager.getTimezone())
   }
   stopSpeedTest() {
     this.cornJob && this.cornJob.stop();

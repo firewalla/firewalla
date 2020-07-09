@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,8 +16,6 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const util = require('util');
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -30,8 +28,12 @@ const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2j
 const sysManager = require('../net2/SysManager.js')
 const networkTool = require('../net2/NetworkTool')();
 
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
+
+const PlatformLoader = require('../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform();
+
+const { Address4 } = require('ip-address')
 
 class NmapSensor extends Sensor {
   constructor() {
@@ -167,10 +169,8 @@ class NmapSensor extends Sensor {
     return host;
   }
 
-  getNetworkRanges() {
-    return this.interfaces && this.interfaces.filter(i => i.name && !i.name.includes("vpn")).map((x) => { // do not scan vpn interface
-      return { range: networkTool.capSubnet(x.subnet), intf_mac: x.mac_address, intf_uuid: x.uuid }
-    })
+  getScanInterfaces() {
+    return sysManager.getMonitoringInterfaces().filter(i => i.name && !i.name.includes("vpn")) // do not scan vpn interface
   }
 
   scheduleReload() {
@@ -190,89 +190,98 @@ class NmapSensor extends Sensor {
       this.checkAndRunOnce(true);
     }, 1000 * 60 * 5); // every 5 minutes, fast scan
 
-    sclient.on("message", (channel, message) => {
-      if (channel === Message.MSG_SYS_NETWORK_INFO_RELOADED) {
-        log.info("Schedule reload NmapSensor since network info is reloaded");
-        this.scheduleReload();
-      }
-    });
-    sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_RELOADED);
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      log.info("Schedule reload NmapSensor since network info is reloaded");
+      this.scheduleReload();
+    })
   }
 
   checkAndRunOnce(fastMode) {
-    this.interfaces = sysManager.getMonitoringInterfaces();
     if (this.isSensorEnabled()) {
-      let range = this.getNetworkRanges()
-      return this.runOnce(fastMode, range)
+      this.runOnce(fastMode)
     }
   }
 
-  runOnce(fastMode, networkRanges) {
-    if (!networkRanges)
-      return Promise.reject(new Error("network range is required"));
+  async runOnce(fastMode) {
+    const interfaces = this.getScanInterfaces()
 
-    return Promise.all(networkRanges.map(({ range, intf_mac, intf_uuid }) => {
+    if (!interfaces)
+      log.error("Failed to get interface list");
 
-      log.info("Scanning network", range, "to detect new devices...");
+    for (const intf of interfaces) {
+
+      let range = intf.subnet
 
       try {
         range = networkTool.capSubnet(range)
       } catch (e) {
         log.error('Error reducing scan range:', range, fastMode, e);
-        return Promise.resolve(); // Skipping this scan
+        return // Skipping this scan
       }
 
-      let cmd = fastMode
-        ? util.format('sudo nmap -sn -PO --send-ip --host-timeout 30s  %s -oX - | %s', range, xml2jsonBinary)
-        : util.format('sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s', range, xml2jsonBinary);
+      log.info("Scanning network", range, "to detect new devices...");
 
-      return NmapSensor.scan(cmd)
-        .then((hosts) => {
-          log.info("Analyzing scan result...");
 
-          if (hosts.length === 0) {
-            log.info("No device is found for network", range);
-            return;
-          }
-          hosts.forEach((h) => {
-            log.debug("Found device:", h.ipv4Addr);
-            this._processHost(h, intf_mac, intf_uuid);
-          })
+      const cmd = fastMode
+        ? `sudo nmap -sn -PO ${intf.type === "wan" ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}`
+        : `sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ${range} -oX - | ${xml2jsonBinary}`;
 
-        }).catch((err) => {
-          log.error("Failed to scan:", err);
-        });
-    })).then(() => {
-      setTimeout(() => {
-        log.info("publish Scan:Done after scan is finished")
-        this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-      }, 3 * 1000)
+      try {
+        const hosts = await NmapSensor.scan(cmd)
+        log.info("Analyzing scan result...");
 
-      Firewalla.isBootingComplete()
-        .then((result) => {
-          if (!result) {
-            setTimeout(() => {
-              log.info("publish Scan:Done after scan is finished")
-              this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-            }, 7 * 1000)
-          }
-        })
-    });
+        if (hosts.length === 0) {
+          log.info("No device is found for network", range);
+          return;
+        }
+
+        for (const host of hosts) {
+          await this._processHost(host, intf)
+        }
+      } catch(err) {
+        log.error("Failed to scan:", err);
+      }
+    }
+
+    setTimeout(() => {
+      log.info("publish Scan:Done after scan is finished")
+      this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+    }, 3 * 1000)
+
+    Firewalla.isBootingComplete()
+      .then((result) => {
+        if (!result) {
+          setTimeout(() => {
+            log.info("publish Scan:Done after scan is finished")
+            this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
+          }, 7 * 1000)
+        }
+      })
   }
 
-  _processHost(host, intf_mac, intf_uuid) {
+  async _processHost(host, intf) {
+    log.debug("Found device:", host.ipv4Addr, host.mac);
+
+    if (['red', 'blue'].includes(platform.getName())) {
+      if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
+        log.debug("Ingore Firewalla's overlay IP")
+        return
+      }
+
+      const ip4 = new Address4(host.ipv4Addr)
+      const defIntf = sysManager.getDefaultWanInterface()
+      const gatewayMac = await sysManager.myGatewayMac(defIntf.name)
+      if (ip4.isInSubnet(defIntf.subnetAddress4) && host.mac == gatewayMac) {
+        log.warn('Ignore gateway on overlay network')
+        return
+      }
+    }
+
     if (!host.mac) {
-      for (const intf of this.interfaces) {
-        const intfName = intf.name;
-        if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intfName)) {
-          host.mac = sysManager.myMAC(intfName)
-          break;
-        } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intfName)) {
-          host.mac = sysManager.myWifiMAC(intfName);
-          break;
-        } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2(intfName)) {
-          return // do nothing on secondary ip
-        }
+      if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intf.name)) {
+        host.mac = sysManager.myMAC(intf.name)
+      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intf.name)) {
+        host.mac = sysManager.myWifiMAC(intf.name);
       }
       if (!host.mac) {
         log.warn("Unidentified MAC Address for host", host);
@@ -281,13 +290,14 @@ class NmapSensor extends Sensor {
     }
 
     if (host && host.mac) {
+
       const hostInfo = {
         ipv4: host.ipv4Addr,
         ipv4Addr: host.ipv4Addr,
         mac: host.mac,
         macVendor: host.macVendor,
-        intf_mac: intf_mac,
-        intf_uuid: intf_uuid,
+        intf_mac: intf.mac_address,
+        intf_uuid: intf.uuid,
         from: "nmap"
       };
 
@@ -310,7 +320,7 @@ class NmapSensor extends Sensor {
   }
 
   static scan(cmd) {
-    log.info("Running command:", cmd);
+    log.debug("Running command:", cmd);
 
     return new Promise((resolve, reject) => {
       cp.exec(cmd, (err, stdout, stderr) => {

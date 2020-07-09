@@ -24,8 +24,13 @@ const sensorsHash = {}
 function initSingleSensor(sensorName) {
   let sensorConfigs = config.sensors;
 
-  if(!sensorConfigs || !sensorConfigs[sensorName])
+  if (!sensorConfigs || !sensorConfigs[sensorName] ||
+      sensorConfigs[sensorName].enable === false ||   // undefined should not be counted
+      sensorConfigs[sensorName].disable
+  ) {
+    log.warn(`${sensorName} disabled`)
     return null;
+  }
 
   try {
     let fp = './' + sensorName + '.js';

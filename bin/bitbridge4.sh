@@ -6,11 +6,17 @@
 BINARY=bitbridge7
 
 if [[ $(uname -m) == "aarch64" ]]; then
-	ln -sfT real.aarch64 real
+  if [[ -e /etc/armbian-release ]]; then
+    . /etc/armbian-release
+    case $BOARD in
+      nanopineo2) ln -sfT real.aarch64 real ;;
+      nanopi-r2s) ln -sfT real.navy real ;;
+    esac
+  fi
 fi
 
 if [[ $(uname -m) == "x86_64" ]]; then
-	ln -sfT real.x86_64 real
+  ln -sfT real.x86_64 real
 fi       
 
 if [[ -e $FIREWALLA_BIN/dev ]]; then
@@ -29,13 +35,15 @@ for RC_FILE in $FIREWALLA_BIN/$BINARY.*.rc; do
   fi
 
   if [[ ! -z "$BINARY_ARGUMENTS" ]]; then
-    $FIREWALLA_BIN/$BINARY $BINARY_ARGUMENTS
+    $FIREWALLA_BIN/$BINARY $BINARY_ARGUMENTS &
     PIDS="$PIDS $!"
   fi
 done
 
 if [[ -n $PIDS ]]; then
-  wait $PIDS
+  wait -n
+  # considered as failure if any child process exits
+  exit 1
 else
   exit 0
 fi
