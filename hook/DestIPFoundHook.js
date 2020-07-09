@@ -265,7 +265,7 @@ class DestIPFoundHook extends Hook {
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain
             || sslInfo && intel.org && sslInfo.O === intel.org
-            || intel.host && this._isSimilarHost(domain, intel.host))
+            || intel.host && isSimilarHost(domain, intel.host))
           {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
