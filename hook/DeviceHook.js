@@ -64,7 +64,14 @@ class DeviceHook extends Hook {
     let ipv6Addr = host.ipv6Addr
 
     if (!mac) { // ignore if no mac
-      log.info("Invalid MAC address for process device update:", event);
+      log.warn("Invalid MAC address for process device update:", event);
+      return;
+    }
+
+    let monInterfaces = await sysManager.getMonitoringInterfaces();
+    let foundInterface = Object.keys(monInterfaces).find(e => e.bcast_address === ipv4Addr)
+    if (foundInterface) {
+      log.warn(`Ignore IP address ${ipv4Addr} as broadcast address of interface ${foundInterface}:`, event);
       return;
     }
 
