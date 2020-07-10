@@ -2979,7 +2979,7 @@ class netBot extends ControllerBot {
           await f.setBootingComplete()
           this.simpleTxData(msg, {}, null, callback)
           log.info("Calling redis bgsave");
-          log.info(rclient.bgsave());
+          rclient.bgsave();
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
