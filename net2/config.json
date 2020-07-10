@@ -696,10 +696,5 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
-  },
-  "ratelimit": {
-    "appMax": 60,
-    "webMax": 200,
-    "duration": 60
   }
 }

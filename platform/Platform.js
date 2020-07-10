@@ -133,6 +133,7 @@ class Platform {
   getPolicyCapacity() {}
 
   getAllowCustomizedProfiles(){}
+  getRatelimitConfig(){}
 
   getDHCPCapacity() {
     return true

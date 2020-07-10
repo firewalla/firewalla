@@ -358,8 +358,7 @@ class netBot extends ControllerBot {
     this.sensorConfig = config.controller.sensor;
 
     // Enhancement: need rate limit on the box api
-    const currentConfig = fc.getConfig(true);
-    const rateLimitOptions = currentConfig.ratelimit || {}
+    const rateLimitOptions = platform.getRatelimitConfig();
     this.rateLimiter = {};
     this.rateLimiter.app = new RateLimiterRedis({
       redis: rclient,
