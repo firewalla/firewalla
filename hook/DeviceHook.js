@@ -23,6 +23,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const ipTool = require('ip');
 
 const Promise = require('bluebird');
 
@@ -65,6 +66,18 @@ class DeviceHook extends Hook {
     if (!mac) { // ignore if no mac
       log.info("Invalid MAC address for process device update:", event);
       return;
+    }
+
+    /*
+     * Filter out IPv4 broadcast address for any monitoring interface
+     */
+    if (ipv4Addr) {
+      let monInterfaces = sysManager.getMonitoringInterfaces();
+      let foundInterface = monInterfaces.find(e => e.subnet && ipTool.cidrSubnet(e.subnet).broadcastAddress === ipv4Addr)
+      if (foundInterface) {
+        log.warn(`Ignore IP address ${ipv4Addr} as broadcast address of interface ${foundInterface.name}:`, event);
+        return;
+      }
     }
 
     mac = mac.toUpperCase()
