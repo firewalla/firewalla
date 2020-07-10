@@ -1226,6 +1226,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "intelAdvice": {
+        (async () => {
+          await bone.intelAdvice(_.pick(value, ['target', 'key', 'value']));
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
