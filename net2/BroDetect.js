@@ -108,6 +108,9 @@ module.exports = class {
           log.debug("Detect:Intel ", data);
           this.processIntelData(data);
         });
+        this.intelLog.on('error', (err) => {
+          log.error("Error while reading intel log", err.message);
+        });
       } else {
         failed = true
       }
@@ -121,6 +124,9 @@ module.exports = class {
           log.debug("Detect:Notice", data);
           this.processNoticeData(data);
         });
+        this.noticeLog.on('error', (err) => {
+          log.error("Error while reading notice log", err.message);
+        });
       } else {
         failed = true
       }
@@ -132,6 +138,9 @@ module.exports = class {
         log.debug("Initializing watchers: dnslog initialized", this.config.bro.dns.path);
         this.dnsLog.on('line', (data) => {
           this.processDnsData(data);
+        });
+        this.dnsLog.on('error', (err) => {
+          log.error("Error while reading dns log", err.message);
         });
       } else {
         failed = true
@@ -146,6 +155,9 @@ module.exports = class {
           log.debug("Detect:Software", data);
           this.processSoftwareData(data);
         });
+        this.softwareLog.on('error', (err) => {
+          log.error("Error while reading software log", err.message);
+        });
       } else {
         failed = true
       }
@@ -158,6 +170,9 @@ module.exports = class {
         this.httpLog.on('line', (data) => {
           log.debug("Detect:Http", data);
           httpFlow.process(data);
+        });
+        this.httpLog.on('error', (err) => {
+          log.error("Error while reading http log", err.message);
         });
       } else {
         failed = true
@@ -172,6 +187,9 @@ module.exports = class {
           log.debug("Detect:SSL", data);
           this.processSslData(data);
         });
+        this.sslLog.on('error', (err) => {
+          log.error("Error while reading ssl log", err.message);
+        });
       } else {
         failed = true
       }
@@ -184,6 +202,9 @@ module.exports = class {
         this.connLog.on('line', async (data) => {
           await this.processConnData(data);
         });
+        this.connLog.on('error', (err) => {
+          log.error("Error while reading conn log", err.message);
+        });
       } else {
         failed = true
       }
@@ -194,6 +215,9 @@ module.exports = class {
         log.debug("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
         this.connLogdev.on('line', async (data) => {
           await this.processConnData(data);
+        });
+        this.connLogdev.on('error', (err) => {
+          log.error("Error while reading conn dev log", err.message);
         });
       } else {
         failed = true
@@ -207,6 +231,9 @@ module.exports = class {
         this.x509Log.on('line', (data) => {
           this.processX509Data(data);
         });
+        this.x509Log.on('error', (err) => {
+          log.error("Error while reading x509 log", err.message);
+        });
       } else {
         failed = true
       }
@@ -218,6 +245,9 @@ module.exports = class {
         log.debug("Initializing watchers: knownHosts Initialized", this.config.bro.knownHosts.path);
         this.knownHostsLog.on('line', (data) => {
           this.processknownHostsData(data);
+        });
+        this.knownHostsLog.on('error', (err) => {
+          log.error("Error while reading known hosts log", err.message);
         });
       } else {
         failed = true
@@ -811,6 +841,9 @@ module.exports = class {
         log.debug("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
         return;
       }
+
+      if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
+        return;
 
       const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
       if (intfInfo && intfInfo.uuid) {
