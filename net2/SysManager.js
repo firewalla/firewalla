@@ -505,11 +505,11 @@ class SysManager {
   }
 
   getLogicInterfaces() {
-    return fireRouter.getLogicIntfNames().map(name => this.sysinfo[name]);
+    return fireRouter.getLogicIntfNames().map(name => this.sysinfo[name]).filter(i => i); // filter null or undefined object in case this.sysinfo is reloaded halfway
   }
 
   getMonitoringInterfaces() {
-    return fireRouter.getMonitoringIntfNames().map(name => this.sysinfo[name])
+    return fireRouter.getMonitoringIntfNames().map(name => this.sysinfo[name]).filter(i => i); // filter null or undefined object in case this.sysinfo is reloaded halfway
   }
 
   getInterface(intf) {
