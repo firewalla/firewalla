@@ -1940,6 +1940,7 @@ class PolicyManager2 {
               rule.localPort = data.port;
               rule.scope = [data.mac];
               rule.rank = 0;
+              rule.direction = "inbound";
             } else {
               rule.rank = -1;
             }
@@ -2110,6 +2111,19 @@ class PolicyManager2 {
             continue;
           break;
         }
+        case "intranet":
+          if (!remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)))
+            continue;
+          break;
+        case "network":
+          const iface = rule.target && sysManager.getInterfaceViaUUID(rule.target);
+          if (!iface || !remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip, iface.name) || sysManager.inMySubnet6(ip, iface.name)))
+            continue;
+          break;
+        case "tag":
+        case "device":
+          // not supported yet
+          continue;
         default:
       }
       // reach here if the rule matches the criteria
