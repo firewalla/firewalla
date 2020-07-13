@@ -299,13 +299,13 @@ class DomainBlock {
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
     const finalDomains = domains.filter((de) => {
       return !defaultDomains.includes(de.domain)
-    }).map((de) => { return de.domain }).concat(defaultDomains, includedDomains).filter((domain) => {
+    }).map((de) => { return de.domain }).concat(defaultDomains).filter((domain)=>{
       if (excludedDomains.includes(domain)) return false;
       if (domain.startsWith("*.") && excludedDomains.includes(domain.substring(2))) {
         return false;
       }
       return true;
-    })
+    }).concat(includedDomains);
 
     function dedupAndPattern(arr) {
       const pattern = arr.filter((domain) => {
