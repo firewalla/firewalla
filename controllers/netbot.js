@@ -358,8 +358,7 @@ class netBot extends ControllerBot {
     this.sensorConfig = config.controller.sensor;
 
     // Enhancement: need rate limit on the box api
-    const currentConfig = fc.getConfig(true);
-    const rateLimitOptions = currentConfig.ratelimit || {}
+    const rateLimitOptions = platform.getRatelimitConfig();
     this.rateLimiter = {};
     this.rateLimiter.app = new RateLimiterRedis({
       redis: rclient,
@@ -1701,6 +1700,7 @@ class netBot extends ControllerBot {
           // dedup battle.net if battle.net and *.battle.net co-exist
           const outputDomains = sortedFinalDomains.filter((de) => {
             const domain = de.domain
+            if (excludedDomains.includes(domain)) return false;
             if (!domain.startsWith("*.") && patternDomains.includes(domain)) {
               return false;
             } else {

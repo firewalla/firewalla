@@ -298,8 +298,10 @@ class DomainBlock {
     const defaultDomains = await categoryUpdater.getDefaultDomains(category);
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
     const finalDomains = domains.filter((de) => {
-      return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
-    }).map((de) => { return de.domain }).concat(defaultDomains, includedDomains)
+      return !defaultDomains.includes(de.domain)
+    }).map((de) => { return de.domain }).concat(defaultDomains).filter((domain)=>{
+      return !excludedDomains.includes(domain)
+    }).concat(includedDomains);
 
     function dedupAndPattern(arr) {
       const pattern = arr.filter((domain) => {
