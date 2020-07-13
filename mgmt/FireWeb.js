@@ -1,6 +1,6 @@
 'use strict';
 
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -55,7 +55,7 @@ class FireWeb {
 
       const eptCloud = new cloud(name, null);
       await eptCloud.loadKeys();
-      await eptCloud.eptloginAsync(appId, appSecret, null, name);
+      await eptCloud.eptLogin(appId, appSecret, null, name);
 
       // register as web
       const eid = eptCloud.eid;
@@ -89,12 +89,12 @@ class FireWeb {
   async isAdded(gid) {
     const eptCloud = await this.getCloudInstance();
     try {
-      const groups = await eptCloud.eptGroupListAsync(eptCloud.eid);
+      const groups = await eptCloud.eptGroupList(eptCloud.eid);
       for(const group of groups || []) {
         if(group.gid === gid) {
           return true;
         }
-      }    
+      }
       return false;
     } catch(err) {
       return false;
@@ -103,14 +103,14 @@ class FireWeb {
 
   async addWebTokenToGroup(netbotCloud, gid) {
     if(!netbotCloud) {
-      return Promise.reject(new Error("Invalid Cloud Instance"));
+      throw new Error("Invalid Cloud Instance");
     }
 
     const eptCloud = await this.getCloudInstance();
 
     if(eptCloud.eid) {
       try {
-        const result = await netbotCloud.eptinviteGroupAsync(gid, eptCloud.eid);
+        const result = await netbotCloud.eptInviteGroup(gid, eptCloud.eid);
         log.info(`Invite result: ${result}`);
         return;
       } catch(err) {

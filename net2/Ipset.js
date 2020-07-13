@@ -20,10 +20,42 @@ const { exec, spawn } = require('child-process-promise');
 
 const maxIpsetQueue = 158;
 const ipsetInterval = 3000;
+const f = require('./Firewalla.js');
+const _ = require('lodash');
 
 let ipsetQueue = [];
 let ipsetTimerSet = false;
 let ipsetProcessing = false;
+
+async function readAllIpsets() {
+  const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
+  const jsonResult = await exec(`sudo ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 2 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
+    log.error(`Failed to convert ipset to json`, err.message);
+    return {};
+  });
+  const result = {};
+  if (jsonResult && jsonResult.ipsets && jsonResult.ipsets.ipset && _.isArray(jsonResult.ipsets.ipset)) {
+    for (const set of jsonResult.ipsets.ipset) {
+      const name = set.name;
+      const elements = [];
+      if (set.members && set.members.member) {
+        if (_.isArray(set.members.member)) {
+          for (const member of set.members.member) {
+            if (member.elem)
+              elements.push(member.elem);
+          }
+        } else {
+          if (_.isObject(set.members.member)) {
+            if (set.members.member.elem)
+              elements.push(set.members.member.elem);
+          }
+        }
+      }
+      result[name] = elements;
+    }
+  }
+  return result;
+}
 
 async function isReferenced(ipset) {
   const listCommand = `sudo ipset list ${ipset} | grep References | cut -d ' ' -f 2`;
@@ -138,6 +170,21 @@ function del(name, target) {
   return exec('sudo ipset ' + cmd);
 }
 
+function batchOp(operations) {
+  if (!Array.isArray(operations) || operations.length === 0)
+    return;
+  const cmd = `echo "${operations.join('\n')}" | sudo ipset restore -!`;
+  return exec(cmd);
+}
+
+const CONSTANTS = {
+  IPSET_MONITORED_NET: "monitored_net_set",
+  IPSET_ACL_OFF: "acl_off_set",
+  IPSET_ACL_OFF_MAC: "acl_off_mac_set",
+  IPSET_NO_DNS_BOOST: "no_dns_caching_set",
+  IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set"
+}
+
 module.exports = {
   enqueue,
   isReferenced,
@@ -145,5 +192,8 @@ module.exports = {
   flush,
   create,
   add,
-  del
+  del,
+  batchOp,
+  CONSTANTS,
+  readAllIpsets
 }

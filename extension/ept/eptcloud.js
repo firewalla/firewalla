@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -41,7 +41,7 @@ class EptCloudExtension {
     const clients = groupInfo.symmetricKeys.filter((client) => client.eid != deviceEID)
 
     const clientInfos = clients.map((client) => {
-      return JSON.stringify({name: client.displayName, eid: client.eid})
+      return JSON.stringify({ name: client.displayName, eid: client.eid })
     });
 
     const keyName = "sys:ept:members";
@@ -51,42 +51,34 @@ class EptCloudExtension {
     cmd.push.apply(cmd, clientInfos)
 
     await rclient.delAsync(keyName)
-    
+
     if(clientInfos.length > 0) {
-      await rclient.saddAsync(cmd)  
+      await rclient.saddAsync(cmd)
     }
+
+    await rclient.hmset('sys:ept:me', {
+      eid: deviceEID,
+      key: groupInfo.me.key
+    })
   }
 
 
   async updateGroupInfo(gid) {
-    return new Promise((resolve, reject) => {
-      this.eptcloud.groupFind(gid, (err, group)=> {
-        if (err) {
-          log.info("Error looking up group", err, err.stack);
-          reject(err);
-          return;
-        }
-        
-        if (group == null) {
-          reject(err);
-          return;
-        }
+    const group = await this.eptcloud.groupFind(gid)
 
-        this.recordAllRegisteredClients(gid).then(() => {
-          resolve();
-        }).catch((err) => {
-          reject(err);
-        });
-      }); 
-    });
+    if (group == null) {
+      throw new Error('Invalid Group')
+    }
+
+    await this.recordAllRegisteredClients(gid)
   }
 
   run() {
     this.job();
-      
+
     setInterval(() => {
       this.job();
-    }, 1000 * 60 * 30); // every thirty minutes
+    }, 1000 * 3600 * 24); // every day
   }
 }
 

@@ -28,12 +28,17 @@ const exec = require('child-process-promise').exec
 const fs = require('fs')
 Promise.promisifyAll(fs)
 
+const Config = require('../../net2/config.js');
+const sysManager = require('../../net2/SysManager.js');
+
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 
 const { wrapIptables } = require('../../net2/Iptables.js')
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
+
+const Mode = require('../../net2/Mode.js');
 
 const VIEW_PATH = 'view';
 const STATIC_PATH = 'static';
@@ -176,13 +181,14 @@ class App {
   }
 
   async getPrimaryIP() {
-    const eth0s = require('os').networkInterfaces()["eth0"]
+    const config = Config.getConfig(true);
+    const eths = require('os').networkInterfaces()[config.monitoringInterface];
 
-    if (eth0s) {
-      for (let index = 0; index < eth0s.length; index++) {
-        const eth0 = eth0s[index]
-        if (eth0.family == "IPv4") {
-          return eth0.address
+    if (eths) {
+      for (let index = 0; index < eths.length; index++) {
+        const eth = eths[index]
+        if (eth.family == "IPv4") {
+          return eth.address
         }
       }
     }
@@ -377,14 +383,20 @@ class App {
   }
 
   async iptablesRedirection(create = true) {
-    const findInf = await exec(`ip addr show dev eth0 | awk '/inet / {print $2}'|cut -f1 -d/`);
-    const ips = findInf.stdout.split('\n')
+    let interfaces = sysManager.getLogicInterfaces()
+    if (await Mode.isRouterModeOn()) {
+      interfaces = interfaces.filter(intf => intf.type != 'wan')
+    }
+    const IPv4List = interfaces.map(intf => intf.ip_address)
 
-    const action = create ? '-A' : '-D';
+    log.info("", IPv4List);
 
-    for (const ip of ips) {
+    const action = create ? '-I' : '-D';
+
+    for (const ip of IPv4List) {
       if (!ip) continue;
 
+      // should use primitive chains here, since it needs to be working before install_iptables.sh
       log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${port} on ${ip}`);
       const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
       await exec(cmd);

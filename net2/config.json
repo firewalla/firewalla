@@ -1,26 +1,23 @@
 {
-  "version": 1.966,
+  "version": 1.970,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
+  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
+  "firewallaSocketIOURL": "https://firewalla.encipher.io",
+  "SocketIOPath": "/socket",
+  "SocketIODevPath": "/socket.v0",
   "cacheInit": true,
   "discovery": {
     "networkInterfaces": [
       "eth0",
       "eth0:0",
       "wlan0"
-    ]
-  },
-  "iptables": {
-    "defaults": [
-      "sudo iptables -w -t nat -A POSTROUTING -s LOCALSUBNET2 -j MASQUERADE",
-      "sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP && sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP || true",
-      "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
     ]
   },
   "monitoringInterface": "eth0",
@@ -35,7 +32,8 @@
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
-    "alarm.vpn_connect.cooldown": 300
+    "alarm.vpn_connect.cooldown": 300,
+    "notification.box_online.cooldown": 900
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -82,7 +80,9 @@
     "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
-    "RemoteNotificationSensor": {}
+    "SystemDNSSensor": {},
+    "RemoteNotificationSensor": {},
+    "WireGuardPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -93,20 +93,32 @@
     "SSLIntel",
     "UAIntel",
     "TransferContextIntel",
-    "MonkeyIntel"
+    "MonkeyIntel",
+    "IntfInfoIntel",
+    "TagsInfoIntel"
   ],
   "sensors": {
     "DHCPSensor": {},
     "UPNPSensor": {
       "interval": 600,
-      "expireInterval": 3600
+      "expireInterval": 1800
     },
     "BonjourSensor": {},
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
+    "DeviceServiceScanSensor": {
+      "interval": 10800,
+      "firstScan": 120
+    },
+    "ExternalScanSensor": {
+      "interval": 1800,
+      "firstScan": 120
+    },
+    "OpenPortByInboundFlowSensor": {},
     "BoneSensor": {},
-    "APISensor": {},
-    "DNSCryptPlugin": {},
+    "DNSCryptPlugin": {
+      "refreshInterval": 1440
+    },
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
@@ -369,7 +381,7 @@
         }
       },
       "defaultConfig": {
-        "youtube": "strict",
+        "youtube": "off",
         "google": "on",
         "bing": "on",
         "duckduckgo": "on"
@@ -389,6 +401,7 @@
         "1.1.1.1",
         "8.8.8.8"
       ],
+      "pingFailureThreshold": 2,
       "interval": 300
     },
     "ICMP6Sensor": {},
@@ -421,7 +434,7 @@
         "count": 10000
       },
       "dns": {
-        "expires": 100000,
+        "expires": 86400,
         "count": 100
       },
       "software": {
@@ -479,14 +492,15 @@
       "perf": {
         "expires": 86400,
         "count": 10000
+      },
+      "networkConfigHistory": {
+        "expires": -1,
+        "count": 32
       }
     },
     "DeviceOfflineSensor": {
       "interval": 60,
       "idle": 2700
-    },
-    "FirewallaDiscoverSensor": {
-      "listenPort": 4096
     },
     "SubnetSensor": {},
     "IPChangeSensor": {},
@@ -497,7 +511,6 @@
         "bipartite_graph"
       ]
     },
-    "WirelessInterfaceSensor": {},
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,
@@ -509,7 +522,17 @@
       "minsize": 150000000,
       "dataPlanMinPercentage": 0.8
     },
-    "LocalDomainSensor": {}
+    "DHCPServerSensor": {
+      "interval": 600,
+      "firstScan": 120
+    },
+    "DnsmasqDhcpSensor": {},
+    "RuleCheckSensor": {},
+    "SystemDNSSensor": {},
+    "LocalDomainSensor": {},
+    "SS2Plugin": {},
+    "WireGuardPlugin": {},
+    "PiHolePlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -597,14 +620,13 @@
     ]
   },
   "app": {
-    "exclude": [
-
-    ]
+    "exclude": []
   },
   "userFeatures": {
     "porn": true,
     "video": true,
     "game": true,
+    "vpn": false,
     "large_upload": true,
     "abnormal_bandwidth_usage": true,
     "data_plan": true,
@@ -620,11 +642,8 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "shadowsocks_server": false,
     "scisurf": false,
     "naughty_monkey": false,
-    "device_detection": false,
-    "porn_redirect": false,
     "redirect_httpd": false,
     "social_hour": true,
     "api_relay": false,
@@ -634,17 +653,40 @@
     "cpu_monitor": true,
     "speed_test": false,
     "doh": false,
+    "ss2": false,
     "safe_search": false,
     "network_stats": false,
     "link_stats": true,
     "network_speed_test": false,
     "vpn_restore": true,
     "vpn_disconnect": true,
-    "local_domain": true
+    "local_domain": true,
+    "external_scan": false,
+    "alarm_openport": false,
+    "device_service_scan": true,
+    "wireguard": false,
+    "ipv6": false,
+    "pihole": false,
+    "adblock": false,
+    "family_protect": false,
+    "smart_block": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
   ],
   "pubKeys": [],
-  "allowCustomizedProfiles": 1
+  "firerouter": {
+    "interface": {
+      "host": "localhost",
+      "port": 8837,
+      "version": "v1"
+    },
+    "homeFolder": "/firerouter",
+    "hiddenFolder": "/.router"
+  },
+  "ratelimit": {
+    "appMax": 60,
+    "webMax": 200,
+    "duration": 60
+  }
 }

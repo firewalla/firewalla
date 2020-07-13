@@ -51,6 +51,11 @@ class DeviceOfflineSensor extends Sensor {
         if (idleTime > this.idle && idleTime < this.idle + 2 * this.interval) {
           // ensure that device offline message will be emitted at most twice
           log.info(`Device ${host.mac} is offline, last seen at ${lastActiveTimestamp}.`);
+          try {
+            if (host.ipv6Addr && host.ipv6Addr.length > 0) {
+              host.ipv6Addr = JSON.parse(host.ipv6Addr);
+            }
+          } catch (err) {}
           sem.emitEvent({
             type: "DeviceOffline",
             message: "A deivce was offline",

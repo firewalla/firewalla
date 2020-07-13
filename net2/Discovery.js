@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2019 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,15 +20,21 @@ var instances = {};
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
-
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
+const sysManager = require('./SysManager.js');
 
 const networkTool = require('./NetworkTool.js')();
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 const util = require('util');
+
+const Config = require('./config.js');
+const firerouter = require('./FireRouter.js');
+
+const uuid = require('uuid')
+const _ = require('lodash')
+const Message = require('./Message.js');
 
 /*
  *   config.discovery.networkInterfaces : list of interfaces
@@ -67,7 +73,7 @@ module.exports = class {
     if (instances[name] == null) {
 
       if (config == null) {
-        config = require('./config.js').getConfig();
+        config = Config.getConfig();
       }
 
       this.hosts = [];
@@ -80,19 +86,16 @@ module.exports = class {
       this.publisher = new p(loglevel);
 
       this.hostCache = {};
-
-      this.discoverInterfacesAsync = util.promisify(this.discoverInterfaces)
     }
 
     return instances[name];
   }
 
   async discoverMac(mac) {
-    await this.discoverInterfacesAsync()
-    log.info("Discovery::DiscoverMAC", this.config.discovery.networkInterfaces);
+    const list = sysManager.getMonitoringInterfaces();
+    log.info("Discovery::DiscoverMAC", list);
     let found = null;
-    for (const name of this.config.discovery.networkInterfaces) {
-      let intf = this.interfaces[name];
+    for (const intf of list) {
       if (intf == null) {
         continue;
       }
@@ -169,9 +172,6 @@ module.exports = class {
     }
   }
 
-  start() {
-  }
-
   /**
    * Only call release function when the SysManager instance is no longer
    * needed
@@ -182,316 +182,94 @@ module.exports = class {
     log.debug("Calling release function of Discovery");
   }
 
-  discoverInterfaces(callback) {
+  discoverInterfaces(callback = () => {}) {
+    this.discoverInterfacesAsync()
+      .then(list => callback(null, list))
+      .catch(err => callback(err))
+  }
+
+  async discoverInterfacesAsync(publishUpdate = true) {
     this.interfaces = {};
-    networkTool.listInterfaces().then(list => {
-      if (!list.length) {
-        log.warn('No interface')
-        return
-      }
-
-      let redisobjs = ['sys:network:info'];
-      for (let i in list) {
-        log.debug(list[i]);
-
-        redisobjs.push(list[i].name);
-        this.interfaces[list[i].name] = list[i];
-        redisobjs.push(JSON.stringify(list[i]));
-
-        /*
-        {
-          "name":"eth0",
-          "ip_address":"192.168.2.225",
-          "mac_address":"b8:27:eb:bd:54:da",
-          "type":"Wired",
-          "gateway":"192.168.2.1",
-          "subnet":"192.168.2.0/24"
-        }
-        */
-        if (list[i].type == "Wired" && list[i].name != "eth0:0") {
-          let host = {
-            name: "Firewalla",
-            uid: list[i].ip_address,
-            mac: list[i].mac_address.toUpperCase(),
-            ipv4Addr: list[i].ip_address,
-            ipv6Addr: list[i].ip6_addresses || JSON.stringify([]),
-            macVendor:"Firewalla"
-          };
-          this.processHost(host);
-        }
-      }
-
-      log.debug("Setting redis", redisobjs);
-
-      rclient.hmset(redisobjs, (error, result) => {
-        if (error) {
-          log.error("Discovery::Interfaces:Error", redisobjs, list, error);
-        } else {
-          log.debug("Discovery::Interfaces", error, result.length);
-        }
-        if (callback) {
-          callback(null, list);
-        }
-      });
-    });
-  }
-
-  filterByVendor(_vendor) {
-    let foundHosts = [];
-    for (let h in this.hosts) {
-      let vendor = this.hosts[h].macVendor;
-      if (vendor != null) {
-        if (vendor.toLowerCase().indexOf(_vendor.toLowerCase()) >= 0) {
-          foundHosts.push(this.hosts[h]);
-        }
-      }
+    let list = [];
+    if (!platform.isFireRouterManaged())
+      list = await networkTool.listInterfaces();
+    else {
+      // firerouter.init should return quickly
+      await firerouter.init();
+      list = await firerouter.getSysNetworkInfo();
     }
-    return foundHosts;
-  }
-
-
-  /* host.uid = ip4 adress
-     host.mac = mac address
-     host.ipv4Addr
-  */
-
-  // mac ip changed, need to wipe out the old
-
-  ipChanged(mac, ip, newmac, callback) {
-    let key = "host:mac:" + mac.toUpperCase();;
-    log.info("Discovery:Mac:Scan:IpChanged", key, ip, newmac);
-    rclient.hgetall(key, (err, data) => {
-      log.info("Discovery:Mac:Scan:IpChanged2", key, ip, newmac, JSON.stringify(data));
-      if (err == null && data && data.ipv4 == ip) {
-        rclient.hdel(key, 'name');
-        rclient.hdel(key, 'bname');
-        rclient.hdel(key, 'ipv4');
-        rclient.hdel(key, 'ipv4Addr');
-        rclient.hdel(key, 'host');
-        log.info("Discovery:Mac:Scan:IpChanged3", key, ip, newmac, JSON.stringify(data));
-      }
-      if (callback) {
-        callback(err, null);
-      }
-    });
-  }
-
-  // FIXME: not every routine this callback may be called.
-  processHost(host, callback) {
-    callback = callback || function () { }
-
-    if (host.mac == null) {
-      log.debug("Discovery:Nmap:HostMacNull:", host);
-      callback(null, null);
-      return;
+    if (!list.length) {
+      log.warn('No interface')
+      return list;
     }
 
-    let nname = host.nname;
-
-    let key = "host:ip4:" + host.uid;
-    log.info("Discovery:Nmap:Scan:Found", key, host.mac, host.uid, host.ipv4Addr, host.name, host.nname);
-    rclient.hgetall(key, (err, data) => {
-      log.debug("Discovery:Nmap:Redis:Search", key, data);
-      if (err == null) {
-        if (data != null) {
-          let changeset = hostTool.mergeHosts(data, host);
-          changeset['lastActiveTimestamp'] = Math.floor(Date.now() / 1000);
-          if (data.firstFoundTimestamp != null) {
-            changeset['firstFoundTimestamp'] = data.firstFoundTimestamp;
-          } else {
-            changeset['firstFoundTimestamp'] = changeset['lastActiveTimestamp'];
-          }
-          changeset['mac'] = host.mac;
-          log.debug("Discovery:Nmap:Redis:Merge", key, changeset);
-          if (data.mac != null && data.mac != host.mac) {
-            this.ipChanged(data.mac, host.uid, host.mac);
-          }
-          rclient.hmset(key, changeset, (err, result) => {
-            if (err) {
-              log.error("Discovery:Nmap:Update:Error", err);
-            } else {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + 2592000);
-            }
-          });
-          // old mac based on this ip does not match the mac
-          // tell the old mac, that it should have the new ip, if not change it
-        } else {
-          log.info("A new host is found: " + host.uid);
-
-          let c = this.hostCache[host.uid];
-          if (c && Date.now() / 1000 < c.expires) {
-            host.name = c.name;
-            host.bname = c.name;
-            log.debug("Discovery:Nmap:HostCache:Look", c);
-          }
-          rclient.hmset(key, host, (err, result) => {
-            if (err) {
-              log.error("Discovery:Nmap:Create:Error", err);
-            } else {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + 2592000);
-            }
-          });
-        }
-      } else {
-        log.error("Discovery:Nmap:Redis:Error", err);
-      }
-    });
-    if (host.mac != null) {
-      let key = "host:mac:" + host.mac.toUpperCase();;
-      let newhost = false;
-      rclient.hgetall(key, (err, data) => {
-        if (err == null) {
-          if (data != null) {
-            data.ipv4 = host.ipv4Addr;
-            data.ipv4Addr = host.ipv4Addr;
-            data.lastActiveTimestamp = Date.now() / 1000;
-            data.mac = host.mac.toUpperCase();
-            if (host.macVendor) {
-              data.macVendor = host.macVendor;
-            }
-            if (data.bname == null && nname != null) {
-              data.bname = nname;
-            }
-            //log.info("Discovery:Nmap:Update",key, data);
-          } else {
-            data = {};
-            data.ipv4 = host.ipv4Addr;
-            data.ipv4Addr = host.ipv4Addr;
-            data.lastActiveTimestamp = Date.now() / 1000;
-            data.firstFoundTimestamp = data.lastActiveTimestamp;
-            data.mac = host.mac.toUpperCase();
-            if (host.macVendor) {
-              data.macVendor = host.macVendor;
-            }
-            newhost = true;
-            if (host.name) {
-              data.bname = host.name;
-            }
-            if (nname) {
-              data.bname = nname;
-            }
-            let c = this.hostCache[host.uid];
-            if (c && Date.now() / 1000 < c.expires) {
-              data.name = c.name;
-              data.bname = c.name;
-              log.debug("Discovery:Nmap:HostCache:LookMac", c);
-            }
-          }
-          rclient.expireat(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365);
-          rclient.hmset(key, data, (err, result) => {
-            if (err != null) {
-              log.error("Failed update ", key, err, result);
-              return;
-            }
-            if (newhost == true) {
-              callback(null, host, true);
-
-              sem.emitEvent({
-                type: "NewDevice",
-                name: data.name || data.bname || host.name,
-                ipv4Addr: data.ipv4Addr,
-                mac: data.mac,
-                macVendor: data.macVendor,
-                message: "new device event by process host"
-              });
-            }
-          });
-        } else {
-
-        }
-      });
-    }
-  }
-
-  //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
-  //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
-  // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
-
-  addV6Host(v6addr, mac, callback) {
-    require('child_process').exec("ping6 -c 3 -I eth0 " + v6addr, (err, out, code) => {
-    });
-    log.info("Discovery:AddV6Host:", v6addr, mac);
-    mac = mac.toUpperCase();
-    let v6key = "host:ip6:" + v6addr;
-    log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
-    sysManager.setNeighbor(v6addr);
-    rclient.hgetall(v6key, (err, data) => {
-      log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, data, err);
-      if (err == null) {
-        if (data != null) {
-          data.mac = mac;
-          data.lastActiveTimestamp = Date.now() / 1000;
-        } else {
-          data = {};
-          data.mac = mac;
-          data.lastActiveTimestamp = Date.now() / 1000;
-          data.firstFoundTimestamp = data.lastActiveTimestamp;
-        }
-        rclient.hmset(v6key, data, (err, result) => {
-          log.debug("++++++ Discover:v6Neighbor:Scan:find", err, result);
-          let mackey = "host:mac:" + mac;
-          rclient.expireat(v6key, parseInt((+new Date) / 1000) + 2592000);
-          rclient.hgetall(mackey, (err, data) => {
-            log.debug("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, data);
-            if (err == null) {
-              if (data != null) {
-                let ipv6array = [];
-                if (data.ipv6) {
-                  ipv6array = JSON.parse(data.ipv6);
-                }
-
-                // only keep around 5 ipv6 around
-                ipv6array = ipv6array.slice(0, 8)
-                let oldindex = ipv6array.indexOf(v6addr);
-                if (oldindex != -1) {
-                  ipv6array.splice(oldindex, 1);
-                }
-                ipv6array.unshift(v6addr);
-
-                data.mac = mac.toUpperCase();
-                data.ipv6 = JSON.stringify(ipv6array);
-                data.ipv6Addr = JSON.stringify(ipv6array);
-                //v6 at times will discver neighbors that not there ...
-                //so we don't update last active here
-                //data.lastActiveTimestamp = Date.now() / 1000;
-              } else {
-                data = {};
-                data.mac = mac.toUpperCase();
-                data.ipv6 = JSON.stringify([v6addr]);
-                data.ipv6Addr = JSON.stringify([v6addr]);
-                data.lastActiveTimestamp = Date.now() / 1000;
-                data.firstFoundTimestamp = data.lastActiveTimestamp;
-              }
-              log.debug("Wring Data:", mackey, data);
-              rclient.hmset(mackey, data, (err, result) => {
-                callback(err, null);
-              });
-            } else {
-              log.error("Discover:v6Neighbor:Scan:Find:Error", err);
-              callback(null, null);
-            }
-          });
-
+    // add consistent uuid to interfaces
+    if (!platform.isFireRouterManaged()) {
+      const uuidIntf = await rclient.hgetallAsync('sys:network:uuid');
+      for (const intf of list) {
+        let uuidAssigned = _.findKey(uuidIntf, i => {
+          try {
+            const obj = JSON.parse(i);
+            return obj.name == intf.name
+          } catch (err) {}
+          return false;
         });
-      } else {
-        log.error("!!!!!!!!!!! Discover:v6Neighbor:Scan:Find:Error", err);
-        callback(null, null);
+        if (!uuidAssigned) {
+          uuidAssigned = uuid.v4()
+          intf.uuid = uuidAssigned
+          await rclient.hsetAsync('sys:network:uuid', uuidAssigned, JSON.stringify(intf))
+        } else {
+          intf.uuid = uuidAssigned
+        }
       }
-    });
+    }
+
+    let redisobjs = ['sys:network:info'];
+    for (const intf of list) {
+      redisobjs.push(intf.name);
+      redisobjs.push(JSON.stringify(intf));
+
+      /*
+      {
+        "name":"eth0",
+        "ip_address":"192.168.2.225",
+        "mac_address":"b8:27:eb:bd:54:da",
+        "conn_type":"Wired",
+        "gateway":"192.168.2.1",
+        "subnet":"192.168.2.0/24",
+        "type": "wan"
+      }
+      */
+      if (intf.conn_type == "Wired" && !intf.name.endsWith(':0')) {
+        sem.emitEvent({
+          type: "DeviceUpdate",
+          message: "Firewalla self discovery",
+          suppressAlarm: true,
+          host: {
+            name: "Firewalla",
+            uid: intf.ip_address,
+            mac: intf.mac_address.toUpperCase(),
+            ipv4Addr: intf.ip_address,
+            ipv6Addr: intf.ip6_addresses || [],
+            macVendor: "Firewalla",
+            from: "Discovery"
+          },
+          toProcess: 'FireMain'
+        })
+      }
+    }
+
+    log.debug("Setting redis", redisobjs);
+
+    try {
+      const result = await rclient.hmsetAsync(redisobjs)
+      log.debug("Discovery::Interfaces", result.length);
+    } catch (error) {
+      log.error("Discovery::Interfaces:Error", redisobjs, list, error);
+    }
+    if (publishUpdate)
+      await pclient.publishAsync(Message.MSG_SYS_NETWORK_INFO_UPDATED, "");
+    return list
   }
 
-  fetchHosts(callback) {
-    this.DB.sync();
-    this.DB.Host.DBModel.findAll().then((objs) => {
-      callback(null, objs);
-    });
-  }
-  fetchPorts(callback) {
-    this.DB.sync();
-    this.DB.Port.DBModel.findAll().then((objs) => {
-      callback(null, objs);
-    });
-  }
 }

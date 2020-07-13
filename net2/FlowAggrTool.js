@@ -49,9 +49,9 @@ class FlowAggrTool {
     return util.format("aggrflow:%s:%s:%s:%s", mac, trafficDirection, interval, ts);
   }
 
-  getSumFlowKey(mac, trafficDirection, begin, end) {
-    if(mac) {
-      return util.format("sumflow:%s:%s:%s:%s", mac, trafficDirection, begin, end);
+  getSumFlowKey(target, trafficDirection, begin, end) {
+    if(target) {
+      return util.format("sumflow:%s:%s:%s:%s", target, trafficDirection, begin, end);
     } else {
       return util.format("syssumflow:%s:%s:%s", trafficDirection, begin, end);
     }
@@ -108,7 +108,7 @@ class FlowAggrTool {
 
     let count = await rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR) // only keep the MAX_FLOW_PER_SUM highest flows
     if(count > 0) {
-      log.warn(`${count} flows are removed from ${key} for self protection`)
+      log.warn(`${count} flows are trimmed from ${key}`)
     }
   }
 
@@ -194,13 +194,17 @@ class FlowAggrTool {
       max_flow = options.max_flow
     }
 
-    let mac = options.mac; // if mac is undefined, by default it will scan over all machines
+    // if below are all undefined, by default it will scan over all machines
+    let intf = options.intf;
+    let tag = options.tag;
+    let mac = options.mac;
+    let target = intf && ('intf:' + intf.intf) || tag && ('tag:' + tag.tag) || mac;
 
-    let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
+    let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
     let count = await rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow) // only keep the MAX_FLOW_PER_SUM highest flows
     if(count > 0) {
-      log.warn(`${count} flows are removed from ${sumFlowKey} for self protection`)
+      log.warn(`${count} flows are trimmed from ${sumFlowKey}`)
     }
   }
 
@@ -222,9 +226,13 @@ class FlowAggrTool {
     let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
     let interval = options.interval || 600; // by default 10 mins
 
-    let mac = options.mac; // if mac is undefined, by default it will scan over all machines
+    // if below are all undefined, by default it will scan over all machines
+    let intf = options.intf;
+    let tag = options.tag;
+    let mac = options.mac;
+    let target = intf && ('intf:' + intf.intf) || tag && ('tag:' + tag.tag) || mac;
 
-    let sumFlowKey = this.getSumFlowKey(mac, trafficDirection, begin, end);
+    let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
     if(options.skipIfExists) {
       let exists = await rclient.existsAsync(sumFlowKey);
@@ -236,8 +244,8 @@ class FlowAggrTool {
     let endString = new Date(end * 1000).toLocaleTimeString();
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    if(mac) {
-      log.debug(util.format("Summing %s %s flows between %s and %s", mac, trafficDirection, beginString, endString));
+    if(target) {
+      log.debug(util.format("Summing %s %s flows between %s and %s", target, trafficDirection, beginString, endString));
     } else {
       log.debug(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
     }
@@ -245,7 +253,11 @@ class FlowAggrTool {
     let ticks = this.getTicks(begin, end, interval);
     let tickKeys = null
 
-    if(mac) {
+    if (intf) {
+      tickKeys = _.flatten(intf.macs.map((mac) => ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick))));
+    } else if (tag) {
+      tickKeys = _.flatten(tag.macs.map((mac) => ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick))));
+    } else if(mac) {
       tickKeys = ticks.map((tick) => this.getFlowKey(mac, trafficDirection, interval, tick));
     } else {
       // only call keys once to improve performance
@@ -283,7 +295,7 @@ class FlowAggrTool {
     let result = await rclient.zunionstoreAsync(args);
     if(result > 0) {
       if(options.setLastSumFlow) {
-        await this.setLastSumFlow(mac, trafficDirection, sumFlowKey)
+        await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
       }
       await rclient.expireAsync(sumFlowKey, expire)
       await this.trimSumFlow(trafficDirection, options)
@@ -292,11 +304,11 @@ class FlowAggrTool {
     return result;
   }
 
-  setLastSumFlow(mac, trafficDirection, keyName) {
+  setLastSumFlow(target, trafficDirection, keyName) {
     let key = "";
     
-    if(mac) {
-      key = util.format("lastsumflow:%s:%s", mac, trafficDirection);
+    if(target) {
+      key = util.format("lastsumflow:%s:%s", target, trafficDirection);
     } else {
       key = util.format("lastsumflow:%s", trafficDirection);
     }
@@ -526,7 +538,11 @@ class FlowAggrTool {
   }
 
   getCleanedAppKey(begin, end, options) {
-    if(options.mac) {
+    if (options.intf) {
+      return `app:intf:${options.intf.intf}:${begin}:${end}`;
+    } else if (options.tag) {
+      return `app:tag:${options.tag.tag}:${begin}:${end}`;
+    } else if(options.mac) {
       return `app:host:${options.mac}:${begin}:${end}`
     } else {
       return `app:system:${begin}:${end}`
@@ -587,7 +603,11 @@ class FlowAggrTool {
   }
 
   getCleanedCategoryKey(begin, end, options) {
-    if(options.mac) {
+    if (options.intf) {
+      return `category:intf:${_.isString(options.intf) ? options.intf : options.intf.intf}:${begin}:${end}`
+    } else if (options.tag) {
+      return `category:tag:${_.isString(options.tag) ? options.tag : options.tag.tag}:${begin}:${end}`
+    } else if(options.mac) {
       return `category:host:${options.mac}:${begin}:${end}`
     } else {
       return `category:system:${begin}:${end}`
@@ -645,6 +665,28 @@ class FlowAggrTool {
   getLastCategoryActivity(mac) {
     let key = util.format("lastcategory:host:%s", mac);
     return rclient.getAsync(key);
+  }
+  
+  async removeAggrFlowsAllTag(tag) {
+    let keys = [];
+
+    let search = await Promise.all([
+      rclient.keysAsync('lastsumflow:tag:' + tag + ':*'),
+      rclient.keysAsync('category:tag:' + tag + ':*'),
+      rclient.keysAsync('app:tag:' + tag + ':*'),
+    ]);
+
+    keys.push(
+      ... _.flatten(search),
+      // 'lastcategory:tag:' + tag,
+      // 'lastapp:tag:' + tag
+    );
+
+    return Promise.all([
+      rclient.delAsync(keys).catch((err) => {}),
+      // this.removeAllFlowKeys(tag),
+      this.removeAllSumFlows('tag:' + tag),
+    ]);
   }
 
   async removeAggrFlowsAll(mac) {

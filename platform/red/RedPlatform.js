@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,7 +18,10 @@
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
 const utils = require('../../lib/utils.js');
+const log = require('../../net2/logger.js')(__filename);
 const fs = require('fs');
+const util = require('util');
+const readFileAsync = util.promisify(fs.readFile)
 
 class RedPlatform extends Platform {
 
@@ -66,13 +69,30 @@ class RedPlatform extends Platform {
   }
 
   // via /etc/update-motd.d/30-sysinfo
-  getCpuTemperature() {
-    const source = '/sys/devices/virtual/thermal/thermal_zone0/temp';
-    return Number(fs.readFileSync(source)) / 1000;
+  async getCpuTemperature() {
+    try {
+      const source = '/sys/devices/virtual/thermal/thermal_zone0/temp';
+      return Number(await readFileAsync(source)) / 1000;
+    } catch(err) {
+      log.error("Failed to get cpu temperature, use 0 as default, err:", err);
+      return 0;
+    }
   }
 
   getPolicyCapacity() {
     return 1000;
+  }
+
+  isFireRouterManaged() {
+    return false;
+  }
+  
+  getAllowCustomizedProfiles(){
+    return 0;
+  }
+
+  defaultPassword() {
+    return "firewalla"
   }
 }
 

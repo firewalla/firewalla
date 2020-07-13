@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,9 +14,12 @@
  */
 
 'use strict';
+const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
 const util = require('util');
+const fs = require('fs')
+
 const iptool = require('ip');
 var instance = null;
 const license = require('../util/license.js');
@@ -26,6 +29,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
+const { delay } = require('../util/util.js')
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -37,6 +41,13 @@ const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/dev
 const bone = require("../lib/Bone.js");
 
 const sss = require('../extension/sysinfo/SysInfo.js');
+
+const Config = require('./config.js');
+
+const fireRouter = require('./FireRouter.js')
+const Message = require('./Message.js');
+
+const { Address4, Address6 } = require('ip-address')
 
 var systemDebug = false;
 
@@ -56,17 +67,22 @@ let DNSServers = {
   "8.8.8.8": true
 };
 
-let f = require('../net2/Firewalla.js');
+const f = require('../net2/Firewalla.js');
 
-let i18n = require('../util/i18n.js');
-
-const MAX_CONNS_PER_FLOW = 25000;
+const i18n = require('../util/i18n.js');
 
 const dns = require('dns');
+// dnscache will override functions in dns
+const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
+  enable: true,
+  ttl: 300,
+  cachesize: 1000
+});
 
-module.exports = class {
+class SysManager {
   constructor() { // loglevel is already ignored
     if (instance == null) {
+      log.info('Initializing SysManager')
       rclient.hdel("sys:network:info", "oper");
       this.multicastlow = iptool.toLong("224.0.0.0");
       this.multicasthigh = iptool.toLong("239.255.255.255");
@@ -76,18 +92,18 @@ module.exports = class {
       instance = this;
 
       this.ts = Date.now() / 1000;
-      log.info("Init",this.ts);
-      sclient.on("message", (channel, message)=> {
-        log.info("Msg",this.ts,channel,message);
-        switch(channel) {
+      log.info("Init", this.ts);
+      sclient.on("message", (channel, message) => {
+        log.debug("Msg", this.ts, channel, message);
+        switch (channel) {
           case "System:Upgrade:Hard":
             this.upgradeEvent = message;
-            log.info("[pubsub] System:Upgrade:Hard",this.ts,this.upgradeEvent);
+            log.info("[pubsub] System:Upgrade:Hard", this.ts, this.upgradeEvent);
             break;
           case "System:DebugChange":
-            if(message === "1") {
+            if (message === "1") {
               systemDebug = true;
-            } else if(message === "0") {
+            } else if (message === "0") {
               systemDebug = false;
             } else {
               log.error("invalid message for channel: " + channel);
@@ -101,17 +117,27 @@ module.exports = class {
             i18n.setLocale(this.language);
             break;
           case "System:TimezoneChange":
-            this.timezone = message;
+            this.reloadTimezone().then(() => {
+              if (f.isMain()) {
+                pclient.publish(Message.MSG_SYS_TIMEZONE_RELOADED, message);
+              }
+            }).catch((err) => {
+              log.error("Failed to reload timezone", err.message);
+            });
             break;
-          case "System:SSHPasswordChange":
-            let SSH = require('../extension/ssh/ssh.js');
-            let ssh = new SSH('info');
+          case "System:SSHPasswordChange": {
+            const SSH = require('../extension/ssh/ssh.js');
+            const ssh = new SSH('info');
             ssh.getPassword((err, password) => {
               this.sshPassword = password;
             });
             break;
-          case "System:IPChange":
-            this.update(null);
+          }
+          case Message.MSG_SYS_NETWORK_INFO_UPDATED:
+            log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
+            this.update(() => {
+              sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
+            });
             break;
         }
       });
@@ -120,29 +146,36 @@ module.exports = class {
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
       sclient.subscribe("System:SSHPasswordChange");
-      sclient.subscribe("System:IPChange");
+      sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
+
+      sem.on(Message.MSG_FW_FR_RELOADED, () => {
+        this.update(() => {
+          sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
+        });
+      });
 
       this.delayedActions();
+      this.reloadTimezone();
 
       this.license = license.getLicense();
 
       sem.on("PublicIP:Updated", (event) => {
-        if(event.ip)
+        if (event.ip)
           this.publicIp = event.ip;
       });
       sem.on("DDNS:Updated", (event) => {
         log.info("Updating DDNS:", event);
-        if(event.ddns) {
+        if (event.ddns) {
           this.ddns = event.ddns;
         }
 
-        if(event.publicIp) {
+        if (event.publicIp) {
           this.publicIp = event.publicIp;
         }
       })
 
       // only in hard upgrade mode
-      rclient.get("sys:upgrade", (err, data)=>{
+      rclient.get("sys:upgrade", (err, data) => {
         if (data) {
           this.upgradeEvent = data;
         }
@@ -151,32 +184,38 @@ module.exports = class {
       // record firewalla's own server address
       //
       this.resolveServerDNS(true);
-      setInterval(()=>{
+      setInterval(() => {
         this.resolveServerDNS(false);
-      },1000*60*60*8);
+      }, 1000 * 60 * 60 * 8);
 
       // update system information more often
-      setInterval(()=>{
+      setInterval(() => {
         this.update(null);
-      },1000*60*20);
+      }, 1000 * 60 * 20);
     }
-    this.update(null);
+    fireRouter.waitTillReady().then(() => {
+      this.update((err) => {
+        if (err)
+          log.error(`Failed to update SysManager after firerouter is ready`, err.message);
+        else
+          log.info("SysManager initialization complete");
+      });
+    });
 
-    this.updateAsync = util.promisify(this.update)
-    return instance;
+    return instance
   }
 
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-      log.info("resolveServerDNS:",retry,err,addresses,null);
+      log.info("resolveServerDNS:", retry, err, addresses, null);
       if (err && retry) {
-        setTimeout(()=>{
+        setTimeout(() => {
           this.resolveServerDNS(false);
-        },1000*60*10);
+        }, 1000 * 60 * 10);
       } else {
         if (addresses) {
           this.serverIps = addresses;
-          log.info("resolveServerDNS:Set",retry,err,this.serverIps,null);
+          log.info("resolveServerDNS:Set", retry, err, this.serverIps, null);
         }
       }
     });
@@ -186,20 +225,27 @@ module.exports = class {
     this.ept = bone.getSysept();
   }
 
-  // config loaded && interface discovered
+  // config loaded, sys:network:info loaded and interface discovered
   isConfigInitialized() {
-    return this.config != null && this.monitoringInterface();
+    return this.config != null && this.sysinfo && fireRouter.isReady();
+  }
+
+  async waitTillInitialized() {
+    if (this.config != null && this.sysinfo && fireRouter.isReady())
+      return;
+    await delay(1);
+    return this.waitTillInitialized();
   }
 
   delayedActions() {
-    setTimeout(()=>{
+    setTimeout(() => {
       let SSH = require('../extension/ssh/ssh.js');
       let ssh = new SSH('info');
 
       ssh.getPassword((err, password) => {
         this.setSSHPassword(password);
       });
-    },2000);
+    }, 2000);
   }
 
   version() {
@@ -255,14 +301,14 @@ module.exports = class {
 
   systemRebootedDueToIssue(reset) {
     try {
-      if (require('fs').existsSync("/home/pi/.firewalla/managed_reboot")) {
+      if (fs.existsSync("/home/pi/.firewalla/managed_reboot")) {
         log.info("SysManager:RebootDueToIssue");
         if (reset == true) {
-          require('fs').unlinkSync("/home/pi/.firewalla/managed_reboot");
+          fs.unlinkSync("/home/pi/.firewalla/managed_reboot");
         }
         return true;
       }
-    } catch(e) {
+    } catch (e) {
       return false;
     }
     return false;
@@ -270,10 +316,10 @@ module.exports = class {
 
   systemRebootedByUser(reset) {
     try {
-      if (require('fs').existsSync("/home/pi/.firewalla/managed_real_reboot")) {
+      if (fs.existsSync("/home/pi/.firewalla/managed_real_reboot")) {
         log.info("SysManager:RebootByUser");
         if (reset == true) {
-          require('fs').unlinkSync("/home/pi/.firewalla/managed_real_reboot");
+          fs.unlinkSync("/home/pi/.firewalla/managed_real_reboot");
         }
         return true;
       }
@@ -289,17 +335,17 @@ module.exports = class {
   }
 
   setLanguage(language, callback) {
-    callback = callback || function() {}
+    callback = callback || function () { }
 
     this.language = language;
     const theLanguage = i18n.setLocale(this.language);
-    if(theLanguage !== this.language) {
+    if (theLanguage !== this.language) {
       callback(new Error("invalid language"))
       return
     }
 
     rclient.hset("sys:config", "language", language, (err) => {
-      if(err) {
+      if (err) {
         log.error("Failed to set language " + language + ", err: " + err);
       }
       pclient.publish("System:LanguageChange", language);
@@ -310,7 +356,7 @@ module.exports = class {
   setLanguageAsync(language) {
     return new Promise((resolve, reject) => {
       this.setLanguage(language, (err) => {
-        if(err) {
+        if (err) {
           reject(err)
         } else {
           resolve()
@@ -319,102 +365,109 @@ module.exports = class {
     })
   }
 
-  async getTimezone() {
-    const tz = await rclient.hgetAsync("sys:config", "timezone");
-    return tz;
+  async reloadTimezone() {
+    this.timezone = await rclient.hgetAsync("sys:config", "timezone");
   }
 
-  setTimezone(timezone, callback) {
-    callback = callback || function() {}
+  getTimezone() {
+    return this.timezone || "UTC";
+  }
 
+  async setTimezone(timezone) {
+    if (this.timezone == timezone) {
+      return null;
+    }
     this.timezone = timezone;
-    rclient.hset("sys:config", "timezone", timezone, (err) => {
-      if(err) {
-        log.error("Failed to set timezone " + timezone + ", err: " + err);
-      }
+    try {
+      await rclient.hsetAsync("sys:config", "timezone", timezone);
       pclient.publish("System:TimezoneChange", timezone);
 
-      // TODO: each running process may not be set to the target timezone until restart
-      (async() =>{
-        try {
-          let cmd = `sudo timedatectl set-timezone ${timezone}`
-          await exec(cmd)
+      await exec(`sudo timedatectl set-timezone ${timezone}`);
+      await exec('sudo systemctl restart cron.service');
+      await exec('sudo systemctl restart rsyslog');
 
-          // TODO: we can improve in the future that only restart if new timezone is different from old one
-          // but the impact is low since calling this settimezone function is very rare
-          let cronRestartCmd = "sudo systemctl restart cron.service"
-          await exec(cronRestartCmd)
-
-          callback(null)
-        } catch(err) {
-          log.error("Failed to set timezone:", err);
-          callback(err)
-        }
-      })()
-    });
+      return null;
+    } catch (err) {
+      log.error("Failed to set timezone:", err);
+      return err;
+    }
   }
 
   update(callback) {
+    if (!callback) callback = () => { }
+
+    return util.callbackify(this.updateAsync).bind(this)(callback)
+  }
+
+  async updateAsync() {
     log.debug("Loading sysmanager data from redis");
-    rclient.hgetall("sys:config", (err, results) => {
-      if(results && results.language) {
+    try {
+      const results = await rclient.hgetallAsync("sys:config")
+      if (results && results.language) {
         this.language = results.language;
         i18n.setLocale(this.language);
       }
 
-      if(results && results.timezone) {
+      if (results && results.timezone) {
         this.timezone = results.timezone;
       }
-    });
+    } catch (err) {
+      log.error('Error getting sys:config', err)
+    }
 
-    rclient.get("system:debug", (err, result) => {
-      if(result) {
-        if(result === "1") {
-          systemDebug = true;
-        } else {
-          systemDebug = false;
-        }
+    try {
+      const result = await rclient.getAsync("system:debug")
+      if (result && result === "1") {
+        systemDebug = true;
       } else {
         // by default off
         systemDebug = false;
       }
-    });
+    } catch (err) {
+      log.error('Error getting system:debug', err)
+    }
 
-    rclient.hgetall("sys:network:info", (err, results) => {
-      if (err == null) {
-        this.sysinfo = results;
+    try {
+      const results = await rclient.hgetallAsync("sys:network:info")
+      this.sysinfo = results;
 
-        if(this.sysinfo === null) {
-          return;
-        }
-
-        for (let r in this.sysinfo) {
-          this.sysinfo[r] = JSON.parse(this.sysinfo[r]);
-        }
-        if (this.sysinfo['config'] != null) {
-          // this.config = JSON.parse(this.sysinfo['config']);
-          this.config = this.sysinfo['config'];
-        }
-        if (this.sysinfo['oper'] == null) {
-          this.sysinfo.oper = {};
-        }
-        this.ddns = this.sysinfo["ddns"];
-        this.publicIp = this.sysinfo["publicIp"];
-        // log.info("System Manager Initialized with Config", this.sysinfo);
+      if (this.sysinfo === null) {
+        throw new Error('Empty key');
       }
-      if (callback != null) {
-        callback(err);
-      }
-    });
-  }
 
-  setConfig(config) {
-    return rclient.hsetAsync("sys:network:info", "config", JSON.stringify(config))
-      .then(() => {
-        this.config = config;
-      }).catch((err) => {
-        log.error("Failed to set sys:network:info in redis", err);
-      });
+      this.macMap = {}
+      for (let r in this.sysinfo) {
+        const item = JSON.parse(this.sysinfo[r])
+        this.sysinfo[r] = item
+        if (item.mac_address) {
+          this.macMap[item.mac_address] = item
+        }
+
+        if (item.subnet) {
+          this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
+        }
+      }
+
+      this.config = Config.getConfig(true)
+      if (this.sysinfo['oper'] == null) {
+        this.sysinfo.oper = {};
+      }
+      this.ddns = this.sysinfo["ddns"];
+      this.publicIp = this.sysinfo["publicIp"];
+      // log.info("System Manager Initialized with Config", this.sysinfo);
+    } catch (err) {
+      log.error('Error getting sys:network:info', err)
+    }
+
+    try {
+      this.uuidMap = await rclient.hgetallAsync('sys:network:uuid')
+
+      for (const uuid in this.uuidMap) {
+        this.uuidMap[uuid] = JSON.parse(this.uuidMap[uuid]);
+      }
+    } catch (err) {
+      log.error('Error getting sys:network:uuid', err)
+    }
   }
 
   async syncVersionUpdate() {
@@ -422,7 +475,7 @@ module.exports = class {
     if (!version || version === "unknown") return;
     const isKnownVersion = await rclient.sismemberAsync("sys:versionHistory", version);
     if (!isKnownVersion) {
-      const versionDesc = {version: version, time: Math.floor(Date.now() / 1000)};
+      const versionDesc = { version: version, time: Math.floor(Date.now() / 1000) };
       await rclient.setAsync("sys:versionUpdate", JSON.stringify(versionDesc));
       await rclient.saddAsync("sys:versionHistory", version);
     }
@@ -451,40 +504,108 @@ module.exports = class {
     });
   }
 
-  monitoringInterface() {
-    if (this.config) {
-      //log.info(require('util').inspect(this.sysinfo, {depth: null}));
-      return this.sysinfo && this.sysinfo[this.config.monitoringInterface];
+  getLogicInterfaces() {
+    return fireRouter.getLogicIntfNames().map(name => this.sysinfo[name]);
+  }
+
+  getMonitoringInterfaces() {
+    return fireRouter.getMonitoringIntfNames().map(name => this.sysinfo[name])
+  }
+
+  getInterface(intf) {
+    return this.sysinfo && this.sysinfo[intf]
+  }
+
+  getInterfaceViaUUID(uuid) {
+    const intf = this.uuidMap && this.uuidMap[uuid]
+
+    return _.isEmpty(intf) ? null :
+      Object.assign({}, intf, {
+        active: this.getMonitoringInterfaces().some(i => i.uuid == uuid)
+      })
+  }
+
+  getInterfaceViaIP4(ip) {
+    if(!ip) return null;
+    const ipAddress = new Address4(ip)
+    return this.getMonitoringInterfaces().find(i => i.subnetAddress4 && ipAddress.isInSubnet(i.subnetAddress4))
+  }
+
+  getInterfaceViaIP6(ip6) {
+    if (_.isArray(ip6)) {
+      for (let index = 0; index < ip6.length; index++) {
+        const element = ip6[index];
+        const intf = this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(element, i.name));
+        if (intf) {
+          return intf;
+        }
+      }
     } else {
-      return undefined;
+      return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(ip6, i.name));
     }
   }
 
-  monitoringInterface2() {
-    if (this.config) {
-      return this.sysinfo && this.sysinfo[this.config.monitoringInterface2];
-    } else {
-      return undefined;
-    }
+  mySignatureMac() {
+    return platform.getSignatureMac();
   }
 
+  // this method is not safe as we'll have interfaces with same mac
+  // getInterfaceViaMac(mac) {
+  //   return this.macMap && this.macMap[mac.toLowerCase()]
+  // }
+
+
+  // DEPRECATING
   monitoringWifiInterface() {
     if (this.config) {
       return this.sysinfo && this.sysinfo[this.config.monitoringWifiInterface];
     }
   }
 
-  myIp() {
-    if(this.monitoringInterface()) {
-      return this.monitoringInterface().ip_address;
-    } else {
-      return undefined;
-    }
+  getDefaultWanInterface() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    return wanIntf && this.getInterface(wanIntf);
+  }
+
+  myWanIps() {
+    const wanIntfs = fireRouter.getWanIntfNames() || [];
+    return wanIntfs.map(i => this.getInterface(i)).filter(iface => iface && iface.ip_address).map(i => i.ip_address);
+  }
+
+  myDefaultWanIp() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myIp(wanIntf);
+    return null;
+  }
+
+  myDefaultGateway() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myGateway(wanIntf);
+    return null;
+  }
+
+  myDefaultDns() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myDNS(wanIntf);
+    return [];
+  }
+
+  myIp(intf = this.config.monitoringInterface) {
+    return this.getInterface(intf) && this.getInterface(intf).ip_address;
+  }
+
+  isMyIP(ip) {
+    if (!ip) return false
+    let interfaces = this.getMonitoringInterfaces();
+    return interfaces.map(i => i.ip_address === ip).some(Boolean);
   }
 
   isIPv6GloballyConnected() {
     let ipv6Addrs = this.myIp6();
-    if (ipv6Addrs && ipv6Addrs.length>0) {
+    if (ipv6Addrs && ipv6Addrs.length > 0) {
       for (const ip6 in ipv6Addrs) {
         if (!ip6.startsWith("fe80")) {
           return true;
@@ -494,14 +615,12 @@ module.exports = class {
     return false;
   }
 
-  myIp2() {
-    if(this.monitoringInterface2()) {
-      return this.monitoringInterface2().ip_address;
-    } else {
-      return undefined;
-    }
+  myIp2(intf = this.config.monitoringInterface) {
+    const if2 = intf + ':0'
+    return this.getInterface(if2) && this.getInterface(if2).ip_address;
   }
 
+  // DEPRECATING
   myWifiIp() {
     if (this.monitoringWifiInterface()) {
       return this.monitoringWifiInterface().ip_address;
@@ -511,17 +630,18 @@ module.exports = class {
   }
 
   // This returns an array
-  myIp6() {
-    if(this.monitoringInterface()) {
-      return this.monitoringInterface().ip6_addresses;
-    } else {
-      return undefined;
-    }
+  myIp6(intf = this.config.monitoringInterface) {
+    return this.getInterface(intf) && this.getInterface(intf).ip6_addresses;
   }
 
-  myIpMask() {
-    if(this.monitoringInterface()) {
-      let mask =  this.monitoringInterface().netmask;
+  isMyIP6(ip6) {
+    let interfaces = this.getMonitoringInterfaces();
+    return interfaces.map(i => i.ip6_addresses && i.ip6_addresses.includes(ip6)).some(Boolean);
+  }
+
+  myIpMask(intf = this.config.monitoringInterface) {
+    if (this.getInterface(intf)) {
+      let mask = this.getInterface(intf).netmask;
       if (mask.startsWith("Mask:")) {
         mask = mask.substr(5);
       }
@@ -531,9 +651,11 @@ module.exports = class {
     }
   }
 
-  myIpMask2() {
-    if(this.monitoringInterface2()) {
-      let mask =  this.monitoringInterface2().netmask;
+  myIpMask2(intf = this.config.monitoringInterface) {
+    const if2 = intf + ':0'
+
+    if (this.getInterface(if2)) {
+      let mask = this.getInterface(if2).netmask;
       if (mask.startsWith("Mask:")) {
         mask = mask.substr(5);
       }
@@ -543,26 +665,31 @@ module.exports = class {
     }
   }
 
-  myWifiIpMask() {
-    if(this.monitoringWifiInterface()) {
-      let mask =  this.monitoringWifiInterface().netmask;
-      if (mask.startsWith("Mask:")) {
-        mask = mask.substr(5);
-      }
-      return mask;
-    } else {
-      return undefined;
-    }
+  isMyMac(mac) {
+    if (!mac) return false
+
+    let interfaces = this.getMonitoringInterfaces();
+    return interfaces.map(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()).some(Boolean);
   }
 
-  myMAC() {
-    if (this.monitoringInterface() && this.monitoringInterface().mac_address) {
-      return this.monitoringInterface().mac_address.toUpperCase();
-    } else {
-      return undefined;
-    }
+  myMAC(intf = this.config.monitoringInterface) {
+    return this.getInterface(intf)
+      && this.getInterface(intf).mac_address
+      && this.getInterface(intf).mac_address.toUpperCase();
   }
 
+  myMACViaIP4(ip) {
+    const intf = this.getMonitoringInterfaces().find(i => i.ip_address === ip);
+    return intf && intf.mac_address && intf.mac_address.toUpperCase();
+  }
+
+  myMACViaIP6(ip) {
+    const intf = this.getMonitoringInterfaces().find(i => Array.isArray(i.ip6_addresses) && i.ip6_addresses.includes(ip));
+    return intf && intf.mac_address && intf.mac_address.toUpperCase();
+  }
+
+
+  // DEPRECATING
   myWifiMAC() {
     if (this.monitoringWifiInterface() && this.monitoringWifiInterface().mac_address) {
       return this.monitoringWifiInterface().mac_address.toUpperCase();
@@ -575,41 +702,56 @@ module.exports = class {
     return this.ddns;
   }
 
-  myDNS() { // return array
-    let _dns = (this.monitoringInterface() && this.monitoringInterface().dns) || [];
+  myResolver(intf) {
+    if (!intf)
+      return [];
+    const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
+    const resolver4 = resolver.filter(r => new Address4(r).isValid())
+    return resolver4;
+  }
+
+  myResolver6(intf) {
+    if (!intf)
+      return [];
+    const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
+    const resolver6 = resolver.filter(r => new Address6(r).isValid())
+    return resolver6;
+  }
+
+  myDNS(intf = this.config.monitoringInterface) { // return array
+    let _dns = (this.getInterface(intf) && this.getInterface(intf).dns) || [];
     let v4dns = [];
     for (let i in _dns) {
-      if (iptool.isV4Format(_dns[i])) {
+      if (new Address4(_dns[i]).isValid()) {
         v4dns.push(_dns[i]);
       }
     }
     return v4dns;
   }
 
-  myDNSAny() {
-    return this.monitoringInterface() && this.monitoringInterface().dns;
+  myGateway(intf = this.config.monitoringInterface) {
+    return this.getInterface(intf) && this.getInterface(intf).gateway;
   }
 
-  myGateway() {
-    return this.monitoringInterface() && this.monitoringInterface().gateway;
+  async myGatewayMac(intf = this.config.monitoringInterface) {
+    const ip = this.myGateway(intf);
+    return rclient.hget(`host:ip4:${ip}`, 'mac')
   }
 
-  myGateway6() {
-    return this.monitoringInterface() && this.monitoringInterface().gateway6;
+  myGateway6(intf = this.config.monitoringInterface) {
+    return this.getInterface(intf) && this.getInterface(intf).gateway6;
   }
 
-  mySubnet() {
-    return this.monitoringInterface() && this.monitoringInterface().subnet;
+  mySubnet(intf = this.config.monitoringInterface) {
+    return this.getInterface(intf) && this.getInterface(intf).subnet;
   }
 
-  mySubnet2() {
-    if(this.monitoringInterface2()) {
-      return this.monitoringInterface2().subnet;
-    } else {
-      return undefined;
-    }
+  mySubnet2(intf = this.config.monitoringInterface) {
+    const if2 = intf + ':0'
+    return this.getInterface(if2) && this.getInterface(if2).subnet;
   }
 
+  // DEPRECATING
   myWifiSubnet() {
     if (this.monitoringWifiInterface()) {
       return this.monitoringWifiInterface().subnet;
@@ -618,8 +760,8 @@ module.exports = class {
     }
   }
 
-  mySubnetNoSlash() {
-    let subnet = this.mySubnet();
+  mySubnetNoSlash(intf) {
+    let subnet = this.mySubnet(intf);
     return subnet.substring(0, subnet.indexOf('/'));
   }
 
@@ -631,31 +773,36 @@ module.exports = class {
     return host === "firewalla.encipher.io";
   }
 
-  inMySubnets4(ip4) {
-    if (!iptool.isV4Format(ip4)) return false;
-    else return (
-      this.mySubnet() && iptool.cidrSubnet(this.mySubnet()).contains(ip4) ||
-      this.mySubnet2() && iptool.cidrSubnet(this.mySubnet2()).contains(ip4) ||
-      this.myWifiSubnet() && iptool.cidrSubnet(this.myWifiSubnet()).contains(ip4) ||
-      false
-    )
+  inMySubnets4(ip4, intf) {
+    ip4 = new Address4(ip4)
+    if (!ip4.isValid()) return false;
+
+    let interfaces = this.getMonitoringInterfaces();
+    if (intf) {
+      interfaces = interfaces.filter(i => i.name === intf)
+    }
+
+    return interfaces
+      .map(i => i.subnetAddress4 && ip4.isInSubnet(i.subnetAddress4))
+      .some(Boolean)
   }
 
-  inMySubnet6(ip6) {
-    let ip6_masks = this.monitoringInterface().ip6_masks;
-    let ip6_addresses = this.monitoringInterface().ip6_addresses;
+  inMySubnet6(ip6, intf) {
+    ip6 = new Address6(ip6)
 
-    if (ip6_masks == null) {
+    if (!ip6.isValid())
       return false;
-    }
-
-    for (let m in ip6_masks) {
-      let mask = iptool.mask(ip6_addresses[m],ip6_masks[m]);
-      if (mask == iptool.mask(ip6,ip6_masks[m])) {
-        return true;
+    else {
+      let interfaces = this.getMonitoringInterfaces();
+      if (intf) {
+        interfaces = interfaces.filter(i => i.name === intf)
       }
+
+      return interfaces
+        .map(i => Array.isArray(i.ip6_subnets) &&
+          i.ip6_subnets.map(subnet => !subnet.startsWith("fe80:") && ip6.isInSubnet(new Address6(subnet))).some(Boolean) // link local address is not accurate to determine subnet
+        ).some(Boolean)
     }
-    return false;
   }
 
   // hack ...
@@ -668,16 +815,8 @@ module.exports = class {
 
   // serial may not come back with anything for some platforms
 
-  getSysInfoAsync() {
-    return new Promise((resolve, reject) => {
-      this.getSysInfo((err, data) => {
-        if(err) {
-          reject(err);
-        } else {
-          resolve(data);
-        }
-      });
-    });
+  getSysInfo(callback = () => {}) {
+    return util.callbackify(this.getSysInfo).bind(this)(callback)
   }
 
   /*
@@ -687,24 +826,23 @@ module.exports = class {
   */
 
 
-
-  getSysInfo(callback) {
+  async getSysInfoAsync() {
     // Fetch statics only once, they should only be updated when services are restarted
     if (!this.serial) {
       let serial = null;
       if (f.isDocker() || f.isTravis()) {
-        serial = require('child_process').execSync("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
+        serial = await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
       } else {
         for (let index = 0; index < serialFiles.length; index++) {
           const serialFile = serialFiles[index];
           try {
-            serial = require('fs').readFileSync(serialFile,'utf8');
+            serial = fs.readFileSync(serialFile, 'utf8');
             break;
-          } catch(err) {
+          } catch (err) {
           }
         }
 
-        if(serial === null) {
+        if (serial === null) {
           serial = "unknown";
         }
 
@@ -714,49 +852,57 @@ module.exports = class {
     }
 
     let cpuTemperature = 50; // stub cpu value for docker/travis
+    let cpuTemperatureList = [ cpuTemperature ]
     if (!f.isDocker() && !f.isTravis()) {
-      cpuTemperature = platform.getCpuTemperature();
+      if (platform.hasMultipleCPUs()) {
+        const list = await platform.getCpuTemperature();
+        cpuTemperature = list[0]
+        cpuTemperatureList = list
+      } else {
+        cpuTemperature = await platform.getCpuTemperature();
+        cpuTemperatureList = [ cpuTemperature ]
+      }
     }
 
     try {
-      this.repo.branch = this.repo.branch || require('fs').readFileSync("/tmp/REPO_BRANCH","utf8").trim();
-      this.repo.head = this.repo.head || require('fs').readFileSync("/tmp/REPO_HEAD","utf8").trim();
-      this.repo.tag = this.repo.tag || require('fs').readFileSync("/tmp/REPO_TAG","utf8").trim();
+      this.repo.branch = this.repo.branch || fs.readFileSync("/tmp/REPO_BRANCH", "utf8").trim();
+      this.repo.head = this.repo.head || fs.readFileSync("/tmp/REPO_HEAD", "utf8").trim();
+      this.repo.tag = this.repo.tag || fs.readFileSync("/tmp/REPO_TAG", "utf8").trim();
     } catch (err) {
-      log.error("Failed to load repo info from /tmp");
+      log.error("Failed to load repo info from /tmp", err);
     }
     // ======== end of statics =========
 
 
-    let stat = require("../util/Stats.js");
-    stat.sysmemory(null,(err,data)=>{
-      callback(null,{
-        ip: this.myIp(),
-        mac: this.myMAC(),
-        serial: this.serial,
-        repoBranch: this.repo.branch,
-        repoHead: this.repo.head,
-        repoTag: this.repo.tag,
-        language: this.language,
-        timezone: this.timezone,
-        memory: data,
-        cpuTemperature: cpuTemperature,
-        sss: sss.getSysInfo()
-      });
-    });
+    const stat = require("../util/Stats.js");
+    const memory = await util.promisify(stat.sysmemory)()
+    return {
+      ip: this.myIp(),
+      mac: this.mySignatureMac(),
+      serial: this.serial,
+      repoBranch: this.repo.branch,
+      repoHead: this.repo.head,
+      repoTag: this.repo.tag,
+      language: this.language,
+      timezone: this.timezone,
+      memory,
+      cpuTemperature,
+      cpuTemperatureList,
+      sss: sss.getSysInfo()
+    }
   }
 
   // if the ip is part of our cloud, no need to log it, since it might cost space and memory
   isMyServer(ip) {
     if (this.serverIps) {
-      return (this.serverIps.indexOf(ip)>-1);
+      return (this.serverIps.indexOf(ip) > -1);
     }
     return false;
   }
 
   isMulticastIP4(ip) {
     try {
-      if (!iptool.isV4Format(ip)) {
+      if (!new Address4(ip).isValid()) {
         return false;
       }
       if (ip == "255.255.255.255") {
@@ -775,7 +921,7 @@ module.exports = class {
 
   isMulticastIP(ip) {
     try {
-      if (iptool.isV4Format(ip)) {
+      if (new Address4(ip).isValid()) {
         return this.isMulticastIP4(ip);
       } else {
         return this.isMulticastIP6(ip);
@@ -793,20 +939,21 @@ module.exports = class {
     return false;
   }
 
-  isLocalIP(ip) {
+  // if intf is not specified, check with all interfaces
+  isLocalIP(ip, intf) {
     if (!ip) {
       log.warn("SysManager:WARN:isLocalIP empty ip");
       // TODO: we should throw error here
       return false;
     }
 
-    if (iptool.isV4Format(ip)) {
-      if (this.isMulticastIP4(ip)) {
+    if (new Address4(ip).isValid()) {
+      if (this.isMulticastIP4(ip) || ip == '127.0.0.1') {
         return true;
       }
-      return this.inMySubnets4(ip);
+      return this.inMySubnets4(ip, intf)
 
-    } else if (iptool.isV6Format(ip)) {
+    } else if (new Address6(ip).isValid()) {
       if (ip.startsWith('::')) {
         return true;
       }
@@ -819,7 +966,7 @@ module.exports = class {
       if (this.locals[ip]) {
         return true;
       }
-      return this.inMySubnet6(ip);
+      return this.inMySubnet6(ip, intf);
     } else {
       log.error("SysManager:ERROR:isLocalIP", ip);
       // TODO: we should throw error here
@@ -841,4 +988,6 @@ module.exports = class {
     }
     return false;
   }
-};
+}
+
+module.exports = new SysManager();

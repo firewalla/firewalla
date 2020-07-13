@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,22 +16,24 @@
 process.title = 'FireMon';
 require('events').EventEmitter.prototype._maxListeners = 100;
 
-let log = require("../net2/logger.js")(__filename, "info");
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-var bone = require("../lib/Bone.js");
-var config = JSON.parse(require('fs').readFileSync('../net2/config.json', 'utf8'));
-
-const fs = require('fs');
+const log = require("../net2/logger.js")(__filename, "info");
+const config = require('../net2/config.js').getConfig();
 
 log.info("================================================================================");
 log.info("Monitor Starting:",config.version);
 log.info("================================================================================");
 
+// init FireRouter ASAP
+const fireRouter = require('../net2/FireRouter.js')
+
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
+const bone = require("../lib/Bone.js");
+
+const fs = require('fs');
+
 // api/main/monitor all depends on sysManager configuration
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager('info');
+const sysManager = require('../net2/SysManager.js');
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");
@@ -42,10 +44,12 @@ require('../net2/config.js').syncDynamicFeaturesConfigs()
 
 run0();
 
-function run0() {
+async function run0() {
+  await sysManager.waitTillInitialized();
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
-   // this is to ensure sysManager is already initliazed when called in API code
+      fireRouter.isReady() &&
+      // this is to ensure sysManager is already initliazed when called in API code
       sysManager.isConfigInitialized()) {
     run();
   } else {
@@ -128,32 +132,27 @@ function updateTouchFile() {
 }
 
 function run() {
-  const firewallaConfig = require('../net2/config.js').getConfig();
-  sysManager.setConfig(firewallaConfig) // update sys config when start
-  
-  sysManager = null; // not needed any more after run()
-  
   // listen on request to dump heap for this process, used for memory optmiziation
   // let HeapSensor = require('../sensor/HeapSensor');
   // heapSensor = new HeapSensor();
   // heapSensor.run();
-  
+
   const tick = 60 * 15; // waking up every 15 min
   const monitorWindow = 60 * 60 * 4; // eight hours window
-  
+
   const FlowMonitor = require('./FlowMonitor.js');
   const flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
-  
+
   log.info("================================================================================");
   log.info("Monitor Running ");
   log.info("================================================================================");
-  
+
   flowMonitor.run();
-  
+
   setInterval(() => {
     const type = 'dlp';
     const _status = status[type];
-    
+
     updateTouchFile();
 
     setTimeout(() => {
@@ -197,7 +196,7 @@ function run() {
       log.warn('Already a detect session running by signal trigger, skip this time', status);
       return;
     }
-    
+
     setStatus(_status, {running: true, runBy: 'scheduler'});
     flowMonitor.run(type, 60).then(() => {
       log.info('Clean up after', type, 'run');
@@ -210,7 +209,7 @@ function run() {
     log.info('Received SIGUSR1. Trigger DLP check.');
     const type = 'dlp';
     const _status = status[type];
-    
+
     if (_status.running) {
       log.warn("DLP check is already running, skip firing", status);
       return;
@@ -227,7 +226,7 @@ function run() {
     log.info('Received SIGUSR2. Trigger Detect check.');
     const type = 'detect';
     const _status = status[type];
-    
+
     if (_status.running) {
       log.warn("Detect check is already running, skip firing", status);
       return;

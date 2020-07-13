@@ -30,8 +30,8 @@ var instance = null;
 const QUERY_MAX_FLOW = 10000;
 
 var flowconfig = {
-    activityDetectMin : 10,
-    activityDetectMax : 60*60*5,
+  activityDetectMin: 10,
+  activityDetectMax: 60 * 60 * 5,
 };
 
 let flowTool = require('./FlowTool')();
@@ -42,7 +42,7 @@ const intelTool = new IntelTool()
 const _ = require('lodash');
 
 class FlowGraph {
-  constructor(name,flowarray) {
+  constructor(name, flowarray) {
     if (flowarray) {
       this.flowarray = flowarray;
     } else {
@@ -72,25 +72,25 @@ class FlowGraph {
     if (flow.flows == null) {
       let flowStart = Math.ceil(Number(flow.__ts) - Number(flow.du));
       let flowEnd = Math.ceil(Number(flow.__ts));
-      if (flow.__ts==null) {
+      if (flow.__ts == null) {
         flowStart = Math.ceil(Number(flow._ts) - Number(flow.du));
         flowEnd = Math.ceil(Number(flow._ts));
       }
       let ob = Number(flow.ob);
       let rb = Number(flow.rb);
 
-      this.addRawFlow(flowStart,flowEnd,ob,rb,flow.ct);
+      this.addRawFlow(flowStart, flowEnd, ob, rb, flow.ct);
     } else {
       //log.info("$$$ before ",flow.flows);
       for (let i in flow.flows) {
         let f = flow.flows[i];
-        this.addRawFlow(f[0],f[1],f[2],f[3],1);
+        this.addRawFlow(f[0], f[1], f[2], f[3], 1);
       }
       //log.info("$$$ after",this.flowarray);
     }
   }
 
-  addRawFlow(flowStart, flowEnd, ob,rb,ct) {
+  addRawFlow(flowStart, flowEnd, ob, rb, ct) {
     let insertindex = 0;
 
     for (let i in this.flowarray) {
@@ -98,11 +98,11 @@ class FlowGraph {
       if (flowStart < e[0]) {
         break;
       }
-      if (flowStart<e[1]) {
+      if (flowStart < e[1]) {
         flowStart = e[0];
         break;
       }
-      insertindex = Number(i)+Number(1);
+      insertindex = Number(i) + Number(1);
     }
 
     let removed = Number(0);
@@ -127,7 +127,7 @@ class FlowGraph {
       }
     }
 
-    this.flowarray.splice(insertindex,removed, [flowStart,flowEnd, ob,rb,ct]);
+    this.flowarray.splice(insertindex, removed, [flowStart, flowEnd, ob, rb, ct]);
     //     log.info("insertindex",insertindex,"removed",removed,this.flowarray,"<=end");
   }
 
@@ -146,12 +146,12 @@ module.exports = class FlowManager {
   // use redis hash to store last 24 hours stats
   recordLast24HoursStats(timestamp, downloadBytes, uploadBytes, target) {
 
-    if(!downloadBytes || !uploadBytes)
+    if (!downloadBytes || !uploadBytes)
       return Promise.reject(new Error("either downloadBytes or uploadBytes is null"));
 
     let key = 'stats:last24';
 
-    if(target)
+    if (target)
       key = key + ":" + target;
 
     let downloadKey = key + ":download";
@@ -166,8 +166,8 @@ module.exports = class FlowManager {
     }
 
     let hourOfDay = (timestamp / 3600) % 24;
-    let downloadValue = JSON.stringify({bytes: downloadBytes, ts: timestamp});
-    let uploadValue = JSON.stringify({bytes: uploadBytes, ts: timestamp});
+    let downloadValue = JSON.stringify({ bytes: downloadBytes, ts: timestamp });
+    let uploadValue = JSON.stringify({ bytes: uploadBytes, ts: timestamp });
 
     return rclient.hsetAsync(downloadKey, hourOfDay, downloadValue)
       .then(rclient.expireAsync(downloadKey, 3600 * 24))
@@ -197,16 +197,16 @@ module.exports = class FlowManager {
   getOrderedStats(stats) {
     let orderedStats = {};
 
-    if(stats === null)
+    if (stats === null)
       return orderedStats;
 
     let keys = Object.keys(stats);
 
 
-    for(const key of keys) {
+    for (const key of keys) {
       let v = stats[key];
       let o = JSON.parse(v);
-      if(o.ts && o.bytes) {
+      if (o.ts && o.bytes) {
         orderedStats[parseInt(o.ts, 10)] = parseInt(o.bytes, 10);
       }
     }
@@ -216,8 +216,8 @@ module.exports = class FlowManager {
 
   filterOldData(stats) {
     let beginDate = new Date() / 1000 - 60 * 60 * 24;
-    for(let key in stats) {
-      if(parseInt(key, 10) < beginDate) {
+    for (let key in stats) {
+      if (parseInt(key, 10) < beginDate) {
         delete stats[key];
       }
     }
@@ -231,7 +231,7 @@ module.exports = class FlowManager {
   getLast24HoursDownloadsStats(target) {
     let key = 'stats:last24';
 
-    if(target)
+    if (target)
       key = key + ":" + target;
 
     let downloadKey = key + ":download";
@@ -247,7 +247,7 @@ module.exports = class FlowManager {
   getLast24HoursUploadsStats(target) {
     let key = 'stats:last24';
 
-    if(target)
+    if (target)
       key = key + ":" + target;
 
     let uploadKey = key + ":upload";
@@ -263,10 +263,10 @@ module.exports = class FlowManager {
   list24HoursTicks() {
     let list = [];
 
-    let tsnow = Math.ceil(Date.now()/1000);
-    tsnow = tsnow-tsnow%3600;
+    let tsnow = Math.ceil(Date.now() / 1000);
+    tsnow = tsnow - tsnow % 3600;
 
-    for(let i = 0; i<24; i++) {
+    for (let i = 0; i < 24; i++) {
       list.push(tsnow - i * 3600);
     }
 
@@ -277,37 +277,37 @@ module.exports = class FlowManager {
   // stats:hour:mac_address score=bytes key=_ts-_ts%3600
   // target = 0.0.0.0 is system
   recordStats(target, type, ts, inBytes, outBytes, callback) {
-    callback = callback || function() {}
+    callback = callback || function () { }
 
     let period = 3600;
     if (type === "day") {
-      period = 60*60*24;
+      period = 60 * 60 * 24;
     } else if (type === "month") {
-      period = 60*60*24*30;
+      period = 60 * 60 * 24 * 30;
     }
-    let inkey = "stats:"+type+":in:"+target;
-    let outkey = "stats:"+type+":out:"+target;
+    let inkey = "stats:" + type + ":in:" + target;
+    let outkey = "stats:" + type + ":out:" + target;
     // round down according to period
-    let subkey = ts-ts%period;
+    let subkey = ts - ts % period;
 
     if (inBytes == null || outBytes == null) {
       return;
     }
 
-    rclient.zincrby(inkey,Number(inBytes),subkey,(err,downloadBytes)=>{
-      if(err) {
+    rclient.zincrby(inkey, Number(inBytes), subkey, (err, downloadBytes) => {
+      if (err) {
         log.error("Failed to record stats on download bytes: " + err);
         callback(err);
         return;
       }
 
-      rclient.zincrby(outkey,Number(outBytes),subkey,(err,uploadBytes)=>{
-        if(err) {
+      rclient.zincrby(outkey, Number(outBytes), subkey, (err, uploadBytes) => {
+        if (err) {
           log.error("Failed to record stats on upload bytes: " + err);
           return;
         }
 
-        if(target === "0.0.0.0")
+        if (target === "0.0.0.0")
           target = null;
 
         this.recordLast24HoursStats(subkey, downloadBytes, uploadBytes, target)
@@ -324,17 +324,17 @@ module.exports = class FlowManager {
   parseGetStatsResult(result, db, from, to) {
     let bytes = 0;
 
-    if (result && result.length==2) {
+    if (result && result.length == 2) {
       let array = result[1];
-      log.debug("array:",array.length);
-      for (let i=0;i<array.length;i++) {
+      log.debug("array:", array.length);
+      for (let i = 0; i < array.length; i++) {
         let clock = Number(array[i]);
-        let bytes = Number(array[i+1]);
+        let bytes = Number(array[i + 1]);
         i++;
-        if (clock<Number(from)) {
+        if (clock < Number(from)) {
           continue;
         }
-        if (Number(to)!=-1 &&  clock>to) {
+        if (Number(to) != -1 && clock > to) {
           continue;
         }
 
@@ -343,7 +343,7 @@ module.exports = class FlowManager {
         } else {
           db[clock] = Number(bytes);
         }
-        bytes+=Number(bytes);
+        bytes += Number(bytes);
       }
     }
 
@@ -353,18 +353,18 @@ module.exports = class FlowManager {
   sumFlows(flows) {
     let result = {};
 
-    if(flows.length === 0) {
+    if (flows.length === 0) {
       return result;
     }
 
     let flow1 = flows[0];
 
-    if(!flow1)
+    if (!flow1)
       return result;
 
     Object.keys(flow1).map((k) => {
       let sum = flows.reduce((total, flow) => {
-        if(flow[k] && !isNaN(parseInt(flow[k]))) {
+        if (flow[k] && !isNaN(parseInt(flow[k]))) {
           return total + parseInt(flow[k]);
         } else {
           return total;
@@ -378,7 +378,7 @@ module.exports = class FlowManager {
 
   sumBytes(flow) {
     return Object.keys(flow).reduce((total, key) => {
-      if(flow[key] && !isNaN(parseInt(flow[key]))) {
+      if (flow[key] && !isNaN(parseInt(flow[key]))) {
         return total + parseInt(flow[key]);
       }
       return total;
@@ -387,9 +387,9 @@ module.exports = class FlowManager {
 
   flowToLegacyFormat(flow) {
     return Object.keys(flow)
-      .sort((a,b) => b-a)
+      .sort((a, b) => b - a)
       .map((key) => {
-        return {size: flow[key], ts: key + ""};
+        return { size: flow[key], ts: key + "" };
       });
   }
 
@@ -400,8 +400,8 @@ module.exports = class FlowManager {
     flowsummary.outbytes = 0;
     flowsummary.type = "hour";
 
-    let tsnow = Math.ceil(Date.now()/1000);
-    tsnow = tsnow-tsnow%3600;
+    let tsnow = Math.ceil(Date.now() / 1000);
+    tsnow = tsnow - tsnow % 3600;
     flowsummary.tophour = tsnow;
 
     let download = this.getLast24HoursDownloadsStats();
@@ -416,9 +416,32 @@ module.exports = class FlowManager {
     });
   }
 
+  // use for intf or tag
+  getTargetStats(target) {
+    let flowsummary = {};
+    flowsummary.inbytes = 0;
+    flowsummary.outbytes = 0;
+    flowsummary.type = "hour";
+
+    let tsnow = Math.ceil(Date.now() / 1000);
+    tsnow = tsnow - tsnow % 3600;
+    flowsummary.tophour = tsnow;
+
+    let download = this.getLast24HoursDownloadsStats(target);
+    let upload = this.getLast24HoursUploadsStats(target);
+
+    return Promise.join(download, upload, (d, u) => {
+      flowsummary.flowinbytes = this.flowToLegacyFormat(d);
+      flowsummary.inbytes = this.sumBytes(d);
+      flowsummary.flowoutbytes = this.flowToLegacyFormat(u);
+      flowsummary.outbytes = this.sumBytes(u);
+      return new Promise((resolve) => resolve(flowsummary));
+    }); 
+  }
+
   // no parameters accepted
   getStats2(host) {
-    if(!host) {
+    if (!host) {
       // if host is null, consider this is system stats
       return this.getSystemStats();
     }
@@ -429,8 +452,8 @@ module.exports = class FlowManager {
     host.flowsummary.outbytes = 0;
     host.flowsummary.type = "hour";
 
-    let tsnow = Math.ceil(Date.now()/1000);
-    tsnow = tsnow-tsnow%3600;
+    let tsnow = Math.ceil(Date.now() / 1000);
+    tsnow = tsnow - tsnow % 3600;
 
     host.flowsummary.tophour = tsnow;
 
@@ -602,10 +625,10 @@ module.exports = class FlowManager {
 
     for (let i in flows) {
       let flow = flows[i];
-      if (flow.du<flowconfig.activityDetectMin) {
+      if (flow.du < flowconfig.activityDetectMin) {
         continue;
       }
-      if (flow.du>flowconfig.activityDetectMax) {
+      if (flow.du > flowconfig.activityDetectMax) {
         continue;
       }
       if (flow.flows) {
@@ -614,10 +637,10 @@ module.exports = class FlowManager {
         for (let i in flow.flows) {
           let f = flow.flows[i];
           let count = f[4];
-          if (count ==null) {
-            count =1;
+          if (count == null) {
+            count = 1;
           }
-          fg.addRawFlow(f[0],f[1],f[2],f[3],count);
+          fg.addRawFlow(f[0], f[1], f[2], f[3], count);
         }
         flow.flows = fg.flowarray;
         //log.info("$$$ After",flow.flows);
@@ -628,7 +651,7 @@ module.exports = class FlowManager {
         } else {
           appdb[flow.appr] = [flow];
         }
-      } else if (flow.intel && flow.intel.category && flow.intel.category!="intel") {
+      } else if (flow.intel && flow.intel.category && flow.intel.category != "intel") {
         if (activitydb[flow.intel.category]) {
           activitydb[flow.intel.category].push(flow);
         } else {
@@ -645,7 +668,7 @@ module.exports = class FlowManager {
     */
     //log.info(activitydb);
 
-    let flowobj = {id:0,app:{},activity:{}};
+    let flowobj = { id: 0, app: {}, activity: {} };
     let hasFlows = false;
 
     for (let i in appdb) {
@@ -655,7 +678,7 @@ module.exports = class FlowManager {
         hasFlows = true;
       }
       // f.name is i, which is the name of app
-      flowobj.app[f.name]= f.flowarraySorted(true);
+      flowobj.app[f.name] = f.flowarraySorted(true);
     }
     for (let i in activitydb) {
       let f = new FlowGraph(i);
@@ -663,7 +686,7 @@ module.exports = class FlowManager {
         f.addFlow(activitydb[i][j]);
         hasFlows = true;
       }
-      flowobj.activity[f.name]=f.flowarraySorted(true);
+      flowobj.activity[f.name] = f.flowarraySorted(true);
     }
     // linear these flows
 
@@ -674,7 +697,7 @@ module.exports = class FlowManager {
     //log.info("### Cleaning",flowobj);
 
     return new Promise((resolve, reject) => {
-      bone.flowgraph("clean", [flowobj],(err,data)=>{
+      bone.flowgraph("clean", [flowobj], (err, data) => {
         resolve(data);
       });
     });
@@ -691,7 +714,7 @@ module.exports = class FlowManager {
     if (o.rb == null || o.ob == null) {
       return false
     }
-    if (o.rb == 0 && o.ob ==0) {
+    if (o.rb == 0 && o.ob == 0) {
       // ignore zero length flows
       return false;
     }
@@ -706,7 +729,7 @@ module.exports = class FlowManager {
   flowStringToJSON(flow) {
     try {
       return JSON.parse(flow);
-    } catch(err) {
+    } catch (err) {
       return null;
     }
   }
@@ -783,10 +806,28 @@ module.exports = class FlowManager {
             // use end timestamp to record stats, so that connection which lasts
             // more than 24 hours will still be recorded
             this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+            if (o.intf) {
+              this.recordStats('intf:' + o.intf, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+            }
+            if (o.tags.length > 0) {
+              for (let index = 0; index < o.tags.length; index++) {
+                const tag = o.tags[index];
+                this.recordStats('tag:' + tag, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+              }
+            }
           } else {
             totalInBytes += Number(o.ob);
             totalOutBytes += Number(o.rb);
             this.recordStats(mac, "hour", o.ets ? o.ets : o.ts, Number(o.ob), Number(o.rb), null);
+            if (o.intf) {
+              this.recordStats('intf:' + o.intf, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+            }
+            if (o.tags.length > 0) {
+              for (let index = 0; index < o.tags.length; index++) {
+                const tag = o.tags[index];
+                this.recordStats('tag:' + tag, "hour", o.ets ? o.ets : o.ts, Number(o.rb), Number(o.ob), null);
+              }
+            }
           }
         }
 
@@ -808,9 +849,9 @@ module.exports = class FlowManager {
         let key = "";
         // No longer needs to take care of portflow, as flow:conn now sums only 1 dest port
         if (o.sh == o.lh) {
-          key = o.dh + ":" + o.fd;
+          key = `${o.dh}:${o.fd}`;
         } else {
-          key = o.sh + ":" + o.fd;
+          key = `${o.sh}:${o.fd}`;
         }
         let flow = conndb[key];
         if (flow == null) {
@@ -922,50 +963,50 @@ module.exports = class FlowManager {
   }
 
   async enrichHttpFlowsInfo(flows) {
-    if(_.isEmpty(flows)) {
+    if (_.isEmpty(flows)) {
       return;
     }
 
-    for(const flow of flows) {
+    for (const flow of flows) {
       let urls = await this._findRelatedHttpFlows(flow);
       urls = urls.filter((url, index) => urls.indexOf(url) === index);
 
       let intels = [];
 
-      for(const url of urls) {
+      for (const url of urls) {
         const intel = await intelTool.getURLIntel(url);
-        if(intel) {
+        if (intel) {
           intel.url = url;
           intels.push(intel);
         }
       }
 
-      if(!_.isEmpty(intels)) {
+      if (!_.isEmpty(intels)) {
         flow.urls = intels;
       }
     }
   }
 
   async _findRelatedHttpFlows(flow) {
-    if(!flow || !flow.uids) {
+    if (!flow || !flow.uids) {
       return;
     }
 
     const urls = [];
 
-    for(const uid of flow.uids) {
+    for (const uid of flow.uids) {
       const key = `flowgraph:${uid}`;
       const fg = await rclient.hgetallAsync(key);
 
-      if(!fg) {
+      if (!fg) {
         continue; // no related urls
       }
 
-      if(!fg.http) {
+      if (!fg.http) {
         continue; // no related urls
       }
 
-      if(!fg.mac || !fg.flowDirection) {
+      if (!fg.mac || !fg.flowDirection) {
         log.error(`Invalid flowgraph: ${fg}`);
         continue;
       }
@@ -974,14 +1015,14 @@ module.exports = class FlowManager {
 
       const httpFlows = await rclient.zrangebyscoreAsync(httpFlowKey, fg.http, fg.http);
 
-      for(const httpFlowJSON of httpFlows) {
+      for (const httpFlowJSON of httpFlows) {
         try {
           const httpFlow = JSON.parse(httpFlowJSON);
-          if(httpFlow.uid === uid && httpFlow.uri && httpFlow.host) {
+          if (httpFlow.uid === uid && httpFlow.uri && httpFlow.host) {
             const url = `${httpFlow.host}${httpFlow.uri}`;
             urls.push(url);
           }
-        } catch(err) {
+        } catch (err) {
           log.error(`Failed to parse http flow json ${httpFlowJSON} from key ${httpFlowKey}, ts: ${fg.ts}, err: ${err}`);
         }
       }
@@ -1008,7 +1049,7 @@ module.exports = class FlowManager {
     if (obj.appr) {
       appr = "#" + obj.appr + "#";
     }
-    return t+"("+_t+")" + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
+    return t + "(" + _t + ")" + "\t" + obj.du + "\t" + obj.sh + "\t" + obj.dh + "\t" + obj.ob + "\t" + obj.rb + "\t" + obj.ct + "\t" + obj.shname + "\t" + obj.dhname + org + appr;
   }
 
   toStringShortShort2(obj, type, interest) {
@@ -1017,7 +1058,7 @@ module.exports = class FlowManager {
       sname = obj.shname;
     }
     let name = obj.dh;
-    if (type == 'txdata' || type =='out') {
+    if (type == 'txdata' || type == 'out') {
       if (obj.appr && obj.appr.length > 2) {
         name = obj.appr;
       } else if (obj.dhname && obj.dhname.length > 2) {
@@ -1037,22 +1078,22 @@ module.exports = class FlowManager {
     let time = Math.round((Date.now() / 1000 - obj.ts) / 60);
     let dtime = "";
 
-    if (time>5) {
-      dtime = time+" min ago, ";
+    if (time > 5) {
+      dtime = time + " min ago, ";
     }
 
     if (type == null) {
       return name + "min : rx " + obj.rb + ", tx " + obj.ob;
     } else if (type == "rxdata" || type == "in") {
       if (interest == 'txdata') {
-        return dtime+sname + " transferred to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+        return dtime + sname + " transferred to " + name + " [" + obj.ob + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
       }
-      return dtime+sname + " transferred to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+      return dtime + sname + " transferred to " + name + " " + obj.ob + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
     } else if (type == "txdata" || type == "out") {
       if (interest == 'txdata') {
-        return dtime+sname + " transferred to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+        return dtime + sname + " transferred to " + name + " : [" + obj.rb + "] bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
       }
-      return dtime+sname + " transferred to " + name + ", " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
+      return dtime + sname + " transferred to " + name + ", " + obj.rb + " bytes" + " for the duration of " + Math.round(obj.du / 60) + " min.";
     }
   }
 
@@ -1102,7 +1143,21 @@ module.exports = class FlowManager {
     return sorted;
   }
 
-  removeFlowsAll(mac) {
+  async removeFlowTag(tag) {
+    let keys = [
+      // 'flow:conn:in:' + tag,
+      // 'flow:conn:out:' + tag,
+      'stats:hour:in:tag:' + tag,
+      'stats:hour:out:tag:' + tag,
+      'stats:last24:tag:' + tag + ':upload',
+      'stats:last24:tag:' + tag + ':download',
+    ];
+
+    await rclient.delAsync(keys);
+    return;
+  }
+
+  async removeFlowsAll(mac) {
     // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated
 
     let keys = [
@@ -1114,6 +1169,7 @@ module.exports = class FlowManager {
       'stats:last24:' + mac + ':download',
     ];
 
-    return rclient.delAsync(keys);
+    await rclient.delAsync(keys);
+    return;
   }
 }

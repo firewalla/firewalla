@@ -32,6 +32,8 @@ var fileRSAPubKey = f.getUserHome() + "/.ssh/id_rsa.firewalla.pub";
 var RSAComment = "firewalla";
 var tempSSHPasswordLocation = f.getHiddenFolder() + "/.sshpasswd"
 
+const platform = require('../../platform/PlatformLoader.js').getPlatform();
+
 const execAsync = util.promisify(cp.exec);
 const readFileAsync = util.promisify(fs.readFile);
 
@@ -72,7 +74,12 @@ module.exports = class {
     jsonfile.readFile(tempSSHPasswordLocation, (err, obj) => {
       if(err) {
         if(err.code === 'ENOENT') {
-          callback(null, 'firewalla')
+          const defaultPassword = platform.defaultPassword();
+          if(defaultPassword) {
+            callback(null, defaultPassword);
+          } else {
+            callback(null, "")
+          }
         } else {
           callback(err);
         }
@@ -134,43 +141,6 @@ module.exports = class {
         callback(new Error('Failed to start child process:' + err));
       });
     }
-
-    // verifyPassword(password, callback) {
-
-    //   var pty = require('pty.js');
-    //   const su = pty.spawn('bash',
-    //       ["-i", "-c", "su " + process.env.USER + " -c 'ls &>/dev/null'"],
-    //       {
-    //         name: 'xterm-color',
-    //         cols: 80,
-    //         rows: 30,
-    //         cwd: process.env.HOME,
-    //         env: process.env
-    //       }
-    //     );
-
-    //   var success = true;
-
-    //   su.on('data', (data) => {
-    //     switch(data.toString('utf8')) {
-    //       case "Password: ":
-    //         su.write(password+"\n");
-    //         break;
-    //       case "su: Authentication failure":
-    //         success = false;
-    //       default:
-    //         break;
-    //     }
-    //   });
-
-    //   su.on('close', (err) => {
-    //     if(err || !success) {
-    //       callback(new Error("Password Check Failed"));
-    //     } else {
-    //       callback(null, true);
-    //     }
-    //   });
-    // }
 
     removeRSAKeyPair() {
       fs.existsSync(fileRSAKey) && fs.unlinkSync(fileRSAKey);

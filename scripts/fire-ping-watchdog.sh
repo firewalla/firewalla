@@ -11,7 +11,7 @@ mem=$(free -m | awk '/-/{print $4}')
 (( mem <= $REBOOT_FREE_MEMORY )) &&  exit 0
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
-DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
+DEFAULT_ROUTE=$(ip r | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
 for i in `seq 1 3`; do
     if ping -c 1 $DEFAULT_ROUTE &> /dev/null
@@ -30,7 +30,7 @@ done
 # reboot ...
 
 api_process_cnt=`sudo systemctl status fireapi |grep 'active (running)' | wc -l`
-if [[ $api_process_cnt > 0 ]]; then
+if [[ $api_process_cnt -gt 0 ]]; then
    /usr/bin/logger "FIREWALLA PING NO Local Network REBOOT "
    #sync
    #/home/pi/firewalla/scripts/fire-reboot 

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,18 +18,18 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('./SensorEventManager.js').getInstance();
 
-const bonjour = require('bonjour')();
-const ip = require('ip');
+const Bonjour = require('../vendor_lib/bonjour');
 const Promise = require('bluebird');
 
-const SysManager = require('../net2/SysManager.js')
-const sysManager = new SysManager('info')
+const sysManager = require('../net2/SysManager.js')
 const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
 const validator = require('validator');
+const { Address4, Address6 } = require('ip-address')
+const Message = require('../net2/Message.js');
 
 const ipMacCache = {};
 
@@ -40,77 +40,89 @@ const ipMacCache = {};
 class BonjourSensor extends Sensor {
   constructor() {
     super();
+    this.bonjourListeners = [];
+  }
 
-    this.hostCache = {};
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      // remove old bonjour listeners
+      if (this.startTask)
+        clearTimeout(this.startTask);
+      if (this.updateTask)
+        clearInterval(this.updateTask);
 
-    bonjour._server.mdns.on('warning', (err) => log.warn("Warning on mdns server", err))
-    bonjour._server.mdns.on('error', (err) => log.error("Error on mdns server", err))
+      for (const listener of this.bonjourListeners) {
+        if (listener.tcpBrowser)
+          listener.tcpBrowser.stop();
+        if (listener.udpBrowser)
+          listener.udpBrowser.stop();
+        if (listener.httpBrowser)
+          listener.httpBrowser.stop();
+        if (listener.instance)
+          listener.instance.destroy();
+      }
+      this.bonjourListeners = [];
+
+      // do not initialize bonjour if there is no interface with IP address
+      // otherwise dgram.addMembership will emit error and crash the process
+      if (sysManager.getMonitoringInterfaces().filter(i => i.ip_address).length == 0)
+        return;
+      let bound = false;
+      // create new bonjour listeners
+      for (const iface of sysManager.getMonitoringInterfaces().filter(i => i.ip_address)) {
+        const opts = {interface: iface.ip_address};
+        if (!bound) {
+          // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
+          opts.bind = "0.0.0.0";
+          bound = true;
+        } else {
+          // no need to bind on any address, multicast query can still be sent via interface in opts
+          opts.bind = false;
+        }
+        const instance = Bonjour(opts);
+        instance._server.mdns.on('warning', (err) => log.warn(`Warning from mDNS server on ${iface.ip_address}`, err));
+        instance._server.mdns.on('error', (err) => log.error(`Error from mDNS server on ${iface.ip_address}`, err));
+        const tcpBrowser = instance.find({protocol: 'tcp'}, (service) => this.bonjourParse(service));
+        const udpBrowser = instance.find({protocol: 'udp'}, (service) => this.bonjourParse(service));
+        const httpBrowser = instance.find({type: 'http'}, (service) => this.bonjourParse(service));
+        this.bonjourListeners.push({tcpBrowser, udpBrowser, httpBrowser, instance});
+      }
+
+      this.updateTask = setInterval(() => {
+        log.info("Bonjour Watch Updating");
+        // remove all detected servcies in bonjour browser internally, otherwise BonjourBrowser would do dedup based on service name, and ip changes would be ignored
+        for (const listener of this.bonjourListeners) {
+          Object.keys(listener.tcpBrowser._serviceMap).forEach(fqdn => listener.tcpBrowser._removeService(fqdn));
+          Object.keys(listener.udpBrowser._serviceMap).forEach(fqdn => listener.udpBrowser._removeService(fqdn));
+          Object.keys(listener.httpBrowser._serviceMap).forEach(fqdn => listener.httpBrowser._removeService(fqdn));
+          listener.tcpBrowser.update();
+          listener.udpBrowser.update();
+          listener.httpBrowser.update();
+        }
+      }, 1000 * 60 * 5);
+
+      this.startTask = setTimeout(() => {
+        for (const listener of this.bonjourListeners) {
+          listener.tcpBrowser.start();
+          listener.udpBrowser.start();
+          listener.httpBrowser.start();
+        }
+      }, 1000 * 10);
+    }, 5000);
   }
 
   run() {
-    log.info("Bonjour Watch Starting");
+    sem.once('IPTABLES_READY', () => {
+      log.info("Bonjour Watch Starting");
+      this.scheduleReload();
 
-    if (this.bonjourBrowserTCP == null) {
-      this.bonjourBrowserTCP = bonjour.find({
-        protocol: 'tcp'
-      }, (service) => {
-        this.bonjourParse(service);
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+        log.info("Schedule reload BonjourSensor since network info is reloaded");
+        this.scheduleReload();
       })
-      this.bonjourBrowserUDP = bonjour.find({
-        protocol: 'udp'
-      }, (service) => {
-        this.bonjourParse(service);
-      });
-
-      // why http?? because sometime http service can't be found via { protocol: 'tcp' }
-      // maybe it's bonjour lib's bug
-      this.bonjourBrowserHTTP = bonjour.find({
-        type: 'http'
-      }, (service) => {
-        this.bonjourParse(service);
-      });
-
-      this.bonjourTimer = setInterval(() => {
-        log.info("Bonjour Watch Updating");
-        // remove all detected servcies in bonjour browser internally, otherwise BonjourBrowser would do dedup based on service name, and ip changes would be ignored
-        Object.keys(this.bonjourBrowserTCP._serviceMap).forEach(fqdn => this.bonjourBrowserTCP._removeService(fqdn));
-        Object.keys(this.bonjourBrowserUDP._serviceMap).forEach(fqdn => this.bonjourBrowserUDP._removeService(fqdn));
-        Object.keys(this.bonjourBrowserHTTP._serviceMap).forEach(fqdn => this.bonjourBrowserHTTP._removeService(fqdn));
-        this.bonjourBrowserTCP.update();
-        this.bonjourBrowserUDP.update();
-        this.bonjourBrowserHTTP.update();
-      }, 1000 * 60 * 5);
-    }
-
-    this.bonjourBrowserTCP.stop();
-    this.bonjourBrowserUDP.stop();
-    this.bonjourBrowserHTTP.stop();
-
-    this.bonjourTimer = setTimeout(() => {
-      this.bonjourBrowserTCP.start();
-      this.bonjourBrowserUDP.start();
-      this.bonjourBrowserHTTP.start();
-    }, 1000 * 10);
-  }
-
-  // do not process same host in a short time
-  isDup(service) {
-    let key = service.ipv4Addr;
-    if (!key) {
-      return true;
-    }
-
-    if (this.hostCache[key]) {
-      log.debug("Ignoring duplicated bonjour services from same ip:", key);
-      return true;
-    }
-
-    this.hostCache[key] = 1;
-    setTimeout(() => {
-      delete this.hostCache[key];
-    }, 5 * 1000 * 60); // 5 mins
-
-    return false;
+    });
   }
 
   async _getMacFromIP(ipAddr) {
@@ -124,22 +136,18 @@ class BonjourSensor extends Sensor {
         delete ipMacCache[ipAddr];
       }
     }
-    if (ip.isV4Format(ipAddr)) {
+    if (new Address4(ipAddr).isValid()) {
       return new Promise((resolve, reject) => {
         l2.getMAC(ipAddr, (err, mac) => {
           if (err) {
-            log.error("Not able to find mac address for host:", ipAddr, mac);
+            log.warn("Not able to find mac address for host:", ipAddr, mac);
             resolve(null);
           } else {
             if (!mac) {
-              if (ipAddr === sysManager.myIp()) {
-                resolve(sysManager.myMAC());
-              } else if (ipAddr === sysManager.myWifiIp()) {
-                resolve(sysManager.myWifiMAC());
-              } else {
-                log.error("Not able to find mac address for host:", ipAddr, mac);
-                resolve(null);
-              }
+              const myMac = sysManager.myMACViaIP4(ipAddr) || null;
+              if (!myMac)
+                log.warn("Not able to find mac address for host:", ipAddr, mac);
+              resolve(myMac);
             } else {
               ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
               resolve(mac);
@@ -147,18 +155,19 @@ class BonjourSensor extends Sensor {
           }
         })
       })
-    } else if (ip.isV6Format(ipAddr)) {
+    } else if (new Address6(ipAddr).isValid()) {
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
-        log.error("Not able to find mac address for host:", ipAddr, err);
+        log.warn("Not able to find mac address for host:", ipAddr, err);
         return null;
       })
-      if (mac === sysManager.myMAC())
+      if (mac && sysManager.isMyMac(mac))
       // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
         mac = null;
       if (!mac) {
-        if (sysManager.myIp6() && sysManager.myIp6().includes(ipAddr)) {
-          mac = sysManager.myMAC();
-        }
+        const myMac = sysManager.myMACViaIP6(ipAddr) || null;
+        if (!myMac)
+          log.warn("Not able to find mac address for host:", ipAddr, mac);
+        return myMac
       } else {
         ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
         return mac;
@@ -249,12 +258,13 @@ class BonjourSensor extends Sensor {
     let ipv6addr = [];
 
     for (const addr of service.addresses) {
-      if (ip.isV4Format(addr) && sysManager.isLocalIP(addr)) {
-        ipv4addr = addr;
-      } else if (ip.isV4Format(addr)) {
-        log.debug("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
-        continue;
-      } else if (ip.isV6Format(addr)) {
+      if (new Address4(addr).isValid()) {
+        if (sysManager.isLocalIP(addr)) {
+          ipv4addr = addr;
+        } else {
+          log.debug("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
+        }
+      } else if (new Address6(addr).isValid()) {
         ipv6addr.push(addr);
       }
     }
@@ -267,10 +277,7 @@ class BonjourSensor extends Sensor {
       host: service.host
     };
 
-    // do not dedup since it is only run once every 5 minutes
-    //if(!this.isDup(s)) {
     this.processService(s);
-    //}
   }
 }
 

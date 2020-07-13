@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,6 +43,12 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 
 const log = require("../net2/logger.js")(__filename);
 
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+log.forceInfo("FireKick Starting ");
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+const fireRouter = require('../net2/FireRouter.js')
+
 const fs = require('fs');
 const cp = require('child_process');
 const exec = require('child-process-promise').exec;
@@ -66,9 +72,7 @@ const fConfig = require('../net2/config.js');
 
 const bone = require("../lib/Bone.js");
 
-const SysManager = require('../net2/SysManager.js');
-const sysManager = new SysManager();
-const firewallaConfig = require('../net2/config.js').getConfig();
+const sysManager = require('../net2/SysManager.js');
 
 const InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
 const interfaceDiscoverSensor = new InterfaceDiscoverSensor();
@@ -80,18 +84,9 @@ const fwDiag = require('../extension/install/diag.js');
 const FWInvitation = require('./invitation.js');
 
 const Diag = require('../extension/diag/app.js');
+const diag = new Diag()
 
 let terminated = false;
-
-log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-log.forceInfo("FireKick Starting ");
-log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-
-(async() => {
-  await rclient.delAsync("firekick:pairing:message");
-  await sysManager.setConfig(firewallaConfig)
-  await interfaceDiscoverSensor.run()
-})();
 
 const license = require('../util/license.js');
 
@@ -127,6 +122,8 @@ if (config.endpoint_name != null) {
 } else if (program.endpoint_name != null) {
   eptname = program.endpoint_name;
 }
+const eptcloud = new cloud(eptname, null);
+
 
 function getUserHome() {
   return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
@@ -144,16 +141,25 @@ if (!fs.existsSync(dbPath)) {
 
 let symmetrickey = generateEncryptionKey(_license);
 
-// start a diagnostic page for people to access during first binding process
-const diag = new Diag()
-diag.start()
-diag.iptablesRedirection()
-
-let eptcloud = new cloud(eptname, null);
-
 storage.initSync({
   'dir': dbPath
 });
+
+(async() => {
+  await fireRouter.waitTillReady();
+  await sysManager.waitTillInitialized();
+  await rclient.delAsync("firekick:pairing:message");
+  if (!platform.isFireRouterManaged()) {
+    await interfaceDiscoverSensor.run()
+  }
+
+  // start a diagnostic page for people to access during first binding process
+  diag.start()
+  diag.iptablesRedirection()
+
+  await eptcloud.loadKeys()
+  await login()
+})();
 
 function generateEncryptionKey(license) {
   // when there is no local license file, use default one
@@ -170,12 +176,11 @@ function generateEncryptionKey(license) {
   };
 }
 
-function initializeGroup(callback) {
+async function initializeGroup() {
   let groupId = storage.getItemSync('groupId');
   if (groupId != null) {
     log.info("Found stored group x", groupId);
-    callback(null, groupId);
-    return;
+    return groupId;
   }
 
   log.info("Using identity:", eptcloud.eid);
@@ -185,21 +190,25 @@ function initializeGroup(callback) {
     'member': config.memberType,
     'model': platform.getName()
   });
-  eptcloud.eptcreateGroup(config.service, meta, config.endpoint_name, function (e, r) {
-    log.info(r);
-    if (e == null && r != null) {
-      storage.setItemSync('groupId', r);
-    }
-    callback(e, r);
-  });
+  const result = await eptcloud.eptCreateGroup(config.service, meta, config.endpoint_name)
+  log.info(result);
+  if (result !== null) {
+    storage.setItemSync('groupId', result);
+  }
+  return result
 }
 
 
 async function postAppLinked() {
+  
+  if(platform.getName() == 'gold') { // no post action on Gold
+    return;
+  }
+
   await platform.turnOffPowerLED();
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
-  
+
   // only do this in production and always do after 15 seconds ...
   // the 15 seconds wait is for the process to wake up
   return new Promise((resolve, reject) => {
@@ -225,11 +234,12 @@ async function postAppLinked() {
 }
 
 async function inviteAdmin(gid) {
+  await sysManager.updateAsync()
   log.forceInfo("Initializing first admin:", gid);
 
   const gidPrefix = gid.substring(0, 8);
 
-  const group = await eptcloud.groupFindAsync(gid)
+  const group = await eptcloud.groupFind(gid)
 
   if (!group || !group.symmetricKeys) {
     return false;
@@ -263,12 +273,13 @@ async function inviteAdmin(gid) {
     }
   }
 
-  const expireDate = Math.floor(new Date() / 1000) + 600;
+  const expireDate = Math.floor(new Date() / 1000) + fwInvitation.totalTimeout;
   diag.expireDate = expireDate;
 
   await fwDiag.submitInfo({
     event: "PAIRSTART",
     msg:"Pairing Ready",
+    firstTime: count <= 1,
     expire: expireDate,
     gidPrefix: gidPrefix
   }).catch((err) => {
@@ -320,7 +331,8 @@ async function inviteAdmin(gid) {
 
 async function launchService2(gid) {
   await writeFileAsync('/home/pi/.firewalla/ui.conf', JSON.stringify({gid:gid}), 'utf8');
-
+  
+  /* bro is taken care of in FireMain now
   // don't start bro until app is linked
   await exec("sudo systemctl is-active brofish").catch(() => {
     // need to restart brofish
@@ -334,6 +346,7 @@ async function launchService2(gid) {
       log.error("Failed to enable brofish", err);
     });
   })
+  */
 
   // // start fire api
   // if (require('fs').existsSync("/tmp/FWPRODUCTION")) {
@@ -347,57 +360,53 @@ async function launchService2(gid) {
   // }
 }
 
-function login() {
+async function login() {
   log.info("Logging in cloud");
-  eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
-    if (err == null) {
-      log.info("Cloud Logged In")
 
-      diag.connected = true
+  try {
+    await eptcloud.eptLogin(config.appId, config.appSecret, null, config.endpoint_name)
+  } catch(err) {
+    log.error("Unable to login", err);
+    process.exit();
+  }
 
-      initializeGroup(async function (err, gid) {
-        if (gid) {
-          // NOTE: This should be the only code to update sys:ept to avoid race condition
-          log.info("Storing Firewalla Cloud Token info to redis");
-          // log.info("EID:", eptcloud.eid);
-          // log.info("GID:", gid);
-          // log.info("TOKEN:", eptcloud.token);
-          rclient.hmset("sys:ept", {
-            eid: eptcloud.eid,
-            token: eptcloud.token,
-            gid: gid
-          }, (err, data) => {
-            log.info("Set sys:ept", err, data, eptcloud.eid, eptcloud.token, gid);
-          });
+  log.info("Cloud Logged In")
 
-          process.on('SIGTERM', exitHandler.bind(null, {
-            terminated: true, cleanup: true, gid: gid, exit: true, event: "SIGTERM"
-          }));
+  diag.connected = true
 
-          await inviteAdmin(gid)
+  const gid = await initializeGroup()
+  if (!gid) {
+    log.error("Invalid gid");
+    process.exit();
+  }
 
-          await exitHandler({terminated: true, cleanup: true, gid: gid, exit: false, event: "NormalEnd"})
+  // NOTE: This should be the only code to update sys:ept to avoid race condition
+  log.info("Storing Firewalla Cloud Token info to redis");
+  // log.info("EID:", eptcloud.eid);
+  // log.info("GID:", gid);
+  // log.info("TOKEN:", eptcloud.token);
+  await rclient.hmsetAsync("sys:ept", {
+    eid: eptcloud.eid,
+    token: eptcloud.token,
+    gid: gid
+  })
+  log.info("Set sys:ept", eptcloud.eid, eptcloud.token, gid);
 
-          process.removeAllListeners('SIGTERM')
+  process.on('SIGTERM', exitHandler.bind(null, {
+    terminated: true, cleanup: true, gid: gid, exit: true, event: "SIGTERM"
+  }));
 
-          exec("sudo systemctl stop firekick").catch(() => {
-            // this command will kill the program itself, catch this error silently
-          })
+  await inviteAdmin(gid)
 
-        } else {
-          log.error("Invalid gid");
-          process.exit();
-        }
-      });
-    } else {
-      log.error("Unable to login", err);
-      process.exit();
-    }
-  });
+  await exitHandler({terminated: true, cleanup: true, gid: gid, exit: false, event: "NormalEnd"})
+
+  process.removeAllListeners('SIGTERM')
+
+  exec("sudo systemctl stop firekick").catch(() => {
+    // this command will kill the program itself, catch this error silently
+  })
+
 }
-
-eptcloud.loadKeys()
-  .then(login)
 
 process.stdin.resume();
 

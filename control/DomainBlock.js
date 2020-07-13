@@ -34,48 +34,28 @@ let resolve6Async;
 const fc = require('../net2/config.js');
 const dc = require('../extension/dnscrypt/dnscrypt');
 
-const SysManager = require("../net2/SysManager.js")
-const sysManager = new SysManager()
+const sysManager = require("../net2/SysManager.js")
 
 const sem = require('../sensor/SensorEventManager.js').getInstance()
 const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
+
+const BlockManager = require('../control/BlockManager.js');
+const blockManager = new BlockManager();
+
+const _ = require('lodash');
 class DomainBlock {
 
   constructor() {
-    sem.once('IPTABLES_READY', async () => {
-      sem.on('UPDATE_CATEGORY_DEFAULT_DOMAIN', async (event) => {
-        if (event.category) {
-          const PM2 = require('../alarm/PolicyManager2.js');
-          const pm2 = new PM2();
-          const policies = await pm2.loadActivePoliciesAsync();
-          for (const policy of policies) {
-            if (policy.type == "category" && policy.target == event.category && policy.dnsmasq_entry) {
-              await pm2.tryPolicyEnforcement(policy, 'reenforce', policy)
-            }
-          }
-        }
-      })
-    })
+    
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
   async blockDomain(domain, options) {
     options = options || {}
     log.info(`Implementing Block on ${domain}`);
-
-    if (options.dnsmasq_entry) {
-      await dnsmasq.addPolicyFilterEntry([domain], options).catch((err) => undefined);
-      sem.emitEvent({
-        type: 'ReloadDNSRule',
-        message: 'DNSMASQ filter rule is updated',
-        toProcess: 'FireMain',
-        suppressEventLogging: true
-      })
-      return;
-    }
 
     await this.syncDomainIPMapping(domain, options)
     domainUpdater.registerUpdate(domain, options);
@@ -89,19 +69,7 @@ class DomainBlock {
   }
 
   async unblockDomain(domain, options) {
-    if (options.dnsmasq_entry) {
-      await dnsmasq.removePolicyFilterEntry([domain], options).catch((err) => undefined);
-      sem.emitEvent({
-        type: 'ReloadDNSRule',
-        message: 'DNSMASQ filter rule is updated',
-        toProcess: 'FireMain',
-        suppressEventLogging: true,
-      })
-      return
-    }
-    if (!options.ignoreUnapplyBlock) {
-      await this.unapplyBlock(domain, options);
-    }
+    await this.unapplyBlock(domain, options);
 
     if (!this.externalMapping) {
       await domainIPTool.removeDomainIPMapping(domain, options);
@@ -111,32 +79,43 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    const blockSet = options.blockSet || "blocked_domain_set"
+    const blockSet = options.blockSet || "block_domain_set";
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
+      const ipLevelBlockAddrs = [];
       for (const addr of addresses) {
         try {
-          await Block.block(addr, blockSet)
+          const ipBlockInfo = await blockManager.updateIpBlockInfo(addr, domain, 'block', blockSet);
+          if (ipBlockInfo.blockLevel == 'ip') {
+            ipLevelBlockAddrs.push(addr);
+          }
         } catch (err) { }
       }
+      await Block.batchBlock(ipLevelBlockAddrs, blockSet).catch((err) => {
+        log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+      });
     }
   }
 
   async unapplyBlock(domain, options) {
-    const blockSet = options.blockSet || "blocked_domain_set"
+    const blockSet = options.blockSet || "block_domain_set"
 
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
       for (const addr of addresses) {
         try {
-          Block.unblock(addr, blockSet)
+          await blockManager.updateIpBlockInfo(addr, domain, 'unblock', blockSet);
         } catch (err) { }
       }
+      await Block.batchUnblock(addresses, blockSet).catch((err) => {
+        log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
+      });
     }
   }
 
   resolve4WithTimeout(domain, timeout) {
     let callbackCalled = false
+
     return new Promise((resolve, reject) => {
       resolve4Async(domain).then((addresses) => {
         if (!callbackCalled) {
@@ -184,9 +163,16 @@ class DomainBlock {
   }
 
   async resolveDomain(domain) {
-    if (false && fc.isFeatureOn('doh')) {
+    if (fc.isFeatureOn('doh')) {
       const server = `127.0.0.1:${dc.getLocalPort()}`;
-      resolver.setServers([server]);
+      if (!this.setUpServers) {
+        try {
+          resolver.setServers([server]);
+          this.setUpServers = true; 
+        } catch (err) {
+          log.warn('set resolver servers error', err);
+        }
+      }
       resolve4Async = util.promisify(resolver.resolve4.bind(resolver));
       resolve6Async = util.promisify(resolver.resolve6.bind(resolver));
     } else {
@@ -270,38 +256,40 @@ class DomainBlock {
     for (let addr in set) {
       if (!existingSet[addr]) {
         await rclient.saddAsync(key, addr);
-        let blockSet = "blocked_domain_set";
+        let blockSet = "block_domain_set";
         if (options.blockSet)
           blockSet = options.blockSet;
         await Block.block(addr, blockSet).catch((err) => undefined);
       }
     }
   }
+
   async blockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.addPolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
-    sem.emitEvent({
-      type: 'ReloadDNSRule',
-      message: 'DNSMASQ filter rule is updated',
-      toProcess: 'FireMain',
-      suppressEventLogging: true
-    })
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async unblockCategory(category, options) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.removePolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
-    sem.emitEvent({
-      type: 'ReloadDNSRule',
-      message: 'DNSMASQ filter rule is updated',
-      toProcess: 'FireMain',
-      suppressEventLogging: true,
-    })
+    dnsmasq.scheduleRestartDNSService();
   }
+
   async updateCategoryBlock(category) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    const PM2 = require('../alarm/PolicyManager2.js');	
+    const pm2 = new PM2();	
+    const policies = await pm2.loadActivePoliciesAsync();	
+    for (const policy of policies) {	
+      if (policy.type == "category" && policy.target == category) {	
+        dnsmasq.scheduleRestartDNSService();
+        return;
+      }	
+    }
   }
+
   async getCategoryDomains(category) {
     const CategoryUpdater = require('./CategoryUpdater.js');
     const categoryUpdater = new CategoryUpdater();
@@ -329,6 +317,7 @@ class DomainBlock {
     }
     return dedupAndPattern(finalDomains)
   }
+
   patternDomain(domain) {
     domain = domain || "";
     if (domain.startsWith("*.")) {
@@ -338,4 +327,4 @@ class DomainBlock {
   }
 }
 
-module.exports = () => new DomainBlock()
+module.exports = new DomainBlock()

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,20 +21,16 @@ const log = require('../../net2/logger.js')(__filename)
 const f = require('../../net2/Firewalla.js')
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
-const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
-const SysManager = require('../../net2/SysManager')
-const sysManager = new SysManager()
+const sysManager = require('../../net2/SysManager')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
-const ipTool = require('ip');
-
-const ShieldManager = require('../../net2/ShieldManager.js');
-let shieldManager = null;
+const exec = require('child-process-promise').exec;
 
 const iptable = require("../../net2/Iptables.js");
+const Message = require('../../net2/Message.js');
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -42,7 +38,7 @@ const configKey = 'extension.portforward.config'
 // Configure Port Forwarding
 // Example:
 // {
-//  maps: 
+//  maps:
 //   [
 //      description: "string"
 //      protocol: tcp/udp
@@ -51,8 +47,8 @@ const configKey = 'extension.portforward.config'
 //      toMAC: mac of the destination
 //      toPort: ip port
 //   ]
-// } 
- 
+// }
+
 class PortForward {
   constructor() {
     if(!instance) {
@@ -76,31 +72,39 @@ class PortForward {
               })();
             }
           });
-  
-          sclient.on("message", (channel, message) => {
-            switch (channel) {
-              case "System:IPChange":
-                (async () => {
-                  if (sysManager.myIp() !== this._selfIP) {
-                    log.info(`Firewalla IP changed from ${this._selfIP} to ${sysManager.myIp()}, refresh all rules...`);
-                    await iptable.portForwardFlushAsync();
-                    await this.restore();
-                    this._selfIP = sysManager.myIp();
-                  }
-                })().catch((err) => {
-                  log.error("Failed to refresh port forward rules for System:IPChange", err);
-                })
-                break;
-              default:
+
+          sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+            if (!this._started)
+              return;
+            try {
+              if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
+                this._wanIPs = sysManager.myWanIps();
+                await this.updateExtIPChain(this._wanIPs);
+              }
+              await this.refreshConfig();
+            } catch(err) {
+              log.error("Failed to refresh port forward rules", err);
             }
-          });
-          sclient.subscribe("System:IPChange");
+          })
         }
-      })    
-      instance = this
+      })
+      instance = this;
     }
 
-    return instance
+    return instance;
+  }
+
+  async updateExtIPChain(extIPs) {
+    const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP`);
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to flush FW_PREROUTING_EXT_IP`, err.message);
+    });
+    for (const extIP of extIPs) {
+      const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PREROUTING_PORT_FORWARD`);
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to update FW_PREROUTING_EXT_IP with ${extIP}`, err.message);
+      });
+    }
   }
 
   async refreshConfig() {
@@ -109,8 +113,8 @@ class PortForward {
     const mapsCopy = JSON.parse(JSON.stringify(this.config.maps));
     const updatedMaps = [];
     for (let map of mapsCopy) {
-      if (!map.toIP) {
-        log.error("toIP is not defined: ", map);
+      if (!map.toIP && !map.toMac) {
+        log.error("Neither toMac nor toIP is defined: ", map);
         await this.removePort(map);
         continue;
       }
@@ -148,12 +152,20 @@ class PortForward {
         const ipv4Addr = macEntry.ipv4Addr;
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
-          log.info("IP address has changed, remove old rule: ", map);
-          await this.removePort(map);
+          if (map.toIP) {
+            log.info("IP address has changed, remove old rule: ", map);
+            await this.removePort(map);
+          }
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
+            map.active = true;
             log.info("IP address has changed, add new rule: ", map);
+            await this.addPort(map);
+          } else {
+            map.toIP = null;
+            map.active = false;
+            log.info("IP address is not available, deactivating rule: ", map);
             await this.addPort(map);
           }
         }
@@ -197,7 +209,7 @@ class PortForward {
   }
 
   // return -1 if not found
-  //        index if found 
+  //        index if found
   //        undefined, null, 0, false, '*' will be recognized as wildcards
 
   find(map) {
@@ -236,19 +248,20 @@ class PortForward {
         }
       }
 
-      if (!this._isSecondaryInterfaceIP(map.toIP)) {
+      if (map.active === false) {
+        log.info("Port forward is not active now", map);
+        return;
+      }
+
+      if (!this._isLANInterfaceIP(map.toIP)) {
         log.warn("IP is not in secondary network, port forward will not be applied: ", map);
         return;
       }
-      
-      log.info("PORTMAP: Add", map);
-      if (!shieldManager)
-        shieldManager = new ShieldManager();
-      await shieldManager.addIncomingRule(map.protocol, map.toIP, map.dport)
+
+      log.info(`Add port forward`, map);
       map.state = true;
-      const dupMap = JSON.parse(JSON.stringify(map))
-      dupMap.destIP = sysManager.myIp()
-      await iptable.portforwardAsync(dupMap)
+      const dupMap = JSON.parse(JSON.stringify(map));
+      await iptable.portforwardAsync(dupMap);
     } catch (err) {
       log.error("Failed to add port mapping:", err);
     }
@@ -259,18 +272,11 @@ class PortForward {
     let old = this.find(map);
     while (old >= 0) {
       this.config.maps[old].state = false;
-      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]))
-      this.config.maps.splice(old, 1);
-
-      log.info("PortForwarder:removePort Found MAP", dupMap);
-      if (!shieldManager)
-        shieldManager = new ShieldManager();
-      await shieldManager.removeIncomingRule(dupMap.protocol, dupMap.toIP, dupMap.dport);
-
-      // we call remove anyway ... even there is no entry
-      dupMap.destIP = sysManager.myIp()
+      log.info(`Remove port forward`, map);
+      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
       await iptable.portforwardAsync(dupMap);
 
+      this.config.maps.splice(old, 1);
       old = this.find(map);
     }
   }
@@ -290,9 +296,8 @@ class PortForward {
 
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
-    this._selfIP = sysManager.myIp();
-    shieldManager = new ShieldManager();
-  
+    this._wanIPs = sysManager.myWanIps();
+    await this.updateExtIPChain(this._wanIPs);
     await this.loadConfig()
     await this.restore()
     await this.refreshConfig()
@@ -301,6 +306,7 @@ class PortForward {
         this.refreshConfig();
       }, 60000); // refresh config once every minute
     }
+    this._started = true;
   }
 
   async stop() {
@@ -309,14 +315,12 @@ class PortForward {
     })
   }
 
-  _isSecondaryInterfaceIP(ip) {
-    const ip2 = sysManager.myIp2();
-    const ipMask2 = sysManager.myIpMask2();
-    
-    if(ip && ip2 && ipMask2) {
-      return ipTool.subnet(ip2, ipMask2).contains(ip);
-    }
-    return false;
+  _isLANInterfaceIP(ip) {
+    const iface = sysManager.getInterfaceViaIP4(ip);
+    if (iface && iface.type === "lan")
+      return true;
+    else
+      return false;
   }
 }
 
