@@ -115,6 +115,16 @@ async function getGatewayMacPrefix() {
   }
 }
 
+async function getGitBranchName(cwd) {
+  try {
+    const result = await exec("git rev-parse --abbrev-ref HEAD", { cwd: cwd, encoding: 'utf8' });
+    return result && result.stdout && result.stdout.trim();
+  } catch(err) {
+    //log(`ERROR: failed to get latest branch name in ${cwd}`+err);
+    return '';
+  }
+}
+
 async function getLatestCommitHash(cwd) {
   try {
     const result = await exec("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
@@ -127,10 +137,11 @@ async function getLatestCommitHash(cwd) {
 
 async function getLicenseInfo() {
   const licenseFile = "/home/pi/.firewalla/license";
-  const SUUID = (await getShellOutput(`awk '/SUUID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
-  const UUID = (await getShellOutput(`awk '/"UUID"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
-  const EID = (await getShellOutput(`awk '/EID/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
-  return { SUUID, UUID, EID };
+  return ['SUUID', 'UUID', 'EID', 'LICENSE'].reduce( async (result,licenseField) => {
+    result = await result;
+    result[licenseField] = (await getShellOutput(`awk '/"${licenseField}"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+    return result;
+  },{});
 }
 
 async function getSysinfo(status) {
@@ -138,7 +149,7 @@ async function getSysinfo(status) {
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, hashRouter, hashWalla, licenseInfo, mac, redisEid] =
+  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, redisEid] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
@@ -146,6 +157,7 @@ async function getSysinfo(status) {
       getCpuTemperature(),
       getEthernetSpeed(),
       getGatewayMacPrefix(),
+      getGitBranchName(),
       getLatestCommitHash("/home/pi/firerouter"),
       getLatestCommitHash("/home/pi/firewalla"),
       getLicenseInfo(),
@@ -166,6 +178,7 @@ async function getSysinfo(status) {
     ethSpeed,
     licenseInfo,
     gatewayMacPrefix,
+    gitBranchName,
     hashRouter,
     hashWalla,
     mac,
@@ -188,7 +201,7 @@ async function update(status, extra) {
   return info;
 }
 
-const job = setTimeout(() => {
+const job = setInterval(() => {
   update("schedule");
 }, 24 * 3600 * 1000); // every day
 
@@ -209,6 +222,11 @@ socket.on('disconnect', () => {
 
 socket.on('update', () => {
   update("cloud");
+});
+
+socket.on('upgrade', () => {
+  log("Upgrade started via heartbeat");
+  exec("/home/pi/firewalla/scripts/fireupgrade_check.sh");
 });
 
 socket.on('reconnect', () => {
