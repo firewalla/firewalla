@@ -153,6 +153,13 @@ class GoldPlatform extends Platform {
   getAllowCustomizedProfiles(){
     return 10;
   }
+  getRatelimitConfig(){
+    return {
+      "appMax": 240,
+      "webMax": 480,
+      "duration": 60
+    }
+  }
 
   isBonjourBroadcastEnabled() {
     return false;
