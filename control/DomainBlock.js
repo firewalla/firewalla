@@ -300,11 +300,7 @@ class DomainBlock {
     const finalDomains = domains.filter((de) => {
       return !defaultDomains.includes(de.domain)
     }).map((de) => { return de.domain }).concat(defaultDomains).filter((domain)=>{
-      if (excludedDomains.includes(domain)) return false;
-      if (domain.startsWith("*.") && excludedDomains.includes(domain.substring(2))) {
-        return false;
-      }
-      return true;
+      return !excludedDomains.includes(domain)
     }).concat(includedDomains);
 
     function dedupAndPattern(arr) {

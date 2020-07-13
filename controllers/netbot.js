@@ -1699,9 +1699,6 @@ class netBot extends ControllerBot {
           const outputDomains = sortedFinalDomains.filter((de) => {
             const domain = de.domain
             if (excludedDomains.includes(domain)) return false;
-            if (domain.startsWith("*.") && excludedDomains.includes(domain.substring(2))) {
-              return false;
-            }
             if (!domain.startsWith("*.") && patternDomains.includes(domain)) {
               return false;
             } else {
