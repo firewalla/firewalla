@@ -233,6 +233,11 @@ socket.on('update', () => {
   update("cloud");
 });
 
+socket.on('upgrade', () => {
+  log("Upgrade started via heartbeat");
+  exec("/home/pi/firewalla/scripts/fireupgrade_check.sh");
+});
+
 socket.on('reconnect', () => {
   log("Reconnected to heartbeat server.");
   //update('reconnect');
