@@ -38,7 +38,7 @@ class PlatformLoader {
 
   getBoardName() {
     if (!this.boardName) {
-      this.boardName = execSync("awk -F= '/BOARD=/ {print $2}' /etc/armbian-release",{encoding:'utf8'}).trim();
+      this.boardName = execSync("awk -F= '/BOARD=/ {print $2}' /etc/*-release",{encoding:'utf8'}).trim();
     }
     return this.boardName
   }
@@ -54,7 +54,8 @@ class PlatformLoader {
       case "aarch64": {
         const boardName = this.getBoardName();
         switch (boardName) {
-          case "nanopi-r2s": {
+          case "nanopi-r2s":
+          case "NanoPi-NEO3-Black": {
             const NavyPlatform = require('./navy/NavyPlatform.js');
             this.platform = new NavyPlatform();
             break;
