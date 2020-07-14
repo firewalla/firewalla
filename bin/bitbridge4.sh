@@ -7,10 +7,10 @@ BINARY=bitbridge7
 
 if [[ $(uname -m) == "aarch64" ]]; then
   if [[ -e /etc/armbian-release ]]; then
-    . /etc/armbian-release
+    BOARD=$( . /etc/*-release; echo $BOARD)
     case $BOARD in
       nanopineo2) ln -sfT real.aarch64 real ;;
-      nanopi-r2s) ln -sfT real.navy real ;;
+      nanopi-r2s|NanoPi-NEO3-Black) ln -sfT real.navy real ;;
     esac
   fi
 fi

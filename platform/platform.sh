@@ -16,15 +16,15 @@ case "$UNAME" in
     export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
     ;;
   "aarch64")
-    . /etc/armbian-release
+    BOARD=$( . /etc/*-release; echo $BOARD)
     case "$BOARD" in
-      "nanopineo2")
+      nanopineo2)
         source $FW_PLATFORM_DIR/blue/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
         BRO_PROC_NAME="bro"
         BRO_PROC_COUNT=3
         ;;
-      "nanopi-r2s")
+      nanopi-r2s|NanoPi-NEO3-Black)
         source $FW_PLATFORM_DIR/navy/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/navy
         BRO_PROC_NAME="zeek"
