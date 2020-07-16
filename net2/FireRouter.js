@@ -344,13 +344,36 @@ class FireRouter {
       defaultWanIntfName = null;
       if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
         const defaultRoutingConfig = routerConfig.routing.global.default;
-        if (defaultRoutingConfig.viaIntf)
-          defaultWanIntfName = defaultRoutingConfig.viaIntf;
-        else {
-          if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
-            // load balance default route, choose the fisrt one as default WAN
-            defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
+        switch (defaultRoutingConfig.type) {
+          case "primary_standby": {
+            defaultWanIntfName = defaultRoutingConfig.viaIntf;
+            const viaIntf = defaultRoutingConfig.viaIntf;
+            const viaIntf2 = defaultRoutingConfig.viaIntf2;
+            if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
+              defaultWanIntfName = viaIntf;
+            } else {
+              if ((intfNameMap[viaIntf2] && intfNameMap[viaIntf2].state && intfNameMap[viaIntf2].state.wanConnState && intfNameMap[viaIntf2].state.wanConnState.active === true))
+                defaultWanIntfName = viaIntf2;
+            }
+            break;
           }
+          case "load_balance": {
+            if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
+              // load balance default route, choose the fisrt one as fallback default WAN
+              defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
+              for (const nextHop of defaultRoutingConfig.nextHops) {
+                const viaIntf = nextHop.viaIntf;
+                if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true) {
+                  defaultWanIntfName = viaIntf;
+                  break;
+                }
+              }
+            }
+            break;
+          }
+          case "single":
+          default:
+            defaultWanIntfName = defaultRoutingConfig.viaIntf;
         }
       }
       if (!defaultWanIntfName )
