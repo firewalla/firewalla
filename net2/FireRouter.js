@@ -164,10 +164,11 @@ async function generateNetworkInfo() {
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
     if (resolverConfig) {
       if (resolverConfig.useNameserversFromWAN) {
-        const routingConfig = (routerConfig && routerConfig.routing && (routerConfig.routing[intfName] || routerConfig.routing.global));
-        const defaultRoutingConfig = routingConfig && routingConfig.default;
+        const defaultRoutingConfig = routerConfig && routerConfig.routing && ((routerConfig.routing[intfName] && routerConfig.routing[intfName].default) || (routerConfig.routing.global && routerConfig.routing.global.default));
         if (defaultRoutingConfig) {
-          const viaIntf = defaultRoutingConfig.viaIntf;
+          let viaIntf = defaultRoutingConfig.viaIntf;
+          if (defaultRoutingConfig === routerConfig.routing.global.default) // use default dns from global default WAN interface if no interface-specific default WAN is configured
+            viaIntf = defaultWanIntfName;
           if (intfNameMap[viaIntf]) {
             resolver = intfNameMap[viaIntf].config.nameservers || intfNameMap[viaIntf].state.dns;
           }
