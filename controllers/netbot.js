@@ -2542,22 +2542,30 @@ class netBot extends ControllerBot {
         break;
       }
       case "alarm:block":
-        am2.blockFromAlarm(value.alarmID, value, (err, { policy, otherBlockedAlarms, alreadyExists }) => {
-          if (value && value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
-            this.simpleTxData(msg, {
-              policy: policy,
-              otherAlarms: otherBlockedAlarms,
-              alreadyExists: alreadyExists === "duplicated",
-              updated: alreadyExists === "duplicated_and_updated"
-            }, err, callback);
+        am2.blockFromAlarm(value.alarmID, value, (err, result) => {
+          if (err) {
+            this.simpleTxData(msg, {}, err, callback);
           } else {
-            this.simpleTxData(msg, policy, err, callback);
+            const { policy, otherBlockedAlarms, alreadyExists } = result
+
+            // only return other matched alarms matchAll is set, originally for backward compatibility
+            // matchAll is not used for blocking check
+            if (value.matchAll) {
+              this.simpleTxData(msg, {
+                policy: policy,
+                otherAlarms: otherBlockedAlarms,
+                alreadyExists: alreadyExists === "duplicated",
+                updated: alreadyExists === "duplicated_and_updated"
+              }, err, callback);
+            } else {
+              this.simpleTxData(msg, policy, err, callback);
+            }
           }
         });
         break;
       case "alarm:allow":
         am2.allowFromAlarm(value.alarmID, value, (err, exception, otherAlarms, alreadyExists) => {
-          if (value && value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          if (value && value.matchAll) { // only return other matched alarms if this option is on, for better backward compatibility
             this.simpleTxData(msg, {
               exception: exception,
               otherAlarms: otherAlarms,
