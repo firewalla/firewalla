@@ -718,19 +718,19 @@ class Host {
 
   async updateHostsFile() {
     const macEntry = await hostTool.getMACEntry(this.o.mac);
-    const ipv4Addr = macEntry && macEntry.ipv4Addr;
     // update hosts file in dnsmasq
     const hostsFile = Host.getHostsFilePath(this.o.mac);
-    const suffix = await rclient.getAsync('local:domain:suffix') || "lan";
-    const localDomain = macEntry.localDomain || "";
-    const userLocalDomain = macEntry.userLocalDomain || "";
     const lastActiveTimestamp = Number(macEntry.lastActiveTimestamp || 0);
-    if (Date.now() / 1000 - lastActiveTimestamp > 1800) {
-      // remove hosts file if it is not active in the last 30 minutes
+    if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 1800) {
+      // remove hosts file if it is not active in the last 30 minutes or it is already removed from host:mac:*
       await fs.unlinkAsync(hostsFile).catch((err) => { });
       dnsmasq.scheduleReloadDNSService();
       return;
     }
+    const ipv4Addr = macEntry && macEntry.ipv4Addr;
+    const suffix = await rclient.getAsync('local:domain:suffix') || "lan";
+    const localDomain = macEntry.localDomain || "";
+    const userLocalDomain = macEntry.userLocalDomain || "";
     if (!ipv4Addr) {
       await fs.unlinkAsync(hostsFile).catch((err) => { });
       dnsmasq.scheduleReloadDNSService();
