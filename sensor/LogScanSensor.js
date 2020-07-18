@@ -41,6 +41,9 @@ class LogScanSensor extends Sensor {
         if (!this.logFireReset) this.logFireReset = {}
 
         this.tailFireReset.on('line', this.fireResetBluetoothChecker.bind(this));
+        this.tailFireReset.on('error', (err) => {
+          log.error("Error while reading firereset log", err.message);
+        })
       }
     } catch (err) {
       log.error("Failed initializing log watchers", err)
