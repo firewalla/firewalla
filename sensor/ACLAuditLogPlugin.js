@@ -55,6 +55,9 @@ class ACLAuditLogPlugin extends Sensor {
       this.auditLogReader.on('line', (line) => {
         this._processIptablesLog(line);
       });
+      this.auditLogReader.on('error', (err) => {
+        log.error("Error while reading acl audit log", err.message);
+      })
     }
 
     sem.on(Message.MSG_ACL_DNS_NXDOMAIN, (message) => {
