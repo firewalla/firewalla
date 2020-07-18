@@ -52,6 +52,9 @@ class OvpnConnSensor extends Sensor {
               log.debug("Detect:OvpnLog ", data);
               this.processOvpnLog(data);
             });
+            this.ovpnLog.on('error', (err) => {
+              log.error("Error while reading openvpn log", err.message);
+            });
           } else {
             setTimeout(() => {
               this.initLogWatcher();
