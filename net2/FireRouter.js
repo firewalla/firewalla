@@ -261,6 +261,15 @@ class FireRouter {
         return;
       let reloadNeeded = false;
       switch (channel) {
+        case Message.MSG_FR_WAN_CONN_CHANGED: {
+          if (!f.isMain())
+            return;
+          const changeDesc = (message && JSON.parse(message)) || null;
+          if (changeDesc) {
+            this.notifyWanConnChange(changeDesc);
+          }
+          break;
+        }
         case Message.MSG_FR_IFACE_CHANGE_APPLIED : {
           log.info("Interface config is changed, schedule reload from FireRouter and restart Brofish ...");
           reloadNeeded = true;
@@ -290,6 +299,7 @@ class FireRouter {
     sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
     sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
+    sclient.subscribe(Message.MSG_FR_WAN_CONN_CHANGED);
   }
 
   async retryUntilInitComplete() {
@@ -750,6 +760,46 @@ class FireRouter {
     }
     // publish message to trigger firerouter init
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+  }
+
+  notifyWanConnChange(changeDesc) {
+    // {"intf":"eth0","ready":false,"wanSwitched":true,"currentStatus":{"eth0":{"ready":false,"active":false},"eth1":{"ready":true,"active":true}}}
+    const intf = changeDesc.intf;
+    const ready = changeDesc.ready;
+    const wanSwitched = changeDesc.wanSwitched;
+    const currentStatus = changeDesc.currentStatus;
+    if (!intfNameMap[intf]) {
+      log.error(`Interface ${intf} is not found`);
+      return;
+    }
+    const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
+    const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
+    let msg = "";
+    if (!ready)
+      msg = `Internet connectivity on ${ifaceName} was lost. `;
+    else
+      msg = `Internet connectivity on ${ifaceName} has been restored. `;
+    if (activeWans.length > 0) {
+      if (wanSwitched)
+        msg = msg + `Active WAN has been switched to ${activeWans.join(', ')}.`;
+      else
+        msg = msg + `Active WAN sticks to ${activeWans.join(', ')}.`;
+    } else {
+      msg = msg + "Internet is unavailable now.";
+    }
+    
+    // TODO: find someone else to generate alarms for WAN connectivity change, instead of send notification
+    sem.sendEventToFireApi({
+      type: 'FW_NOTIFICATION',
+      titleKey: 'NOTIF_WAN_CONN_CHANGED_TITLE',
+      bodyKey: 'NOTIF_WAN_CONN_CHANGED',
+      titleLocalKey: 'WAN_CONN_CHANGED',
+      bodyLocalKey: 'WAN_CONN_CHANGED',
+      bodyLocalArgs: [msg],
+      payload: {
+        msg: msg
+      }
+    });
   }
 }
 
