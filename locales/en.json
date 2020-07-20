@@ -119,5 +119,7 @@
   "NOTIF_ALARM_VPN_WEAK_PASSWORD": "The password on device {{{p.device.name}}} for {{{p.open.servicename}}} service (port {{{p.open.port}}}) is susceptible to malicious attack. Please harden it with more complex combination.",
   "INFO_ALARM_VPN_WEAK_PASSWORD": "The password on device {{{p.device.name}}} for {{{p.open.servicename}}} service (port {{{p.open.port}}}) is susceptible to malicious attack. Please harden it with more complex combination.",
   "NOTIF_BOX_ONLINE_TITLE": "Firewalla back online",
-  "NOTIF_BOX_ONLINE_BODY": "Internet connectivity is restored"
+  "NOTIF_BOX_ONLINE_BODY": "Internet connectivity is restored",
+  "NOTIF_WAN_CONN_CHANGED_TITLE": "WAN Connectivity Status Changed",
+  "NOTIF_WAN_CONN_CHANGED": "{{{msg}}}"
 }
