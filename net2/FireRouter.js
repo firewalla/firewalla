@@ -215,6 +215,11 @@ async function generateNetworkInfo() {
       searchDomains: searchDomains
     }
 
+    if (intf.state && intf.state.wanConnState) {
+      redisIntf.ready = intf.state.wanConnState.ready || false;
+      redisIntf.active = intf.state.wanConnState.active || false;
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
