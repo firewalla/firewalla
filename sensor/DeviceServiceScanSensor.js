@@ -32,6 +32,9 @@ const fc = require('../net2/config.js');
 
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
+const extensionManager = require('./ExtensionManager.js');
+const featureName = 'device_service_scan';
+const enableHostsKey = 'device:service:scan:hosts';
 
 const sysManager = require('../net2/SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -41,9 +44,14 @@ class DeviceServiceScanSensor extends Sensor {
     super();
   }
 
-  run() {
+  run(init = true) {
     let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
-    setTimeout(async() => {
+    if (!this.init) {
+      clearTimeout(this.timeoutId);
+      clearInterval(this.intervalId);
+      firstScanTime = 0;
+    }
+    this.timeoutId = setTimeout(async () => {
       await this.checkAndRunOnce();
       sem.emitEvent({
         type: "DeviceServiceScanComplete",
@@ -52,13 +60,42 @@ class DeviceServiceScanSensor extends Sensor {
     }, firstScanTime);
 
     let interval = this.config.interval * 1000 || 30 * 60 * 1000; // 30 minutes
-    setInterval(() => {
+    this.intervalId = setInterval(() => {
       this.checkAndRunOnce();
     }, interval);
   }
 
   isSensorEnable() {
-    return fc.isFeatureOn("device_service_scan");
+    return fc.isFeatureOn(featureName);
+  }
+  async apiRun() {
+    extensionManager.onSet("deviceServiceScan", async (msg, data) => {
+      if (data) {
+        const enable = data.enable;
+        const hosts = data.hosts || []; //[mac,mac...]
+        if (enable) {
+          await fc.enableDynamicFeature(featureName);
+        } else {
+          await fc.disableDynamicFeature(featureName);
+        }
+        await rclient.setAsync(enableHostsKey, hosts);
+        this.run(false);
+        return true;
+      }
+      return false;
+    });
+    extensionManager.onGet("deviceServiceScan", async (msg, data) => {
+      let hosts;
+      try {
+        hosts = JSON.parse(await rclient.get(enableHostsKey));
+      } catch (e) {
+        hosts = []
+      }
+      const enable = await this.isSensorEnable();
+      return {
+        enable, hosts
+      }
+    });
   }
 
   async checkAndRunOnce() {
@@ -67,7 +104,7 @@ class DeviceServiceScanSensor extends Sensor {
       if (result) {
         return await this.runOnce();
       };
-    } catch(err) {
+    } catch (err) {
       log.error('Failed to scan: ', err);
     };
 
@@ -76,7 +113,16 @@ class DeviceServiceScanSensor extends Sensor {
 
   async runOnce() {
     log.info('Scan start...');
-
+    let results = [];
+    try {
+      const macAddresses = JSON.parse(await rclient.get(enableHostsKey));
+      for (const mac of macAddresses) {
+        const host = await hostManager.getHostAsync(mac);
+        host && results.push(host);
+      }
+    } catch (e) {
+      results = [];
+    }
     let results = await hostManager.getHostsAsync();
     if (!results)
       throw new Error('Failed to scan.');
@@ -91,7 +137,7 @@ class DeviceServiceScanSensor extends Sensor {
           await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
         }
       };
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to scan: " + err);
     }
     log.info('Scan finished...');
@@ -104,7 +150,7 @@ class DeviceServiceScanSensor extends Sensor {
     log.info("Running command:", cmd);
     return new Promise((resolve, reject) => {
       cp.exec(cmd, (err, stdout, stderr) => {
-        if(err || stderr) {
+        if (err || stderr) {
           reject(err || new Error(stderr));
           return;
         }
@@ -142,7 +188,7 @@ class DeviceServiceScanSensor extends Sensor {
         // multiple ports
         port.forEach((p) => DeviceServiceScanSensor._handlePortEntry(p, openports));
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to parse nmap host: " + err);
     }
     return openports;
