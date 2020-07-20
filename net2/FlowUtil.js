@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,12 +16,8 @@
 'use strict'
 
 const urlHash = require('../util/UrlHash.js')
-/*
-module.exports = {
-    canonicalizeAndHashExpressions: canonicalizeAndHash,
-    hashBase64: hashBase64
-};*/
 
+const _ = require('lodash')
 
 // Take host and return hashed
 // [[a,a'],[b,b']]
@@ -30,8 +26,9 @@ function hashHost(_domain, opts) {
   if(results) {
     if (opts && opts.keepOriginal) {
       return results.map(x => {
+        // remove ending '/' from domain name
         if (x[0].endsWith('/')) {
-          x[0] = x[0].substr(0, x[0].length - 1);
+          x[0] = x[0].slice(0, -1);
         }
         return x;
       });
@@ -41,7 +38,6 @@ function hashHost(_domain, opts) {
   } else {
     return null;
   }
-//    return urlHash.canonicalizeAndHashExpressions(_domain).map(x => x.slice(1,3) );
 }
 
 function hashMac(_mac) {
@@ -67,18 +63,22 @@ function hashIp(_ip) {
 }
 
 function hashApp(domain) {
-    let hashed = [];
-    let d = domain.split(".");
-    if (d.length >= 2) {
-         hashed.push(urlHash.hashBase64("*."+d[d.length - 2] + "." + d[d.length - 1]));
-    }
-    if (d.length >= 3) {
-         hashed.push(urlHash.hashBase64("*."+d[d.length - 3] + "." + d[d.length - 2] + "." + d[d.length - 1]));
-    }
-    if (d.length >= 4) {
-         hashed.push(urlHash.hashBase64("*."+d[d.length - 4] + "." + d[d.length - 3] + "." + d[d.length - 2] + "." + d[d.length - 1]));
-    }
-    return hashed;
+  let hashed = [];
+  if (!_.isString(domain)) return hashed
+
+  const d = domain.split(".");
+  const l = d.length
+
+  if (l >= 2) {
+    hashed.push(urlHash.hashBase64("*." + d[l - 2] + "." + d[l - 1]));
+  }
+  if (l >= 3) {
+    hashed.push(urlHash.hashBase64("*." + d[l - 3] + "." + d[l - 2] + "." + d[l - 1]));
+  }
+  if (l >= 4) {
+    hashed.push(urlHash.hashBase64("*." + d[l - 4] + "." + d[l - 3] + "." + d[l - 2] + "." + d[l - 1]));
+  }
+  return hashed;
 }
 
 function dhnameFlow(_flow) {
@@ -197,7 +197,7 @@ console.log(JSON.stringify(hashFlow(JSON.parse(testurl2))));
 
 function hashIntelFlow(flow, cache) {
   cache = cache || {}
-  
+
   if(flow.device) {
     let realMac = flow.device
     let hashedMac = hashMac(realMac)
@@ -210,7 +210,7 @@ function hashIntelFlow(flow, cache) {
 
 function unhashIntelFlow(flow, cache) {
   cache = cache || {}
-  
+
   if(flow.device && cache[flow.device]) {
     flow.device = cache[flow.device]
   }
@@ -233,7 +233,7 @@ function unhashIntelFlows(intelFlows, cache) {
   if(typeof intelFlows != 'object') { // workaround for cloud returns a string
     return {}
   }
-  
+
   for(let intel in intelFlows) {
     let flows = intelFlows[intel]
     flows.forEach((flow) => {
@@ -246,16 +246,16 @@ function unhashIntelFlows(intelFlows, cache) {
 
 
 module.exports = {
-  addFlag: addFlag,
-  checkFlag: checkFlag,
-  hashFlow: hashFlow,
-  hashHost: hashHost,
-  hashMac: hashMac,
-  hashIp: hashIp,
-  hashApp: hashApp,
-  hashIntelFlow: hashIntelFlow,
-  unhashIntelFlow: unhashIntelFlow,
-  hashIntelFlows: hashIntelFlows,
-  unhashIntelFlows: unhashIntelFlows,
-  dhnameFlow: dhnameFlow
+  addFlag,
+  checkFlag,
+  hashFlow,
+  hashHost,
+  hashMac,
+  hashIp,
+  hashApp,
+  hashIntelFlow,
+  unhashIntelFlow,
+  hashIntelFlows,
+  unhashIntelFlows,
+  dhnameFlow,
 };

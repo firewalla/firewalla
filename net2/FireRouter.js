@@ -164,10 +164,11 @@ async function generateNetworkInfo() {
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
     if (resolverConfig) {
       if (resolverConfig.useNameserversFromWAN) {
-        const routingConfig = (routerConfig && routerConfig.routing && (routerConfig.routing[intfName] || routerConfig.routing.global));
-        const defaultRoutingConfig = routingConfig && routingConfig.default;
+        const defaultRoutingConfig = routerConfig && routerConfig.routing && ((routerConfig.routing[intfName] && routerConfig.routing[intfName].default) || (routerConfig.routing.global && routerConfig.routing.global.default));
         if (defaultRoutingConfig) {
-          const viaIntf = defaultRoutingConfig.viaIntf;
+          let viaIntf = defaultRoutingConfig.viaIntf;
+          if (defaultRoutingConfig === routerConfig.routing.global.default) // use default dns from global default WAN interface if no interface-specific default WAN is configured
+            viaIntf = defaultWanIntfName;
           if (intfNameMap[viaIntf]) {
             resolver = intfNameMap[viaIntf].config.nameservers || intfNameMap[viaIntf].state.dns;
           }
@@ -344,13 +345,36 @@ class FireRouter {
       defaultWanIntfName = null;
       if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
         const defaultRoutingConfig = routerConfig.routing.global.default;
-        if (defaultRoutingConfig.viaIntf)
-          defaultWanIntfName = defaultRoutingConfig.viaIntf;
-        else {
-          if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
-            // load balance default route, choose the fisrt one as default WAN
-            defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
+        switch (defaultRoutingConfig.type) {
+          case "primary_standby": {
+            defaultWanIntfName = defaultRoutingConfig.viaIntf;
+            const viaIntf = defaultRoutingConfig.viaIntf;
+            const viaIntf2 = defaultRoutingConfig.viaIntf2;
+            if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
+              defaultWanIntfName = viaIntf;
+            } else {
+              if ((intfNameMap[viaIntf2] && intfNameMap[viaIntf2].state && intfNameMap[viaIntf2].state.wanConnState && intfNameMap[viaIntf2].state.wanConnState.active === true))
+                defaultWanIntfName = viaIntf2;
+            }
+            break;
           }
+          case "load_balance": {
+            if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
+              // load balance default route, choose the fisrt one as fallback default WAN
+              defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
+              for (const nextHop of defaultRoutingConfig.nextHops) {
+                const viaIntf = nextHop.viaIntf;
+                if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true) {
+                  defaultWanIntfName = viaIntf;
+                  break;
+                }
+              }
+            }
+            break;
+          }
+          case "single":
+          default:
+            defaultWanIntfName = defaultRoutingConfig.viaIntf;
         }
       }
       if (!defaultWanIntfName )

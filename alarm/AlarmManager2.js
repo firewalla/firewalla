@@ -940,7 +940,7 @@ module.exports = class {
     return util.callbackify(this.blockFromAlarmAsync).bind(this)(alarmID, info, callback || function(){})
   }
 
-  async blockFromAlarmAsync(alarmID, value, callback) {
+  async blockFromAlarmAsync(alarmID, value) {
     log.info("Going to block alarm " + alarmID);
     log.info("value: ", value);
 
@@ -952,8 +952,7 @@ module.exports = class {
 
     if (!alarm) {
       log.error("Invalid alarm ID:", alarmID);
-      callback(new Error("Invalid alarm ID: " + alarmID));
-      return;
+      throw new Error("Invalid alarm ID: " + alarmID);
     }
 
     let p = {
@@ -982,8 +981,7 @@ module.exports = class {
       //     p.target = target;
       //   } else {
       //     log.error("Unsupported alarm type for blocking: ", alarm)
-      //     callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
-      //     return
+      //     throw new Error("Unsupported alarm type for blocking: " + alarm.type)
       //   }
       //   break;
 
@@ -999,8 +997,7 @@ module.exports = class {
           dnsManager.resolveLocalHost(targetIp, (err, result) => {
             if (err || result == null) {
               log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
-              callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
-              return;
+              throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
             }
 
             targetMac = result.mac;
@@ -1061,8 +1058,7 @@ module.exports = class {
     }
 
     if (!p.type || !p.target) {
-      callback(new Error("Unsupported Action!"));
-      return;
+      throw new Error("Unsupported Action!")
     }
 
     p["if.type"] = p.type;

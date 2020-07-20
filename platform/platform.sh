@@ -16,22 +16,29 @@ case "$UNAME" in
     export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
     ;;
   "aarch64")
-    . /etc/armbian-release
-    case "$BOARD" in
-      "nanopineo2")
-        source $FW_PLATFORM_DIR/blue/platform.sh
-        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
-        BRO_PROC_NAME="bro"
-        BRO_PROC_COUNT=3
-        ;;
-      "nanopi-r2s")
-        source $FW_PLATFORM_DIR/navy/platform.sh
-        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/navy
-        BRO_PROC_NAME="zeek"
-        BRO_PROC_COUNT=2
-        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
-        ;;
-    esac
+    if [[ -e /etc/firewalla-release ]]; then
+      BOARD=$( . /etc/firewalla-release; echo $BOARD)
+      case $BOARD in
+        navy)
+          source $FW_PLATFORM_DIR/navy/platform.sh
+          FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/navy
+          BRO_PROC_NAME="zeek"
+          BRO_PROC_COUNT=2
+          export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+          ;;
+        *)
+          unset FW_PLATFORM_CUR_DIR
+          unset BRO_PROC_NAME
+          unset BRO_PROC_COUNT
+          unset ZEEK_DEFAULT_LISTEN_ADDRESS
+          ;;
+      esac
+    else
+      source $FW_PLATFORM_DIR/blue/platform.sh
+      FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
+      BRO_PROC_NAME="bro"
+      BRO_PROC_COUNT=3
+    fi
     ;;
   "armv7l")
     source $FW_PLATFORM_DIR/red/platform.sh

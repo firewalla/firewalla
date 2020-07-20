@@ -29,8 +29,12 @@ class PlatformLoader {
 
   getPlatformName() {
     if (!this.platformName) {
-      const uname = execSync("uname -m", {encoding: 'utf8'}).trim();
-      this.platformName = uname;
+      try {
+        const uname = execSync("uname -m", {encoding: 'utf8'}).trim();
+        this.platformName = uname;
+      } catch (err) {
+        this.platformName = 'unknown';
+      }
     }
 
     return this.platformName;
@@ -38,7 +42,11 @@ class PlatformLoader {
 
   getBoardName() {
     if (!this.boardName) {
-      this.boardName = execSync("awk -F= '/BOARD=/ {print $2}' /etc/armbian-release",{encoding:'utf8'}).trim();
+      try {
+        this.boardName = execSync("awk -F= '/BOARD=/ {print $2}' /etc/firewalla-release",{encoding:'utf8'}).trim();
+      } catch (err) {
+        this.boardName = 'unknown';
+      }
     }
     return this.boardName
   }
@@ -54,18 +62,16 @@ class PlatformLoader {
       case "aarch64": {
         const boardName = this.getBoardName();
         switch (boardName) {
-          case "nanopi-r2s": {
+          case "navy": {
             const NavyPlatform = require('./navy/NavyPlatform.js');
             this.platform = new NavyPlatform();
             break;
           }
-          case "nanopineo2": {
+          default: {
             const BluePlatform = require('./blue/BluePlatform.js');
             this.platform = new BluePlatform();
             break;
           }
-          default:
-            return null;
         }
         break;
       }

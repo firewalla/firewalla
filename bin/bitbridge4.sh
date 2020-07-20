@@ -3,22 +3,10 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_BIN:=$FIREWALLA_HOME/bin}
 
+source ${FIREWALLA_HOME}/platform/platform.sh
+ln -sfT $REAL_PLATFORM real
+
 BINARY=bitbridge7
-
-if [[ $(uname -m) == "aarch64" ]]; then
-  if [[ -e /etc/armbian-release ]]; then
-    . /etc/armbian-release
-    case $BOARD in
-      nanopineo2) ln -sfT real.aarch64 real ;;
-      nanopi-r2s) ln -sfT real.navy real ;;
-    esac
-  fi
-fi
-
-if [[ $(uname -m) == "x86_64" ]]; then
-  ln -sfT real.x86_64 real
-fi       
-
 if [[ -e $FIREWALLA_BIN/dev ]]; then
   cp $FIREWALLA_BIN{/mock,}/$BINARY
 else
