@@ -123,7 +123,9 @@ class DeviceServiceScanSensor extends Sensor {
     } catch (e) {
       results = [];
     }
-    let results = await hostManager.getHostsAsync();
+    if (results.length == 0) {
+      results = await hostManager.getHostsAsync();
+    }
     if (!results)
       throw new Error('Failed to scan.');
 
