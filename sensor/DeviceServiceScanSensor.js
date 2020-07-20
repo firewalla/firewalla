@@ -35,6 +35,7 @@ const hostManager = new HostManager();
 const extensionManager = require('./ExtensionManager.js');
 const featureName = 'device_service_scan';
 const enableHostsKey = 'device:service:scan:hosts';
+const _ = require('lodash');
 
 const sysManager = require('../net2/SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -44,9 +45,9 @@ class DeviceServiceScanSensor extends Sensor {
     super();
   }
 
-  run(init = true) {
+  run(force) {
     let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
-    if (!this.init) {
+    if (this.force) {
       clearTimeout(this.timeoutId);
       clearInterval(this.intervalId);
       firstScanTime = 0;
@@ -78,8 +79,8 @@ class DeviceServiceScanSensor extends Sensor {
         } else {
           await fc.disableDynamicFeature(featureName);
         }
-        await rclient.setAsync(enableHostsKey, hosts);
-        this.run(false);
+        await rclient.setAsync(enableHostsKey, JSON.stringify(hosts));
+        this.run(true);
         return true;
       }
       return false;
@@ -87,13 +88,14 @@ class DeviceServiceScanSensor extends Sensor {
     extensionManager.onGet("deviceServiceScan", async (msg, data) => {
       let hosts;
       try {
-        hosts = JSON.parse(await rclient.get(enableHostsKey));
+        hosts = JSON.parse(await rclient.getAsync(enableHostsKey));
       } catch (e) {
         hosts = []
       }
       const enable = await this.isSensorEnable();
       return {
-        enable, hosts
+        enable: enable,
+        hosts: _.isArray(hosts) ? hosts : []
       }
     });
   }
@@ -115,7 +117,8 @@ class DeviceServiceScanSensor extends Sensor {
     log.info('Scan start...');
     let results = [];
     try {
-      const macAddresses = JSON.parse(await rclient.get(enableHostsKey));
+      let macAddresses = JSON.parse(await rclient.getAsync(enableHostsKey));
+      macAddresses = _.isArray(macAddresses) ? macAddresses : [];
       for (const mac of macAddresses) {
         const host = await hostManager.getHostAsync(mac);
         host && results.push(host);
@@ -134,9 +137,13 @@ class DeviceServiceScanSensor extends Sensor {
       results = results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr));
       for (const host of results) {
         log.info("Scanning device: ", host.o.ipv4Addr);
-        const scanResult = await this._scan(host.o.ipv4Addr);
-        if (scanResult) {
-          await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
+        try {
+          const scanResult = await this._scan(host.o.ipv4Addr);
+          if (scanResult) {
+            await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
+          }
+        } catch (e) {
+          log.info('host port scan error', e);
         }
       };
     } catch (err) {
@@ -163,7 +170,6 @@ class DeviceServiceScanSensor extends Sensor {
         } catch (err) {
           reject(err);
         }
-
         let nmapJSON = findings && findings.nmaprun && findings.nmaprun.host;
         resolve(this._parseNmapPortResult(nmapJSON));
       })

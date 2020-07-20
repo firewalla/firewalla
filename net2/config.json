@@ -81,6 +81,7 @@
     "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
+    "DeviceServiceScanSensor":{},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
     "WireGuardPlugin": {}
