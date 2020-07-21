@@ -25,7 +25,8 @@ Tail = (function(_super) {
 
       if (block.type == 'close') {
         fs.close(block.fd, function(err) {
-          return self.emit('error', err);
+          if (err)
+            return self.emit('error', err);
         });
         delete self.bookmarks[block.fd];
       };
@@ -171,7 +172,8 @@ Tail = (function(_super) {
     
     if (self.fd) {
       fs.close(self.fd, function(err) {
-        return self.emit('error', err);
+        if (err)
+          return self.emit('error', err);
       });
       self.fd = null;
     };
@@ -181,7 +183,8 @@ Tail = (function(_super) {
       var item = self.queue[i];
       if (item.type == 'close') {
         fs.close(item.fd, function(err) {
-          return self.emit('error', err);
+          if (err)
+            return self.emit('error', err);
         });
       };
     };
