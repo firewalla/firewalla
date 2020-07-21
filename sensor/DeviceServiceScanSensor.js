@@ -141,7 +141,7 @@ class DeviceServiceScanSensor extends Sensor {
     }
 
     async applyScan() {
-        this.applySystemScan();
+        await this.applySystemScan();
         for (const mac in this.deviceScanMap) {
             const scanInfo = this.deviceScanMap(mac);
             await this.applyDeviceScan(scanInfo);
