@@ -38,6 +38,9 @@ const { wrapIptables } = require('../../net2/Iptables.js')
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
+const platformLoader = require('../../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 const Mode = require('../../net2/Mode.js');
 
 const VIEW_PATH = 'view';
@@ -107,6 +110,38 @@ class App {
     }
 
     return 0
+  }
+
+  async getFireResetStatus() {
+    try {
+      await exec("systemctl is-active firereset")
+    } catch(err) {
+      log.error("firereset is not active", err);
+      return 1;
+    }
+
+    try {
+      await exec("tail -n 10 /home/pi/.forever/firereset.log | grep 'Invalid Bluetooth'")
+      log.error("Invalid bluetooth plugged in");
+      return 2;
+    } catch(err) {
+    }
+
+    try {
+      await exec("tail -n 10 /home/pi/.forever/firereset.log | grep 'Failed to start service'")
+      log.error("Likely bluetooth not plugged in");
+      return 3;
+    } catch(err) {
+    }
+
+    try {
+      await exec("tail -n 10 /home/pi/.forever/firereset.log | grep 'can\'t read hci socket'")
+      log.error("Unknown error");
+      return 4;
+    } catch(err) {
+    }
+
+    return 0;
   }
 
   getCloudConnectivity() {
@@ -289,6 +324,24 @@ class App {
       }
     });
 
+
+    this.app.use('/raw', async (req, res) => {
+      log.info("Got a request in *")
+
+      try {
+        const values = await this.getPairingStatus();
+        if(values.error) {
+          log.error("Failed to process request", err);
+          res.status(500).send({})
+        } else {
+          res.render('raw', values)
+        }
+      } catch(err) {
+        log.error("Failed to process request", err);
+        res.status(500).send({})
+      }
+    })
+
     this.app.use('*', async (req, res) => {
       log.info("Got a request in *")
 
@@ -367,6 +420,15 @@ class App {
       if(systemServices != 0) {
         values.err_service = true
         success = false
+      }
+
+      value.has_bluetooth = platform.isBluetoothAvailable();
+      if(value.has_bluetooth) {
+        const btStatus = await this.getFireResetStatus();
+        if(btStatus !== 0) {
+          value.err_bluetooth = btStatus
+          // no need to set success to false, because it's not a blocking issue for QR code pairing
+        }
       }
 
       values.success = success
