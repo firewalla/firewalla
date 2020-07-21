@@ -72,14 +72,22 @@ class DeviceServiceScanSensor extends Sensor {
                         if (tagUid) {
                             const hosts = await hostManager.getHostsAsync();
                             const tagHosts = hosts.filter((h) => {
-                                return h && h.o && h.o.tags(
+                                return h && h.o && h.o.tags && (
                                     h.o.tags.includes(Number(tagUid)) || h.o.tags.includes(String(tagUid))
                                 )
                             })
-                            this.tagScanMap[tagUid] = Object.assign(this.tagScanMap[tagUid], {
-                                hosts: tagHosts,
-                                policy: policy
-                            })
+                            if (this.tagScanMap[tagUid]) {
+                                this.tagScanMap[tagUid] = Object.assign(this.tagScanMap[tagUid], {
+                                    hosts: tagHosts,
+                                    policy: policy
+                                })
+                            } else {
+                                this.tagScanMap[tagUid] = {
+                                    hosts: tagHosts,
+                                    policy: policy
+                                }
+                            }
+
                             await this.applyDeviceScan(this.tagScanMap[tagUid]);
                         }
                         break;
@@ -91,10 +99,17 @@ class DeviceServiceScanSensor extends Sensor {
                             const networkHosts = hosts.filter((h) => {
                                 return h && h.o && h.o.intf_uuid == uuid
                             })
-                            this.networkScanMap[uuid] = Object.assign(this.networkScanMap[uuid], {
-                                hosts: networkHosts,
-                                policy: policy
-                            })
+                            if (this.networkScanMap[uuid]) {
+                                this.networkScanMap[uuid] = Object.assign(this.networkScanMap[uuid], {
+                                    hosts: networkHosts,
+                                    policy: policy
+                                })
+                            } else {
+                                this.networkScanMap[uuid] = {
+                                    hosts: networkHosts,
+                                    policy: policy
+                                }
+                            }
                             await this.applyDeviceScan(this.networkScanMap[uuid]);
                         }
                         break;
@@ -102,10 +117,17 @@ class DeviceServiceScanSensor extends Sensor {
                     case "Host": {
                         const macAddress = host && host.o && host.o.mac;
                         if (macAddress) {
-                            this.deviceScanMap[macAddress] = Object.assign(this.deviceScanMap[macAddress], {
-                                hosts: host,
-                                policy: policy
-                            })
+                            if (this.deviceScanMap[macAddress]) {
+                                this.deviceScanMap[macAddress] = Object.assign(this.deviceScanMap[macAddress], {
+                                    hosts: [host],
+                                    policy: policy
+                                })
+                            } else {
+                                this.deviceScanMap[macAddress] = {
+                                    hosts: [host],
+                                    policy: policy
+                                }
+                            }
                             await this.applyDeviceScan(this.deviceScanMap[macAddress]);
                         }
                         break;
