@@ -121,6 +121,16 @@ class App {
     }
 
     try {
+      const result = await exec("hcitool -i hci0 dev | wc -l")
+      if (result.stdout !== "2") {
+        return 6;
+      }
+    } catch(err) {
+      log.error("bluetooth not found");
+      return 5;
+    }
+
+    try {
       await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'Invalid Bluetooth'")
       log.error("Invalid bluetooth plugged in");
       return 2;
