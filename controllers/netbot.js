@@ -4279,6 +4279,8 @@ class netBot extends ControllerBot {
 process.on('unhandledRejection', (reason, p) => {
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: " + reason;
   log.error(msg, reason.stack);
+  if (msg.includes("Redis connection"))
+    return;
   bone.logAsync("error", {
     type: 'FIREWALLA.UI.unhandledRejection',
     msg: msg,
