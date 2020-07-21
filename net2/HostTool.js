@@ -38,6 +38,13 @@ const iptool = require('ip');
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
+const _ = require('lodash')
+
+const nameKeys = [
+  'cloudName', 'spoofMeName', 'spoofMeName', 'dhcpName', 'bonjourName',
+  'bname', 'pname', 'hostname', 'macVendor', 'name'
+]
+
 class HostTool {
   constructor() {
     if(!instance) {
@@ -101,6 +108,22 @@ class HostTool {
     log.info("Updating backup name", name, "for mac:", mac);
     let key = "host:mac:" + mac;
     return rclient.hsetAsync(key, "bname", name)
+  }
+
+  async removeIPv4Names(ip) {
+    if (ip) {
+      await rclient.hdelAsync(this.getHostKey(ip), nameKeys)
+    }
+  }
+
+  async removeIPv6Names(oldIPs, newIPs) {
+    if (!Array.isArray(oldIPs)) return
+
+    // undefined/null newIPs will be considered as empty
+    const deprecatedIPs = _.difference(oldIPs, newIPs)
+    for (const ip6 of deprecatedIPs) {
+      await rclient.hdelAsync(this.getIPv6HostKey(ip6), nameKeys)
+    }
   }
 
   async updateIPv4Host(host) {
@@ -510,7 +533,7 @@ class HostTool {
   }
 
   async findMacByMacHash(hash) {
-    const allMacs = await this.getAllMACs();    
+    const allMacs = await this.getAllMACs();
     for(const mac of allMacs) {
       const hashObject = Hashes.getHashObject(mac);
       if(hashObject && hashObject.hash === hash) {
@@ -545,7 +568,7 @@ class HostTool {
 
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
-  
+
   async generateLocalDomain(mac) {
     if(!this.isMacAddress(mac)) {
       return;
