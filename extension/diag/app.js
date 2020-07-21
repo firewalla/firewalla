@@ -422,11 +422,11 @@ class App {
         success = false
       }
 
-      value.has_bluetooth = platform.isBluetoothAvailable();
-      if(value.has_bluetooth) {
+      values.has_bluetooth = platform.isBluetoothAvailable();
+      if(values.has_bluetooth) {
         const btStatus = await this.getFireResetStatus();
         if(btStatus !== 0) {
-          value.err_bluetooth = btStatus
+          values.err_bluetooth = btStatus
           // no need to set success to false, because it's not a blocking issue for QR code pairing
         }
       }
