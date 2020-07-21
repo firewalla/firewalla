@@ -289,6 +289,27 @@ class App {
       })
     });
 
+    this.app.use('/bluetooth_log', (req, res) => {
+      const filename = "/home/pi/.forever/firereset.log";
+      (async () => {
+        await fs.accessAsync(filename, fs.constants.F_OK)
+        const result = (await exec(`tail -n 100 ${filename}`)).stdout
+        let lines = result.split("\n")
+        lines = lines.map((originLine) => {
+          let line = originLine
+          line = line.replace(/password.........................................../, "*************************");
+          line = line.replace(/username.........................................../, "*************************")
+          return line
+        })
+
+        res.setHeader('content-type', 'text/plain');
+        res.end(lines.join("\n"))
+      })().catch((err) => {
+        log.error("Failed to fetch log", err);
+        res.status(404).send('')
+      })
+    });
+
     this.app.use('/pairing', (req, res) => {
       if (this.broadcastInfo) {
         res.json(this.broadcastInfo);
