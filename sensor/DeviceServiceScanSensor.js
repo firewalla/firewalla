@@ -250,6 +250,8 @@ class DeviceServiceScanSensor extends Sensor {
     // global on/off
     async globalOn() {
         this.adminSystemSwitch = true;
+        const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null;
+        defaultOn && (this.systemSwitch = true);
         this.applyScan();
     }
 
