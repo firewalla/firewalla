@@ -38,13 +38,6 @@ const iptool = require('ip');
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
-const _ = require('lodash')
-
-const nameKeys = [
-  'cloudName', 'spoofMeName', 'spoofMeName', 'dhcpName', 'bonjourName',
-  'bname', 'pname', 'hostname', 'macVendor', 'name'
-]
-
 class HostTool {
   constructor() {
     if(!instance) {
@@ -110,22 +103,6 @@ class HostTool {
     return rclient.hsetAsync(key, "bname", name)
   }
 
-  async removeIPv4Names(ip) {
-    if (ip) {
-      await rclient.hdelAsync(this.getHostKey(ip), nameKeys)
-    }
-  }
-
-  async removeIPv6Names(oldIPs, newIPs) {
-    if (!Array.isArray(oldIPs)) return
-
-    // undefined/null newIPs will be considered as empty
-    const deprecatedIPs = _.difference(oldIPs, newIPs)
-    for (const ip6 of deprecatedIPs) {
-      await rclient.hdelAsync(this.getIPv6HostKey(ip6), nameKeys)
-    }
-  }
-
   async updateIPv4Host(host) {
     let uid = host.uid;
     let key = this.getHostKey(uid);
@@ -136,8 +113,13 @@ class HostTool {
       delete hostCopy.ipv6Addr
     }
 
-    this.cleanupData(hostCopy);
+    const oldHostMac = await rclient.hgetAsync(key, 'mac')
+    // new host taking over this ip, remove previous entry
+    if (oldHostMac != host.mac) {
+      await rclient.delAsync(key)
+    }
 
+    this.cleanupData(hostCopy);
     await rclient.hmsetAsync(key, hostCopy)
     await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
   }
@@ -365,34 +347,36 @@ class HostTool {
 
   async updateIPv6Host(host, ipv6Addr, skipTimeUpdate) {
     skipTimeUpdate = skipTimeUpdate || false;
-    if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
-      for (const addr of ipv6Addr) {
-        let key = this.getIPv6HostKey(addr)
 
-        let existingData = await rclient.hgetallAsync(key)
-        let data = null
+    if (!Array.isArray(ipv6Addr)) return
 
-        if(existingData && existingData.mac === host.mac) {
-          // just update last timestamp for existing device
-          if (!skipTimeUpdate) {
-            data = {
-              lastActiveTimestamp: Date.now() / 1000
-            }
-          }
-        } else {
+    for (const addr of ipv6Addr) {
+      const key = this.getIPv6HostKey(addr)
+
+      const existingData = await rclient.hgetallAsync(key)
+      let data = null
+
+      if (existingData && existingData.mac === host.mac) {
+        // just update last timestamp for existing device
+        if (!skipTimeUpdate) {
           data = {
-            mac: host.mac
-          };
-          if (!skipTimeUpdate) {
-            data.firstFoundTimestamp = Date.now() / 1000;
-            data.lastActiveTimestamp = Date.now() / 1000;
+            lastActiveTimestamp: Date.now() / 1000
           }
         }
-
-        if (data) {
-          await rclient.hmsetAsync(key, data)
-          await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
+      } else {
+        await rclient.delAsync(key)
+        data = {
+          mac: host.mac
+        };
+        if (!skipTimeUpdate) {
+          data.firstFoundTimestamp = Date.now() / 1000;
+          data.lastActiveTimestamp = Date.now() / 1000;
         }
+      }
+
+      if (data) {
+        await rclient.hmsetAsync(key, data)
+        await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
       }
     }
   }

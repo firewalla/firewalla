@@ -224,18 +224,17 @@ class DeviceHook extends Hook {
         }
       });
 
-      sem.on("NewDeviceFound", (event) => {
-        let host = event.host;
+      sem.on("NewDeviceFound", async (event) => {
+        try {
+          let host = event.host;
 
-        log.info(util.format("A new device %s - %s - %s is found!", host.bname, host.ipv4Addr, host.mac));
+          log.info(util.format("A new device %s - %s - %s is found!", host.bname, host.ipv4Addr, host.mac));
 
-        let enrichedHost = extend({}, host, {
-          uid: host.ipv4Addr || this.getFirstIPv6(host) || host.mac || "Unknown",
-          firstFoundTimestamp: new Date() / 1000,
-          lastActiveTimestamp: new Date() / 1000
-        });
-
-        (async () => {
+          let enrichedHost = extend({}, host, {
+            uid: host.ipv4Addr || this.getFirstIPv6(host) || host.mac || "Unknown",
+            firstFoundTimestamp: new Date() / 1000,
+            lastActiveTimestamp: new Date() / 1000
+          });
 
           // v4
           if (enrichedHost.ipv4Addr) {
@@ -249,8 +248,9 @@ class DeviceHook extends Hook {
           }
 
           // v6
-          if (enrichedHost.ipv6Addr)
+          if (enrichedHost.ipv6Addr) {
             await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr);
+          }
 
           log.info("Host entry is created for this new device:", host);
 
@@ -306,9 +306,9 @@ class DeviceHook extends Hook {
           await this.setupLocalDeviceDomain(host.mac, 'new_device');
 
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
-        })().catch((err) => {
+        } catch(err) {
           log.error("Failed to handle NewDeviceFound event:", err);
-        });
+        }
       });
 
       sem.on("OldDeviceChangedToNewIP", async (event) => {
@@ -330,12 +330,10 @@ class DeviceHook extends Hook {
             lastActiveTimestamp: currentTimestamp
           });
 
-          await hostTool.removeIPv4Names(macData.ipv4Addr)
-          await hostTool.removeIPv6Names(macData.ipv6Addr, enrichedHost.ipv6Addr)
-
           await hostTool.updateIPv4Host(enrichedHost); // update host:ip4:xxx entries
-          if (enrichedHost.ipv6Addr)
+          if (enrichedHost.ipv6Addr) {
             await hostTool.updateIPv6Host(enrichedHost, enrichedHost.ipv6Addr); // update host:ip6:xxx entries
+          }
 
           log.info("New host entry is created for this old device");
 
@@ -403,10 +401,6 @@ class DeviceHook extends Hook {
             log.info("Suspected spoofing device detected: " + enrichedHost.mac);
             this.createAlarm(enrichedHost, 'spoofing_device');
           }
-
-          await hostTool.removeIPv4Names(enrichedHost.ipv4Addr)
-          await hostTool.removeIPv4Names(macData.ipv4Addr)
-          await hostTool.removeIPv6Names(macData.ipv6Addr, enrichedHost.ipv6Addr)
 
           await hostTool.updateIPv4Host(enrichedHost);
           if (enrichedHost.ipv6Addr)
