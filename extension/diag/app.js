@@ -121,21 +121,21 @@ class App {
     }
 
     try {
-      await exec("tail -n 10 /home/pi/.forever/firereset.log | grep 'Invalid Bluetooth'")
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'Invalid Bluetooth'")
       log.error("Invalid bluetooth plugged in");
       return 2;
     } catch(err) {
     }
 
     try {
-      await exec("tail -n 10 /home/pi/.forever/firereset.log | grep 'Failed to start service'")
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'Failed to start service'")
       log.error("Likely bluetooth not plugged in");
       return 3;
     } catch(err) {
     }
 
     try {
-      await exec("tail -n 10 /home/pi/.forever/firereset.log | grep 'can\'t read hci socket'")
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'can\'t read hci socket'")
       log.error("Unknown error");
       return 4;
     } catch(err) {
@@ -326,7 +326,7 @@ class App {
 
 
     this.app.use('/raw', async (req, res) => {
-      log.info("Got a request in *")
+      log.info("Got a request in /raw")
 
       try {
         const values = await this.getPairingStatus();
