@@ -122,7 +122,7 @@ class App {
 
     try {
       const result = await exec("hcitool -i hci0 dev | wc -l")
-      if (result.stdout !== "2") {
+      if (result.stdout.replace("\n", "") !== "2") {
         return 6;
       }
     } catch(err) {
