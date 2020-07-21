@@ -181,19 +181,7 @@ class App {
   }
 
   async getPrimaryIP() {
-    const config = Config.getConfig(true);
-    const eths = require('os').networkInterfaces()[config.monitoringInterface];
-
-    if (eths) {
-      for (let index = 0; index < eths.length; index++) {
-        const eth = eths[index]
-        if (eth.family == "IPv4") {
-          return eth.address
-        }
-      }
-    }
-
-    return ''
+    return sysManager.myDefaultWanIp() || '';
   }
 
   async getQRImage() {
