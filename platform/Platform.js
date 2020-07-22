@@ -157,6 +157,10 @@ class Platform {
     return null;
   }
 
+
+  isOverlayNetworkAvailable() {
+    return true;
+  }
 }
 
 module.exports = Platform;
