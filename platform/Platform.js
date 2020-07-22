@@ -161,6 +161,10 @@ class Platform {
   isBluetoothAvailable() {
     return true
   }
+
+  isOverlayNetworkAvailable() {
+    return true;
+  }
 }
 
 module.exports = Platform;
