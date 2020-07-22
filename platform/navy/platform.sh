@@ -6,23 +6,21 @@ FIREMON_MAX_MEMORY=240000
 FIREAPI_MAX_MEMORY=200000
 MAX_NUM_OF_PROCESSES=4000
 MAX_NUM_OF_THREADS=20000
+MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
-REAL_PLATFORM='real.aarch64'
+REAL_PLATFORM='real.navy'
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
 }
 
 function heartbeatLED {
-  sudo sh -c 'echo none > /sys/devices/platform/leds/leds/nanopi:green:status/trigger' # intentionally not use green light as it is hard to be seen
-  sudo sh -c 'echo heartbeat > /sys/devices/platform/leds/leds/nanopi:red:pwr/trigger'
+  sudo sh -c 'echo heartbeat > /sys/devices/platform/gpio-leds/leds/status_led/trigger'
 }
 
 function turnOffLED {
-  sudo sh -c 'echo none > /sys/devices/platform/leds/leds/nanopi:green:status/trigger'
-  sudo sh -c 'echo 0 > /sys/devices/platform/leds/leds/nanopi:green:status/brightness'
-  sudo sh -c 'echo none > /sys/devices/platform/leds/leds/nanopi:red:pwr/trigger' 
-  sudo sh -c 'echo 0 > /sys/devices/platform/leds/leds/nanopi:red:pwr/brightness'
+  sudo sh -c 'echo none > /sys/devices/platform/gpio-leds/leds/status_led/trigger'
+  sudo sh -c 'echo 0 > /sys/devices/platform/gpio-leds/leds/status_led/brightness'
 }
 
 function get_node_modules_url {
