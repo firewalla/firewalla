@@ -180,9 +180,18 @@ get_redis_key_with_no_ttl() {
     echo -e "$COLOR $NOTTL $UNCOLOR"
 }
 
+get_mode() {
+    MODE=$(redis-cli get mode)
+    if [ $MODE = "spoof" ] && [ "$(redis-cli hget policy:system enhancedSpoof)" = "true" ]; then
+        echo "enhancedSpoof"
+    else
+        echo "$MODE"
+    fi
+}
+
 check_system_config() {
     echo "----------------------- System Config ------------------------------"
-    check_each_system_config Mode $(redis-cli get mode)
+    check_each_system_config "Mode" $(get_mode)
     check_each_system_config "Adblock" $(redis-cli hget policy:system adblock)
     check_each_system_config "Family" $(redis-cli hget policy:system family)
     check_each_system_config "Monitor" $(redis-cli hget policy:system monitor)
