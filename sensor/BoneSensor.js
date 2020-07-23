@@ -44,17 +44,28 @@ let hostManager = new HostManager();
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
 
+const CHECK_IN_MIN_INTERVAL = 900 * 1000;
+const CHECK_IN_MAX_INTERVAL = 3600 * 4 * 1000;
+
 
 class BoneSensor extends Sensor {
   scheduledJob() {
-    Bone.waitUntilCloudReady(() => {
-      this.checkIn()
-        .then(() => { })
-        .catch((err) => {
-          log.error("Failed to check in", err);
-        })
-
-    })
+    if (!this.checkinTask) {
+      log.info(`Next scheduled checkin will happen in ${this.nextInterval} milliseconds`);
+      this.checkinTask = setTimeout(() => {
+        Bone.waitUntilCloudReady(() => {
+          this.checkIn().then(() => {
+            log.info("Scheduled checkin succeeded");
+          }).catch((err) => {
+            log.error("Scheduled checkin failed", err);
+          }).then(() => {
+            this.nextInterval = Math.min(this.nextInterval * 2, CHECK_IN_MAX_INTERVAL);
+            this.checkinTask = null;
+            this.scheduledJob();
+          });
+        });
+      }, this.nextInterval);
+    }
   }
 
   apiRun() {
@@ -181,7 +192,7 @@ class BoneSensor extends Sensor {
     await this.checkCloudSpoofOff(data.spoofOff);
     this.lastCheckedIn = Date.now() / 1000;
 
-    log.info("Cloud checked in successfully:")//, JSON.stringify(data));
+    log.info("Cloud checked in successfully")//, JSON.stringify(data));
 
     await rclient.setAsync("sys:bone:info", JSON.stringify(data));
 
@@ -250,9 +261,9 @@ class BoneSensor extends Sensor {
   }
 
   run() {
-    setInterval(() => {
-      this.scheduledJob();
-    }, syncInterval);
+    // checkin interval increases exponentially from min to max
+    this.nextInterval = CHECK_IN_MIN_INTERVAL;
+    this.scheduledJob();
 
     sem.on("CloudURLUpdate", async () => {
       return this.applyNewCloudInstanceURL()
