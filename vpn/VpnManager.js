@@ -52,28 +52,36 @@ class VpnManager {
       this.upnp = new UPNP();
       if (firewalla.isMain()) {
         sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
-          // update UPnP port mapping
-          try {
-            if (!this.started)
-              return;
-            // this.configure() with out arguments will leave the current config unchanged
-            await this.configure().then(() => this.start()).catch((err) => {
-              log.error("Failed to reconfigure and start VPN server", err.message);
-            });
-            await this.removeUpnpPortMapping().catch((err) => {});
-            this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN")
-            await this.updateOverlayNetworkDNAT().catch((err) => {
-              log.error("Failed to update overlay network DNAT", err.message);
-            });
-          } catch(err) {
-            log.error("Failed to set Upnp port mapping", err);
-          }
-        })
+          this.scheduleReload();
+        });
       }
       instance = this;
       this.instanceName = "server"; // defautl value
     }
     return instance;
+  }
+
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(async () => {
+      try {
+        if (!this.started)
+          return;
+        // this.configure() with out arguments will leave the current config unchanged
+        await this.configure().then(() => this.start()).catch((err) => {
+          log.error("Failed to reconfigure and start VPN server", err.message);
+        });
+        // update UPnP port mapping
+        await this.removeUpnpPortMapping().catch((err) => {});
+        this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN")
+        await this.updateOverlayNetworkDNAT().catch((err) => {
+          log.error("Failed to update overlay network DNAT", err.message);
+        });
+      } catch(err) {
+        log.error("Failed to set Upnp port mapping", err);
+      }
+    }, 15000);
   }
 
   install(instance, callback) {
