@@ -31,6 +31,8 @@ const exec = require('child-process-promise').exec;
 
 const iptable = require("../../net2/Iptables.js");
 const Message = require('../../net2/Message.js');
+const pl = require('../../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -317,9 +319,15 @@ class PortForward {
 
   _isLANInterfaceIP(ip) {
     const iface = sysManager.getInterfaceViaIP4(ip);
-    if (iface && iface.type === "lan")
+    if (!iface || !iface.name)
+      return false;
+    if (iface.type === "lan")
       return true;
-    else
+    if (platform.isOverlayNetworkAvailable()) {
+      // on red/blue/navy, if overlay and primary network are in the same subnet, getInterfaceViaIP4 will return primary network, which is LAN
+      if (sysManager.inMySubnets4(ip, `${iface.name}:0`))
+      return true;
+    }
       return false;
   }
 }
