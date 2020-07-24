@@ -83,7 +83,7 @@ class DeviceMgmtTool {
       log.info("OverlayFS is enabled");
       return new Promise((resolve, reject) => {
         let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/"+platform.getSystemResetAllOverlayfsScriptName();
-
+        log.info("cmd: ",cmd);
         cp.exec(cmd, (err) => {
           if(err) {
             log.error("Failed to rename overlay upper work directory to backup:", err);
