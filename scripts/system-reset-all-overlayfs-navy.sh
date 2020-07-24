@@ -16,8 +16,20 @@ sudo rm /data/redis/*
 sudo rm -fr ${FIREWALLA_LOG_DIR}/*/*
 
 # clean up upper directory
-: ${FIREWALLA_UPPER_DIR:=/media/root-rw/overlay}
-: ${FIREWALLA_UPPER_WORK_DIR:=/media/root-rw/overlay-workdir}
+: ${FIREWALLA_UPPER_MP:=/media/root-rw}
+: ${FIREWALLA_LOWER_MP:=/media/root-ro}
+: ${FIREWALLA_UPPER_DEV:=/dev/mmcblk0p2}
+: ${FIREWALLA_LOWER_DEV:=/dev/mmcblk0p1}
+
+FIREWALLA_UPPER_SUBDIR=root
+FIREWALLA_WORK_SUBDIR=work
+sudo mkdir -p $FIREWALLA_LOWER_MP $FIREWALLA_UPPER_MP
+sudo mount -o ro $FIREWALLA_LOWER_DEV $FIREWALLA_LOWER_MP
+sudo mount $FIREWALLA_UPPER_DEV $FIREWALLA_UPPER_MP
+
+FIREWALLA_UPPER_DIR=${FIREWALLA_UPPER_MP}/${FIREWALLA_UPPER_SUBDIR}
+FIREWALLA_UPPER_WORK_DIR=${FIREWALLA_UPPER_MP}/${FIREWALLA_WORK_SUBDIR}
+
 
 sudo rm -rf ${FIREWALLA_UPPER_DIR}.bak ${FIREWALLA_UPPER_WORK_DIR}.bak
 sudo mv ${FIREWALLA_UPPER_DIR}{,.bak}
@@ -25,9 +37,9 @@ sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
 # touch a fw reset file to support new image
 if [[ -f /support_fw_reset || -f /etc/support_fw_reset ]]; then
-    sudo mount -o remount,rw /media/root-ro
-    sudo touch /media/root-ro/fw_reset
-    sudo mount -o remount,ro /media/root-ro
+    sudo mount -o remount,rw ${FIREWALLA_LOWER_MP}
+    sudo touch ${FIREWALLA_LOWER_MP}/fw_reset
+    sudo mount -o remount,ro ${FIREWALLA_LOWER_MP}
 fi
 sync
 sync
