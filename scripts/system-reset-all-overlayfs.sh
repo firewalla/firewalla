@@ -26,7 +26,7 @@ sudo rm -fr ${FIREWALLA_LOG_DIR}/*/*
 
 if [[ -e /etc/firewalla-release ]]; then
     BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
-    if [[ ${BOARD:-'unknown'} == 'navy']]; then
+    if [[ ${BOARD:-'unknown'} == 'navy' ]]; then
         FIREWALLA_LOWER_DEV=/dev/mmcblk0p1
         FIREWALLA_UPPER_DEV=/dev/mmcblk0p2
         FIREWALLA_UPPER_SUBDIR=root
