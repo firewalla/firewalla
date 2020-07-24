@@ -164,6 +164,10 @@ class GoldPlatform extends Platform {
   isBonjourBroadcastEnabled() {
     return false;
   }
+
+  isOverlayNetworkAvailable() {
+    return false;
+  }
 }
 
 module.exports = GoldPlatform;
