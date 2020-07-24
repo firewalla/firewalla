@@ -43,7 +43,7 @@ class DeviceServiceScanSensor extends Sensor {
     super();
   }
 
-  run() {
+  async run() {
     this.scanSettings = {};
     const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null;
     this.scanSettings = {
@@ -130,10 +130,10 @@ class DeviceServiceScanSensor extends Sensor {
       let result = await this.isSensorEnable();
       if (result) {
         return await this.runOnce();
-      };
+      }
     } catch (err) {
       log.error('Failed to scan: ', err);
-    };
+    }
 
     return null;
   }
@@ -167,7 +167,7 @@ class DeviceServiceScanSensor extends Sensor {
         if (scanResult) {
           await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
         }
-      };
+      }
     } catch (err) {
       log.error("Failed to scan: " + err);
     }
@@ -175,7 +175,7 @@ class DeviceServiceScanSensor extends Sensor {
     return hosts;
   }
 
-  _scan(ipAddr, callback) {
+  _scan(ipAddr) {
     let cmd = util.format('sudo nmap -Pn --top-ports 3000 %s -oX - | %s', ipAddr, xml2jsonBinary);
 
     log.info("Running command:", cmd);
