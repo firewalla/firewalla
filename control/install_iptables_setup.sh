@@ -253,6 +253,11 @@ sudo iptables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -A FW_NAT_HOLE -j RETURN
 
 
+# a special chain mainly for red/blue to redirect VPN connection on overlay IP to primary IP if two subnets are the same
+sudo iptables -w -t nat -N FW_PREROUTING_VPN_OVERLAY &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_VPN_OVERLAY
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_VPN_OVERLAY &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_VPN_OVERLAY
+
 # DNAT related chain comes first
 # create port forward chain in PREROUTING, this is used in ipv4 only
 sudo iptables -w -t nat -N FW_PREROUTING_EXT_IP &> /dev/null
