@@ -138,6 +138,11 @@ class NavyPlatform extends Platform {
   defaultPassword() {
     return "firewalla"
   }
+
+  getSystemResetAllOverlayfsScriptName() {
+    return "system-reset-all-overlayfs-navy.sh";
+  }
+
 }
 
 module.exports = NavyPlatform;
