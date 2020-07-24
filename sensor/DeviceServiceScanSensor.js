@@ -161,7 +161,7 @@ class DeviceServiceScanSensor extends Sensor {
         if (setting.devicePolicy !== null && setting.tagPolicy === true) return true;
         if (setting.devicePolicy !== null && setting.networkPolicy === true) return true;
         if (setting.devicePolicy !== null && setting.tagPolicy !== null &&
-          setting.networkPolicy !== null && this.scanSettings['0.0.0.0']) return false;
+          setting.networkPolicy !== null && this.scanSettings['0.0.0.0']) return true;
         return false;
       });
       for (const host of hosts) {
