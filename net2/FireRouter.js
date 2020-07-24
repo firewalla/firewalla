@@ -140,6 +140,7 @@ function safeCheckMonitoringInterfaces(monitoringInterfaces) {
 
 async function generateNetworkInfo() {
   const networkInfos = [];
+  const mode = await rclient.getAsync('mode');
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
@@ -162,6 +163,7 @@ async function generateNetworkInfo() {
     let dns = null;
     let resolver = null;
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
+    let type = intf.config.meta.type;
     if (resolverConfig) {
       if (resolverConfig.useNameserversFromWAN) {
         const defaultRoutingConfig = routerConfig && routerConfig.routing && ((routerConfig.routing[intfName] && routerConfig.routing[intfName].default) || (routerConfig.routing.global && routerConfig.routing.global.default));
@@ -193,6 +195,10 @@ async function generateNetworkInfo() {
         break
       }
     }
+    // always consider wan as lan in DHCP mode, which will affect port forward and VPN client
+    if (mode === Mode.MODE_DHCP && type === "wan")
+      type = "lan";
+    
     const redisIntf = {
       name:         intfName,
       uuid:         intf.config.meta.uuid,
@@ -210,7 +216,7 @@ async function generateNetworkInfo() {
       resolver:     resolver,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
-      type:         intf.config.meta.type,
+      type:         type,
       rtid:         intf.state.rtid || 0,
       searchDomains: searchDomains
     }
