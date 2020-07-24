@@ -275,6 +275,7 @@ function create_bootstrap_scripts_folder() {
         return 1 # checksum failed
     fi
 
+    [ -s /home/pi/firewalla/scripts/fire-time.sh ] && cp /home/pi/firewalla/scripts/fire-time.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/fireupgrade.sh ] && cp /home/pi/firewalla/scripts/fireupgrade.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.
