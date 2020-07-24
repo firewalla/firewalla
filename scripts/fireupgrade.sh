@@ -26,6 +26,7 @@
 #   0 - process exits before timeout
 #   1 - process killed due to timeout
 
+: ${SCRIPTS_DIR:=/home/pi/scripts}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 source ${FIREWALLA_HOME}/platform/platform.sh
@@ -118,7 +119,7 @@ restore_values() {
 
 await_ip_assigned || restore_values
 
-$FIREWALLA_HOME/scripts/fire-time.sh
+[ -s $SCRIPTS_DIR/fire-time.sh ] && $SCRIPTS_DIR/fire-time.sh || $FIREWALLA_HOME/scripts/fire-time.sh
 
 GITHUB_STATUS_API=https://api.github.com
 
