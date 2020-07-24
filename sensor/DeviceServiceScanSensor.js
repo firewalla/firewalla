@@ -87,11 +87,11 @@ class DeviceServiceScanSensor extends Sensor {
               const tagHosts = hosts.filter((h) => {
                 return h && h.o && h.o.tags && (
                   h.o.tags.includes(Number(tagUid)) || h.o.tags.includes(String(tagUid))
-                ) && host.o.mac
+                ) && h.o.mac
               })
-              tagHosts.map((host) => {
-                !this.scanSettings[host.o.mac] && (this.scanSettings[host.o.mac] = {})
-                this.scanSettings[host.o.mac].tagPolicy = policy;
+              tagHosts.map((h) => {
+                !this.scanSettings[h.o.mac] && (this.scanSettings[h.o.mac] = {})
+                this.scanSettings[h.o.mac].tagPolicy = policy;
               })
             }
             break;
@@ -101,11 +101,11 @@ class DeviceServiceScanSensor extends Sensor {
             if (uuid) {
               const hosts = await hostManager.getHostsAsync();
               const networkHosts = hosts.filter((h) => {
-                return h && h.o && h.o.intf_uuid == uuid && host.o.mac
+                return h && h.o && h.o.intf_uuid == uuid && h.o.mac
               })
-              networkHosts.map((host) => {
-                !this.scanSettings[host.o.mac] && (this.scanSettings[host.o.mac] = {})
-                this.scanSettings[host.o.mac].networkPolicy = policy;
+              networkHosts.map((h) => {
+                !this.scanSettings[h.o.mac] && (this.scanSettings[h.o.mac] = {})
+                this.scanSettings[h.o.mac].networkPolicy = policy;
               })
             }
             break;
@@ -152,14 +152,17 @@ class DeviceServiceScanSensor extends Sensor {
         const mac = host.o.mac;
         const setting = this.scanSettings[mac];
         /* 
-          policy === null | undefined // unset
-          policy === false // exclude
+          same as adblock/familyProtect
+          policy === null // exclude
+          policy === false | undefined // unset
         */
-        if (setting.devicePolicy === false || setting.tagPolicy === false ||
-          setting.networkPolicy === false || this.scanSettings['0.0.0.0'] === false) {
-          return false
-        }
-        return true;
+        if (!setting) return this.scanSettings['0.0.0.0'];
+        if (setting.devicePolicy === true) return true;
+        if (setting.devicePolicy !== null && setting.tagPolicy === true) return true;
+        if (setting.devicePolicy !== null && setting.networkPolicy === true) return true;
+        if (setting.devicePolicy !== null && setting.tagPolicy !== null &&
+          setting.networkPolicy !== null && this.scanSettings['0.0.0.0']) return false;
+        return false;
       });
       for (const host of hosts) {
         log.info("Scanning device: ", host.o.ipv4Addr);
