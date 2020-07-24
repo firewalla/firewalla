@@ -35,15 +35,22 @@ const hostManager = new HostManager();
 
 const sysManager = require('../net2/SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
+const extensionManager = require('./ExtensionManager.js')
+const featureName = "device_service_scan";
+const policyKeyName = "device_service_scan";
 class DeviceServiceScanSensor extends Sensor {
   constructor() {
     super();
   }
 
   run() {
+    this.scanSettings = {};
+    const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null;
+    this.scanSettings = {
+      '0.0.0.0': defaultOn
+    }
     let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
-    setTimeout(async() => {
+    setTimeout(async () => {
       await this.checkAndRunOnce();
       sem.emitEvent({
         type: "DeviceServiceScanComplete",
@@ -55,10 +62,67 @@ class DeviceServiceScanSensor extends Sensor {
     setInterval(() => {
       this.checkAndRunOnce();
     }, interval);
+
+    extensionManager.registerExtension(policyKeyName, this, {
+      applyPolicy: this.applyPolicy
+    });
   }
 
   isSensorEnable() {
-    return fc.isFeatureOn("device_service_scan");
+    return fc.isFeatureOn(featureName);
+  }
+  async applyPolicy(host, ip, policy) {
+    log.info("Applying device service scan policy:", ip, policy);
+    try {
+      if (ip === '0.0.0.0') {
+        this.scanSettings[ip] = policy;
+      } else {
+        if (!host)
+          return;
+        switch (host.constructor.name) {
+          case "Tag": {
+            const tagUid = host.o && host.o.uid;
+            if (tagUid) {
+              const hosts = await hostManager.getHostsAsync();
+              const tagHosts = hosts.filter((h) => {
+                return h && h.o && h.o.tags && (
+                  h.o.tags.includes(Number(tagUid)) || h.o.tags.includes(String(tagUid))
+                ) && host.o.mac
+              })
+              tagHosts.map((host) => {
+                !this.scanSettings[host.o.mac] && (this.scanSettings[host.o.mac] = {})
+                this.scanSettings[host.o.mac].tagPolicy = policy;
+              })
+            }
+            break;
+          }
+          case "NetworkProfile": {
+            const uuid = host.o && host.o.uuid;
+            if (uuid) {
+              const hosts = await hostManager.getHostsAsync();
+              const networkHosts = hosts.filter((h) => {
+                return h && h.o && h.o.intf_uuid == uuid && host.o.mac
+              })
+              networkHosts.map((host) => {
+                !this.scanSettings[host.o.mac] && (this.scanSettings[host.o.mac] = {})
+                this.scanSettings[host.o.mac].networkPolicy = policy;
+              })
+            }
+            break;
+          }
+          case "Host": {
+            const macAddress = host && host.o && host.o.mac;
+            if (!macAddress) return;
+            !this.scanSettings[macAddress] && (this.scanSettings[macAddress] = {})
+            this.scanSettings[macAddress].devicePolicy = policy;
+            break;
+          }
+          default:
+        }
+      }
+    } catch (err) {
+      log.error("Got error when applying adblock policy", err);
+    }
   }
 
   async checkAndRunOnce() {
@@ -67,7 +131,7 @@ class DeviceServiceScanSensor extends Sensor {
       if (result) {
         return await this.runOnce();
       };
-    } catch(err) {
+    } catch (err) {
       log.error('Failed to scan: ', err);
     };
 
@@ -77,21 +141,34 @@ class DeviceServiceScanSensor extends Sensor {
   async runOnce() {
     log.info('Scan start...');
 
-    let results = await hostManager.getHostsAsync();
-    if (!results)
+    let hosts = await hostManager.getHostsAsync();
+    if (!hosts)
       throw new Error('Failed to scan.');
 
-    let hosts = [];
     try {
-      results = results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr));
-      for (const host of results) {
+      hosts = hosts.filter((host) => {
+        const validHost = host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr);
+        if (!validHost) return false;
+        const mac = host.o.mac;
+        const setting = this.scanSettings[mac];
+        /* 
+          policy === null | undefined // unset
+          policy === false // exclude
+        */
+        if (setting.devicePolicy === false || setting.tagPolicy === false ||
+          setting.networkPolicy === false || this.scanSettings['0.0.0.0'] === false) {
+          return false
+        }
+        return true;
+      });
+      for (const host of hosts) {
         log.info("Scanning device: ", host.o.ipv4Addr);
         const scanResult = await this._scan(host.o.ipv4Addr);
         if (scanResult) {
           await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
         }
       };
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to scan: " + err);
     }
     log.info('Scan finished...');
@@ -104,7 +181,7 @@ class DeviceServiceScanSensor extends Sensor {
     log.info("Running command:", cmd);
     return new Promise((resolve, reject) => {
       cp.exec(cmd, (err, stdout, stderr) => {
-        if(err || stderr) {
+        if (err || stderr) {
           reject(err || new Error(stderr));
           return;
         }
@@ -142,7 +219,7 @@ class DeviceServiceScanSensor extends Sensor {
         // multiple ports
         port.forEach((p) => DeviceServiceScanSensor._handlePortEntry(p, openports));
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to parse nmap host: " + err);
     }
     return openports;
