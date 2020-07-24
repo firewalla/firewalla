@@ -24,15 +24,17 @@ sudo rm -fr ${FIREWALLA_LOG_DIR}/*/*
 : ${FIREWALLA_UPPER_SUBDIR:=overlay}
 : ${FIREWALLA_WORK_SUBDIR:=overlay-workdir}
 
-test -e /etc/firewalla-release && . /etc/firewalla-release
-if [[ $BOARD == 'navy' ]]; then
-    FIREWALLA_LOWER_DEV=/dev/mmcblk0p1
-    FIREWALLA_UPPER_DEV=/dev/mmcblk0p2
-    FIREWALLA_UPPER_SUBDIR=root
-    FIREWALLA_WORK_SUBDIR=work
-    sudo mkdir -p $FIREWALLA_LOWER_MP $FIREWALLA_UPPER_MP
-    sudo mount -o ro $FIREWALLA_LOWER_DEV $FIREWALLA_LOWER_MP
-    sudo mount $FIREWALLA_UPPER_DEV $FIREWALLA_UPPER_MP
+if [[ -e /etc/firewalla-release ]]; then
+    BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    if [[ ${BOARD:-'unknown'} == 'navy']]; then
+        FIREWALLA_LOWER_DEV=/dev/mmcblk0p1
+        FIREWALLA_UPPER_DEV=/dev/mmcblk0p2
+        FIREWALLA_UPPER_SUBDIR=root
+        FIREWALLA_WORK_SUBDIR=work
+        sudo mkdir -p $FIREWALLA_LOWER_MP $FIREWALLA_UPPER_MP
+        sudo mount -o ro $FIREWALLA_LOWER_DEV $FIREWALLA_LOWER_MP
+        sudo mount $FIREWALLA_UPPER_DEV $FIREWALLA_UPPER_MP
+    fi
 fi
 
 FIREWALLA_UPPER_DIR=${FIREWALLA_UPPER_MP}/${FIREWALLA_UPPER_SUBDIR}
