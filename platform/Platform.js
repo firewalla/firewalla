@@ -165,6 +165,10 @@ class Platform {
   isOverlayNetworkAvailable() {
     return true;
   }
+
+  getSystemResetAllOverlayfsScriptName() {
+    return "system-reset-all-overlayfs.sh";
+  }
 }
 
 module.exports = Platform;

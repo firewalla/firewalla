@@ -149,7 +149,7 @@ async function getSysinfo(status) {
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, redisEid] =
+  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, redisEid] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
@@ -162,6 +162,7 @@ async function getSysinfo(status) {
       getLatestCommitHash("/home/pi/firewalla"),
       getLicenseInfo(),
       getShellOutput("cat /sys/class/net/eth0/address"),
+      getShellOutput("redis-cli get mode"),
       getShellOutput("redis-cli hget sys:ept eid")
     ]);
 
@@ -183,6 +184,7 @@ async function getSysinfo(status) {
     hashWalla,
     mac,
     memory,
+    mode,
     redisEid,
     status,
     timestamp,
