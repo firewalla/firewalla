@@ -151,11 +151,7 @@ class NetworkTool {
 
     list.forEach(i => {
       log.info('Found interface', i.name, i.ip_address);
-      // there is another field named "gateway_ip", which is same as "gateway"
-      i.gateway = require('netroute').getGateway(i.name) || null;
-      // if there is no default router on this interface, set gateway_ip to null
-      if (!i.gateway)
-        i.gateway = null;
+      i.gateway = i.gateway_ip || null;
       i.subnet = this._getSubnet(i.name, i.ip_address, 'IPv4');
       i.gateway6 = linux.gateway_ip6_sync();
       i.dns = dns.getServers();
