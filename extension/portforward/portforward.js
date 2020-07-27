@@ -326,9 +326,9 @@ class PortForward {
     if (platform.isOverlayNetworkAvailable()) {
       // on red/blue/navy, if overlay and primary network are in the same subnet, getInterfaceViaIP4 will return primary network, which is LAN
       if (sysManager.inMySubnets4(ip, `${iface.name}:0`))
-      return true;
+        return true;
     }
-      return false;
+    return false;
   }
 }
 
