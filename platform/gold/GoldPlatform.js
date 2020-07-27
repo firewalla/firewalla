@@ -168,6 +168,10 @@ class GoldPlatform extends Platform {
   isOverlayNetworkAvailable() {
     return false;
   }
+
+  isIFBSupported() {
+    return true;
+  }
 }
 
 module.exports = GoldPlatform;

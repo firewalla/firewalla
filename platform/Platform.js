@@ -178,6 +178,10 @@ class Platform {
     return 1;
   }
 
+  
+  isIFBSupported() {
+    return false;
+  }
 }
 
 module.exports = Platform;
