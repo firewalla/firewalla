@@ -52,12 +52,6 @@ const bone = require('../lib/Bone.js');
 class FlowAggregationSensor extends Sensor {
   constructor() {
     super();
-    this.config.interval = 600; // default 10 minutes, might be overwrote by net2/config.json
-    this.config.cleanupInterval = 60 * 60 // default one hour
-    this.config.flowRange = 24 * 3600 // 24 hours
-    this.config.sumFlowExpireTime = 0.5 * 3600 // 30 minutes
-    this.config.aggrFlowExpireTime = 24 * 3600 // 24 hours
-
     this.firstTime = true; // some work only need to be done once, use this flag to check
   }
 
@@ -77,13 +71,12 @@ class FlowAggregationSensor extends Sensor {
     log.info("Summarized flow generation is complete");
   }
 
-  async cleanupJob() {
-    log.info("Cleaning up app/category flows...")
-    await appFlowTool.cleanupTypeFlow()
-    await categoryFlowTool.cleanupTypeFlow()
-  }
-
   run() {
+    log.debug("config.interval="+ this.config.interval);
+    log.debug("config.flowRange="+ this.config.flowRange);
+    log.debug("config.sumFlowExpireTime="+ this.config.sumFlowExpireTime);
+    log.debug("config.aggrFlowExpireTime="+ this.config.aggrFlowExpireTime);
+    log.debug("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
     sem.once('IPTABLES_READY', async () => {
       // init host
       if (hostManager.hosts.all.length == 0) {
@@ -99,9 +92,6 @@ class FlowAggregationSensor extends Sensor {
         this.scheduledJob();
       }, this.config.interval * 1000)
 
-      setInterval(() => {
-        this.cleanupJob()
-      }, this.config.cleanupInterval * 1000)
     });
   }
 
@@ -358,7 +348,7 @@ class FlowAggregationSensor extends Sensor {
       interval: this.config.interval,
       expireTime: this.config.sumFlowExpireTime,
       setLastSumFlow: true,
-      max_flow: 200
+      max_flow: this.config.sumFlowMaxFlow
     }
 
     await this.sumViews(options, apps, categories)

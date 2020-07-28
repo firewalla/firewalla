@@ -151,10 +151,10 @@
     "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {
       "interval": 600,
-      "flowRange": 86400,
-      "sumFlowExpireTime": 1800,
-      "aggrFlowExpireTime": 86400,
-      "sumFlowMaxFlow": 200
+      "flowRange": 604800,
+      "sumFlowExpireTime": 604800,
+      "aggrFlowExpireTime": 604800,
+      "sumFlowMaxFlow": 1000
     },
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
@@ -457,8 +457,8 @@
         "count": 10000
       },
       "conn": {
-        "expires": 86400,
-        "count": 10000
+        "expires": 604800,
+        "count": 50000
       },
       "ssh": {
         "expires": 86400,
@@ -485,12 +485,12 @@
         "count": 200
       },
       "categoryflow": {
-        "expires": 86400,
-        "count": 200
+        "expires": 604800,
+        "count": 1000
       },
       "appflow": {
-        "expires": 86400,
-        "count": 200
+        "expires": 604800,
+        "count": 1000
       },
       "safe_urls": {
         "expires": 604800,
@@ -554,6 +554,7 @@
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
+    "DeviceStatusUpdateHook": {},
     "DeviceHook": {
       "hostExpirationSecs": 2700
     },
