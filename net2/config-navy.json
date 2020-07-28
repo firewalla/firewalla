@@ -554,7 +554,6 @@
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
-    "DeviceStatusUpdateHook": {},
     "DeviceHook": {
       "hostExpirationSecs": 2700
     },
