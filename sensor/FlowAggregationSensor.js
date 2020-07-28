@@ -45,6 +45,8 @@ const excludedCategories = (config.category && config.category.exclude) || [];
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const bone = require('../lib/Bone.js');
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 // This sensor is to aggregate device's flow every 10 minutes
 
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
@@ -53,6 +55,8 @@ class FlowAggregationSensor extends Sensor {
   constructor() {
     super();
     this.firstTime = true; // some work only need to be done once, use this flag to check
+    this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
+    this.retentionCountMultipler = platform.getRetentionCountMultiplier();
   }
 
   async scheduledJob() {
@@ -72,6 +76,10 @@ class FlowAggregationSensor extends Sensor {
   }
 
   run() {
+    this.config.flowRange *= this.retentionTimeMultipler;
+    this.config.sumFlowMaxFlow *= this.retentionTimeMultipler;
+    this.config.aggrFlowExpireTime *= this.retentionTimeMultipler;
+    this.config.sumFlowMaxFlow *= this.retentionCountMultipler;
     log.debug("config.interval="+ this.config.interval);
     log.debug("config.flowRange="+ this.config.flowRange);
     log.debug("config.sumFlowExpireTime="+ this.config.sumFlowExpireTime);

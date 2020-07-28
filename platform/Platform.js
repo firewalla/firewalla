@@ -170,15 +170,12 @@ class Platform {
     return "system-reset-all-overlayfs.sh";
   }
 
-  /*
-   * getConfigFile returns config file for given platform if it exists
-   * - default : config.json
-   * - platform specific: config-<platform>.json
-   * NOTE1 : The platform specific file should be a full copy to override the default one
-   * NOTE2 : Any incremental change to default file should be appiled to platform ones as well
-   */
-  getConfigFile() {
-    return "config.json";
+  getRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getRetentionCountMultiplier() {
+    return 1;
   }
 
 }
