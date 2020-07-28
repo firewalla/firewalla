@@ -143,6 +143,10 @@ class NavyPlatform extends Platform {
     return "system-reset-all-overlayfs-navy.sh";
   }
 
+  getConfigFile() {
+    return "config-navy.json";
+  }
+
 }
 
 module.exports = NavyPlatform;

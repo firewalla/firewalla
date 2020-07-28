@@ -16,7 +16,6 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const fConfig = require('../net2/config.js').getConfig();
 const f = require('../net2/Firewalla.js');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -55,6 +54,7 @@ class Platform {
 
   async getNetworkSpeed() {
     try {
+      const fConfig = require('../net2/config.js').getConfig();
       const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
       return output.trim();
     } catch(err) {
@@ -169,6 +169,18 @@ class Platform {
   getSystemResetAllOverlayfsScriptName() {
     return "system-reset-all-overlayfs.sh";
   }
+
+  /*
+   * getConfigFile returns config file for given platform if it exists
+   * - default : config.json
+   * - platform specific: config-<platform>.json
+   * NOTE1 : The platform specific file should be a full copy to override the default one
+   * NOTE2 : Any incremental change to default file should be appiled to platform ones as well
+   */
+  getConfigFile() {
+    return "config.json";
+  }
+
 }
 
 module.exports = Platform;
