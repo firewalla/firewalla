@@ -21,10 +21,9 @@ const fs = require('fs');
 const f = require('./Firewalla.js');
 const cp = require('child_process');
 
-const rclient = require('../util/redis_manager.js').getRedisClient();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
-const pclient = require('../util/redis_manager.js').getPublishClient();
-const platform = require('../platform/PlatformLoader.js').getPlatform();
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const featureNodes = [ 'sensors', 'apiSensors', 'features', 'userFeatures' ]
 const dynamicConfigKey = "sys:features"
@@ -81,8 +80,7 @@ async function getUserConfig(reload) {
 
 function getConfig(reload) {
   if(!config || reload === true) {
-    let defaultConfigFile = platform.getConfigFile();
-    let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/"+defaultConfigFile, 'utf8'));
+    let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
     for (let i = 0; i !== 5; i++) {
