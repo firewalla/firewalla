@@ -137,7 +137,7 @@ async function getLatestCommitHash(cwd) {
 
 async function getLicenseInfo() {
   const licenseFile = "/home/pi/.firewalla/license";
-  return [ 'SUUID', 'UUID', 'EID', 'LICENSE'].reduce( (result,licenseField)=>{
+  return ['SUUID', 'UUID', 'EID', 'LICENSE'].reduce( async (result,licenseField) => {
     result[licenseField] = (await getShellOutput(`awk '/"${licenseField}"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
     return result;
   },{});
