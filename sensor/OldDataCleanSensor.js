@@ -49,6 +49,8 @@ const CommonKeys = require('../net2/CommonKeys.js');
 
 const exec = require('child-process-promise').exec;
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
 }
@@ -59,6 +61,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   getExpiredDate(type) {
+<<<<<<< HEAD
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
       case "conn":
@@ -68,6 +71,9 @@ class OldDataCleanSensor extends Sensor {
         break;
     }
     let expireInterval = (this.config[type] && this.config[type].expires * platformRetentionTimeMultiplier) || 0;
+=======
+    let expireInterval = (this.config[type] && this.config[type].expires * platform.getRetentionTimeMultiplier()) || 0;
+>>>>>>> 2fe26e45... separate platform specific logic from config file
     if(expireInterval < 0) {
       return null;
     }
@@ -87,7 +93,7 @@ class OldDataCleanSensor extends Sensor {
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
         break;
     }
-    let count = (this.config[type] && this.config[type].count * platformRetentionCountMultiplier) || 10000;
+    let count = (this.config[type] && this.config[type].count * platform.getRetentionCountMultiplier()) || 10000;
     if(count < 0) {
       return null;
     }

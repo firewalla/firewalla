@@ -145,6 +145,14 @@ class NavyPlatform extends Platform {
   }
   */
 
+  getRetentionTimeMultiplier() {
+    return 7;
+  }
+
+  getRetentionCountMultiplier() {
+    return 5;
+  }
+
 }
 
 module.exports = NavyPlatform;
