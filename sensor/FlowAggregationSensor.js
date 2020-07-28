@@ -91,7 +91,7 @@ class FlowAggregationSensor extends Sensor {
 
   run() {
     this.config.flowRange *= this.retentionTimeMultipler;
-    this.config.sumFlowMaxFlow *= this.retentionTimeMultipler;
+    this.config.sumFlowExpireTime *= this.retentionTimeMultipler;
     this.config.aggrFlowExpireTime *= this.retentionTimeMultipler;
     this.config.sumFlowMaxFlow *= this.retentionCountMultipler;
     log.debug("config.interval="+ this.config.interval);
