@@ -113,3 +113,12 @@ if [[ -n "$NO_FIREKICK_RESTART" ]]; then
   # turn off led light since pairing is not activated
   turnOffLED
 fi
+
+POST_MAIN_D="/home/pi/.firewalla/config/post_main.d"
+
+if [[ -d $POST_MAIN_D ]]; then
+  for post_script in $(ls $POST_MAIN_D/*.sh)
+  do
+      bash $post_script
+  done
+fi
