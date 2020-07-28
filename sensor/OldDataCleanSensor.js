@@ -61,7 +61,15 @@ class OldDataCleanSensor extends Sensor {
   }
 
   getExpiredDate(type) {
-    let expireInterval = (this.config[type] && this.config[type].expires * platform.getRetentionTimeMultiplier()) || 0;
+    let platformRetentionTimeMultiplier = 1;
+    switch (type) {
+      case "conn":
+      case "categoryflow":
+      case "appflow":
+        platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
+        break;
+    }
+    let expireInterval = (this.config[type] && this.config[type].expires * platformRetentionTimeMultiplier) || 0;
     if(expireInterval < 0) {
       return null;
     }
@@ -73,7 +81,15 @@ class OldDataCleanSensor extends Sensor {
   }
 
   getCount(type) {
-    let count = (this.config[type] && this.config[type].count * platform.getRetentionCountMultiplier()) || 10000;
+    let platformRetentionCountMultiplier = 1;
+    switch (type) {
+      case "conn":
+      case "categoryflow":
+      case "appflow":
+        platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
+        break;
+    }
+    let count = (this.config[type] && this.config[type].count * platformRetentionCountMultiplier) || 10000;
     if(count < 0) {
       return null;
     }
