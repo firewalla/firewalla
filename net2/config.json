@@ -683,7 +683,7 @@
     "smart_block": true,
     "internal_scan": false,
     "acl_audit": false,
-    "new_device_tag": true
+    "new_device_tag": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
