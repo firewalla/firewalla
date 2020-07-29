@@ -149,7 +149,13 @@
       "countryInterval": 86400
     },
     "AutoBlocksRevalidationSensor": {},
-    "FlowAggregationSensor": {},
+    "FlowAggregationSensor": {
+      "interval": 600,
+      "flowRange": 86400,
+      "sumFlowExpireTime": 1800,
+      "aggrFlowExpireTime": 86400,
+      "sumFlowMaxFlow": 200
+    },
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
     "SafeSearchPlugin": {

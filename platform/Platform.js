@@ -169,6 +169,15 @@ class Platform {
   getSystemResetAllOverlayfsScriptName() {
     return "system-reset-all-overlayfs.sh";
   }
+
+  getRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getRetentionCountMultiplier() {
+    return 1;
+  }
+
 }
 
 module.exports = Platform;
