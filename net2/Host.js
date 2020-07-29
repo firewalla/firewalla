@@ -69,11 +69,10 @@ const instances = {}; // this instances cache can ensure that Host object for ea
 const envCreatedMap = {};
 
 class Host {
-  constructor(obj, mgr, callback) {
+  constructor(obj) {
     if (!instances[obj.mac]) {
       this.callbacks = {};
       this.o = obj;
-      this.mgr = mgr;
       if (this.o.ipv4) {
         this.o.ipv4Addr = this.o.ipv4;
       }
@@ -98,7 +97,7 @@ class Host {
 
         this.predictHostNameUsingUserAgent();
 
-        this.loadPolicy(callback);
+        this.loadPolicy();
 
         Host.ensureCreateDeviceIpset(this.o.mac).then(() => {
           this.subscribe(this.o.mac, "Device:Updated");
@@ -802,12 +801,7 @@ class Host {
     await this.loadPolicyAsync()
     log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
     let policy = JSON.parse(JSON.stringify(this.policy));
-    // check for global
-    /* no need to do this now, if global monitoring is turned off, mock bitbridge will be used
-    if (this.mgr.policy.monitor != null && this.mgr.policy.monitor == false) {
-      policy.monitor = false;
-    }
-    */
+
     let PolicyManager = require('./PolicyManager.js');
     let policyManager = new PolicyManager('info');
 
