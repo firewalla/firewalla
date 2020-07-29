@@ -143,6 +143,14 @@ class NavyPlatform extends Platform {
     return "system-reset-all-overlayfs-navy.sh";
   }
 
+  getRetentionTimeMultiplier() {
+    return 7;
+  }
+
+  getRetentionCountMultiplier() {
+    return 5;
+  }
+
 }
 
 module.exports = NavyPlatform;
