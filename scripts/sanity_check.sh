@@ -296,11 +296,18 @@ is_simple_mode() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %35s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount" "Group" "Emergency Access"
+    printf "%35s %15s %25s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount" "Group" "Emergency Access"
     NOW=$(date +%s)
+    FRCC=$(curl -s "http://localhost:8837/v1/config/active")
     for DEVICE in $DEVICES; do
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
         local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
+	local DEVICE_NETWORK_NAME=
+	if [[ -n "$FRCC" ]]; then
+	    local DEVICE_INTF=$(redis-cli hget $DEVICE intf)
+            DEVICE_NETWORK_NAME=$(echo "$FRCC"| jq -r ".interface|..|select(.uuid?==\"${DEVICE_INTF}\")|.name")
+	    # : ${DEVICE_NETWORK_NAME:='NA'}
+        fi
         local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
         local DEVICE_MAC=${DEVICE/host:mac:/""}
         local POLICY_MAC="policy:mac:${DEVICE_MAC}"
@@ -366,7 +373,7 @@ check_hosts() {
             TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
         done
         TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
-        printf "$COLOR%35s %35s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
+        printf "$COLOR%35s %15s %25s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
     done
 
     echo ""
