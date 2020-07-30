@@ -222,15 +222,20 @@ check_policies() {
 
         local COLOR=""
         local UNCOLOR="\e[0m"
+
+        if [[ "x$ACTION" == "x" ]]; then
+            ACTION="block"
+        elif [ "$ACTION" = "allow" ]; then
+            COLOR="\e[38;5;28m"
+        fi
+
         if [[ $DISABLED == "1" ]]; then
             DISABLED=true
             COLOR="\e[2m" #dim
         else
             DISABLED=false
         fi
-        if [[ "x$ACTION" == "x" ]]; then
-            ACTION="block"
-        fi
+
         local DIRECTION=$(redis-cli hget $RULE direction)
         if [[ "x$DIRECTION" == "x" || "x$DIRECTION" == "xbidirection" ]]; then
             DIRECTION="both"
