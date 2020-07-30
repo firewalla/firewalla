@@ -127,13 +127,13 @@ function update_node_modules {
         git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH || git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
         cd - &>/dev/null
       fi
-      REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM
+      REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.${FIREWALLA_PLATFORM}
 
       NODE_VERSION=$($FIREWALLA_HOME/bin/node -v)
 
       RE_NODE4='^v4\..*$'
       if [[ $NODE_VERSION =~ $RE_NODE4 ]]; then
-        REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM.node4
+        REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.${FIREWALLA_PLATFORM}.node4
       fi
 
 
