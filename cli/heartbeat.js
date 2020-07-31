@@ -47,6 +47,7 @@ const socket = io2(
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
+process.title = 'FireHB';
 const launchTime = Math.floor(new Date() / 1000);
 
 let uid = null;
