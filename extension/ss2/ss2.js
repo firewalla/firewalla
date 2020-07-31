@@ -125,6 +125,15 @@ class SS2 {
 
       await exec(`FW_SS_SERVER=${this.config.server} FW_SS_REDIR_PORT=9954 NAME=${this.getChainName()} ${__dirname}/setup_iptables.sh`);
 
+      if(_.isArray(this.config.excludes)) {
+        for(const exclude of this.config.excludes) {
+          const result = exec(`dig +short ${exclude}`);
+          if(!_.isEmpty(result && result.stdout)) {
+            await exec(`sudo ipset add fw_ss2_whitelist ${result.stdout} &>/dev/null`);
+          }
+        }
+      }
+
       this.ready = true;
     } catch (err) {
       log.error("Got error when reading preparing config, err:", err);
