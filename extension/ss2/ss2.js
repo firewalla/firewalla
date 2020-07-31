@@ -123,7 +123,10 @@ class SS2 {
         await fs.writeFileAsync(runtimeConfigFile, output);
       }      
 
-      await exec(`FW_SS_SERVER=${this.config.server} FW_SS_REDIR_PORT=9954 NAME=${this.getChainName()} ${__dirname}/setup_iptables.sh`);
+      const dohDNS1 = this.config.doh1 || "https://1.1.1.1/dns-query";
+      const dohDNS2 = this.config.doh2 || "https://1.0.0.1/dns-query";
+
+      await exec(`FW_SS_SERVER=${this.config.server} FW_SS_REDIR_PORT=9954 DOH_DNS1=${dohDNS1} DOH_DNS2=${dohDNS2} NAME=${this.getChainName()} ${__dirname}/setup_iptables.sh`);
 
       if(_.isArray(this.config.excludes)) {
         for(const exclude of this.config.excludes) {
