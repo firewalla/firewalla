@@ -117,6 +117,14 @@ function record_latest_production_branch() {
 }
 
 logger "FIREWALLA: Main-Run Start Update Modules"
+
+function update_node_modules_link {
+  # only continue when there is ~/.node_modules/node_modules
+  NM=/home/pi/.node_modules/node_modules
+  test -e $NM || return
+  sudo -u pi ln -sf $NM $FIREWALLA_HOME/node_modules
+}
+
 function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
   if [[ "x$FIREWALLA_NODE_MODULES_MODE" == "xGIT" ]]; then
@@ -181,6 +189,7 @@ function update_node_modules {
 
 # update ~/.node_modules
 update_node_modules
+update_node_modules_link
 
 record_latest_production_branch
 
