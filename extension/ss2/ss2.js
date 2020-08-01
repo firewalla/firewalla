@@ -92,11 +92,17 @@ class SS2 {
       } else if(env === 'TROJAN_PASSWORD=password' && sourceConfig.password) {
         return `TROJAN_PASSWORD=${sourceConfig.password}`;
       } else if(env === 'DOH_DNS1=dns1') {
-        const doh1 = sourceConfig.doh1 || "https://1.1.1.1/dns-query";
-        return `DOH_DNS1=${doh1}`;
+        let doh = "https://1.1.1.1/dns-query";
+        if (!_.isEmpty(sourceConfig.doh)) {
+          doh = sourceConfig.doh[0];
+        }
+        return `DOH_DNS1=${doh}`;
       } else if(env === 'DOH_DNS2=dns2') {
-        const doh2 = sourceConfig.doh2 || "https://1.0.0.1/dns-query";
-        return `DOH_DNS2=${doh2}`;
+        let doh = "https://1.1.1.1/dns-query";
+        if (!_.isEmpty(sourceConfig.doh)) {
+          doh = sourceConfig.doh[1] || sourceConfig.doh[0];
+        }
+        return `DOH_DNS2=${doh}`;
       } else {
         return env;
       }
