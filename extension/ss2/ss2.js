@@ -139,9 +139,14 @@ class SS2 {
 
       if(_.isArray(this.config.excludes)) {
         for(const exclude of this.config.excludes) {
-          const result = exec(`dig +short ${exclude}`);
-          if(!_.isEmpty(result && result.stdout)) {
-            await exec(`sudo ipset add fw_ss2_whitelist ${result.stdout} &>/dev/null`);
+          try {
+            log.info("Adding exclude domain", exclude)
+            const result = exec(`dig +short ${exclude}`);
+            if (!_.isEmpty(result && result.stdout)) {
+              await exec(`sudo ipset add fw_ss2_whitelist ${result.stdout} &>/dev/null`);
+            }
+          } catch(err) {
+            log.error("Got error when adding excludes, err:", err);
           }
         }
       }
