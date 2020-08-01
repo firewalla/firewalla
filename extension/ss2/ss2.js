@@ -79,18 +79,6 @@ class SS2 {
     config.environment = config.environment.map((env) => {
       if(env === 'LOCAL_DNS=1.1.1.1' && dns) {
         return `LOCAL_DNS=${dns}`;
-      } else {
-        return env;
-      }
-    });
-  }
-
-  updateProxy(config, sourceConfig) {
-    config.environment = config.environment.map((env) => {
-      if(env === 'TROJAN_SERVER=server' && sourceConfig.server) {
-        return `TROJAN_SERVER=${sourceConfig.server}`;
-      } else if(env === 'TROJAN_PASSWORD=password' && sourceConfig.password) {
-        return `TROJAN_PASSWORD=${sourceConfig.password}`;
       } else if(env === 'DOH_DNS1=dns1') {
         let doh = "https://1.1.1.1/dns-query";
         if (!_.isEmpty(sourceConfig.doh)) {
@@ -103,6 +91,18 @@ class SS2 {
           doh = sourceConfig.doh[1] || sourceConfig.doh[0];
         }
         return `DOH_DNS2=${doh}`;
+      } else {
+        return env;
+      }
+    });
+  }
+
+  updateProxy(config, sourceConfig) {
+    config.environment = config.environment.map((env) => {
+      if(env === 'TROJAN_SERVER=server' && sourceConfig.server) {
+        return `TROJAN_SERVER=${sourceConfig.server}`;
+      } else if(env === 'TROJAN_PASSWORD=password' && sourceConfig.password) {
+        return `TROJAN_PASSWORD=${sourceConfig.password}`;
       } else {
         return env;
       }
