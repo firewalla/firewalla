@@ -91,6 +91,12 @@ class SS2 {
         return `TROJAN_SERVER=${sourceConfig.server}`;
       } else if(env === 'TROJAN_PASSWORD=password' && sourceConfig.password) {
         return `TROJAN_PASSWORD=${sourceConfig.password}`;
+      } else if(env === 'DOH_DNS1=dns1') {
+        const doh1 = sourceConfig.doh1 || "https://1.1.1.1/dns-query";
+        return `DOH_DNS1=${doh1}`;
+      } else if(env === 'DOH_DNS2=dns2') {
+        const doh2 = sourceConfig.doh2 || "https://1.0.0.1/dns-query";
+        return `DOH_DNS2=${doh2}`;
       } else {
         return env;
       }
@@ -123,10 +129,7 @@ class SS2 {
         await fs.writeFileAsync(runtimeConfigFile, output);
       }      
 
-      const dohDNS1 = this.config.doh1 || "https://1.1.1.1/dns-query";
-      const dohDNS2 = this.config.doh2 || "https://1.0.0.1/dns-query";
-
-      await exec(`FW_SS_SERVER=${this.config.server} FW_SS_REDIR_PORT=9954 DOH_DNS1=${dohDNS1} DOH_DNS2=${dohDNS2} NAME=${this.getChainName()} ${__dirname}/setup_iptables.sh`);
+      await exec(`FW_SS_SERVER=${this.config.server} FW_SS_REDIR_PORT=9954 NAME=${this.getChainName()} ${__dirname}/setup_iptables.sh`);
 
       if(_.isArray(this.config.excludes)) {
         for(const exclude of this.config.excludes) {
