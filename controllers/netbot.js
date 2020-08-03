@@ -358,8 +358,7 @@ class netBot extends ControllerBot {
     this.sensorConfig = config.controller.sensor;
 
     // Enhancement: need rate limit on the box api
-    const currentConfig = fc.getConfig(true);
-    const rateLimitOptions = currentConfig.ratelimit || {}
+    const rateLimitOptions = platform.getRatelimitConfig();
     this.rateLimiter = {};
     this.rateLimiter.app = new RateLimiterRedis({
       redis: rclient,
@@ -1701,6 +1700,7 @@ class netBot extends ControllerBot {
           // dedup battle.net if battle.net and *.battle.net co-exist
           const outputDomains = sortedFinalDomains.filter((de) => {
             const domain = de.domain
+            if (excludedDomains.includes(domain)) return false;
             if (!domain.startsWith("*.") && patternDomains.includes(domain)) {
               return false;
             } else {
@@ -2542,22 +2542,30 @@ class netBot extends ControllerBot {
         break;
       }
       case "alarm:block":
-        am2.blockFromAlarm(value.alarmID, value, (err, { policy, otherBlockedAlarms, alreadyExists }) => {
-          if (value && value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
-            this.simpleTxData(msg, {
-              policy: policy,
-              otherAlarms: otherBlockedAlarms,
-              alreadyExists: alreadyExists === "duplicated",
-              updated: alreadyExists === "duplicated_and_updated"
-            }, err, callback);
+        am2.blockFromAlarm(value.alarmID, value, (err, result) => {
+          if (err) {
+            this.simpleTxData(msg, {}, err, callback);
           } else {
-            this.simpleTxData(msg, policy, err, callback);
+            const { policy, otherBlockedAlarms, alreadyExists } = result
+
+            // only return other matched alarms matchAll is set, originally for backward compatibility
+            // matchAll is not used for blocking check
+            if (value.matchAll) {
+              this.simpleTxData(msg, {
+                policy: policy,
+                otherAlarms: otherBlockedAlarms,
+                alreadyExists: alreadyExists === "duplicated",
+                updated: alreadyExists === "duplicated_and_updated"
+              }, err, callback);
+            } else {
+              this.simpleTxData(msg, policy, err, callback);
+            }
           }
         });
         break;
       case "alarm:allow":
         am2.allowFromAlarm(value.alarmID, value, (err, exception, otherAlarms, alreadyExists) => {
-          if (value && value.matchAll) { // only block other matched alarms if this option is on, for better backward compatibility
+          if (value && value.matchAll) { // only return other matched alarms if this option is on, for better backward compatibility
             this.simpleTxData(msg, {
               exception: exception,
               otherAlarms: otherAlarms,
@@ -4343,6 +4351,8 @@ class netBot extends ControllerBot {
 process.on('unhandledRejection', (reason, p) => {
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: " + reason;
   log.error(msg, reason.stack);
+  if (msg.includes("Redis connection"))
+    return;
   bone.logAsync("error", {
     type: 'FIREWALLA.UI.unhandledRejection',
     msg: msg,

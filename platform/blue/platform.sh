@@ -7,6 +7,7 @@ FIREAPI_MAX_MEMORY=200000
 MAX_NUM_OF_PROCESSES=4000
 MAX_NUM_OF_THREADS=20000
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
+REAL_PLATFORM='real.aarch64'
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'

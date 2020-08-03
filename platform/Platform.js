@@ -63,6 +63,10 @@ class Platform {
     }
   }
 
+  getDHKeySize() {
+    return 1024;
+  }
+
   getLedPaths() {
     return []
   }
@@ -129,6 +133,7 @@ class Platform {
   getPolicyCapacity() {}
 
   getAllowCustomizedProfiles(){}
+  getRatelimitConfig(){}
 
   getDHCPCapacity() {
     return true
@@ -153,6 +158,14 @@ class Platform {
     return null;
   }
 
+
+  isOverlayNetworkAvailable() {
+    return true;
+  }
+
+  getSystemResetAllOverlayfsScriptName() {
+    return "system-reset-all-overlayfs.sh";
+  }
 }
 
 module.exports = Platform;

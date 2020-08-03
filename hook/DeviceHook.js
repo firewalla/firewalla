@@ -284,13 +284,14 @@ class DeviceHook extends Hook {
             log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
           }
           const hostManager = new HostManager();
-          hostManager.getHost(host.mac, (err, host) => {
+          hostManager.getHost(host.mac, (err, h) => {
             // directly start spoofing
             if (err) {
               log.error("Failed to get host after it is detected.");
-            }
-            if (!sysManager.isMyMac(mac)) {
-              host.spoof(true);
+            } else {
+              if (!sysManager.isMyMac(mac)) {
+                h.spoof(true);
+              }
             }
           });
           await this.setupLocalDeviceDomain(host.mac, 'new_device');
