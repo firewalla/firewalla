@@ -1497,7 +1497,7 @@ module.exports = class {
 
       l2.getMAC(ip, (err, mac) => {
 
-        if (err) {
+        if (err || !mac) {
           // not found, ignore this host
           log.error("Not able to found mac address for host:", ip, mac);
           return;
