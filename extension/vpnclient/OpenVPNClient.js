@@ -393,9 +393,11 @@ class OpenVPNClient extends VPNClient {
     }
     await this._processPushOptions("stop");
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
-    await execAsync(cmd);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to stop openvpn client ${this.profileId}`, err.message);
+    });
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
-    await execAsync(cmd);
+    await execAsync(cmd).catch((err) => {});
   }
 
   async status() {
