@@ -94,6 +94,7 @@ exports.switchACL = util.callbackify(switchACLAsync);
 exports.switchACLAsync = switchACLAsync;
 exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
 exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
+exports.switchQoSAsync = switchQoSAsync;
 
 var workqueue = [];
 var running = false;
@@ -426,6 +427,24 @@ function flush() {
     "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING",
   ).catch(err => {
     log.error("IPTABLE:FLUSH:Unable to flush", err)
+  });
+}
+
+async function switchQoSAsync(state, family = 4) {
+  const op = state ? '-D' : '-A'
+
+  const inRule = new Rule('mangle').chn('FW_QOS_SWITCH')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_LAN} dst,dst`)
+    .jmp(`CONNMARK --set-xmark 0x0/0x40000000`).fam(family);
+  const outRule = new Rule('mangle').chn('FW_QOS_SWITCH')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_LAN} src,src`)
+    .jmp(`CONNMARK --set-xmark 0x0/0x40000000`).fam(family);
+
+  await execAsync(inRule.toCmd(op)).catch((err) => {
+    log.error(`Failed to switch QoS: ${inRule}`, err.message);
+  });
+  await execAsync(outRule.toCmd(op)).catch((err) => {
+    log.error(`Failed to switch QoS: ${outRule}`, err.message);
   });
 }
 
