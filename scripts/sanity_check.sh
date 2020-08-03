@@ -307,11 +307,11 @@ check_hosts() {
     for DEVICE in $DEVICES; do
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
         local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
-	local DEVICE_NETWORK_NAME=
-	if [[ -n "$FRCC" ]]; then
-	    local DEVICE_INTF=$(redis-cli hget $DEVICE intf)
+        local DEVICE_NETWORK_NAME=
+        if [[ -n "$FRCC" ]]; then
+            local DEVICE_INTF=$(redis-cli hget $DEVICE intf)
             DEVICE_NETWORK_NAME=$(echo "$FRCC"| jq -r ".interface|..|select(.uuid?==\"${DEVICE_INTF}\")|.name")
-	    # : ${DEVICE_NETWORK_NAME:='NA'}
+            # : ${DEVICE_NETWORK_NAME:='NA'}
         fi
         local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
         local DEVICE_MAC=${DEVICE/host:mac:/""}
@@ -367,10 +367,9 @@ check_hosts() {
 
         local COLOR=""
         local UNCOLOR="\e[0m"
-        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_B7_MONITORING == "false" ]]; then
-            if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
-                COLOR="\e[91m"
-            fi
+        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_B7_MONITORING == "false" ]] &&
+          ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
+            COLOR="\e[91m"
         elif [ $DEVICE_FLOWINCOUNT -gt 2000 ] || [ $DEVICE_FLOWOUTCOUNT -gt 2000 ]; then
             COLOR="\e[33m" #yellow
         elif [ $DEVICE_ONLINE = "no" ]; then
