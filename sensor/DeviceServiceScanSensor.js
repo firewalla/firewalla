@@ -44,8 +44,7 @@ class DeviceServiceScanSensor extends Sensor {
   }
 
   async run() {
-    this.scanSettings = {};
-    const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null;
+    const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null; // backward compatibility
     this.scanSettings = {
       '0.0.0.0': defaultOn
     }
