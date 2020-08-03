@@ -158,6 +158,28 @@ class NetworkProfile {
     return this.spoofing;
   }
 
+  async qos(state) {
+    if (state === true) {
+      const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+      const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${netIpsetName6}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    } else {
+      const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+      const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${netIpsetName6}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    }
+  }
+
   async acl(state) {
     if (state === true) {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
