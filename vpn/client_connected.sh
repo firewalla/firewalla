@@ -14,6 +14,7 @@ if [[ -n $CLIENT_SUBNETS ]]; then # CLIENT_SUBNETS are cidr subnets separated wi
   for CLIENT_SUBNET in $CLIENT_SUBNETS;
   do
     sudo ip r add $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn table lan_routable || true
+    sudo ip r add $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn table wan_routable || true
     sudo ip r add $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn
   done
 fi
