@@ -371,6 +371,8 @@ check_hosts() {
             if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
                 COLOR="\e[91m"
             fi
+        elif [ $DEVICE_ONLINE = "no" ]; then
+            COLOR="\e[2m" #dim
         fi
         local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=\[==" | sed "s=\]==" | sed "s=,= =")
         TAGNAMES=""
