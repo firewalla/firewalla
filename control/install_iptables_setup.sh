@@ -44,6 +44,10 @@ sudo ipset create no_dns_caching_mac_set hash:mac &>/dev/null
 sudo ipset create no_dns_caching_set list:set &>/dev/null
 sudo ipset create monitored_net_set list:set &>/dev/null
 
+sudo ipset create qos_off_mac_set hash:mac &>/dev/null
+sudo ipset create qos_off_set list:set &>/dev/null
+
+
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush block_ip_set
 sudo ipset flush block_domain_set
@@ -75,6 +79,10 @@ sudo ipset flush no_dns_caching_set
 sudo ipset add -! no_dns_caching_set no_dns_caching_mac_set
 sudo ipset flush monitored_net_set
 
+sudo ipset flush qos_off_mac_set
+sudo ipset flush qos_off_set
+sudo ipset add -! qos_off_set qos_off_mac_set
+
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
 if [[ $(uname -m) != "x86_64" ]]; then
@@ -83,6 +91,9 @@ if [[ $(uname -m) != "x86_64" ]]; then
   sudo ip6tables -w -F FORWARD
   sudo ip6tables -w -t nat -F PREROUTING
 fi
+
+# ifb module is for QoS
+sudo modprobe ifb &> /dev/null || true
 
 # destroy chains in previous version, these should be removed in next release
 sudo iptables -w -F FW_BLOCK &>/dev/null && sudo iptables -w -X FW_BLOCK
@@ -749,6 +760,45 @@ sudo iptables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_REG_DEVICE
 sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
+sudo iptables -w -t mangle -N FW_FORWARD &> /dev/null
+sudo iptables -w -t mangle -F FW_FORWARD
+sudo iptables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo iptables -w -t mangle -D FORWARD -j FW_FORWARD
+sudo iptables -w -t mangle -I FORWARD -j FW_FORWARD
+
+sudo iptables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_SWITCH
+sudo iptables -w -t mangle -A FW_FORWARD -j FW_QOS_SWITCH
+# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
+# the packet will be mirrored to ifb only if this bit is set
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
+
+sudo iptables -w -t mangle -N FW_QOS &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS
+sudo iptables -w -t mangle -A FW_FORWARD -j FW_QOS
+# global qos connmark chain
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL
+sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_GLOBAL
+# network group qos connmark chain
+sudo iptables -w -t mangle -N FW_QOS_NET_G &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G
+sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_NET_G
+# network qos connmark chain
+sudo iptables -w -t mangle -N FW_QOS_NET &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET
+sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_NET
+# device group qos connmark chain
+sudo iptables -w -t mangle -N FW_QOS_DEV_G &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G
+sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV_G
+# device qos connmark chain
+sudo iptables -w -t mangle -N FW_QOS_DEV &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV
+sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV
+
 sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
 sudo ip6tables -w -t mangle -F FW_PREROUTING
 sudo ip6tables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null && sudo ip6tables -w -t mangle -D PREROUTING -j FW_PREROUTING
@@ -813,6 +863,45 @@ sudo ip6tables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_REG_DEVICE
 sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
+sudo ip6tables -w -t mangle -N FW_FORWARD &> /dev/null
+sudo ip6tables -w -t mangle -F FW_FORWARD
+sudo ip6tables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo ip6tables -w -t mangle -D FORWARD -j FW_FORWARD
+sudo ip6tables -w -t mangle -I FORWARD -j FW_FORWARD
+
+sudo ip6tables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_SWITCH
+sudo ip6tables -w -t mangle -A FW_FORWARD -j FW_QOS_SWITCH
+# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
+# the packet will be mirrored to ifb only if this bit is set
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
+
+sudo ip6tables -w -t mangle -N FW_QOS &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS
+sudo ip6tables -w -t mangle -A FW_FORWARD -j FW_QOS
+# global qos connmark chain
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL
+sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_GLOBAL
+# network group qos connmark chain
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G
+sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_NET_G
+# network qos connmark chain
+sudo ip6tables -w -t mangle -N FW_QOS_NET &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET
+sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_NET
+# device group qos connmark chain
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G
+sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV_G
+# device qos connmark chain
+sudo ip6tables -w -t mangle -N FW_QOS_DEV &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV
+sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV
+
 # This will remove all customized ip sets that are not referred in iptables after initialization
 for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset flush -! $set
@@ -829,4 +918,26 @@ if [[ $(uname -m) == "x86_64" ]]; then
   sudo iptables -w -F DOCKER-USER
   sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
   sudo iptables -w -A DOCKER-USER -j RETURN
+fi
+
+
+if ip link show dev ifb0; then
+  sudo tc filter delete dev ifb0 &> /dev/null || true
+  sudo tc qdisc delete dev ifb0 root &> /dev/null || true
+  sudo ip link set ifb0 up
+  sudo tc filter del dev ifb0
+  sudo tc qdisc replace dev ifb0 root handle 1: htb default 1
+  # 5 is the default priority
+  sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 950mbit prio 5
+  sudo tc qdisc replace dev ifb0 parent 1:1 fq
+fi
+
+if ip link show dev ifb1; then
+  sudo tc filter delete dev ifb1 &> /dev/null || true
+  sudo tc qdisc delete dev ifb1 root &> /dev/null || true
+  sudo ip link set ifb1 up
+  sudo tc filter del dev ifb1
+  sudo tc qdisc replace dev ifb1 root handle 1: htb default 1
+  sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 950mbit prio 5
+  sudo tc qdisc replace dev ifb1 parent 1:1 fq
 fi

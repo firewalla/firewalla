@@ -415,7 +415,7 @@ function dhcpSubnetChange(ip, state, callback) {
 
 function prepare() {
   return execAsync(
-    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true) && (sudo iptables -w -t mangle -N FW_PREROUTING || true)"
+    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true) && (sudo iptables -w -t mangle -N FW_PREROUTING || true) && (sudo iptables -w -t mangle -N FW_FORWARD || true)"
   ).catch(err => {
     log.error("IPTABLE:PREPARE:Unable to prepare", err);
   })
@@ -423,7 +423,7 @@ function prepare() {
 
 function flush() {
   return execAsync(
-    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING",
+    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING && sudo iptables -w -t mangle -F FW_FORWARD",
   ).catch(err => {
     log.error("IPTABLE:FLUSH:Unable to flush", err)
   });

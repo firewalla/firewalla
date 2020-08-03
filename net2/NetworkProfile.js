@@ -37,6 +37,8 @@ const Mode = require('./Mode.js');
 const SpooferManager = require('./SpooferManager.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const pl = require('../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -456,6 +458,23 @@ async createEnv() {
         }
       }
     }
+
+    if (this.o.type === "lan" && !this.o.gateway) { // do not support wan interface in DHCP mode, although it is marked as lan
+      await exec(`sudo tc qdisc add dev ${realIntf} ingress`).catch((err) => {
+        log.error(`Failed to create ingress qdisc on ${realIntf}`, err.message);
+      });
+      await exec(`sudo tc qdisc replace dev ${realIntf} root handle 1: htb default 1`).catch((err) => {
+        log.error(`Failed to create default htb qdisc on ${realIntf}`, err.message);
+      })
+      // redirect ingress (upload) traffic to ifb0
+      await exec(`sudo tc filter add dev ${realIntf} parent ffff: handle 0x1 protocol all u32 match u32 0 0 action connmark pipe action mirred egress redirect dev ifb0`).catch((err) => {
+        log.error(`Failed to add tc filter to redirect ingress traffic on ${realIntf} to ifb0`, err.message);
+      });
+      // redirect egress (download) traffic to ifb1
+      await exec(`sudo tc filter add dev ${realIntf} parent 1: handle 0x1 protocol all u32 match u32 0 0 action connmark pipe action mirred egress redirect dev ifb1`).catch((err) => {
+        log.error(`Failed to add tc filter to redirect egress traffic on ${realIntf} to ifb1`, err.message);
+      });
+    }
   }
 
   async destroyEnv() {
@@ -525,6 +544,11 @@ async createEnv() {
       this._monitoredGateway6 = [];
     }
     await sm.emptySpoofSet(this.o.intf);
+
+    if (platform.isIFBSupported()) {
+      await exec(`sudo tc qdisc del dev ${realIntf} root`).catch((err) => {});
+      await exec(`sudo tc qdisc del dev ${realIntf} ingress`).catch((err) => {});
+    }
   }
   
   getTags() {

@@ -156,7 +156,8 @@ class Policy {
       this.direction === policy.direction &&
       this.action === policy.action &&
       this.upnp === policy.upnp &&
-      this.dnsmasq_only === policy.dnsmasq_only
+      this.dnsmasq_only === policy.dnsmasq_only &&
+      this.trafficDirection === policy.trafficDirection
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {
