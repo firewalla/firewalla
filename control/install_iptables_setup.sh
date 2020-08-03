@@ -765,11 +765,19 @@ sudo iptables -w -t mangle -F FW_FORWARD
 sudo iptables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo iptables -w -t mangle -D FORWARD -j FW_FORWARD
 sudo iptables -w -t mangle -I FORWARD -j FW_FORWARD
 
+sudo iptables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_SWITCH
+sudo iptables -w -t mangle -A FW_FORWARD -j FW_QOS_SWITCH
+# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
+# the packet will be mirrored to ifb only if this bit is set
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
+
 sudo iptables -w -t mangle -N FW_QOS &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS
-# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter
-sudo iptables -w -t mangle -A FW_FORWARD -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
-sudo iptables -w -t mangle -A FW_FORWARD -m set ! --match-set qos_off_set src,src -j FW_QOS
+sudo iptables -w -t mangle -A FW_FORWARD -j FW_QOS
 # global qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_GLOBAL
@@ -860,11 +868,19 @@ sudo ip6tables -w -t mangle -F FW_FORWARD
 sudo ip6tables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo ip6tables -w -t mangle -D FORWARD -j FW_FORWARD
 sudo ip6tables -w -t mangle -I FORWARD -j FW_FORWARD
 
+sudo ip6tables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_SWITCH
+sudo ip6tables -w -t mangle -A FW_FORWARD -j FW_QOS_SWITCH
+# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
+# the packet will be mirrored to ifb only if this bit is set
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
+
 sudo ip6tables -w -t mangle -N FW_QOS &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS
-# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter
-sudo ip6tables -w -t mangle -A FW_FORWARD -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
-sudo ip6tables -w -t mangle -A FW_FORWARD -m set ! --match-set qos_off_set src,src -j FW_QOS
+sudo ip6tables -w -t mangle -A FW_FORWARD -j FW_QOS
 # global qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL
@@ -909,10 +925,19 @@ if ip link show dev ifb0; then
   sudo tc filter delete dev ifb0 &> /dev/null || true
   sudo tc qdisc delete dev ifb0 root &> /dev/null || true
   sudo ip link set ifb0 up
+  sudo tc filter del dev ifb0
+  sudo tc qdisc replace dev ifb0 root handle 1: htb default 1
+  # 5 is the default priority
+  sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 950mbit prio 5
+  sudo tc qdisc replace dev ifb0 parent 1:1 fq
 fi
 
 if ip link show dev ifb1; then
   sudo tc filter delete dev ifb1 &> /dev/null || true
   sudo tc qdisc delete dev ifb1 root &> /dev/null || true
   sudo ip link set ifb1 up
+  sudo tc filter del dev ifb1
+  sudo tc qdisc replace dev ifb1 root handle 1: htb default 1
+  sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 950mbit prio 5
+  sudo tc qdisc replace dev ifb1 parent 1:1 fq
 fi
