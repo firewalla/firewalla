@@ -330,6 +330,11 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo systemctl daemon-reload
     sudo systemctl enable firehb
+
+    # to make sure fireapi service is always started
+    # so that app can try best to connect box via local LAN or WAN
+    sudo systemctl enable fireapi
+
     sudo systemctl restart firehb # start if not started
 fi
 
