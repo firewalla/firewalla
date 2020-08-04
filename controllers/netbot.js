@@ -3612,7 +3612,7 @@ class netBot extends ControllerBot {
                   "toPort": "*",
                   "protocol": "*",
                   "toIP": ip,
-                  "type": "portforward",
+                  "_type": "*",
                   "state": false,
                   "dport": "*"
                 })
