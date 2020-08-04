@@ -144,7 +144,7 @@ class NetBotTool {
     } else {
       flows = await flowAggrTool.getCleanedAppActivity(begin, end, options)
     }
-
+    this._dedupActivityDuration(flows);
     if (flows) {
       json.flows[key] = flows
     }
@@ -206,10 +206,9 @@ class NetBotTool {
         .sort((a, b) => {
           return b.ts - a.ts;
         });
-
       if (!allFlows[type].length) delete allFlows[type]
     }
-
+    this._dedupActivityDuration(allFlows);
     json.flows[key] = allFlows
     return allFlows
   }
@@ -264,6 +263,36 @@ class NetBotTool {
     return {
       begin: toInt(result[1]),
       end: toInt(result[2])
+    }
+  }
+
+  _dedupActivityDuration(allFlows) {
+    // dedup duration
+    // 00:00 - 00:15  duration 15
+    // 00:03 - 00:18  duration 15
+    // shoud dedup to 00:00 - 00:18 duration 18
+    for (const type in allFlows) {
+      allFlows[type].sort((a, b) => {
+        return a.ts - b.ts;
+      });
+      for (let i = 0; i < allFlows[type].length - 1; i++) {
+        const flow = allFlows[type][i];
+        const nextFlow = allFlows[type][i + 1];
+        if (flow.ts + flow.duration <= nextFlow.ts) {
+          continue;
+        } else if (flow.ts + flow.duration > nextFlow.ts + nextFlow.duration) {
+          flow.download += nextFlow.download;
+          flow.upload += nextFlow.upload;
+          allFlows[type].splice(i + 1, 1);
+          i--;
+        } else if (flow.ts + flow.duration <= nextFlow.ts + nextFlow.duration) {
+          flow.download += nextFlow.download;
+          flow.upload += nextFlow.upload;
+          flow.duration = nextFlow.ts + nextFlow.duration - flow.ts;
+          allFlows[type].splice(i + 1, 1);
+          i--;
+        }
+      }
     }
   }
 }
