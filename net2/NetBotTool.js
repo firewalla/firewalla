@@ -275,7 +275,7 @@ class NetBotTool {
       for (let i = allFlows[type].length - 1; i >0; i--) {
         const flow = allFlows[type][i];
         const nextFlow = allFlows[type][i - 1];
-        if (flow.ts + flow.duration <= nextFlow.ts) {
+        if (flow.ts + flow.duration < nextFlow.ts) {
           continue;
         } else if (flow.ts + flow.duration > nextFlow.ts + nextFlow.duration) {
           flow.download += nextFlow.download;
