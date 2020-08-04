@@ -198,7 +198,7 @@ async function generateNetworkInfo() {
     // always consider wan as lan in DHCP mode, which will affect port forward and VPN client
     if (mode === Mode.MODE_DHCP && type === "wan")
       type = "lan";
-    
+
     const redisIntf = {
       name:         intfName,
       uuid:         intf.config.meta.uuid,
@@ -518,7 +518,7 @@ class FireRouter {
       };
       await rclient.hmset("sys:network:uuid", stubNetworkUUID);
       for (let key of Object.keys(previousUUID).filter(uuid => !Object.keys(stubNetworkUUID).includes(uuid))) {
-        await rclient.hdel("sys:network:uuid", key).catch((err) => {});
+        await rclient.hdelAsync("sys:network:uuid", key).catch(() => {});
       }
       // updates sys:network:info
       const intfList = await d.discoverInterfacesAsync()
@@ -798,7 +798,7 @@ class FireRouter {
     } else {
       msg = msg + "Internet is unavailable now.";
     }
-    
+
     // TODO: find someone else to generate alarms for WAN connectivity change, instead of send notification
     sem.sendEventToFireApi({
       type: 'FW_NOTIFICATION',
