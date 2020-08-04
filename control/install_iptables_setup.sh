@@ -255,6 +255,10 @@ sudo iptables -w -t nat -F FW_POSTROUTING_PORT_FORWARD
 sudo iptables -w -t nat -C FW_POSTROUTING -m conntrack --ctstate DNAT -j FW_POSTROUTING_PORT_FORWARD &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -m conntrack --ctstate DNAT -j FW_POSTROUTING_PORT_FORWARD
 sudo iptables -w -t nat -N FW_POSTROUTING_HAIRPIN &> /dev/null
 sudo iptables -w -t nat -F FW_POSTROUTING_HAIRPIN
+# create POSTROUTING dmz host chain and add it to the end of port forward chain
+sudo iptables -w -t nat -N FW_POSTROUTING_DMZ_HOST &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_DMZ_HOST
+sudo iptables -w -t nat -A FW_POSTROUTING_PORT_FORWARD -j FW_POSTROUTING_DMZ_HOST
 
 # nat blackhole 8888
 sudo iptables -w -t nat -N FW_NAT_HOLE &>/dev/null
@@ -276,6 +280,13 @@ sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_EXT_IP &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_EXT_IP
 sudo iptables -w -t nat -N FW_PREROUTING_PORT_FORWARD &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
+# create dmz host chain, this is used in ipv4 only
+sudo iptables -w -t nat -N FW_PREROUTING_DMZ_HOST &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_DMZ_HOST
+sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 22,53,8853,8837,8833,8834,8835 -j ACCEPT
+sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j ACCEPT
+# add dmz host chain to the end of port forward chain
+sudo iptables -w -t nat -A FW_PREROUTING_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
 # create vpn client dns redirect chain in FW_PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
