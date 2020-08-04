@@ -481,7 +481,7 @@ async createEnv() {
       }
     }
 
-    if (this.o.type === "lan" && !this.o.gateway) { // do not support wan interface in DHCP mode, although it is marked as lan
+    if (this.o.type === "lan" && !this.o.gateway && platform.isIFBSupported()) { // do not support wan interface in DHCP mode, although it is marked as lan
       await exec(`sudo tc qdisc add dev ${realIntf} ingress`).catch((err) => {
         log.error(`Failed to create ingress qdisc on ${realIntf}`, err.message);
       });

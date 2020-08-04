@@ -26,6 +26,8 @@ const QOS_DOWNLOAD_MASK = 0x7f0000;
 const QOS_SWITCH_MASK = 0x40000000;
 const DEFAULT_PRIO = 5;
 const DEFAULT_RATE_LIMIT = 950;
+const pl = require('../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 
 async function allocateQoSHanderForPolicy(pid) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
@@ -51,6 +53,10 @@ async function deallocateQoSHandlerForPolicy(pid) {
 }
 
 async function createQoSClass(classId, direction, rateLimit, priority, qdisc) {
+  if (!platform.isIFBSupported()) {
+    log.error("ifb is not supported on this platform");
+    return;
+  }
   qdisc = qdisc || "fq_codel";
   rateLimit = rateLimit || DEFAULT_RATE_LIMIT;
   priority = priority || DEFAULT_PRIO;
@@ -73,6 +79,10 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc) {
 }
 
 async function destroyQoSClass(classId, direction) {
+  if (!platform.isIFBSupported()) {
+    log.error("ifb is not supported on this platform");
+    return;
+  }
   log.info(`Destroying QoS class for classid ${classId}, direction ${direction}`);
   if (!classId) {
     log.error(`class id is not specified`);
@@ -92,6 +102,10 @@ async function destroyQoSClass(classId, direction) {
 }
 
 async function createTCFilter(filterId, classId, direction, prio, fwmark) {
+  if (!platform.isIFBSupported()) {
+    log.error("ifb is not supported on this platform");
+    return;
+  }
   log.info(`Creating tc filter for filter id ${filterId}, classid ${classId}, direction ${direction}, prio ${prio}`)
   if (!filterId) {
     log.error(`filter id is not specified`);
@@ -124,6 +138,10 @@ async function createTCFilter(filterId, classId, direction, prio, fwmark) {
 }
 
 async function destroyTCFilter(filterId, direction, prio, fwmark) {
+  if (!platform.isIFBSupported()) {
+    log.error("ifb is not supported on this platform");
+    return;
+  }
   log.info(`Destroying tc filter for filter id ${filterId}, direction ${direction}, prio ${prio}`);
   if (!filterId) {
     log.error(`filter id is not specified`);
