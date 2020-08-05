@@ -773,7 +773,9 @@ class Host {
       }
     }
     if (entries.length !== 0) {
-      await fs.writeFileAsync(hostsFile, entries.join("\n"));
+      await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
+        log.error(`Failed to write hosts file ${hostsFile}`, err.message);
+      });
       dnsmasq.scheduleReloadDNSService();
     } else {
       await fs.unlinkAsync(hostsFile).catch((err) => { });
