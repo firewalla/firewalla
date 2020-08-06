@@ -796,9 +796,9 @@ class FireRouter {
       msg = `Internet connectivity on ${ifaceName} has been restored. `;
     if (activeWans.length > 0) {
       if (wanSwitched)
-        msg = msg + `Active WAN has been switched to ${activeWans.join(', ')}.`;
+        msg = msg + `Active WAN is switched to ${activeWans.join(', ')}.`;
       else
-        msg = msg + `Active WAN sticks to ${activeWans.join(', ')}.`;
+        msg = msg + `Active WAN remains with ${activeWans.join(', ')}.`;
     } else {
       msg = msg + "Internet is unavailable now.";
     }
