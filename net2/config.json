@@ -149,7 +149,13 @@
       "countryInterval": 86400
     },
     "AutoBlocksRevalidationSensor": {},
-    "FlowAggregationSensor": {},
+    "FlowAggregationSensor": {
+      "interval": 600,
+      "flowRange": 86400,
+      "sumFlowExpireTime": 1800,
+      "aggrFlowExpireTime": 86400,
+      "sumFlowMaxFlow": 200
+    },
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
     "SafeSearchPlugin": {
@@ -543,12 +549,12 @@
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
-    "ACLAuditLogPlugin": {}
+    "ACLAuditLogPlugin": {},
+    "NewDeviceTagSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
-    "DeviceStatusUpdateHook": {},
     "DeviceHook": {
       "hostExpirationSecs": 2700
     },
@@ -682,7 +688,8 @@
     "family_protect": false,
     "smart_block": true,
     "internal_scan": false,
-    "acl_audit": false
+    "acl_audit": false,
+    "new_device_tag": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -179,10 +179,13 @@ function batchOp(operations) {
 
 const CONSTANTS = {
   IPSET_MONITORED_NET: "monitored_net_set",
+  IPSET_LAN: "c_lan_set",
   IPSET_ACL_OFF: "acl_off_set",
   IPSET_ACL_OFF_MAC: "acl_off_mac_set",
   IPSET_NO_DNS_BOOST: "no_dns_caching_set",
-  IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set"
+  IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set",
+  IPSET_QOS_OFF: "qos_off_set",
+  IPSET_QOS_OFF_MAC: "qos_off_mac_set"
 }
 
 module.exports = {

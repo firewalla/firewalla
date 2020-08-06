@@ -113,8 +113,13 @@ class HostTool {
       delete hostCopy.ipv6Addr
     }
 
-    this.cleanupData(hostCopy);
+    const oldHostMac = await rclient.hgetAsync(key, 'mac')
+    // new host taking over this ip, remove previous entry
+    if (oldHostMac != host.mac) {
+      await rclient.delAsync(key)
+    }
 
+    this.cleanupData(hostCopy);
     await rclient.hmsetAsync(key, hostCopy)
     await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
   }
@@ -342,34 +347,36 @@ class HostTool {
 
   async updateIPv6Host(host, ipv6Addr, skipTimeUpdate) {
     skipTimeUpdate = skipTimeUpdate || false;
-    if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
-      for (const addr of ipv6Addr) {
-        let key = this.getIPv6HostKey(addr)
 
-        let existingData = await rclient.hgetallAsync(key)
-        let data = null
+    if (!Array.isArray(ipv6Addr)) return
 
-        if(existingData && existingData.mac === host.mac) {
-          // just update last timestamp for existing device
-          if (!skipTimeUpdate) {
-            data = {
-              lastActiveTimestamp: Date.now() / 1000
-            }
-          }
-        } else {
+    for (const addr of ipv6Addr) {
+      const key = this.getIPv6HostKey(addr)
+
+      const existingData = await rclient.hgetallAsync(key)
+      let data = null
+
+      if (existingData && existingData.mac === host.mac) {
+        // just update last timestamp for existing device
+        if (!skipTimeUpdate) {
           data = {
-            mac: host.mac
-          };
-          if (!skipTimeUpdate) {
-            data.firstFoundTimestamp = Date.now() / 1000;
-            data.lastActiveTimestamp = Date.now() / 1000;
+            lastActiveTimestamp: Date.now() / 1000
           }
         }
-
-        if (data) {
-          await rclient.hmsetAsync(key, data)
-          await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
+      } else {
+        await rclient.delAsync(key)
+        data = {
+          mac: host.mac
+        };
+        if (!skipTimeUpdate) {
+          data.firstFoundTimestamp = Date.now() / 1000;
+          data.lastActiveTimestamp = Date.now() / 1000;
         }
+      }
+
+      if (data) {
+        await rclient.hmsetAsync(key, data)
+        await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
       }
     }
   }
@@ -510,7 +517,7 @@ class HostTool {
   }
 
   async findMacByMacHash(hash) {
-    const allMacs = await this.getAllMACs();    
+    const allMacs = await this.getAllMACs();
     for(const mac of allMacs) {
       const hashObject = Hashes.getHashObject(mac);
       if(hashObject && hashObject.hash === hash) {
@@ -545,7 +552,7 @@ class HostTool {
 
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
-  
+
   async generateLocalDomain(mac) {
     if(!this.isMacAddress(mac)) {
       return;

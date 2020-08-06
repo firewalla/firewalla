@@ -31,6 +31,8 @@ const exec = require('child-process-promise').exec;
 
 const iptable = require("../../net2/Iptables.js");
 const Message = require('../../net2/Message.js');
+const pl = require('../../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -102,7 +104,7 @@ class PortForward {
     for (const extIP of extIPs) {
       const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PREROUTING_PORT_FORWARD`);
       await exec(cmd).catch((err) => {
-        log.error(`Failed to update FW_PREROUTING_EXT_IP with ${extIP}`, err.message);
+        log.error(`Failed to update FW_PREROUTING_EXT_IP with command: ${cmd}`, err.message);
       });
     }
   }
@@ -220,7 +222,8 @@ class PortForward {
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
           (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
-          _map.toIP == map.toIP
+          _map.toIP == map.toIP &&
+          (map._type == "*" || (_map._type || "port_forward") === (map._type || "port_forward"))
         ) {
           return i;
         }
@@ -317,10 +320,16 @@ class PortForward {
 
   _isLANInterfaceIP(ip) {
     const iface = sysManager.getInterfaceViaIP4(ip);
-    if (iface && iface.type === "lan")
-      return true;
-    else
+    if (!iface || !iface.name)
       return false;
+    if (iface.type === "lan")
+      return true;
+    if (platform.isOverlayNetworkAvailable()) {
+      // on red/blue/navy, if overlay and primary network are in the same subnet, getInterfaceViaIP4 will return primary network, which is LAN
+      if (sysManager.inMySubnets4(ip, `${iface.name}:0`))
+        return true;
+    }
+    return false;
   }
 }
 

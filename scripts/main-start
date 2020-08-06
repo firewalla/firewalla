@@ -117,6 +117,16 @@ function record_latest_production_branch() {
 }
 
 logger "FIREWALLA: Main-Run Start Update Modules"
+
+function update_node_modules_link {
+  # only continue when there is ~/.node_modules/node_modules
+  NM_PATH="/home/pi/.node_modules/node_modules"
+
+  # ~/firewalla/node_modules => ~/.node_modules/node_modules
+  # keep name node_modules because its the default name for node to search node modulers in upper level folders
+  test -e $NM_PATH && sudo -u pi ln -sf $NM_PATH $FIREWALLA_HOME/node_modules
+}
+
 function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
   if [[ "x$FIREWALLA_NODE_MODULES_MODE" == "xGIT" ]]; then
@@ -127,13 +137,13 @@ function update_node_modules {
         git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH || git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
         cd - &>/dev/null
       fi
-      REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM
+      REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.${FIREWALLA_PLATFORM}
 
       NODE_VERSION=$($FIREWALLA_HOME/bin/node -v)
 
       RE_NODE4='^v4\..*$'
       if [[ $NODE_VERSION =~ $RE_NODE4 ]]; then
-        REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM.node4
+        REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.${FIREWALLA_PLATFORM}.node4
       fi
 
 
@@ -181,6 +191,7 @@ function update_node_modules {
 
 # update ~/.node_modules
 update_node_modules
+update_node_modules_link
 
 record_latest_production_branch
 
@@ -319,6 +330,11 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo systemctl daemon-reload
     sudo systemctl enable firehb
+
+    # to make sure fireapi service is always started
+    # so that app can try best to connect box via local LAN or WAN
+    sudo systemctl enable fireapi
+
     sudo systemctl restart firehb # start if not started
 fi
 

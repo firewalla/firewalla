@@ -69,7 +69,18 @@ sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
 #(cd $FIREWALLA_HOME; pkill FWBroadcastBooting &>/dev/null; timeout 30m node scripts/broadcast_booting.js) &
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
-sudo -u pi crontab -r ; sudo -u pi crontab $CRONTAB_FILE
+
+USER_CRONTAB=/home/pi/.firewalla/config/user_crontab
+if [[ -e $USER_CRONTAB ]]; then
+    sudo -u pi crontab -r ; 
+    TMP_CRONTAB_FILE=$(mktemp)
+    cat $CRONTAB_FILE > $TMP_CRONTAB_FILE
+    cat $USER_CRONTAB >> $TMP_CRONTAB_FILE
+    sudo -u pi crontab $TMP_CRONTAB_FILE
+else
+    sudo -u pi crontab -r ; sudo -u pi crontab $CRONTAB_FILE
+fi
+
 $FIREWALLA_HOME/scripts/fire-time.sh
 logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
 
@@ -112,4 +123,13 @@ fi
 if [[ -n "$NO_FIREKICK_RESTART" ]]; then
   # turn off led light since pairing is not activated
   turnOffLED
+fi
+
+POST_MAIN_D="/home/pi/.firewalla/config/post_main.d"
+
+if [[ -d $POST_MAIN_D ]]; then
+  for post_script in $(ls $POST_MAIN_D/*.sh)
+  do
+      bash $post_script
+  done
 fi

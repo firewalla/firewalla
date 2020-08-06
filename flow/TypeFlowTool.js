@@ -119,14 +119,6 @@ class TypeFlowTool {
     }).filter(Boolean)
   }
 
-  cleanupTypeFlow(mac, type) {
-    const key = this.getTypeFlowKey(mac, type)
-
-    const now = new Date() / 1000
-    const _24hoursAgo = now - 3600 * 24
-
-    return rclient.zremrangebyscoreAsync(key, '-inf', `(${_24hoursAgo}`)
-  }
 }
 
 module.exports = TypeFlowTool

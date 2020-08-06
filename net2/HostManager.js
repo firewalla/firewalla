@@ -1052,7 +1052,7 @@ module.exports = class HostManager {
 
     if (o == null) return null;
 
-    host = new Host(o, this);
+    host = new Host(o);
 
     //this.hostsdb[`host:mac:${o.mac}`] = host
     // do not update host:mac entry in this.hostsdb intentionally,
@@ -1187,7 +1187,7 @@ module.exports = class HostManager {
       let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
 
       if (hostbymac == null) {
-        hostbymac = new Host(o,this);
+        hostbymac = new Host(o);
         this.hosts.all.push(hostbymac);
         this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         this.hostsdb['host:mac:' + o.mac] = hostbymac;
@@ -1323,6 +1323,16 @@ module.exports = class HostManager {
 
   isMonitoring() {
     return this.spoofing;
+  }
+
+  async qos(state) {
+    if (state == false) {
+      await iptables.switchQoSAsync(false);
+      await iptables.switchQoSAsync(false, 6);
+    } else {
+      await iptables.switchQoSAsync(true);
+      await iptables.switchQoSAsync(true, 6);
+    }
   }
 
   async acl(state) {
