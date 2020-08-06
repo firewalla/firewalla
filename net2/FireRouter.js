@@ -48,6 +48,9 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
 const Mode = require('./Mode.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Alarm = require('../alarm/Alarm.js');
+const AM2 = require('../alarm/AlarmManager2.js');
+const am2 = new AM2();
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -267,7 +270,7 @@ class FireRouter {
 
     this.retryUntilInitComplete()
 
-    sclient.on("message", (channel, message) => {
+    sclient.on("message", async (channel, message) => {
       if (!this.ready)
         return;
       let reloadNeeded = false;
@@ -277,7 +280,7 @@ class FireRouter {
             return;
           const changeDesc = (message && JSON.parse(message)) || null;
           if (changeDesc) {
-            this.notifyWanConnChange(changeDesc);
+            await this.notifyWanConnChange(changeDesc);
           }
           break;
         }
@@ -773,7 +776,8 @@ class FireRouter {
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
   }
 
-  notifyWanConnChange(changeDesc) {
+  async notifyWanConnChange(changeDesc) {
+    if(!Config.isFeatureOn('dual_wan'))return;
     // {"intf":"eth0","ready":false,"wanSwitched":true,"currentStatus":{"eth0":{"ready":false,"active":false},"eth1":{"ready":true,"active":true}}}
     const intf = changeDesc.intf;
     const ready = changeDesc.ready;
@@ -792,25 +796,24 @@ class FireRouter {
       msg = `Internet connectivity on ${ifaceName} has been restored. `;
     if (activeWans.length > 0) {
       if (wanSwitched)
-        msg = msg + `Active WAN has been switched to ${activeWans.join(', ')}.`;
+        msg = msg + `Active WAN is switched to ${activeWans.join(', ')}.`;
       else
-        msg = msg + `Active WAN sticks to ${activeWans.join(', ')}.`;
+        msg = msg + `Active WAN remains with ${activeWans.join(', ')}.`;
     } else {
       msg = msg + "Internet is unavailable now.";
     }
-
-    // TODO: find someone else to generate alarms for WAN connectivity change, instead of send notification
-    sem.sendEventToFireApi({
-      type: 'FW_NOTIFICATION',
-      titleKey: 'NOTIF_WAN_CONN_CHANGED_TITLE',
-      bodyKey: 'NOTIF_WAN_CONN_CHANGED',
-      titleLocalKey: 'WAN_CONN_CHANGED',
-      bodyLocalKey: 'WAN_CONN_CHANGED',
-      bodyLocalArgs: [msg],
-      payload: {
-        msg: msg
+    let alarm = new Alarm.DualWanAlarm(
+      Date.now() / 1000,
+      ifaceName,
+      {
+        "p.iface.name":ifaceName,
+        "p.active.wans":activeWans,
+        "p.wan.switched": wanSwitched,
+        "p.ready": ready,
+        "p.message": msg
       }
-    });
+    );
+    await am2.enqueueAlarm(alarm);
   }
 }
 
