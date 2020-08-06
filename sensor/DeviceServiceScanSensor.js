@@ -82,15 +82,10 @@ class DeviceServiceScanSensor extends Sensor {
           case "Tag": {
             const tagUid = host.o && host.o.uid;
             if (tagUid) {
-              const hosts = await hostManager.getHostsAsync();
-              const tagHosts = hosts.filter((h) => {
-                return h && h.o && h.o.tags && (
-                  h.o.tags.includes(Number(tagUid)) || h.o.tags.includes(String(tagUid))
-                ) && h.o.mac
-              })
-              tagHosts.map((h) => {
-                !this.scanSettings[h.o.mac] && (this.scanSettings[h.o.mac] = {})
-                this.scanSettings[h.o.mac].tagPolicy = policy;
+              const allMacs = hostManager.getTagMacs(tagUid);
+              allMacs.map((mac) => {
+                !this.scanSettings[mac] && (this.scanSettings[mac] = {})
+                this.scanSettings[mac].tagPolicy = policy;
               })
             }
             break;
@@ -98,13 +93,10 @@ class DeviceServiceScanSensor extends Sensor {
           case "NetworkProfile": {
             const uuid = host.o && host.o.uuid;
             if (uuid) {
-              const hosts = await hostManager.getHostsAsync();
-              const networkHosts = hosts.filter((h) => {
-                return h && h.o && h.o.intf_uuid == uuid && h.o.mac
-              })
-              networkHosts.map((h) => {
-                !this.scanSettings[h.o.mac] && (this.scanSettings[h.o.mac] = {})
-                this.scanSettings[h.o.mac].networkPolicy = policy;
+              const allMacs = hostManager.getIntfMacs(uuid);
+              allMacs.map((mac) => {
+                !this.scanSettings[mac] && (this.scanSettings[mac] = {})
+                this.scanSettings[mac].networkPolicy = policy;
               })
             }
             break;
@@ -156,11 +148,14 @@ class DeviceServiceScanSensor extends Sensor {
           policy === false | undefined // unset
         */
         if (!setting) return this.scanSettings['0.0.0.0'];
-        if (setting.devicePolicy === true) return true;
-        if (setting.devicePolicy !== null && setting.tagPolicy === true) return true;
-        if (setting.devicePolicy !== null && setting.networkPolicy === true) return true;
-        if (setting.devicePolicy !== null && setting.tagPolicy !== null &&
-          setting.networkPolicy !== null && this.scanSettings['0.0.0.0']) return true;
+        if (setting.devicePolicy === true) return true
+        if (setting.devicePolicy === null) return false
+        if (setting.tagPolicy === true) return true
+        if (setting.tagPolicy === null) return false
+        if (setting.networkPolicy === true) return true
+        if (setting.networkPolicy === null) return false
+        if (this.scanSettings['0.0.0.0'] === true) return true
+        if (this.scanSettings['0.0.0.0'] === null) return false
         return false;
       });
       for (const host of hosts) {
