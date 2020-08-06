@@ -233,11 +233,14 @@ sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge7
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6
 
-# Enable TCP_BBR
-logger "FIREWALLA:MAIN:ENABLE_TCP_BBR"
-sudo modprobe tcp_bbr
 sudo sysctl -w net.core.default_qdisc=fq &>/dev/null
-sudo sysctl -w net.ipv4.tcp_congestion_control=bbr &>/dev/null
+
+# Enable TCP_BBR
+if [[ "x$TCP_BBR" == "xyes" ]]; then
+    logger "FIREWALLA:MAIN:ENABLE_TCP_BBR"
+    sudo modprobe tcp_bbr
+    sudo sysctl -w net.ipv4.tcp_congestion_control=bbr &>/dev/null
+fi
 
 #fix network
 # sudo cp $FIREWALLA_HOME/etc/duplex_patch /etc/network/if-pre-up.d/.
