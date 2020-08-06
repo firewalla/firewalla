@@ -277,9 +277,12 @@ class NetworkProfileManager {
 
     for (let uuid in this.networkProfiles) {
       const key = `network:uuid:${uuid}`;
-      const profileJson = this.networkProfiles[uuid].o;
+      const networkProfile = this.networkProfiles[uuid];
+      const profileJson = networkProfile.o;
       if (f.isMain()) {
         await rclient.hmsetAsync(key, this.redisfy(profileJson));
+        // always refresh tc filters on network interface in case the interface is re-created in firerouter
+        networkProfile.scheduleRefreshTCFilters();
       }
     }
     return this.networkProfiles;
