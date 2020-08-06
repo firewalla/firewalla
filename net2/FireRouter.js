@@ -48,9 +48,6 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
 const Mode = require('./Mode.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const Alarm = require('../alarm/Alarm.js');
-const AM2 = require('../alarm/AlarmManager2.js');
-const am2 = new AM2();
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -802,6 +799,9 @@ class FireRouter {
     } else {
       msg = msg + "Internet is unavailable now.";
     }
+    const Alarm = require('../alarm/Alarm.js');
+    const AM2 = require('../alarm/AlarmManager2.js');
+    const am2 = new AM2();
     let alarm = new Alarm.DualWanAlarm(
       Date.now() / 1000,
       ifaceName,
