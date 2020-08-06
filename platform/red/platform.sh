@@ -8,6 +8,7 @@ MAX_NUM_OF_PROCESSES=2000
 MAX_NUM_OF_THREADS=10000
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.armv7l'
+TCP_BBR=yes
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'

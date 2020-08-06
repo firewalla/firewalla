@@ -7,6 +7,7 @@ UNAME=$(uname -m)
 # by default no
 MANAGED_BY_FIREBOOT=no
 FIREWALLA_PLATFORM=unknown
+TCP_BBR=no
 
 case "$UNAME" in
   "x86_64")
