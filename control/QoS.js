@@ -24,8 +24,8 @@ const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
 const QOS_UPLOAD_MASK = 0x3f800000;
 const QOS_DOWNLOAD_MASK = 0x7f0000;
 const QOS_SWITCH_MASK = 0x40000000;
-const DEFAULT_PRIO = 5;
-const DEFAULT_RATE_LIMIT = 950;
+const DEFAULT_PRIO = 50;
+const DEFAULT_RATE_LIMIT = 1024;
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 

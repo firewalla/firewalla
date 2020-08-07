@@ -192,7 +192,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
   let table = null;
   let chain = null;
   let target = null;
-  const filterPrio = 1; // global filter has the lowest priority 7
+  const filterPrio = 1;
   switch (action) {
     case "qos": {
       qdisc = qdisc || "fq_codel";
@@ -276,7 +276,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
   let table = null;
   let chain = null;
   let target = null;
-  const filterPrio = 1; // device filter has the highest priority 1
+  const filterPrio = 1;
   switch (action) {
     case "qos": {
       qdisc = qdisc || "fq_codel";
