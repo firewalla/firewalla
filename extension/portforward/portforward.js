@@ -104,7 +104,7 @@ class PortForward {
     for (const extIP of extIPs) {
       const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PREROUTING_PORT_FORWARD`);
       await exec(cmd).catch((err) => {
-        log.error(`Failed to update FW_PREROUTING_EXT_IP with ${extIP}`, err.message);
+        log.error(`Failed to update FW_PREROUTING_EXT_IP with command: ${cmd}`, err.message);
       });
     }
   }
@@ -222,7 +222,8 @@ class PortForward {
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
           (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
-          _map.toIP == map.toIP
+          _map.toIP == map.toIP &&
+          (map._type == "*" || (_map._type || "port_forward") === (map._type || "port_forward"))
         ) {
           return i;
         }

@@ -37,6 +37,8 @@ const Mode = require('./Mode.js');
 const SpooferManager = require('./SpooferManager.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const pl = require('../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -154,6 +156,28 @@ class NetworkProfile {
 
   isMonitoring() {
     return this.spoofing;
+  }
+
+  async qos(state) {
+    if (state === true) {
+      const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+      const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${netIpsetName6}`).catch((err) => {
+        log.error(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    } else {
+      const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
+      const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${netIpsetName}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${netIpsetName6}`).catch((err) => {
+        log.error(`Failed to add ${netIpsetName6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    }
   }
 
   async acl(state) {

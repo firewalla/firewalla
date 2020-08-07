@@ -1325,6 +1325,16 @@ module.exports = class HostManager {
     return this.spoofing;
   }
 
+  async qos(state) {
+    if (state == false) {
+      await iptables.switchQoSAsync(false);
+      await iptables.switchQoSAsync(false, 6);
+    } else {
+      await iptables.switchQoSAsync(true);
+      await iptables.switchQoSAsync(true, 6);
+    }
+  }
+
   async acl(state) {
     if (state == false) {
       await iptables.switchACLAsync(false);

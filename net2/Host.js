@@ -535,6 +535,30 @@ class Host {
     return this.spoofing;
   }
 
+  async qos(state) {
+    if (state === true) {
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 4)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 6)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+    } else {
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC} ${this.o.mac}`).catch((err) => {
+        log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC}`, err);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
+        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
+        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    }
+  }
+
   async acl(state) {
     if (state === true) {
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC} ${this.o.mac}`).catch((err) => {
@@ -691,28 +715,36 @@ class Host {
         this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
-        // update tracking ipset
-        const macEntry = await hostTool.getMACEntry(this.o.mac);
-        const ipv4Addr = macEntry && macEntry.ipv4Addr;
-        if (ipv4Addr) {
-          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
-            log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
-          });
-        }
-        let ipv6Addr = null;
-        try {
-          ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
-        } catch (err) {}
-        if (Array.isArray(ipv6Addr)) {
-          for (const addr of ipv6Addr) {
-            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
-              log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
-            });
-          }
-        }
-        await this.updateHostsFile();
+        this.scheduleUpdateHostData();
       }
     });
+  }
+
+  scheduleUpdateHostData() {
+    if (this.updateHostDataTask)
+      clearTimeout(this.updateHostDataTask);
+    this.updateHostDataTask = setTimeout(async () => {
+      // update tracking ipset
+      const macEntry = await hostTool.getMACEntry(this.o.mac);
+      const ipv4Addr = macEntry && macEntry.ipv4Addr;
+      if (ipv4Addr) {
+        await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
+          log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
+        });
+      }
+      let ipv6Addr = null;
+      try {
+        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+      } catch (err) {}
+      if (Array.isArray(ipv6Addr)) {
+        for (const addr of ipv6Addr) {
+          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
+            log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
+          });
+        }
+      }
+      await this.updateHostsFile();
+    }, 3000);
   }
 
   async updateHostsFile() {
@@ -764,7 +796,9 @@ class Host {
       }
     }
     if (entries.length !== 0) {
-      await fs.writeFileAsync(hostsFile, entries.join("\n"));
+      await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
+        log.error(`Failed to write hosts file ${hostsFile}`, err.message);
+      });
       dnsmasq.scheduleReloadDNSService();
     } else {
       await fs.unlinkAsync(hostsFile).catch((err) => { });

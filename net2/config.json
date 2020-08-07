@@ -31,6 +31,7 @@
     "alarm.data_plan.cooldown": 2592000,
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
+    "alarm.dual_wan.cooldown": 60,
     "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
@@ -689,7 +690,8 @@
     "smart_block": true,
     "internal_scan": false,
     "acl_audit": false,
-    "new_device_tag": false
+    "new_device_tag": false,
+    "dual_wan": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

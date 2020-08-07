@@ -18,7 +18,6 @@ const log = require('../net2/logger.js')(__filename, 'info');
 const { Sensor } = require('./Sensor.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const MessageBus = require('../net2/MessageBus.js');
-const messageBus = new MessageBus('info')
 const fc = require('../net2/config.js');
 
 const HostManager = require('../net2/HostManager.js');
@@ -46,14 +45,18 @@ class NewDeviceTagSensor extends Sensor {
   constructor() {
     super()
 
+    // use dedicated instance as messageBus can't deal with multiple subscribers well
+    this.messageBus = new MessageBus('info', 'newDeviceTag')
     this.queue = []
     this.macIndex = {}
   }
 
   async checkAndExecutePolicy(channel, type, mac, host) {
     try {
-      if (this.macIndex[mac])
-        this.macIndex[mac] = false
+      if (this.macIndex[mac]) {
+        this.messageBus.unsubscribe("DiscoveryEvent", "Device:Updated", mac)
+        delete this.macIndex[mac]
+      }
       else
         return // already checked
 
@@ -97,8 +100,14 @@ class NewDeviceTagSensor extends Sensor {
         if (!fc.isFeatureOn(FEATURE_KEY)) return
 
         this.macIndex[event.host.mac] = true
+
         // Use Device:Updated event as it's the time that host info will be written to redis
-        messageBus.subscribeOnce("DiscoveryEvent", "Device:Updated", event.host.mac, this.checkAndExecutePolicy.bind(this))
+        this.messageBus.subscribeOnce(
+          "DiscoveryEvent",
+          "Device:Updated",
+          event.host.mac,
+          this.checkAndExecutePolicy.bind(this)
+        )
       })
 
       sem.removeListener('NewDeviceFound', this.enqueueEvent)
@@ -107,7 +116,6 @@ class NewDeviceTagSensor extends Sensor {
 
       for (const event of this.queue) {
         this.macIndex[event.host.mac] = true
-        messageBus.subscribeOnce("DiscoveryEvent", "Device:Updated", event.host.mac, this.checkAndExecutePolicy.bind(this))
       }
     })
   }

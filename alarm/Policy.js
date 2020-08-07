@@ -85,6 +85,12 @@ class Policy {
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
 
+    if (raw.rateLimit)
+      this.rateLimit = Number(raw.rateLimit);
+
+    if (raw.priority)
+      this.priority = Number(raw.priority);
+
     this.dnsmasq_only = false;
     if (raw.dnsmasq_only)
       this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
@@ -156,7 +162,8 @@ class Policy {
       this.direction === policy.direction &&
       this.action === policy.action &&
       this.upnp === policy.upnp &&
-      this.dnsmasq_only === policy.dnsmasq_only
+      this.dnsmasq_only === policy.dnsmasq_only &&
+      this.trafficDirection === policy.trafficDirection
     ) {
       return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
     } else {

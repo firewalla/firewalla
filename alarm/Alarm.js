@@ -1028,6 +1028,37 @@ class UpnpAlarm extends Alarm {
     return false;
   }
 }
+class DualWanAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_DUAL_WAN', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return [
+    ];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup()
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.dual_wan.cooldown') || super.getExpirationTime();
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.iface.name"],
+    this["p.active.wans"],
+    this["p.wan.switched"],
+    this["p.ready"]
+  ];
+  }
+  
+  isDup() {
+    return false;
+  }
+}
 
 let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
@@ -1051,7 +1082,8 @@ let classMapping = {
   ALARM_SUBNET: SubnetAlarm.prototype,
   ALARM_WEAK_PASSWORD: WeakPasswordAlarm.prototype,
   ALARM_OPENPORT: OpenPortAlarm.prototype,
-  ALARM_UPNP: UpnpAlarm.prototype
+  ALARM_UPNP: UpnpAlarm.prototype,
+  ALARM_DUAL_WAN: DualWanAlarm.prototype
 }
 
 module.exports = {
@@ -1079,5 +1111,6 @@ module.exports = {
   WeakPasswordAlarm: WeakPasswordAlarm,
   OpenPortAlarm: OpenPortAlarm,
   UpnpAlarm: UpnpAlarm,
+  DualWanAlarm: DualWanAlarm,
   mapping: classMapping
 }
