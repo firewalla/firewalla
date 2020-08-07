@@ -202,17 +202,6 @@ sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
 
-if [[ $MANAGED_BY_FIREBOOT == "yes" ]]; then
-    sudo systemctl disable firewalla
-    sudo systemctl disable fireupgrade
-    sudo systemctl disable brofish
-else
-    sudo systemctl reenable firewalla
-    sudo systemctl reenable fireupgrade
-    sudo systemctl reenable brofish
-fi
-
-
 case $mode in
     normal)
         /home/pi/firewalla/scripts/fireupgrade_normal.sh
