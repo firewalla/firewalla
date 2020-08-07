@@ -54,6 +54,7 @@ const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
 const ip = require('ip')
 const _ = require('lodash');
+const exec = require('child-process-promise').exec;
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
@@ -285,6 +286,7 @@ class FireRouter {
           log.info("Interface config is changed, schedule reload from FireRouter and restart Brofish ...");
           reloadNeeded = true;
           this.broRestartNeeded = true;
+          this.tcFilterRefreshNeeded = true;
           break;
         }
         case Message.MSG_SECONDARY_IFACE_UP: {
@@ -592,25 +594,57 @@ class FireRouter {
     log.info('FireRouter initialization complete')
     this.ready = true
 
-    if (f.isMain() && (
+    if (f.isMain()) { 
       // zeek used to be bro
-      this.platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions) || this.broRestartNeeded) ||
-      !this.platform.isFireRouterManaged() && first
-    )) {
-      this.broReady = false;
-      if(this.platform.isFireRouterManaged()) {
-        await broControl.writeClusterConfig(zeekOptions);
+      if (this.platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions) || this.broRestartNeeded) ||
+        !this.platform.isFireRouterManaged() && first
+      ) {
+        this.broReady = false;
+        if (this.platform.isFireRouterManaged()) {
+          await broControl.writeClusterConfig(zeekOptions);
+        }
+        // do not await bro restart to finish, it may take some time
+        broControl.restart()
+          .then(() => broControl.addCronJobs())
+          .then(() => {
+            log.info('Bro restarted');
+            this.broRestartNeeded = false;
+            this.broReady = true;
+          });
+      } else {
+        this.broReady = true;
       }
-      // do not await bro restart to finish, it may take some time
-      broControl.restart()
-        .then(() => broControl.addCronJobs())
-        .then(() => {
-          log.info('Bro restarted');
-          this.broRestartNeeded = false;
-          this.broReady = true;
-        });
-    } else {
-      this.broReady = true;
+      if (first || this.tcFilterRefreshNeeded) {
+        const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
+        await this.resetTCFilters(localIntfs);
+        this.tcFilterRefreshNeeded = false;
+      }
+    }
+  }
+
+  async resetTCFilters(ifaces) {
+    if (!this.platform.isIFBSupported()) {
+      log.info("Platform does not support ifb, tc filters will not be reset");
+      return;
+    }
+    log.info("Resetting tc filters ...", ifaces);
+    for (const iface of ifaces) {
+      await exec(`sudo tc qdisc del dev ${iface} root`).catch((err) => { });
+      await exec(`sudo tc qdisc del dev ${iface} ingress`).catch((err) => { });
+      await exec(`sudo tc qdisc add dev ${iface} ingress`).catch((err) => {
+        log.error(`Failed to create ingress qdisc on ${iface}`, err.message);
+      });
+      await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
+        log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
+      })
+      // redirect ingress (upload) traffic to ifb0
+      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 0x1 protocol all u32 match u32 0 0 action connmark pipe action mirred egress redirect dev ifb0`).catch((err) => {
+        log.error(`Failed to add tc filter to redirect ingress traffic on ${iface} to ifb0`, err.message);
+      });
+      // redirect egress (download) traffic to ifb1
+      await exec(`sudo tc filter add dev ${iface} parent 1: handle 0x1 protocol all u32 match u32 0 0 action connmark pipe action mirred egress redirect dev ifb1`).catch((err) => {
+        log.error(`Failed to add tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
+      });
     }
   }
 
