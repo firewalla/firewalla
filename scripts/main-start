@@ -326,7 +326,6 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/extension/dnscrypt/dnscrypt.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/docker-compose@.service /etc/systemd/system/
     sudo cp /home/pi/firewalla/extension/ss_client/ss_client@.service /etc/systemd/system/.
-    sudo cp /home/pi/firewalla/etc/devicemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firehttpd.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
@@ -341,13 +340,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo systemctl restart firehb # start if not started
 fi
 
-# it is no longer used since 1.965
-sudo systemctl stop devicemasq
-sudo systemctl disable devicemasq
-
 cd sys
-#forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
-#forever start --uid kickstart -a -l ui.log  -c '/usr/bin/nodejs --expose-gc' ./kickstart.js --config /encipher.config/netbot.config
 
 if [[ -z "$NO_FIREKICK_RESTART" ]]; then
   if [[ -f /.dockerenv ]]; then
@@ -374,8 +367,6 @@ fi
 
 cd ..
 cd monitor
-#forever start --uid monitor -c "/usr/bin/node --expose-gc" ./MonitorMain.js
-#forever start --uid monitor MonitorMain.js
 if [[ -f /.dockerenv ]]; then
     forever start -a --uid monitor -c "${FIREWALLA_HOME}/bin/node --expose-gc"  MonitorMain.js
 else
@@ -408,28 +399,7 @@ cd ../../
 
 sync
 
-#if [[ ! -f /.dockerenv ]]; then
-#    logger "FIREWALLA.DATE.SYNC"
-#    sudo systemctl stop ntp
-#    sudo ntpdate -b -u -s time.nist.gov
-#    sudo ntpd -gq
-#    sudo systemctl start ntp
-#    sudo systemctl start ntp
-#    logger "FIREWALLA.DATE.SYNC.DONE"
-#    sync
-#fi
-
 DEFAULT_ROUTE=$(/sbin/ip r | grep default | cut -d ' ' -f 3 | sed -n '1p')
-
-#NMAP_DATA_FILE=$FIREWALLA_HOME/extension/nmap/nmap-mac-prefixes
-#
-#function update_nmap_data_file() {
-#  if [[ -e $NMAP_DATA_FILE ]]; then
-#    sudo cp $NMAP_DATA_FILE /usr/share/nmap/nmap-mac-prefixes
-#  fi
-#}
-#
-#update_nmap_data_file
 
 # run post_run in background
 # Be careful that this script will be not executed when upgrading in a remote support connection

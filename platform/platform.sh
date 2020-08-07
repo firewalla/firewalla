@@ -8,6 +8,7 @@ UNAME=$(uname -m)
 MANAGED_BY_FIREBOOT=no
 FIREWALLA_PLATFORM=unknown
 TCP_BBR=no
+FW_PROBABILITY="0.9"
 
 case "$UNAME" in
   "x86_64")
