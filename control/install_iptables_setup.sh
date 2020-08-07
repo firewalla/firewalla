@@ -938,8 +938,8 @@ if ip link show dev ifb0; then
   sudo ip link set ifb0 up
   sudo tc filter del dev ifb0
   sudo tc qdisc replace dev ifb0 root handle 1: htb default 1
-  # 5 is the default priority
-  sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 1024mbit prio 5
+  # 50 is the default priority
+  sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 1024mbit prio 50
   sudo tc qdisc replace dev ifb0 parent 1:1 fq
 fi
 
@@ -949,6 +949,6 @@ if ip link show dev ifb1; then
   sudo ip link set ifb1 up
   sudo tc filter del dev ifb1
   sudo tc qdisc replace dev ifb1 root handle 1: htb default 1
-  sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 1024mbit prio 5
+  sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 1024mbit prio 50
   sudo tc qdisc replace dev ifb1 parent 1:1 fq
 fi
