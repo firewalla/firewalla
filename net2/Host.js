@@ -1143,7 +1143,7 @@ class Host {
 
     if (this.o.tags) {
       try {
-        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags) : []
+        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags).map(Number) : []
       } catch (err) {
         log.error("Failed to parse tags:", err)
       }
@@ -1311,14 +1311,14 @@ class Host {
   }
 
   async tags(tags) {
-    tags = tags || [];
+    tags = (tags || []).map(Number);
     this._tags = this._tags || [];
     if (!this.o || !this.o.mac) {
       log.error(`Mac address is not defined`);
       return;
     }
     // remove old tags that are not in updated tags
-    const removedTags = this._tags.filter(uid => !(tags.includes(Number(uid)) || tags.includes(String(uid))));
+    const removedTags = this._tags.filter(uid => !tags.includes(uid));
     for (let removedTag of removedTags) {
       const tag = TagManager.getTagByUid(removedTag);
       if (tag) {

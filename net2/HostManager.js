@@ -1710,17 +1710,9 @@ module.exports = class HostManager {
 
   // need active host?
   getTagMacs(tag) {
-    let macs = this.hosts.all.map(host => host.o)
-      .filter(host => {
-        if (_.isEmpty(host.tags)) return false;
-        try {
-          const tags = JSON.parse(host.tags);
-          return tags.includes(String(tag)) || tags.includes(Number(tag));
-        } catch (e) {
-          log.warn('Parse host tags error', host.mac)
-          return false;
-        }
-      })
+    tag = Number(tag);
+    let macs =  this.hosts.all.map(host => host.o)
+      .filter(host => !_.isEmpty(host.tags) && JSON.parse(host.tags).includes(tag))
       .map(host => host.mac);
     return _.uniq(macs);
   }
