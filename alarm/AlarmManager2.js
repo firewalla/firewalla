@@ -90,7 +90,7 @@ module.exports = class {
     return instance;
   }
 
-  setupAlarmQueue() {
+  async setupAlarmQueue() {
 
     this.queue = new Queue(`alarm-${f.getProcessName()}`, {
       removeOnFailure: true,
@@ -141,6 +141,8 @@ module.exports = class {
           break
       }
     })
+
+    return this.queue.ready();
   }
 
   createAlarmIDKey() {
@@ -399,13 +401,12 @@ module.exports = class {
             // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
             log.info("Re-creating alarm queue ...");
             this.queue.close(() => {
-              this.setupAlarmQueue();
-              if (retry) {
-                this.queue.ready(() => {
+              this.setupAlarmQueue().then(() => {
+                if (retry) {
                   log.info("Retry creating alarm ...", alarm);
                   this.enqueueAlarm(alarm, false);
-                });
-              }
+                }
+              });
             });
           }
         }
