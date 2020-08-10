@@ -270,7 +270,25 @@ class PolicyManager2 {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         if (this.queue) {
           const job = this.queue.createJob(event)
-          job.timeout(60 * 1000).save(function () { })
+          job.timeout(60 * 1000).save((err) => {
+            if (err) {
+              log.error("Failed to create policy job", err.message);
+              if (err.message && err.message.includes("NOSCRIPT")) {
+                // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
+                log.info("Re-creating policy queue ...");
+                this.queue.close(() => {
+                  this.setupPolicyQueue();
+                  if (event.retry !== false) {
+                    this.queue.ready(() => {
+                      log.info("Retry policy job ...", event);
+                      event.retry = false;
+                      sem.emitEvent(event);
+                    });
+                  }
+                });
+              }
+            }
+          })
         }
       }
     })
