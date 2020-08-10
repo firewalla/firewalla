@@ -96,6 +96,10 @@ async function getIPLinks() {
   return ipLinks.split("\n");
 }
 
+async function getDiskFree() {
+  return await getShellOutput("df -h");
+}
+
 async function getEthernetSpeed() {
     const eths = await getShellOutput("cd /sys/class/net; ls -1d eth* | fgrep -v .");
     if (!eths) return "";
@@ -149,12 +153,13 @@ async function getSysinfo(status) {
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, redisEid] =
+  const [arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, redisEid] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
       getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
       getCpuTemperature(),
+      getDiskFree(),
       getEthernetSpeed(),
       getGatewayMacPrefix(),
       getGitBranchName(),
@@ -176,6 +181,7 @@ async function getSysinfo(status) {
     btMac,
     cpuTemp,
     ifs,
+    diskFree,
     ethSpeed,
     licenseInfo,
     gatewayMacPrefix,
