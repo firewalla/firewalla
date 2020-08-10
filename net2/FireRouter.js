@@ -279,6 +279,7 @@ class FireRouter {
           const changeDesc = (message && JSON.parse(message)) || null;
           if (changeDesc) {
             await this.notifyWanConnChange(changeDesc);
+            reloadNeeded = true;
           }
           break;
         }
