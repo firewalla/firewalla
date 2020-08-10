@@ -97,8 +97,8 @@ async function getIPLinks() {
 }
 
 async function getDiskFree() {
-  const dfFree = await getShellOutput("df -h | jq -sR '[split(\"\n\")[]|select(length>0)|split(\" +\")|add]'");
-  return JSON.parse(dfFree);
+  const dfFree = await getShellOutput("df -h");
+  return dfFree.split("\n");
 }
 
 async function getEthernetSpeed() {
