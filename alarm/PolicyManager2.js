@@ -277,14 +277,13 @@ class PolicyManager2 {
                 // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
                 log.info("Re-creating policy queue ...");
                 this.queue.close(() => {
-                  this.setupPolicyQueue();
-                  if (event.retry !== false) {
-                    this.queue.ready(() => {
+                  this.setupPolicyQueue().then(() => {
+                    if (event.retry !== false) {
                       log.info("Retry policy job ...", event);
                       event.retry = false;
                       sem.emitEvent(event);
-                    });
-                  }
+                    }
+                  });
                 });
               }
             }
