@@ -178,7 +178,14 @@ class Platform {
     return 1;
   }
 
-  
+  getBroSafeCheckThreshold() {
+    return {
+      missedBytes: 10000000,
+      respRate: 70000000,
+      origRate: 70000000
+    };
+  }
+
   isIFBSupported() {
     return false;
   }
