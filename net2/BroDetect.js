@@ -63,6 +63,7 @@ const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 /*
  *
  *  config.bro.notice.path {
@@ -699,13 +700,15 @@ module.exports = class {
         return;
       }
 
+      const safeCheckThreshold = platform.getBroSafeCheckThreshold();
+
       // drop layer 4
       if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
         log.debug("Conn:Drop:ZeroLength2", obj.conn_state, obj);
         return;
       }
 
-      if (obj.missed_bytes > 10000000) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
+      if (obj.missed_bytes > safeCheckThreshold.missedBytes) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
         log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
         return;
       }
@@ -723,12 +726,8 @@ module.exports = class {
 
       //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
       if (obj.resp_bytes > 100000000) {
-        if (obj.duration < 1) {
-          log.debug("Conn:Burst:Drop", obj);
-          return;
-        }
         let rate = obj.resp_bytes / obj.duration;
-        if (rate > 20000000) {
+        if (rate > safeCheckThreshold.respRate) {
           log.debug("Conn:Burst:Drop", rate, obj);
           return;
         }
@@ -741,12 +740,8 @@ module.exports = class {
 
 
       if (obj.orig_bytes > 100000000) {
-        if (obj.duration < 1) {
-          log.debug("Conn:Burst:Drop:Orig", obj);
-          return;
-        }
         let rate = obj.orig_bytes / obj.duration;
-        if (rate > 20000000) {
+        if (rate > safeCheckThreshold.origRate) {
           log.debug("Conn:Burst:Drop:Orig", rate, obj);
           return;
         }
