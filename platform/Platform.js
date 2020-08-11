@@ -166,6 +166,14 @@ class Platform {
   getSystemResetAllOverlayfsScriptName() {
     return "system-reset-all-overlayfs.sh";
   }
+
+  getBroSafeCheckThreshold() {
+    return {
+      missedBytes: 10000000,
+      respRate: 70000000,
+      origRate: 70000000
+    };
+  }
 }
 
 module.exports = Platform;
