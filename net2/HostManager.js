@@ -1711,9 +1711,9 @@ module.exports = class HostManager {
   // need active host?
   getTagMacs(tag) {
     tag = Number(tag);
-    let macs =  this.hosts.all.map(host => host.o)
-      .filter(host => !_.isEmpty(host.tags) && JSON.parse(host.tags).includes(tag))
-      .map(host => host.mac);
+    let macs =  this.hosts.all.filter(host => {
+      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.includes(tag)
+    }).map(host => host.o.mac);
     return _.uniq(macs);
   }
 
