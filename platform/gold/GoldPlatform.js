@@ -168,6 +168,14 @@ class GoldPlatform extends Platform {
   isOverlayNetworkAvailable() {
     return false;
   }
+
+  getBroSafeCheckThreshold() {
+    return {
+      missedBytes: 1000000000,
+      respRate: 256000000,
+      origRate: 256000000
+    };
+  }
 }
 
 module.exports = GoldPlatform;
