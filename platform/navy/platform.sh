@@ -9,6 +9,8 @@ MAX_NUM_OF_THREADS=20000
 MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.navy'
+FW_PROBABILITY="0.98"
+FW_SCHEDULE_BRO=false
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
@@ -24,7 +26,7 @@ function turnOffLED {
 }
 
 function get_node_modules_url {
-  echo "https://github.com/firewalla/fnm.node8.aarch64"
+  echo "https://github.com/firewalla/fnm.node12.aarch64"
 }
 
 CURRENT_DIR=$(dirname $BASH_SOURCE)
