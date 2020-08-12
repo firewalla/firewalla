@@ -139,9 +139,11 @@ class NavyPlatform extends Platform {
     return "firewalla"
   }
 
+  /*
   getSystemResetAllOverlayfsScriptName() {
     return "system-reset-all-overlayfs-navy.sh";
   }
+  */
 
 }
 
