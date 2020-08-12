@@ -1094,12 +1094,12 @@ class PolicyManager2 {
     if (localPort) {
       localPortSet = `c_${pid}_local_port`;
       await ipset.create(localPortSet, "bitmap:port");
-      await Block.block(localPort, localPortSet);
+      await Block.batchBlock(localPort.split(","), localPortSet);
     }
     if (remotePort) {
       remotePortSet = `c_${pid}_remote_port`;
       await ipset.create(remotePortSet, "bitmap:port");
-      await Block.block(remotePort, remotePortSet);
+      await Block.batchBlock(remotePort.split(","), remotePortSet);
     }
 
     if (upnp) {
@@ -1153,7 +1153,7 @@ class PolicyManager2 {
         if (remotePort) {
           remotePortSet = `c_${pid}_remote_port`;
           await ipset.create(remotePortSet, "bitmap:port");
-          await Block.block(remotePort, remotePortSet);
+          await Block.batchBlock(remotePort.split(","), remotePortSet);
         }
         break;
 
@@ -1211,7 +1211,7 @@ class PolicyManager2 {
           if (localPort) {
             localPortSet = `c_${pid}_local_port`;
             await ipset.create(localPortSet, "bitmap:port");
-            await Block.block(localPort, localPortSet);
+            await Block.batchBlock(localPort.split(","), localPortSet);
           } else
             return; 
         } else
@@ -1356,11 +1356,11 @@ class PolicyManager2 {
     let ctstate = null;
     if (localPort) {
       localPortSet = `c_${pid}_local_port`;
-      await Block.unblock(localPort, localPortSet);
+      await Block.batchUnblock(localPort.split(","), localPortSet);
     }
     if (remotePort) {
       remotePortSet = `c_${pid}_remote_port`;
-      await Block.unblock(remotePort, remotePortSet);
+      await Block.batchUnblock(remotePort.split(","), remotePortSet);
     }
 
     if (upnp) {
@@ -1409,7 +1409,7 @@ class PolicyManager2 {
 
         if (remotePort) {
           remotePortSet = `c_${pid}_remote_port`;
-          await Block.unblock(remotePort, remotePortSet);
+          await Block.batchUnblock(remotePort.split(","), remotePortSet);
         }
         break;
 
@@ -1460,7 +1460,7 @@ class PolicyManager2 {
 
           if (localPort) {
             localPortSet = `c_${pid}_local_port`;
-            await Block.unblock(localPort, localPortSet);
+            await Block.batchUnblock(localPort.split(","), localPortSet);
           } else
             return;
         } else
