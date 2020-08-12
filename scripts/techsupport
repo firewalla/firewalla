@@ -52,6 +52,7 @@ fi
 sudo chmod 777 syslog*
 cp -rfp /home/pi/.forever/* .
 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
+curl -s "http://localhost:8837/v1/config/active" &> frcc.log
 cd ..
 tar -zcvf support.tar.gz techsupport
 rm -r -f techsupport
