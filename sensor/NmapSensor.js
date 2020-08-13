@@ -262,9 +262,9 @@ class NmapSensor extends Sensor {
   async _processHost(host, intf) {
     log.debug("Found device:", host.ipv4Addr, host.mac);
 
-    if (['red', 'blue'].includes(platform.getName())) {
+    if ( platform.isOverlayNetworkAvailable() ) {
       if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
-        log.debug("Ingore Firewalla's overlay IP")
+        log.debug("Ignore Firewalla's overlay IP")
         return
       }
 

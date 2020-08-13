@@ -90,7 +90,7 @@ module.exports = class {
     return instance;
   }
 
-  setupAlarmQueue() {
+  async setupAlarmQueue() {
 
     this.queue = new Queue(`alarm-${f.getProcessName()}`, {
       removeOnFailure: true,
@@ -141,6 +141,8 @@ module.exports = class {
           break
       }
     })
+
+    return this.queue.ready();
   }
 
   createAlarmIDKey() {
@@ -386,13 +388,29 @@ module.exports = class {
     });
   }
 
-  enqueueAlarm(alarm) {
+  enqueueAlarm(alarm, retry = true) {
     if (this.queue) {
       const job = this.queue.createJob({
         alarm: alarm,
         action: "create"
       })
-      job.timeout(60000).save()
+      job.timeout(60000).save((err) => {
+        if (err) {
+          log.error("Failed to create alarm job", err.message);
+          if (err.message && err.message.includes("NOSCRIPT")) {
+            // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
+            log.info("Re-creating alarm queue ...");
+            this.queue.close(() => {
+              this.setupAlarmQueue().then(() => {
+                if (retry) {
+                  log.info("Retry creating alarm ...", alarm);
+                  this.enqueueAlarm(alarm, false);
+                }
+              });
+            });
+          }
+        }
+      })
     }
   }
 
