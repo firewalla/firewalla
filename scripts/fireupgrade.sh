@@ -175,6 +175,8 @@ fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 sudo rm -f $FIREWALLA_HOME/.git/*.lock
+# ensure the remote fetch branch is up-to-date
+git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
 GIT_COMMAND="(sudo -u pi $MGIT fetch origin $remote_branch && sudo -u pi $MGIT reset --hard FETCH_HEAD)"
 eval $GIT_COMMAND ||
   (sleep 3; eval $GIT_COMMAND) ||
