@@ -28,6 +28,8 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 cd /home/pi/firewalla
 branch=$(git rev-parse --abbrev-ref HEAD)
 remote_branch=$(map_target_branch $branch)
+# ensure the remote fetch branch is up-to-date
+git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
 $MGIT fetch --tags
 
 current_hash=$(git rev-parse HEAD)
