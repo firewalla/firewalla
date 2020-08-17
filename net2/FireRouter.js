@@ -713,6 +713,26 @@ class FireRouter {
     }
   }
 
+  async switchBranch(target) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/system/switch_branch",
+      json: true,
+      body: {
+        target: target
+      }
+    }
+    const resp = await rp(options);
+    if (resp.statusCode !== 200) {
+      throw new Error(`Failed to switch firerouter branch to ${target}`);
+    }
+
+    return resp.body;
+  }
+
   async setConfig(config) {
     const options = {
       method: "POST",
