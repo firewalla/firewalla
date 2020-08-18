@@ -296,7 +296,7 @@ class VpnManager {
       this.instanceName = "server";
       this.needRestart = true;
     }
-    var mydns = sysManager.myDefaultDns()[0];
+    var mydns = (sysManager.myResolver("tun_fwvpn") && sysManager.myResolver("tun_fwvpn")[0]) || sysManager.myDefaultDns()[0];
     if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
     }
