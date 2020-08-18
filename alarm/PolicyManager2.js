@@ -1052,7 +1052,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc} = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes} = policy;
 
     if (action !== "block" && action !== "allow" && action !== "qos") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1280,14 +1280,14 @@ class PolicyManager2 {
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc);
+        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes);
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc);
+        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes);
       if (!_.isEmpty(scope))
-        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc);
+        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes);
     } else {
       // apply to global
-      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc);
+      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes);
     }
   }
 
@@ -1317,7 +1317,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc} = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes} = policy;
 
     if (action !== "block" && action !== "allow" && action !== "qos") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1524,14 +1524,14 @@ class PolicyManager2 {
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc);
+        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes);
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc);
+        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes);
       if (!_.isEmpty(scope))
-        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc);
+        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes);
     } else {
       // apply to global
-      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc);
+      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes);
     }
 
     if (localPortSet) {
