@@ -543,8 +543,10 @@ class VpnManager {
           for (let cidr of value) {
             // add iroute to client config file
             const subnet = ip.cidrSubnet(cidr);
-            configCCD.push(`iroute ${subnet.networkAddress} ${subnet.subnetMask}`);
-            clientSubnets.push(`${subnet.networkAddress}/${subnet.subnetMaskLength}`);
+            if (!clientSubnets.includes(`${subnet.networkAddress}/${subnet.subnetMaskLength}`)) {
+              configCCD.push(`iroute ${subnet.networkAddress} ${subnet.subnetMask}`);
+              clientSubnets.push(`${subnet.networkAddress}/${subnet.subnetMaskLength}`);
+            }
           }
           configRC.push(`CLIENT_SUBNETS="${clientSubnets.join(',')}"`);
           break;
