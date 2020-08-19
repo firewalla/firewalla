@@ -61,7 +61,6 @@ class OldDataCleanSensor extends Sensor {
   }
 
   getExpiredDate(type) {
-<<<<<<< HEAD
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
       case "conn":
@@ -70,10 +69,7 @@ class OldDataCleanSensor extends Sensor {
         platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
         break;
     }
-    let expireInterval = (this.config[type] && this.config[type].expires * platformRetentionTimeMultiplier) || 0;
-=======
     let expireInterval = (this.config[type] && this.config[type].expires * platform.getRetentionTimeMultiplier()) || 0;
->>>>>>> 2fe26e45... separate platform specific logic from config file
     if(expireInterval < 0) {
       return null;
     }
