@@ -174,6 +174,14 @@ class Platform {
       origRate: 70000000
     };
   }
+
+  getRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getRetentionCountMultiplier() {
+    return 1;
+  }
 }
 
 module.exports = Platform;

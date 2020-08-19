@@ -144,6 +144,7 @@ async function getLatestCommitHash(cwd) {
 async function getLicenseInfo() {
   const licenseFile = "/home/pi/.firewalla/license";
   return ['SUUID', 'UUID', 'EID', 'LICENSE'].reduce( async (result,licenseField) => {
+    result = await result;
     result[licenseField] = (await getShellOutput(`awk '/"${licenseField}"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
     return result;
   },{});
@@ -231,6 +232,11 @@ socket.on('disconnect', () => {
 
 socket.on('update', () => {
   update("cloud");
+});
+
+socket.on('upgrade', () => {
+  log("Upgrade started via heartbeat");
+  exec("/home/pi/firewalla/scripts/fireupgrade_check.sh");
 });
 
 socket.on('reconnect', () => {
