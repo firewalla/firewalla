@@ -1274,7 +1274,7 @@ module.exports = class HostManager {
         let index = this.hosts.all.indexOf(this.hostsdb[h]);
         if (index!=-1) {
           this.hosts.all.splice(index,1);
-          log.info("Removing host due to sweeping");
+          log.info("Removing host due to sweeping", h);
         }
         removedHosts.push(h);
       }  else {
