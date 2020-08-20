@@ -544,14 +544,14 @@
     "LocalDomainSensor": {},
     "SS2Plugin": {},
     "WireGuardPlugin": {},
-    "PiHolePlugin": {},
     "InternalScanSensor": {},
     "LogScanSensor": {
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
     "ACLAuditLogPlugin": {},
-    "NewDeviceTagSensor": {}
+    "NewDeviceTagSensor": {},
+    "DockerSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
