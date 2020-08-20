@@ -727,6 +727,70 @@ class FireRouter {
     // publish message to trigger firerouter init
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
   }
+
+  isDevelopmentVersion(branch) {
+    if (branch === "master" || branch.includes("master")) {
+      return true
+    } else {
+      return false
+    }
+  }
+  
+  isBeta(branch) {
+    if (branch.match(/^beta_.*/)) {
+      if (this.isAlpha(branch)) {
+        return false;
+      }
+      return true;
+    } else {
+      return false
+    }  
+  }
+  
+  isAlpha(branch) {
+    if (branch.match(/^beta_8_.*/)) {
+      return true;
+    } else if (branch.match(/^beta_7_.*/)) {
+      return true;
+    } else {
+      return false
+    }
+  }
+  
+  isProduction(branch) {
+    if (branch.match(/^release_.*/)) {
+      return true
+    } else {
+      return false
+    }
+  }
+
+  async getBranch() {
+    const fwConfig = Config.getConfig();
+    const firerouterHomeFolder = `${f.getUserHome()}/${fwConfig.firerouter.homeFolder}`;
+    const branch = await exec(`cd ${firerouterHomeFolder}; git rev-parse --abbrev-ref HEAD`).then((result) => result.stdout.replace(/\n/g, "")).catch((err) => {
+      log.error("Failed to get branch of FireRouter", err.message);
+      return null;
+    });
+    return branch;
+  }
+
+  async getReleaseType() {
+    const branch = await this.getBranch();
+    if (!branch)
+      return "unknown";
+    if (this.isProduction(branch)) {
+      return "prod"
+    } else if (this.isAlpha(branch)) {
+      return "alpha";
+    } else if (this.isBeta(branch)) {
+      return "beta"
+    } else if (this.isDevelopmentVersion(branch)) {
+      return "dev"
+    } else {
+      return "unknown"
+    }
+  }
 }
 
 const instance = new FireRouter();
