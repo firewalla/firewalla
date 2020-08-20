@@ -25,6 +25,8 @@ const hostManager = new HostManager();
 const sysManager = require('../net2/SysManager.js')
 const networkProfileManager = require('../net2/NetworkProfileManager.js')
 
+const { Address6 } = require('ip-address')
+
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
 
@@ -54,6 +56,20 @@ class NewDeviceTagSensor extends Sensor {
   async checkAndExecutePolicy(channel, type, mac, host) {
     try {
       if (this.macIndex[mac]) {
+        // ip address is required to find the corresponding policy
+        if (!host.ipv4Addr && !host.ipv6Addr) return
+
+        if (!host.ipv4Addr && host.ipv6Addr) {
+          const v6Addresses = host.ipv6Addr
+            .map(str => new Address6(str))
+            .filter(add6 => add6.isValid() && !add6.isLinkLocal())
+
+          log.debug(v6Addresses)
+          // only link local v6 address, ignore this event
+          if (!v6Addresses.length) return
+
+          host.realV6Address = v6Addresses
+        }
         this.messageBus.unsubscribe("DiscoveryEvent", "Device:Updated", mac)
         delete this.macIndex[mac]
       }
@@ -67,7 +83,8 @@ class NewDeviceTagSensor extends Sensor {
       systemPolicy.key = 'policy:system'
       log.debug(systemPolicy)
 
-      const intf = sysManager.getInterfaceViaIP4(host.ipv4Addr)
+      const intf = host.ipv4Addr && sysManager.getInterfaceViaIP4(host.ipv4Addr) ||
+                   host.realV6Address && sysManager.getInterfaceViaIP6(host.realV6Address[0].address)
       const networkProfile = networkProfileManager.getNetworkProfile(intf.uuid)
       const networkPolicy = copyPolicy((await networkProfile.loadPolicy()).newDeviceTag)
       networkPolicy.key = networkProfile._getPolicyKey()
