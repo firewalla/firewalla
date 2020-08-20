@@ -177,7 +177,8 @@ class Policy {
       this.transferredPackets === policy.transferredPackets &&
       this.avgPacketBytes === policy.avgPacketBytes
     ) {
-      return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
+      // ignore scope if type is mac
+      return (this.type == 'mac' || arraysEqual(this.scope, policy.scope)) && arraysEqual(this.tag, policy.tag);
     } else {
       return false
     }

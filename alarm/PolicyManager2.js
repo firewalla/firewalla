@@ -165,7 +165,6 @@ class PolicyManager2 {
             log.error("enforce policy failed:" + err, policy)
           } finally {
             log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
-            return
           }
           break
         }
@@ -178,7 +177,6 @@ class PolicyManager2 {
             log.error("unenforce policy failed:" + err, policy)
           } finally {
             log.info("COMPLETE UNENFORCING POLICY", policy.pid, action);
-            return
           }
           break
         }
@@ -201,7 +199,6 @@ class PolicyManager2 {
             log.error("reenforce policy failed:" + err, policy)
           } finally {
             log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
-            return
           }
           break
         }
@@ -243,8 +240,8 @@ class PolicyManager2 {
             log.error("incremental update policy failed:", err);
           } finally {
             log.info("COMPLETE incremental update policy");
-            return
           }
+          break
         }
 
         default:
