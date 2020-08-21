@@ -12,7 +12,7 @@ FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
 
 hook_server_route_up() {
-
+  echo nothing > /dev/null
 }
 
 case "$UNAME" in
