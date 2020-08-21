@@ -268,7 +268,8 @@ function check_upgrade {
 
 if [[ $CPU_PLATFORM != "x86_64" ]]; then
   # x86_64 is using ramfs for / partition, this can save memory
-  sudo setcap cap_net_raw+eip /home/pi/firewalla/bin/node
+  sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+  sudo setcap cap_net_raw+eip $(eval readlink -f `which node`)
 fi
 
 # Take care of upgrade differently
