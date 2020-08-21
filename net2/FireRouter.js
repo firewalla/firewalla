@@ -434,7 +434,7 @@ class FireRouter {
 
       logicIntfNames = Object.values(intfNameMap)
         .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
-        .filter(intf => intf.state && intf.state.ip4)
+        .filter(intf => intf.config.meta.type === 'wan' || intf.state && intf.state.ip4) // still show WAN interface without an IP address in logic interfaces
         .map(intf => intf.config.meta.intfName);
 
       // Legacy code compatibility
