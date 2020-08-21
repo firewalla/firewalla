@@ -11,4 +11,22 @@ else
   [[ -e $CUR_DIR/local.bro ]] && sudo cp $CUR_DIR/local.bro /usr/local/bro/share/bro/site/local.bro
 fi
 
+VPN_PORT=$(redis-cli hget policy:system vpn | jq '.localPort')
+
+if [[ $VPN_PORT == "null" ]]; then
+  VPN_PORT=1194
+fi
+
+VPN_PROTOCOL=$(redis-cli hget policy:system vpn | jq '.protocol')
+
+if [[ $VPN_PROTOCOL == "null" ]]; then
+  VPN_PROTOCOL="udp"
+fi
+
+VPN_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
+
+if [[ -n "$VPN_IP" ]]; then
+  sudo echo "redef restrict_filters += [[\"not-vpn\"] = \"not (port $VPN_PORT && host $VPN_IP && ip proto $VPN_PROTOCOL)\"];" >> /usr/local/bro/share/bro/site/local.bro
+fi
+
 sync

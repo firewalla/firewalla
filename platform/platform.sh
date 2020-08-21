@@ -11,6 +11,10 @@ TCP_BBR=no
 FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
 
+hook_server_route_up() {
+
+}
+
 case "$UNAME" in
   "x86_64")
     source $FW_PLATFORM_DIR/gold/platform.sh
