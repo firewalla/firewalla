@@ -73,3 +73,11 @@ function before_bro {
     done
   fi
 }
+
+function after_bro {
+  if [[ -d ${FW_PLATFORM_CUR_DIR}/hooks/after_bro ]]; then
+    for script in `ls -1 ${FW_PLATFORM_CUR_DIR}/hooks/after_bro/*.sh`; do
+      $script
+    done
+  fi
+}
