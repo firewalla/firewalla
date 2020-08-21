@@ -1,4 +1,4 @@
 #!/bin/bash
 
-cd /spool/
+cd /bspool/
 ln -sfT zeek bro
