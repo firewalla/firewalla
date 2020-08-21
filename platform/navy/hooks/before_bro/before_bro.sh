@@ -18,9 +18,9 @@ VPN_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | 
 
 VPN_CONFIG=$(redis-cli hget policy:system vpn)
 
-if [[ -n "$VPN_CONFIG"]]; then
-  PROTOCOL=$(echo $VPN_CONFIG | jq '.protocol')
-  PORT=$(echo $VPN_CONFIG | jq '.localPort')
+if [[ -n "$VPN_CONFIG" ]]; then
+  PROTOCOL=$(echo $VPN_CONFIG | jq -r '.protocol')
+  PORT=$(echo $VPN_CONFIG | jq -r '.localPort')
 
   if [[ $PROTOCOL != "null" && "x$PROTOCOL" != "x" ]]; then
     VPN_PROTOCOL=$PROTOCOL
@@ -32,6 +32,7 @@ if [[ -n "$VPN_CONFIG"]]; then
 fi
 
 if [[ -n "$VPN_IP" ]]; then
+  sudo echo "" >>  /usr/local/bro/share/bro/site/local.bro
   sudo echo "redef restrict_filters += [[\"not-vpn\"] = \"not (port $VPN_PORT && host $VPN_IP && ip proto $VPN_PROTOCOL)\"];" >> /usr/local/bro/share/bro/site/local.bro
 fi
 
