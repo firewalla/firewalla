@@ -3,6 +3,7 @@
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 [[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/broctl.cfg
+[[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/zeekctl.cfg
 
 TMP_FILE="/home/pi/.firewalla/config/local.bro"
 if [ -f "${TMP_FILE}" ]; then
@@ -33,7 +34,7 @@ fi
 
 if [[ -n "$VPN_IP" ]]; then
   sudo echo "" >>  /usr/local/bro/share/bro/site/local.bro
-  sudo echo "redef restrict_filters += [[\"not-vpn\"] = \"not (port $VPN_PORT && host $VPN_IP && ip proto $VPN_PROTOCOL)\"];" >> /usr/local/bro/share/bro/site/local.bro
+#  sudo echo "redef restrict_filters += [[\"not-vpn\"] = \"not (port $VPN_PORT && host $VPN_IP && ip proto $VPN_PROTOCOL)\"];" >> /usr/local/bro/share/bro/site/local.bro
 fi
 
 sync
