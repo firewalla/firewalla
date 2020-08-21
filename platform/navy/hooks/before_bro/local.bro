@@ -15,7 +15,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load tuning/json-logs
 
 # Load the scan detection script.
-# @load misc/scan
+@load misc/scan
 
 # Log some information about web applications being used by users
 # on your network.
@@ -96,7 +96,6 @@ redef SSL::disable_analyzer_after_detection = F;
 @load policy/protocols/conn/mac-logging
 
 redef restrict_filters += [["not-mdns"] = "not port 5353"];
-redef restrict_filters += [["not-vpn"] = "not port 1194"];
 
 redef SSL::disable_analyzer_after_detection = F;
 # Following redef not supported
