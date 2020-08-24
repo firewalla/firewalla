@@ -37,4 +37,6 @@ if [[ $branch = "master" ]]; then
   sudo sysctl -w kernel.core_pattern="/home/pi/core.%e"
 fi
 
+after_bro
+
 logger "FIREWALLA: BRO-RUN Finished"

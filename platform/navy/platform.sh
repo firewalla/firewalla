@@ -42,3 +42,8 @@ function get_sysctl_conf_path {
 function map_target_branch {
   echo "$1"
 }
+
+function hook_server_route_up {
+  # adjust rps_cpus for better performance
+  sudo bash -c "echo 7 > /sys/class/net/tun_fwvpn/queues/rx-0/rps_cpus"
+}
