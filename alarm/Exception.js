@@ -185,7 +185,7 @@ module.exports = class {
         }
       }
 
-      let valArray = null;
+      let valArray = val;
       if (_.isString(val) && validator.isJSON(val)) {
         valArray = JSON.parse(val);
       }
