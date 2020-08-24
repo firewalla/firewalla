@@ -630,9 +630,6 @@ class PolicyManager2 {
 
   // await all async opertions here to ensure errors are caught
   async deleteMacRelatedPolicies(mac) {
-    // device specified policy
-    await rclient.delAsync('policy:mac:' + mac);
-
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
     let policyKeys = [];
@@ -642,6 +639,7 @@ class PolicyManager2 {
         policyIds.push(rule.pid);
         policyKeys.push('policy:' + rule.pid);
         this.tryPolicyEnforcement(rule, 'unenforce');
+        continue
       }
 
       if (_.isEmpty(rule.scope)) continue;
@@ -704,7 +702,7 @@ class PolicyManager2 {
       }
     }
 
-    if (policyIds.length) { 
+    if (policyIds.length) {
       await rclient.delAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
     }
@@ -882,7 +880,7 @@ class PolicyManager2 {
 
   isFirewallaOrCloud(policy) {
     const target = policy.target
-    
+
     // allow rule always return false
     return policy.action != 'allow' && target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
@@ -1106,7 +1104,7 @@ class PolicyManager2 {
       direction = "inbound";
       ctstate = "DNAT";
     }
-    
+
     switch (type) {
       case "ip":
       case "net": {
@@ -1149,7 +1147,7 @@ class PolicyManager2 {
           remotePort = values[1];
         } else
           remotePort = values[0] || null;
-        
+
         if (remotePort) {
           remotePortSet = `c_${pid}_remote_port`;
           await ipset.create(remotePortSet, "bitmap:port");
@@ -1213,7 +1211,7 @@ class PolicyManager2 {
             await ipset.create(localPortSet, "bitmap:port");
             await Block.batchBlock(localPort.split(","), localPortSet);
           } else
-            return; 
+            return;
         } else
           return;
         break;
@@ -1691,7 +1689,7 @@ class PolicyManager2 {
           const testStr = "add " + ipsetName + " " + currentTxt + "\n";
           if (ipsetContent.indexOf(testStr) == -1) {
             continue;
-          } 
+          }
         }
 
         const matches = ipsetName.match(/(.*)_(\d+)_(.*)/); // match rule id
@@ -1818,7 +1816,7 @@ class PolicyManager2 {
     if (disableAllFlag == "on") {
       // just firemain started, not need unenforce all
       if (!initialFlag) {
-        this.unenforceAllPolicies(); 
+        this.unenforceAllPolicies();
       }
       const startTime = await rclient.hgetAsync(policyDisableAllKey, "startTime");
       let expireMinute = await rclient.hgetAsync(policyDisableAllKey, "expire");
@@ -1993,7 +1991,7 @@ class PolicyManager2 {
         }
         rule.intfs = intfs;
         rule.tags = tags;
-        
+
         if (action === "block")
           // block has lower priority than allow
           rule.rank++;
@@ -2008,7 +2006,7 @@ class PolicyManager2 {
           remoteIpsToCheck.push(remoteVal);
         break;
       case "domain":
-        if (remoteVal) 
+        if (remoteVal)
           remoteIpsToCheck = (await dnsTool.getIPsByDomain(remoteVal)) || [];
           if (remoteIpsToCheck.length === 0) // domain exact match not found, try matching domain pattern
             remoteIpsToCheck.push.apply(remoteIpsToCheck, (await dnsTool.getIPsByDomainPattern(remoteVal)));
@@ -2142,7 +2140,7 @@ class PolicyManager2 {
         case "country": {
           const remoteSet4 = categoryUpdater.getIPSetName(countryUpdater.getCategory(rule.target));
           const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(rule.target));
-          if (!(this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) && 
+          if (!(this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) &&
               !(this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net)))))
             )
             continue;

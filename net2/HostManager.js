@@ -119,6 +119,25 @@ module.exports = class HostManager {
       this.iptablesReady = false;
       this.spoofing = true;
 
+      // make sure cached host is deleted in all processes
+      this.messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, (channel, type, mac, obj) => {
+        const host = this.getHostFastByMAC(mac)
+        log.info('Removing host cache', mac)
+
+        delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
+        log.info('Removing host cache', host.o.ipv4Addr)
+        if (Array.isArray(host.ipv6Addr)) {
+          host.ipv6Addr.forEach(ip6 => {
+            log.info('Removing host cache', ip6)
+            delete this.hostsdb[`host:ip6:${ip6}`]
+          })
+        }
+        delete this.hostsdb[`host:mac:${mac}`]
+
+        this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
+        log.info(this.getHostFastByMAC(mac))
+      })
+
       // ONLY register for these events in FireMain process
       if(f.isMain()) {
         sem.once('IPTABLES_READY', () => {
@@ -148,24 +167,22 @@ module.exports = class HostManager {
             }
           });
         });
-        if (f.isMain()) {
-          this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
-            if (!this.iptablesReady) {
-              log.warn("Iptables is not ready yet");
-              return;
-            }
+        this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
+          if (!this.iptablesReady) {
+            log.warn("Iptables is not ready yet");
+            return;
+          }
 
-            this.scheduleExecPolicy();
+          this.scheduleExecPolicy();
 
-            /*
+          /*
             this.loadPolicy((err,data)=> {
                 log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
                 policyManager.execute(this,"0.0.0.0",this.policy,null);
             });
             */
-            log.info("SystemPolicy:Changed", channel, ip, type, obj);
-          });
-        }
+          log.info("SystemPolicy:Changed", channel, ip, type, obj);
+        });
 
         this.keepalive();
         setInterval(()=>{
@@ -1204,26 +1221,31 @@ module.exports = class HostManager {
         }
 
       } else {
-        if (o.ipv4!=hostbymac.o.ipv4) {
+        if (o.ipv4 != hostbymac.o.ipv4) {
           // the physical host get a new ipv4 address
           //
           this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
         }
         this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
-        if (hostbymac.o.ipv6Addr && Array.isArray(hostbymac.o.ipv6Addr)) {
-          // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
-          for (const oldIpv6 of hostbymac.o.ipv6Addr) {
-            if (!o.ipv6Addr || !Array.isArray(o.ipv6Addr) || !o.ipv6Addr.includes(oldIpv6)) {
-              // the physical host dropped old ipv6 address
-              this.hostsdb['host:ip6:' + oldIpv6] = null;
+        try {
+          const ipv6Addr = JSON.parse(o.ipv6Addr)
+          if (hostbymac.ipv6Addr && Array.isArray(hostbymac.ipv6Addr)) {
+            // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
+            for (const oldIpv6 of hostbymac.ipv6Addr) {
+              if (!ipv6Addr || !Array.isArray(ipv6Addr) || !ipv6Addr.includes(oldIpv6)) {
+                // the physical host dropped old ipv6 address
+                this.hostsdb['host:ip6:' + oldIpv6] = null;
+              }
             }
           }
-        }
-        if (o.ipv6Addr && Array.isArray(o.ipv6Addr)) {
-          for (const newIpv6 of o.ipv6Addr) {
-            this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
+          if (ipv6Addr && Array.isArray(ipv6Addr)) {
+            for (const newIpv6 of ipv6Addr) {
+              this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
+            }
           }
+        } catch(err) {
+          log.err('Failed to check v6 address of', o.mac, err)
         }
 
         hostbymac.update(o);

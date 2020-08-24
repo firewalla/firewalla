@@ -320,9 +320,8 @@ class netBot extends ControllerBot {
         let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
         log.info("sendLog: cmdline", filename, password, cmdline);
         exec(cmdline, (err, out, code) => {
-          if (err != null) {
+          if (err) {
             log.error("sendLog: unable to process encrypt-upload", err, out, code);
-          } else {
           }
         });
         this.simpleTxData(msg, { password: password, filename: path }, null, callback);
@@ -332,9 +331,7 @@ class netBot extends ControllerBot {
 
   _portforward(target, msg, callback = () => { }) {
     log.info("_portforward", msg);
-    let c = require('../net2/MessageBus.js');
-    this.channel = new c('debug');
-    this.channel.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
+    this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
     callback(null, null);
   }
 
@@ -374,13 +371,7 @@ class netBot extends ControllerBot {
     })
 
     //flow.summaryhours
-    sysManager.update((err, data) => {
-    });
-
-    setInterval(() => {
-      sysManager.update((err, data) => {
-      });
-    }, 1000 * 60 * 60 * 10);
+    sysManager.update()
 
     setInterval(() => {
       try {
@@ -404,9 +395,9 @@ class netBot extends ControllerBot {
     this.tagManager = require('../net2/TagManager.js');
 
     let c = require('../net2/MessageBus.js');
-    this.subscriber = new c('debug');
+    this.messageBus = new c('debug');
 
-    this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
+    this.messageBus.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
       let m = null;
       let n = null;
       log.info("Monitor:Flow:Out", channel, ip, msg, "=====");
@@ -3595,7 +3586,7 @@ class netBot extends ControllerBot {
 
       case "host:delete": {
         (async () => {
-          const hostMac = value.mac;
+          const hostMac = value.mac.toUpperCase();
           log.info('host:delete', hostMac);
           const macExists = await hostTool.macExists(hostMac);
           if (macExists) {
@@ -3613,17 +3604,6 @@ class netBot extends ControllerBot {
               const latestMac = await hostTool.getMacByIP(ip);
               if (latestMac && latestMac === hostMac) {
                 // double check to ensure ip address is not taken over by other device
-                await hostTool.deleteHost(ip);
-
-                // remove port forwarding
-                this._portforward(null, {
-                  "toPort": "*",
-                  "protocol": "*",
-                  "toIP": ip,
-                  "_type": "*",
-                  "state": false,
-                  "dport": "*"
-                })
 
                 // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
                 await rclient.delAsync([
@@ -3632,8 +3612,9 @@ class netBot extends ControllerBot {
                 ]);
               }
             }
-            await hostTool.deleteMac(hostMac);
             // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
+            this.messageBus.publish("DiscoveryEvent", "Device:Delete", hostMac, {});
+
             this.simpleTxData(msg, {}, null, callback);
           } else {
             this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
