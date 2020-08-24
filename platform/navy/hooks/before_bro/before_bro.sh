@@ -33,8 +33,12 @@ if [[ -n "$VPN_CONFIG" ]]; then
 fi
 
 if [[ -n "$VPN_IP" ]]; then
-  sudo echo "" >>  /usr/local/bro/share/bro/site/local.bro
-#  sudo echo "redef restrict_filters += [[\"not-vpn\"] = \"not (port $VPN_PORT && host $VPN_IP && ip proto $VPN_PROTOCOL)\"];" >> /usr/local/bro/share/bro/site/local.bro
+
+  sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
+  # vpn filter
+  redef restrict_filters += [["not-vpn"] = "not ($VPN_PROTOCOL src port $VPN_PORT and src host $VPN_IP) and not ($VPN_PROTOCOL dst port $VPN_PORT and dst host $VPN_IP)"];
+EOS
+
 fi
 
 sync
