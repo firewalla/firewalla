@@ -1587,7 +1587,7 @@ module.exports = class {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
 
-    if (!_.isEmpty(userInput.tag)) {
+    if (userInput && !_.isEmpty(userInput.tag)) {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
       e["p.tag.ids"] = [];
