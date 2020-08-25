@@ -256,6 +256,7 @@ class VpnManager {
       if (config.localPort) {
         if (this.localPort && this.localPort !== config.localPort)
           this.needRestart = true;
+          this.localPortOrProtocolChanged = true;
         this.localPort = config.localPort;
       }
       if (config.externalPort) {
@@ -267,6 +268,7 @@ class VpnManager {
         if (this.protocol && this.protocol !== config.protocol)
           this.needRestart = true;
         this.protocol = config.protocol;
+        this.localPortOrProtocolChanged = true;
       }
     }
     if (this.listenIp !== sysManager.myDefaultWanIp()) {
@@ -514,6 +516,11 @@ class VpnManager {
     log.info("VpnManager:Start:" + this.instanceName);
     try {
       await execAsync(util.format("sudo systemctl %s openvpn@%s", op, this.instanceName));
+      if(this.localPortOrProtocolChanged) {
+        // no need to await this
+        platform.onVPNPortProtocolChanged(); 
+        this.localPortOrProtocolChanged = false;
+      }
       this.started = true;
       await this.setIptables();
       this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {

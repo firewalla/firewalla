@@ -153,6 +153,19 @@ class NavyPlatform extends Platform {
     return 5;
   }
 
+  async onWanIPChanged(ip) {
+    await super.onWanIPChanged(ip)
+
+    // to refresh VPN filter in zeek
+    await exec("sudo systemctl restart brofish");
+  }
+
+  async onVPNPortProtocolChanged() {
+    await super.onVPNPortProtocolChanged();
+
+    // to refresh VPN filter in zeek
+    await exec("sudo systemctl restart brofish");
+  }
 }
 
 module.exports = NavyPlatform;
