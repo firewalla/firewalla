@@ -70,20 +70,20 @@ declare -A DESTPORT
 declare -A DEST
 declare -A CONN
 
-cat $FILES |
-( [[ $FILES == *"/current/"* ]] && cat || gunzip ) |
+zcat -f $FILES |
+grep -v "$GATEWAY\|$FIREWALLA\|$FIREWALLA2\|198.51.100.99\|0.0.0.0\|f\(f0\|e[89abcde]\).:.*" |
 jq -r ". | \"\(.proto) \(.[\"id.orig_h\"]) \(.[\"id.orig_p\"]) \(.[\"id.resp_h\"]) \(.[\"id.resp_p\"]) \(.conn_state) \(.local_orig) \(.local_resp)\"" |
 while read proto orig oport resp rport state local_orig local_resp; do
     #host=""
-    if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
-          "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ||
-          # ff0 broadcast, fe[89abcde] link local & site local
-          "$orig" =~ f(f0|e[89abcde]).:.* ||
-          "$resp" =~ f(f0|e[89abcde]).:.* ||
-          # Firewalla dns block
-          "$orig" == "198.51.100.99" || "$orig" == "0.0.0.0" ||
-          "$resp" == "198.51.100.99" || "$resp" == "0.0.0.0"
-    ]]; then continue; fi
+    # if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
+    #       "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ||
+    #       # ff0 broadcast, fe[89abcde] link local & site local
+    #       "$orig" =~ f(f0|e[89abcde]).:.* ||
+    #       "$resp" =~ f(f0|e[89abcde]).:.* ||
+    #       # Firewalla dns block
+    #       "$orig" == "198.51.100.99" || "$orig" == "0.0.0.0" ||
+    #       "$resp" == "198.51.100.99" || "$resp" == "0.0.0.0"
+    # ]]; then continue; fi
     if [[ "$local_orig" == "true" ]]; then
         if [[ "$local_resp" == "true" ]]; then
             continue;
