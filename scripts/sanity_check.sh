@@ -305,6 +305,19 @@ check_hosts() {
     NOW=$(date +%s)
     FRCC=$(curl -s "http://localhost:8837/v1/config/active")
     for DEVICE in $DEVICES; do
+
+        local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
+        DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
+        if [[ ! -n $DEVICE_ONLINE_TS ]]; then
+            local DEVICE_ONLINE="N/A"
+        elif (($DEVICE_ONLINE_TS < $NOW - 2592000)); then # 30days ago, hide entry
+            continue
+        elif (($DEVICE_ONLINE_TS > $NOW - 1800)); then
+            local DEVICE_ONLINE="yes"
+        else
+            local DEVICE_ONLINE="no"
+        fi
+
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
         local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
         local DEVICE_NETWORK_NAME=
@@ -336,18 +349,6 @@ check_hosts() {
             DEVICE_B7_MONITORING="true"
         else
             DEVICE_B7_MONITORING="false"
-        fi
-
-        local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
-        DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
-        if [[ ! -n $DEVICE_ONLINE_TS ]]; then
-            local DEVICE_ONLINE="N/A"
-        else
-            if (($DEVICE_ONLINE_TS > $NOW - 1800)); then
-                local DEVICE_ONLINE="yes"
-            else
-                local DEVICE_ONLINE="no"
-            fi
         fi
 
         local DEVICE_VPN="N/A"
