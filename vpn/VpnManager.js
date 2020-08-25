@@ -254,9 +254,10 @@ class VpnManager {
         this.netmask = config.netmask;
       }
       if (config.localPort) {
-        if (this.localPort && this.localPort !== config.localPort)
+        if (this.localPort && this.localPort !== config.localPort) {
           this.needRestart = true;
           this.localPortOrProtocolChanged = true;
+        }
         this.localPort = config.localPort;
       }
       if (config.externalPort) {
@@ -265,9 +266,10 @@ class VpnManager {
         this.externalPort = config.externalPort;
       }
       if (config.protocol) {
-        if (this.protocol && this.protocol !== config.protocol)
+        if (this.protocol && this.protocol !== config.protocol) {
           this.needRestart = true;
-        this.protocol = config.protocol;
+          this.protocol = config.protocol;
+        }
         this.localPortOrProtocolChanged = true;
       }
     }
