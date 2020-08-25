@@ -1055,9 +1055,9 @@ class DualWanAlarm extends Alarm {
       _.join(wan, ",")
     ];
   }
-
-  localizedNotificationTitleKey() {
-    let key = super.localizedNotificationTitleKey();
+  
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
 
     let wan = JSON.parse(this["p.active.wans"]);
     if (!this["p.ready"]) {
