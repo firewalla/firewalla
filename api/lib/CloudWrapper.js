@@ -92,7 +92,7 @@ module.exports = class {
         const { gid } = await Bone.checkCloud()
         if (!nbControllers[gid]) {
           const name = await rclient.getAsync('groupName')
-          this.createController(gid, name, null, true)
+          this.createController(gid, name, [], true)
         }
       } catch(err) {
         log.error('Error creating controller', err)
