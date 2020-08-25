@@ -268,9 +268,9 @@ class VpnManager {
       if (config.protocol) {
         if (this.protocol && this.protocol !== config.protocol) {
           this.needRestart = true;
-          this.protocol = config.protocol;
+          this.localPortOrProtocolChanged = true;
         }
-        this.localPortOrProtocolChanged = true;
+        this.protocol = config.protocol;
       }
     }
     if (this.listenIp !== sysManager.myDefaultWanIp()) {
