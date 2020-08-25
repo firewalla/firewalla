@@ -15,7 +15,7 @@ fi
 : ${VPN_PORT:=1194}
 : ${VPN_PROTOCOL:=udp}
 
-VPN_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
+EXTERNAL_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
 
 VPN_CONFIG=$(redis-cli hget policy:system vpn)
 
@@ -32,11 +32,12 @@ if [[ -n "$VPN_CONFIG" ]]; then
   fi
 fi
 
-if [[ -n "$VPN_IP" ]]; then
+if [[ -n "$EXTERNAL_IP" ]]; then
 
   sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
   # vpn filter
-  redef restrict_filters += [["not-vpn"] = "not ($VPN_PROTOCOL src port $VPN_PORT and src host $VPN_IP) and not ($VPN_PROTOCOL dst port $VPN_PORT and dst host $VPN_IP)"];
+  redef restrict_filters += [["not-vpn"] = "not ($VPN_PROTOCOL src port $VPN_PORT and src host $EXTERNAL_IP) and not ($VPN_PROTOCOL dst port $VPN_PORT and dst host $EXTERNAL_IP)"];
+  redef restrict_filters += [["not-itself"] = "not tcp src $EXTERNAL_IP"];
 EOS
 
 fi
