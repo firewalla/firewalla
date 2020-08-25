@@ -51,6 +51,7 @@ const configKey = 'extension.portforward.config'
 //   ]
 // }
 
+// only supports IPv4 for now
 class PortForward {
   constructor() {
     if(!instance) {
@@ -59,19 +60,21 @@ class PortForward {
         if (f.isMain()) {
           let c = require('../../net2/MessageBus.js');
           this.channel = new c('debug');
-          this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, (channel, type, ip, obj) => {
-            if (type == "Extension:PortForwarding") {
-              (async ()=>{
-                if (obj!=null) {
-                  if (obj.state == false) {
-                    await this.removePort(obj);
-                  } else {
-                    await this.addPort(obj);
-                  }
-                  // TODO: config should be saved after rule successfully applied
-                  await this.refreshConfig();
+          this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
+            if (type != "Extension:PortForwarding") return
+
+            try {
+              if (obj != null) {
+                if (obj.state == false) {
+                  await this.removePort(obj);
+                } else {
+                  await this.addPort(obj);
                 }
-              })();
+                // TODO: config should be saved after rule successfully applied
+                await this.refreshConfig();
+              }
+            } catch(err) {
+              log.error('Error applying port-forward', obj, err)
             }
           });
 
@@ -222,7 +225,7 @@ class PortForward {
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
           (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
-          _map.toIP == map.toIP &&
+          (!map.toIP && map.toMac && _map.toMac == map.toMac || _map.toIP == map.toIP) &&
           (map._type == "*" || (_map._type || "port_forward") === (map._type || "port_forward"))
         ) {
           return i;
@@ -294,7 +297,7 @@ class PortForward {
           await this.addPort(map, true)
         }
       }
-    } catch (err) { };
+    } catch (err) { }
   }
 
   async start() {
@@ -314,8 +317,7 @@ class PortForward {
 
   async stop() {
     log.info("PortForwarder:Stopping PortForwarder ...")
-    await this.saveConfig().catch((err) => {
-    })
+    await this.saveConfig().catch(() => { })
   }
 
   _isLANInterfaceIP(ip) {

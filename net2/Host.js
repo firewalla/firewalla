@@ -101,6 +101,7 @@ class Host {
 
         Host.ensureCreateDeviceIpset(this.o.mac).then(() => {
           this.subscribe(this.o.mac, "Device:Updated");
+          this.subscribe(this.o.mac, "Device:Delete");
         }).catch((err) => {
           log.error(`Failed to create tracking ipset for ${this.o.mac}`, err.message);
         })
@@ -108,6 +109,7 @@ class Host {
 
       this.dnsmasq = new DNSMASQ();
       instances[obj.mac] = this;
+      log.info('Created new Host', obj.mac)
     }
     return instances[obj.mac];
   }
@@ -118,7 +120,7 @@ class Host {
       this.o.ipv4Addr = this.o.ipv4;
     }
 
-    if(f.isMain()) {
+    if (f.isMain()) {
       if (obj && obj.mac) {
         this.subscribe(this.o.mac, "Notice:Detected");
         this.subscribe(this.o.mac, "Intel:Detected");
@@ -155,6 +157,14 @@ class Host {
     await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getIpSetName(mac, 4)}`);
     await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getIpSetName(mac, 6)}`);
     envCreatedMap[mac] = 1;
+  }
+
+  async flushIpsets() {
+    log.info('Flushing ipset for', this.o.mac)
+    await ipset.flush(Host.getIpSetName(this.o.mac, 4))
+    await ipset.flush(Host.getIpSetName(this.o.mac, 6))
+    await ipset.flush(Host.getMacSetName(this.o.mac))
+    await ipset.flush(Host.getDeviceSetName(this.o.mac))
   }
 
   /* example of ipv6Host
@@ -404,9 +414,6 @@ class Host {
     }
     if (this.activities) {
       this.o.activities= JSON.stringify(this.activities);
-    }
-    if (this._tags) {
-      this.o.tags = JSON.stringify(this._tags);
     }
   }
 
@@ -716,6 +723,34 @@ class Host {
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
         this.scheduleUpdateHostData();
+      } else if (type === "Device:Delete") {
+        log.info('Deleting Host', this.o.mac)
+        this.subscriber.unsubscribe('DiscoveryEvent', 'Notice:Detected',    this.o.mac);
+        this.subscriber.unsubscribe('DiscoveryEvent', 'Intel:Detected',     this.o.mac);
+        this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
+        this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated',     this.o.mac);
+        this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Delete',      this.o.mac);
+
+        if (f.isMain()) {
+          // this effectively stops all iptables rules against this device
+          // PolicyManager2 should be dealing with iptables entries alone
+          await this.flushIpsets();
+
+          await this.resetPolicies()
+
+          // delete redis host keys
+          if (this.o.ipv4Addr) {
+            await rclient.delAsync(`host:ip4:${this.o.ipv4Addr}`)
+          }
+          if (Array.isArray(this.ipv6Addr)) {
+            for (const ip6 of this.ipv6Addr) {
+              await rclient.delAsync(`host:ip6:${ip6}`)
+            }
+          }
+          await rclient.delAsync(`host:mac:${mac}`)
+        }
+
+        delete instances[this.o.mac]
       }
     });
   }
@@ -829,7 +864,7 @@ class Host {
     this.applyPolicyTask = setTimeout(() => {
       this.applyPolicy();
     }, 3000);
-  }  
+  }
 
   async applyPolicyAsync() {
     await this.loadPolicyAsync()
@@ -846,6 +881,20 @@ class Host {
     return util.callbackify(this.applyPolicyAsync).bind(this)(callback || function(){})
   }
 
+  async resetPolicies() {
+    await this.setPolicyAsync('tags', [])
+
+    this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
+      "toPort": "*",
+      "protocol": "*",
+      "toMac": this.o.mac,
+      "_type": "*",
+      "state": false,
+      "dport": "*"
+    })
+
+    await rclient.delAsync('policy:mac:' + this.o.mac);
+  }
 
   // type:
   //  { 'human': 0-100
@@ -1138,17 +1187,13 @@ class Host {
     }
     if (this.policy) {
       json.policy = this.policy;
+
+      if (this.policy.tags) {
+        json.tags = this.policy.tags
+      }
     }
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;
-    }
-
-    if (this.o.tags) {
-      try {
-        json.tags= !_.isEmpty(JSON.parse(this.o.tags)) ? JSON.parse(this.o.tags).map(Number) : []
-      } catch (err) {
-        log.error("Failed to parse tags:", err)
-      }
     }
 
     if(this.o.openports) {
@@ -1278,8 +1323,9 @@ class Host {
       } else {
         if (data) {
           this.policy = {};
-          for (let k in data) {
+          for (const k in data) {
             this.policy[k] = JSON.parse(data[k]);
+            if (k == 'tags') this._tags = this.policy['tags']
           }
           if (callback)
             callback(null, data);
@@ -1368,7 +1414,6 @@ class Host {
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
-    this.save("tags", null);
   }
 }
 
