@@ -189,6 +189,14 @@ class Platform {
   isIFBSupported() {
     return false;
   }
+
+  async onWanIPChanged(ip) {
+    log.info("WanIP is changed to", ip);
+  }
+
+  async onVPNPortProtocolChanged() {
+    log.info("VPN Port Protocol is changed");
+  }
 }
 
 module.exports = Platform;
