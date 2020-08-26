@@ -15,6 +15,12 @@ hook_server_route_up() {
   echo nothing > /dev/null
 }
 
+function hook_after_vpn_confgen {
+  # by default do nothing
+  OVPN_CFG="$1"
+  echo nothing > /dev/null
+}
+
 case "$UNAME" in
   "x86_64")
     source $FW_PLATFORM_DIR/gold/platform.sh
@@ -80,10 +86,4 @@ function after_bro {
       $script
     done
   fi
-}
-
-function hook_after_vpn_confgen {
-  # by default do nothing
-  OVPN_CONF="$1"
-  echo nothing > /dev/null
 }
