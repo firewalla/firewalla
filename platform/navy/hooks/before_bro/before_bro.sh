@@ -35,9 +35,10 @@ fi
 if [[ -n "$EXTERNAL_IP" ]]; then
 
   sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
-  # vpn filter
-  redef restrict_filters += [["not-vpn"] = "not ($VPN_PROTOCOL src port $VPN_PORT and src host $EXTERNAL_IP) and not ($VPN_PROTOCOL dst port $VPN_PORT and dst host $EXTERNAL_IP)"];
-  redef restrict_filters += [["not-itself"] = "not tcp src $EXTERNAL_IP"];
+
+# vpn filter
+redef restrict_filters += [["not-vpn"] = "not ($VPN_PROTOCOL src port $VPN_PORT and src host $EXTERNAL_IP) and not ($VPN_PROTOCOL dst port $VPN_PORT and dst host $EXTERNAL_IP)"];
+redef restrict_filters += [["not-itself"] = "not (tcp and src host $EXTERNAL_IP)"];
 EOS
 
 fi
