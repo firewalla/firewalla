@@ -48,3 +48,12 @@ function hook_server_route_up {
   # adjust rps_cpus for better performance
   sudo bash -c "echo 7 > /sys/class/net/tun_fwvpn/queues/rx-0/rps_cpus"
 }
+
+function hook_after_vpn_confgen {
+  OVPN_CONF="$1"
+  sudo bash -c "cat >> $OVPN_CFG" <<EOS
+fast-io
+sndbuf 0
+rcvbuf 0
+EOS
+}

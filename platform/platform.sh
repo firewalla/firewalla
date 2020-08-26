@@ -81,3 +81,9 @@ function after_bro {
     done
   fi
 }
+
+function hook_after_vpn_confgen {
+  # by default do nothing
+  OVPN_CONF="$1"
+  echo nothing > /dev/null
+}
