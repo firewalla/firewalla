@@ -512,11 +512,8 @@ class netBot extends ControllerBot {
         notifMsg["body_loc_key"] = alarm.localizedNotificationContentKey().replace(/[.:-]/g, '_');
         notifMsg["body_loc_args"] = alarm.localizedNotificationContentArray();
 
-        const forceUseNotificationLocalization = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
-        if (forceUseNotificationLocalization === "1") {
-          delete notifMsg.title;
-          delete notifMsg.body;
-        }
+        delete notifMsg.title;
+        delete notifMsg.body;
       }
 
       this.tx2(this.primarygid, "test", notifMsg, data);
