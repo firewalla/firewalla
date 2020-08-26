@@ -38,7 +38,7 @@ if [[ -n "$EXTERNAL_IP" ]]; then
 
 # vpn filter
 redef restrict_filters += [["not-vpn"] = "not ($VPN_PROTOCOL src port $VPN_PORT and src host $EXTERNAL_IP) and not ($VPN_PROTOCOL dst port $VPN_PORT and dst host $EXTERNAL_IP)"];
-redef restrict_filters += [["not-itself"] = "not (tcp and src host $EXTERNAL_IP)"];
+redef restrict_filters += [["not-itself"] = "not (tcp and host $EXTERNAL_IP)"];
 EOS
 
 fi
