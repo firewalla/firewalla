@@ -51,9 +51,13 @@ function hook_server_route_up {
 
 function hook_after_vpn_confgen {
   OVPN_CONF="$1"
-  sudo bash -c "cat >> $OVPN_CFG" <<EOS
+  fgrep -q fast-io $OVPN_CFG || {
+
+    sudo bash -c "cat >> $OVPN_CFG" <<EOS
 fast-io
 sndbuf 0
 rcvbuf 0
 EOS
+  }
+
 }
