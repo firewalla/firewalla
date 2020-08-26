@@ -1229,23 +1229,21 @@ module.exports = class HostManager {
         this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
         try {
-          const ipv6Addr = JSON.parse(o.ipv6Addr)
+          const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
           if (hostbymac.ipv6Addr && Array.isArray(hostbymac.ipv6Addr)) {
             // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
             for (const oldIpv6 of hostbymac.ipv6Addr) {
-              if (!ipv6Addr || !Array.isArray(ipv6Addr) || !ipv6Addr.includes(oldIpv6)) {
+              if (!ipv6Addr.includes(oldIpv6)) {
                 // the physical host dropped old ipv6 address
                 this.hostsdb['host:ip6:' + oldIpv6] = null;
               }
             }
           }
-          if (ipv6Addr && Array.isArray(ipv6Addr)) {
-            for (const newIpv6 of ipv6Addr) {
-              this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
-            }
+          for (const newIpv6 of ipv6Addr) {
+            this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
           }
         } catch(err) {
-          log.err('Failed to check v6 address of', o.mac, err)
+          log.error('Failed to check v6 address of', o.mac, err)
         }
 
         hostbymac.update(o);
