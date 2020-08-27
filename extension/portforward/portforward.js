@@ -157,10 +157,8 @@ class PortForward {
         const ipv4Addr = macEntry.ipv4Addr;
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
-          if (map.toIP) {
-            log.info("IP address has changed, remove old rule: ", map);
-            await this.removePort(map);
-          }
+          log.info("IP address has changed, remove old rule: ", map);
+          await this.removePort(map);
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
