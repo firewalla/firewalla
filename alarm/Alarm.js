@@ -1055,22 +1055,28 @@ class DualWanAlarm extends Alarm {
       _.join(wan, ",")
     ];
   }
-  
+
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
     let wan = JSON.parse(this["p.active.wans"]);
-    if (!this["p.ready"]) {
-      if (this["p.wan.switched"]) {
+
+    if (wan && wan.length == 0) {
+      key += ".lost.all";
+      return key;
+    }
+
+    if (this["p.ready"] == "false") {
+      if (this["p.wan.switched"] == "true") {
         key += ".lost";
       } else {
-        key += ".remain";
+        key += ".lost.remain";
       }
     } else {
       if (wan && wan.length > 1) {
         key += ".restore.all";
       } else {
-        if (this["p.wan.switched"]) {
+        if (this["p.wan.switched"] == "true") {
           key += ".remain.switch";
         } else {
           key += ".remain";
