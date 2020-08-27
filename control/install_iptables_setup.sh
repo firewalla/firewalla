@@ -941,7 +941,6 @@ if [[ $(uname -m) == "x86_64" ]]; then
   sudo iptables -w -A DOCKER-USER -j RETURN
 fi
 
-
 if ip link show dev ifb0; then
   sudo tc filter delete dev ifb0 &> /dev/null || true
   sudo tc qdisc delete dev ifb0 root &> /dev/null || true
