@@ -84,5 +84,9 @@ sed -i "s/PROTO/$PROTO/" /etc/openvpn/$INSTANCE_NAME.conf
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/$INSTANCE_NAME.conf
 fi
+
+# platform specific confgen
+hook_after_vpn_confgen "/etc/openvpn/$INSTANCE_NAME.conf"
+
 logger "FIREWALLA: OpenVPN config complete @ $INSTANCE_NAME"
 sync
