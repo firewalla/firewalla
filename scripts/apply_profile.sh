@@ -9,10 +9,9 @@ CMDDIR=$(dirname $0)
 : ${PROFILE_CHECK:=false}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
-PROFILE_DEFAULT_DIR=$FIREWALLA_HOME/platform/$FIREWALLA_PLATFORM/profile/
-PROFILE_DEFAULT_NAME=profile_default.json
-PROFILE_USER_DIR=$FIREWALLA_HOME/.firewalla/run/profile
-PROFILE_ACTIVE=profile_default
+PROFILE_DEFAULT_DIR=$FIREWALLA_HOME/platform/$FIREWALLA_PLATFORM/profile
+PROFILE_DEFAULT_NAME=profile_default
+PROFILE_USER_DIR=/home/pi/.firewalla/run/profile
 
 # ----------------------------------------------------------------------------
 # Function
@@ -113,7 +112,7 @@ apply_profile() {
     input_json=$(cat)
     for key in $(echo "$input_json"| jq -r 'keys[]')
     do
-        loginfo "apply key '$key'"
+        loginfo "- apply '$key'"
         case $key in
             smp_affinity)
                 echo "$input_json" | jq -r '.smp_affinity[]|@tsv' | set_smp_affinity
@@ -141,14 +140,14 @@ apply_profile() {
 }
 
 get_active_profile() {
-    active_profile_name=$(redis-cli get platform:profile:active)
-    if [[ -n "$active_profile_name" ]]; then
-        active_profile=$PROFILE_USER_DIR/$active_profile_name
-        test -e $active_profile || active_profile=$PROFILE_DEFAULT_DIR/$active_profile_name
+    ap_name=$(redis-cli get platform:profile:active)
+    if [[ -n "$ap_name" ]]; then
+        ap=$PROFILE_USER_DIR/$ap_name
+        test -e $ap || ap=$PROFILE_DEFAULT_DIR/$ap_name
     else
-        active_profile=$PROFILE_DEFAULT_DIR/$PROFILE_DEFAULT_NAME
+        ap=$PROFILE_DEFAULT_DIR/$PROFILE_DEFAULT_NAME
     fi
-    echo $active_profile
+    echo $ap
 }
 
 # ----------------------------------------------------------------------------
@@ -172,6 +171,7 @@ done
 shift $((OPTIND-1))
 
 active_profile=${1:-$(get_active_profile)}
+loginfo "Apply profile - $active_profile"
 
 cat $active_profile | apply_profile || {
     logerror "failed to apply profile"
