@@ -62,6 +62,8 @@ let FLOWSTASH_EXPIRES;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 /*
  *
  *  config.bro.notice.path {
@@ -491,6 +493,23 @@ module.exports = class {
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
         }
       }
+      if (fc.isFeatureOn("acl_audit")) {
+        // detect DNS level block (NXDOMAIN) in dns log
+        if (obj["rcode_name"] === "NXDOMAIN" && (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") && obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["query"] != null && obj["query"].length > 0) {
+          if (!sysManager.isMyIP(obj["id.orig_h"]) && !sysManager.isMyIP6(obj["id.orig_h"])) {
+            const record = {
+              src: obj["id.orig_h"],
+              domain: obj["query"],
+              qtype: obj["qtype_name"]
+            };
+            sem.emitEvent({
+              type: Message.MSG_ACL_DNS_NXDOMAIN,
+              record: record,
+              suppressEventLogging: true
+            });
+          }
+        }
+      }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
     }
@@ -681,13 +700,15 @@ module.exports = class {
         return;
       }
 
+      const safeCheckThreshold = platform.getBroSafeCheckThreshold();
+
       // drop layer 4
       if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
         log.debug("Conn:Drop:ZeroLength2", obj.conn_state, obj);
         return;
       }
 
-      if (obj.missed_bytes > 10000000) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
+      if (obj.missed_bytes > safeCheckThreshold.missedBytes) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
         log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
         return;
       }
@@ -705,12 +726,8 @@ module.exports = class {
 
       //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
       if (obj.resp_bytes > 100000000) {
-        if (obj.duration < 1) {
-          log.debug("Conn:Burst:Drop", obj);
-          return;
-        }
         let rate = obj.resp_bytes / obj.duration;
-        if (rate > 20000000) {
+        if (rate > safeCheckThreshold.respRate) {
           log.debug("Conn:Burst:Drop", rate, obj);
           return;
         }
@@ -723,12 +740,8 @@ module.exports = class {
 
 
       if (obj.orig_bytes > 100000000) {
-        if (obj.duration < 1) {
-          log.debug("Conn:Burst:Drop:Orig", obj);
-          return;
-        }
         let rate = obj.orig_bytes / obj.duration;
-        if (rate > 20000000) {
+        if (rate > safeCheckThreshold.origRate) {
           log.debug("Conn:Burst:Drop:Orig", rate, obj);
           return;
         }
@@ -1479,7 +1492,7 @@ module.exports = class {
 
       l2.getMAC(ip, (err, mac) => {
 
-        if (err) {
+        if (err || !mac) {
           // not found, ignore this host
           log.error("Not able to found mac address for host:", ip, mac);
           return;

@@ -86,13 +86,32 @@ class RedPlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
-  
+
   getAllowCustomizedProfiles(){
     return 0;
+  }
+  getRatelimitConfig(){
+    return {
+      "appMax": 120,
+      "webMax": 240,
+      "duration": 60
+    }
   }
 
   defaultPassword() {
     return "firewalla"
+  }
+
+  isBluetoothAvailable() {
+    return false
+  }
+
+  getBroSafeCheckThreshold() {
+    return {
+      missedBytes: 10000000,
+      respRate: 12800000,
+      origRate: 12800000
+    };
   }
 }
 

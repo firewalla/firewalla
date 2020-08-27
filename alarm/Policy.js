@@ -85,6 +85,21 @@ class Policy {
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
 
+    if (raw.rateLimit)
+      this.rateLimit = Number(raw.rateLimit);
+
+    if (raw.priority)
+      this.priority = Number(raw.priority);
+
+    if (raw.transferredBytes)
+      this.transferredBytes = Number(raw.transferredBytes);
+
+    if (raw.transferredPackets)
+      this.transferredPackets = Number(raw.transferredPackets);
+
+    if (raw.avgPacketBytes)
+      this.avgPacketBytes = Number(raw.avgPacketBytes);
+
     this.dnsmasq_only = false;
     if (raw.dnsmasq_only)
       this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
@@ -156,9 +171,14 @@ class Policy {
       this.direction === policy.direction &&
       this.action === policy.action &&
       this.upnp === policy.upnp &&
-      this.dnsmasq_only === policy.dnsmasq_only
+      this.dnsmasq_only === policy.dnsmasq_only &&
+      this.trafficDirection === policy.trafficDirection &&
+      this.transferredBytes === policy.transferredBytes &&
+      this.transferredPackets === policy.transferredPackets &&
+      this.avgPacketBytes === policy.avgPacketBytes
     ) {
-      return arraysEqual(this.scope, policy.scope) && arraysEqual(this.tag, policy.tag);
+      // ignore scope if type is mac
+      return (this.type == 'mac' || arraysEqual(this.scope, policy.scope)) && arraysEqual(this.tag, policy.tag);
     } else {
       return false
     }

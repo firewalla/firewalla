@@ -41,6 +41,9 @@ function updateTouchFile() {
   })
 }
 
+const rclient = require('../util/redis_manager.js').getRedisClient()
+rclient.del('sys:bone:url') // always try configured server for 1st checkin
+
 const bone = require("../lib/Bone.js");
 
 const firewalla = require("./Firewalla.js");
@@ -140,6 +143,8 @@ process.on('uncaughtException',(err)=>{
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
+  if (msg.includes("Redis connection"))
+    return;
   bone.logAsync("error", {
     type: 'FIREWALLA.MAIN.unhandledRejection',
     msg: msg,

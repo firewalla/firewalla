@@ -919,6 +919,29 @@ class SubnetAlarm extends Alarm {
   }
 }
 
+class WeakPasswordAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_WEAK_PASSWORD', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return ['p.device.ip', 'p.open.protocol', 'p.open.port', 'p.weakpasswords'];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup();
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.weak_password.cooldown') || super.getExpirationTime();
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.device.name"], this["p.open.protocol"], this["p.open.port"], this["p.open.servicename"], this["p.weakpasswords"]];
+  }
+}
+
 class OpenPortAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super('ALARM_OPENPORT', timestamp, device, info);
@@ -1005,6 +1028,69 @@ class UpnpAlarm extends Alarm {
     return false;
   }
 }
+class DualWanAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_DUAL_WAN', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return [
+    ];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup()
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.dual_wan.cooldown') || super.getExpirationTime();
+  }
+
+  localizedNotificationContentArray() {
+    let wan = JSON.parse(this["p.active.wans"]);
+
+    return [
+      this["p.iface.name"],
+      _.join(wan, ",")
+    ];
+  }
+
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+
+    let wan = JSON.parse(this["p.active.wans"]);
+
+    if (wan && wan.length == 0) {
+      key += ".lost.all";
+      return key;
+    }
+
+    if (this["p.ready"] == "false") {
+      if (this["p.wan.switched"] == "true") {
+        key += ".lost";
+      } else {
+        key += ".lost.remain";
+      }
+    } else {
+      if (wan && wan.length > 1) {
+        key += ".restore.all";
+      } else {
+        if (this["p.wan.switched"] == "true") {
+          key += ".remain.switch";
+        } else {
+          key += ".remain";
+        }
+      }
+    }
+
+    return key;
+  }
+  
+  isDup() {
+    return false;
+  }
+}
 
 let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
@@ -1026,8 +1112,10 @@ let classMapping = {
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
   ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
   ALARM_SUBNET: SubnetAlarm.prototype,
+  ALARM_WEAK_PASSWORD: WeakPasswordAlarm.prototype,
   ALARM_OPENPORT: OpenPortAlarm.prototype,
-  ALARM_UPNP: UpnpAlarm.prototype
+  ALARM_UPNP: UpnpAlarm.prototype,
+  ALARM_DUAL_WAN: DualWanAlarm.prototype
 }
 
 module.exports = {
@@ -1052,7 +1140,9 @@ module.exports = {
   VulnerabilityAlarm: VulnerabilityAlarm,
   IntelReportAlarm: IntelReportAlarm,
   SubnetAlarm: SubnetAlarm,
+  WeakPasswordAlarm: WeakPasswordAlarm,
   OpenPortAlarm: OpenPortAlarm,
   UpnpAlarm: UpnpAlarm,
+  DualWanAlarm: DualWanAlarm,
   mapping: classMapping
 }

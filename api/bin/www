@@ -240,6 +240,10 @@ function onError(error) {
       console.error(bind + ' is already in use');
       process.exit(1);
       break;
+    case 'EADDRNOTAVAIL':
+      console.error(`${bind} is currently unavailable`);
+      // no need to exit process for this error
+      break;
     default:
       throw error;
   }
