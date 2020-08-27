@@ -14,7 +14,11 @@ CMDDIR=$(dirname $0)
 
 usage() {
     cat <<EOU
-usage: $CMD [<profile_path>]
+usage: $CMD [-n] [<profile_path>]
+options:
+
+    -n
+        No actual operation but checking.
 EOU
 }
 
@@ -144,8 +148,16 @@ test $# -gt 0 ||{
     exit 1
 }
 
-profile_path=${1:-''}
 rc=0
+
+while getopts ":n" opt
+do
+    case $opt in
+        n) PROFILE_CHECK=true;;
+    esac
+done
+shift $((OPTIND-1))
+profile_path=${1:-''}
 
 
 cat $profile_path | apply_profile || {
