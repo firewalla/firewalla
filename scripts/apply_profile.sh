@@ -6,6 +6,7 @@
 
 CMD=$(basename $0)
 CMDDIR=$(dirname $0)
+: ${PROFILE_CHECK:=false}
 
 # ----------------------------------------------------------------------------
 # Function
@@ -33,14 +34,24 @@ set_smp_affinity() {
     while read intf smp_affinity
     do
         irq=$(cat /proc/interrupts | awk "\$NF == \"$intf\" {print \$1}"|tr -d :)
-        echo $smp_affinity > /proc/irq/$irq/smp_affinity
+        if $PROFILE_CHECK; then
+            cat /proc/irq/$irq/smp_affinity
+        else
+            echo $smp_affinity > /proc/irq/$irq/smp_affinity
+        fi
     done
 }
 
 set_rps_cpus() {
     while read intf q rps_cpus
     do
-        echo $rps_cpus > /sys/class/net/$intf/queues/$q/rps_cpus
+        rps_cpus_path=/sys/class/net/$intf/queues/$q/rps_cpus
+        test -e $rps_cpus_path || continue
+        if $PROFILE_CHECK; then
+            cat $rps_cpus_path
+        else
+            echo $rps_cpus > $rps_cpus_path
+        fi
     done
 }
 
@@ -49,13 +60,21 @@ do_taskset() {
     do
         loginfo "do_task $pname $cpu_list"
         pid=$(pidof $pname)
-        test -n "$pid" && taskset -cp $cpu_list $pid
+        if [[ -n "$pid" ]]; then
+            if $PROFILE_CHECK; then
+                taskset -cp $pid
+            else
+                taskset -cp $cpu_list $pid
+            fi
+        fi
     done
 }
 
 set_cpufreq() {
-    while read min max governor
-    do
+    read min max governor
+    if $PROFILE_CHECK; then
+        cat /etc/default/cpufrequtils
+    else
         cat <<EOS > /etc/default/cpufrequtils
 ENABLE=true
 MIN_SPEED=${min}
@@ -63,14 +82,18 @@ MAX_SPEED=${max}
 GOVERNOR=${governor}
 EOS
         systemctl reload cpufrequtils
-    done
+    fi
 }
 
 set_priority() {
     while read pname nvalue
     do
         pid=$(pidof $pname)
-        test -n "$pid" && renice -n $nvalue -p $pid
+        if $PROFILE_CHECK; then
+            ps -l $pid
+        else
+            test -n "$pid" && renice -n $nvalue -p $pid
+        fi
     done
 
 }
