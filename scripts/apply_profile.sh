@@ -7,6 +7,12 @@
 CMD=$(basename $0)
 CMDDIR=$(dirname $0)
 : ${PROFILE_CHECK:=false}
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+PROFILE_DEFAULT_DIR=$FIREWALLA_HOME/platform/$FIREWALLA_PLATFORM/profile/
+PROFILE_DEFAULT_NAME=profile_default.json
+PROFILE_USER_DIR=$FIREWALLA_HOME/.firewalla/run/profile
+PROFILE_ACTIVE=profile_default
 
 # ----------------------------------------------------------------------------
 # Function
@@ -14,7 +20,7 @@ CMDDIR=$(dirname $0)
 
 usage() {
     cat <<EOU
-usage: $CMD [-n] [<profile_path>]
+usage: $CMD [-n] [<active_profile_path>]
 options:
 
     -n
@@ -134,6 +140,17 @@ apply_profile() {
     return $_rc
 }
 
+get_active_profile() {
+    active_profile_name=$(redis-cli get platform:profile:active)
+    if [[ -n "$active_profile_name" ]]; then
+        active_profile=$PROFILE_USER_DIR/$active_profile_name
+        test -e $active_profile || active_profile=$PROFILE_DEFAULT_DIR/$active_profile_name
+    else
+        active_profile=$PROFILE_DEFAULT_DIR/$PROFILE_DEFAULT_NAME
+    fi
+    echo $active_profile
+}
+
 # ----------------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------------
@@ -143,24 +160,20 @@ test $UID -eq 0 || {
     exit 1
 }
 
-test $# -gt 0 ||{
-    usage
-    exit 1
-}
-
 rc=0
 
 while getopts ":n" opt
 do
     case $opt in
+        h) usage ; exit 0 ;;
         n) PROFILE_CHECK=true;;
     esac
 done
 shift $((OPTIND-1))
-profile_path=${1:-''}
 
+active_profile=${1:-$(get_active_profile)}
 
-cat $profile_path | apply_profile || {
+cat $active_profile | apply_profile || {
     logerror "failed to apply profile"
     rc=1
 }
