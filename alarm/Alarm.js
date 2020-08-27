@@ -1078,6 +1078,15 @@ class DualWanAlarm extends Alarm {
 
     let wan = JSON.parse(this["p.active.wans"]);
 
+    if (this["p.wan.type"] == "single") {
+      if (this["p.ready"] == "false") {
+        key += ".lost.all";
+      } else {
+        key += ".remain.switch";
+      }
+      return key;
+    }
+
     if (wan && wan.length == 0) {
       key += ".lost.all";
       return key;
