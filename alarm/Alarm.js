@@ -528,13 +528,13 @@ class BroNoticeAlarm extends Alarm {
       let key = `notif.content.${this.type}.${this["p.noticeType"]}`;
       if (this["p.noticeType"] == "Scan::Port_Scan") {
         if (this["p.dest.name"] != this["p.dest.ip"]) {
-          if (!this["p.local_is_client"]) {
+          if (this["p.local_is_client"] != "1") {
             key += ".inbound.internal";
           } else {
             key += ".outbound.internal";
           }
         } else {
-          if (!this["p.local_is_client"]) {
+          if (this["p.local_is_client"] != "1") {
             key += ".inbound";
           } else {
             key += ".outbound";
