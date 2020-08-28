@@ -108,12 +108,12 @@ set_priority() {
 
 }
 
-apply_profile() {
+process_profile() {
     _rc=0
     input_json=$(cat)
     for key in $(echo "$input_json"| jq -r 'keys[]')
     do
-        loginfo "- apply '$key'"
+        loginfo "- process '$key'"
         case $key in
             smp_affinity)
                 echo "$input_json" | jq -r '.smp_affinity[]|@tsv' | set_smp_affinity
@@ -172,9 +172,9 @@ done
 shift $((OPTIND-1))
 
 active_profile=${1:-$(get_active_profile)}
-loginfo "Apply profile - $active_profile"
-cat $active_profile | apply_profile || {
-    logerror "failed to apply profile"
+loginfo "Process profile - $active_profile"
+cat $active_profile | process_profile || {
+    logerror "failed to process profile"
     rc=1
 }
 
