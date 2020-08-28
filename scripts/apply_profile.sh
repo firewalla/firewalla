@@ -6,8 +6,9 @@
 
 CMD=$(basename $0)
 CMDDIR=$(dirname $0)
-: ${PROFILE_CHECK:=false}
+FIREWALLA_HOME=$(cd $CMDDIR; git rev-parse show-toplevel)
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${PROFILE_CHECK:=false}
 source ${FIREWALLA_HOME}/platform/platform.sh
 PROFILE_DEFAULT_DIR=$FIREWALLA_HOME/platform/$FIREWALLA_PLATFORM/profile
 PROFILE_DEFAULT_NAME=profile_default
@@ -172,7 +173,6 @@ shift $((OPTIND-1))
 
 active_profile=${1:-$(get_active_profile)}
 loginfo "Apply profile - $active_profile"
-
 cat $active_profile | apply_profile || {
     logerror "failed to apply profile"
     rc=1
