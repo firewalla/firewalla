@@ -6,7 +6,7 @@
 
 CMD=$(basename $0)
 CMDDIR=$(dirname $0)
-FIREWALLA_HOME=$(cd $CMDDIR; git rev-parse show-toplevel)
+FIREWALLA_HOME=$(cd $CMDDIR; git rev-parse --show-toplevel)
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${PROFILE_CHECK:=false}
 source ${FIREWALLA_HOME}/platform/platform.sh
