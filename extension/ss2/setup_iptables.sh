@@ -29,4 +29,5 @@ sudo iptables -w -t nat -A $FW_SS_CHAIN -m set --match-set $FW_SS2_WHITE_LIST_NE
 
 # overture use DoH directly
 #sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp -m set --match-set $FW_OVERTURE_IPSET dst -j RETURN
-sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --destination-port 22:1023 -j REDIRECT --to-ports $FW_SS_REDIR_PORT
+# 5228 for Google Wifi
+sudo iptables -w -t nat -A $FW_SS_CHAIN -p tcp --match multiport --destination-port 22:1023,5228 -j REDIRECT --to-ports $FW_SS_REDIR_PORT

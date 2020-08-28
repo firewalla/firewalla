@@ -841,18 +841,21 @@ class FireRouter {
     }
     const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
+    const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
     let msg = "";
     if (!ready)
-      msg = `Internet connectivity on ${ifaceName} was lost. `;
+      msg = `Internet connectivity on ${ifaceName} was lost.`;
     else
-      msg = `Internet connectivity on ${ifaceName} has been restored. `;
-    if (activeWans.length > 0) {
-      if (wanSwitched)
-        msg = msg + `Active WAN is switched to ${activeWans.join(', ')}.`;
-      else
-        msg = msg + `Active WAN remains with ${activeWans.join(', ')}.`;
-    } else {
-      msg = msg + "Internet is unavailable now.";
+      msg = `Internet connectivity on ${ifaceName} has been restored.`;
+    if (type !== "single") { // do not add WAN switch information for single WAN configuration
+      if (activeWans.length > 0) {
+        if (wanSwitched)
+          msg = msg + ` Active WAN is switched to ${activeWans.join(', ')}.`;
+        else
+          msg = msg + ` Active WAN remains with ${activeWans.join(', ')}.`;
+      } else {
+        msg = msg + " Internet is unavailable now.";
+      }
     }
     const Alarm = require('../alarm/Alarm.js');
     const AM2 = require('../alarm/AlarmManager2.js');
@@ -864,6 +867,7 @@ class FireRouter {
         "p.iface.name":ifaceName,
         "p.active.wans":activeWans,
         "p.wan.switched": wanSwitched,
+        "p.wan.type": type,
         "p.ready": ready,
         "p.message": msg
       }
