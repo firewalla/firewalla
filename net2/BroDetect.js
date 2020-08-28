@@ -896,7 +896,7 @@ module.exports = class {
       if (localMac) {
         localMac = localMac.toUpperCase();
         const hostInfo = hostManager.getHostFastByMAC(localMac);
-        tags = hostInfo ? hostInfo.getTags() : [];
+        tags = hostInfo ? await hostInfo.getTags() : [];
       }
 
       if (intfId !== '') {

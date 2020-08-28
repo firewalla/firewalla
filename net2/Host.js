@@ -1325,7 +1325,6 @@ class Host {
           this.policy = {};
           for (const k in data) {
             this.policy[k] = JSON.parse(data[k]);
-            if (k == 'tags') this._tags = this.policy['tags']
           }
           if (callback)
             callback(null, data);
@@ -1350,12 +1349,10 @@ class Host {
     return true;
   }
 
-  getTags() {
-    if (_.isEmpty(this._tags)) {
-      return [];
-    }
+  async getTags() {
+    if (!this.policy) await this.loadPolicyAsync()
 
-    return this._tags;
+    return this.policy.tags || [];
   }
 
   async tags(tags) {
