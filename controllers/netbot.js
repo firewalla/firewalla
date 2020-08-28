@@ -3088,6 +3088,14 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+      case "switchFirmwareBranch":
+        (async () => {
+          await FireRouter.switchBranch(value.target);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       case "enableBinding":
         sysTool.restartFireKickService()
           .then(() => {

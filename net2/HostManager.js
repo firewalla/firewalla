@@ -202,7 +202,7 @@ module.exports = class HostManager {
     this.callbacks[event] = callback;
   }
 
-  basicDataForInit(json, options) {
+  async basicDataForInit(json, options) {
     let networkinfo = sysManager.getDefaultWanInterface();
     if(networkinfo.gateway === null) {
       delete networkinfo.gateway;
@@ -232,6 +232,8 @@ module.exports = class HostManager {
     }
 
     json.releaseType = f.getReleaseType()
+    if (platform.isFireRouterManaged())
+      json.firmwareReleaseType = await FireRouter.getReleaseType();
 
     if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
@@ -715,7 +717,7 @@ module.exports = class HostManager {
       this.networkProfilesForInit(json),
     ]
 
-    this.basicDataForInit(json, {});
+    await this.basicDataForInit(json, {});
 
     await Promise.all(requiredPromises);
 
@@ -939,7 +941,7 @@ module.exports = class HostManager {
           netBotTool.loadSystemStats(json)
         ];
 
-        this.basicDataForInit(json, options);
+        await this.basicDataForInit(json, options);
 
         await Promise.all(requiredPromises);
 
