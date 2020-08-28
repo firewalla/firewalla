@@ -628,7 +628,14 @@ class FireRouter {
       log.info("Platform does not support ifb, tc filters will not be reset");
       return;
     }
-    log.info("Resetting tc filters ...", ifaces);
+    if (this._qosIfaces) {
+      log.info("Clearing tc filters ...", this._qosIfaces);
+      for (const iface of this._qosIfaces) {
+        await exec(`sudo tc qdisc del dev ${iface} root`).catch((err) => {});
+        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch((err) => {});
+      }
+    }
+    log.info("Initializing tc filters ...", ifaces);
     for (const iface of ifaces) {
       await exec(`sudo tc qdisc del dev ${iface} root`).catch((err) => { });
       await exec(`sudo tc qdisc del dev ${iface} ingress`).catch((err) => { });
@@ -647,6 +654,7 @@ class FireRouter {
         log.error(`Failed to add tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
       });
     }
+    this._qosIfaces = ifaces;
   }
 
   isReady() {
