@@ -242,7 +242,7 @@ class DeviceHook extends Hook {
             if (previousEntry && enrichedHost.ipv4Addr === sysManager.myDefaultGateway()) {
               // gateway ip entry is previously recorded and now its ip address is taken over, handle it separately
               log.info("Suspected spoofing device detected: " + enrichedHost.mac);
-              this.createAlarm(enrichedHost, 'spoofing_device');
+              await this.createAlarm(enrichedHost, 'spoofing_device');
             }
             await hostTool.updateIPv4Host(enrichedHost);
           }
@@ -289,7 +289,7 @@ class DeviceHook extends Hook {
           await hostTool.updateMACKey(enrichedHost);
 
           if (!event.suppressAlarm) {
-            this.createAlarm(enrichedHost);
+            await this.createAlarm(enrichedHost);
           } else {
             log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
           }
@@ -349,7 +349,7 @@ class DeviceHook extends Hook {
               try {
                 const enabled = await this.isFeatureEnabled(host.mac, "devicePresence");
                 if (enabled) {
-                  this.createAlarm(enrichedHost, 'device_online');
+                  await this.createAlarm(enrichedHost, 'device_online');
                 } else {
                   log.info("Device presence is disabled for " + host.mac);
                 }
@@ -400,7 +400,7 @@ class DeviceHook extends Hook {
           if (enrichedHost.ipv4Addr === sysManager.myDefaultGateway()) {
             // ip address of gateway is taken over, handle it separately
             log.info("Suspected spoofing device detected: " + enrichedHost.mac);
-            this.createAlarm(enrichedHost, 'spoofing_device');
+            await this.createAlarm(enrichedHost, 'spoofing_device');
           }
 
           await hostTool.updateIPv4Host(enrichedHost);
@@ -418,7 +418,7 @@ class DeviceHook extends Hook {
               try {
                 const enabled = await this.isFeatureEnabled(host.mac, "devicePresence");
                 if (enabled) {
-                  this.createAlarm(enrichedHost, 'device_online');
+                  await this.createAlarm(enrichedHost, 'device_online');
                 } else {
                   log.info("Device presence is disabled for " + host.mac);
                 }
@@ -492,7 +492,7 @@ class DeviceHook extends Hook {
               try {
                 const enabled = await this.isFeatureEnabled(host.mac, "devicePresence");
                 if (enabled) {
-                  this.createAlarm(enrichedHost, 'device_online');
+                  await this.createAlarm(enrichedHost, 'device_online');
                 } else {
                   log.info("Device presence is disabled for " + host.mac);
                 }
@@ -548,7 +548,7 @@ class DeviceHook extends Hook {
             // device back online and offline both abide by device presence settings
             const enabled = await this.isFeatureEnabled(host.mac, "deviceOffline");
             if (enabled) {
-              this.createAlarm(host, 'device_offline');
+              await this.createAlarm(host, 'device_offline');
             } else {
               log.info("Device presence is disabled for " + host.mac);
             }
@@ -603,13 +603,6 @@ class DeviceHook extends Hook {
     return linklocalAddrs.concat(globalAddrs);
   }
 
-  createAlarmAsync(host, type) {
-    return new Promise((resolve, reject) => {
-      this.createAlarm(host, type);
-      resolve();
-    })
-  }
-
   getFirstIPv6(host) {
     let v6Addrs = host.ipv6Addr || [];
     if (_.isString(v6Addrs)) {
@@ -634,7 +627,7 @@ class DeviceHook extends Hook {
     return false; // by default return false, a conservative fallback
   }
 
-  createAlarm(host, type) {
+  async createAlarm(host, type) {
     type = type || "new_device";
 
     // check if new device alarm is enabled or not
@@ -651,7 +644,7 @@ class DeviceHook extends Hook {
     const hostManager = new HostManager();
     const hostInstance = hostManager.getHostFastByMAC(host.mac);
     if (hostInstance) {
-      tags = hostInstance.getTags();
+      tags = await hostInstance.getTags();
     }
 
     let alarm = null;
