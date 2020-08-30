@@ -83,15 +83,11 @@ do_taskset() {
 set_cpufreq() {
     read min max governor
     if $PROFILE_CHECK; then
-        cat /etc/default/cpufrequtils
+        cpufreq-info |grep -A3 policy|sed '/--/q'
     else
-        cat <<EOS > /etc/default/cpufrequtils
-ENABLE=true
-MIN_SPEED=${min}
-MAX_SPEED=${max}
-GOVERNOR=${governor}
-EOS
-        systemctl reload cpufrequtils
+        cpufreq-set -d ${min}
+        cpufreq-set -u ${max}
+        cpufreq-set -g ${governor}
     fi
 }
 
