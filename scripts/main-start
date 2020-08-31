@@ -325,7 +325,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
-    sudo cp /home/pi/firewalla/etc/firehb.service /etc/systemd/system/.
+    ${NEED_FIREHB:=true} && sudo cp /home/pi/firewalla/etc/firehb.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/dnscrypt/dnscrypt.service /etc/systemd/system/.
@@ -336,11 +336,12 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo systemctl daemon-reload
-    sudo systemctl enable firehb
+    ${NEED_FIREHB:=true} && sudo systemctl enable firehb
+
     # to make sure fireapi service is always started
     # so that app can try best to connect box via local LAN or WAN
     sudo systemctl enable fireapi
-    sudo systemctl restart firehb # start if not started
+    ${NEED_FIREHB:=true} && sudo systemctl restart firehb # start if not started
 
     if [[ "$MANAGED_BY_FIREBOOT" == "yes" ]]; then
       sudo systemctl disable firewalla
