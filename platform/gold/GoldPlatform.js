@@ -176,6 +176,14 @@ class GoldPlatform extends Platform {
       origRate: 256000000
     };
   }
+
+  isIFBSupported() {
+    return true;
+  }
+
+  async applyProfile() {
+    log.info("NO need to apply profile");
+  }
 }
 
 module.exports = GoldPlatform;
