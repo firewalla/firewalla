@@ -186,6 +186,14 @@ class Platform {
   async applyProfile() {
     log.info("NO need to apply profile");
   }
+
+  async onWanIPChanged(ip) {
+    log.info("WanIP is changed to", ip);
+  }
+
+  async onVPNPortProtocolChanged() {
+    log.info("VPN Port Protocol is changed");
+  }
 }
 
 module.exports = Platform;
