@@ -153,6 +153,28 @@ class NavyPlatform extends Platform {
     return 5;
   }
 
+  async onWanIPChanged(ip) {
+    await super.onWanIPChanged(ip)
+
+    // to refresh VPN filter in zeek
+    await exec("sudo systemctl restart brofish");
+  }
+
+  async onVPNPortProtocolChanged() {
+    await super.onVPNPortProtocolChanged();
+
+    // to refresh VPN filter in zeek
+    await exec("sudo systemctl restart brofish");
+  }
+
+  async applyProfile() {
+    try {
+      log.info("apply profile to optimize network performance");
+      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+    } catch(err) {
+      log.error("Error applying profile", err)
+    }
+  }
 }
 
 module.exports = NavyPlatform;
