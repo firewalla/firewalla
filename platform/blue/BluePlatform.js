@@ -139,10 +139,6 @@ class BluePlatform extends Platform {
   isBluetoothAvailable() {
     return false
   }
-
-  async applyProfile() {
-    log.info("NO need to apply profile");
-  }
 }
 
 module.exports = BluePlatform;
