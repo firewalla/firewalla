@@ -133,4 +133,4 @@ if [[ -d $POST_MAIN_D ]]; then
   done
 fi
 
-sudo $FIREWALLA_HOME/scripts/apply_profile.sh
+sudo $FIREWALLA_HOME/scripts/apply_profile.sh &> /tmp/apply_profile-main-run.log
