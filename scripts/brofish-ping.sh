@@ -9,7 +9,7 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 
 TOTAL_RETRIES=3
 SLEEP_TIMEOUT=10
-CPU_THRESHOLD=80
+CPU_THRESHOLD=${FW_ZEEK_CPU_THRESHOLD:-80}
 
 # there should be updated logs in log file
 MMIN="-15"

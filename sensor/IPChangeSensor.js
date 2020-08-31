@@ -24,6 +24,7 @@
  const d = new Discovery();
  const Config = require('../net2/config.js');
  const PlatformLoader = require('../platform/PlatformLoader.js');
+ const platform = PlatformLoader.getPlatform();
 
  class IPChangeSensor extends Sensor {
    constructor() {
@@ -43,6 +44,9 @@
         // const ipv6Addresses = intf.ip6_addresses || [];
         const currentIpv4Addr = sysManager.myDefaultWanIp();
         if (ipv4Address !== currentIpv4Addr) {
+          // no need to await
+          platform.onWanIPChanged(ipv4Address);
+
           // discoverInterfaces will publish message to trigger network info reload
           await d.discoverInterfacesAsync().catch((err) => {
             log.error("Failed to discover interfaces", err);
