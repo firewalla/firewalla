@@ -341,7 +341,12 @@ if [[ ! -f /.dockerenv ]]; then
     # to make sure fireapi service is always started
     # so that app can try best to connect box via local LAN or WAN
     sudo systemctl enable fireapi
-    ${NEED_FIREHB:=true} && sudo systemctl restart firehb # start if not started
+    if ${NEED_FIREHB:=true}
+    then
+        sudo systemctl restart firehb # start if not started
+    else
+        sudo systemctl stop firehb # shutdown if no firehdb needed
+    fi
 
     if [[ "$MANAGED_BY_FIREBOOT" == "yes" ]]; then
       sudo systemctl disable firewalla
