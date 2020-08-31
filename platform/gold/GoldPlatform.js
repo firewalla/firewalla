@@ -180,6 +180,10 @@ class GoldPlatform extends Platform {
   isIFBSupported() {
     return true;
   }
+
+  async applyProfile() {
+    log.info("NO need to apply profile");
+  }
 }
 
 module.exports = GoldPlatform;
