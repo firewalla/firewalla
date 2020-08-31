@@ -197,6 +197,15 @@ class Platform {
   async onVPNPortProtocolChanged() {
     log.info("VPN Port Protocol is changed");
   }
+
+  async applyProfile() {
+    try {
+      log.info("apply profile to optimize network performance");
+      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+    } catch(err) {
+      log.error("Error applying profile", err)
+    }
+  }
 }
 
 module.exports = Platform;

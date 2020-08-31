@@ -535,6 +535,8 @@ class VpnManager {
       log.info("VpnManager:UPNP:SetDone", this.portmapped);
       const vpnSubnet = ip.subnet(this.serverNetwork, this.netmask);
       pclient.publishAsync("System:VPNSubnetChanged", this.serverNetwork + "/" + vpnSubnet.subnetMaskLength);
+      log.info("apply profile to optimize network performance");
+      platform.applyProfile();
       return {
         state: true,
         serverNetwork: this.serverNetwork,

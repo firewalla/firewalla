@@ -113,6 +113,10 @@ class RedPlatform extends Platform {
       origRate: 12800000
     };
   }
+
+  async applyProfile() {
+    log.info("NO need to apply profile");
+  }
 }
 
 module.exports = RedPlatform;
