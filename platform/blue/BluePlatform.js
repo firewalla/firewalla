@@ -135,6 +135,14 @@ class BluePlatform extends Platform {
   defaultPassword() {
     return "firewalla"
   }
+
+  isBluetoothAvailable() {
+    return false
+  }
+
+  async applyProfile() {
+    log.info("NO need to apply profile");
+  }
 }
 
 module.exports = BluePlatform;
