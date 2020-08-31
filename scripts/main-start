@@ -336,15 +336,16 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo systemctl daemon-reload
-    ${NEED_FIREHB:=true} && sudo systemctl enable firehb
 
     # to make sure fireapi service is always started
     # so that app can try best to connect box via local LAN or WAN
     sudo systemctl enable fireapi
     if ${NEED_FIREHB:=true}
     then
+        sudo systemctl enable firehb
         sudo systemctl restart firehb # start if not started
     else
+        sudo systemctl disable firehb
         sudo systemctl stop firehb # shutdown if no firehdb needed
     fi
 
