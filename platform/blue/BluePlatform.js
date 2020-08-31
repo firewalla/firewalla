@@ -135,6 +135,10 @@ class BluePlatform extends Platform {
   defaultPassword() {
     return "firewalla"
   }
+
+  isBluetoothAvailable() {
+    return false
+  }
 }
 
 module.exports = BluePlatform;

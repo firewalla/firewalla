@@ -183,6 +183,10 @@ class Platform {
     return 1;
   }
 
+  async applyProfile() {
+    log.info("NO need to apply profile");
+  }
+
   async onWanIPChanged(ip) {
     log.info("WanIP is changed to", ip);
   }
