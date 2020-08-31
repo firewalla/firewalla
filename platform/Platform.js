@@ -199,12 +199,7 @@ class Platform {
   }
 
   async applyProfile() {
-    try {
-      log.info("apply profile to optimize network performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
-    } catch(err) {
-      log.error("Error applying profile", err)
-    }
+    log.info("NO need to apply profile");
   }
 }
 
