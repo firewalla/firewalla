@@ -72,9 +72,9 @@ do_taskset() {
         pid=$(pidof $pname)
         if [[ -n "$pid" ]]; then
             if $PROFILE_CHECK; then
-                taskset -cp $pid
+                taskset -acp $pid
             else
-                taskset -cp $cpu_list $pid
+                taskset -acp $cpu_list $pid
             fi
         fi
     done
