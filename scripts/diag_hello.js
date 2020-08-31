@@ -16,9 +16,11 @@
  'use strict'
 
 const fwDiag = require("../extension/install/diag.js");
+const sysManager = require('../net2/SysManager.js');
 
 (async () => {
   try {
+    await sysManager.waitTillInitialized()
     await fwDiag.sayHello();
   } catch(err) {
     console.log("Failed to say hello:", err.statusCode);
