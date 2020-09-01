@@ -64,7 +64,7 @@ if [[ $ping_ok -ne 1 ]]; then
 
   cd $FIREWALLA_HOME
   $FIREWALLA_HOME/bin/node scripts/diag_log.js \
-    --data '{ "msg": "brofish-ping failed", "broCPU": '${cpu%% *}' }'
+    --data "{ \"msg\": \"brofish-ping failed\", \"broCPU\": ${cpu%% *} }"
 
   sudo systemctl restart brofish
 fi
