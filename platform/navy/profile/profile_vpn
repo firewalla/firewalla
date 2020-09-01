@@ -13,10 +13,12 @@
     ["FireMain", "0,3"],
     ["FireMon", "0,3"],
     ["redis-server", "0,3"],
-    ["ovpn-server", "2", "match"]
+    ["ovpn-server", "2", "match"],
+    ["vpnclient", "2", "match"]
   ],
   "cpufreq": [ 816000, 1200000, "ondemand" ],
   "priority": [
-    ["ovpn-server", -10, "match"]
+    ["ovpn-server", -10, "match"],
+    ["vpnclient", -10, "match"]
   ]
 }
