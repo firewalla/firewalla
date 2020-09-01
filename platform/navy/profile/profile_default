@@ -12,7 +12,7 @@
     ["FireApi", "0,3"],
     ["FireMain", "0,3"],
     ["FireMon", "0,3"],
-    ["redis-server", "0,3"]
+    ["redis-server", "0,3"],
     ["ovpn-server", "2", "match"]
   ],
   "cpufreq": [ 816000, 1200000, "ondemand" ],
