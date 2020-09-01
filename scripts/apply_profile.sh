@@ -55,28 +55,47 @@ set_smp_affinity() {
 set_rps_cpus() {
     while read intf q rps_cpus
     do
-        rps_cpus_path=/sys/class/net/$intf/queues/$q/rps_cpus
-        test -e $rps_cpus_path || continue
-        if $PROFILE_CHECK; then
-            cat $rps_cpus_path
-        else
-            echo $rps_cpus > $rps_cpus_path
-        fi
+        rps_cpus_paths=/sys/class/net/$intf/queues/$q/rps_cpus
+        for rps_cpus_path in $rps_cpus_paths; do
+            if $PROFILE_CHECK; then
+                cat $rps_cpus_path
+            else
+                echo $rps_cpus > $rps_cpus_path
+            fi
+        done
     done
 }
 
+get_pids() {
+    mode=$1
+    pname=$2
+    local pids=
+    case $mode in
+        match)
+          pids=$(ps  -eo pid,cmd |grep "$pname" | grep -v grep | awk '{print $1}')
+          ;;
+        exact)
+          pids=$(pidof $pname)
+          ;;
+        *)
+          logerror "unknown mode '$mode'"
+          ;;
+    esac
+    echo "$pids"
+}
+
 do_taskset() {
-    while read pname cpu_list
+    while read pname cpu_list mode
     do
         loginfo "do_task $pname $cpu_list"
-        pid=$(pidof $pname)
-        if [[ -n "$pid" ]]; then
+        pids=$(get_pids ${mode:='exact'} "$pname")
+        for pid in $pids; do
             if $PROFILE_CHECK; then
                 taskset -acp $pid
             else
                 taskset -acp $cpu_list $pid
             fi
-        fi
+        done
     done
 }
 
@@ -92,16 +111,17 @@ set_cpufreq() {
 }
 
 set_priority() {
-    while read pname nvalue
+    while read pname nvalue mode
     do
-        pid=$(pidof $pname)
-        if $PROFILE_CHECK; then
-            ps -l $pid
-        else
-            test -n "$pid" && renice -n $nvalue -p $pid
-        fi
+        pids=$(get_pids ${mode:='exact'} "$pname")
+        for pid in $pids; do
+            if $PROFILE_CHECK; then
+                ps -l $pid
+            else
+                renice -n $nvalue -p $pid
+            fi
+        done
     done
-
 }
 
 process_profile() {
