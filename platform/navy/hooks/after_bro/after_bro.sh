@@ -1,4 +1,4 @@
 #!/bin/bash
 
 cd /bspool/
-ln -sfT zeek bro
+ln -sfT bro zeek
