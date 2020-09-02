@@ -53,6 +53,11 @@ const launchTime = Math.floor(new Date() / 1000);
 
 let uid = null;
 
+let overheatedThresholds = null;
+(async function() {
+  overheatedThresholds = await getOverheatedThresholds();
+})()
+
 function getUniqueID(info) {
   const randomNumber = Math.floor(Math.random() * 1000000);
   if(info.mac) {
@@ -252,7 +257,7 @@ async function getOverheatedThresholds() {
   return {temperatureThreshold,timeThreshold};
 }
 
-async function monitorTemperature(overheatedThresholds, lastStateOverheated) {
+async function monitorTemperature(lastStateOverheated) {
   try {
 
       const cpuTempCurrent = await getCpuTemperature();
@@ -280,9 +285,7 @@ async function monitorTemperature(overheatedThresholds, lastStateOverheated) {
           pclient.publish(`TO.${event.toProcess}`, JSON.stringify(event));
         } else {
           // normal previously, schedule next check
-          setTimeout(async () => {
-            await monitorTemperature(overheatedThresholds,true);
-          }, overheatedThresholds.timeThreshold);
+          setTimeout(async () => { await monitorTemperature(true); }, overheatedThresholds.timeThreshold);
         }
       } else {
         // normal now
@@ -299,7 +302,7 @@ const job = setInterval(() => {
 }, 24 * 3600 * 1000); // every day
 
 const jobTemperature = setInterval(async () => {
-  await monitorTemperature(await getOverheatedThresholds(),false);
+  await monitorTemperature(false);
 }, 30 * 1000); // every 30 seconds
 
 /* DEBUG
