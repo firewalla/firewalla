@@ -57,7 +57,7 @@ let sysStateCount = { "normal": 0, "overheated": 0 };
 let overheatedThresholds = null;
 (async function() {
   overheatedThresholds = await getOverheatedThresholds();
-  setInterval(async () => { await monitorTemperature(false); }, 30 * 1000); // every 30 seconds
+  setInterval(async () => { await monitorTemperature(); }, 30 * 1000); // every 30 seconds
 })()
 
 function getUniqueID(info) {
@@ -289,6 +289,8 @@ async function monitorTemperature() {
       const cpuTempCurrent = await getCpuTemperature();
       const cpuTempThreshold = 1000*overheatedThresholds.temperatureThreshold;
       const sysStateCurrent = (cpuTempCurrent>cpuTempThreshold) ? "overheated":"normal";
+      const sysStateOther = (cpuTempCurrent>cpuTempThreshold) ? "normal":"overheated";
+      sysStateCount[sysStateOther] = 0; // reset other state
       //log("cpuTempCurrent:"+cpuTempCurrent);
       //log("cpuTempThreshold:"+cpuTempThreshold);
       //log("sysStateCurrent:"+sysStateCurrent);
