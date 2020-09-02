@@ -290,7 +290,7 @@ const job = setInterval(() => {
   update("schedule");
 }, 24 * 3600 * 1000); // every day
 
-const job = setInterval(() => {
+const jobTemperature = setInterval(() => {
   monitorTemperature(getOverheatedThresholds(),false);
 }, 30 * 1000); // every 30 seconds
 
