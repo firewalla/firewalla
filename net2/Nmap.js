@@ -76,7 +76,7 @@ module.exports = class {
         resolve(null);
       }
   
-      const cmd = util.format('sudo nmap -6 -PR -sn %s -oX - | %s', ipv6Addr, xml2jsonBinary);
+      const cmd = util.format('sudo timeout 1200s nmap -6 -PR -sn %s -oX - | %s', ipv6Addr, xml2jsonBinary);
       log.info('Running neighbor solicitation: ', cmd);
   
       this.scanQ.push({cmdline: cmd, fast: true, callback: (err, hosts, ports) => {

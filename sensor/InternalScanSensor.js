@@ -195,7 +195,7 @@ class InternalScanSensor extends Sensor {
       if (scriptArgs.length > 0) {
         cmdArg.push(util.format('--script-args %s', scriptArgs.join(',')));
       }
-      const cmd = util.format('sudo nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
+      const cmd = util.format('sudo timeout 1200s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
       log.info("Running command:", cmd);
       const startTime = Date.now() / 1000;
       try {
