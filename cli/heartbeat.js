@@ -57,6 +57,7 @@ let sysStateCount = { "normal": 0, "overheated": 0 };
 let overheatedThresholds = null;
 (async function() {
   overheatedThresholds = await getOverheatedThresholds();
+  setInterval(async () => { await monitorTemperature(false); }, 30 * 1000); // every 30 seconds
 })()
 
 function getUniqueID(info) {
@@ -304,10 +305,6 @@ async function monitorTemperature() {
 const job = setInterval(() => {
   update("schedule");
 }, 24 * 3600 * 1000); // every day
-
-const jobTemperature = setInterval(async () => {
-  await monitorTemperature(false);
-}, 3 * 1000); // every 30 seconds
 
 /* DEBUG
 const job2 = setTimeout(() => {
