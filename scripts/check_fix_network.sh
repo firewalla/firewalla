@@ -58,7 +58,7 @@ gateway_pingable() {
     gw=$(ip route show dev eth0 | awk '/default/ {print $3; exit; }')
     if [[ -n "$gw" ]]; then
         # some router might not reply to ping
-        ping -c1 -w3 $gw >/dev/null || sudo nmap -sP -PR $gw |grep "Host is up" &> /dev/null
+        ping -c1 -w3 $gw >/dev/null || sudo timeout 1200s nmap -sP -PR $gw |grep "Host is up" &> /dev/null
     else
         return 1
     fi

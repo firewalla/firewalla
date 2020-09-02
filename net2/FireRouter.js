@@ -722,6 +722,28 @@ class FireRouter {
   }
 
   async switchBranch(target) {
+    let tgt = null;
+    switch (target) {
+      case "dev":
+        tgt = "master";
+        break;
+      case "alpha":
+      case "salpha":
+        tgt = "alpha";
+        break;
+      case "beta":
+        tgt = "beta";
+        break;
+      case "prod":
+        tgt = "release";
+        break;
+      default:
+    }
+    if (!tgt) {
+      log.error(`Cannot find corresponding firerouter target branch for ${target}`);
+      return;
+    }
+    log.info(`Going to switch to firerouter branch ${tgt}`);
     const options = {
       method: "POST",
       headers: {
@@ -730,7 +752,7 @@ class FireRouter {
       url: routerInterface + "/system/switch_branch",
       json: true,
       body: {
-        target: target
+        target: tgt
       }
     }
     const resp = await rp(options);

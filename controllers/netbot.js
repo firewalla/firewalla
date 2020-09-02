@@ -143,6 +143,7 @@ const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
+const cpuProfile = require('../net2/CpuProfile.js');
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -1216,6 +1217,21 @@ class netBot extends ControllerBot {
       case "intelAdvice": {
         (async () => {
           await bone.intelAdvice(_.pick(value, ['target', 'key', 'value']));
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "cpuProfile":{
+        (async () => {
+          const { applyProfileName, profiles} = value;
+          if (profiles && profiles.length > 0) {
+            await cpuProfile.addProfiles(profiles);
+          }
+          if (applyProfileName) {
+            await cpuProfile.applyProfile(applyProfileName);
+          }
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3913,7 +3929,12 @@ class netBot extends ControllerBot {
     log.info("Going to switch to branch", targetBranch);
 
     await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
-    sysTool.upgradeToLatest()
+    if (platform.isFireRouterManaged()) {
+      // firerouter switch branch will trigger fireboot and restart firewalla services
+      await FireRouter.switchBranch(target);
+    } else {
+      sysTool.upgradeToLatest()
+    }
   }
 
   simpleTxData(msg, data, err, callback) {
