@@ -228,12 +228,12 @@ async function getOverheatedThresholds() {
       switch (boardName) {
         case "blue": {
           temperatureThreshold = 255;
-          timeThreshold = 255;
+          countThreshold = 255;
           break;
         }
         case "navy": {
           temperatureThreshold = 85;
-          timeThreshold = 20;
+          countThreshold = 20;
           break;
         }
       }
@@ -260,6 +260,8 @@ async function getOverheatedThresholds() {
 
 async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
   const sysStateInRedis = await getShellOutput("redis-cli get sys:state");
+  //log("sysStateCurrent:"+sysStateCurrent);
+  //log("sysStateInRedis:"+sysStateInRedis);
   if ( sysStateCurrent === sysStateInRedis ) { return; }
   await exec(`redis-cli set sys:state ${sysStateCurrent}`, { encoding: 'utf8' });
   const event = {
@@ -270,21 +272,25 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
     bodyLocalKey: 'FW_OVERHEATED',
     bodyLocalArgs: [process.title],
     payload: {
-      cpuTemperature: cpuTemperature
+      cpuTemperature: cpuTemperature,
+      sysState: sysStateCurrent
     },
     fromProcess: process.title,
     toProcess: "FireApi"
   };
   // publish to FireApi via redis
+  //log("publish");
   pclient.publish(`TO.${event.toProcess}`, JSON.stringify(event));
 }
 
 async function monitorTemperature() {
   try {
-
       const cpuTempCurrent = await getCpuTemperature();
       const cpuTempThreshold = 1000*overheatedThresholds.temperatureThreshold;
       const sysStateCurrent = (cpuTempCurrent>cpuTempThreshold) ? "overheated":"normal";
+      //log("cpuTempCurrent:"+cpuTempCurrent);
+      //log("cpuTempThreshold:"+cpuTempThreshold);
+      //log("sysStateCurrent:"+sysStateCurrent);
       if ( ++sysStateCount[sysStateCurrent] > overheatedThresholds.countThreshold ) {
         await updateSysStateInRedis(sysStateCurrent, cpuTempCurrent);
         sysStateCount[sysStateCurrent] = 0;
@@ -301,7 +307,7 @@ const job = setInterval(() => {
 
 const jobTemperature = setInterval(async () => {
   await monitorTemperature(false);
-}, 30 * 1000); // every 30 seconds
+}, 3 * 1000); // every 30 seconds
 
 /* DEBUG
 const job2 = setTimeout(() => {
