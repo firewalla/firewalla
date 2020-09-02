@@ -214,7 +214,8 @@ async function update(status, extra) {
 
 async function getOverheatedThresholds() {
   const uname = await getShellOutput("uname -m");
-  let threshold = 100;
+  let temperatureThreshold = null;
+  let timeThreshold = null;
   switch (uname) {
     case "aarch64": {
       const boardName = await getShellOutput("awk -F= '/BOARD=/ {print $2}' /etc/firewalla-release");
@@ -252,36 +253,43 @@ async function getOverheatedThresholds() {
 }
 
 async function monitorTemperature(overheatedThresholds, lastStateOverheated) {
-  const cpuTempCurrent = getCpuTemperature();
-  const cpuTempThreshold = 1000*overheatedThresholds.temperatureThreshold;
-  if ( cpuTempCurrent > cpuTempThreshold ) {
-    // overheated now
-    if (lastStateOverheated) {
-      // overheated since last check
-      // set flag in redis
-      await exec("redis-cli set sys:state overheated", { encoding: 'utf8' });
-      const event = {
-        type: 'FW_NOTIFICATION',
-        titleKey: 'FW_OVERHEATED_TITLE',
-        bodyKey: 'FW_OVERHEATED_BODY',
-        titleLocalKey: 'FW_OVERHEATED',
-        bodyLocalKey: 'FW_OVERHEATED',
-        bodyLocalArgs: [process.title],
-        payload: {
-          clientName: process.title
-        },
-        fromProcess: process.title,
-        toProcess: "FireApi"
-      };
-      // publish to FireApi via redis
-      pclient.publish(`TO.${event.toProcess}`, JSON.stringify(event));
-    } else {
-      // normal previously, schedule next check
-      setTimeout(monitorTemperature(overheatedThresholds,true),overheatedThresholds.timeThreshold);
-    }
-  } else {
-    // normal now
-    await exec("redis-cli set sys:state normal", { encoding: 'utf8' });
+  try {
+
+      const cpuTempCurrent = await getCpuTemperature();
+      const cpuTempThreshold = 1000*overheatedThresholds.temperatureThreshold;
+      if ( cpuTempCurrent > cpuTempThreshold ) {
+        // overheated now
+        if (lastStateOverheated) {
+          // overheated since last check
+          // set flag in redis
+          await exec("redis-cli set sys:state overheated", { encoding: 'utf8' });
+          const event = {
+            type: 'FW_NOTIFICATION',
+            titleKey: 'FW_OVERHEATED_TITLE',
+            bodyKey: 'FW_OVERHEATED_BODY',
+            titleLocalKey: 'FW_OVERHEATED',
+            bodyLocalKey: 'FW_OVERHEATED',
+            bodyLocalArgs: [process.title],
+            payload: {
+              clientName: process.title
+            },
+            fromProcess: process.title,
+            toProcess: "FireApi"
+          };
+          // publish to FireApi via redis
+          pclient.publish(`TO.${event.toProcess}`, JSON.stringify(event));
+        } else {
+          // normal previously, schedule next check
+          setTimeout(async () => {
+            await monitorTemperature(overheatedThresholds,true);
+          }, overheatedThresholds.timeThreshold);
+        }
+      } else {
+        // normal now
+        await exec("redis-cli set sys:state normal", { encoding: 'utf8' });
+      }
+  } catch (err) {
+      log(`Failed to monitor CPU temperature: ${err}`);
   }
   return ;
 }
@@ -290,8 +298,8 @@ const job = setInterval(() => {
   update("schedule");
 }, 24 * 3600 * 1000); // every day
 
-const jobTemperature = setInterval(() => {
-  monitorTemperature(getOverheatedThresholds(),false);
+const jobTemperature = setInterval(async () => {
+  await monitorTemperature(await getOverheatedThresholds(),false);
 }, 30 * 1000); // every 30 seconds
 
 /* DEBUG
