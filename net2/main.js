@@ -81,6 +81,16 @@ async function run0() {
   const isModeConfigured = await mode.isModeConfigured();
   await sysManager.waitTillInitialized();
 
+  if (platform.isFireRouterManaged()) {
+    const fwReleaseType = firewalla.getReleaseType();
+    const frReleaseType = await fireRouter.getReleaseType();
+    log.info(`Current firerouter release type: ${frReleaseType}. Current firewalla release type: ${fwReleaseType}`);
+    if (fwReleaseType && fwReleaseType !== "unknown" && fwReleaseType !== frReleaseType) {
+      log.info(`firerouter release type will be switched to ${fwReleaseType}`);
+      await fireRouter.switchBranch(fwReleaseType);
+    }
+  }
+
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
       isModeConfigured &&

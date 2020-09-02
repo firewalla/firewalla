@@ -3913,7 +3913,12 @@ class netBot extends ControllerBot {
     log.info("Going to switch to branch", targetBranch);
 
     await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
-    sysTool.upgradeToLatest()
+    if (platform.isFireRouterManaged()) {
+      // firerouter switch branch will trigger fireboot and restart firewalla services
+      await FireRouter.switchBranch(target);
+    } else {
+      sysTool.upgradeToLatest()
+    }
   }
 
   simpleTxData(msg, data, err, callback) {
