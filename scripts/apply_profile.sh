@@ -124,6 +124,20 @@ set_priority() {
     done
 }
 
+set_sysctl() {
+    while read pname pvalue
+    do
+        sudo sysctl -w "$pname=$pvalue"
+    done
+}
+
+set_iplink() {
+    while read intf pname pvalue
+    do
+        sudo ip link set $intf $pname $pvalue
+    done
+}
+
 process_profile() {
     _rc=0
     input_json=$(cat)
@@ -145,6 +159,12 @@ process_profile() {
                 ;;
             priority)
                 echo "$input_json" | jq -r '.priority[]|@tsv' | set_priority
+                ;;
+            sysctl)
+                echo "$input_json" | jq -r '.sysctl[]|@tsv' | set_sysctl
+                ;;
+            iplink)
+                echo "$input_json" | jq -r '.iplink[]|@tsv' | set_iplink
                 ;;
             *)
                 echo "unknown key '$key'"
