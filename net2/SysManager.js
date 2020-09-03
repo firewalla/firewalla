@@ -992,7 +992,7 @@ class SysManager {
     try {
       const cmd = `git log ${branch} -1 --format=%ct`;
       const result = await exec(cmd);
-      return result.stdout;
+      return Number(result.stdout);
     } catch (e) {
       log.warn(`Get ${branch} update time error`, e);
     }
