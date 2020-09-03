@@ -272,7 +272,7 @@ module.exports = class {
       "target_ip": destIP,
     }*/
 
-    rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
+    rclient.hmset(exceptionKey, JSON.stringify(exception), (err) => {
       if(err) {
         log.error("Failed to set exception: " + err);
         callback(err);

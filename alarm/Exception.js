@@ -176,19 +176,27 @@ module.exports = class {
           continue;
         }
       }
-
-      if (key === "p.tag.ids") {
+      let valArray = val, val2Array = val2;
+      if (key && key.startsWith("p.tag.ids")) {
+        this.isJsonString(val) && (valArray = JSON.parse(val));
+        this.isJsonString(val2) && (val2Array = JSON.parse(val2));
+        valArray = valArray.map(Number);
+        val2Array = val2Array.map(Number);
         const intersect = _.intersection(val, val2);
         if (intersect.length > 0) {
           matched = true;
           continue;
         }
+        if ((/[0-9]+$/g).test(key) && val) {
+          //Backward compatible
+          //p.tag.ids.0
+          if (val2Array.includes(Number(val))) {
+            matched = true;
+            continue;
+          }
+        }
       }
 
-      let valArray = val;
-      if (_.isString(val) && validator.isJSON(val)) {
-        valArray = JSON.parse(val);
-      }
       if (_.isArray(valArray)) {
         let matchInArray = false;
         for (const valCurrent of valArray) {
@@ -211,5 +219,8 @@ module.exports = class {
     }
 
     return matched;
+  }
+  isJsonString(str){
+    return (_.isString(str) && validator.isJSON(str))
   }
 }
