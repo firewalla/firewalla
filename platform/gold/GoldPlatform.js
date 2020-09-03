@@ -176,6 +176,10 @@ class GoldPlatform extends Platform {
       origRate: 256000000
     };
   }
+
+  isIFBSupported() {
+    return true;
+  }
 }
 
 module.exports = GoldPlatform;

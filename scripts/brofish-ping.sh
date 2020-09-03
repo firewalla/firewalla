@@ -7,9 +7,9 @@
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
-TOTAL_RETRIES=3
+TOTAL_RETRIES=5
 SLEEP_TIMEOUT=10
-CPU_THRESHOLD=80
+CPU_THRESHOLD=${FW_ZEEK_CPU_THRESHOLD:-80}
 
 # there should be updated logs in log file
 MMIN="-15"
@@ -27,7 +27,7 @@ brofish_ping() {
 
 brofish_cpu() {
   # Get CPU% from top
-  RESULT=$(top -bn1 -p$(cat /blog/current/.pid) |grep $(bro_proc_name)|awk '{print $9}')
+  RESULT=$(top -bn1 -p$(cat /blog/current/.pid) |grep $BRO_PROC_NAME|awk '{print $9}')
 
   if [[ ${RESULT%%.*} -ge $CPU_THRESHOLD ]]; then
     echo ${RESULT%%.*}

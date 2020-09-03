@@ -174,6 +174,26 @@ class Platform {
       origRate: 70000000
     };
   }
+
+  getRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getRetentionCountMultiplier() {
+    return 1;
+  }
+
+  async applyProfile() {
+    log.info("NO need to apply profile");
+  }
+
+  async onWanIPChanged(ip) {
+    log.info("WanIP is changed to", ip);
+  }
+
+  async onVPNPortProtocolChanged() {
+    log.info("VPN Port Protocol is changed");
+  }
 }
 
 module.exports = Platform;

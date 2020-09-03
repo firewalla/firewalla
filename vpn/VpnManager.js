@@ -254,8 +254,10 @@ class VpnManager {
         this.netmask = config.netmask;
       }
       if (config.localPort) {
-        if (this.localPort && this.localPort !== config.localPort)
+        if (this.localPort && this.localPort !== config.localPort) {
           this.needRestart = true;
+          this.localPortOrProtocolChanged = true;
+        }
         this.localPort = config.localPort;
       }
       if (config.externalPort) {
@@ -264,8 +266,10 @@ class VpnManager {
         this.externalPort = config.externalPort;
       }
       if (config.protocol) {
-        if (this.protocol && this.protocol !== config.protocol)
+        if (this.protocol && this.protocol !== config.protocol) {
           this.needRestart = true;
+          this.localPortOrProtocolChanged = true;
+        }
         this.protocol = config.protocol;
       }
     }
@@ -514,6 +518,11 @@ class VpnManager {
     log.info("VpnManager:Start:" + this.instanceName);
     try {
       await execAsync(util.format("sudo systemctl %s openvpn@%s", op, this.instanceName));
+      if(this.localPortOrProtocolChanged) {
+        // no need to await this
+        platform.onVPNPortProtocolChanged(); 
+        this.localPortOrProtocolChanged = false;
+      }
       this.started = true;
       await this.setIptables();
       this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
@@ -526,6 +535,8 @@ class VpnManager {
       log.info("VpnManager:UPNP:SetDone", this.portmapped);
       const vpnSubnet = ip.subnet(this.serverNetwork, this.netmask);
       pclient.publishAsync("System:VPNSubnetChanged", this.serverNetwork + "/" + vpnSubnet.subnetMaskLength);
+      log.info("apply profile to optimize network performance");
+      platform.applyProfile();
       return {
         state: true,
         serverNetwork: this.serverNetwork,
@@ -588,8 +599,10 @@ class VpnManager {
           for (let cidr of value) {
             // add iroute to client config file
             const subnet = ip.cidrSubnet(cidr);
-            configCCD.push(`iroute ${subnet.networkAddress} ${subnet.subnetMask}`);
-            clientSubnets.push(`${subnet.networkAddress}/${subnet.subnetMaskLength}`);
+            if (!clientSubnets.includes(`${subnet.networkAddress}/${subnet.subnetMaskLength}`)) {
+              configCCD.push(`iroute ${subnet.networkAddress} ${subnet.subnetMask}`);
+              clientSubnets.push(`${subnet.networkAddress}/${subnet.subnetMaskLength}`);
+            }
           }
           configRC.push(`CLIENT_SUBNETS="${clientSubnets.join(',')}"`);
           break;

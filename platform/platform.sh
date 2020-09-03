@@ -11,6 +11,16 @@ TCP_BBR=no
 FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
 
+hook_server_route_up() {
+  echo nothing > /dev/null
+}
+
+function hook_after_vpn_confgen {
+  # by default do nothing
+  OVPN_CFG="$1"
+  echo nothing > /dev/null
+}
+
 case "$UNAME" in
   "x86_64")
     source $FW_PLATFORM_DIR/gold/platform.sh
@@ -65,6 +75,14 @@ esac
 function before_bro {
   if [[ -d ${FW_PLATFORM_CUR_DIR}/hooks/before_bro ]]; then
     for script in `ls -1 ${FW_PLATFORM_CUR_DIR}/hooks/before_bro/*.sh`; do
+      $script
+    done
+  fi
+}
+
+function after_bro {
+  if [[ -d ${FW_PLATFORM_CUR_DIR}/hooks/after_bro ]]; then
+    for script in `ls -1 ${FW_PLATFORM_CUR_DIR}/hooks/after_bro/*.sh`; do
       $script
     done
   fi
