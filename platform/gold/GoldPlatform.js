@@ -180,6 +180,10 @@ class GoldPlatform extends Platform {
   isIFBSupported() {
     return true;
   }
+
+  isDockerSupported() {
+    return true;
+  }
 }
 
 module.exports = GoldPlatform;
