@@ -989,14 +989,13 @@ class SysManager {
     return false;
   }
   async getBranchUpdateTime(branch) {
-    let timestamp;
     try {
       const cmd = `git log ${branch} -1 --format=%ct`;
-      timestamp = await exec(cmd);
+      const result = await exec(cmd);
+      return result.stdout;
     } catch (e) {
       log.warn(`Get ${branch} update time error`, e);
     }
-    return timestamp;
   }
 }
 
