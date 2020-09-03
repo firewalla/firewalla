@@ -55,8 +55,10 @@ let uid = null;
 
 let sysStateCount = { "normal": 0, "overheated": 0 };
 let overheatedThresholds = null;
+let curGitBranch = null;
 (async function() {
   overheatedThresholds = await getOverheatedThresholds();
+  curGitBranch = await getGitBranchName();
   setInterval(async () => { await monitorTemperature(); }, 30 * 1000); // every 30 seconds
 })()
 
@@ -265,16 +267,21 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
   //log("sysStateInRedis:"+sysStateInRedis);
   if ( sysStateCurrent === sysStateInRedis ) { return; }
   await exec(`redis-cli set sys:state ${sysStateCurrent}`, { encoding: 'utf8' });
+
+  const featureFlag = await getShellOutput("redis-cli hget sys:features temp_monitor_notif");
+  if (featureFlag != "1") {
+    return;
+  }
+
   const event = {
     type: 'FW_NOTIFICATION',
-    titleKey: 'FW_OVERHEATED_TITLE',
-    bodyKey: 'FW_OVERHEATED_BODY',
-    titleLocalKey: 'FW_OVERHEATED',
-    bodyLocalKey: 'FW_OVERHEATED',
-    bodyLocalArgs: [process.title],
+    titleKey: `FW_OVERHEATED_TITLE_${sysStateCurrent}`,
+    bodyKey: `FW_OVERHEATED_BODY_${sysStateCurrent}`,
+    titleLocalKey: `FW_OVERHEATED_${sysStateCurrent}`,
+    bodyLocalKey: `FW_OVERHEATED_${sysStateCurrent}`,
+    bodyLocalArgs: [cpuTemperature],
     payload: {
       cpuTemperature: cpuTemperature,
-      sysState: sysStateCurrent
     },
     fromProcess: process.title,
     toProcess: "FireApi"
