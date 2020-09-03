@@ -2053,6 +2053,19 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "branchUpdateTime": {
+        (async () => {
+          const branches = (value && value.branches) || ['beta_6_0', 'release_6_0'];
+          const result = {};
+          for (const branch of branches) {
+            result[branch] = await sysManager.getBranchUpdateTime(branch);
+          }
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
