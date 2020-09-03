@@ -9,7 +9,7 @@ shopt -s lastpipe
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
-TOTAL_RETRIES=3
+TOTAL_RETRIES=5
 SLEEP_TIMEOUT=10
 CPU_THRESHOLD=${FW_ZEEK_CPU_THRESHOLD:-80}
 
