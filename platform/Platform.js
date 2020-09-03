@@ -190,6 +190,10 @@ class Platform {
     return false;
   }
 
+  isDockerSupported() {
+    return false;
+  }
+
   async onWanIPChanged(ip) {
     log.info("WanIP is changed to", ip);
   }
