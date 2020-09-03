@@ -265,16 +265,23 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
   //log("sysStateInRedis:"+sysStateInRedis);
   if ( sysStateCurrent === sysStateInRedis ) { return; }
   await exec(`redis-cli set sys:state ${sysStateCurrent}`, { encoding: 'utf8' });
+
+  const featureFlag = await getShellOutput("redis-cli hget sys:features temp_monitor_notif");
+  if (featureFlag != "1") {
+    return;
+  }
+
+  const curStateUpperCase = sysStateCurrent.toUpperCase();
+
   const event = {
     type: 'FW_NOTIFICATION',
-    titleKey: 'FW_OVERHEATED_TITLE',
-    bodyKey: 'FW_OVERHEATED_BODY',
-    titleLocalKey: 'FW_OVERHEATED',
-    bodyLocalKey: 'FW_OVERHEATED',
-    bodyLocalArgs: [process.title],
+    titleKey: `FW_OVERHEATED_TITLE_${curStateUpperCase}`,
+    bodyKey: `FW_OVERHEATED_BODY_${curStateUpperCase}`,
+    titleLocalKey: `FW_OVERHEATED_${curStateUpperCase}`,
+    bodyLocalKey: `FW_OVERHEATED_${curStateUpperCase}`,
+    bodyLocalArgs: [cpuTemperature],
     payload: {
       cpuTemperature: cpuTemperature,
-      sysState: sysStateCurrent
     },
     fromProcess: process.title,
     toProcess: "FireApi"
