@@ -77,7 +77,7 @@ class BroControl {
 
   async addCronJobs() {
     log.info('Adding bro related cron jobs')
-    await exec(`sudo -u pi crontab -r; sudo -u pi crontab ${platform.getBroTabFile()}`);
+    await exec(`sudo -u pi crontab -r; sudo -u pi crontab ${platform.getCronTabFile()}`);
   }
 
   async restart() {
