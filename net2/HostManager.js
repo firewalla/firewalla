@@ -1003,6 +1003,7 @@ module.exports = class HostManager {
 
         const suffix = await rclient.getAsync('local:domain:suffix');
         json.localDomainSuffix = suffix ? suffix : 'lan';
+        json.cpuProfile = await this.getCpuProfile();
         callback(null, json);
       } catch(err) {
         log.error("Caught error when preparing init data: " + err);
@@ -1885,5 +1886,19 @@ module.exports = class HostManager {
 
     json.systemFlows = systemFlows;
     return systemFlows;
+  }
+  async getCpuProfile() {
+    try {
+      const name = await rclient.getAsync('platform:profile:active');
+      const content = await rclient.hgetAsync('platform:profile', name);
+      if (name && content) {
+        return {
+          name: name,
+          content: content
+        }
+      }
+    } catch (e) {
+      log.warn('getCpuProfile error', e)
+    }
   }
 }
