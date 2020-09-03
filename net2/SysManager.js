@@ -136,7 +136,7 @@ class SysManager {
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
-              sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
+              sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
             });
             break;
         }
@@ -150,7 +150,7 @@ class SysManager {
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
         this.update(() => {
-          sem.emitLocalEvent({type: Message.MSG_SYS_NETWORK_INFO_RELOADED})
+          sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
         });
       });
 
@@ -526,7 +526,7 @@ class SysManager {
   }
 
   getInterfaceViaIP4(ip) {
-    if(!ip) return null;
+    if (!ip) return null;
     const ipAddress = new Address4(ip)
     return this.getMonitoringInterfaces().find(i => i.subnetAddress4 && ipAddress.isInSubnet(i.subnetAddress4))
   }
@@ -815,7 +815,7 @@ class SysManager {
 
   // serial may not come back with anything for some platforms
 
-  getSysInfo(callback = () => {}) {
+  getSysInfo(callback = () => { }) {
     return util.callbackify(this.getSysInfo).bind(this)(callback)
   }
 
@@ -852,7 +852,7 @@ class SysManager {
     }
 
     let cpuTemperature = 50; // stub cpu value for docker/travis
-    let cpuTemperatureList = [ cpuTemperature ]
+    let cpuTemperatureList = [cpuTemperature]
     if (!f.isDocker() && !f.isTravis()) {
       if (platform.hasMultipleCPUs()) {
         const list = await platform.getCpuTemperature();
@@ -860,7 +860,7 @@ class SysManager {
         cpuTemperatureList = list
       } else {
         cpuTemperature = await platform.getCpuTemperature();
-        cpuTemperatureList = [ cpuTemperature ]
+        cpuTemperatureList = [cpuTemperature]
       }
     }
 
@@ -990,6 +990,8 @@ class SysManager {
   }
   async getBranchUpdateTime(branch) {
     try {
+      await exec(`git config remote.origin.fetch "+refs/heads/${branch}:refs/remotes/origin/${branch}"`);
+      await exec(`git fetch origin ${branch}`);
       const cmd = `git log ${branch} -1 --format=%ct`;
       const result = await exec(cmd);
       return Number(result.stdout);
