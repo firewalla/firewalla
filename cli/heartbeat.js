@@ -55,10 +55,8 @@ let uid = null;
 
 let sysStateCount = { "normal": 0, "overheated": 0 };
 let overheatedThresholds = null;
-let curGitBranch = null;
 (async function() {
   overheatedThresholds = await getOverheatedThresholds();
-  curGitBranch = await getGitBranchName();
   setInterval(async () => { await monitorTemperature(); }, 30 * 1000); // every 30 seconds
 })()
 
@@ -273,12 +271,14 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
     return;
   }
 
+  const curStateUpperCase = sysStateCurrent.toUpperCase();
+
   const event = {
     type: 'FW_NOTIFICATION',
-    titleKey: `FW_OVERHEATED_TITLE_${sysStateCurrent}`,
-    bodyKey: `FW_OVERHEATED_BODY_${sysStateCurrent}`,
-    titleLocalKey: `FW_OVERHEATED_${sysStateCurrent}`,
-    bodyLocalKey: `FW_OVERHEATED_${sysStateCurrent}`,
+    titleKey: `FW_OVERHEATED_TITLE_${curStateUpperCase}`,
+    bodyKey: `FW_OVERHEATED_BODY_${curStateUpperCase}`,
+    titleLocalKey: `FW_OVERHEATED_${curStateUpperCase}`,
+    bodyLocalKey: `FW_OVERHEATED_${curStateUpperCase}`,
     bodyLocalArgs: [cpuTemperature],
     payload: {
       cpuTemperature: cpuTemperature,
