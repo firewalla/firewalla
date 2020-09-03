@@ -992,7 +992,7 @@ class SysManager {
     try {
       await exec(`git config remote.origin.fetch "+refs/heads/${branch}:refs/remotes/origin/${branch}"`);
       await exec(`git fetch origin ${branch}`);
-      const cmd = `git log ${branch} -1 --format=%ct`;
+      const cmd = `git log origin/${branch} -1 --format=%ct`;
       const result = await exec(cmd);
       return Number(result.stdout);
     } catch (e) {
