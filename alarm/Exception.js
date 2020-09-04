@@ -178,22 +178,24 @@ module.exports = class {
       }
       let valArray = val, val2Array = val2;
       if (key && key.startsWith("p.tag.ids")) {
-        this.isJsonString(val) && (valArray = JSON.parse(val));
-        this.isJsonString(val2) && (val2Array = JSON.parse(val2));
-        valArray = valArray.map(Number);
-        val2Array = val2Array.map(Number);
-        const intersect = _.intersection(val, val2);
-        if (intersect.length > 0) {
-          matched = true;
-          continue;
-        }
-        if ((/[0-9]+$/g).test(key) && val) {
-          //Backward compatible
-          //p.tag.ids.0
-          if (val2Array.includes(Number(val))) {
+        try {
+          this.isJsonString(val) && (valArray = JSON.parse(val));
+          this.isJsonString(val2) && (val2Array = JSON.parse(val2));
+          const intersect = _.intersection(val, val2);
+          if (intersect.length > 0) {
             matched = true;
             continue;
           }
+          if ((/\.[0-9]+$/).test(key) && val) {
+            //Backward compatible
+            //p.tag.ids.0
+            if (val2Array.includes(Number(val))) {
+              matched = true;
+              continue;
+            }
+          }
+        } catch (e) {
+          log.warn('Exception macth p.tag.ids error',e);
         }
       }
 
