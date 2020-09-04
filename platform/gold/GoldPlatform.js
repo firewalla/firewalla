@@ -147,8 +147,8 @@ class GoldPlatform extends Platform {
     return true;
   }
 
-  getBroTabFile() {
-    return `${f.getFirewallaHome()}/etc/brotab.gold`;
+  getCronTabFile() {
+    return `${f.getFirewallaHome()}/etc/crontab.gold`;
   }
   getAllowCustomizedProfiles(){
     return 10;
