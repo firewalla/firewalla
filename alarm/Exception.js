@@ -177,9 +177,9 @@ module.exports = class {
           }
         }
         let valArray = val, val2Array = val2;
+        this.isJsonString(val) && (valArray = JSON.parse(val));
+        this.isJsonString(val2) && (val2Array = JSON.parse(val2));
         if (key && key.startsWith("p.tag.ids")) {
-          this.isJsonString(val) && (valArray = JSON.parse(val));
-          this.isJsonString(val2) && (val2Array = JSON.parse(val2));
           valArray = valArray.map(Number);
           val2Array = val2Array.map(Number);
           const intersect = _.intersection(val, val2);
