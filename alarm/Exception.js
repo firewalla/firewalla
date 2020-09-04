@@ -152,35 +152,36 @@ module.exports = class {
   }
 
   match(alarm) {
+    try{
+      let matched = false;
+      // FIXME: exact match only for now, and only supports String
+      for (var key in this) {
 
-    let matched = false;
-    // FIXME: exact match only for now, and only supports String
-    for (var key in this) {
+        if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+          continue;
+        }
 
-      if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
-        continue;
-      }
+        var val = this[key];
+        if(!alarm[key]) return false;
+        let val2 = alarm[key];
 
-      var val = this[key];
-      if(!alarm[key]) return false;
-      let val2 = alarm[key];
-
-      if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
-        matched = true;
-        continue;
-      }
-
-      if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
-        if (this.jsonComparisonMatch(val, val2)) {
+        if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
           matched = true;
           continue;
         }
-      }
-      let valArray = val, val2Array = val2;
-      if (key && key.startsWith("p.tag.ids")) {
-        try {
+
+        if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
+          if (this.jsonComparisonMatch(val, val2)) {
+            matched = true;
+            continue;
+          }
+        }
+        let valArray = val, val2Array = val2;
+        if (key && key.startsWith("p.tag.ids")) {
           this.isJsonString(val) && (valArray = JSON.parse(val));
           this.isJsonString(val2) && (val2Array = JSON.parse(val2));
+          valArray = valArray.map(Number);
+          val2Array = val2Array.map(Number);
           const intersect = _.intersection(val, val2);
           if (intersect.length > 0) {
             matched = true;
@@ -194,34 +195,33 @@ module.exports = class {
               continue;
             }
           }
-        } catch (e) {
-          log.warn('Exception macth p.tag.ids error',e);
-          return false;
         }
-      }
 
-      if (_.isArray(valArray)) {
-        let matchInArray = false;
-        for (const valCurrent of valArray) {
-          if (this.valueMatch(valCurrent + "", val2)) {
-            matchInArray = true;
-            break;
+        if (_.isArray(valArray)) {
+          let matchInArray = false;
+          for (const valCurrent of valArray) {
+            if (this.valueMatch(valCurrent + "", val2)) {
+              matchInArray = true;
+              break;
+            }
+          }
+
+          if (!matchInArray) {
+            return false;
+          }
+        } else {
+          if (!this.valueMatch(val, val2)) {
+            return false;
           }
         }
 
-        if (!matchInArray) {
-          return false;
-        }
-      } else {
-        if (!this.valueMatch(val, val2)) {
-          return false;
-        }
+        matched = true;
       }
-
-      matched = true;
+      return matched;
+    }catch(e){
+      log.warn("Exception match error",e);
+      return false;
     }
-
-    return matched;
   }
   isJsonString(str){
     return (_.isString(str) && validator.isJSON(str))
