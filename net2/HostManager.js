@@ -983,7 +983,7 @@ module.exports = class HostManager {
           json.isBindingOpen = 0;
         }
 
-        const suffix = await rclient.get('local:domain:suffix');
+        const suffix = await rclient.getAsync('local:domain:suffix');
         json.localDomainSuffix = suffix ? suffix : 'lan';
         callback(null, json);
       } catch(err) {
