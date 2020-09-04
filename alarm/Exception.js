@@ -196,6 +196,7 @@ module.exports = class {
           }
         } catch (e) {
           log.warn('Exception macth p.tag.ids error',e);
+          return false;
         }
       }
 
