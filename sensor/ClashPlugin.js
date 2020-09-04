@@ -69,7 +69,7 @@ class ClashPlugin extends Sensor {
       return;
     }
 
-    if (this.systemSwitch && this.adminSystemSwitch) {
+    if (this.adminSystemSwitch) {
       return this.systemStart();
     } else {
       return this.systemStop();

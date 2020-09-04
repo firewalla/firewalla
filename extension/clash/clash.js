@@ -75,7 +75,7 @@ class Clash {
 
     for(const pg of pgs) {
       if(pg.name === "auto") {
-        pg.proxyes = serverNames;
+        pg.proxies = serverNames;
       }
     }
 
@@ -182,19 +182,11 @@ class Clash {
 
   async isListening() {
     try {
-      await exec("nc -w 5 -z localhost 9954 && nc -w 5 -z localhost 9955 && netstat -an  | egrep -q ':::9953'");
+      await exec("netstat -an  | egrep -q ':::9953'");
       return true;
     } catch(err) {
       return false;
     }
-  }
-
-  getName() {
-    return (this.config && this.config.name) || "default";
-  }
-
-  getChainName() {
-    return `FW_Clash_${this.getName()}`;
   }
 
   // prepare the chnroute files
@@ -205,18 +197,18 @@ class Clash {
     (async() => {
       const code = "CN";
       await countryUpdater.activateCountry(code);
-      await exec(wrapIptables(`sudo iptables -w -t nat -I ${this.getChainName()} -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
+      await exec(wrapIptables(`sudo iptables -w -t nat -I FW_CLASH_CHAIN -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
     })()
   }
 
   async redirectTraffic() {
     await this.prepareCHNRoute();
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j ${this.getChainName()}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j FW_CLASH_CHAIN`));
     this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j ${this.getChainName()}`));
+    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j FW_CLASH_CHAIN`));
     this.shouldRedirect = false;
   }
 
