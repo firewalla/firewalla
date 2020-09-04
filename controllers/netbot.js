@@ -143,6 +143,7 @@ const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
+const cpuProfile = require('../net2/CpuProfile.js');
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -1210,6 +1211,40 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
+        break;
+      }
+      case "eptGroupName": {
+        (async () => {
+          const { name } = value;
+          await this.eptcloud.rename(this.primarygid, name);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "intelAdvice": {
+        (async () => {
+          await bone.intelAdvice(_.pick(value, ['target', 'key', 'value']));
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "cpuProfile":{
+        (async () => {
+          const { applyProfileName, profiles} = value;
+          if (profiles && profiles.length > 0) {
+            await cpuProfile.addProfiles(profiles);
+          }
+          if (applyProfileName) {
+            await cpuProfile.applyProfile(applyProfileName);
+          }
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       default:
