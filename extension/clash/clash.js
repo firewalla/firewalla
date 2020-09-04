@@ -86,6 +86,12 @@ class Clash {
     await fs.writeFileAsync(destConfigFilePath, output);
   }
 
+  async prepareDockerComposeFile() {
+    const dockerPath = `${f.getRuntimeInfoFolder()}/docker`;
+		const clashDockerPath = `${dockerPath}/clash`;
+    return exec(`cp ${__dirname}/docker-compose.yml ${clashDockerPath}/`);
+  }
+
   getServers() {
     const serversConfig = this.config.servers || []  
     return serversConfig.map((config) => config.server);
@@ -95,7 +101,8 @@ class Clash {
     log.info("Preparing environment for Clash...");
     this.ready = false;
     try {
-      await this.prepareClashConfig(this.config);
+      await this.prepareClashConfig();
+      await this.prepareDockerComposeFile();
 
       // setup iptables
       await exec(`${__dirname}/setup_iptables.sh`);
