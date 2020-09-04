@@ -271,8 +271,10 @@ module.exports = class {
       "target_name": "battle.net",
       "target_ip": destIP,
     }*/
-
-    rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
+    if (exception['p.tag.ids'] && _.isArray(exception['p.tag.ids'])) {
+      exception['p.tag.ids'] = JSON.stringify(exception['p.tag.ids'])
+    }
+    rclient.hmset(exceptionKey, exception, (err) => {
       if(err) {
         log.error("Failed to set exception: " + err);
         callback(err);
