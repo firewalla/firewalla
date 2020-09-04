@@ -40,10 +40,20 @@ function arraysEqual(a, b) {
   return true;
 }
 
+function isJsonString(str){
+  return (_.isString(str) && validator.isJSON(str))
+}
 module.exports = class {
-  constructor(rules) {
+  constructor(raw) {
     // FIXME: ignore any rules not begin with prefix "p"
-    extend(this, rules);
+    if (raw && raw['p.tag.ids'] && isJsonString(raw['p.tag.ids'])) {
+      try {
+        raw['p.tag.ids'] = JSON.parse(raw['p.tag.ids']).map(Number);
+      } catch (e) {
+        log.warn("Failed to parse exception p.tag.ids string:", raw['p.tag.ids']);
+      }
+    }
+    extend(this, raw);
     this.timestamp = new Date() / 1000;
   }
 
@@ -177,12 +187,12 @@ module.exports = class {
           }
         }
         let valArray = val, val2Array = val2;
-        this.isJsonString(val) && (valArray = JSON.parse(val));
-        this.isJsonString(val2) && (val2Array = JSON.parse(val2));
+        isJsonString(val) && (valArray = JSON.parse(val));
+        isJsonString(val2) && (val2Array = JSON.parse(val2));
         if (key && key.startsWith("p.tag.ids")) {
           valArray = valArray.map(Number);
           val2Array = val2Array.map(Number);
-          const intersect = _.intersection(val, val2);
+          const intersect = _.intersection(valArray, val2Array);
           if (intersect.length > 0) {
             matched = true;
             continue;
@@ -222,8 +232,5 @@ module.exports = class {
       log.warn("Exception match error",e);
       return false;
     }
-  }
-  isJsonString(str){
-    return (_.isString(str) && validator.isJSON(str))
   }
 }

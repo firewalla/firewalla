@@ -124,7 +124,7 @@ module.exports = class {
 
         results = results.filter((x) => x != null) // ignore any exception which doesn't exist
 
-        let rr = results.map((r) => Object.assign(Object.create(Exception.prototype), r))
+        let rr = results.map((r) => new Exception(r));
 
         // recent first
         rr.sort((a, b) => {
@@ -353,11 +353,12 @@ module.exports = class {
   async deleteTagRelatedExceptions(tag) {
     // remove exceptions
     let exceptions = await this.loadExceptionsAsync();
+    tag = Number(tag);
     for (let index = 0; index < exceptions.length; index++) {
       const exception = exceptions[index];
-      if (!_.isEmpty(exception['p.tag.ids']) && exception['p.tag.ids'].inclues(tag)) {
+      if (!_.isEmpty(exception['p.tag.ids']) && exception['p.tag.ids'].includes(tag)) {
         if (exception['p.tag.ids'].length <= 1) {
-          await this.deleteException(exception); 
+          await this.deleteException(exception.eid); 
         } else {
           let reducedTag = _.without(exception['p.tag.ids'], tag);
           exception['p.tag.ids'] = reducedTag;
