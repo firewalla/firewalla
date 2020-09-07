@@ -180,8 +180,8 @@ node_network_xrate_bytes() {
         $OUTPUT_SHELL)
             for intf in $intfs; do
                 cat <<EOL
-network_xrate_${intf}_rx $(bmon  -p "${intf}" -o format:fmt='$(attr:rxrate:bytes)\n',format:quitafter=2 | tail -1)
-network_xrate_${intf}_tx $(bmon  -p "${intf}" -o format:fmt='$(attr:txrate:bytes)\n',format:quitafter=2 | tail -1)
+network_xrate_${intf}_rx $(bmon -p "${intf}" -o format:fmt='$(attr:rxrate:bytes)\n',format:quitafter=2 | tail -1 |sed 's/\..*//')
+network_xrate_${intf}_tx $(bmon -p "${intf}" -o format:fmt='$(attr:txrate:bytes)\n',format:quitafter=2 | tail -1 |sed 's/\..*//')
 EOL
             done
             ;;
@@ -194,8 +194,8 @@ EOL
 EOH
             for intf in $intfs; do
                 cat <<EOL
-node_network_xrate_bytes{if="$intf",tr="rx"} $(bmon  -p "${intf}" -o format:fmt='$(attr:rxrate:bytes)\n',format:quitafter=2 | tail -1)
-node_network_xrate_bytes{if="$intf",tr="tx"} $(bmon  -p "${intf}" -o format:fmt='$(attr:txrate:bytes)\n',format:quitafter=2 | tail -1)
+node_network_xrate_bytes{if="$intf",tr="rx"} $(bmon  -p "${intf}" -o format:fmt='$(attr:rxrate:bytes)\n',format:quitafter=2 | tail -1|sed 's/\..*//')
+node_network_xrate_bytes{if="$intf",tr="tx"} $(bmon  -p "${intf}" -o format:fmt='$(attr:txrate:bytes)\n',format:quitafter=2 | tail -1|sed 's/\..*//')
 EOL
             done
             ;;
@@ -205,24 +205,21 @@ EOL
 node_ping_gateway_ms() {
 
     # collect
-    gws=$(ip route | awk '$1 == "default" {print $3}')
+    gw=$(ip route | awk '$1 == "default" {print $3}'| head -1)
 
     # output
     case $OUTPUT_FORMAT in
 
         $OUTPUT_SHELL)
-            for gw in $gws; do
-                ping -nc 6 $gw | awk '/rtt/ {print $4}'| {
-                    IFS=/ read min avg max mdev
-                    gw_ip=$(echo $gw|tr '.' '_')
-                    cat <<EOL
-ping_${gw_ip}_min  $min
-ping_${gw_ip}_avg  $avg
-ping_${gw_ip}_max  $max
-ping_${gw_ip}_mdev $mdev
+            ping -nc 6 $gw | awk '/rtt/ {print $4}'| {
+                IFS=/ read min avg max mdev
+                cat <<EOL
+ping_gw_min  $min
+ping_gw_avg  $avg
+ping_gw_max  $max
+ping_gw_mdev $mdev
 EOL
-                }
-            done
+            }
             ;;
 
         $OUTPUT_PROM)
@@ -231,17 +228,15 @@ EOL
 # HELP node_ping_gateway_ms Ping to gateway
 # TYPE node_ping_gateway_ms gauge
 EOH
-             for gw in $gws; do
-                 ping -nc 6 $gw | awk '/rtt/ {print $4}'| {
-                     IFS=/ read min avg max mdev
-                     cat <<EOL
+            ping -nc 6 $gw | awk '/rtt/ {print $4}'| {
+                IFS=/ read min avg max mdev
+                cat <<EOL
 node_ping_gateway_ms gauge{gw="$gw",stat="min"}  $min
 node_ping_gateway_ms gauge{gw="$gw",stat="avg"}  $avg
 node_ping_gateway_ms gauge{gw="$gw",stat="max"}  $max
 node_ping_gateway_ms gauge{gw="$gw",stat="mdev"} $mdev
 EOL
-                 }
-             done
+            }
             ;;
     esac
 }
