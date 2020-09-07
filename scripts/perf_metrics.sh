@@ -6,15 +6,33 @@
 
 CMD=$(basename $0)
 CMDDIR=$(dirname $0)
-OUTPUT_SHELL='shell'
-OUTPUT_PROM='prometheus'
-: ${OUTPUT_MODE:=$OUTPUT_SHELL}
-
+OUTPUT_SHELL='sh'
+OUTPUT_PROM='prom'
+: ${OUTPUT_FORMAT:=$OUTPUT_SHELL}
 : ${RUN_INTERVAL:=10}
+: ${SHOW_HEADER:=true}
+
+shopt -s lastpipe
 
 # ----------------------------------------------------------------------------
 # Functions
 # ----------------------------------------------------------------------------
+
+err() {
+    echo "ERROR: $@" >&2
+}
+
+usage() {
+    cat <<EOU
+uasge: $0 [-f {$OUTPUT_SHELL|$OUTPUT_PROM}]
+option:
+    -f {$OUTPUT_SHELL|$OUTPUT_PROM}
+       Output format:
+         $OUTPUT_SHELL - space separated shell format, this is default.
+         $OUTPUT_PROM - node-exporter collector format of Prometheus.
+EOU
+}
+
 get_model() {
     case "$(uname -m)" in
         "x86_64") FIREWALLA_PLATFORM='gold' ;;
@@ -46,7 +64,7 @@ node_cpu_frequency_khz() {
     c3=$(cpufreq-info -c 3 -f)
 
     # output
-    case $OUTPUT_MODE in
+    case $OUTPUT_FORMAT in
 
         $OUTPUT_SHELL)
             cat <<EOS
@@ -77,7 +95,7 @@ node_cpu_temperature_c() {
     cpu_temp=$(cat /sys/class/thermal/thermal_zone0/temp)
 
     # output
-    case $OUTPUT_MODE in
+    case $OUTPUT_FORMAT in
     
         $OUTPUT_SHELL)
             echo "node_cpu_temperature_c $cpu_temp"
@@ -98,7 +116,7 @@ node_cpu_usage_overall() {
     type mpstat >/dev/null || sudo apt install -y sysstat
 
     # output
-    case $OUTPUT_MODE in
+    case $OUTPUT_FORMAT in
     
         $OUTPUT_SHELL)
             mpstat -o JSON 2 1 | jq -r '.sysstat.hosts[0].statistics[0]."cpu-load"[]|del(.cpu)|to_entries[]|"cpu_usage_\(.key) \(.value)"'
@@ -118,13 +136,13 @@ EOH
 node_cpu_usage_process() {
 
     # collect
-    cpu_usage_zeek=$(ps aux |fgrep zeek|grep -v grep |awk '{print $3}' |sort -n |tail -1)
-    cpu_usage_openvpn=$(ps aux |fgrep openvpn|grep -v grep |awk '{print $3}' |sort -n |tail -1)
-    cpu_usage_firemain=$(ps aux |fgrep FireMain|grep -v grep |awk '{print $3}' |sort -n |tail -1)
-    cpu_usage_firemon=$(ps aux |fgrep FireMon|grep -v grep |awk '{print $3}' |sort -n |tail -1)
+    cpu_usage_zeek=$(top -b -n1 |awk '$12 == "zeek" {print $9}')
+    cpu_usage_openvpn=$(top -b -n1 |awk '$12 == "openvpn" {print $9}')
+    cpu_usage_firemain=$(top -b -n1 -c|awk '$12 == "FireMain" {print $9}')
+    cpu_usage_firemon=$(top -b -n1 -c|awk '$12 == "FireMon" {print $9}')
 
     # output
-    case $OUTPUT_MODE in
+    case $OUTPUT_FORMAT in
     
         $OUTPUT_SHELL)
             cat <<EOS
@@ -157,7 +175,7 @@ node_network_xrate_bytes() {
     esac
 
     # output
-    case $OUTPUT_MODE in
+    case $OUTPUT_FORMAT in
 
         $OUTPUT_SHELL)
             for intf in $intfs; do
@@ -190,7 +208,7 @@ node_ping_gateway_ms() {
     gws=$(ip route | awk '$1 == "default" {print $3}')
 
     # output
-    case $OUTPUT_MODE in
+    case $OUTPUT_FORMAT in
 
         $OUTPUT_SHELL)
             for gw in $gws; do
@@ -238,7 +256,13 @@ collect_metrics() {
 }
 
 transpose() {
-    tee >(awk '{print $2}'| tr '\n' ' ';echo) > >(awk '{print $1}'| tr '\n' ' '; echo)
+    if $SHOW_HEADER; then
+        SHOW_HEADER=false
+        tee >(awk '{print $2}'| tr '\n' ' ';echo) > >(awk '{print $1}'| tr '\n' ' '; echo)
+    else
+        awk '{print $2}'| tr '\n' ' '
+        echo
+    fi
 }
 
 # ----------------------------------------------------------------------------
@@ -248,10 +272,22 @@ transpose() {
 branch=$(git branch --show-current)
 test $branch == 'master' || { exit 1; }
 
+while getopts ":f:h" opt
+do
+    case $opt in
+        f) case $OPTARG in
+               $OUTPUT_SHELL|$OUTPUT_PROM) OUTPUT_FORMAT=$OPTARG ;;
+               *) err "unknow format '$OPTARG'"; exit 1 ;;
+           esac
+           ;;
+        h) usage; exit 0;;
+    esac
+done
+
 while sleep $RUN_INTERVAL; do
-    case $OUTPUT_MODE in
+    case $OUTPUT_FORMAT in
         $OUTPUT_SHELL)
-            collect_metrics | transpose
+            collect_metrics | transpose # need shopt -s lastpipe
             ;;
         $OUTPUT_PROM)
             collect_metrics
