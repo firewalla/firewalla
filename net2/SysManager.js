@@ -23,7 +23,7 @@ const fs = require('fs')
 const iptool = require('ip');
 var instance = null;
 const license = require('../util/license.js');
-
+const rp = require('request-promise');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -990,11 +990,14 @@ class SysManager {
   }
   async getBranchUpdateTime(branch) {
     try {
-      await exec(`git config remote.origin.fetch "+refs/heads/${branch}:refs/remotes/origin/${branch}"`);
-      await exec(`git fetch origin ${branch}`);
-      const cmd = `git log origin/${branch} -1 --format=%ct`;
-      const result = await exec(cmd);
-      return Number(result.stdout);
+      const result = await rp({
+        uri: `https://api.github.com/repos/firewalla/firewalla/commits/${branch}`,
+        headers: {
+          "User-Agent": "curl/7.64.1",
+        },
+        json: true
+      })
+      return new Date(result.commit.committer.date) / 1000;
     } catch (e) {
       log.warn(`Get ${branch} update time error`, e);
     }

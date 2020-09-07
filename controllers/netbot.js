@@ -2055,7 +2055,7 @@ class netBot extends ControllerBot {
       }
       case "branchUpdateTime": {
         (async () => {
-          const branches = (value && value.branches) || ['beta_6_0', 'release_6_0'];
+          const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
           const result = {};
           for (const branch of branches) {
             result[branch] = await sysManager.getBranchUpdateTime(branch);
