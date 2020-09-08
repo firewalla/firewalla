@@ -68,10 +68,10 @@ node_cpu_frequency_khz() {
 
         $OUTPUT_SHELL)
             cat <<EOS
-cpufreq_cpu0 $c0
-cpufreq_cpu1 $c1
-cpufreq_cpu2 $c2
-cpufreq_cpu3 $c3
+cpufreq_0 $c0
+cpufreq_1 $c1
+cpufreq_2 $c2
+cpufreq_3 $c3
 EOS
             ;;
 
@@ -98,7 +98,7 @@ node_cpu_temperature_c() {
     case $OUTPUT_FORMAT in
     
         $OUTPUT_SHELL)
-            echo "node_cpu_temperature_c $cpu_temp"
+            echo "temp $cpu_temp"
             ;;
 
         $OUTPUT_PROM)
@@ -119,7 +119,7 @@ node_cpu_usage_overall() {
     case $OUTPUT_FORMAT in
     
         $OUTPUT_SHELL)
-            mpstat -o JSON 2 1 | jq -r '.sysstat.hosts[0].statistics[0]."cpu-load"[]|del(.cpu)|to_entries[]|"cpu_usage_\(.key) \(.value)"'
+            mpstat -o JSON 2 1 | jq -r '.sysstat.hosts[0].statistics[0]."cpu-load"[]|del(.cpu)|to_entries[]|"cpu_\(.key) \(.value)"'
             ;;
 
         $OUTPUT_PROM)
@@ -146,10 +146,10 @@ node_cpu_usage_process() {
     
         $OUTPUT_SHELL)
             cat <<EOS
-cpu_usage_zeek $cpu_usage_zeek
-cpu_usage_openvpn $cpu_usage_openvpn
-cpu_usage_firemain $cpu_usage_firemain
-cpu_usage_firemon $cpu_usage_firemon
+p_zeek $cpu_usage_zeek
+p_openvpn $cpu_usage_openvpn
+p_firemain $cpu_usage_firemain
+p_firemon $cpu_usage_firemon
 EOS
             ;;
 
@@ -180,8 +180,8 @@ node_network_xrate_bytes() {
         $OUTPUT_SHELL)
             for intf in $intfs; do
                 cat <<EOL
-network_xrate_${intf}_rx $(bmon -p "${intf}" -o format:fmt='$(attr:rxrate:bytes)\n',format:quitafter=2 | tail -1 |sed 's/\..*//')
-network_xrate_${intf}_tx $(bmon -p "${intf}" -o format:fmt='$(attr:txrate:bytes)\n',format:quitafter=2 | tail -1 |sed 's/\..*//')
+${intf}_rx $(bmon -p "${intf}" -o format:fmt='$(attr:rxrate:bytes)\n',format:quitafter=2 | tail -1 |sed 's/\..*//')
+${intf}_tx $(bmon -p "${intf}" -o format:fmt='$(attr:txrate:bytes)\n',format:quitafter=2 | tail -1 |sed 's/\..*//')
 EOL
             done
             ;;
@@ -214,10 +214,10 @@ node_ping_gateway_ms() {
             ping -nc 6 $gw | awk '/rtt/ {print $4}'| {
                 IFS=/ read min avg max mdev
                 cat <<EOL
-ping_gw_min  $min
-ping_gw_avg  $avg
-ping_gw_max  $max
-ping_gw_mdev $mdev
+ping_min  $min
+ping_avg  $avg
+ping_max  $max
+ping_mdev $mdev
 EOL
             }
             ;;
