@@ -12,7 +12,7 @@ for net in $EXCLUDED_NET; do
     sudo ipset add fw_clash_whitelist_net $net
 done
 
-PUBLIC_IP=$(redis-cli hget sys:network:info publicIp)
+PUBLIC_IP=$(redis-cli --raw hget sys:network:info publicIp | jq -r .)
 test -n "$PUBLIC_IP" && sudo iptables -w -t nat -A FW_CLASH_CHAIN -d $PUBLIC_IP -j RETURN
 
 sudo iptables -w -t nat -A FW_CLASH_CHAIN -m set --match-set fw_clash_whitelist dst -j RETURN
