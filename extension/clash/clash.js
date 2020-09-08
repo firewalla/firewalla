@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -103,6 +103,8 @@ class Clash {
     try {
       await this.prepareClashConfig();
       await this.prepareDockerComposeFile();
+
+      await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
 
       // setup iptables
       await exec(`${__dirname}/setup_iptables.sh`);
