@@ -141,6 +141,11 @@ node_cpu_usage_process() {
     cpu_usage_firemain=$(top -b -n1 -c|awk '$12 == "FireMain" {print $9}')
     cpu_usage_firemon=$(top -b -n1 -c|awk '$12 == "FireMon" {print $9}')
 
+    cpu_usage_zeek=${cpu_usage_zeek:-'n/a'}
+    cpu_usage_openvpn=${cpu_usage_openvpn:-'n/a'}
+    cpu_usage_firemain=${cpu_usage_firemain:-'n/a'}
+    cpu_usage_firemon=${cpu_usage_firemon:-'n/a'}
+
     # output
     case $OUTPUT_FORMAT in
     
