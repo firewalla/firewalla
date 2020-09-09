@@ -146,11 +146,11 @@ class NavyPlatform extends Platform {
   */
 
   getRetentionTimeMultiplier() {
-    return 7;
+    return 3;
   }
 
   getRetentionCountMultiplier() {
-    return 5;
+    return 3;
   }
 
   async onWanIPChanged(ip) {
