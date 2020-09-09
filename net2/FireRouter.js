@@ -479,7 +479,7 @@ class FireRouter {
       };
       await rclient.hmset("sys:network:uuid", stubNetworkUUID);
       for (let key of Object.keys(previousUUID).filter(uuid => !Object.keys(stubNetworkUUID).includes(uuid))) {
-        await rclient.hdel("sys:network:uuid", key).catch((err) => {});
+        await rclient.hdelAsync("sys:network:uuid", key).catch(() => {});
       }
       // updates sys:network:info
       const intfList = await d.discoverInterfacesAsync()

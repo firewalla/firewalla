@@ -124,6 +124,48 @@ set_priority() {
     done
 }
 
+set_sysctl() {
+    while read pname pvalue
+    do
+        sudo sysctl -w "$pname=$pvalue"
+    done
+}
+
+set_iplink() {
+    while read intf pname pvalue
+    do
+        sudo ip link set $intf $pname $pvalue
+    done
+}
+
+# examples
+#
+# "tc": [
+#     [ "eth0", "default"]
+#  - xor -
+#     [ "eth0", "fq_codel"]
+#  - xor -
+#     [ "eth0", "htb", "rate", "500mbit"]
+# ]
+#
+set_tc() {
+    while read intf qdname pname pvalue
+    do
+        case $qdname in
+            default)
+                sudo tc qdisc del dev $intf root
+                ;;
+            fq_codel)
+                sudo tc qdisc add dev $intf root fq_codel
+                ;;
+            htb)
+                sudo tc qdisc replace dev $intf root handle 1: htb default 1
+                sudo tc class add dev $intf parent 1: classid 1:1 htb prio 4 $pname $pvalue
+                ;;
+        esac
+    done
+}
+
 process_profile() {
     _rc=0
     input_json=$(cat)
@@ -145,6 +187,15 @@ process_profile() {
                 ;;
             priority)
                 echo "$input_json" | jq -r '.priority[]|@tsv' | set_priority
+                ;;
+            sysctl)
+                echo "$input_json" | jq -r '.sysctl[]|@tsv' | set_sysctl
+                ;;
+            iplink)
+                echo "$input_json" | jq -r '.iplink[]|@tsv' | set_iplink
+                ;;
+            tc)
+                echo "$input_json" | jq -r '.tc[]|@tsv' | set_tc
                 ;;
             *)
                 echo "unknown key '$key'"
