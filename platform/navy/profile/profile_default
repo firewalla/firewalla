@@ -26,5 +26,8 @@
   ],
   "iplink": [
       [ "eth0", "txqueuelen", 1000]
+  ],
+  "tc": [
+      [ "eth0", "rate", "500mbit"]
   ]
 }
