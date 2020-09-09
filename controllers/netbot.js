@@ -2658,7 +2658,7 @@ class netBot extends ControllerBot {
 
         pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
           if (alreadyExists == "duplicated") {
-            this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+            this.simpleTxData(msg, policy2, {code: 409, msg: "Policy already exists"}, callback)
             return
           } else if (alreadyExists == "duplicated_and_updated") {
             const p = JSON.parse(JSON.stringify(policy2))
