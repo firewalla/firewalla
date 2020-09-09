@@ -353,7 +353,7 @@ module.exports = class {
   async deleteTagRelatedExceptions(tag) {
     // remove exceptions
     let exceptions = await this.loadExceptionsAsync();
-    tag = Number(tag);
+    tag = String(tag);
     for (let index = 0; index < exceptions.length; index++) {
       const exception = exceptions[index];
       if (!_.isEmpty(exception['p.tag.ids']) && exception['p.tag.ids'].includes(tag)) {
@@ -453,14 +453,7 @@ module.exports = class {
   }
 
   jsonToException(json) {
-    let proto = Exception.prototype;
-    if(proto) {
-      let obj = Object.assign(Object.create(proto), json);
-      return obj;
-    } else {
-      log.error("Unsupported exception type: " + json.type);
-      return null;
-    }
+    return new Exception(json);
   }
 
   async searchException(target) {

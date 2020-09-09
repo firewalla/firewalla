@@ -18,7 +18,6 @@
 let log = require('../net2/logger.js')(__filename, 'info');
 let ip = require('ip')
 
-var extend = require('util')._extend
 
 const minimatch = require('minimatch')
 
@@ -48,12 +47,12 @@ module.exports = class {
     // FIXME: ignore any rules not begin with prefix "p"
     if (raw && raw['p.tag.ids'] && isJsonString(raw['p.tag.ids'])) {
       try {
-        raw['p.tag.ids'] = JSON.parse(raw['p.tag.ids']).map(Number);
+        raw['p.tag.ids'] = JSON.parse(raw['p.tag.ids']).map(String); //Backward compatible
       } catch (e) {
         log.warn("Failed to parse exception p.tag.ids string:", raw['p.tag.ids']);
       }
     }
-    extend(this, raw);
+    Object.assign(this,raw);
     this.timestamp = new Date() / 1000;
   }
 
@@ -190,8 +189,6 @@ module.exports = class {
         isJsonString(val) && (valArray = JSON.parse(val));
         isJsonString(val2) && (val2Array = JSON.parse(val2));
         if (key && key.startsWith("p.tag.ids")) {
-          valArray = valArray.map(Number);
-          val2Array = val2Array.map(Number);
           const intersect = _.intersection(valArray, val2Array);
           if (intersect.length > 0) {
             matched = true;
@@ -200,7 +197,7 @@ module.exports = class {
           if ((/\.[0-9]+$/).test(key) && val) {
             //Backward compatible
             //p.tag.ids.0
-            if (val2Array.includes(Number(val))) {
+            if (val2Array.includes(val)) {
               matched = true;
               continue;
             }
