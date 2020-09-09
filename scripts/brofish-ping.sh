@@ -39,9 +39,9 @@ brofish_cmd() {
 brofish_cpu() {
   bcpu=$(top -bn1 | awk "\$12==\"$BRO_PROC_NAME\" {print \$9}")
   if [[ -n "$bcpu" ]]; then
-    if [[ $bcpu -ge $CPU_THRESHOLD ]]; then
+    echo $bcpu
+    if [[ ${bcpu%%.*} -ge $CPU_THRESHOLD ]]; then
       /home/pi/firewalla/scripts/firelog -t cloud -m "brofish CPU%($bcpu) is over threshold($CPU_THRESHOLD): $(brofish_cmd)"
-      echo $bcpu
       return 1
     else
       return 0
@@ -56,9 +56,9 @@ brofish_cpu() {
 brofish_rss() {
   brss=$(ps -eo rss,cmd | awk "\$2~/${BRO_PROC_NAME}\$/ {print \$1}")
   if [[ -n "$brss" ]]; then
+    echo $brss
     if [[ $brss -ge $RSS_THRESHOLD ]]; then
       /home/pi/firewalla/scripts/firelog -t cloud -m "brofish RSS($brss) is over threshold($RSS_THRESHOLD): $(brofish_cmd)"
-      echo $brss
       return 1
     else
       return 0
