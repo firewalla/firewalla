@@ -85,9 +85,6 @@ class Policy {
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
 
-    if (raw.rateLimit)
-      this.rateLimit = Number(raw.rateLimit);
-
     if (raw.priority)
       this.priority = Number(raw.priority);
 

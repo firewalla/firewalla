@@ -25,7 +25,7 @@ const QOS_UPLOAD_MASK = 0x3f800000;
 const QOS_DOWNLOAD_MASK = 0x7f0000;
 const QOS_SWITCH_MASK = 0x40000000;
 const DEFAULT_PRIO = 4;
-const DEFAULT_RATE_LIMIT = 3072;
+const DEFAULT_RATE_LIMIT = "3072mbit";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
@@ -59,6 +59,8 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc) {
   }
   qdisc = qdisc || "fq_codel";
   rateLimit = rateLimit || DEFAULT_RATE_LIMIT;
+  if (!Number.isNaN(rateLimit)) // default unit of rate limit is mbit
+    rateLimit = `${rateLimit}mbit`;
   priority = priority || DEFAULT_PRIO;
   log.info(`Creating QoS class for classid ${classId}, direction ${direction}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}`);
   if (!classId) {
@@ -71,7 +73,7 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc) {
   }
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   classId = Number(classId).toString(16);
-  await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${rateLimit}mbit`).then(() => {
+  await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
     return exec(`sudo tc qdisc replace dev ${device} parent 1:0x${classId} ${qdisc}`);
   }).catch((err) => {
     log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
@@ -96,7 +98,7 @@ async function destroyQoSClass(classId, direction) {
   classId = Number(classId).toString(16);
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   // if the filter cannot be solely deleted, the class cannot be deleted either. We have to replace it with a dummy class
-  await exec(`sudo tc class replace dev ${device} classid 1:0x${classId} htb rate ${DEFAULT_RATE_LIMIT}mbit prio ${DEFAULT_PRIO}`).catch((err) => {
+  await exec(`sudo tc class replace dev ${device} classid 1:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} prio ${DEFAULT_PRIO}`).catch((err) => {
     log.error(`Failed to destroy QoS class ${classId}, direction ${direction}`, err.message);
   });
 }
