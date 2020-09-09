@@ -138,6 +138,14 @@ set_iplink() {
     done
 }
 
+set_tc() {
+    while read intf pname pvalue
+    do
+        sudo tc qdisc replace dev $intf root handle 1: htb default 1
+        sudo tc class add dev $intf parent 1: classid 1:1 htb prio 4 $pname $pvalue
+    done
+}
+
 process_profile() {
     _rc=0
     input_json=$(cat)
@@ -165,6 +173,9 @@ process_profile() {
                 ;;
             iplink)
                 echo "$input_json" | jq -r '.iplink[]|@tsv' | set_iplink
+                ;;
+            tc)
+                echo "$input_json" | jq -r '.tc[]|@tsv' | set_tc
                 ;;
             *)
                 echo "unknown key '$key'"
