@@ -142,8 +142,8 @@ class Platform {
   isFireRouterManaged() {
   }
 
-  getBroTabFile() {
-    return `${f.getFirewallaHome()}/etc/brotab`;
+  getCronTabFile() {
+    return `${f.getFirewallaHome()}/etc/crontab`;
   }
 
   hasMultipleCPUs() {
@@ -187,6 +187,10 @@ class Platform {
   }
 
   isIFBSupported() {
+    return false;
+  }
+
+  isDockerSupported() {
     return false;
   }
 

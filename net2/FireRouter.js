@@ -760,7 +760,14 @@ class FireRouter {
       throw new Error(`Failed to switch firerouter branch to ${target}`);
     }
 
+    this.scheduleRestartFireBoot();
     return resp.body;
+  }
+
+  scheduleRestartFireBoot(delay = 10) {
+    setTimeout(() => {
+      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter").then(() => exec(`sudo systemctl restart fireboot`));
+    }, delay * 1000);
   }
 
   async setConfig(config) {
