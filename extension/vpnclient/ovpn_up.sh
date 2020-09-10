@@ -10,6 +10,7 @@ done
 
 # loosen reverse path filter
 sudo sysctl -w net.ipv4.conf.${dev}.rp_filter=2 || true
+sudo bash -c "echo 7 > /sys/class/net/${dev}/queues/rx-0/rps_cpus" || true
 
 chown pi $PUSH_OPTIONS_FILE
 # remove file with gateway IP, which will be created by route-up scripts afterward

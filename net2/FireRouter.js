@@ -628,7 +628,14 @@ class FireRouter {
       log.info("Platform does not support ifb, tc filters will not be reset");
       return;
     }
-    log.info("Resetting tc filters ...", ifaces);
+    if (this._qosIfaces) {
+      log.info("Clearing tc filters ...", this._qosIfaces);
+      for (const iface of this._qosIfaces) {
+        await exec(`sudo tc qdisc del dev ${iface} root`).catch((err) => {});
+        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch((err) => {});
+      }
+    }
+    log.info("Initializing tc filters ...", ifaces);
     for (const iface of ifaces) {
       await exec(`sudo tc qdisc del dev ${iface} root`).catch((err) => { });
       await exec(`sudo tc qdisc del dev ${iface} ingress`).catch((err) => { });
@@ -647,6 +654,7 @@ class FireRouter {
         log.error(`Failed to add tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
       });
     }
+    this._qosIfaces = ifaces;
   }
 
   isReady() {
@@ -714,6 +722,28 @@ class FireRouter {
   }
 
   async switchBranch(target) {
+    let tgt = null;
+    switch (target) {
+      case "dev":
+        tgt = "master";
+        break;
+      case "alpha":
+      case "salpha":
+        tgt = "alpha";
+        break;
+      case "beta":
+        tgt = "beta";
+        break;
+      case "prod":
+        tgt = "release";
+        break;
+      default:
+    }
+    if (!tgt) {
+      log.error(`Cannot find corresponding firerouter target branch for ${target}`);
+      return;
+    }
+    log.info(`Going to switch to firerouter branch ${tgt}`);
     const options = {
       method: "POST",
       headers: {
@@ -722,7 +752,7 @@ class FireRouter {
       url: routerInterface + "/system/switch_branch",
       json: true,
       body: {
-        target: target
+        target: tgt
       }
     }
     const resp = await rp(options);
@@ -730,7 +760,14 @@ class FireRouter {
       throw new Error(`Failed to switch firerouter branch to ${target}`);
     }
 
+    this.scheduleRestartFireBoot();
     return resp.body;
+  }
+
+  scheduleRestartFireBoot(delay = 10) {
+    setTimeout(() => {
+      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter").then(() => exec(`sudo systemctl restart fireboot`));
+    }, delay * 1000);
   }
 
   async setConfig(config) {
@@ -841,18 +878,21 @@ class FireRouter {
     }
     const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
+    const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
     let msg = "";
     if (!ready)
-      msg = `Internet connectivity on ${ifaceName} was lost. `;
+      msg = `Internet connectivity on ${ifaceName} was lost.`;
     else
-      msg = `Internet connectivity on ${ifaceName} has been restored. `;
-    if (activeWans.length > 0) {
-      if (wanSwitched)
-        msg = msg + `Active WAN is switched to ${activeWans.join(', ')}.`;
-      else
-        msg = msg + `Active WAN remains with ${activeWans.join(', ')}.`;
-    } else {
-      msg = msg + "Internet is unavailable now.";
+      msg = `Internet connectivity on ${ifaceName} has been restored.`;
+    if (type !== "single") { // do not add WAN switch information for single WAN configuration
+      if (activeWans.length > 0) {
+        if (wanSwitched)
+          msg = msg + ` Active WAN is switched to ${activeWans.join(', ')}.`;
+        else
+          msg = msg + ` Active WAN remains with ${activeWans.join(', ')}.`;
+      } else {
+        msg = msg + " Internet is unavailable now.";
+      }
     }
     const Alarm = require('../alarm/Alarm.js');
     const AM2 = require('../alarm/AlarmManager2.js');
@@ -864,6 +904,7 @@ class FireRouter {
         "p.iface.name":ifaceName,
         "p.active.wans":activeWans,
         "p.wan.switched": wanSwitched,
+        "p.wan.type": type,
         "p.ready": ready,
         "p.message": msg
       }

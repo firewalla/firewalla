@@ -75,8 +75,19 @@ class Alarm {
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
 
-    if (info) Object.assign(this, info);
-
+    if (info) {
+      let tagIds = info['p.tag.ids'];
+      if (_.isArray(tagIds)) {
+        info['p.tag.ids'] = tagIds.map(String);
+      } else if (_.isString(tagIds)) {
+        try {
+          info['p.tag.ids'] = JSON.parse(tagIds).map(String);
+        } catch (e) {
+          log.warn("Failed to parse alarm p.tag.ids string:", tagIds);
+        }
+      }
+      Object.assign(this, info);
+    }
     //    this.validate(type);
 
   }
@@ -525,14 +536,31 @@ class BroNoticeAlarm extends Alarm {
 
   localizedNotificationContentKey() {
     if (this["p.noticeType"]) {
-      return `notif.content.${this.type}.${this["p.noticeType"]}`;
+      let key = `notif.content.${this.type}.${this["p.noticeType"]}`;
+      if (this["p.noticeType"] == "Scan::Port_Scan") {
+        if (this["p.dest.name"] != this["p.dest.ip"]) {
+          if (this["p.local_is_client"] != "1") {
+            key += ".inbound.internal";
+          } else {
+            key += ".outbound.internal";
+          }
+        } else {
+          if (this["p.local_is_client"] != "1") {
+            key += ".inbound";
+          } else {
+            key += ".outbound";
+          }
+        }
+      }
+
+      return key;
     } else {
       return super.localizedNotificationContentKey();
     }
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"]];
+    return [this["p.device.name"], this["p.device.ip"], this["p.dest.name"]];
   }
 }
 
@@ -1060,6 +1088,15 @@ class DualWanAlarm extends Alarm {
     let key = super.localizedNotificationContentKey();
 
     let wan = JSON.parse(this["p.active.wans"]);
+
+    if (this["p.wan.type"] == "single") {
+      if (this["p.ready"] == "false") {
+        key += ".lost.all";
+      } else {
+        key += ".remain.switch";
+      }
+      return key;
+    }
 
     if (wan && wan.length == 0) {
       key += ".lost.all";

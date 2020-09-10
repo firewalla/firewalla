@@ -1,5 +1,25 @@
 #!/bin/bash
 
+UNAME=$(uname -m)
+case "$UNAME" in
+  "x86_64")
+    PLATFORM='gold'
+    ;;
+  "aarch64")
+    if [[ -e /etc/firewalla-release ]]; then
+      PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      PLATFORM='unknown'
+    fi
+    ;;
+  "armv7l")
+    PLATFORM='red'
+    ;;
+  *)
+    PLATFORM='unknown'
+    ;;
+esac
+
 check_cloud() {
     echo -n "  checking cloud access ... "
     curl_result=$(curl -w '%{http_code}' -Lks --connect-timeout 5 https://firewalla.encipher.io)
@@ -107,7 +127,7 @@ check_systemctl_services() {
     check_each_system_service fireupgrade "dead"
     check_each_system_service fireboot "dead"
 
-    if [[ $(uname -m) != "x86_64" ]]; then # non gold
+    if [[ $PLATFORM != 'gold' ]]; then # non gold
         check_each_system_service firemasq "running"
     else # gold
         check_each_system_service firerouter "running"
@@ -368,7 +388,7 @@ check_hosts() {
 
         local COLOR=""
         local UNCOLOR="\e[0m"
-        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_B7_MONITORING == "false" ]] &&
+        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_MONITORING == 'true' && $DEVICE_B7_MONITORING == "false" ]] &&
           ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
             COLOR="\e[91m"
         elif [ $DEVICE_FLOWINCOUNT -gt 2000 ] || [ $DEVICE_FLOWOUTCOUNT -gt 2000 ]; then
@@ -412,21 +432,41 @@ check_sys_features() {
     echo "---------------------- System Features ------------------"
     declare -A FEATURES
     local FILE="$FIREWALLA_HOME/net2/config.json"
-    if [[ -f "$FILE" ]]; then
+    local USERFILE="$HOME/.firewalla/config/config.json"
+
+    # use jq where available
+    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' ]]; then
+      echo 'using jq'
+      if [[ -f "$FILE" ]]; then
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
+        while read key value; do
+          FEATURES["$key"]="$value"
+        done
+      fi
+
+      if [[ -f "$USERFILE" ]]; then
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $USERFILE |
+        while read key value; do
+          FEATURES["$key"]="$value"
+        done
+      fi
+    else
+      # lagacy python 2.7 solution
+      if [[ -f "$FILE" ]]; then
         local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
         while IFS="=" read -r key value; do
-            FEATURES["$key"]="$value"
+          FEATURES["$key"]="$value"
         done <<<"$JSON"
-    fi
+      fi
 
-    FILE="$HOME/.firewalla/config/config.json"
-    if [[ -f "$FILE" ]]; then
-        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
+      if [[ -f "$USERFILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$USERFILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
         if [[ "$JSON" != "" ]]; then
-            while IFS="=" read -r key value; do
-                FEATURES["$key"]="$value"
-            done <<<"$JSON"
+          while IFS="=" read -r key value; do
+            FEATURES["$key"]="$value"
+          done <<<"$JSON"
         fi
+      fi
     fi
 
     local HKEYS=$(redis-cli hkeys sys:features)

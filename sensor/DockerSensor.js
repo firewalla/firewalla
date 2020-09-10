@@ -16,7 +16,8 @@
 
 const log = require('../net2/logger.js')(__filename, 'info');
 const { Sensor } = require('./Sensor.js');
-const ipset = require('../net2/Ipset.js')
+const ipset = require('../net2/Ipset.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const { exec } = require('child-process-promise');
 const _ = require('lodash')
@@ -103,6 +104,8 @@ class DockerSensor extends Sensor {
   }
 
   async run() {
+    if (!platform.isDockerSupported())
+      return;
     try {
       await ipset.create(IPSET_DOCKER_WAN_ROUTABLE, 'hash:net')
       await ipset.create(IPSET_DOCKER_LAN_ROUTABLE, 'hash:net')
