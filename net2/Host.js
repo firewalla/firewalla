@@ -936,10 +936,14 @@ class Host {
       if (neighbors) {
         let neighborArray = [];
         for (let i in neighbors) {
-          let obj = JSON.parse(neighbors[i]);
-          obj['ip']=i;
-          neighborArray.push(obj);
-          count--;
+          try {
+            let obj = JSON.parse(neighbors[i]);
+            obj['ip'] = i;
+            neighborArray.push(obj);
+            count--;
+          } catch (e) {
+            log.warn('parse neighbor data error', neighbors[i], nkey);
+          }
         }
         neighborArray.sort(function (a, b) {
           return Number(b.count) - Number(a.count);
