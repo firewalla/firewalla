@@ -82,23 +82,21 @@ class DestInfoIntel extends Intel {
       alarm["p.dest.app"] = intel.app
     }
 
-    if (intel && intel.category) {
-      // some alarm types are determined by combination of values in intel.category and intel.cs
-      // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
-      switch (alarm["type"]) {
-        case 'ALARM_VIDEO':
-          alarm["p.dest.category"] = 'av';
-          break;
-        case 'ALARM_GAME':
-          alarm["p.dest.category"] = 'games';
-          break;
-        case 'ALARM_PORN':
-          alarm["p.dest.category"] = 'porn';
-          break;
-        default:
-          alarm["p.dest.category"] = intel.category
-      }
-
+    switch (alarm["type"]) {
+      case 'ALARM_VIDEO':
+        alarm["p.dest.category"] = 'av';
+        break;
+      case 'ALARM_GAME':
+        alarm["p.dest.category"] = 'games';
+        break;
+      case 'ALARM_PORN':
+        alarm["p.dest.category"] = 'porn';
+        break;
+      default:
+        // some alarm types are determined by combination of values in intel.category and intel.cs
+        // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
+        if (intel && intel.category)
+          alarm["p.dest.category"] = intel.category;
     }
 
     if (intel && intel.host) {
