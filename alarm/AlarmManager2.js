@@ -562,6 +562,16 @@ module.exports = class {
 
     let proto = Alarm.mapping[json.type];
     if (proto) {
+      let tagIds = json['p.tag.ids'];
+      if (_.isArray(tagIds)) {
+        json['p.tag.ids'] = tagIds.map(String);
+      } else if (_.isString(tagIds)) {
+        try {
+          json['p.tag.ids'] = JSON.parse(tagIds).map(String); //Backward compatible
+        } catch (e) {
+          log.warn("Failed to parse alarm p.tag.ids string:", tagIds);
+        }
+      }
       let obj = Object.assign(Object.create(proto), json);
       obj.message = obj.localizedMessage(); // append locaized message info
       if (obj["p.flow"]) {
@@ -1590,14 +1600,13 @@ module.exports = class {
     if (userInput && !_.isEmpty(userInput.tag)) {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
-      e["p.tag.ids"] = [];
       for (const tagStr of userInput.tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length)
-          e["p.tag.ids"].push(tagUid);
+          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
+          e["p.tag.ids"] = [tagUid];
         }
       }
     }

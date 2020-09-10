@@ -2053,6 +2053,19 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "branchUpdateTime": {
+        (async () => {
+          const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
+          const result = {};
+          for (const branch of branches) {
+            result[branch] = await sysManager.getBranchUpdateTime(branch);
+          }
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2645,7 +2658,7 @@ class netBot extends ControllerBot {
 
         pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
           if (alreadyExists == "duplicated") {
-            this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+            this.simpleTxData(msg, policy2, {code: 409, msg: "Policy already exists"}, callback)
             return
           } else if (alreadyExists == "duplicated_and_updated") {
             const p = JSON.parse(JSON.stringify(policy2))
