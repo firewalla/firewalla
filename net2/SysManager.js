@@ -655,9 +655,9 @@ class SysManager {
     const if2 = intf + ':0'
 
     if (this.getInterface(if2)) {
-      let mask = this.getInterface(if2).netmask;
-      if (mask.startsWith("Mask:")) {
-        mask = mask.substr(5);
+      const mask = this.getInterface(if2).netmask;
+      if (mask && mask.startsWith("Mask:")) {
+        return mask.substr(5);
       }
       return mask;
     } else {
