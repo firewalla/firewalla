@@ -89,7 +89,9 @@ LOGGER=logger
 ERR=logger
 [ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
-await_ip_assigned || restore_values
+if [ "$(uname -m)" != "x86_64" ]; then
+  await_ip_assigned || restore_values
+fi
 
 [ -s $SCRIPTS_DIR/fire-time.sh ] && $SCRIPTS_DIR/fire-time.sh || $FIREWALLA_HOME/scripts/fire-time.sh
 
