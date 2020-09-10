@@ -87,9 +87,14 @@ exports.gateway_ip_for = function(nic_name) {
   return trim_exec_async("ip r | grep " + nic_name + " | grep default | cut -d ' ' -f 3 | sed -n '1p'");
 };
 
-exports.netmask_for = function(nic_name) {
+exports.netmask_for = async function (nic_name) {
   var cmd = "ifconfig " + nic_name + " 2> /dev/null | egrep 'netmask|Mask:' | awk '{print $4}'";
-  return trim_exec_async(cmd);
+  let result = await trim_exec_async(cmd);
+  // FIXME: should completely remove Mask: in the future
+  if (result.startsWith("Mask:")) {
+    return result;
+  }
+  return "Mask:" + result;
 };
 
 exports.gateway_ip6 = function(cb) {
