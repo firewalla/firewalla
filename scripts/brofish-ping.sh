@@ -69,6 +69,7 @@ get_free_memory() {
 }
 
 brofish_rss() {
+  # there may be multiple bro/zeek processes, need to find out the max rss 
   brss=$(ps -eo rss,cmd | awk "\$2~/${BRO_PROC_NAME}\$/ {print \$1}" | sort -k 1 -rn | head -n 1)
   if [[ -n "$brss" ]]; then
     echo $brss
