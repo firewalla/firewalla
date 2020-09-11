@@ -1176,7 +1176,11 @@ module.exports = class DNSMASQ {
     // use restart to ensure the latest configuration is loaded
     let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
 
-    cmd = await this.prepareDnsmasqCmd(cmd);
+    try {
+      cmd = await this.prepareDnsmasqCmd(cmd);
+    } catch(err) {
+      log.error('Error adding DHCP arguments', err)
+    }
 
     this.writeStartScript(cmd);
 

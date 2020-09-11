@@ -26,5 +26,7 @@
   ],
   "iplink": [
       [ "eth0", "txqueuelen", 1000]
+  ],
+  "tc": [
   ]
 }
