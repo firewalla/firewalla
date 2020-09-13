@@ -38,7 +38,7 @@ brofish_cmd() {
 }
 
 brofish_cpu() {
-  bcpu=$(top -bn1 | awk "\$12==\"$BRO_PROC_NAME\" {print \$9}")
+  bcpu=$(top -bn1 | awk "\$12==\"$BRO_PROC_NAME\" {print \$9}" | sort -rn | head -n 1)
   if [[ -n "$bcpu" ]]; then
     echo $bcpu
     if [[ ${bcpu%%.*} -ge $CPU_THRESHOLD ]]; then
