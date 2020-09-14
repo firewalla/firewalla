@@ -129,6 +129,8 @@ function isAlpha() {
 
   if(branch.match(/^beta_8_.*/)) {
     return true;
+  } else if (branch.match(/^beta_9_.*/)) {
+    return true;
   } else if(branch.match(/^beta_7_.*/)) {
     return true;
   } else {
