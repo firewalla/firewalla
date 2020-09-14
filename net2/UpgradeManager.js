@@ -44,7 +44,7 @@ async function getUpgradeInfo() {
     : 'UnknownVersion';
 
   let result = {
-    upgraded: tagBeforeUpgrade != sysInfo.repoTag,
+    upgraded: sysInfo.repoTag && tagBeforeUpgrade != sysInfo.repoTag,
     from:     tagBeforeUpgrade,
     to:       sysInfo.repoTag
   }

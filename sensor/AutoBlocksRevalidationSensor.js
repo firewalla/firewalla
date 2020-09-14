@@ -128,7 +128,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
         continue;
       }
 
-      log.info(`Revalidating ip ${ip}...`);
+      log.debug(`Revalidating ip ${ip}...`);
 
       const intel = await intelTool.getIntel(ip);
       if (!intel) { // missing intel
@@ -160,7 +160,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
 
         } else {
           // need to keep all relevant keys for this ip
-          log.info(`Extending ttl for intel on ip ${ip}...`);
+          log.debug(`Extending ttl for intel on ip ${ip}...`);
 
           // intel
           await intelTool.updateExpire(ip, this.config.intelExpireTime);

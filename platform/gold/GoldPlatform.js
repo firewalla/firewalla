@@ -147,15 +147,42 @@ class GoldPlatform extends Platform {
     return true;
   }
 
-  getBroTabFile() {
-    return `${f.getFirewallaHome()}/etc/brotab.gold`;
+  getCronTabFile() {
+    return `${f.getFirewallaHome()}/etc/crontab.gold`;
   }
   getAllowCustomizedProfiles(){
     return 10;
   }
+  getRatelimitConfig(){
+    return {
+      "appMax": 240,
+      "webMax": 480,
+      "duration": 60
+    }
+  }
 
   isBonjourBroadcastEnabled() {
     return false;
+  }
+
+  isOverlayNetworkAvailable() {
+    return false;
+  }
+
+  getBroSafeCheckThreshold() {
+    return {
+      missedBytes: 1000000000,
+      respRate: 256000000,
+      origRate: 256000000
+    };
+  }
+
+  isIFBSupported() {
+    return true;
+  }
+
+  isDockerSupported() {
+    return true;
   }
 }
 

@@ -63,6 +63,10 @@ class Platform {
     }
   }
 
+  getDHKeySize() {
+    return 1024;
+  }
+
   getLedPaths() {
     return []
   }
@@ -129,6 +133,7 @@ class Platform {
   getPolicyCapacity() {}
 
   getAllowCustomizedProfiles(){}
+  getRatelimitConfig(){}
 
   getDHCPCapacity() {
     return true
@@ -137,8 +142,8 @@ class Platform {
   isFireRouterManaged() {
   }
 
-  getBroTabFile() {
-    return `${f.getFirewallaHome()}/etc/brotab`;
+  getCronTabFile() {
+    return `${f.getFirewallaHome()}/etc/crontab`;
   }
 
   hasMultipleCPUs() {
@@ -153,6 +158,53 @@ class Platform {
     return null;
   }
 
+  isBluetoothAvailable() {
+    return true
+  }
+
+  isOverlayNetworkAvailable() {
+    return true;
+  }
+
+  getSystemResetAllOverlayfsScriptName() {
+    return "system-reset-all-overlayfs.sh";
+  }
+
+  getRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getRetentionCountMultiplier() {
+    return 1;
+  }
+
+  getBroSafeCheckThreshold() {
+    return {
+      missedBytes: 10000000,
+      respRate: 70000000,
+      origRate: 70000000
+    };
+  }
+
+  isIFBSupported() {
+    return false;
+  }
+
+  isDockerSupported() {
+    return false;
+  }
+
+  async onWanIPChanged(ip) {
+    log.info("WanIP is changed to", ip);
+  }
+
+  async onVPNPortProtocolChanged() {
+    log.info("VPN Port Protocol is changed");
+  }
+
+  async applyProfile() {
+    log.info("NO need to apply profile");
+  }
 }
 
 module.exports = Platform;

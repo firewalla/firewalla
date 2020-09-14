@@ -90,7 +90,7 @@ module.exports = class {
     return instance;
   }
 
-  setupAlarmQueue() {
+  async setupAlarmQueue() {
 
     this.queue = new Queue(`alarm-${f.getProcessName()}`, {
       removeOnFailure: true,
@@ -141,6 +141,8 @@ module.exports = class {
           break
       }
     })
+
+    return this.queue.ready();
   }
 
   createAlarmIDKey() {
@@ -386,13 +388,29 @@ module.exports = class {
     });
   }
 
-  enqueueAlarm(alarm) {
+  enqueueAlarm(alarm, retry = true) {
     if (this.queue) {
       const job = this.queue.createJob({
         alarm: alarm,
         action: "create"
       })
-      job.timeout(60000).save()
+      job.timeout(60000).save((err) => {
+        if (err) {
+          log.error("Failed to create alarm job", err.message);
+          if (err.message && err.message.includes("NOSCRIPT")) {
+            // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
+            log.info("Re-creating alarm queue ...");
+            this.queue.close(() => {
+              this.setupAlarmQueue().then(() => {
+                if (retry) {
+                  log.info("Retry creating alarm ...", alarm);
+                  this.enqueueAlarm(alarm, false);
+                }
+              });
+            });
+          }
+        }
+      })
     }
   }
 
@@ -544,6 +562,16 @@ module.exports = class {
 
     let proto = Alarm.mapping[json.type];
     if (proto) {
+      let tagIds = json['p.tag.ids'];
+      if (_.isArray(tagIds)) {
+        json['p.tag.ids'] = tagIds.map(String);
+      } else if (_.isString(tagIds)) {
+        try {
+          json['p.tag.ids'] = JSON.parse(tagIds).map(String); //Backward compatible
+        } catch (e) {
+          log.warn("Failed to parse alarm p.tag.ids string:", tagIds);
+        }
+      }
       let obj = Object.assign(Object.create(proto), json);
       obj.message = obj.localizedMessage(); // append locaized message info
       if (obj["p.flow"]) {
@@ -940,7 +968,7 @@ module.exports = class {
     return util.callbackify(this.blockFromAlarmAsync).bind(this)(alarmID, info, callback || function(){})
   }
 
-  async blockFromAlarmAsync(alarmID, value, callback) {
+  async blockFromAlarmAsync(alarmID, value) {
     log.info("Going to block alarm " + alarmID);
     log.info("value: ", value);
 
@@ -952,8 +980,7 @@ module.exports = class {
 
     if (!alarm) {
       log.error("Invalid alarm ID:", alarmID);
-      callback(new Error("Invalid alarm ID: " + alarmID));
-      return;
+      throw new Error("Invalid alarm ID: " + alarmID);
     }
 
     let p = {
@@ -982,8 +1009,7 @@ module.exports = class {
       //     p.target = target;
       //   } else {
       //     log.error("Unsupported alarm type for blocking: ", alarm)
-      //     callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
-      //     return
+      //     throw new Error("Unsupported alarm type for blocking: " + alarm.type)
       //   }
       //   break;
 
@@ -999,8 +1025,7 @@ module.exports = class {
           dnsManager.resolveLocalHost(targetIp, (err, result) => {
             if (err || result == null) {
               log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
-              callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
-              return;
+              throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
             }
 
             targetMac = result.mac;
@@ -1061,8 +1086,7 @@ module.exports = class {
     }
 
     if (!p.type || !p.target) {
-      callback(new Error("Unsupported Action!"));
-      return;
+      throw new Error("Unsupported Action!")
     }
 
     p["if.type"] = p.type;
@@ -1573,17 +1597,16 @@ module.exports = class {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
 
-    if (!_.isEmpty(userInput.tag)) {
+    if (userInput && !_.isEmpty(userInput.tag)) {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
-      e["p.tag.ids"] = [];
       for (const tagStr of userInput.tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length)
-          e["p.tag.ids"].push(tagUid);
+          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
+          e["p.tag.ids"] = [tagUid];
         }
       }
     }

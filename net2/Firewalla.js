@@ -129,6 +129,8 @@ function isAlpha() {
 
   if(branch.match(/^beta_8_.*/)) {
     return true;
+  } else if (branch.match(/^beta_9_.*/)) {
+    return true;
   } else if(branch.match(/^beta_7_.*/)) {
     return true;
   } else {
@@ -192,7 +194,7 @@ function isOverlayFS() {
   if(_isOverlayFS === null) {
     let result = true;
     try {
-      cp.execSync("grep 'overlayroot / ' /proc/mounts &>/dev/null");
+      cp.execSync("egrep 'overlay(root)? / ' /proc/mounts &>/dev/null");
     } catch(err) {
       result = false;
     }

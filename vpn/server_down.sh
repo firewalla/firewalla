@@ -18,4 +18,6 @@ redis-cli -n 1 publish "ifdown" "$dev" || true
 
 if [[ $(uname -m) == "x86_64" ]]; then
   (sudo iptables -w -C FW_INPUT_ACCEPT -p tcp --dport $local_port_1 -j ACCEPT &>/dev/null && sudo iptables -w -D FW_INPUT_ACCEPT -p tcp --dport $local_port_1 -j ACCEPT) || true
+  (sudo iptables -w -t nat -C FW_PREROUTING_DMZ_HOST -p tcp --dport $local_port_1 -j ACCEPT &>/dev/null && sudo iptables -w -t nat -D FW_PREROUTING_DMZ_HOST -p tcp --dport $local_port_1 -j ACCEPT) || true
+  (sudo iptables -w -t nat -C FW_PREROUTING_DMZ_HOST -p udp --dport $local_port_1 -j ACCEPT &>/dev/null && sudo iptables -w -t nat -D FW_PREROUTING_DMZ_HOST -p udp --dport $local_port_1 -j ACCEPT) || true
 fi

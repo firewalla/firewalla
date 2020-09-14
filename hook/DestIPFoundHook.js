@@ -37,6 +37,8 @@ const countryUpdater = new CountryUpdater()
 const country = require('../extension/country/country.js');
 const sysManager = require('../net2/SysManager.js')
 
+const _ = require('lodash')
+
 const IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
 
 const ITEMS_PER_FETCH = 100;
@@ -71,6 +73,8 @@ class DestIPFoundHook extends Hook {
   }
 
   isFirewalla(host) {
+    if (!_.isString(host)) return false
+
     let patterns = [/\.encipher\.io$/,
       /^encipher\.io$/,
       /^firewalla\.com$/,
@@ -183,9 +187,9 @@ class DestIPFoundHook extends Hook {
       //      }
     });
 
-    const domains = this.getDomains(sslInfo, dnsInfo);
+    const domain = this.getDomain(sslInfo, dnsInfo);
 
-    if(intel.originIP && !domains.includes(intel.originIP)) {
+    if(intel.originIP && domain != intel.originIP) {
       // it's a pattern
       intel.isOriginIPAPattern = true
     }
@@ -193,18 +197,9 @@ class DestIPFoundHook extends Hook {
     return intel;
   }
 
-  getDomains(sslInfo, dnsInfo) {
+  getDomain(sslInfo, dnsInfo) {
     // sslInfo is an object, dnsInfo is a string
-    let domain = sslInfo && sslInfo.server_name;
-    if(!domain) {
-      domain = dnsInfo;
-    }
-
-    let domains = [];
-    if(domain)
-      domains.push(domain);
-
-    return domains;
+    return sslInfo && sslInfo.server_name || dnsInfo;
   }
 
   async updateCategoryDomain(intel) {
@@ -254,8 +249,8 @@ class DestIPFoundHook extends Hook {
     const skipWriteLocalCache = options.skipWriteLocalCache;
     let sslInfo = await intelTool.getSSLCertificate(ip);
     let dnsInfo = await intelTool.getDNS(ip);
-    let domains = this.getDomains(sslInfo, dnsInfo); // domains should contain at most one domain
-    if (domains.length == 0 && retryCount < 5) {
+    let domain = this.getDomain(sslInfo, dnsInfo);
+    if (!domain && retryCount < 5) {
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
       this.appendNewFlow(ip, fd, retryCount + 1);
     }
@@ -266,27 +261,30 @@ class DestIPFoundHook extends Hook {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
-          // use cache data if host is similar or ssl org is identical (relatively loose condition to avoid calling intel API too frequently)
-          if (domains.length == 0 || (sslInfo && intel.org && sslInfo.O === intel.org) || (intel.host && isSimilarHost(domains[0], intel.host))) {
+          // use cache data if host is similar or ssl org is identical
+          // (relatively loose condition to avoid calling intel API too frequently)
+          if (!domain
+            || sslInfo && intel.org && sslInfo.O === intel.org
+            || intel.host && isSimilarHost(domain, intel.host))
+          {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
-            return;
+            return intel;
           }
         }
       }
 
-      log.debug("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domains + ", checking intels...");
-
-      let ips = [ip];
+      log.debug("Found new IP " + ip + " fd " +fd+ " flow "+flow+ " domain " + domain + ", checking intels...");
 
       let cloudIntelInfo = [];
 
       // ignore if domain contain firewalla domain
-      if(domains.filter(d => this.isFirewalla(d)).length === 0) {
+      if (!this.isFirewalla(domain)) {
         try {
-          cloudIntelInfo = await intelTool.checkIntelFromCloud(ips, domains, fd);
+          cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
         } catch(err) {
           // marks failure while not blocking local enrichement, e.g. country
+          log.debug("Failed to get cloud intel", ip, domain, err)
           cloudIntelInfo.push({failed: true});
 
           if(options.noUpdateOnError) {
