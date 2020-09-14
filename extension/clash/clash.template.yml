@@ -34,6 +34,10 @@ dns:
     geoip: true
     ipcidr:
       - 240.0.0.0/4
+    domain:
+      - google.com
+      - facebook.com
+      - youtube.com
 
 proxies:
 
