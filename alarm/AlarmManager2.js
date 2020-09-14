@@ -737,7 +737,6 @@ module.exports = class {
       alarm.result = "archiveByException";
       await this.updateAlarm(alarm);
       await this.archiveAlarm(alarm.aid);
-      log.info(`Alarm ${alarm.aid} is allowed successfully`)
     }
     return alarms;
   }
