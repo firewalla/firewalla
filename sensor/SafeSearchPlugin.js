@@ -469,6 +469,7 @@ class SafeSearchPlugin extends Sensor {
   // global on/off
   async globalOn() {
     this.adminSystemSwitch = true;
+    await this.updateAllDomains();
     await this.applySafeSearch();
   }
 
