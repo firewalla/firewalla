@@ -40,20 +40,29 @@ function arraysEqual(a, b) {
 }
 
 function isJsonString(str){
-  return (_.isString(str) && validator.isJSON(str))
+  return _.isString(str) && validator.isJSON(str)
 }
+
 module.exports = class {
   constructor(raw) {
-    // FIXME: ignore any rules not begin with prefix "p"
-    if (raw && raw['p.tag.ids'] && isJsonString(raw['p.tag.ids'])) {
-      try {
-        raw['p.tag.ids'] = JSON.parse(raw['p.tag.ids']).map(String); //Backward compatible
-      } catch (e) {
-        log.warn("Failed to parse exception p.tag.ids string:", raw['p.tag.ids']);
+    for (const key in raw) {
+      if (isJsonString(raw[key])) {
+        // parse will always be successful if passed check
+        raw[key] = JSON.parse(raw[key])
+      }
+      if (key == 'p.tag.ids' && Array.isArray(raw[key])) {
+        raw[key] = raw[key].map(String) //Backward compatibility
+      }
+      if ((/^p\.tag\.ids\.[0-9]+$/).test(key)) {
+        log.debug('legacy field found', key, raw[key])
+        this['p.tag.ids'] = this['p.tag.ids'] || []
+        this['p.tag.ids'].push(raw[key])
+        delete raw[key]
       }
     }
-    Object.assign(this,raw);
-    this.timestamp = new Date() / 1000;
+    Object.assign(this, raw);
+
+    if (!this.timestamp) this.timestamp = new Date() / 1000;
   }
 
   getMatchingKeys() {
@@ -115,10 +124,10 @@ module.exports = class {
         return true;
       }
     }
-    
+
     return false;
   }
-  
+
   valueMatch(val, val2) {
     //special exception
     if (val.endsWith("*")) {
@@ -163,8 +172,8 @@ module.exports = class {
   match(alarm) {
     try{
       let matched = false;
-      // FIXME: exact match only for now, and only supports String
-      for (var key in this) {
+
+      for (const key in this) {
 
         if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
           continue;
@@ -185,28 +194,21 @@ module.exports = class {
             continue;
           }
         }
-        let valArray = val, val2Array = val2;
-        isJsonString(val) && (valArray = JSON.parse(val));
+        let val2Array = val2;
+        // Exception will be parsed at object creation
+        // while alarm will always use string to avoid compatibility issue with clients
         isJsonString(val2) && (val2Array = JSON.parse(val2));
-        if (key && key.startsWith("p.tag.ids")) {
-          const intersect = _.intersection(valArray, val2Array);
-          if (intersect.length > 0) {
+
+        if (key.startsWith("p.tag.ids")) {
+          if (_.intersection(val, val2Array).length > 0) {
             matched = true;
             continue;
           }
-          if ((/\.[0-9]+$/).test(key) && val) {
-            //Backward compatible
-            //p.tag.ids.0
-            if (val2Array.includes(val)) {
-              matched = true;
-              continue;
-            }
-          }
         }
 
-        if (_.isArray(valArray)) {
+        if (_.isArray(val)) {
           let matchInArray = false;
-          for (const valCurrent of valArray) {
+          for (const valCurrent of val) {
             if (this.valueMatch(valCurrent + "", val2)) {
               matchInArray = true;
               break;
@@ -225,8 +227,8 @@ module.exports = class {
         matched = true;
       }
       return matched;
-    }catch(e){
-      log.warn("Exception match error",e);
+    } catch(e) {
+      log.warn("Error on alarm matching", e);
       return false;
     }
   }
