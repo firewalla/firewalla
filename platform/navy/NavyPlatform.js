@@ -76,6 +76,18 @@ class NavyPlatform extends Platform {
     }
   }
 
+  async switchQoS(state, qdisc) {
+    if (state == true) {
+      await exec(`sudo tc qdisc replace dev eth0 root ${qdisc}`).catch((err) => {
+        log.error(`Failed to replace qdisc on eth0 with ${qdisc}`, err.message);
+      });
+    } else {
+      await exec(`sudo tc qdisc del dev eth0 root`).catch((err) => {
+        log.error(`Failed to remove qdisc on eth0`, err.message);
+      });
+    }
+  }
+
   getCPUDefaultFile() {
     return `${__dirname}/files/cpu_default.conf`;
   }
