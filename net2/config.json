@@ -76,6 +76,7 @@
     "VPNRelaySensor": {},
     "BoneSensor": {},
     "AdditionalPairPlugin": {},
+    "DockerPlugin": {},
     "EncipherPlugin": {},
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
