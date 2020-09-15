@@ -89,10 +89,6 @@ class Docker {
         return this._opDocker("stop");
     }
 
-    async statusDocker() {
-        return this._opDocker("status");
-    }
-
 }
 
  module.exports = new Docker();

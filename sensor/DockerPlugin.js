@@ -42,6 +42,12 @@ class DockerPlugin extends Sensor {
         extensionManager.onGet("docker.images", (msg) => {
             return docker.listImages();
         });
+        extensionManager.onCmd("docker.service.start", (msg) => {
+            return docker.startDocker();
+        });
+        extensionManager.onCmd("docker.service.stop", (msg) => {
+            return docker.stopDocker();
+        });
     }
 }
 
