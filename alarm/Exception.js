@@ -200,7 +200,7 @@ module.exports = class {
         isJsonString(val2) && (val2Array = JSON.parse(val2));
 
         if (key.startsWith("p.tag.ids")) {
-          if (_.intersection(val, val2Array).length > 0) {
+          if (_.intersection(val, val2Array.map(String)).length > 0) {
             matched = true;
             continue;
           }
