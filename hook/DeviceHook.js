@@ -43,6 +43,7 @@ const HostManager = require('../net2/HostManager.js');
 const sysManager = require('../net2/SysManager.js');
 
 const l2 = require('../util/Layer2.js');
+const { getPreferredBName } = require('../util/util.js')
 
 const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
@@ -615,10 +616,6 @@ class DeviceHook extends Hook {
     return v6Addrs[0] || "";
   }
 
-  getPreferredName(host) {
-    return host.bname || host.ipv4Addr || this.getFirstIPv6(host) || "Unknown"
-  }
-
   async isFeatureEnabled(mac, feature) {
     const policy = await hostTool.loadDevicePolicyByMAC(mac);
     if (policy && policy[feature] === "true") {
@@ -627,25 +624,20 @@ class DeviceHook extends Hook {
     return false; // by default return false, a conservative fallback
   }
 
-  async createAlarm(host, type) {
-    type = type || "new_device";
-
-    // check if new device alarm is enabled or not
+  async createAlarm(host, type = 'new_device') {
+    // check if specific alarm type is enabled or not
     if (!fc.isFeatureOn(type)) {
       return
     }
 
-    let Alarm = require('../alarm/Alarm.js');
-    let AM2 = require('../alarm/AlarmManager2.js');
-    let am2 = new AM2();
+    const Alarm = require('../alarm/Alarm.js');
+    const AM2 = require('../alarm/AlarmManager2.js');
+    const am2 = new AM2();
 
-    let name = this.getPreferredName(host)
-    let tags = [];
+    const name = getPreferredBName(host) || "Unknown"
     const hostManager = new HostManager();
     const hostInstance = hostManager.getHostFastByMAC(host.mac);
-    if (hostInstance) {
-      tags = await hostInstance.getTags();
-    }
+    const tags = hostInstance && await hostInstance.getTags() || []
 
     let alarm = null;
     switch (type) {
@@ -653,6 +645,11 @@ class DeviceHook extends Hook {
         // no new device alarm on Firewalla
         if (sysManager.isMyMac(host.mac)) {
           log.info('New device alarm on Firewalla', host)
+          return
+        }
+
+        // NewDeviceTagSensor will send alarm after tagging the new device
+        if (fc.isFeatureOn('new_device_tag')) {
           return
         }
 
