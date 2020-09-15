@@ -108,6 +108,10 @@ class Platform {
     }
   }
 
+  async switchQoS(state, qdisc) {
+
+  }
+
   getDNSServiceName() {
     return "firemasq";
   }
