@@ -99,7 +99,11 @@ if [[ $(uname -m) != "x86_64" ]]; then
 fi
 
 # ifb module is for QoS
-sudo modprobe ifb &> /dev/null || true
+if [[ $IFB_SUPPORTED == "yes" ]]; then
+  sudo modprobe ifb &> /dev/null || true
+else
+  sudo rmmod ifb &> /dev/null || true
+fi
 
 # destroy chains in previous version, these should be removed in next release
 sudo iptables -w -F FW_BLOCK &>/dev/null && sudo iptables -w -X FW_BLOCK
