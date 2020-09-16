@@ -1,5 +1,5 @@
 {
-  "version": 1.971,
+  "version": 1.972,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -543,7 +543,6 @@
     "RuleCheckSensor": {},
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
-    "SS2Plugin": {},
     "ClashPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},

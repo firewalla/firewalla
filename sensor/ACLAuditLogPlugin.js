@@ -36,6 +36,9 @@ const auditLogFile = "/var/log/acl_audit.log";
 
 const featureName = "acl_audit";
 
+const auditDropCounterKey = "audit:counter:drop";
+const auditDropCounterExpireTime = 3600 * 24 * 7; // one week
+
 class ACLAuditLogPlugin extends Sensor {
   async run() {
     this.hookFeature(featureName);
@@ -104,6 +107,7 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
     if (sysManager.isLocalIP(record.src)) {
+      record.dir = 'out';
       const intf = new Address4(record.src).isValid() ? sysManager.getInterfaceViaIP4(record.src) : sysManager.getInterfaceViaIP6(record.src);
       // not able to map ip to unique identity from VPN yet
       if (!intf || intf.name === "tun_fwvpn")
@@ -120,6 +124,7 @@ class ACLAuditLogPlugin extends Sensor {
       }
     } else {
       if (sysManager.isLocalIP(record.dst)) {
+        record.dir = 'in';
         const intf = new Address4(record.dst).isValid() ? sysManager.getInterfaceViaIP4(record.dst) : sysManager.getInterfaceViaIP6(record.dst);
         // not able to map ip to unique identity from VPN yet
         if (!intf || intf.name === "tun_fwvpn")
@@ -134,8 +139,39 @@ class ACLAuditLogPlugin extends Sensor {
           const key = this._getAuditDropKey(mac);
           await rclient.zaddAsync(key, Date.now() / 1000, JSON.stringify(record));
         }
+      } else {
+        record.dir = 'local';
       }
     }
+
+
+    await this._recordCounter(record);
+  }
+
+  // dest could be a domain or ip
+  async _recordCounter(record) {
+    // invalid record if record.aclType is dns && record.domain doesn't exist
+    if (record.aclType === "dns" && !record.domain) {
+      return;
+    }
+
+    if (record.domain) {
+      await rclient.zincrbyAsync(auditDropCounterKey, 1, record.domain);
+    } else {
+      if (record.dir === 'out') {
+        await rclient.zincrbyAsync(auditDropCounterKey, 1, record.dst);
+      }
+
+      if (record.dir === 'in') {
+        await rclient.zincrbyAsync(auditDropCounterKey, 1, record.src);
+      }
+    }
+
+    await rclient.expireAsync(auditDropCounterKey, auditDropCounterExpireTime);
+  }
+
+  async _rotateCounter() {
+    // TBD
   }
 
   async _processDnsNxdomainRecord(record) {
@@ -149,6 +185,7 @@ class ACLAuditLogPlugin extends Sensor {
         record.aclType = "dns";
         const key = this._getAuditDropKey(mac);
         await rclient.zaddAsync(key, Date.now() / 1000, JSON.stringify(record));
+        await this._recordCounter(record);
       }
     }
   }
@@ -172,6 +209,12 @@ class ACLAuditLogPlugin extends Sensor {
     if (this.timeoutTask)
       clearTimeout(this.timeoutTask);
     this.timeoutTask = setTimeout(() => {
+
+      // do not auto disable when in dev branch
+      if (f.isDevelopmentVersion()) {
+        return;
+      }
+
       Config.disableDynamicFeature(featureName);
     }, 30 * 60 * 1000);
   }
