@@ -719,6 +719,17 @@ module.exports = class {
       .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
       .execAsync();
   }
+  async archiveAlarmByExceptionAsync(exceptionID) {
+    const exception = await exceptionManager.getException(exceptionID);
+    const alarms = await this.findSimilarAlarmsByException(exception);
+    for (const alarm of alarms) {
+      alarm.result_exception = exception.eid;
+      alarm.result = "archiveByException";
+      await this.updateAlarm(alarm);
+      await this.archiveAlarm(alarm.aid);
+    }
+    return alarms;
+  }
 
   async listExtendedAlarms() {
     const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
@@ -911,7 +922,7 @@ module.exports = class {
   }
 
   async findSimilarAlarmsByException(exception, curAlarmID) {
-    let alarms = await this.loadActiveAlarmsAsync();
+    let alarms = await this.loadActiveAlarmsAsync(200);
     return alarms.filter((alarm) => {
       if (alarm.aid === curAlarmID) {
         return false // ignore current alarm id, since it's already blocked
