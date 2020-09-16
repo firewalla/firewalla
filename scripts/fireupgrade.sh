@@ -147,6 +147,15 @@ function map_target_branch {
         echo $1
         ;;
     esac
+  elif [[ $(head -n 1 /etc/firewalla-release 2>/dev/null) == "BOARD=navy" ]]; then
+    case "$1" in
+      "release_6_0")
+        echo "release_8_0"
+        ;;
+      *)
+        echo $1
+        ;;
+    esac
   else
     echo $1
   fi
