@@ -156,14 +156,14 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (record.domain) {
-      await rclient.zincrbyAsync(auditDropCounterKey, record.domain);
+      await rclient.zincrbyAsync(auditDropCounterKey, 1, record.domain);
     } else {
       if (record.dir === 'out') {
-        await rclient.zincrbyAsync(auditDropCounterKey, record.dst);
+        await rclient.zincrbyAsync(auditDropCounterKey, 1, record.dst);
       }
 
       if (record.dir === 'in') {
-        await rclient.zincrbyAsync(auditDropCounterKey, record.src);
+        await rclient.zincrbyAsync(auditDropCounterKey, 1, record.src);
       }
     }
 
