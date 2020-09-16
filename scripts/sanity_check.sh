@@ -397,7 +397,7 @@ check_hosts() {
             COLOR="\e[2m" #dim
         fi
 
-        local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=\[==" | sed "s=\]==" | sed "s=,= =")
+        local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=[][\" ]==g" | sed "s=,= =")
         TAGNAMES=""
         for tag in $TAGS; do
             TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
@@ -410,7 +410,7 @@ check_hosts() {
     echo ""
 }
 
-check_iptables() {
+check_ipset() {
     echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
@@ -436,7 +436,6 @@ check_sys_features() {
 
     # use jq where available
     if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' ]]; then
-      echo 'using jq'
       if [[ -f "$FILE" ]]; then
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
         while read key value; do
@@ -540,13 +539,60 @@ check_dhcp() {
 }
 
 usage() {
+    echo "Options:"
+    echo "  -s  | --service"
+    echo "  -n  | --network"
+    echo "  -sc | --config"
+    echo "  -sf | --feature"
+    echo "  -r  | --rule"
+    echo "  -i  | --ipset"
+    echo "  -d  | --dhcp"
+    echo "  -f  | --fast | --host"
+    echo "  -h  | --help"
     return
 }
 
 FAST=false
 while [ "$1" != "" ]; do
     case $1 in
-    -f | --fast)
+    -s | --service)
+        shift
+        check_systemctl_services
+        FAST=true
+        ;;
+    -n | --network)
+        shift
+        check_network
+        FAST=true
+        ;;
+    -sc | --config)
+        shift
+        check_system_config
+        check_sys_config
+        FAST=true
+        ;;
+    -sf | --feature)
+        shift
+        check_sys_features
+        FAST=true
+        ;;
+    -r | --rule)
+        shift
+        check_policies
+        FAST=true
+        ;;
+    -i | --ipset)
+        shift
+        check_ipset
+        FAST=true
+        ;;
+    -d | --dhcp)
+        shift
+        check_dhcp
+        FAST=true
+        ;;
+    -f | --fast | --host)
+        check_hosts
         shift
         FAST=true
         ;;
@@ -559,7 +605,6 @@ while [ "$1" != "" ]; do
         exit 1
         ;;
     esac
-    shift
 done
 
 if [ "$FAST" == false ]; then
@@ -573,9 +618,9 @@ if [ "$FAST" == false ]; then
     check_sys_features
     check_sys_config
     check_policies
-    check_iptables
+    check_ipset
     check_conntrack
     check_dhcp
     test -z $SPEED || check_speed
+    check_hosts
 fi
-check_hosts
