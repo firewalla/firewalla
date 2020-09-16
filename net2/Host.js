@@ -1206,6 +1206,9 @@ class Host {
         log.error("Failed to parse openports:", err);
       }
     }
+    if (this.o.mac && this.o.bname) {
+      json.randomization = this.randomization(this.o.mac, this.o.bname)
+    }
 
     // json.macVendor = this.name();
 
@@ -1414,6 +1417,17 @@ class Host {
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
+  }
+  randomization(mac, bname) {
+    // mac FF:FF:FF:FF:FF:FF
+    // primary focus on Apple devices
+    // for a simple rule, any MAC address’ first octet that ends 2,6,A,E would be a random MAC address.
+    if (!['2', '6', 'A', 'E'].includes(mac[1])) return false;
+    const randomBnames = ["apple", "ipad", "iphone", "mac", "mini", "living", "air", "mbp", "room", "ipod", "watch", "capsule"];
+    for (const name of randomBnames) {
+      if (bname.toLowerCase().includes(name)) return true;
+    }
+    return false;
   }
 }
 
