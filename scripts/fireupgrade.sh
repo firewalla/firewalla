@@ -138,7 +138,7 @@ function map_target_branch {
         echo "beta_8_0"
         ;;
       "beta_7_0")
-        echo "beta_8_0"
+        echo "beta_9_0"
         ;;
       "master")
         echo "master"

@@ -230,6 +230,8 @@ class ACLAuditLogPlugin extends Sensor {
     });
     // remove rsyslog config that filters iptables log to specific syslog file
     await exec(`sudo rm /etc/rsyslog.d/30-acl-audit.conf`).then(() => exec(`sudo systemctl restart rsyslog`)).catch((err) => {});
+    // remove syslog file
+    await exec(`sudo rm ${auditLogFile}`).catch((err) => {});
     if (this.timeoutTask)
       clearTimeout(this.timeoutTask);
   }

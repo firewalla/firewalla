@@ -99,7 +99,11 @@ if [[ $(uname -m) != "x86_64" ]]; then
 fi
 
 # ifb module is for QoS
-sudo modprobe ifb &> /dev/null || true
+if [[ $IFB_SUPPORTED == "yes" ]]; then
+  sudo modprobe ifb &> /dev/null || true
+else
+  sudo rmmod ifb &> /dev/null || true
+fi
 
 # destroy chains in previous version, these should be removed in next release
 sudo iptables -w -F FW_BLOCK &>/dev/null && sudo iptables -w -X FW_BLOCK
@@ -949,7 +953,7 @@ if ip link show dev ifb0; then
   sudo tc qdisc replace dev ifb0 root handle 1: htb default 1
   # 50 is the default priority
   sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 3072mbit prio 4
-  sudo tc qdisc replace dev ifb0 parent 1:1 fq
+  sudo tc qdisc replace dev ifb0 parent 1:1 fq_codel
 fi
 
 if ip link show dev ifb1; then
@@ -959,5 +963,5 @@ if ip link show dev ifb1; then
   sudo tc filter del dev ifb1
   sudo tc qdisc replace dev ifb1 root handle 1: htb default 1
   sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 3072mbit prio 4
-  sudo tc qdisc replace dev ifb1 parent 1:1 fq
+  sudo tc qdisc replace dev ifb1 parent 1:1 fq_codel
 fi

@@ -2615,6 +2615,16 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
+      case "alarm:archiveByException":
+        (async () => {
+          const exceptionID = value.exceptionID;
+          const result = await am2.archiveAlarmByExceptionAsync(exceptionID);
+          this.simpleTxData(msg, result, null, callback)
+        })().catch((err) => {
+          log.error("Failed to archive alarm by exception:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
       case "alarm:largeTransferAlarm": {
         (async () => {
           if (!value.ts || !value.shname || !value.dh) {

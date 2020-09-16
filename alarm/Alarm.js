@@ -76,16 +76,6 @@ class Alarm {
     this.timestamp = timestamp;
 
     if (info) {
-      let tagIds = info['p.tag.ids'];
-      if (_.isArray(tagIds)) {
-        info['p.tag.ids'] = tagIds.map(String);
-      } else if (_.isString(tagIds)) {
-        try {
-          info['p.tag.ids'] = JSON.parse(tagIds).map(String);
-        } catch (e) {
-          log.warn("Failed to parse alarm p.tag.ids string:", tagIds);
-        }
-      }
       Object.assign(this, info);
     }
     //    this.validate(type);
