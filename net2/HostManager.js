@@ -1324,6 +1324,23 @@ module.exports = class HostManager {
     return this.spoofing;
   }
 
+  async qos(policy) {
+    let state = null;
+    let qdisc = "fq_codel";
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+        qdisc = policy.qdisc || "fq_codel";
+        break;
+      default:
+        return;
+    }
+    await platform.switchQoS(state, qdisc);
+  }
+
   async acl(state) {
     if (state == false) {
       await iptables.switchACLAsync(false);
