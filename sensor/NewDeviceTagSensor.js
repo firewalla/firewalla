@@ -80,6 +80,11 @@ class NewDeviceTagSensor extends Sensor {
       else
         return // already checked
 
+      if (sysManager.isMyMac(mac)) {
+        log.debug('Skipping firewalla mac', host)
+        return
+      }
+
       log.info('Checking new device', host)
 
       await hostManager.loadPolicyAsync()
