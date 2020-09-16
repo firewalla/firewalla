@@ -37,7 +37,7 @@ const auditLogFile = "/var/log/acl_audit.log";
 const featureName = "acl_audit";
 
 const auditDropCounterKey = "audit:drop:cnt";
-const auditDropCounterExpireTime = 3600 * 24 * 14; // two weeks
+const auditDropCounterExpireTime = 3600 * 24 * 7; // one week
 
 class ACLAuditLogPlugin extends Sensor {
   async run() {
