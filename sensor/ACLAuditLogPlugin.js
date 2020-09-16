@@ -37,6 +37,7 @@ const auditLogFile = "/var/log/acl_audit.log";
 const featureName = "acl_audit";
 
 const auditDropCounterKey = "audit:drop:cnt";
+const auditDropCounterExpireTime = 3600 * 24 * 14; // two weeks
 
 class ACLAuditLogPlugin extends Sensor {
   async run() {
@@ -149,29 +150,28 @@ class ACLAuditLogPlugin extends Sensor {
 
   // dest could be a domain or ip
   async _recordCounter(record) {
+    // invalid record if record.aclType is dns && record.domain doesn't exist
+    if (record.aclType === "dns" && !record.domain) {
+      return;
+    }
+
     if (record.domain) {
       await rclient.zincrbyAsync(auditDropCounterKey, record.domain);
-      return;
+    } else {
+      if (record.dir === 'out') {
+        await rclient.zincrbyAsync(auditDropCounterKey, record.dst);
+      }
+
+      if (record.dir === 'in') {
+        await rclient.zincrbyAsync(auditDropCounterKey, record.src);
+      }
     }
 
-    // invalid record if record.aclType is dns && record.domain doesn't exist
-    if (record.aclType === "dns") {
-      return;
-    }
-
-    if (record.dir === 'out') {
-      await rclient.zincrbyAsync(auditDropCounterKey, record.dst);
-      return;
-    }
-
-    if (record.dir === 'in') {
-      await rclient.zincrbyAsync(auditDropCounterKey, record.src);
-      return;
-    }
+    await rclient.expireAsync(auditDropCounterKey, auditDropCounterExpireTime);
   }
 
   async _rotateCounter() {
-
+    // TBD
   }
 
   async _processDnsNxdomainRecord(record) {
