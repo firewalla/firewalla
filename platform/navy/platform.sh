@@ -42,7 +42,14 @@ function get_sysctl_conf_path {
 }
 
 function map_target_branch {
-  echo "$1"
+  case "$1" in
+  "release_6_0")
+    echo "release_8_0"
+    ;;
+  *)
+    echo $1
+    ;;
+  esac
 }
 
 function hook_server_route_up {
