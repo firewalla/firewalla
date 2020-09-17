@@ -20,6 +20,7 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
+const iptables = require('../../net2/Iptables.js');
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
@@ -80,6 +81,16 @@ class GoldPlatform extends Platform {
       }
     } catch(err) {
       log.error("Error turning on LED", err)
+    }
+  }
+
+  async switchQoS(state, qdisc) {
+    if (state == false) {
+      await iptables.switchQoSAsync(false);
+      await iptables.switchQoSAsync(false, 6);
+    } else {
+      await iptables.switchQoSAsync(true);
+      await iptables.switchQoSAsync(true, 6);
     }
   }
 

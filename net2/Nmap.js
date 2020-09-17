@@ -76,7 +76,7 @@ module.exports = class {
         resolve(null);
       }
   
-      const cmd = util.format('sudo nmap -6 -PR -sn %s -oX - | %s', ipv6Addr, xml2jsonBinary);
+      const cmd = util.format('sudo timeout 1200s nmap -6 -PR -sn %s -oX - | %s', ipv6Addr, xml2jsonBinary);
       log.info('Running neighbor solicitation: ', cmd);
   
       this.scanQ.push({cmdline: cmd, fast: true, callback: (err, hosts, ports) => {
@@ -115,12 +115,12 @@ module.exports = class {
 
     let cmdline = fast
       ? util.format(
-          'sudo nmap -sn -PO --host-timeout 30s  %s -oX - | %s',
+          'sudo timeout 1200s nmap -sn -PO --host-timeout 30s  %s -oX - | %s',
           range,
           xml2jsonBinary
         )
       : util.format(
-          'sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s',
+          'sudo timeout 1200s nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s',
           range,
           xml2jsonBinary
         );
