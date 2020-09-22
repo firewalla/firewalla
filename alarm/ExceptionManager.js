@@ -124,7 +124,7 @@ module.exports = class {
 
         results = results.filter((x) => x != null) // ignore any exception which doesn't exist
 
-        let rr = results.map((r) => Object.assign(Object.create(Exception.prototype), r))
+        let rr = results.map((r) => new Exception(r));
 
         // recent first
         rr.sort((a, b) => {
@@ -271,8 +271,10 @@ module.exports = class {
       "target_name": "battle.net",
       "target_ip": destIP,
     }*/
-
-    rclient.hmset(exceptionKey, flat.flatten(exception), (err) => {
+    if (exception['p.tag.ids'] && _.isArray(exception['p.tag.ids'])) {
+      exception['p.tag.ids'] = JSON.stringify(exception['p.tag.ids'])
+    }
+    rclient.hmset(exceptionKey, exception, (err) => {
       if(err) {
         log.error("Failed to set exception: " + err);
         callback(err);
@@ -351,11 +353,12 @@ module.exports = class {
   async deleteTagRelatedExceptions(tag) {
     // remove exceptions
     let exceptions = await this.loadExceptionsAsync();
+    tag = String(tag);
     for (let index = 0; index < exceptions.length; index++) {
       const exception = exceptions[index];
-      if (!_.isEmpty(exception['p.tag.ids']) && exception['p.tag.ids'].inclues(tag)) {
+      if (!_.isEmpty(exception['p.tag.ids']) && exception['p.tag.ids'].includes(tag)) {
         if (exception['p.tag.ids'].length <= 1) {
-          await this.deleteException(exception); 
+          await this.deleteException(exception.eid); 
         } else {
           let reducedTag = _.without(exception['p.tag.ids'], tag);
           exception['p.tag.ids'] = reducedTag;
@@ -450,14 +453,7 @@ module.exports = class {
   }
 
   jsonToException(json) {
-    let proto = Exception.prototype;
-    if(proto) {
-      let obj = Object.assign(Object.create(proto), json);
-      return obj;
-    } else {
-      log.error("Unsupported exception type: " + json.type);
-      return null;
-    }
+    return new Exception(json);
   }
 
   async searchException(target) {

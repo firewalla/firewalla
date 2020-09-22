@@ -207,6 +207,10 @@ class Tag {
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
   }
 
+  async qos(state) {
+    // do nothing for qos on tag
+  }
+
   async acl(state) {
     // do nothing for acl on tag
   }

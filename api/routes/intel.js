@@ -52,7 +52,7 @@ router.get('/domain/:domain', async (req, res, next) => {
 
   let result;
   try {
-    result = await intelTool.checkIntelFromCloud([], [domain]);
+    result = await intelTool.checkIntelFromCloud(null, domain);
   } catch (err) {
     log.error("Error when intel", err);
   }

@@ -154,8 +154,7 @@ storage.initSync({
   }
 
   // start a diagnostic page for people to access during first binding process
-  diag.start()
-  diag.iptablesRedirection()
+  await diag.start()
 
   await eptcloud.loadKeys()
   await login()
@@ -239,15 +238,15 @@ async function inviteAdmin(gid) {
 
   const gidPrefix = gid.substring(0, 8);
 
-  const group = await eptcloud.groupFind(gid)
+  const findResult = await eptcloud.groupFind(gid)
 
-  if (!group || !group.symmetricKeys) {
+  if (!findResult) {
     return false;
   }
 
   // number of key sym keys equals to number of members in this group
   // set this number to redis so that other js processes get this info
-  let count = group.symmetricKeys.length;
+  let count = findResult.group.symmetricKeys.length;
 
   await rclient.hsetAsync("sys:ept", "group_member_cnt", count);
 
@@ -428,7 +427,7 @@ async function sendTerminatedInfoToDiagServer(gid) {
 async function exitHandler(options, err) {
   if (err) log.info("Exiting", options.event, err.message, err.stack);
   if (options.cleanup) {
-    await diag.iptablesRedirection(false);
+    await diag.stop();
     await platform.turnOffPowerLED();
   }
   if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
@@ -468,6 +467,8 @@ process.on('uncaughtException',(err)=>{
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
+  if (msg.includes("Redis connection"))
+    return;
   bone.logAsync("error", {
     type: 'FIREWALLA.KICKSTART.unhandledRejection',
     msg: msg,
