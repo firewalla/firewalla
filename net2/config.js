@@ -80,11 +80,23 @@ async function getUserConfig(reload) {
   return userConfig;
 }
 
+function getPlatformConfig() {
+  const path = `${f.getFirewallaHome()}/platform/${platform.getName()}/files/config.json`;
+  if (fs.existsSync(path))
+    try {
+      return JSON.parse(fs.readFileSync(path, 'utf8'));
+    } catch (err) {
+      log.error('Error parsing platform config', err)
+    }
+
+  return {}
+}
+
 function getConfig(reload) {
   if(!config || reload === true) {
     const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
 
-    const platformConfig = platform.getPlatformConfig()
+    const platformConfig = getPlatformConfig()
 
     const userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
