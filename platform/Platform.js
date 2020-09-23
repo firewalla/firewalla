@@ -16,7 +16,6 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const fConfig = require('../net2/config.js').getConfig();
 const f = require('../net2/Firewalla.js');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -67,7 +66,7 @@ class Platform {
 
   async getNetworkSpeed() {
     try {
-      const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
+      const output = await fs.readFileAsync(`/sys/class/net/${this.getAllNicNames[0]}/speed`, {encoding: 'utf8'});
       return output.trim();
     } catch(err) {
       log.debug('Error getting network speed', err)
