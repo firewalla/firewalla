@@ -31,13 +31,25 @@ class Platform {
     return ["eth0"];
   }
 
+  async getPlatformConfig() {
+    const path = `${f.getFirewallaHome()}/platform/${this.getName()}/files/config.json`;
+    if (fs.existsSync(path))
+      try {
+        return JSON.parse(await fs.readFileAsync(path, 'utf8'));
+      } catch (err) {
+        log.error('Error parsing platform config', err)
+      }
+
+    return {}
+  }
+
   async getNicStates() {
     const nics = this.getAllNicNames();
     const result = {};
     for (const nic of nics) {
-      const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch((err) => "");
-      const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
-      const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
+      const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
+      const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       result[nic] = {address, speed, carrier};
     }
     return result;
@@ -180,14 +192,6 @@ class Platform {
 
   getRetentionCountMultiplier() {
     return 1;
-  }
-
-  getBroSafeCheckThreshold() {
-    return {
-      missedBytes: 10000000,
-      respRate: 70000000,
-      origRate: 70000000
-    };
   }
 
   isIFBSupported() {
