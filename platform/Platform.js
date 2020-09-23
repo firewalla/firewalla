@@ -30,18 +30,6 @@ class Platform {
     return ["eth0"];
   }
 
-  async getPlatformConfig() {
-    const path = `${f.getFirewallaHome()}/platform/${this.getName()}/files/config.json`;
-    if (fs.existsSync(path))
-      try {
-        return JSON.parse(await fs.readFileAsync(path, 'utf8'));
-      } catch (err) {
-        log.error('Error parsing platform config', err)
-      }
-
-    return {}
-  }
-
   async getNicStates() {
     const nics = this.getAllNicNames();
     const result = {};
