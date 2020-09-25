@@ -76,6 +76,18 @@ class NavyPlatform extends Platform {
     }
   }
 
+  async switchQoS(state, qdisc) {
+    if (state == true) {
+      await exec(`sudo tc qdisc replace dev eth0 root ${qdisc}`).catch((err) => {
+        log.error(`Failed to replace qdisc on eth0 with ${qdisc}`, err.message);
+      });
+    } else {
+      await exec(`sudo tc qdisc del dev eth0 root`).catch((err) => {
+        log.error(`Failed to remove qdisc on eth0`, err.message);
+      });
+    }
+  }
+
   getCPUDefaultFile() {
     return `${__dirname}/files/cpu_default.conf`;
   }
@@ -146,11 +158,11 @@ class NavyPlatform extends Platform {
   */
 
   getRetentionTimeMultiplier() {
-    return 7;
+    return 3;
   }
 
   getRetentionCountMultiplier() {
-    return 5;
+    return 3;
   }
 
   async onWanIPChanged(ip) {
@@ -165,6 +177,15 @@ class NavyPlatform extends Platform {
 
     // to refresh VPN filter in zeek
     await exec("sudo systemctl restart brofish");
+  }
+
+  async applyProfile() {
+    try {
+      log.info("apply profile to optimize network performance");
+      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+    } catch(err) {
+      log.error("Error applying profile", err)
+    }
   }
 }
 

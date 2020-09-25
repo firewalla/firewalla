@@ -51,7 +51,6 @@ const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCan
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 
-const {Rule} = require('./Iptables.js');
 const ipset = require('./Ipset.js');
 
 const fs = require('fs');
@@ -936,10 +935,14 @@ class Host {
       if (neighbors) {
         let neighborArray = [];
         for (let i in neighbors) {
-          let obj = JSON.parse(neighbors[i]);
-          obj['ip']=i;
-          neighborArray.push(obj);
-          count--;
+          try {
+            let obj = JSON.parse(neighbors[i]);
+            obj['ip'] = i;
+            neighborArray.push(obj);
+            count--;
+          } catch (e) {
+            log.warn('parse neighbor data error', neighbors[i], nkey);
+          }
         }
         neighborArray.sort(function (a, b) {
           return Number(b.count) - Number(a.count);
@@ -1325,7 +1328,6 @@ class Host {
           this.policy = {};
           for (const k in data) {
             this.policy[k] = JSON.parse(data[k]);
-            if (k == 'tags') this._tags = this.policy['tags']
           }
           if (callback)
             callback(null, data);
@@ -1350,16 +1352,14 @@ class Host {
     return true;
   }
 
-  getTags() {
-    if (_.isEmpty(this._tags)) {
-      return [];
-    }
+  async getTags() {
+    if (!this.policy) await this.loadPolicyAsync()
 
-    return this._tags;
+    return this.policy.tags && this.policy.tags.map(String) || [];
   }
 
   async tags(tags) {
-    tags = (tags || []).map(Number);
+    tags = (tags || []).map(String);
     this._tags = this._tags || [];
     if (!this.o || !this.o.mac) {
       log.error(`Mac address is not defined`);

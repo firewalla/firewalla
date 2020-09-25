@@ -143,6 +143,7 @@ const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
+const cpuProfile = require('../net2/CpuProfile.js');
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -1222,6 +1223,21 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "cpuProfile":{
+        (async () => {
+          const { applyProfileName, profiles} = value;
+          if (profiles && profiles.length > 0) {
+            await cpuProfile.addProfiles(profiles);
+          }
+          if (applyProfileName) {
+            await cpuProfile.applyProfile(applyProfileName);
+          }
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
@@ -2037,6 +2053,19 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "branchUpdateTime": {
+        (async () => {
+          const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
+          const result = {};
+          for (const branch of branches) {
+            result[branch] = await sysManager.getBranchUpdateTime(branch);
+          }
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2586,6 +2615,16 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
+      case "alarm:archiveByException":
+        (async () => {
+          const exceptionID = value.exceptionID;
+          const result = await am2.archiveAlarmByExceptionAsync(exceptionID);
+          this.simpleTxData(msg, result, null, callback)
+        })().catch((err) => {
+          log.error("Failed to archive alarm by exception:", err)
+          this.simpleTxData(msg, {}, err, callback)
+        })
+        break;
       case "alarm:largeTransferAlarm": {
         (async () => {
           if (!value.ts || !value.shname || !value.dh) {
@@ -2629,7 +2668,7 @@ class netBot extends ControllerBot {
 
         pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
           if (alreadyExists == "duplicated") {
-            this.simpleTxData(msg, null, new Error("Policy already exists"), callback)
+            this.simpleTxData(msg, policy2, {code: 409, msg: "Policy already exists"}, callback)
             return
           } else if (alreadyExists == "duplicated_and_updated") {
             const p = JSON.parse(JSON.stringify(policy2))
@@ -3913,7 +3952,12 @@ class netBot extends ControllerBot {
     log.info("Going to switch to branch", targetBranch);
 
     await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
-    sysTool.upgradeToLatest()
+    if (platform.isFireRouterManaged()) {
+      // firerouter switch branch will trigger fireboot and restart firewalla services
+      await FireRouter.switchBranch(target);
+    } else {
+      sysTool.upgradeToLatest()
+    }
   }
 
   simpleTxData(msg, data, err, callback) {

@@ -75,8 +75,9 @@ class Alarm {
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
 
-    if (info) Object.assign(this, info);
-
+    if (info) {
+      Object.assign(this, info);
+    }
     //    this.validate(type);
 
   }

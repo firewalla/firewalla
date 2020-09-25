@@ -1,5 +1,5 @@
 {
-  "version": 1.971,
+  "version": 1.972,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -76,6 +76,7 @@
     "VPNRelaySensor": {},
     "BoneSensor": {},
     "AdditionalPairPlugin": {},
+    "DockerPlugin": {},
     "EncipherPlugin": {},
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
@@ -542,7 +543,7 @@
     "RuleCheckSensor": {},
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
-    "SS2Plugin": {},
+    "ClashPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "LogScanSensor": {
@@ -691,7 +692,8 @@
     "internal_scan": false,
     "acl_audit": false,
     "new_device_tag": false,
-    "dual_wan": true
+    "dual_wan": true,
+    "clash": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -11,7 +11,8 @@ CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.navy'
 FW_PROBABILITY="0.98"
 FW_SCHEDULE_BRO=false
-FW_ZEEK_CPU_THRESHOLD=90
+FW_ZEEK_CPU_THRESHOLD=98
+FW_ZEEK_RSS_THRESHOLD=380000
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
@@ -41,10 +42,30 @@ function get_sysctl_conf_path {
 }
 
 function map_target_branch {
-  echo "$1"
+  case "$1" in
+  "release_6_0")
+    echo "release_8_0"
+    ;;
+  *)
+    echo $1
+    ;;
+  esac
 }
 
 function hook_server_route_up {
   # adjust rps_cpus for better performance
   sudo bash -c "echo 7 > /sys/class/net/tun_fwvpn/queues/rx-0/rps_cpus"
+}
+
+function hook_after_vpn_confgen {
+  OVPN_CFG="$1"
+  fgrep -q fast-io $OVPN_CFG || {
+
+    sudo bash -c "cat >> $OVPN_CFG" <<EOS
+fast-io
+sndbuf 0
+rcvbuf 0
+EOS
+  }
+
 }

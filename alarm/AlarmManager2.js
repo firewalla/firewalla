@@ -719,6 +719,17 @@ module.exports = class {
       .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
       .execAsync();
   }
+  async archiveAlarmByExceptionAsync(exceptionID) {
+    const exception = await exceptionManager.getException(exceptionID);
+    const alarms = await this.findSimilarAlarmsByException(exception);
+    for (const alarm of alarms) {
+      alarm.result_exception = exception.eid;
+      alarm.result = "archiveByException";
+      await this.updateAlarm(alarm);
+      await this.archiveAlarm(alarm.aid);
+    }
+    return alarms;
+  }
 
   async listExtendedAlarms() {
     const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
@@ -911,7 +922,7 @@ module.exports = class {
   }
 
   async findSimilarAlarmsByException(exception, curAlarmID) {
-    let alarms = await this.loadActiveAlarmsAsync();
+    let alarms = await this.loadActiveAlarmsAsync(200);
     return alarms.filter((alarm) => {
       if (alarm.aid === curAlarmID) {
         return false // ignore current alarm id, since it's already blocked
@@ -1590,14 +1601,13 @@ module.exports = class {
     if (userInput && !_.isEmpty(userInput.tag)) {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
-      e["p.tag.ids"] = [];
       for (const tagStr of userInput.tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length)
-          e["p.tag.ids"].push(tagUid);
+          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
+          e["p.tag.ids"] = [tagUid];
         }
       }
     }

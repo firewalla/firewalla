@@ -108,6 +108,10 @@ class Platform {
     }
   }
 
+  async switchQoS(state, qdisc) {
+
+  }
+
   getDNSServiceName() {
     return "firemasq";
   }
@@ -142,8 +146,8 @@ class Platform {
   isFireRouterManaged() {
   }
 
-  getBroTabFile() {
-    return `${f.getFirewallaHome()}/etc/brotab`;
+  getCronTabFile() {
+    return `${f.getFirewallaHome()}/etc/crontab`;
   }
 
   hasMultipleCPUs() {
@@ -190,12 +194,20 @@ class Platform {
     return false;
   }
 
+  isDockerSupported() {
+    return false;
+  }
+
   async onWanIPChanged(ip) {
     log.info("WanIP is changed to", ip);
   }
 
   async onVPNPortProtocolChanged() {
     log.info("VPN Port Protocol is changed");
+  }
+
+  async applyProfile() {
+    log.info("NO need to apply profile");
   }
 }
 

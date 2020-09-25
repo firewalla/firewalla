@@ -1,5 +1,25 @@
 #!/bin/bash
 
+UNAME=$(uname -m)
+case "$UNAME" in
+  "x86_64")
+    PLATFORM='gold'
+    ;;
+  "aarch64")
+    if [[ -e /etc/firewalla-release ]]; then
+      PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      PLATFORM='unknown'
+    fi
+    ;;
+  "armv7l")
+    PLATFORM='red'
+    ;;
+  *)
+    PLATFORM='unknown'
+    ;;
+esac
+
 check_cloud() {
     echo -n "  checking cloud access ... "
     curl_result=$(curl -w '%{http_code}' -Lks --connect-timeout 5 https://firewalla.encipher.io)
@@ -107,7 +127,7 @@ check_systemctl_services() {
     check_each_system_service fireupgrade "dead"
     check_each_system_service fireboot "dead"
 
-    if [[ $(uname -m) != "x86_64" ]]; then # non gold
+    if [[ $PLATFORM != 'gold' ]]; then # non gold
         check_each_system_service firemasq "running"
     else # gold
         check_each_system_service firerouter "running"
@@ -368,7 +388,7 @@ check_hosts() {
 
         local COLOR=""
         local UNCOLOR="\e[0m"
-        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_B7_MONITORING == "false" ]] &&
+        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_MONITORING == 'true' && $DEVICE_B7_MONITORING == "false" ]] &&
           ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
             COLOR="\e[91m"
         elif [ $DEVICE_FLOWINCOUNT -gt 2000 ] || [ $DEVICE_FLOWOUTCOUNT -gt 2000 ]; then
@@ -377,7 +397,7 @@ check_hosts() {
             COLOR="\e[2m" #dim
         fi
 
-        local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=\[==" | sed "s=\]==" | sed "s=,= =")
+        local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=[][\" ]==g" | sed "s=,= =")
         TAGNAMES=""
         for tag in $TAGS; do
             TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
@@ -390,7 +410,7 @@ check_hosts() {
     echo ""
 }
 
-check_iptables() {
+check_ipset() {
     echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
@@ -412,21 +432,40 @@ check_sys_features() {
     echo "---------------------- System Features ------------------"
     declare -A FEATURES
     local FILE="$FIREWALLA_HOME/net2/config.json"
-    if [[ -f "$FILE" ]]; then
+    local USERFILE="$HOME/.firewalla/config/config.json"
+
+    # use jq where available
+    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' ]]; then
+      if [[ -f "$FILE" ]]; then
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
+        while read key value; do
+          FEATURES["$key"]="$value"
+        done
+      fi
+
+      if [[ -f "$USERFILE" ]]; then
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $USERFILE |
+        while read key value; do
+          FEATURES["$key"]="$value"
+        done
+      fi
+    else
+      # lagacy python 2.7 solution
+      if [[ -f "$FILE" ]]; then
         local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
         while IFS="=" read -r key value; do
-            FEATURES["$key"]="$value"
+          FEATURES["$key"]="$value"
         done <<<"$JSON"
-    fi
+      fi
 
-    FILE="$HOME/.firewalla/config/config.json"
-    if [[ -f "$FILE" ]]; then
-        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
+      if [[ -f "$USERFILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$USERFILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
         if [[ "$JSON" != "" ]]; then
-            while IFS="=" read -r key value; do
-                FEATURES["$key"]="$value"
-            done <<<"$JSON"
+          while IFS="=" read -r key value; do
+            FEATURES["$key"]="$value"
+          done <<<"$JSON"
         fi
+      fi
     fi
 
     local HKEYS=$(redis-cli hkeys sys:features)
@@ -500,13 +539,60 @@ check_dhcp() {
 }
 
 usage() {
+    echo "Options:"
+    echo "  -s  | --service"
+    echo "  -n  | --network"
+    echo "  -sc | --config"
+    echo "  -sf | --feature"
+    echo "  -r  | --rule"
+    echo "  -i  | --ipset"
+    echo "  -d  | --dhcp"
+    echo "  -f  | --fast | --host"
+    echo "  -h  | --help"
     return
 }
 
 FAST=false
 while [ "$1" != "" ]; do
     case $1 in
-    -f | --fast)
+    -s | --service)
+        shift
+        check_systemctl_services
+        FAST=true
+        ;;
+    -n | --network)
+        shift
+        check_network
+        FAST=true
+        ;;
+    -sc | --config)
+        shift
+        check_system_config
+        check_sys_config
+        FAST=true
+        ;;
+    -sf | --feature)
+        shift
+        check_sys_features
+        FAST=true
+        ;;
+    -r | --rule)
+        shift
+        check_policies
+        FAST=true
+        ;;
+    -i | --ipset)
+        shift
+        check_ipset
+        FAST=true
+        ;;
+    -d | --dhcp)
+        shift
+        check_dhcp
+        FAST=true
+        ;;
+    -f | --fast | --host)
+        check_hosts
         shift
         FAST=true
         ;;
@@ -519,7 +605,6 @@ while [ "$1" != "" ]; do
         exit 1
         ;;
     esac
-    shift
 done
 
 if [ "$FAST" == false ]; then
@@ -533,9 +618,9 @@ if [ "$FAST" == false ]; then
     check_sys_features
     check_sys_config
     check_policies
-    check_iptables
+    check_ipset
     check_conntrack
     check_dhcp
     test -z $SPEED || check_speed
+    check_hosts
 fi
-check_hosts

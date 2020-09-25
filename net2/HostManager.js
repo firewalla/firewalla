@@ -1003,6 +1003,7 @@ module.exports = class HostManager {
 
         const suffix = await rclient.getAsync('local:domain:suffix');
         json.localDomainSuffix = suffix ? suffix : 'lan';
+        json.cpuProfile = await this.getCpuProfile();
         callback(null, json);
       } catch(err) {
         log.error("Caught error when preparing init data: " + err);
@@ -1229,23 +1230,21 @@ module.exports = class HostManager {
         this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
         try {
-          const ipv6Addr = JSON.parse(o.ipv6Addr)
+          const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
           if (hostbymac.ipv6Addr && Array.isArray(hostbymac.ipv6Addr)) {
             // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
             for (const oldIpv6 of hostbymac.ipv6Addr) {
-              if (!ipv6Addr || !Array.isArray(ipv6Addr) || !ipv6Addr.includes(oldIpv6)) {
+              if (!ipv6Addr.includes(oldIpv6)) {
                 // the physical host dropped old ipv6 address
                 this.hostsdb['host:ip6:' + oldIpv6] = null;
               }
             }
           }
-          if (ipv6Addr && Array.isArray(ipv6Addr)) {
-            for (const newIpv6 of ipv6Addr) {
-              this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
-            }
+          for (const newIpv6 of ipv6Addr) {
+            this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
           }
         } catch(err) {
-          log.err('Failed to check v6 address of', o.mac, err)
+          log.error('Failed to check v6 address of', o.mac, err)
         }
 
         hostbymac.update(o);
@@ -1284,7 +1283,7 @@ module.exports = class HostManager {
       let hostbymac = this.hostsdb[h];
       if (hostbymac && h.startsWith("host:mac")) {
         if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
-          if (!sysManager.isMyIP(hostbymac.ipv4Addr)) {   // local ipv6 do not count
+          if (hostbymac.o.ipv4Addr && !sysManager.isMyIP(hostbymac.o.ipv4Addr)) {   // local ipv6 do not count
             allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
           }
         }
@@ -1349,14 +1348,21 @@ module.exports = class HostManager {
     return this.spoofing;
   }
 
-  async qos(state) {
-    if (state == false) {
-      await iptables.switchQoSAsync(false);
-      await iptables.switchQoSAsync(false, 6);
-    } else {
-      await iptables.switchQoSAsync(true);
-      await iptables.switchQoSAsync(true, 6);
+  async qos(policy) {
+    let state = null;
+    let qdisc = "fq_codel";
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+        qdisc = policy.qdisc || "fq_codel";
+        break;
+      default:
+        return;
     }
+    await platform.switchQoS(state, qdisc);
   }
 
   async acl(state) {
@@ -1887,5 +1893,19 @@ module.exports = class HostManager {
 
     json.systemFlows = systemFlows;
     return systemFlows;
+  }
+  async getCpuProfile() {
+    try {
+      const name = await rclient.getAsync('platform:profile:active');
+      const content = await rclient.hgetAsync('platform:profile', name);
+      if (name && content) {
+        return {
+          name: name,
+          content: content
+        }
+      }
+    } catch (e) {
+      log.warn('getCpuProfile error', e)
+    }
   }
 }

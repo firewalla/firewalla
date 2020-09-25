@@ -35,7 +35,7 @@ async function dhcpDiscover(intf) {
   intf = intf || config.monitoringInterface;
   log.info("Broadcasting DHCP discover on ", intf);
   
-  let cmd = util.format('sudo nmap --script broadcast-dhcp-discover -e %s -oX - | %s', intf, xml2jsonBinary);
+  let cmd = util.format('sudo timeout 1200s nmap --script broadcast-dhcp-discover -e %s -oX - | %s', intf, xml2jsonBinary);
   log.info("Running command:", cmd);
 
   return new Promise((resolve, reject) => {
@@ -92,7 +92,7 @@ async function dhcpDiscover(intf) {
 
 async function dhcpServerStatus(serverIp) {
   let result = false;
-  let cmd = util.format('sudo nmap -sU -p 67 --script=dhcp-discover %s -oX - | %s', serverIp, xml2jsonBinary);
+  let cmd = util.format('sudo timeout 1200s nmap -sU -p 67 --script=dhcp-discover %s -oX - | %s', serverIp, xml2jsonBinary);
   log.info("Running command:", cmd);
   try {
     const cmdresult = await execAsync(cmd);

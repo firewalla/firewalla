@@ -89,7 +89,9 @@ LOGGER=logger
 ERR=logger
 [ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
-await_ip_assigned || restore_values
+if [ "$(uname -m)" != "x86_64" ]; then
+  await_ip_assigned || restore_values
+fi
 
 [ -s $SCRIPTS_DIR/fire-time.sh ] && $SCRIPTS_DIR/fire-time.sh || $FIREWALLA_HOME/scripts/fire-time.sh
 
@@ -136,10 +138,19 @@ function map_target_branch {
         echo "beta_8_0"
         ;;
       "beta_7_0")
-        echo "beta_8_0"
+        echo "beta_9_0"
         ;;
       "master")
         echo "master"
+        ;;
+      *)
+        echo $1
+        ;;
+    esac
+  elif [[ $(head -n 1 /etc/firewalla-release 2>/dev/null) == "BOARD=navy" ]]; then
+    case "$1" in
+      "release_6_0")
+        echo "release_8_0"
         ;;
       *)
         echo $1
