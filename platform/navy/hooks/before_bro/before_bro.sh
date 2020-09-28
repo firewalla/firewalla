@@ -12,26 +12,8 @@ else
   [[ -e $CUR_DIR/local.bro ]] && sudo cp $CUR_DIR/local.bro /usr/local/bro/share/bro/site/local.bro
 fi
 
-: ${VPN_PORT:=1194}
-: ${VPN_PROTOCOL:=udp}
-
 EXTERNAL_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
 OVERLAY_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0:0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
-
-VPN_CONFIG=$(redis-cli hget policy:system vpn)
-
-if [[ -n "$VPN_CONFIG" ]]; then
-  PROTOCOL=$(echo $VPN_CONFIG | jq -r '.protocol')
-  PORT=$(echo $VPN_CONFIG | jq -r '.localPort')
-
-  if [[ $PROTOCOL != "null" && "x$PROTOCOL" != "x" ]]; then
-    VPN_PROTOCOL=$PROTOCOL
-  fi
-
-  if [[ $PORT != "null" && "x$PORT" != "x" ]]; then
-    VPN_PORT=$PORT
-  fi
-fi
 
 if [[ -n "$EXTERNAL_IP" ]]; then
 
