@@ -22,6 +22,7 @@ if [[ -n "$EXTERNAL_IP" ]]; then
 # local filter
 redef restrict_filters += [["not-itself"] = "not (host $EXTERNAL_IP and not port 53 and not port 8853)"];
 EOS
+fi
 
 if [[ -n "$OVERLAY_IP" ]]; then
 
