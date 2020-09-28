@@ -1597,8 +1597,10 @@ module.exports = class {
     if (this.enableRecording) {
 
       // for traffic account
-      await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
-      await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+      (async () => {
+        await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
+        await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+      })()
 
       const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 
