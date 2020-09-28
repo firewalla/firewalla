@@ -1596,6 +1596,10 @@ module.exports = class {
   recordTraffic(ts, inBytes, outBytes, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
+      // for traffic account
+      await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
+      await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+
       const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 
       // lastNTS starts with null and assigned with normalizedTS every 10s
