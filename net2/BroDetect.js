@@ -1596,11 +1596,6 @@ module.exports = class {
   recordTraffic(ts, inBytes, outBytes, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
-      // for traffic account
-      (async () => {
-        await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
-        await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
-      })()
 
       const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 
@@ -1624,6 +1619,12 @@ module.exports = class {
 
       // append current status
       if (!ignoreGlobal) {
+        // for traffic account
+        (async () => {
+          await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
+          await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+        })()
+
         this.timeSeriesCache.global.download += Number(inBytes)
         this.timeSeriesCache.global.upload += Number(outBytes)
       }
