@@ -1317,6 +1317,11 @@ module.exports = class HostManager {
       spoofer.validateV4Spoofs(allIPv4Addrs);
     }
     log.info("done Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
+    if (f.isMain()) {
+      const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+      const dnsmasq = new Dnsmasq();
+      dnsmasq.onDHCPReservationChanged(); // trigger dhcp hosts file update
+    }
     return this.hosts.all;
   }
 
