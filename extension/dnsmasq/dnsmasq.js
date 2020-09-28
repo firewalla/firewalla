@@ -1086,10 +1086,14 @@ module.exports = class DNSMASQ {
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
     const lease_time = '24h';
+    const HostManager = require('../../net2/HostManager.js');
+    const hostManager = new HostManager();
 
     // legacy ip reservation is set in host:mac:*
     const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
       .filter((x) => (x && x.mac) != null)
+      .filter((x) => hostManager.getHostFastByMAC(x.mac)) // do not apply host IP assignment for devices that are inactive
+      .filter((x) => !sysManager.isMyMac(x.mac))
       .sort((a, b) => a.mac.localeCompare(b.mac));
 
     hosts.forEach(h => {
