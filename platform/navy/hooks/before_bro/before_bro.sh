@@ -16,6 +16,7 @@ fi
 : ${VPN_PROTOCOL:=udp}
 
 EXTERNAL_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
+OVERLAY_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0:0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
 
 VPN_CONFIG=$(redis-cli hget policy:system vpn)
 
@@ -38,6 +39,14 @@ if [[ -n "$EXTERNAL_IP" ]]; then
 
 # local filter
 redef restrict_filters += [["not-itself"] = "not (host $EXTERNAL_IP and not port 53 and not port 8853)"];
+EOS
+
+if [[ -n "$OVERLAY_IP" ]]; then
+
+  sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
+
+# overlay filter
+redef restrict_filters += [["not-itself-overlay"] = "not (host $OVERLAY_IP and tcp)"];
 EOS
 
 fi
