@@ -1209,13 +1209,16 @@ module.exports = class HostManager {
       if (hostbymac == null) {
         hostbymac = new Host(o);
         this.hosts.all.push(hostbymac);
-        this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
+        // it will be updated later by checking if there is double mapping
+        // this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         this.hostsdb['host:mac:' + o.mac] = hostbymac;
 
         let ipv6Addrs = hostbymac.ipv6Addr
         if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
           for(let i in ipv6Addrs) {
             let ip6 = ipv6Addrs[i]
+            // ipv6 address conflict hardly happens, so update here is relatively safe
             let key = `host:ip6:${ip6}`
             this.hostsdb[key] = hostbymac
           }
@@ -1224,10 +1227,12 @@ module.exports = class HostManager {
       } else {
         if (o.ipv4 != hostbymac.o.ipv4) {
           // the physical host get a new ipv4 address
-          //
-          this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+          // remove host:ip4 entry from this.hostsdb only if the entry belongs to this mac
+          if (hostbyip && hostbyip.o.mac === o.mac)
+            this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
         }
-        this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
+        // do not update host:ip4 entries here for the same reason in if cause
+        // this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
         try {
           const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
@@ -1257,8 +1262,15 @@ module.exports = class HostManager {
       if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
         log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
         if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
+          log.info(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        } else {
+          log.info(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
+          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbyip;
         }
+      } else {
+        // update host:ip4 entries in this.hostsdb here if it is a new IPv4 address or belongs to the same device
+        this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
       }
       await hostbymac.cleanV6()
       if (f.isMain()) {
