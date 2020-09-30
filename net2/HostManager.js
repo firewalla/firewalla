@@ -1914,7 +1914,7 @@ module.exports = class HostManager {
   async getCpuProfile() {
     try {
       const name = await rclient.getAsync('platform:profile:active');
-      const content = await rclient.hgetAsync('platform:profile', name);
+      const content = name ? await rclient.hgetAsync('platform:profile', name) : null;
       if (name && content) {
         return {
           name: name,
