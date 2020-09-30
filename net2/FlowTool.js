@@ -338,7 +338,7 @@ class FlowTool {
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
       const hostManager = new HostManager();
-      allMacs = hostManager.getTagMacs(_.toNumber(options.tag));
+      allMacs = hostManager.getTagMacs(options.tag);
     } else {
       allMacs = await hostTool.getAllMACs();
     }
