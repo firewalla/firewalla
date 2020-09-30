@@ -456,7 +456,7 @@ process.on('uncaughtException',(err)=>{
     type: 'FIREWALLA.KICKSTART.exception',
     msg: err.message,
     stack: err.stack,
-    err: JSON.stringify(err)
+    err: err
   });
   setTimeout(()=>{
     cp.execSync("touch /home/pi/.firewalla/managed_reboot")
@@ -473,6 +473,6 @@ process.on('unhandledRejection', (reason, p)=>{
     type: 'FIREWALLA.KICKSTART.unhandledRejection',
     msg: msg,
     stack: reason.stack,
-    err: JSON.stringify(reason)
+    err: reason
   });
 });
