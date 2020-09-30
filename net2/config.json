@@ -438,7 +438,7 @@
         "count": 100
       },
       "software": {
-        "expires": 604800,
+        "expires": 86400,
         "count": 10000
       },
       "http": {
@@ -572,7 +572,7 @@
     },
     "software": {
       "path": "/blog/current/software.log",
-      "expires": 604800
+      "expires": 86400
     },
     "http": {
       "path": "/blog/current/http.log",
