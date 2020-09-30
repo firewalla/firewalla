@@ -900,11 +900,14 @@ module.exports = class DNSMASQ {
       }
       const resolver4 = sysManager.myResolver(intf.name);
       const resolver6 = sysManager.myResolver6(intf.name);
+      const myIp4 = sysManager.myIp(intf.name);
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const netSet = NetworkProfile.getNetIpsetName(uuid);
-      if (resolver4 && resolver4.length > 0) {
+      if (myIp4 && resolver4 && resolver4.length > 0) {
+        // redirect dns request that is originally sent to box itself to the upstream resolver
         const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
           .mdl("set", `--match-set ${netSet} src,src`)
+          .mth(myIp4, null, "dst")
           .mth(53, null, 'dport')
           .jmp(`DNAT --to-destination ${resolver4[0]}:53`);
         const redirectUDP = redirectTCP.clone().pro('udp');
