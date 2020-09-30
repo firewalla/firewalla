@@ -71,7 +71,7 @@ class TypeFlowTool {
   async getTypes(mac) {
     mac = mac || '*' // match all mac addresses if mac is not defined
     const keyPattern = this.getTypeFlowKey(mac, '*')
-    const keys = await rclient.scanResults(keyPattern)
+    const keys = await rclient.scanResults(keyPattern, 1000)
     const types = new Set()
     keys && keys.forEach(key => {
       const result = key.split(':').pop();
@@ -86,7 +86,7 @@ class TypeFlowTool {
   async getTypeMacAddresses(type) {
     const keyPattern = this.getTypeFlowKey('*', type)
 
-    const keys = await rclient.scanResults(keyPattern)
+    const keys = await rclient.scanResults(keyPattern, 1000)
     const results = []
     keys.forEach(key => {
       const regex = new RegExp(`${this.dimension}flow:(.*):[^:]*`)
