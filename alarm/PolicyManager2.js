@@ -2146,6 +2146,11 @@ class PolicyManager2 {
           if (!remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)))
             continue;
           break;
+        case "mac":
+        case "internet":
+          if (remoteIpsToCheck.filter(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)).length === remoteIpsToCheck.length)
+            continue;
+          break;
         case "network":
           const iface = rule.target && sysManager.getInterfaceViaUUID(rule.target);
           if (!iface || !remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip, iface.name) || sysManager.inMySubnet6(ip, iface.name)))
