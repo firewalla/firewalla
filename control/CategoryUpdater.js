@@ -72,23 +72,29 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       // only run refresh category records for fire main process
       sem.once('IPTABLES_READY', async () => {
-        this.inited = true;
         if (firewalla.isMain()) {
           setInterval(() => {
             this.refreshAllCategoryRecords()
           }, 60 * 60 * 1000) // update records every hour
 
-          await this.refreshAllCategoryRecords()
-
           sem.on('UPDATE_CATEGORY_DOMAIN', (event) => {
-            if (event.category) {
-              if (!this.isActivated(event.category)) {
-                return;
+            if (!this.inited) {
+              log.info("Category updater is not ready yet, will retry in 5 seconds", event);
+              // re-emit the same event in 5 seconds if init process is not complete yet
+              setTimeout(() => {
+                sem.emitEvent(event);
+              }, 5000);
+            } else {
+              if (event.category) {
+                if (!this.isActivated(event.category)) {
+                  return;
+                }
+                this.recycleIPSet(event.category);
+                domainBlock.updateCategoryBlock(event.category);
               }
-              this.recycleIPSet(event.category);
-              domainBlock.updateCategoryBlock(event.category);
             }
           });
+          await this.refreshAllCategoryRecords()
           fc.onFeature('smart_block', async (feature) => {
             if (feature !== 'smart_block') {
               return
@@ -96,6 +102,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
             await this.refreshAllCategoryRecords();
           })
         }
+        this.inited = true;
       })
       this.updateIPSetTasks = {};
       this.filterIPSetTasks = {};

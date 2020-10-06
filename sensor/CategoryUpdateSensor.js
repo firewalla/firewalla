@@ -128,6 +128,11 @@ class CategoryUpdateSensor extends Sensor {
       await categoryUpdater.flushIPv6Addresses(category)
       await categoryUpdater.addIPv6Addresses(category, ip6List)
     }
+    sem.emitEvent({
+      type: "UPDATE_CATEGORY_DOMAIN",
+      category: category,
+      toProcess: "FireMain"
+    });
   }
 
   async updateCountryAllocation(country) {
