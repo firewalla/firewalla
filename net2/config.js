@@ -129,6 +129,7 @@ function getConfig(reload) {
     // 1 more level of Object.assign grants more flexibility to configurations
     for (const key of complexNodes) {
       config[key] = Object.assign({}, defaultConfig[key], platformConfig[key], userConfig[key], testConfig[key])
+    }
   }
   return config;
 }
