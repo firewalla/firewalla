@@ -86,6 +86,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
               }, 5000);
             } else {
               if (event.category) {
+                // skip ipset and dnsmasq config update if category is not activated
                 if (!this.isActivated(event.category)) {
                   return;
                 }
@@ -235,11 +236,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!category || !domain) {
       return;
     }
-
-    if (!this.isActivated(category)) {
-      return
-    }
-
     const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)
 
@@ -262,6 +258,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const dynamicCategoryDomainExists = await this.dynamicCategoryDomainExists(category, d)
     const defaultDomainExists = await this.defaultDomainExists(category, d);
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
+
+    // skip ipset and dnsmasq config update if category is not activated
+    if (!this.isActivated(category)) {
+      return
+    }
     this.addUpdateIPSetByDomainTask(category, d);
     this.addFilterIPSetByDomainTask(category);
     if (!dynamicCategoryDomainExists && !defaultDomainExists) {

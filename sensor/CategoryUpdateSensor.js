@@ -32,6 +32,8 @@ const categoryUpdater = new CategoryUpdater();
 const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
 
+const domainBlock = require('../control/DomainBlock.js');
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -176,10 +178,9 @@ class CategoryUpdateSensor extends Sensor {
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
-        if (!categoryHashsetMapping[category]) {
-          log.error(`Cannot activate unrecognized category ${category}`);
-          return;
-        }
+        await domainBlock.updateCategoryBlock(category).catch((err) => {
+          log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
+        });
         await categoryUpdater.refreshCategoryRecord(category).then(() => {
           return categoryUpdater.recycleIPSet(category)
         }).catch((err) => {
