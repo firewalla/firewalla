@@ -29,10 +29,10 @@ const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 const abnormalBandwidthUsageFeatureName = 'abnormal_bandwidth_usage';
-const dataPlanFeatureName = 'data_plan';
+const dataPlanFeatureName = 'data_plan_alarm';
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const fc = require('../net2/config.js');
-const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan.cooldown") || 60 * 60 * 24 * 30;
+const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan_alarm.cooldown") || 60 * 60 * 24 * 30;
 const abnormalBandwidthUsageCooldown = fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4;
 class DataUsageSensor extends Sensor {
     constructor() {
