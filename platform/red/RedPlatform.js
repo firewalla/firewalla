@@ -105,14 +105,6 @@ class RedPlatform extends Platform {
   isBluetoothAvailable() {
     return false
   }
-
-  getBroSafeCheckThreshold() {
-    return {
-      missedBytes: 10000000,
-      respRate: 12800000,
-      origRate: 12800000
-    };
-  }
 }
 
 module.exports = RedPlatform;

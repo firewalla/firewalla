@@ -148,6 +148,8 @@ class NetBotTool {
     if (flows) {
       json.flows[key] = flows
     }
+
+    return flows
   }
 
   async prepareDetailedFlows(json, dimension, options) {
@@ -177,7 +179,7 @@ class NetBotTool {
       allMacs = hostManager.getIntfMacs(options.intf);
       log.info(`prepareDetailedFlows ${dimension} intf: ${options.intf}, ${allMacs}`);
     } else if (options.tag) {
-      allMacs = hostManager.getTagMacs(_.toNumber(options.tag));
+      allMacs = hostManager.getTagMacs(options.tag);
       log.info(`prepareDetailedFlows ${dimension} tag: ${options.tag}, ${allMacs}`);
     } else if (options.mac) {
       allMacs = [ options.mac ]
@@ -228,6 +230,12 @@ class NetBotTool {
 
     if(options.queryall && target) {
       sumFlowKey = await flowAggrTool.getLastSumFlow(target, trafficDirection);
+
+      if (!sumFlowKey) {
+        log.warn('Aggregation not found', target, trafficDirection)
+        return []
+      }
+
       const ts = this._getTimestamps(sumFlowKey);
       if (ts) {
         begin = ts.begin

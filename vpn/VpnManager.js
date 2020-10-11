@@ -78,6 +78,9 @@ class VpnManager {
         await this.updateOverlayNetworkDNAT().catch((err) => {
           log.error("Failed to update overlay network DNAT", err.message);
         });
+        await this.updateMultiWanDNAT().catch((err) => {
+          log.error("Failed to update multi WAN DNAT", err.message);
+        });
       } catch(err) {
         log.error("Failed to set Upnp port mapping", err);
       }
@@ -118,6 +121,24 @@ class VpnManager {
 
   async installAsync(instance) {
     return util.promisify(this.install).bind(this)(instance)
+  }
+
+  async updateMultiWanDNAT() {
+    if (!platform.isFireRouterManaged())
+      return;
+    const primaryIp = sysManager.myDefaultWanIp();
+    const allWanIps = sysManager.myWanIps();
+    if (!primaryIp || !allWanIps || allWanIps.length === 0)
+      return;
+    const localPort = this.localPort;
+    const protocol = this.protocol;
+    const commands = [];
+    commands.push(wrapIptables(`sudo iptables -w -t nat -F FW_PREROUTING_VPN_OVERLAY`));
+    for (const wanIp of allWanIps) {
+      if (wanIp !== primaryIp)
+        commands.push(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VPN_OVERLAY -d ${wanIp} -p ${protocol} --dport ${localPort} -j DNAT --to-destination ${primaryIp}:${localPort}`));
+    }
+    await iptable.run(commands);
   }
 
   async updateOverlayNetworkDNAT() {
@@ -531,6 +552,9 @@ class VpnManager {
       });
       await this.updateOverlayNetworkDNAT().catch((err) => {
         log.error("Failed to update overlay network DNAT", err.message);
+      });
+      await this.updateMultiWanDNAT().catch((err) => {
+        log.error("Failed to update multi WAN DNAT", err.message);
       });
       log.info("VpnManager:UPNP:SetDone", this.portmapped);
       const vpnSubnet = ip.subnet(this.serverNetwork, this.netmask);

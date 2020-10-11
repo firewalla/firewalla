@@ -900,11 +900,14 @@ module.exports = class DNSMASQ {
       }
       const resolver4 = sysManager.myResolver(intf.name);
       const resolver6 = sysManager.myResolver6(intf.name);
+      const myIp4 = sysManager.myIp(intf.name);
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const netSet = NetworkProfile.getNetIpsetName(uuid);
-      if (resolver4 && resolver4.length > 0) {
+      if (myIp4 && resolver4 && resolver4.length > 0) {
+        // redirect dns request that is originally sent to box itself to the upstream resolver
         const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
           .mdl("set", `--match-set ${netSet} src,src`)
+          .mth(myIp4, null, "dst")
           .mth(53, null, 'dport')
           .jmp(`DNAT --to-destination ${resolver4[0]}:53`);
         const redirectUDP = redirectTCP.clone().pro('udp');
@@ -1086,10 +1089,14 @@ module.exports = class DNSMASQ {
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
     const lease_time = '24h';
+    const HostManager = require('../../net2/HostManager.js');
+    const hostManager = new HostManager();
 
     // legacy ip reservation is set in host:mac:*
     const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
       .filter((x) => (x && x.mac) != null)
+      .filter((x) => hostManager.getHostFastByMAC(x.mac)) // do not apply host IP assignment for devices that are inactive
+      .filter((x) => !sysManager.isMyMac(x.mac))
       .sort((a, b) => a.mac.localeCompare(b.mac));
 
     hosts.forEach(h => {
