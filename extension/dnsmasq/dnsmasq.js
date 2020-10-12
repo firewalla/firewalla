@@ -528,8 +528,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async addPolicyCategoryFilterEntry(domains, options) {
-    log.debug("addPolicyCategoryFilterEntry", domains, options)
+  async addPolicyCategoryFilterEntry(options) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
@@ -537,18 +536,7 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     options = options || {};
     const category = options.category;
-    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
-    const blockEntries = [];
-    const allowEntries = [];
     try {
-      for (const domain of domains) {
-        blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
-        allowEntries.push(`server=/${domain}/#$${category}_allow`);
-      }
-      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
-      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
-
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
         if (options.scope && options.scope.length > 0) {
           // use single config for all devices configuration
@@ -606,8 +594,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async removePolicyCategoryFilterEntry(domains, options) {
-    log.debug("removePolicyCategoryFilterEntry", domains, options)
+  async removePolicyCategoryFilterEntry(options) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later

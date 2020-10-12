@@ -24,6 +24,7 @@ const Block = require('./Block.js');
 const exec = require('child-process-promise').exec
 
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const domainBlock = require('../control/DomainBlock.js');
 
 const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;
@@ -60,22 +61,17 @@ class CategoryUpdaterBase {
   }
 
   async getIPv4Addresses(category) {
-    if(!this.isActivated(category))
-      return 0
 
     return rclient.smembersAsync(this.getIPv4CategoryKey(category))
   }
 
   async getIPv4AddressesCount(category) {
-    if(!this.isActivated(category))
-      return 0
 
     return rclient.scardAsync(this.getIPv4CategoryKey(category))
   }
 
   async addIPv4Addresses(category, addresses) {
-    if (!category || !this.isActivated(category)
-      || !Array.isArray(addresses) || addresses.length === 0) {
+    if (!category || !Array.isArray(addresses) || addresses.length === 0) {
       return
     }
 
@@ -86,29 +82,19 @@ class CategoryUpdaterBase {
   }
 
   async flushIPv4Addresses(category) {
-    if(!this.isActivated(category))
-      return
-
     return rclient.delAsync(this.getIPv4CategoryKey(category));
   }
 
   async getIPv6Addresses(category) {
-    if(!this.isActivated(category))
-      return
-
     return rclient.smembersAsync(this.getIPv6CategoryKey(category))
   }
 
   async getIPv6AddressesCount(category) {
-    if(!this.isActivated(category))
-      return 0
-
     return rclient.scardAsync(this.getIPv6CategoryKey(category))
   }
 
   async addIPv6Addresses(category, addresses) {
-    if (!category || !this.isActivated(category)
-      || !Array.isArray(addresses) || addresses.length === 0) {
+    if (!category || !Array.isArray(addresses) || addresses.length === 0) {
       return
     }
 
@@ -119,10 +105,6 @@ class CategoryUpdaterBase {
   }
 
   async flushIPv6Addresses(category) {
-    if(!this.isActivated(category)) {
-      return
-    }
-
     return rclient.delAsync(this.getIPv6CategoryKey(category));
   }
 
@@ -212,9 +194,9 @@ class CategoryUpdaterBase {
     return Object.keys(this.activeCategories)
   }
 
-  async activateCategory(category) {
+  async activateCategory(category, type = 'hash:ip') {
     // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
-    await Block.setupCategoryEnv(category, 'hash:ip', 4096);
+    await Block.setupCategoryEnv(category, type, 4096);
 
     this.activeCategories[category] = 1
   }
@@ -237,6 +219,9 @@ class CategoryUpdaterBase {
     log.info('Active categories', categories)
 
     for (const category of categories) {
+      await domainBlock.updateCategoryBlock(category).catch((err) => {
+        log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
+      });
 
       await this.refreshCategoryRecord(category).catch((err) => {
         log.error(`Failed to refresh category ${category}`, err)
