@@ -54,10 +54,11 @@ if [ $? -ne 0 ]; then
   sudo apt-get install -y jq
 fi
 
+# TODO: multi-interface
 GATEWAY="$(redis-cli hget sys:network:info eth0 | jq -r .gateway_ip)"
 FIREWALLA="$(redis-cli hget sys:network:info eth0 | jq -r .ip_address)"
 SUBNET=${FIREWALLA%.*}
-FIREWALLA2="$(redis-cli hget sys:network:info eth0:0 | jq -r .ip_address)"
+FIREWALLA2="$(redis-cli hget sys:network:info eth0:0 | jq -r .ip_address |grep . || echo 255.255.255.255)"
 SUBNET2=${FIREWALLA2%.*}
 
 EXCLUDE=($GATEWAY $FIREWALLA $FIREWALLA2)
@@ -71,7 +72,7 @@ declare -A DEST
 declare -A CONN
 
 zcat -f $FILES |
-grep -v "$GATEWAY\|$FIREWALLA\|$FIREWALLA2\|198.51.100.99\|0.0.0.0\|f\(f0\|e[89abcde]\).:.*" |
+grep -v "$GATEWAY\"\|$FIREWALLA\"\|$FIREWALLA2\"\|198.51.100.99\|0.0.0.0\|f\(f0\|e[89abcde]\).:.*\"" |
 jq -r ". | \"\(.proto) \(.[\"id.orig_h\"]) \(.[\"id.orig_p\"]) \(.[\"id.resp_h\"]) \(.[\"id.resp_p\"]) \(.conn_state) \(.local_orig) \(.local_resp)\"" |
 while read proto orig oport resp rport state local_orig local_resp; do
     #host=""
@@ -100,6 +101,7 @@ while read proto orig oport resp rport state local_orig local_resp; do
             srcPort=$rport;
             destPort=$oport;
         else
+            # TODO: ipv6 check
             if [[ "${orig%.*}" == "$SUBNET" || "${orig%.*}" == "$SUBNET2" ]]; then
                 host=$orig;
                 dest=$resp;
