@@ -99,7 +99,12 @@ class CategoryUpdateSensor extends Sensor {
     log.info(`category ${category} has ${domains.length} domains`)
 
     await categoryUpdater.flushDefaultDomains(category);
-    return categoryUpdater.addDefaultDomains(category,domains);
+    await categoryUpdater.addDefaultDomains(category,domains);
+    sem.emitEvent({
+      type: "UPDATE_CATEGORY_DOMAIN",
+      category: category,
+      toProcess: "FireMain"
+    });
   }
 
   async updateSecurityCategory(category) {
