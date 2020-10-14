@@ -124,7 +124,7 @@ function update_node_modules_link {
 
   # ~/firewalla/node_modules => ~/.node_modules/node_modules
   # keep name node_modules because its the default name for node to search node modulers in upper level folders
-  test -e $NM_PATH && sudo -u pi ln -sf $NM_PATH $FIREWALLA_HOME/node_modules
+  test -e $NM_PATH && sudo -u pi ln -sfn $NM_PATH $FIREWALLA_HOME/node_modules
 }
 
 function update_node_modules {
