@@ -3,6 +3,7 @@
 */
 
 'use strict';
+const log = require('../../net2/logger.js')(__filename, 'info');
 const Child = require('child_process');
 const Dns = require('dns');
 const Net = require('net');

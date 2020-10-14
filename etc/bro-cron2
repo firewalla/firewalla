@@ -5,27 +5,12 @@ sync
 /usr/bin/sudo /bin/rm -r -f /bspool/tmp/*
 #node /home/pi/firewalla/scripts/clean-redis.js &
 
-bro_process_cnt=`ps -ef |grep "broctl/standalone broctl/auto" | grep -v grep | wc -l`
-logger "detected bro process count:$bro_process_cnt"  
-if [[ $bro_process_cnt < 3 ]]; then
-    logger 'FIREWALLA: bro restart due to bro vanished'
-    sudo service brofish stop
-    sudo service brofish start
-fi
-
-#forever_process_cnt=`forever list | grep "STOPPED" | grep -v grep | wc -l`
-#if [[ $forever_process_cnt > 0 ]]; then
-#    logger 'FIREWALLA: forever process STOPPED'
-#    forever list | logger
-#    forever restartall
-#fi
-
 ui_process_cnt=`sudo systemctl status fireui | grep 'active (running)' | wc -l`
 kickui_process_cnt=`sudo systemctl status firekick |grep 'active (running)' | wc -l`
 api_process_cnt=`sudo systemctl status fireapi |grep 'active (running)' | wc -l`
-if [[ $ui_process_cnt <1 ]]; then
-    if [[ $kickui_process_cnt < 1 ]]; then
-        if [[ $api_process_cnt < 1 ]]; then
+if [[ $ui_process_cnt -lt 1 ]]; then
+    if [[ $kickui_process_cnt -lt 1 ]]; then
+        if [[ $api_process_cnt -lt 1 ]]; then
             logger 'FIREWALLA: no ui process'
         fi
     fi

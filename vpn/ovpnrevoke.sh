@@ -1,6 +1,7 @@
 #!/bin/bash
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 # ovpnrevoke.sh <common name>
 
@@ -10,9 +11,10 @@ FILEEXT=".ovpn"
 PASSEXT=".password"
 
 cd /etc/openvpn/easy-rsa
+OPENSSL_CNF=$(get_openssl_cnf_file)
 # Ensure nextUpdate in openssl crl to 3600 days
-if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
-  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
+if [ -f $OPENSSL_CNF ]; then
+  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' $OPENSSL_CNF
 fi
 
 source ./vars

@@ -30,8 +30,7 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-let SysManager = require('../net2/SysManager');
-let sysManager = new SysManager('info');
+let sysManager = require('../net2/SysManager');
 
 let bootstrap = require('../net2/Bootstrap');
 

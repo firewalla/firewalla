@@ -1,9 +1,10 @@
 
 ## Firewalla
 * Support https://help.firewalla.com (email help@firewalla.com)
-* Current Stable Branch: release_6_0 
-* Current Beta Branch: beta_6_0
-* Current Alpha Branch: beta_7_0
+* Stable Branch: release_6_0 
+* Beta Branch: beta_6_0
+* Alpha Branch: beta_7_0
+* SuperAlpha Branch: beta_8_0
 * Unstable Branch: master
 
 ## Software Image
@@ -100,5 +101,8 @@ If anything bad happens, unplug it. :)  The raspberry pi version uses bluetooth 
 ## Router Compatibility
 
 * For router compatibility, please check out detail information at https://help.firewalla.com/hc/en-us/articles/360009401874-Router-Compatibility
+
+
+
 
 

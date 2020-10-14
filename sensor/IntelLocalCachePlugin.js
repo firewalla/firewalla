@@ -70,7 +70,9 @@ class IntelLocalCachePlugin extends Sensor {
     const loadCacheError = await rclient.getAsync(loadCacheErrorKey);
     if (loadCacheError) return;
     log.info(`Loading intel cache from cloud...`);
-    const data = await bone.hashsetAsync(hashKey);
+    const data = await bone.hashsetAsync(hashKey).catch((err) => {
+      log.error(`Failed to load ${hashKey} from cloud`, err.message);
+    });
     if (data) {
       const bf = await this.loadCacheFromBase64(data, true);
       if (bf) {
@@ -111,7 +113,7 @@ class IntelLocalCachePlugin extends Sensor {
     } catch (err) {
       await rclient.setAsync(loadCacheErrorKey, "1");
       await rclient.expireAsync(loadCacheErrorKey, 900) // auto expire in 15 minutes
-      log.error(`Failed to load cache data, err: ${err}`);
+      log.error(`Failed to load cache data ${fromCloud ? 'from cloud' : ''}`, err);
       return null;
     }
   }

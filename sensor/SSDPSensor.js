@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,8 +29,8 @@ const parseString = require('xml2js').parseString;
 const l2 = require('../util/Layer2.js');
 
 const URL = require('url').URL;
-const SM = require('../net2/SysManager.js');
-const sm = new SM();
+const sm = require('../net2/SysManager.js');
+const Message = require('../net2/Message.js');
 
 class SSDPSensor extends Sensor {
 
@@ -72,7 +72,7 @@ class SSDPSensor extends Sensor {
 
   notify(ip, ssdpResult) {
     l2.getMAC(ip, (err, mac) => {
-      
+
       if(err) {
         // not found, ignore this host
         log.error("Not able to found mac address for host:", ip, mac, err);
@@ -90,16 +90,16 @@ class SSDPSensor extends Sensor {
       }
 
       log.info(`Found a device via ssdp: ${host.bname} (${ip} - ${host.mac})`)
-      
+
       sem.emitEvent({
         type: "DeviceUpdate",
         message: `Found a device via ssdp ${ip} ${mac}`,
         host: host
       })
-      
+
     });
   }
-  
+
   parseURL(ip, location, callback) {
     let options = {
       uri: location,
@@ -135,7 +135,7 @@ class SSDPSensor extends Sensor {
 
     return array && (array.constructor.name === 'Array') && array.length > 0 && array[0]
   }
-  
+
   parseContent(content) {
     let root = content && content.root
 
@@ -160,21 +160,51 @@ class SSDPSensor extends Sensor {
       modelName: modelName
     }
   }
-  
+
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      if (this.ssdpClient)
+        this.ssdpClient.stop();
+      this.ssdpClient = null;
+      const monitoringInterfaces = sm.getMonitoringInterfaces();
+      const ifaces = monitoringInterfaces.filter(i => i.name && !i.name.endsWith(":0")).map(i => i.name);
+      this.ssdpClient = new SSDPClient({interfaces: ifaces, explicitSocketBind: true});
+      this.ssdpClient.on('response', (header, statusCode, rinfo) => {
+        this.onResponse(header, statusCode, rinfo)
+      });
+      process.nextTick(() => {
+        this.ssdpClient.search('ssdp:all').catch((err) => {
+          log.error(`Failed to do SSDP search`, err.message);
+        });
+      });
+    }, 5000);
+  }
+
   run() {
-    this.ssdpClient = new SSDPClient();
     this.locationCache = {};
     this.CACHE_INTERVAL = this.config.cacheTTL || 3600; // one hour
-    this.ssdpClient.on('response', (header, statusCode, rinfo) => {
-      this.onResponse(header, statusCode, rinfo)
-    });
-    process.nextTick(() => {
-      this.ssdpClient.search('ssdp:all')
-    })
 
-    setInterval(() => {
-      this.ssdpClient.search('ssdp:all')
-    }, this.config.interval * 1000 || 10 * 60 * 1000) // every 10 minutes
+    sem.once('IPTABLES_READY', () => {
+      this.scheduleReload();
+
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+        log.info("Schedule reload SSDPSensor since network info is reloaded");
+        this.scheduleReload();
+      })
+
+      setInterval(() => {
+        if (this.ssdpClient)
+          this.ssdpClient.search('ssdp:all');
+      }, this.config.interval * 1000 || 10 * 60 * 1000); // every 10 minutes
+
+      setInterval(() => {
+        // there is a bug in os.networkInterfaces() that is used in node-ssdp. It will not return interface without carrier.
+        // this is a workaround to refresh the listen instances of ssdp client in case carrier changes.
+        this.scheduleReload();
+      }, 900 * 1000);
+    });
   }
 }
 

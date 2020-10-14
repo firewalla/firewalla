@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,12 +14,12 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
+const config = require('../net2/config.js').getConfig();
+const fireRouter = require('../net2/FireRouter.js')
 
-let config = require('../net2/config.js').getConfig();
-
-let sensors = [];
-let sensorsHash = {}
+const sensors = [];
+const sensorsHash = {}
 
 function initSingleSensor(sensorName) {
   let sensorConfigs = config.sensors;
@@ -41,7 +41,9 @@ function initSingleSensor(sensorName) {
   }
 }
 
-function initSensors() {
+async function initSensors() {
+  await fireRouter.waitTillReady()
+
   Object.keys(config.sensors).forEach((sensorName) => {
     if (!sensorsHash[sensorName])
       initSingleSensor(sensorName)

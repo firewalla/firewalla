@@ -20,8 +20,7 @@ let log = require("../../net2/logger.js")(__filename, "info");
 let express = require('express');
 let router = express.Router();
 
-let SysManager = require('../../net2/SysManager.js');
-let sysManager = new SysManager('info');
+let sysManager = require('../../net2/SysManager.js');
 
 let sysInfo = require('../../extension/sysinfo/SysInfo.js');
 
@@ -40,11 +39,11 @@ router.get('/info',
 //    passport.authenticate('bearer', { session: false }),
            function(req, res, next) {
              res.json({
-               ip_address: sysManager.myIp(),
-               mac_address: sysManager.myMAC(),
-               gateway: sysManager.myGateway(),
-               subnet: sysManager.mySubnet(),
-               dns: sysManager.myDNS(),
+               ip_address: sysManager.myDefaultWanIp(),
+               mac_address: sysManager.mySignatureMac(),
+               gateway: sysManager.myDefaultGateway(),
+               subnet: sysManager.getDefaultWanInterface() && sysManager.mySubnet(sysManager.getDefaultWanInterface().name),
+               dns: sysManager.myDefaultDns(),
                ddns: sysManager.myDDNS(),
                info: sysInfo.getSysInfo()
              });
@@ -53,7 +52,7 @@ router.get('/info',
 router.get('/status',
            (req, res, next) => {
              let HostManager = require('../../net2/HostManager.js');
-             let hm = new HostManager('system_api', 'client', 'info');
+             let hm = new HostManager();
              let compressed = req.query.compressed;
 
              hm.toJson(true, (err, json) => {

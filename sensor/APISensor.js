@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const bonjour = require('bonjour')()
+const bonjour = require('../vendor_lib/bonjour')()
 
 const EncipherTool = require('../net2/EncipherTool.js')
 const encipherTool = new EncipherTool()

@@ -1,6 +1,7 @@
 #!/bin/bash 
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 sudo chmod 777 -R /etc/openvpn
 
@@ -21,6 +22,10 @@ EXTERNAL_PORT=$4
 : ${EXTERNAL_PORT:="1194"}
 sed -i "s/EXTERNAL_PORT/$EXTERNAL_PORT/" /etc/openvpn/easy-rsa/keys/Default.txt
 
+PROTO=$5
+: ${PROTO:="udp"}
+sed -i "s/PROTO/$PROTO/" /etc/openvpn/easy-rsa/keys/Default.txt
+
  
 # Default Variable Declarations 
 DEFAULT="Default.txt" 
@@ -34,9 +39,10 @@ TA="ta.key"
 #Build the client key and then encrypt the key
 sudo chmod 777 -R /etc/openvpn
 cd /etc/openvpn/easy-rsa
+OPENSSL_CNF=$(get_openssl_cnf_file)
 # Ensure nextUpdate in openssl crl to 3600 days
-if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
-  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
+if [ -f $OPENSSL_CNF ]; then
+  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' $OPENSSL_CNF
 fi
 
 source ./vars

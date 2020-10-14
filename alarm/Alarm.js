@@ -15,15 +15,15 @@
 
 'use strict';
 
+const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, 'info');
-const jsonfile = require('jsonfile');
 const util = require('util');
 
 const i18n = require('../util/i18n.js');
 const fc = require('../net2/config.js');
-const moment = require('moment');
+const moment = require('moment-timezone');
+const sysManager = require('../net2/SysManager.js');
 
-// let moment = require('moment');
 
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
@@ -38,7 +38,7 @@ const moment = require('moment');
 
 function suffixAutoBlock(alarm, category) {
   if (alarm.result === "block" &&
-      alarm.result_method === "auto") {
+    alarm.result_method === "auto") {
     return `${category}_AUTOBLOCK`;
   }
 
@@ -47,7 +47,7 @@ function suffixAutoBlock(alarm, category) {
 
 function suffixDirection(alarm, category) {
   if ("p.local_is_client" in alarm) {
-    if(alarm["p.local_is_client"] === "1") {
+    if (alarm["p.local_is_client"] === "1") {
       return `${category}_OUTBOUND`;
     } else {
       return `${category}_INBOUND`;
@@ -55,6 +55,16 @@ function suffixDirection(alarm, category) {
   }
 
   return category;
+}
+
+function GetOpenPortAlarmCompareValue(alarm) {
+  if (alarm.type == 'ALARM_OPENPORT') {
+    return alarm['p.device.ip'] + alarm['p.open.protocol'] + alarm['p.open.port'];
+  } else if (alarm.type == 'ALARM_UPNP') {
+    return alarm['p.device.ip'] + alarm['p.upnp.protocol'] + alarm['p.upnp.private.port'];
+  }
+
+  return alarm.type
 }
 
 class Alarm {
@@ -67,8 +77,14 @@ class Alarm {
 
     if (info) Object.assign(this, info);
 
-//    this.validate(type);
+    //    this.validate(type);
 
+  }
+  needPolicyMatch() {
+    return false;
+  }
+  isSecurityAlarm() {
+    return false;
   }
 
   getManagementType() {
@@ -118,9 +134,9 @@ class Alarm {
 
   cloudAction() {
     const decision = this["p.cloud.decision"];
-    switch(decision) {
+    switch (decision) {
       case "block": {
-        if(!this["p.action.block"]) {
+        if (!this["p.action.block"]) {
           return decision;
         } else {
           return null;
@@ -158,7 +174,7 @@ class Alarm {
   // }
 
   requiredKeys() {
-    return ["p.device.name", "p.device.id"];
+    return ["p.device.name", "p.device.id", "p.device.mac"];
   }
 
 
@@ -167,7 +183,7 @@ class Alarm {
   validate(type) {
 
     this.requiredKeys().forEach((v) => {
-      if(!this[v]) {
+      if (!this[v]) {
         log.error("Invalid payload for " + this.type + ", missing " + v);
         throw new Error("Invalid alarm object");
       }
@@ -184,13 +200,19 @@ class Alarm {
     let alarm2 = this;
     let keysToCompare = this.keysToCompareForDedup();
 
-    if(alarm.type !== alarm2.type)
+    if (alarm.type !== alarm2.type)
       return false;
 
-    for(var i in keysToCompare) {
+    for (var i in keysToCompare) {
       let k = keysToCompare[i];
       // using == to compromise numbers comparison
-      if(alarm[k] && alarm2[k] && alarm[k] == alarm2[k]) {
+      if (alarm[k] && alarm2[k] && typeof alarm[k] != typeof alarm2[k]) {
+        const idsA = _.isString(alarm[k]) ? JSON.parse(alarm[k]) : alarm[k];
+        const idsB = _.isString(alarm2[k]) ? JSON.parse(alarm2[k]) : alarm2[k];
+        if (!_.isEqual(idsA, idsB)) {
+          return false; 
+        }
+      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k])) {
 
       } else {
         return false;
@@ -206,7 +228,7 @@ class Alarm {
 
   isOutbound() {
     if ("p.local_is_client" in this) {
-      if(this["p.local_is_client"] === "1") {
+      if (this["p.local_is_client"] === "1") {
         return true;
       } else {
         return false;
@@ -218,7 +240,7 @@ class Alarm {
 
   isInbound() {
     if ("p.local_is_client" in this) {
-      if(this["p.local_is_client"] === "1") {
+      if (this["p.local_is_client"] === "1") {
         return false;
       } else {
         return true;
@@ -230,7 +252,7 @@ class Alarm {
 
   isAutoBlock() {
     return this.result === "block" &&
-        this.result_method === "auto";
+      this.result_method === "auto";
   }
 }
 
@@ -254,10 +276,6 @@ class DeviceBackOnlineAlarm extends Alarm {
     super("ALARM_DEVICE_BACK_ONLINE", timestamp, device, info);
   }
 
-  getManagementType() {
-    return "info";
-  }
-
   keysToCompareForDedup() {
     return ["p.device.mac"];
   }
@@ -271,12 +289,8 @@ class DeviceOfflineAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_DEVICE_OFFLINE", timestamp, device, info);
     if (info && info["p.device.lastSeen"]) {
-      this['p.device.lastSeenTimezone'] = moment(info["p.device.lastSeen"]*1000).format('LT')
+      this['p.device.lastSeenTimezone'] = moment(info["p.device.lastSeen"] * 1000).tz(sysManager.getTimezone()).format('LT')
     }
-  }
-
-  getManagementType() {
-    return "info";
   }
 
   keysToCompareForDedup() {
@@ -294,11 +308,14 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.device.name", "p.device.ip"]
+    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentArray() {
     return [this["p.device.name"], this["p.device.ip"]];
+  }
+  isSecurityAlarm(){
+    return true;
   }
 }
 
@@ -333,7 +350,7 @@ class VPNRestoreAlarm extends Alarm {
       this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
     }
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
     }
   }
 
@@ -353,7 +370,7 @@ class VPNRestoreAlarm extends Alarm {
     let key = super.localizedNotificationContentKey();
 
     key += "." + this["p.vpn.subtype"];
-    
+
     return key;
   }
 
@@ -370,7 +387,7 @@ class VPNDisconnectAlarm extends Alarm {
       this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
     }
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
     }
   }
 
@@ -434,6 +451,13 @@ class VulnerabilityAlarm extends Alarm {
     this["p.vid"] = vulnerabilityID;
   }
 
+  needPolicyMatch(){
+    return true;
+  }
+  isSecurityAlarm(){
+    return true;
+  }
+
   getI18NCategory() {
     return util.format("%s_%s", this.type, this["p.vid"]);
   }
@@ -447,10 +471,10 @@ class VulnerabilityAlarm extends Alarm {
   }
 
   isDup(alarm) {
-    if(!super.isDup(alarm))
+    if (!super.isDup(alarm))
       return false;
 
-    if(alarm["p.vid"] === this["p.vid"]) {
+    if (alarm["p.vid"] === this["p.vid"]) {
       return true;
     }
 
@@ -463,6 +487,13 @@ class BroNoticeAlarm extends Alarm {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
     this["p.noticeType"] = notice;
     this["p.message"] = message;
+  }
+
+  needPolicyMatch(){
+    return true;
+  }
+  isSecurityAlarm(){
+    return true;
   }
 
   keysToCompareForDedup() {
@@ -485,15 +516,15 @@ class BroNoticeAlarm extends Alarm {
     category = suffixAutoBlock(this, category)
 
     // fallback if localization for this special bro type does not exist
-    if(`NOTIF_${category}` === i18n.__(`NOTIF_${category}`)) {
+    if (`NOTIF_${category}` === i18n.__(`NOTIF_${category}`)) {
       category = this.type;
     }
-    
+
     return category;
   }
 
   localizedNotificationContentKey() {
-    if(this["p.noticeType"]) {
+    if (this["p.noticeType"]) {
       return `notif.content.${this.type}.${this["p.noticeType"]}`;
     } else {
       return super.localizedNotificationContentKey();
@@ -509,11 +540,15 @@ class IntelReportAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_INTEL_REPORT", timestamp, device, info);
   }
-  
+
+  needPolicyMatch(){
+    return true;
+  }
+
   getI18NCategory() {
     return "ALARM_INTEL_REPORT";
 
-    if(Number(this["p.attempts"]) === 1) {
+    if (Number(this["p.attempts"]) === 1) {
       return "ALARM_INTEL_REPORT";
     } else {
       return "ALARM_INTEL_REPORT_N";
@@ -531,13 +566,19 @@ class IntelAlarm extends Alarm {
     this["p.severity"] = severity;
     this["p.dest.readableName"] = this.getReadableDestination();
   }
+  needPolicyMatch(){
+    return true;
+  }
+  isSecurityAlarm(){
+    return true;
+  }
 
   getI18NCategory() {
     this["p.dest.readableName"] = this.getReadableDestination()
 
     let category = "ALARM_INTEL";
 
-    if("p.dest.url" in this) {
+    if ("p.dest.url" in this) {
       category = "ALARM_URL_INTEL";
     }
 
@@ -546,52 +587,52 @@ class IntelAlarm extends Alarm {
 
     category = suffixDirection(this, category);
     category = suffixAutoBlock(this, category)
-   
+
     return category;
   }
-  
+
   getReadableDestination() {
     const name = this["p.dest.name"];
     const port = this["p.dest.port"];
     const url = this["p.dest.url"];
-    
-    if(url) {
+
+    if (url) {
       return url;
-    } else if( name && port) {
-      if(port == 80) {
+    } else if (name && port) {
+      if (port == 80) {
         return `http://${name}`
-      } else if(port == 443) {
+      } else if (port == 443) {
         return `https://${name}`
       } else {
         return `${name}:${port}`
       }
     } else {
-      if(name) {
+      if (name) {
         return name
       } else {
-        return this["p.dest.id"] 
+        return this["p.dest.id"]
       }
     }
   }
 
   keysToCompareForDedup() {
     const url = this["p.dest.url"];
-    if(url) {
-      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port"];
+    if (url) {
+      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port", "p.intf.id", "p.tag.ids"];
     }
-    return ["p.device.mac", "p.dest.name", "p.dest.port"];
+    return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tag.ids"];
   }
 
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
-    if(this.isInbound()) {
+    if (this.isInbound()) {
       key += ".INBOUND";
-    } else if(this.isOutbound()) {
+    } else if (this.isOutbound()) {
       key += ".OUTBOUND";
     }
 
-    if(this.isAutoBlock()) {
+    if (this.isAutoBlock()) {
       key += ".AUTOBLOCK";
     }
     return key;
@@ -603,9 +644,9 @@ class IntelAlarm extends Alarm {
     // dest category
     // device port
     // device url
-    return [this["p.device.name"], 
-    this.getReadableDestination(), 
-    this["p.security.primaryReason"],    
+    return [this["p.device.name"],
+    this.getReadableDestination(),
+    this["p.security.primaryReason"],
     this["p.device.port"],
     this["p.device.url"]];
   }
@@ -614,11 +655,14 @@ class IntelAlarm extends Alarm {
 class OutboundAlarm extends Alarm {
 
   constructor(type, timestamp, device, destinationID, info) {
-    super(type, timestamp ,device, info);
+    super(type, timestamp, device, info);
     this["p.dest.id"] = destinationID;
     if (this.timestamp) {
-      this["p.timestampTimezone"] = moment(this.timestamp*1000).format("LT")
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
     }
+  }
+  needPolicyMatch(){
+    return true;
   }
 
   requiredKeys() {
@@ -649,45 +693,48 @@ class OutboundAlarm extends Alarm {
     return this["p.dest.ip"];
   }
 
-  getSimpleOutboundTrafficSize() {
-    return formatBytes(this["p.transfer.outbound.size"]);
-  }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.id"];
+    return ["p.device.mac", "p.dest.id", "p.intf.id", "p.tag.ids"];
   }
 
   isDup(alarm) {
     let alarm2 = this;
-    
-    if(alarm.type !== alarm2.type) {
+
+    if (alarm.type !== alarm2.type) {
       return false;
     }
 
     const macKey = "p.device.mac";
     const destDomainKey = "p.dest.domain";
     const destNameKey = "p.dest.id";
-    
+
     // Mac
-    if(!alarm[macKey] || 
-    !alarm2[macKey] || 
-    alarm[macKey] !== alarm2[macKey]) {
+    if (!alarm[macKey] ||
+      !alarm2[macKey] ||
+      alarm[macKey] !== alarm2[macKey]) {
+      return false;
+    }
+
+    // Interface
+    const intfKey = "p.intf.id";
+    if (!_.has(alarm, intfKey) || !_.has(alarm2, intfKey) || alarm[intfKey] !== alarm2[intfKey]) {
       return false;
     }
 
     // now these two alarms have same device MAC
 
     // Destination
-    if(destDomainKey in alarm && 
+    if (destDomainKey in alarm &&
       destDomainKey in alarm2 &&
       alarm[destDomainKey] === alarm2[destDomainKey]) {
       return true;
     }
 
 
-    if(!alarm[destNameKey] || 
-    !alarm2[destNameKey] || 
-    alarm[destNameKey] !== alarm2[destNameKey]) {
+    if (!alarm[destNameKey] ||
+      !alarm2[destNameKey] ||
+      alarm[destNameKey] !== alarm2[destNameKey]) {
       return false;
     }
 
@@ -698,23 +745,36 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
   }
-  localizedNotificationContentArray(){
-    return [this["p.device.name"], 
-    this["p.totalUsage.humansize"], 
+  localizedNotificationContentArray() {
+    return [this["p.device.name"],
+    this["p.totalUsage.humansize"],
     this["p.duration"],
     this["p.percentage"]
     ];
   }
 }
-class OverDataPlanUsageAlarm extends Alarm{
+class OverDataPlanUsageAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_OVER_DATA_PLAN_USAGE", timestamp, device, info);
   }
-  requiredKeys(){
+  isDup(alarm) {
+    let alarm2 = this;
+    if (alarm.type !== alarm2.type) {
+      return false;
+    }
+    if (alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level']) {
+      return false;
+    }
+    return true;
+  }
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.data_plan.cooldown") || 60 * 60 * 24 * 30
+  }
+  requiredKeys() {
     return [];
   }
-  localizedNotificationContentArray(){
-    return [this["p.percentage"], 
+  localizedNotificationContentArray() {
+    return [this["p.percentage"],
     this["p.totalUsage.humansize"],
     this["p.planUsage.humansize"]
     ];
@@ -736,9 +796,9 @@ class LargeTransferAlarm extends OutboundAlarm {
 
   getNotificationCategory() {
     let category = super.getNotificationCategory()
-    
-    if(this["p.dest.name"] === this["p.dest.ip"]) {
-      if(this["p.dest.country"]) {
+
+    if (this["p.dest.name"] === this["p.dest.ip"]) {
+      if (this["p.dest.country"]) {
         let country = this["p.dest.country"]
         let locale = i18n.getLocale()
         try {
@@ -756,7 +816,7 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   getCountryName() {
-    if(this["p.dest.country"]) {
+    if (this["p.dest.country"]) {
       let country = this["p.dest.country"]
       let locale = i18n.getLocale()
       try {
@@ -777,12 +837,12 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   // dedup implemented before generation @ FlowMonitor
-  isDup(alarm) {
+  isDup() {
     return false;
   }
 
   localizedNotificationContentKey() {
-    if(this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
+    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
       return super.localizedNotificationContentKey() + "_COUNTRY";
     } else {
       return super.localizedNotificationContentKey();
@@ -790,8 +850,8 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], 
-    this["p.transfer.outbound.humansize"], 
+    return [this["p.device.name"],
+    this["p.transfer.outbound.humansize"],
     this["p.dest.name"],
     this["p.timestampTimezone"],
     this.getCountryName()
@@ -833,14 +893,21 @@ class PornAlarm extends OutboundAlarm {
   }
 }
 
+class VpnAlarm extends OutboundAlarm {
+  constructor(timestamp, device, vpnID, info) {
+    super("ALARM_VPN", timestamp, device, vpnID, info);
+    this["p.showMap"] = false;
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.device.name"], this["p.dest.name"]];
+  }
+}
+
 class SubnetAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_SUBNET", timestamp, device, info);
     this["p.showMap"] = false;
-  }
-
-  getManagementType() {
-    return "info";
   }
 
   keysToCompareForDedup() {
@@ -849,6 +916,47 @@ class SubnetAlarm extends Alarm {
 
   getExpirationTime() {
     return fc.getTimingConfig("alarm.subnet.cooldown") || 30 * 24 * 60 * 60;
+  }
+}
+
+class OpenPortAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_OPENPORT', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+
+  needPolicyMatch(){
+    return true;
+  }
+
+  keysToCompareForDedup() {
+    return ['p.device.ip', 'p.open.protocol', 'p.open.port'];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup()
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.upnp.cooldown') || super.getExpirationTime();
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.device.name"], this["p.open.protocol"], this["p.open.port"], this["p.open.servicename"]];
+  }
+
+  isDup(alarm) {
+    if (alarm.type === this.type) {
+      return super.isDup(alarm);
+    }
+
+    if (['ALARM_OPENPORT', 'ALARM_UPNP'].includes(alarm.type)) {
+      let compareValue = GetOpenPortAlarmCompareValue(alarm);
+      let compareValue2 = GetOpenPortAlarmCompareValue(this);
+      return (compareValue == compareValue2);
+    }
+
+    return false;
   }
 }
 
@@ -863,7 +971,7 @@ class UpnpAlarm extends Alarm {
       'p.device.mac',
       'p.upnp.protocol',
       //'p.upnp.public.host', check header of UPNPSensor for details
-      'p.upnp.public.port',
+      //'p.upnp.public.port',
       'p.upnp.private.host',
       'p.upnp.private.port'
     ];
@@ -878,9 +986,23 @@ class UpnpAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.upnp.protocol"], 
+    return [this["p.upnp.protocol"],
     this["p.upnp.private.port"],
     this["p.device.name"]];
+  }
+  
+  isDup(alarm) {
+    if (alarm.type === this.type) {
+      return super.isDup(alarm);
+    }
+
+    if (['ALARM_OPENPORT', 'ALARM_UPNP'].includes(alarm.type)) {
+      let compareValue = GetOpenPortAlarmCompareValue(alarm);
+      let compareValue2 = GetOpenPortAlarmCompareValue(this);
+      return (compareValue == compareValue2);
+    }
+
+    return false;
   }
 }
 
@@ -888,6 +1010,7 @@ let classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
+  ALARM_VPN: VpnAlarm.prototype,
   ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
   ALARM_ABNORMAL_BANDWIDTH_USAGE: AbnormalBandwidthUsageAlarm.prototype,
   ALARM_OVER_DATA_PLAN_USAGE: OverDataPlanUsageAlarm.prototype,
@@ -903,6 +1026,7 @@ let classMapping = {
   ALARM_VULNERABILITY: VulnerabilityAlarm.prototype,
   ALARM_INTEL_REPORT: IntelReportAlarm.prototype,
   ALARM_SUBNET: SubnetAlarm.prototype,
+  ALARM_OPENPORT: OpenPortAlarm.prototype,
   ALARM_UPNP: UpnpAlarm.prototype
 }
 
@@ -912,6 +1036,7 @@ module.exports = {
   VideoAlarm: VideoAlarm,
   GameAlarm: GameAlarm,
   PornAlarm: PornAlarm,
+  VpnAlarm: VpnAlarm,
   LargeTransferAlarm: LargeTransferAlarm,
   AbnormalBandwidthUsageAlarm: AbnormalBandwidthUsageAlarm,
   OverDataPlanUsageAlarm: OverDataPlanUsageAlarm,
@@ -927,6 +1052,7 @@ module.exports = {
   VulnerabilityAlarm: VulnerabilityAlarm,
   IntelReportAlarm: IntelReportAlarm,
   SubnetAlarm: SubnetAlarm,
+  OpenPortAlarm: OpenPortAlarm,
   UpnpAlarm: UpnpAlarm,
   mapping: classMapping
 }

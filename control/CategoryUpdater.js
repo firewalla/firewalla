@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,17 +24,18 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
-const domainBlock = require('../control/DomainBlock.js')();
-
+const domainBlock = require('../control/DomainBlock.js');
+const BlockManager = require('../control/BlockManager.js');
+const blockManager = new BlockManager();
 const exec = require('child-process-promise').exec
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const _ = require('lodash');
-
+const fc = require('../net2/config.js');
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 48 // one hour
+const EXPIRE_TIME = 60 * 60 * 48 // two days...
 
 class CategoryUpdater extends CategoryUpdaterBase {
 
@@ -45,7 +46,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
       instance = this
 
       this.activeCategories = {
-        "default_c": 1,
+        "default_c": 1
+        // categories below should be activated on demand
+        /*
         "games": 1,
         "social": 1,
         "porn": 1,
@@ -54,6 +57,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         "p2p": 1,
         "gamble": 1,
         "vpn": 1
+        */
       };
 
       this.excludedDomains = {
@@ -76,12 +80,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
           await this.refreshAllCategoryRecords()
 
-          sem.on('UPDATE_CATEGORY_DYNAMIC_DOMAIN', (event) => {
+          sem.on('UPDATE_CATEGORY_DOMAIN', (event) => {
             if (event.category) {
+              if (!this.isActivated(event.category)) {
+                return;
+              }
               this.recycleIPSet(event.category);
               domainBlock.updateCategoryBlock(event.category);
             }
           });
+          fc.onFeature('smart_block', async (feature) => {
+            if (feature !== 'smart_block') {
+              return
+            }
+            await this.refreshAllCategoryRecords();
+          })
         }
       })
       this.updateIPSetTasks = {};
@@ -92,6 +105,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     return instance
+  }
+
+  async activateCategory(category) {
+    if (this.activeCategories[category]) return;
+    await super.activateCategory(category);
+    sem.emitEvent({
+      type: "Policy:CategoryActivated",
+      toProcess: "FireMain",
+      message: "Category activated: " + category,
+      category: category
+    });
   }
 
   async executeIPSetTasks() {
@@ -113,23 +137,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async getDomains(category) {
-    if (!this.isActivated(category))
-      return []
-
     return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
   }
 
   async getDefaultDomains(category) {
-    if (!this.isActivated(category))
-      return []
-
     return rclient.smembersAsync(this.getDefaultCategoryKey(category))
   }
 
   async addDefaultDomains(category, domains) {
-    if (!this.isActivated(category))
-      return []
-
     if (domains.length === 0) {
       return []
     }
@@ -138,7 +153,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     commands.push.apply(commands, domains)
     sem.emitEvent({
-      type: "UPDATE_CATEGORY_DEFAULT_DOMAIN",
+      type: "UPDATE_CATEGORY_DOMAIN",
       category: category,
       toProcess: "FireMain"
     });
@@ -146,76 +161,45 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async flushDefaultDomains(category) {
-    if (!this.isActivated(category))
-      return [];
-
     return rclient.delAsync(this.getDefaultCategoryKey(category));
   }
 
   async getIncludedDomains(category) {
-    if (!this.isActivated(category))
-      return []
-
     return rclient.smembersAsync(this.getIncludeCategoryKey(category))
   }
 
   async addIncludedDomain(category, domain) {
-    if (!this.isActivated(category))
-      return
-
     return rclient.saddAsync(this.getIncludeCategoryKey(category), domain)
   }
 
   async removeIncludedDomain(category, domain) {
-    if (!this.isActivated(category))
-      return
-
     return rclient.sremAsync(this.getIncludeCategoryKey(category), domain)
   }
 
   async getExcludedDomains(category) {
-    if (!this.isActivated(category))
-      return []
-
     return rclient.smembersAsync(this.getExcludeCategoryKey(category))
   }
 
   async addExcludedDomain(category, domain) {
-    if (!this.isActivated(category))
-      return
-
     return rclient.saddAsync(this.getExcludeCategoryKey(category), domain)
   }
 
   async removeExcludedDomain(category, domain) {
-    if (!this.isActivated(category))
-      return
-
     return rclient.sremAsync(this.getExcludeCategoryKey(category), domain)
   }
 
   async includeDomainExists(category, domain) {
-    if (!this.isActivated(category))
-      return false
-
     return rclient.sismemberAsync(this.getIncludeCategoryKey(category), domain)
   }
 
   async excludeDomainExists(category, domain) {
-    if (!this.isActivated(category))
-      return false
-
     return rclient.sismemberAsync(this.getExcludeCategoryKey(category), domain)
   }
   async defaultDomainExists(category, domain) {
-    if (!this.isActivated(category))
-      return false
     const defaultDomains = await this.getDefaultDomains(category) || [];
     return defaultDomains.indexOf(domain) > -1
   }
   async dynamicCategoryDomainExists(category, domain) {
-    if (!this.isActivated(category))
-      return false
     const dynamicCategoryDomains = await this.getDomains(category) || [];
     return dynamicCategoryDomains.indexOf(domain) > -1
   }
@@ -281,6 +265,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
   getDomainMapping(domain) {
     return `rdns:domain:${domain}`
   }
+  getCategoryIpMapping(category) {
+    return `rdns:category:${category}`
+  }
 
   async getDomainMappingsByDomainPattern(domainPattern) {
     const keys = await rclient.keysAsync(this.getDomainMapping(domainPattern))
@@ -315,18 +302,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
       return this.updateIPSetByDomainPattern(category, domain, options)
     }
 
-    const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
-
-    if (hasAny) {
-      let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
-      await exec(cmd4).catch((err) => {
-        log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
-      })
-      await exec(cmd6).catch((err) => {
-        log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
-      })
-    }
+    const categoryIps = await rclient.zrangeAsync(mapping,0,-1);
+    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
+    if(pureCategoryIps.length==0) return;
+    // Existing sets and elements are not erased by restore unless specified so in the restore file.
+    // -! ignores error on entries already exists
+    let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    await exec(cmd4).catch((err) => {
+      log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
+    })
+    await exec(cmd6).catch((err) => {
+      log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
+    })
 
   }
 
@@ -374,18 +362,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
       ipset6Name = this.getTempIPSetNameForIPV6(category)
     }
 
-    const hasAny = await rclient.zcountAsync(mapping, '-inf', '+inf')
-
-    if (hasAny) {
-      let cmd4 = `redis-cli zrange ${mapping} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `redis-cli zrange ${mapping} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
-      await exec(cmd4).catch((err) => {
-        log.error(`Failed to delete ipset by category ${category} domain ${domain}, err: ${err}`)
-      })
-      await exec(cmd6).catch((err) => {
-        log.error(`Failed to delete ipset6 by category ${category} domain ${domain}, err: ${err}`)
-      })
-    }
+    const categoryFilterIps = await rclient.zrangeAsync(mapping,0,-1);
+    if(categoryFilterIps.length == 0)return;
+    let cmd4 = `echo "${categoryFilterIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `echo "${categoryFilterIps.join('\n')}" | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+    await exec(cmd4).catch((err) => {
+      log.error(`Failed to delete ipset by category ${category} domain ${domain}, err: ${err}`)
+    })
+    await exec(cmd6).catch((err) => {
+      log.error(`Failed to delete ipset6 by category ${category} domain ${domain}, err: ${err}`)
+    })
+    const categoryIpMappingKey = this.getCategoryIpMapping(category);
+    await rclient.sremAsync(categoryIpMappingKey,categoryFilterIps);
+    
   }
 
   async _filterIPSetByDomainPattern(category, domain, options) {
@@ -417,15 +406,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipsetName = this.getTempIPSetName(category)
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
-
-      let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
+      const categoryFilterIps = await rclient.zrangeAsync(smappings,0,-1);
+      if(categoryFilterIps.length == 0)return;
+      let cmd4 = `echo "${categoryFilterIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${categoryFilterIps.join('\n')}" | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
       try {
         await exec(cmd4);
         await exec(cmd6);
       } catch (err) {
         log.error(`Failed to filter ipset by category ${category} domain pattern ${domain}, err: ${err}`)
       }
+      const categoryIpMappingKey = this.getCategoryIpMapping(category);
+      await rclient.sremAsync(categoryIpMappingKey,categoryFilterIps);
     }
   }
 
@@ -460,9 +452,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipsetName = this.getTempIPSetName(category)
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
-
-      let cmd4 = `redis-cli zrange ${smappings} 0 -1 | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `redis-cli zrange ${smappings} 0 -1 | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      const categoryIps = await rclient.zrangeAsync(smappings,0,-1);
+      const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
+      if(pureCategoryIps.length==0)return;
+      let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
       try {
         await exec(cmd4)
         await exec(cmd6)
@@ -501,12 +495,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
       await this.updateIPSetByDomain(category, domain, {useTemp: true});
-
-      await this.filterIPSetByDomain(category, domain, {useTemp: true});
     }
-
+    await this.filterIPSetByDomain(category, { useTemp: true });
     await this.swapIpset(category);
-
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 

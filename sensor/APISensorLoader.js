@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,14 +14,16 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
+const config = require('../net2/config.js').getConfig();
+const fireRouter = require('../net2/FireRouter.js')
 
-let config = require('../net2/config.js').getConfig();
 
 let sensors = [];
 let sensorsHash = {}
 
-function initSensors(eptcloud) {
+async function initSensors(eptcloud) {
+  await fireRouter.waitTillReady()
   let sensorConfigs = config.apiSensors;
 
   if(!sensorConfigs)
@@ -37,9 +39,9 @@ function initSensors(eptcloud) {
       sensors.push(ss);
       sensorsHash[sensorName] = ss;
     } catch(err) {
-      log.error(`Failed to load sensor: ${sensorName}: ${err}`)
+      log.error(`Failed to load sensor: ${sensorName}:`, err)
     }
-  });  
+  });
 }
 
 function run() {
@@ -48,7 +50,7 @@ function run() {
     try {
       s.apiRun()
     } catch(err) {
-      log.error(`Failed to install sensor: ${s.constructor.name}, err: ${err}`)
+      log.error(`Failed to install sensor: ${s.constructor.name}:`, err)
     }
   });
 }

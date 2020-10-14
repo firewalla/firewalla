@@ -14,25 +14,20 @@
  */
 'use strict'
 
-var ipTool = require('ip');
-
-let l2 = require('../util/Layer2.js');
-
 var instance = null;
 
-let log = require("./logger.js")(__filename, 'info');
+const log = require("./logger.js")(__filename, 'info');
 
-let monitoredKey = "monitored_hosts";
-let unmonitoredKey = "unmonitored_hosts";
+const monitoredKey = "monitored_hosts";
+const unmonitoredKey = "unmonitored_hosts";
 // hosts in key unmonitored_hosts will be auto removed in 8 seconds.
 // hosts in key unmonitored_hosts_all will not be auto removed
 // key unmonitored_hosts_all is used to prevent same host from inserting to unmonitored_hosts multiple times
 // this way can reduce amount of good arp spoofs.
 const unmonitoredKeyAll = "unmonitored_hosts_all";
 let monitoredKey6 = "monitored_hosts6";
-let unmonitoredKey6 = "unmonitored_hosts6";
 
-const SysManager = require('./SysManager.js');
+const addrIfaceMap = {};
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -42,95 +37,118 @@ let mode = require('./Mode.js')
 
 module.exports = class {
 
-  isPrimaryInterfaceIP(ip) {
-    const sysManager = new SysManager();
-    const primaryIp = sysManager.myIp();
-    const primaryIpMask = sysManager.myIpMask();
+  async newSpoof(address, iface) {
+    iface = iface || addrIfaceMap[address];
+    if (!iface)
+      return;
 
-    if (ip && primaryIp && primaryIpMask) {
-      return ipTool.subnet(primaryIp, primaryIpMask).contains(ip);
-    }
-    return false;
-  }
-
-  isSecondaryInterfaceIP(ip) {
-    const sysManager = new SysManager();
-    const ip2 = sysManager.myIp2();
-    const ipMask2 = sysManager.myIpMask2();
-    
-    if(ip && ip2 && ipMask2) {
-      return ipTool.subnet(ip2, ipMask2).contains(ip);
-    }
-
-    return false
-  }
-
-  async newSpoof(address) {
-    if(!this.isPrimaryInterfaceIP(address)) {
-      return // ip addresses in the secondary interface subnet will be monitored by assigning pi as gateway
-    }
-    // for manual spoof mode, ip addresses will NOT be added to these two keys in the fly
     let flag = await mode.isSpoofModeOn();
+    if (!flag)
+      return;
 
-    if (flag) {
-      const isMember = await rclient.sismemberAsync(monitoredKey, address);
-      if (!isMember) {
-        // Spoof redis set is cleared during initialization, see SpooferManager.startSpoofing()
-        // This can ensure that all monitored hosts are added to redis set and ip set at the beginning
-        // It's unnecessary to add ip address to monitored_ip_set that are already in redis set
-        const cmd = `sudo ipset add -! monitored_ip_set ${address}`;
-        await cp.exec(cmd);
-        // add membership at the end
-        await rclient.saddAsync(monitoredKey, address);
-      }
-      await rclient.sremAsync(unmonitoredKeyAll, address);
-      await rclient.sremAsync(unmonitoredKey, address);
+    // address changed to a different interface, remove it from previous spoof set
+    if (addrIfaceMap[address] && addrIfaceMap[address] !== iface) {
+      log.info(`${address} moves to ${iface}, remove it from ${addrIfaceMap[address]}`);
+      await this.newUnspoof(address, addrIfaceMap[address]);
     }
+    addrIfaceMap[address] = iface;
+
+    const subMonitoredKey = `monitored_hosts_${iface}`;
+    const subUnmonitoredKey = `unmonitored_hosts_${iface}`;
+    const isMember = await rclient.sismemberAsync(monitoredKey, address);
+    if (!isMember) {
+      const cmd = `sudo ipset add -! monitored_ip_set ${address}`;
+      await cp.exec(cmd);
+      // add membership at the end
+      await rclient.saddAsync(monitoredKey, address);
+    }
+    await rclient.saddAsync(subMonitoredKey, address);
+
+    await rclient.sremAsync(unmonitoredKeyAll, address);
+    await rclient.sremAsync(unmonitoredKey, address);
+    await rclient.sremAsync(subUnmonitoredKey, address);
+
   }
 
-  async newUnspoof(address) {
-    let flag = await mode.isSpoofModeOn();
+  async newUnspoof(address, iface) {
+    iface = iface || addrIfaceMap[address];
+    if (!iface)
+      return;
 
-    if (flag) {
-      let isMember = await rclient.sismemberAsync(monitoredKey, address);
-      if (isMember) {
-        await rclient.sremAsync(monitoredKey, address);
-        const cmd = `sudo ipset del -! monitored_ip_set ${address}`;
-        await cp.exec(cmd);
-      }
-      isMember = await rclient.sismemberAsync(unmonitoredKeyAll, address);
-      if (!isMember) {
-        await rclient.saddAsync(unmonitoredKey, address);
-        await rclient.saddAsync(unmonitoredKeyAll, address);
-        setTimeout(() => {
-          rclient.sremAsync(unmonitoredKey, address);
-        }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
-      }
+    let flag = await mode.isSpoofModeOn();
+    if (!flag)
+      return;
+
+    const subMonitoredKey = `monitored_hosts_${iface}`;
+    const subUnmonitoredKey = `unmonitored_hosts_${iface}`;
+    let isMember = await rclient.sismemberAsync(monitoredKey, address);
+    if (isMember) {
+      await rclient.sremAsync(monitoredKey, address);
+      const cmd = `sudo ipset del -! monitored_ip_set ${address}`;
+      await cp.exec(cmd);
     }
-  }  
+    await rclient.sremAsync(subMonitoredKey, address);
+    isMember = await rclient.sismemberAsync(unmonitoredKeyAll, address);
+    if (!isMember) {
+      await rclient.saddAsync(unmonitoredKey, address);
+      await rclient.saddAsync(subUnmonitoredKey, address);
+      await rclient.saddAsync(unmonitoredKeyAll, address);
+      setTimeout(() => {
+        rclient.sremAsync(unmonitoredKey, address);
+        rclient.sremAsync(subUnmonitoredKey, address);
+      }, 8 * 1000) // remove ip from unmonitoredKey after 8 seconds to reduce battery cost of unmonitored devices
+    }
+  }
 
   /* spoof6 is different than ipv4.  Some hosts may take on random addresses
    * hence storing a unmonitoredKey list does not make sense.
    */
 
-  async newSpoof6(address) {  
+  async newSpoof6(address, iface) {
+    iface = iface || addrIfaceMap[address];
+    if (!iface)
+      return;
+
+    let flag = await mode.isSpoofModeOn();
+    if (!flag)
+      return;
+
+    // address changed to a different interface, remove it from previous spoof set
+    if (addrIfaceMap[address] && addrIfaceMap[address] !== iface) {
+      log.info(`${address} moves to ${iface}, remove it from ${addrIfaceMap[address]}`);
+      await this.newUnspoof6(address, addrIfaceMap[address]);
+    }
+    addrIfaceMap[address] = iface;
+
+    const subMonitoredKey6 = `monitored_hosts6_${iface}`;
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
     if (!isMember) {
       const cmd = `sudo ipset add -! monitored_ip_set6 ${address}`;
       await cp.exec(cmd);
       await rclient.saddAsync(monitoredKey6, address);
     }
+    await rclient.saddAsync(subMonitoredKey6, address);
   }
 
-  async newUnspoof6(address) {
+  async newUnspoof6(address, iface) {
+    iface = iface || addrIfaceMap[address];
+    if (!iface)
+      return;
+
+    let flag = await mode.isSpoofModeOn();
+    if (!flag)
+      return;
+
+    const subMonitoredKey6 = `monitored_hosts6_${iface}`;
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
     if (isMember) {
       await rclient.sremAsync(monitoredKey6, address);
       const cmd = `sudo ipset del -! monitored_ip_set6 ${address}`;
       await cp.exec(cmd);
     }
+    await rclient.sremAsync(subMonitoredKey6, address);
   }
-  
+
   /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
    */
   validateV6Spoofs(ipv6Addrs) {
@@ -144,7 +162,7 @@ module.exports = class {
           if (v6db[datas[i]] == null) {
             log.info("Spoof6:Remove:By:Check", datas[i]);
             this.newUnspoof6(datas[i]);
-          }         
+          }
         }
       }
     });
@@ -162,320 +180,14 @@ module.exports = class {
           if (v4db[datas[i]] == null) {
             log.info("Spoof4:Remove:By:Check:Device", datas[i]);
             this.newUnspoof(datas[i]);
-          }         
+          }
         }
       }
     });
   }
 
-
-  spoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
-
-    callback = callback || function() {}
-
-      log.debug("Spoof:Spoof:Ing",ipAddr,tellIpAddr,mac,ip6Addrs,gateway6);
-      if (ipAddr && tellIpAddr) {
-        if (ipAddr == tellIpAddr) {
-            log.info("Can't spoof self to self", ipAddr, tellIpAddr);
-            if (callback) callback("error", null);
-            return;
-        }
-
-        if (this._spoofersFind(mac,ipAddr,'v4',tellIpAddr)) {
-            if (callback) callback("error", null);
-            return;
-        }
-
-        l2.getMAC(ipAddr, (err, _mac) => {
-            if (_mac) {
-                _mac = _mac.toUpperCase();
-            }
-            if (err == false && _mac != null && _mac.match("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$") != null && _mac == mac) {
-                //log.info("Got mac ipAddr",ipAddr," with mac ", mac);
-                log.info("Spoof:Spoof", ipAddr + " " + tellIpAddr + " " + mac + " " + _mac);
-                this._spoof(ipAddr, tellIpAddr, mac, callback);
-            } else {
-                // this will be better to tie up with nmap,
-                // scans.  then msg through a channel
-                //
-                //log.info("Host not there exist, waiting", ipAddr,err,mac);
-                if (_mac != mac) {
-                    log.info("Spoof:Spoof:Error:Mac", _mac + ":" + mac);
-                }
-                setTimeout(() => {
-                    this.spoof(ipAddr, tellIpAddr, mac, null,null,callback);
-                }, 60000);
-            }
-        });
-      }
-
-      this.spoofMac6(mac,ip6Addrs,gateway6,callback);
-    }
-
-    _spoofersFind(mac,ip,version,gateway) {
-        if (this.spoofers[mac]) {
-            return this.spoofers[mac][version][ip];
-        }
-        return null;
-    }
-
-    _spoofersAdd(mac,ip,version,gateway,obj) {
-        if (this.spoofers[mac] == null) {
-            this.spoofers[mac] = {};
-            this.spoofers[mac]['v6'] = {};
-            this.spoofers[mac]['v4'] = {};
-        }
-        this.spoofers[mac][version][ip] = obj;
-    }
-
-    spoofMac6(mac,ipv6Addrs,gateway,callback) {
-      callback = callback || function() {}
-
-        let newips = [];
-        let removals = [];
-        let ipv6db = {};
-        if (mac == null || ipv6Addrs==null || ipv6Addrs.length==0) {
-            return;
-        }
-
-        for (let i in ipv6Addrs) {
-            ipv6db[ipv6Addrs[i]]=1;
-            if (null == this._spoofersFind(mac,ipv6Addrs[i],'v6',gateway)) {
-                newips.push(ipv6Addrs[i]);
-                log.info("Spoof:AddNew",ipv6Addrs[i]);
-            }
-        }
-
-        if (this.spoofers[mac]) {
-            for (let j in this.spoofers[mac]['v6']) {
-                if (ipv6db[j]==null) {
-                   removals.push(j);
-                   log.info("Spoof:Remove",j);
-                }
-            }
-        }
-
-        log.info("Spoof:Spoof:new",newips,"removals", removals);
-
-        if (removals.length>0) {
-            this.unspoof(null,null,mac,removals,gateway);
-        }
-        if (newips.length>0 && gateway) {
-            let maxv6spoof = 5;
-            for (let i in newips) {
-                this._spoof6(newips[i],gateway,mac);
-                maxv6spoof-- ;
-                if (maxv6spoof==0) {
-                    if (callback) {
-                        callback(null);
-                    }
-                    return;
-                }
-            }
-        }
-        if (callback) {
-            callback();
-        }
-    }
-
-    _spoof6(ip6Addr, tellIpAddr, mac,callback) {
-        log.info("Spoof:Spoof6",ip6Addr,tellIpAddr);
-      //  if (ip6Addr == tellIpAddr || ip6Addr.startsWith("fe80") ) {
-        if (ip6Addr == tellIpAddr ) {
-            log.info("Can't spoof self to self", ip6Addr, tellIpAddr);
-            if (callback) callback("error", null);
-            return;
-        }
-        if (this._spoofersFind(mac,ip6Addr,'v6',tellIpAddr) != null) {
-            if (callback) callback("error", null);
-            return;
-        }
-        let task = null;
-        let cmdline = "../bin/bitbridge6a -r -w 1 eth0 " + tellIpAddr +" "+  ip6Addr;
-        if (ip6Addr.startsWith("fe80")) {
-            task = require('child_process').exec(cmdline, (err, out, code) => {
-            });
-        }
-        let taskr = null;
-        let cmdline2 = "../bin/bitbridge6a  -w 1  eth0 " + ip6Addr +" "+ tellIpAddr;
-        if (!ip6Addr.startsWith("fe80")) {
-            let taskr = require('child_process').exec(cmdline2, (err, out, code) => {
-            });
-        }
-        log.info(cmdline,cmdline2);
-        this._spoofersAdd(mac,ip6Addr,'v6',tellIpAddr, {
-            ip6: ip6Addr,
-            tellIpAddr: tellIpAddr,
-            task: task,
-            taskr: taskr,
-            adminState: 'up',
-        });
-    }
-
-    _spoof(ipAddr, tellIpAddr, mac, callback) {
-        if (ipAddr == tellIpAddr) {
-            log.info("Can't spoof self to self", ipAddr, tellIpAddr);
-            if (callback) callback("error", null);
-            return;
-        }
-
-        if (this._spoofersFind(mac,ipAddr,'v4',tellIpAddr)) {
-            if (callback) callback("error", null);
-            return;
-        }
-
-        let cmdline = "../bin/bitbridge4 " + ipAddr + " -t " + tellIpAddr + " -r";
-
-        log.info("Executing cmdline ", cmdline);
-
-        let task = require('child_process').exec(cmdline, (err, out, code) => {
-            if (callback)
-                callback(err, null);
-        });
-
-
-        this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,{
-            ip: ipAddr,
-            tellIpAddr: tellIpAddr,
-            task: task,
-            adminState: 'up',
-        });
-
-        task.stderr.on('data', function (data) {});
-
-        task.on('data', (data) => {});
-
-        task.stdout.on('data', (data) => {});
-
-        task.on('close', (code) => {
-            this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
-        });
-
-        task.on('exit', (code) => {
-            this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
-        });
-
-        //log.info("Spoof:Spoof:",ipAddr,tellIpAddr);
-    }
-
-    _unspoof6(ipAddr, tellIpAddr,mac) {
-        let task = this._spoofersFind(mac,ipAddr,'v6',tellIpAddr);
-        log.info("Spoof:Unspoof6", ipAddr, tellIpAddr,task);
-        if (task && task.task) {
-           task.task.kill('SIGHUP');
-        }
-        if (task && task.taskr) {
-           task.taskr.kill('SIGHUP');
-        }
-        this.clean6byIp(ipAddr,tellIpAddr);
-        this._spoofersAdd(mac,ipAddr,'v6',tellIpAddr,null);
-    }
-
-    _unspoof(ipAddr, tellIpAddr,mac) {
-        let task = this._spoofersFind(mac,ipAddr,'v4',tellIpAddr);
-        log.info("Spoof:Unspoof", ipAddr, tellIpAddr);
-        if (task != null && task.task != null) {
-            task.task.kill('SIGHUP');
-            this.clean(task.ip);
-            this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
-        } else {
-            this.clean(ipAddr);
-            this._spoofersAdd(mac,ipAddr,'v4',tellIpAddr,null);
-        }
-    }
-  unspoof(ipAddr, tellIpAddr, mac, ip6Addrs, gateway6, callback) {
-    callback = callback || function() {}
-
-    log.info("Spoof:Unspoof", ipAddr, tellIpAddr,mac,ip6Addrs,gateway6);
-    if (ipAddr && tellIpAddr) {
-      this._unspoof(ipAddr,tellIpAddr,mac);
-    }
-    if (ip6Addrs && ip6Addrs.length>0 && gateway6) {
-      for (let i in ip6Addrs) {
-        this._unspoof6(ip6Addrs[i],gateway6,mac);
-      }
-    }
-  }
-
-    clean(ip) {
-        let cmdline = 'sudo pkill -f bitbridge4';
-        if (ip != null) {
-            cmdline = "sudo pkill -f 'bitbridge4 " + ip + "'";
-        }
-        log.info("Spoof:Clean:Running commandline: ", cmdline);
-
-      return new Promise((resolve, reject) => {
-        let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
-          if (err) {
-            log.error("Failed to clean up spoofing army: " + err);
-          }
-          resolve();
-        });
-      });
-    }
-
-    clean7() {
-      let cmdline = 'sudo pkill -f bitbridge7';
-
-      log.info("Spoof:Clean:Running commandline: ", cmdline);
-
-      return new Promise((resolve, reject) => {
-        let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
-          if(err) {
-            log.error("Failed to clean up spoofing army: " + err);
-          }
-          resolve();
-        });
-      });
-    }
-
-    clean6byIp(ip6Addr,tellIpAddr) {
-        let cmdline = "sudo pkill -f 'bitbridge6a -r -w 1 eth0 " + tellIpAddr +" "+  ip6Addr+"'";
-        let cmdline2 = "sudo pkill -f 'bitbridge6a  -w 1  eth0 " + ip6Addr +" "+ tellIpAddr+"'";
-      let p = require('child_process').exec(cmdline, (err, out, code) => {
-        if(err) {
-          log.error("Failed to clean up spoofing army: " + err);
-        }
-
-      });
-      let p2 = require('child_process').exec(cmdline2, (err, out, code) => {
-        if(err) {
-          log.error("Failed to clean up spoofing army: " + err);
-        }
-
-      });
-    }
-
-    clean6(ip) {
-        let cmdline = 'sudo pkill -f bitbridge6a';
-        if (ip != null) {
-            cmdline = "sudo pkill -f 'bitbridge6a " + ip + "'";
-        }
-        log.info("Spoof:Clean:Running commandline: ", cmdline);
-
-        let p = require('child_process').exec(cmdline, (err, out, code) => {
-            log.info("Spoof:Clean up spoofing army", cmdline, err, out);
-        });
-    }
-
-  constructor(intf, config, clean) {
-
-        // Warning, should not clean default ACL's applied to ip tables
-        // there is one applied for ip6 spoof, can't be deleted
-        if (clean == true) {
-            this.clean();
-            this.clean6();
-        }
+  constructor() {
         if (instance == null) {
-            this.config = config;
-            this.spoofers = {};
-            this.intf = intf;
-
-            if (config == null || config.gateway == null) {
-                this.gateway = "192.168.1.1"
-            } else {
-                this.gateway = config.gateway;
-            }
             instance = this;
         } else {
             return instance;

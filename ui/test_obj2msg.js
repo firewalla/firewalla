@@ -1,7 +1,7 @@
 'use strict'
 let NM = require('./NotifyManager.js');
 let HostManager = require("../net2/HostManager.js");
-var hostManager= new HostManager("cli",'server','debug');
+var hostManager= new HostManager();
 let nm = new NM();
 
 hostManager.getHost("192.168.2.186",(err,host)=>{

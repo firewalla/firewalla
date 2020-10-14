@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,31 +14,29 @@
  */
 'use strict'
 
-let zlib = require('zlib')
-let Promise = require('bluebird')
+const zlib = require('zlib')
+const Promise = require('bluebird')
 
-let log = require('../net2/logger.js')(__filename)
-let Sensor = require('./Sensor.js').Sensor
-let SysManager = require('../net2/SysManager')
-let sysManager = new SysManager()
-let HostManager = require('../net2/HostManager.js')
-let hostManager = new HostManager('cli', 'server')
-let HostTool = require('../net2/HostTool')
-let hostTool = new HostTool()
-let flowTool = require('../net2/FlowTool')()
-let flowUtil = require('../net2/FlowUtil')
-let Bone = require('../lib/Bone.js')
+const log = require('../net2/logger.js')(__filename)
+const Sensor = require('./Sensor.js').Sensor
+const sysManager = require('../net2/SysManager')
+const HostManager = require('../net2/HostManager.js')
+const hostManager = new HostManager()
+const HostTool = require('../net2/HostTool')
+const hostTool = new HostTool()
+const flowTool = require('../net2/FlowTool')()
+const flowUtil = require('../net2/FlowUtil')
+const Bone = require('../lib/Bone.js')
 
-let INTERVAL_MIN = 10 //10 seconds
-let INTERVAL_MAX = 3600 //1 hour
-let INTERVAL_DEFAULT = 900 //15 minutes
-let MAX_FLOWS = 50000 //can upload at most 50000 flows(after aggregation) to cloud, about 20 mb after compress
-let TIME_OFFSET = 90 //90 seconds for other process to store latest data into redis
+const INTERVAL_MIN = 10 //10 seconds
+const INTERVAL_MAX = 3600 //1 hour
+const INTERVAL_DEFAULT = 900 //15 minutes
+const MAX_FLOWS = 50000 //can upload at most 50000 flows(after aggregation) to cloud, about 20 mb after compress
+const TIME_OFFSET = 90 //90 seconds for other process to store latest data into redis
 
 class FlowUploadSensor extends Sensor {
     constructor() {
         super()
-        
     }
 
     run() {
@@ -116,7 +114,7 @@ class FlowUploadSensor extends Sensor {
     uploadData(data) {
         let toUpload = {
             payload : data
-        }    
+        }
         Bone.flowgraph('flow', toUpload, function(err, response){
             if (err) {
                 log.error("upload to cloud failed:" + err)
@@ -225,9 +223,9 @@ class FlowUploadSensor extends Sensor {
          *  {...}
          *  {...}
          * ]
-         * 
+         *
          *  aggregate by sh,dh,lh,fd, then copy "lo" at first level, and put the others to second nested array
-         * 
+         *
          *  output flows sample: 5 fields in first level, 13 fields in second level
          * [
          *  {
@@ -246,7 +244,7 @@ class FlowUploadSensor extends Sensor {
          *         "pf":{},
          *         "flows":[],
          *         "bl":"",
-         *         "ob":"",   
+         *         "ob":"",
          *         "rb":"",
          *         "ct":"",
          *         "pr":"",
@@ -259,7 +257,7 @@ class FlowUploadSensor extends Sensor {
          * ]
          * */
 
-        let aggs = {} 
+        let aggs = {}
         for(var i = 0; i < flows.length; i++) {
             let flow = flows[i]
             let key = flow.sh + "," + flow.dh + "," + flow.lh + "," + flow.fd
@@ -272,7 +270,7 @@ class FlowUploadSensor extends Sensor {
                     lo : flow.lo,
                     agg : []
                 }
-            } 
+            }
             //merge other fields to agg
             let agg = {}
             let allFields = Object.keys(flow)

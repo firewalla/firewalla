@@ -1,0 +1,59 @@
+{
+  "name": "bonjour",
+  "version": "3.5.0",
+  "description": "A Bonjour/Zeroconf implementation in pure JavaScript",
+  "main": "index.js",
+  "dependencies": {
+    "array-flatten": "^2.1.0",
+    "deep-equal": "^1.0.1",
+    "dns-equal": "^1.0.0",
+    "dns-txt": "^2.0.2",
+    "multicast-dns": "^6.0.1",
+    "multicast-dns-service-types": "^1.1.0"
+  },
+  "devDependencies": {
+    "after-all": "^2.0.2",
+    "standard": "^6.0.8",
+    "tape": "^4.5.1"
+  },
+  "scripts": {
+    "test": "standard && tape test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watson/bonjour.git"
+  },
+  "keywords": [
+    "bonjour",
+    "zeroconf",
+    "zero",
+    "configuration",
+    "mdns",
+    "dns",
+    "service",
+    "discovery",
+    "multicast",
+    "broadcast",
+    "dns-sd"
+  ],
+  "author": {
+    "name": "Thomas Watson Steen",
+    "email": "w@tson.dk",
+    "url": "https://twitter.com/wa7son"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/watson/bonjour/issues"
+  },
+  "homepage": "https://github.com/watson/bonjour",
+  "coordinates": [
+    55.68250900965318,
+    12.586377442991648
+  ],
+  "readme": "# bonjour\n\nA Bonjour/Zeroconf protocol implementation in pure JavaScript. Publish\nservices on the local network or discover existing services using\nmulticast DNS.\n\n[![Build status](https://travis-ci.org/watson/bonjour.svg?branch=master)](https://travis-ci.org/watson/bonjour)\n[![js-standard-style](https://img.shields.io/badge/code%20style-standard-brightgreen.svg?style=flat)](https://github.com/feross/standard)\n\n## Installation\n\n```\nnpm install bonjour\n```\n\n## Usage\n\n```js\nvar bonjour = require('bonjour')()\n\n// advertise an HTTP server on port 3000\nbonjour.publish({ name: 'My Web Server', type: 'http', port: 3000 })\n\n// browse for all http services\nbonjour.find({ type: 'http' }, function (service) {\n  console.log('Found an HTTP server:', service)\n})\n```\n\n## API\n\n### Initializing\n\n```js\nvar bonjour = require('bonjour')([options])\n```\n\nThe `options` are optional and will be used when initializing the\nunderlying multicast-dns server. For details see [the multicast-dns\ndocumentation](https://github.com/mafintosh/multicast-dns#mdns--multicastdnsoptions).\n\n### Publishing\n\n#### `var service = bonjour.publish(options)`\n\nPublishes a new service.\n\nOptions are:\n\n- `name` (string)\n- `host` (string, optional) - defaults to local hostname\n- `port` (number)\n- `type` (string)\n- `subtypes` (array of strings, optional)\n- `protocol` (string, optional) - `udp` or `tcp` (default)\n- `txt` (object, optional) - a key/value object to broadcast as the TXT\n  record\n\nIANA maintains a [list of official service types and port\nnumbers](http://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml).\n\n#### `bonjour.unpublishAll([callback])`\n\nUnpublish all services. The optional `callback` will be called when the\nservices have been unpublished.\n\n#### `bonjour.destroy()`\n\nDestroy the mdns instance. Closes the udp socket.\n\n### Browser\n\n#### `var browser = bonjour.find(options[, onup])`\n\nListen for services advertised on the network. An optional callback can\nbe provided as the 2nd argument and will be added as an event listener\nfor the `up` event.\n\nOptions (all optional):\n\n- `type` (string)\n- `subtypes` (array of strings)\n- `protocol` (string) - defaults to `tcp`\n- `txt` (object) - passed into [dns-txt\n  module](https://github.com/watson/dns-txt) contructor. Set to `{\n  binary: true }` if you want to keep the TXT records in binary\n\n#### `var browser = bonjour.findOne(options[, callback])`\n\nListen for and call the `callback` with the first instance of a service\nmatching the `options`. If no `callback` is given, it's expected that\nyou listen for the `up` event. The returned `browser` will automatically\nstop it self after the first matching service.\n\nOptions are the same as given in the `browser.find` function.\n\n#### `Event: up`\n\nEmitted every time a new service is found that matches the browser.\n\n#### `Event: down`\n\nEmitted every time an existing service emmits a goodbye message.\n\n#### `browser.services`\n\nAn array of services known by the browser to be online.\n\n#### `browser.start()`\n\nStart looking for matching services.\n\n#### `browser.stop()`\n\nStop looking for matching services.\n\n#### `browser.update()`\n\nBroadcast the query again.\n\n### Service\n\n#### `Event: up`\n\nEmitted when the service is up.\n\n#### `Event: error`\n\nEmitted if an error occurrs while publishing the service.\n\n#### `service.stop([callback])`\n\nUnpublish the service. The optional `callback` will be called when the\nservice have been unpublished.\n\n#### `service.start()`\n\nPublish the service.\n\n#### `service.name`\n\nThe name of the service, e.g. `Apple TV`.\n\n#### `service.type`\n\nThe type of the service, e.g. `http`.\n\n#### `service.subtypes`\n\nAn array of subtypes. Note that this property might be `null`.\n\n#### `service.protocol`\n\nThe protocol used by the service, e.g. `tcp`.\n\n#### `service.host`\n\nThe hostname or ip address where the service resides.\n\n#### `service.port`\n\nThe port on which the service listens, e.g. `5000`.\n\n#### `service.fqdn`\n\nThe fully qualified domain name of the service. E.g. if given the name\n`Foo Bar`, the type `http` and the protocol `tcp`, the `service.fqdn`\nproperty will be `Foo Bar._http._tcp.local`.\n\n#### `service.txt`\n\nThe TXT record advertised by the service (a key/value object). Note that\nthis property might be `null`.\n\n#### `service.published`\n\nA boolean indicating if the service is currently published.\n\n## License\n\nMIT\n",
+  "readmeFilename": "README.md",
+  "_id": "bonjour@3.5.0",
+  "_shasum": "8e890a183d8ee9a2393b3844c691a42bcf7bc9f5",
+  "_resolved": "https://registry.npmjs.org/bonjour/-/bonjour-3.5.0.tgz",
+  "_from": "https://registry.npmjs.org/bonjour/-/bonjour-3.5.0.tgz"
+}

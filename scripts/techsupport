@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2020 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,28 +29,28 @@ ifconfig > ifconfig.txt
 ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
 top -n 10 -b > top-output.txt
-cp -r -f /home/pi/.firewalla . 
+cp -rfp /home/pi/.firewalla .
 if [ -z "$1" ]
-   then 
+   then
      cp /data/redis/dump.rdb .
    else
      echo "skip db"
-fi 
+fi
 if [ -z "$2" ]
-   then 
-     cp -r -f /home/pi/logs/* .
-     sudo cp /var/log/syslog* .
+   then
+     cp -rfp /home/pi/logs/* .
+     sudo cp -p /var/log/syslog* .
    else
-     ls -lt /home/pi/logs/FireMon*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
-     ls -lt /home/pi/logs/FireApi*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
-     ls -lt /home/pi/logs/FireMain*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
-     ls -lt /home/pi/logs/FireKick*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
-     ls -lt /home/pi/logs/Trace*.log |head -2 | awk '{print $NF}' | xargs -i cp {} .
-     ls -lt /var/log/syslog* |head -3 | awk '{print $NF}' | xargs -i sudo cp {} .
-     ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp {} .
-fi 
+     ls -lt /home/pi/logs/FireMon*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
+     ls -lt /home/pi/logs/FireApi*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
+     ls -lt /home/pi/logs/FireMain*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
+     ls -lt /home/pi/logs/FireKick*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
+     ls -lt /home/pi/logs/Trace*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
+     ls -lt /var/log/syslog* |head -3 | awk '{print $NF}' | xargs -i sudo cp -p {} .
+     ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp -p {} .
+fi
 sudo chmod 777 syslog*
-cp -r -f /home/pi/.forever/* .
+cp -rfp /home/pi/.forever/* .
 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
 cd ..
 tar -zcvf support.tar.gz techsupport

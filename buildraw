@@ -89,7 +89,7 @@ function install_walla()
     
     sudo cp $basedir/etc/sysctl.conf /etc/sysctl.conf || perr_and_exit "Failed to replace system sysctl.conf."
     sudo cp $basedir/etc/bro-cron /etc/cron.hourly/. || perr_and_exit "Failed to install root bron cronjobs."
-    crontab $basedir/etc/brotab || perr_and_exit "Failed to install user bro cronjobs."
+    crontab $basedir/etc/crontab || perr_and_exit "Failed to install user bro cronjobs."
 
     echo "Setting up encipher..."
     sudo mkdir -p /encipher.config || perr_and_exit "Failed to create /encipher.config/"

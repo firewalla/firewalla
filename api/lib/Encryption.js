@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,70 +14,73 @@
  */
 'use strict';
 
-let CloudWrapper = require('../lib/CloudWrapper');
-let cloudWrapper = new CloudWrapper();
+const CloudWrapper = require('../lib/CloudWrapper');
+const cloudWrapper = new CloudWrapper();
 
 let instance = null;
-let log = null;
+const log = require("../../net2/logger.js")(__filename);
 
 module.exports = class {
-    constructor(loglevel) {
-        if (instance == null) {
-            log = require("../../net2/logger.js")("encryption", loglevel);
-            instance = this;
-        }
-        return instance;
+  constructor() {
+    if (instance == null) {
+      instance = this;
+    }
+    return instance;
+  }
+
+  decrypt(req, res, next) {
+    let gid = req.params.gid;
+    let message = req.body.message;
+
+    if(gid == null) {
+      res.status(400);
+      res.json({"error" : "Invalid group id"});
+      return;
     }
 
-    decrypt(req, res, next) {
-      let gid = req.params.gid;
-      let message = req.body.message;
-
-      if(gid == null) {
-        res.status(400);
-        res.json({"error" : "Invalid group id"});
-        return;
-      }
-
-      if(message == null) {
-        res.status(400);
-        res.json({"error" : "Invalid request"});
-        return;
-      }
-
-      cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {
-        if(err) {
-            res.json({"error" : err});
-            return;
-        } else {          
-          decryptedMessage.mtype = decryptedMessage.message.mtype;
-          req.body = decryptedMessage;
-          next();
-        }
-      });
+    if(message == null) {
+      res.status(400);
+      res.json({"error" : "Invalid request"});
+      return;
     }
 
-    encrypt(req, res, next) {
-      let gid = req.params.gid;
-      if(gid == null) {
-        res.json({"error" : "Invalid group id"});
+    cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {
+      if(err) {
+        res.status(400).json({"error" : err});
         return;
+      } else {
+        decryptedMessage.mtype = decryptedMessage.message.mtype;
+        req.body = decryptedMessage;
+        next();
       }
+    });
+  }
 
-      let body = res.body;
-
-      if(body == null) {
-        res.json({"error" : "Response error"});
-        return;
-      }
-
-      cloudWrapper.getCloud().encryptMessage(gid, body, (err, encryptedResponse) => {
-          if(err) {
-              res.json({error: err});
-              return;
-          } else {
-              res.json({ message : encryptedResponse });
-          }
-      });
+  encrypt(req, res, next) {
+    let gid = req.params.gid;
+    if(gid == null) {
+      res.json({"error" : "Invalid group id"});
+      return;
     }
+
+    let body = res.body;
+
+    if(body == null) {
+      res.json({"error" : "Response error"});
+      return;
+    }
+
+    // log.info('Response Data:', JSON.parse(body));
+    const time = process.hrtime();
+    cloudWrapper.getCloud().encryptMessage(gid, body, (err, encryptedResponse) => {
+      log.info('EncryptMessage Cost Time:', `${process.hrtime(time)[1]/1e6} ms`);
+
+      if(err) {
+        res.json({error: err});
+        return;
+      } else {
+        res.json({ message : encryptedResponse });
+      }
+    });
+  }
 }

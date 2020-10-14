@@ -21,8 +21,7 @@ const exec = require('child-process-promise').exec;
 const fConfig = require('../../net2/config.js').getConfig();
 const log = require('../../net2/logger.js')(__filename);
 
-const get_interfaces_list_async = require('util').promisify(require('network').get_interfaces_list);
-const activeInterface = fConfig.monitoringInterface || "eth0";
+const sysManager = require('../../net2/SysManager.js');
 
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -35,7 +34,7 @@ const f = require('../../net2/Firewalla.js');
 
 Promise.promisifyAll(fs);
 
-const rp = require('request-promise');
+const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 
 class FWDiag {
   constructor() {
@@ -48,17 +47,6 @@ class FWDiag {
 
   getEndpoint() {
     return fConfig.firewallaDiagServerURL || `https://api.firewalla.com/diag/api/v1/device/`
-  }
-
-  async getNetworkInfo() {
-    const list = await get_interfaces_list_async();
-    for(const inter of list || []) {
-      if(inter.name === activeInterface) {
-        return inter;
-      }
-    }
-
-    return null;
   }
 
   async getGatewayMac(gatewayIP) {
@@ -110,7 +98,7 @@ class FWDiag {
   async hasLicenseFile() {
     const filePath = `${f.getHiddenFolder()}/license`;
     try {
-      const stat = await fs.accessAsync(filePath, fs.constants.F_OK);
+      await fs.accessAsync(filePath, fs.constants.F_OK);
       return true;
     } catch (err) {
       return false;
@@ -118,11 +106,11 @@ class FWDiag {
   }
 
   async prepareData(payload) {
-    const inter = await this.getNetworkInfo();
+    const inter = sysManager.getDefaultWanInterface()
 
     const ip = inter.ip_address;
     const gateway = inter.gateway_ip;
-    const mac = inter.mac_address;
+    const mac = platform.getSignatureMac();
 
     const gatewayMac = await this.getGatewayMac(gateway);
     const gatewayName = await this.getGatewayName(gateway);
@@ -148,9 +136,11 @@ class FWDiag {
       const options = {
         uri:  this.getEndpoint() + data.gw,
         method: 'POST',
-        json: data
+        json: data,
+        maxAttempts: 2,
+        timeout: 10000
       }
-      const result = await rp(options);
+      const result = await rrWithErrHandling(options);
       if(result && result.mode) {
         await rclient.setAsync("recommend_firewalla_mode", result.mode);
       }
@@ -172,10 +162,10 @@ class FWDiag {
   }
 
   async prepareHelloData() {
-    const inter = await this.getNetworkInfo();
+    const inter = sysManager.getDefaultWanInterface()
 
     const firewallaIP = inter.ip_address;
-    const mac = inter.mac_address;
+    const mac = platform.getSignatureMac();
     const gateway = inter.gateway_ip;
 
     const version = this.getVersion();
@@ -214,9 +204,11 @@ class FWDiag {
     const options = {
       uri: this.getEndpoint() + 'hello',
       method: 'POST',
-      json: data
+      json: data,
+      maxAttempts: 2,
+      timeout: 10000
     }
-    await rp(options);
+    await rrWithErrHandling(options);
     log.info("said hello to Firewalla Cloud");
   }
 
@@ -225,10 +217,12 @@ class FWDiag {
     const options = {
       uri: this.getEndpoint() + 'log/' + level,
       method: 'POST',
-      json: Object.assign({}, data, sysData)
+      json: Object.assign({}, data, sysData),
+      maxAttempts: 2,
+      timeout: 10000
     }
     log.info(`Sending diag log, [${level}] ${JSON.stringify(data)}`);
-    await rp(options);
+    await rrWithErrHandling(options);
   }
 }
 

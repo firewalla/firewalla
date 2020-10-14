@@ -114,5 +114,7 @@
   "INFO_ALARM_VPN_DISCONNECT": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} is disconnected at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) has switched to local ISP.",
   "NOTIF_TITLE_ALARM_VPN_DISCONNECT_KILLSWITCH": "VPN Connection Error",
   "NOTIF_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is paused until the VPN connection is restored.",
-  "INFO_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is paused until the VPN connection is restored."
+  "INFO_ALARM_VPN_DISCONNECT_KILLSWITCH": "{{{p.vpn.subtypename}}} to {{{p.vpn.displayname}}} encounters error at {{{p.timestampTimezone}}}, Internet access on {{{p.vpn.devicecount}}} device(s) is paused until the VPN connection is restored.",
+  "NOTIF_BOX_ONLINE_TITLE": "Firewalla back online",
+  "NOTIF_BOX_ONLINE_BODY": "Internet connectivity is restored"
 }

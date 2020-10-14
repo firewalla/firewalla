@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,20 +26,23 @@ const log = require('../../net2/logger.js')(__filename, "info");
 
 const sc = require('../lib/SystemCheck.js');
 
-/* IMPORTANT 
- * -- NO AUTHENTICATION IS NEEDED FOR URL /message 
- * -- message is encrypted already 
+/* IMPORTANT
+ * -- NO AUTHENTICATION IS NEEDED FOR URL /message
+ * -- message is encrypted already
  */
 router.post('/message/:gid',
     sc.isInitialized,
     encryption.decrypt,
     sc.debugInfo,
+
     (req, res, next) => {
       const gid = req.params.gid;
-      
+
       (async() =>{
+        const time = process.hrtime();
         const controller = await cloudWrapper.getNetBotController(gid);
         const response = await controller.msgHandlerAsync(gid, req.body);
+        log.info('API Cost Time:', `${process.hrtime(time)[1]/1e6} ms`);
         res.body = JSON.stringify(response);
         next();
       })()
@@ -50,7 +53,7 @@ router.post('/message/:gid',
           res.json({error: 'Initializing Firewalla Device, please try later'});
         });
     },
-  
+
     sc.compressPayloadIfRequired,
     encryption.encrypt
 );

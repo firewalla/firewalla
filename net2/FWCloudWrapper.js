@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -40,12 +40,11 @@ function getCloud() {
   return eptcloud;
 }
 
-function initializeGroup(callback) {
+async function initializeGroup() {
   let groupId = storage.getItemSync('groupId');
   if (groupId != null) {
     log.info("Found stored group x", groupId);
-    callback(null, groupId);
-    return;
+    return groupId;
   }
 
   log.info("Creating new group ", config.service, config.endpoint_name);
@@ -53,45 +52,34 @@ function initializeGroup(callback) {
     'type': config.serviceType,
     'member': config.memberType,
   });
-  eptcloud.eptcreateGroup(config.service, meta, config.endpoint_name, function (e, r) {
-    log.info(r);
-    if (e === null && r !== null) {
-      storage.setItemSync('groupId', r);
-    }
-    callback(e, r);
-  });
+  const result = await eptcloud.eptCreateGroup(config.service, meta, config.endpoint_name)
+  log.info(result);
+  if (result !== null) {
+    storage.setItemSync('groupId', result);
+  }
+  return result
 }
 
-function login() {
-  return new Promise((resolve, reject) => {
-    
-    eptcloud.eptlogin(config.appId, config.appSecret, null, config.endpoint_name, function (err, result) {
-      if (err == null) {
-        initializeGroup(function (err, gid) {
-          if (gid) {
-            rclient.hmsetAsync("sys:ept", {
-              eid: eptcloud.eid,
-              token: eptcloud.token,
-              gid: gid
-            }).then((data) => {
-              log.info("Set SYS:EPT", err, data,eptcloud.eid, eptcloud.token, gid);
-              resolve({
-                eid: eptcloud.eid,
-                token: eptcloud.token,
-                gid: gid
-              });
-            });
-          } else {
-            log.error("Unable to get group id:", err);
-            reject(err);
-          }
-        });
-      } else {
-        log.error("Unable to login", err);
-        reject(err);
-      }
-    });
+async function login() {
+  await eptcloud.eptLogin(config.appId, config.appSecret, null, config.endpoint_name)
+
+  const gid = await initializeGroup();
+  if (!gid) {
+    throw new Error("Unable to get group id:");
+  }
+
+  const data = await rclient.hmsetAsync("sys:ept", {
+    eid: eptcloud.eid,
+    token: eptcloud.token,
+    gid: gid
   })
+  log.info("Set SYS:EPT", data,eptcloud.eid, eptcloud.token, gid);
+
+  return {
+    eid: eptcloud.eid,
+    token: eptcloud.token,
+    gid: gid
+  }
 }
 
 module.exports = {

@@ -18,8 +18,7 @@ const fs = require("fs");
 
 const log = require('./logger.js')(__filename);
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 /*
  * If the system is upgrading ...

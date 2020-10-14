@@ -4,9 +4,11 @@ logs
 npm-debug.log*
 .DS_Store
 
+# vim
 *.swp
 .vimrc
 tags
+
 # Runtime data
 pids
 *.pid
@@ -39,10 +41,6 @@ jspm_packages
 
 # Optional REPL history
 .node_repl_history
-/etc/shadowsocks.config.json
-/extension/shadowsocks/ss.config.json
-/bin/bitbridge6
-/bin/bitbridge4
 
 
 ######### EMACS #########
@@ -92,33 +90,41 @@ flycheck_*.el
 # directory configuration
 .dir-locals.el
 ######## END OF EMACS ########
-/bin/bitbridge3
-/bin/bitbridge6a
-/bin/bitbridge7
-/imports/bro
-/imports/bro49.tar.gz
+
+
+
 
 /tmp/
-
-api/db/token.json
-/test/sample_license.json
-#/test
-/tests/sample_license.json
 
 .idea/
 .idea/workspace.xml
 
 .vscode/
 
-.tern-port
-
-/test
-/.gitmodules
-/extension/frp/frpc.ini
+tsconfig.json
 
 .tern-port
 .tern-project
 
+/test
+/.gitmodules
+
+api/db/token.json
+/test/sample_license.json
+#/test
+/tests/sample_license.json
+
+/etc/shadowsocks.config.json
+/extension/shadowsocks/ss.config.json
+/bin/bitbridge6
+/bin/bitbridge4
+/bin/bitbridge3
+/bin/bitbridge6a
+/bin/bitbridge7
+/imports/bro
+/imports/bro49.tar.gz
+
 /bin/bitbridge7.rc
+/extension/frp/frpc.ini
 /extension/frp/frpc.support.ini
 /extension/frp/frpc.support.service

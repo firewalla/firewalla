@@ -16,8 +16,10 @@
 
 let instance = null;
 
+const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename);
 
+//Need to change
 class Accounting {
   constructor() {
     if(!instance) {
@@ -30,12 +32,21 @@ class Accounting {
 
   addBlockedDevice(mac) {
     log.info("Added block device", mac);
-    this.blockedDevices[mac] = true;
+    if (_.has(this.blockedDevices, mac)) {
+      this.blockedDevices[mac] += 1;
+    } else {
+      this.blockedDevices[mac] = 1;
+    }
   }
 
   removeBlockedDevice(mac) {
     log.info("Removed block device", mac);
-    delete this.blockedDevices[mac];
+    if (_.has(this.blockedDevices, mac)) {
+      this.blockedDevices[mac] -= 1;
+      if (this.blockedDevices[mac] == 0) {
+        delete this.blockedDevices[mac];
+      }
+    }
   }
 
   isBlockedDevice(mac) {

@@ -11,7 +11,7 @@
 var fs = require('fs');
 var program = require('commander');
 var HostManager = require('../net2/HostManager.js');
-var SysManager= require('../net2/SysManager.js');
+var sysmanager = require('../net2/SysManager.js');
 var FlowManager = require('../net2/FlowManager.js');
 var flowManager = new FlowManager('info');
 
@@ -23,7 +23,6 @@ program.version('0.0.2')
 
 
 program.parse(process.argv);
-var sysmanager = new SysManager('info');
 sysmanager.update(null);
 
 var hostManager = new HostManager("cli", 'client','debug');

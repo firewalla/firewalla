@@ -3,23 +3,27 @@
 # confgen.sh <instance_name> <local_ip> <dns> <server_network> <local_port>
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 INSTANCE_NAME=$1
 LOCAL_IP=$2
 DNS=$3
 : ${DNS:="8.8.8.8"}
 SERVER_NETWORK=$4
-: ${SERVER_NETWORK="10.8.0.0"}
+: ${SERVER_NETWORK:="10.8.0.0"}
 NETMASK=$5
-: ${NETMASK="255.255.255.0"}
+: ${NETMASK:="255.255.255.0"}
 LOCAL_PORT=$6
-: ${LOCAL_PORT="1194"}
+: ${LOCAL_PORT:="1194"}
+PROTO=$7
+: ${PROTO:="udp"}
 
 chmod 777 -R /etc/openvpn
 
+OPENSSL_CNF=$(get_openssl_cnf_file)
 # Ensure nextUpdate in openssl crl to 3600 days
-if [ -f /etc/openvpn/easy-rsa/openssl-1.0.0.cnf ]; then
-  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' /etc/openvpn/easy-rsa/openssl-1.0.0.cnf
+if [ -f $OPENSSL_CNF ]; then
+  sudo sed -i 's/default_crl_days= [0-9]*/default_crl_days= 3600/' $OPENSSL_CNF
 fi
 
 if [ ! -s /etc/openvpn/crl.pem ]; then
@@ -74,6 +78,8 @@ sed -i "s=NETMASK=$NETMASK=" /etc/openvpn/$INSTANCE_NAME.conf
 sed -i "s=LOCAL_PORT=$LOCAL_PORT=" /etc/openvpn/$INSTANCE_NAME.conf
 # Set server instance
 sed -i "s/SERVER_INSTANCE/$INSTANCE_NAME/" /etc/openvpn/$INSTANCE_NAME.conf
+# Set protocol
+sed -i "s/PROTO/$PROTO/" /etc/openvpn/$INSTANCE_NAME.conf
 
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/$INSTANCE_NAME.conf

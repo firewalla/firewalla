@@ -1,6 +1,7 @@
-#!/bin/bash -
+#!/bin/bash
+
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2020 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,39 +17,54 @@
 #
 
 #
-# Ensure network is stable first then launch main-start
-#
+# Try keep system time in sync
 #
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-ntp_process_cnt=`sudo systemctl status ntp |grep 'active (running)' | wc -l`
-logger "FIREWALLA.FIRETIME.ENTER "+`date`
+logger "FIREWALLA.DATE.SYNC"
+
+TIME_THRESHOLD="2020-03-27"
+
+tsThreshold=$(date -d "$TIME_THRESHOLD" +%s)
+tsFakeHwclock=$(date -d "$(cat /etc/fake-hwclock.data)" +%s)
+if [ $tsFakeHwclock -ge $tsThreshold ]; then tsThreshold=$tsFakeHwclock; fi
 
 function sync_time() {
     time_website=$1
     logger "syncing time from ${time_website}..."
-    time=$(curl -D - ${time_website} -o /dev/null --silent | egrep "^Date:" | awk -F ": " '{print $2}')
+    time=$(curl -m5 -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
     if [[ "x$time" == "x" ]]; then
+        logger "ERROR: Failed to load date info from website: $time_website"
         return 1
     else
-        sudo date -s "$time"
-    fi    
+        # compare website time against threshold to prevent it goes bad in some rare cases
+        tsWebsite=$(date -d "$time" +%s)
+        if [ $tsWebsite -ge $tsThreshold ];
+        then
+          echo "$tsWebsite";
+          return 0
+        else
+          return 1
+        fi
+    fi
 }
 
+ntp_process_cnt=`sudo systemctl status ntp |grep 'active (running)' | wc -l`
 if [[ $ntp_process_cnt == 0 ]]; then
-    logger `date`
-    if [[ ! -f /.dockerenv ]]; then
-        logger "FIREWALLA.DATE.SYNC"
-        sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com
-        sudo systemctl stop ntp
-        sudo ntpdate -b -u -s time.nist.gov
-        sudo timeout 30 ntpd -gq
-        sudo systemctl start ntp
-        logger "FIREWALLA.DATE.SYNC.DONE"
-        sync
+    logger "ntp not running, restart"
+    sudo systemctl stop ntp
+    sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
+    sudo systemctl start ntp
+fi
+
+if [[ ! -f /.dockerenv ]]; then
+    tsWebsite=$(sync_time status.github.com || sync_time google.com || sync_time live.com || sync_time facebook.com)
+    tsSystem=$(date +%s)
+    if [ "0$tsWebsite" -ge "0$tsSystem" ]; # prefix 0 as tsWebsite could be empty
+    then
+      sudo date +%s -s "@$tsWebsite";
     fi
-    logger `date`
-else
-    logger "FIREWALLA.DATE.SYNC.NTPSTARTED"
+    logger "FIREWALLA.DATE.SYNC.DONE $([ ! -z "$tsWebsite" ] && date -d @$tsWebsite)"
+    sync
 fi

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,13 +14,15 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let util = require('util');
+const util = require('util');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
+
+const Message = require('../net2/Message.js');
 
 class DHCPSensor extends Sensor {
   constructor() {
@@ -28,15 +30,14 @@ class DHCPSensor extends Sensor {
     this.cache = {};
   }
 
-  run() {
-    let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
-    this.dhcpDump = new DhcpDump();
-    this.dhcpDump.install((obj)=>{
-      log.info("DHCPDUMP is installed");
-      this.dhcpDump.start(false,(obj)=>{
+  scheduleReload() {
+    if (this.reloadTask)
+      clearTimeout(this.reloadTask);
+    this.reloadTask = setTimeout(() => {
+      this.dhcpDump.start(false, (obj) => {
         if (obj && obj.mac) {
           // dedup
-          if(this.cache[obj.mac])
+          if (this.cache[obj.mac])
             return;
 
           this.cache[obj.mac] = 1;
@@ -45,16 +46,35 @@ class DHCPSensor extends Sensor {
           }, 60 * 1000); // cache for one minute
 
           log.info(util.format("New Device Found: %s (%s)", obj.name, obj.mac));
-          sem.emitEvent({
+          let eventMessage = {
             type: "NewDeviceWithMacOnly",
             mac: obj.mac,
-            name: obj.name,
+            intf_mac: obj.intf_mac,
+            intf_uuid: obj.intf_uuid,
             mtype: obj.mtype,
             from: 'dhcp',
             message: "may found a new device by dhcp"
-          });
+          }
+          if (!obj.ignoreName) {
+            eventMessage.name = obj.name;
+          }
+          sem.emitEvent(eventMessage);
         }
       });
+    }, 5000);
+  }
+
+  run() {
+    let DhcpDump = require("../extension/dhcpdump/dhcpdump.js");
+    this.dhcpDump = new DhcpDump();
+    this.dhcpDump.install((obj) => {
+      log.info("DHCPDUMP is installed");
+      this.scheduleReload();
+
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+        log.info("Schedule reload DHCPSensor since network info is reloaded");
+        this.scheduleReload();
+      })
     });
   }
 }

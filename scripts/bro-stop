@@ -1,3 +1,6 @@
 #!/bin/bash
 
-sudo pkill -9 -x bro 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+sudo pkill -9 -x $(bro_proc_name)

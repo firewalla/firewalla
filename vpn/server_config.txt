@@ -1,6 +1,6 @@
 #local LOCAL_IP
 dev tun_fwvpn
-proto udp
+proto PROTO
 port LOCAL_PORT
 ca /etc/openvpn/easy-rsa/keys/ca.crt
 cert /etc/openvpn/easy-rsa/keys/SERVER_INSTANCE.crt
@@ -30,6 +30,7 @@ client-config-dir /etc/openvpn/client_conf
 cipher AES-128-CBC
 comp-lzo
 persist-key
+
 persist-tun
 status /var/log/openvpn-status-SERVER_INSTANCE.log 20
 log /var/log/openvpn-SERVER_INSTANCE.log
@@ -38,6 +39,8 @@ verb 1
 # The following two lines added to disable logs
 #log /dev/null
 #status /dev/null
-client-connect /home/pi/firewalla/vpn/client_connected.sh
-client-disconnect /home/pi/firewalla/vpn/client_disconnected.sh
+client-connect "/home/pi/firewalla/vpn/client_connected.sh SERVER_INSTANCE"
+client-disconnect "/home/pi/firewalla/vpn/client_disconnected.sh SERVER_INSTANCE"
+route-up "/home/pi/firewalla/vpn/server_route_up.sh SERVER_INSTANCE"
+down "/home/pi/firewalla/vpn/server_down.sh SERVER_INSTANCE"
 management localhost 5194

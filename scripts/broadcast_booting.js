@@ -17,10 +17,11 @@
 
 process.title = "FWBroadcastBooting";
 
-const bonjour = require('bonjour')()
+const bonjour = require('../vendor_lib/bonjour')()
 const cp = require('child_process')
 
-const cmd = "ip addr show dev eth0 | awk '/inet /' | awk '$NF==\"eth0\" {print $2}' | cut -f1 -d/ | head -n 1"
+const fConfig = require('../net2/config.js').getConfig(true);
+const cmd = `ip addr show dev ${fConfig.monitoringInterface} | awk '/inet /' | awk '$NF==\"${fConfig.monitoringInterface}\" {print $2}' | cut -f1 -d/ | head -n 1`
 const ip = cp.execSync(cmd).toString().replace(/\n$/, '')
 
 const cmd3 = "redis-cli hget sys:ept gid"

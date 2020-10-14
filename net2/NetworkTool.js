@@ -18,7 +18,8 @@ const log = require('./logger.js')(__filename);
 
 const linux = require('../util/linux.js');
 
-const fConfig = require('./config.js').getConfig();
+const Config = require('./config.js');
+let fConfig = Config.getConfig();
 
 const os = require('os');
 const ip = require('ip');
@@ -26,6 +27,7 @@ const dns = require('dns');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const exec = require('child-process-promise').exec
 
 let instance = null;
 
@@ -37,11 +39,41 @@ class NetworkTool {
     return instance;
   }
 
+  async updateMonitoringInterface() {
+    const cmd = "/sbin/ip route show | awk '/default via/ {print $5}' | head -n 1"
+    const result = await exec(cmd).catch((err) => null);
+    fConfig = Config.getConfig(true);
+    if (result && result.stdout) {
+      const intf = result.stdout.trim();
+      const secondaryInterface = fConfig.secondaryInterface;
+      secondaryInterface.intf = `${intf}:0`;
+      const updatedConfig = {
+        discovery: {
+          networkInterfaces: [
+            intf,
+            `${intf}:0`,
+            "wlan0"
+          ]
+        },
+        monitoringInterface: intf,
+        monitoringInterface2: `${intf}:0`,
+        secondaryInterface: secondaryInterface
+      };
+      Config.updateUserConfigSync(updatedConfig);
+      fConfig = Config.getConfig();
+
+      return intf
+    } else {
+      log.error("WAN interface is not detected");
+      return null
+    }
+  }
+
   _is_interface_valid(netif) {
     return (
       netif.ip_address != null &&
       netif.mac_address != null &&
-      netif.type != null &&
+      netif.conn_type != null &&
       !netif.ip_address.startsWith('169.254.')
     );
   }
@@ -64,6 +96,18 @@ class NetworkTool {
     return ipSubnets[0];
   }
 
+  async getIdentifierMAC() {
+    // eth0 is default WAN interface for red, blue and gold.
+    // It is hardcoded. But it fits for red, blue and gold. It may not be changed in a long time
+    const iface = "eth0";
+    const result = await exec(`cat /sys/class/net/${iface}/address`).catch((err) => {return null});
+    if (result) {
+      const mac = result.stdout.trim();
+      return mac;
+    }
+    return null;
+  }
+
 
   // listInterfaces(), output example:
   // [
@@ -75,22 +119,25 @@ class NetworkTool {
   //     ip6_masks: ['ffff:ffff:ffff:ffff::'],
   //     gateway_ip: '192.168.10.1',
   //     netmask: 'Mask:255.255.255.0',
-  //     type: 'Wired',
+  //     conn_type: 'Wired',
   //     gateway: '192.168.10.1',
   //     subnet: '192.168.10.0/24',
   //     gateway6: '',
   //     dns: ['192.168.10.1'],
+  //     type: 'wan'
   //   },
   //   {
   //     name: 'eth0:0',
   //     ip_address: '192.168.218.1',
   //     mac_address: '02:81:05:84:b0:5d',
   //     netmask: 'Mask:255.255.255.0',
-  //     type: 'Wired',
-  //     gateway: null,
+  //     conn_type: 'Wired',
+  //     gateway: '192.168.218.1',
+  //     gateway_ip: '192.168.218.1',
   //     subnet: '192.168.218.0/24',
   //     gateway6: '',
   //     dns: ['192.168.10.1'],
+  //     type: 'lan'
   //   },
   // ]
   async listInterfaces() {
@@ -104,39 +151,24 @@ class NetworkTool {
 
     list.forEach(i => {
       log.info('Found interface', i.name, i.ip_address);
-
-      i.gateway = require('netroute').getGateway(i.name);
+      // there is another field named "gateway_ip", which is same as "gateway"
+      i.gateway = require('netroute').getGateway(i.name) || null;
+      // if there is no default router on this interface, set gateway_ip to null
+      if (!i.gateway)
+        i.gateway = null;
       i.subnet = this._getSubnet(i.name, i.ip_address, 'IPv4');
       i.gateway6 = linux.gateway_ip6_sync();
       i.dns = dns.getServers();
+      if (i.ip_address) {
+        if (i.gateway === null)
+          i.type = "lan";
+        else
+          i.type = "wan"; 
+      }
+      i.searchDomains = [];
     });
 
     return list
-  }
-
-  // same as listInterfaces() but filters out non-local interfaces
-  async getLocalNetworkInterface() {
-    let intfs = fConfig.discovery && fConfig.discovery.networkInterfaces;
-    if (!intfs) {
-      return null;
-    }
-
-    const list = await this.listInterfaces()
-    let list2 = list.filter(x => {
-      return intfs.some(y => y === x.name);
-    });
-    if (list2.length === 0) {
-      return null;
-    } else {
-      return list2;
-    }
-  }
-
-  // same as getSubnet() but filters non-local interfaces
-  async getLocalNetworkSubnets() {
-    let interfaces = await this.getLocalNetworkInterface();
-    // a very hard code for 16 subnet
-    return interfaces && interfaces.map(x => this.capSubnet(x.subnet));
   }
 
   capSubnet(cidrAddr) {

@@ -19,8 +19,7 @@ const iptool = require('ip');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('./SysManager.js');
 
 const asyncNative = require('../util/asyncNative.js');
 
@@ -129,7 +128,7 @@ module.exports = class DNSManager {
     // no need to call Date.now() too many times.
     if (hostManager == null) {
       let HostManager = require("../net2/HostManager.js");
-      hostManager = new HostManager("cli", 'client', 'info');
+      hostManager = new HostManager();
     }
 
     if (list == null || list.length == 0) {

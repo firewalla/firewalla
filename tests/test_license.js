@@ -31,9 +31,6 @@ Promise.promisifyAll(fs);
 
 let license = require('../util/license.js');
 
-let async = require('asyncawait/async');
-let await = require('asyncawait/await');
-
 let sample = require('./sample_data');
 
 describe('License', function() {

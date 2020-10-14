@@ -20,6 +20,8 @@ let instance = null;
 const log = require('../../net2/logger')(__filename);
 
 const fs = require('fs');
+const util = require('util');
+const existsAsync = util.promisify(fs.exists);
 const f = require('../../net2/Firewalla.js');
 
 const Promise = require('bluebird');
@@ -36,6 +38,8 @@ const serverKey = "ext.dnscrypt.servers";
 const allServerKey = "ext.dnscrypt.allServers";
 
 const bone = require("../../lib/Bone");
+const { DNSStamp } = require("../../vendor_lib/DNSStamp.js");
+const _ = require('lodash');
 
 class DNSCrypt {
   constructor() {
@@ -46,15 +50,16 @@ class DNSCrypt {
 
     return instance;
   }
-
-  getLocalServer() {
-    return `127.0.0.1#${this.config.localPort || 8854}`;
-  }
+  
   getLocalPort() {
     return this.config.localPort || 8854;
   }
 
-  async prepareConfig(config = {}) {
+  getLocalServer() {
+    return `127.0.0.1#${this.config.localPort || 8854}`;
+  }
+
+  async prepareConfig(config = {}, reCheckConfig = false) {
     this.config = config;
     let content = await fs.readFileAsync(templatePath, {encoding: 'utf8'});
     content = content.replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1");
@@ -62,22 +67,75 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
+    const allServers = await this.getAllServersFromCloud(); // get servers from cloud
     let serverList = await this.getServers();
-    const allServers = await this.getAllServers();
-    const allServerNames = await this.getAllServerNames();
-    serverList = serverList.filter((n) => allServerNames.includes(n));
+    const allServerNames = allServers.map((x) => x.name).filter(Boolean);
+    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers, serverList));
 
+    serverList = serverList.map((server) => {
+      if (allServerNames.includes(server)) { return server }
+      if (allServerNames.includes(server.name)) { return `${server.name}_${server.id}` }
+    }).filter(Boolean)
     content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
-    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
 
+    if (reCheckConfig) {
+      const fileExists = await existsAsync(runtimePath);
+      if (fileExists) {
+        const oldContent = await fs.readFileAsync(runtimePath, {encoding: 'utf8'});
+        if (oldContent == content)
+          return false;
+      }
+    }
     await fs.writeFileAsync(runtimePath, content);
+    return true;
   }
 
-  allServersToToml(servers) {
+  allServersToToml(servers, selectedServers) {
+    /*
+    servers from cloud: [
+      {name: string, stamp: string},
+      {
+        name:'nextdns',
+        hostName:'dns.nextdns.io',
+        ip:'45.90.28.0'
+      }
+    ]
+    selectedServers: [
+      string | object{name:'nextdns',id:'xyz'}
+    ]
+    */
     return servers.map((s) => {
-      if(!s) return null;
-      return `[static.'${s.name}']\n  stamp = '${s.stamp}'\n`;
+      if (!s) return null;
+      let stamp = s.stamp;
+      let name = s.name;
+      if (!stamp) {
+        const server = _.find(selectedServers, (item) => {
+          return item && item.name == s.name;
+        });
+        if (!server) return null;
+        switch (s.name) {
+          case 'nextdns':
+            if (s.ip && s.hostName) {
+              stamp = new DNSStamp.DOH(s.ip, {
+                "hostName": s.hostName,
+                "path": `/${server.id}`,
+                "props": new DNSStamp.Properties({
+                  nofilter: server.nofilter === undefined ? false : server.nofilter,
+                  nolog: server.nolog === undefined ? false : server.nolog,
+                  dnssec: server.nolog === undefined ? true : server.nolog,
+                }),
+              }).toString();
+              name = `${name}_${server.id}`
+            }
+        }
+      }
+      if (!stamp) return null;
+      return `[static.'${name}']\n  stamp = '${stamp}'\n`;
     }).filter(Boolean).join("\n");
+  }
+
+  async start() {
+    return exec("sudo systemctl start dnscrypt");
   }
 
   async restart() {
@@ -120,19 +178,36 @@ class DNSCrypt {
     return result && result.servers;
   }
 
-  async getAllServers() {
-    const serversString = await rclient.getAsync(allServerKey);
-    if(!serversString) {
-      return this.getDefaultAllServers();
-    }
-
+  async getAllServersFromCloud() {
     try {
-      const servers = JSON.parse(serversString);
-      return servers;
+      const serversString = await bone.hashsetAsync("doh");
+      if (serversString) {
+        let servers = JSON.parse(serversString);
+        servers = servers.filter((server) => (server && server.name && server.stamp));
+        if (servers.length > 0) {
+          await this.setAllServers(servers);
+          return servers;
+        }
+      }
     } catch(err) {
       log.error("Failed to parse servers, err:", err);
-      return this.getDefaultAllServers();
     }
+    return this.getDefaultAllServers();
+  }
+
+  async getAllServers() {
+    const serversString = await rclient.getAsync(allServerKey);
+    if (serversString) {
+      try {
+        let servers = JSON.parse(serversString);
+        servers = servers.filter((server) => (server && server.name && server.stamp));
+        if (servers.length > 0)
+          return servers;
+      } catch(err) {
+        log.error("Failed to parse servers, err:", err);
+      }
+    }
+    return this.getDefaultAllServers();
   }
 
   async getAllServerNames() {
@@ -142,12 +217,11 @@ class DNSCrypt {
 
   async setAllServers(servers) {
     if(servers === null) {
-      return rclient.delAsync(serverKey);
+      return rclient.delAsync(allServerKey);
     }
 
-    return rclient.setAsync(serverKey, JSON.stringify(servers));
+    return rclient.setAsync(allServerKey, JSON.stringify(servers));
   }
-
 }
 
 module.exports = new DNSCrypt();

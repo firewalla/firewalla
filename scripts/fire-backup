@@ -41,7 +41,15 @@ cp -r -f /home/pi/.encipher .
 cp /data/redis/dump.rdb .
 cd ..
 tar -zcvf $filename.tar.gz firebackup
-gpg --passphrase $1 --symmetric --cipher-algo AES256 /home/pi/tmp/$filename.tar.gz
+
+GPG_VERSION=$(gpg --version | head -n 1 | awk '{print $3}' | awk -F. '{print $1}')
+
+if [[ $GPG_VERSION == "1" ]]; then
+  gpg --passphrase $1 --symmetric --cipher-algo AES256 /home/pi/tmp/$filename.tar.gz
+else
+  echo $1 | gpg --batch --yes --passphrase-fd 0 --symmetric --cipher-algo AES256 /home/pi/tmp/$filename.tar.gz
+fi
+
 rm $filename.tar.gz
 rm -r -f firebackup
 

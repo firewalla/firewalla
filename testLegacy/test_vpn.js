@@ -3,8 +3,7 @@
 var chai = require('chai');
 var expect = chai.expect;
 
-var SysManager= require('../net2/SysManager.js');
-var sysManager = new SysManager('info');
+var sysManager= require('../net2/SysManager.js');
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('../test/config.json', 'utf8'));
 sysManager.setConfig(config);

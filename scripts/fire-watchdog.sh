@@ -14,7 +14,7 @@ totalmem=$(( swapmem + realmem ))
 (( mem <= 35 )) && /home/pi/firewalla/scripts/firelog -t local -m "REBOOT: Memory less than 35 $mem"
 
 #DEFAULT_ROUTE=$(ip route show default | awk '/default/ {print $3}')
-DEFAULT_ROUTE=$(ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
+DEFAULT_ROUTE=$(ip r | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
 for i in `seq 1 1`; do
     if ping -w 1 -c 1 $DEFAULT_ROUTE &> /dev/null

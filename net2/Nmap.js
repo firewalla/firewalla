@@ -64,7 +64,7 @@ module.exports = class {
     if (obj) {
       this.nmapScan(obj.cmdline, true, (err, hosts, ports) => {
         obj.callback(err, hosts, ports);
-        log.info('NMAP:ScanQUEUE', this.scanQ);
+        if (this.scanQ.length) log.info('NMAP:ScanQUEUE', this.scanQ);
         this.scanQueue(this.scanQ.pop());
       });
     }
@@ -286,7 +286,7 @@ module.exports = class {
       }
     );
     this.process.on('close', (code, signal) => {
-      log.info('NMAP Closed');
+      log.debug('NMAP Closed');
       this.process = null;
     });
   }

@@ -32,20 +32,14 @@ const pclient = require('../util/redis_manager.js').getPublishClient();
 var instances = {};
 
 module.exports = class {
-  constructor(loglevel, instanceId, throttle) {
+  constructor(loglevel, instanceId = 'default', throttle = 1) {
     let instance = null;
-    if (instanceId == null) {
-      instanceId = 'default';
-    }
     instance = instances[instanceId];
     if (instance == null) {
       instance = this;
       instances[instanceId] = instance;
       this.callbacks = {};
-      this.throttle = 1;
-      if (throttle) {
-        this.throttle = throttle;
-      }
+      this.throttle = throttle;
       this.sending = false;
       sclient.on('message', (channel, message) => {
         try {
@@ -55,7 +49,6 @@ module.exports = class {
           let cbs = null;
           if (
             m.ip &&
-            m.ip.length > 3 &&
             this.callbacks[channel + '.' + m.type + '.' + m.ip] != null
           ) {
             cbs = this.callbacks[channel + '.' + m.type + '.' + m.ip];
@@ -77,7 +70,7 @@ module.exports = class {
           }
           log.debug('Notified ', notified);
         } catch (err) {
-          //              log.error("Error to process message:", message, "err:", err);
+          log.debug("Error to process message:", channel, message, "err:", err);
           // ignore any non-JSON messages
         }
       });
@@ -110,12 +103,10 @@ module.exports = class {
   }
 
   _subscribe(key, callback) {
-    let cbs = this.callbacks[key];
-    if (!cbs) {
+    if (!this.callbacks[key]) {
       this.callbacks[key] = [];
-      cbs = this.callbacks[key];
     }
-    cbs.push(callback);
+    this.callbacks[key].push(callback);
   }
 
   subscribeOnce(channel, type, ip, callback) {

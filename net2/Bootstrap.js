@@ -23,8 +23,7 @@ let log = require("../net2/logger.js")(__filename);
 
 let cw = require("../net2/FWCloudWrapper");
 
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager();
+let sysManager = require('../net2/SysManager.js');
 
 let firewallaConfig = require('../net2/config.js').getConfig();
 
@@ -52,7 +51,6 @@ function bootstrap() {
     await cw.getCloud().loadKeys()
     await cw.login()
     await bone.waitUntilCloudReadyAsync()
-    await sysManager.setConfig(firewallaConfig)
     let sysInfo = await sysManager.getSysInfoAsync()
     log.debug("License:", license.getLicense());
     await bone.checkinAsync(firewallaConfig, license.getLicense(), sysInfo);

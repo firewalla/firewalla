@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,42 +26,33 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
-
-const networkTool = require('../net2/NetworkTool')();
+const sysManager = require('../net2/SysManager.js');
 const execAsync = require('child-process-promise').exec
 
 
 class IPv6DiscoverySensor extends Sensor {
   constructor() {
     super();
-    this.networkInterface = networkTool.getLocalNetworkInterface();
     this.enabled = true; // very basic feature, always enabled
     let p = require('../net2/MessageBus.js');
-    this.publisher = new p('info','Scan:Done', 10);
-    log.debug("Starting IPv6DiscoverySensor Interfaces [",this.networkInterface,"]");
+    this.publisher = new p('info', 'Scan:Done', 10);
   }
 
   run() {
-    setTimeout(()=> {
+    setTimeout(() => {
       this.checkAndRunOnce(true);
 
       setInterval(() => {
         this.checkAndRunOnce(true);
       }, 1000 * 60 * 5); // every 5 minutes, fast scan
 
-    },1000*60*5); // start the first run in 5 minutes
+    }, 1000 * 60 * 5); // start the first run in 5 minutes
   }
 
   async checkAndRunOnce() {
-    log.info("Starting IPv6DiscoverySensor Scanning",new Date()/1000);
     if (this.isSensorEnabled()) {
-      const results = await networkTool.getLocalNetworkInterface()
-      if (results) {
-        for (let i in results) {
-          let intf = results[i];
-          await this.neighborDiscoveryV6(intf.name, intf);
-        }
-      }
+      log.info("Starting IPv6DiscoverySensor Scanning", new Date() / 1000);
+      await this.neighborDiscoveryV6();
     }
   }
 
@@ -70,67 +61,72 @@ class IPv6DiscoverySensor extends Sensor {
   }
 
   async ping6ForDiscovery(intf, obj) {
-    await execAsync("ping6 -c2 -I eth0 ff02::1")
+    await execAsync(`ping6 -c2 -I ${intf} ff02::1`).catch((err) => {});
     return asyncNative.eachLimit(obj.ip6_addresses, 5, async (o) => {
-      let pcmd = "ping6 -B -c 2 -I eth0 -I " + o + " ff02::1";
+      let pcmd = `ping6 -B -c 2 -I ${intf} -I ${o} ff02::1`;
       log.info("Discovery:v6Neighbor:Ping6", pcmd);
-      return execAsync(pcmd)
+      return execAsync(pcmd).catch((err) => {});
     })
   }
 
 
-  addV6Host(v6addrs,mac) {
+  addV6Host(v6addrs, mac, intf) {
     sem.emitEvent({
       type: "DeviceUpdate",
       message: `A new ipv6 is found @ IPv6DisocverySensor ${v6addrs} ${mac}`,
-      suppressAlarm: true,
-      host:  {
+      host: {
         ipv6Addr: v6addrs,
         mac: mac.toUpperCase(),
+        intf_mac: intf.mac_address,
+        intf_uuid: intf.uuid,
         from: "ip6neighbor"
       }
     });
   }
 
-  async neighborDiscoveryV6(intf, obj) {
-    if (obj.ip6_addresses == null || obj.ip6_addresses.length <= 1) {
-      log.info("Discovery:v6Neighbor:NoV6", intf, JSON.stringify(obj));
-      return;
+  async neighborDiscoveryV6() {
+    const interfaces = sysManager.getMonitoringInterfaces();
+    for (const intf of interfaces) {
+      if (intf.ip6_addresses == null || intf.ip6_addresses.length <= 1) {
+        log.info("Discovery:v6Neighbor:NoV6", intf.name, JSON.stringify(intf));
+        continue;
+      }
+      await this.ping6ForDiscovery(intf.name, intf);
     }
-    await this.ping6ForDiscovery(intf, obj)
     let cmdline = 'ip -6 neighbor show';
     log.info("Running commandline: ", cmdline);
-
     const { stdout } = await execAsync(cmdline)
     let lines = stdout.split("\n");
-    let macHostMap = {};
-    for (const o of lines) {
-      log.debug("Discover:v6Neighbor:Scan:Line", o, "of interface", intf);
-      let parts = o.split(" ");
-      if (parts[2] == intf) {
-        let v6addr = parts[0];
-        let mac = parts[4].toUpperCase();
-        if (mac == "FAILED" || mac.length < 16) {
-          continue
-        } else {
-          /*
-            hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
-            cb();
-            });
-          */
-          let _host = macHostMap[mac];
-          if (_host) {
-            _host.push(v6addr);
+    for (const intf of interfaces) {
+      let macHostMap = {};
+      for (const o of lines) {
+        log.debug("Discover:v6Neighbor:Scan:Line", o, "of interface", intf.name);
+        let parts = o.split(" ");
+        if (parts[2] == intf.name) {
+          let v6addr = parts[0];
+          let mac = parts[4].toUpperCase();
+          if (mac == "FAILED" || mac.length < 16) {
+            continue
           } else {
-            _host = [v6addr];
-            macHostMap[mac] = _host;
+            /*
+              hostTool.linkMacWithIPv6(v6addr, mac,(err)=>{
+              cb();
+              });
+            */
+            let _host = macHostMap[mac];
+            if (_host) {
+              _host.push(v6addr);
+            } else {
+              _host = [v6addr];
+              macHostMap[mac] = _host;
+            }
+            continue
           }
-          continue
         }
       }
-    }
-    for (let mac in macHostMap) {
-      this.addV6Host(macHostMap[mac], mac)
+      for (let mac in macHostMap) {
+        this.addV6Host(macHostMap[mac], mac, intf);
+      }
     }
 
     // FIXME

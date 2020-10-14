@@ -18,7 +18,7 @@
 // node find_firewalla.js
 
 'use strict'
-let bonjour = require('bonjour')();
+let bonjour = require('../vendor_lib/bonjour')();
 
 bonjour._server.mdns.on('warning', (err) => console.warn("Warning on mdns server", err))
 bonjour._server.mdns.on('error', (err) => console.error("Error on mdns server", err))

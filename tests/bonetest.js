@@ -21,8 +21,7 @@ if(typeof global.it === 'function') {
 var bone = require("../lib/Bone.js");
 let fConfig = require('../net2/config.js').getConfig();
 let License = require('../util/license');
-let SysManager = require('../net2/SysManager.js');
-let sysManager = new SysManager('info');
+let sysManager = require('../net2/SysManager.js');
 let sampledata = require("../tests/sample_data_intel.js");
 
 

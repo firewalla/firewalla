@@ -21,8 +21,7 @@ let cloudWrapper = new CloudWrapper();
 
 let log = require("../../net2/logger.js")(__filename, 'info');
 
-let SysManager = require('../../net2/SysManager.js');
-let sysManager = new SysManager('info');
+let sysManager = require('../../net2/SysManager.js');
 
 let zlib = require('zlib');
 

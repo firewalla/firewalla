@@ -95,7 +95,7 @@ function pre_main() {
 #     # if [[ ! -d ~/.nvm ]]; then
 #     #   install_node8
 #     # fi
-    
+
 #     # make sure node_modules use the right repo
 #     cd ~/.node_modules
 #     NM_URL=$(git remote get-url origin)
@@ -104,8 +104,8 @@ function pre_main() {
 #       git remote remove origin
 #       git remote add origin https://github.com/firewalla/fnm.node8.armv7l.git
 #       git pull origin $branch
-#     fi    
-    
+#     fi
+
 #   fi
 #   return 0
 # }
@@ -131,23 +131,31 @@ function update_node_modules {
 
       NODE_VERSION=$($FIREWALLA_HOME/bin/node -v)
 
-      RE_NODE4='^v4\..*$'      
+      RE_NODE4='^v4\..*$'
       if [[ $NODE_VERSION =~ $RE_NODE4 ]]; then
         REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.$CPU_PLATFORM.node4
       fi
 
-      
+
       if [[ -d $FW_NODE_MODULES_PATH && -f $REVISION_FILE ]]; then
         cd $FW_NODE_MODULES_PATH
+
+        modulesBranch=$(git rev-parse --abbrev-ref HEAD)
+        if [[ $branch != $modulesBranch ]]; then
+            logger "FIREWALLA: NODE MODULES BRANCH MISMATCH: $modulesBranch, NOW SWITCHING TO $branch..."
+            $MGIT remote set-branches origin $branch
+            $MGIT fetch origin $branch
+            $MGIT checkout $branch
+        fi
 
         EXPECTED_REVISION=$(cat $REVISION_FILE)
         CURRENT_REVISION=$(git log | head -n 1 | awk '{print $2}')
 
         cd $FW_NODE_MODULES_PATH
-   
+
         logger "FIREWALLA: MAIN-STARTED CHECKING MODULE STATUS $(date)"
         if [[ `git status -uno --porcelain` ]]; then
-          NODE_MODULE_CHANGED=true  
+          NODE_MODULE_CHANGED=true
         else
           NODE_MODULE_CHANGED=false;
         fi
@@ -188,12 +196,12 @@ if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
      cp $FIREWALLA_HOME/bin/mock/bitbridge6a $FIREWALLA_HOME/bin/.
      if [ -f /home/pi/.firewalla/config/enablev6 ]; then
          cp $FIREWALLA_HOME/bin/real/bitbridge6 $FIREWALLA_HOME/bin/.
-     else 
+     else
          cp $FIREWALLA_HOME/bin/mock/bitbridge6 $FIREWALLA_HOME/bin/.
      fi
-     cat $FWPRODUCTION > /tmp/FWPRODUCTION
+     echo $FWPRODUCTION > /tmp/FWPRODUCTION
      mkdir -p /home/pi/.forever
-     sudo rm -r -f /home/pi/.forever/*
+     sudo rm -f /home/pi/.forever/{kickui,api,main,monitor}.log
     else
      cp $FIREWALLA_HOME/bin/real/bitbridge4 $FIREWALLA_HOME/bin/.
      cp $FIREWALLA_HOME/bin/real/bitbridge{3,7} $FIREWALLA_HOME/bin/.
@@ -227,20 +235,11 @@ sudo sysctl -w net.ipv4.tcp_congestion_control=bbr &>/dev/null
 #export FWPRODUCTION=$branch
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
 
-#nohup sudo ~/firewalla/bin/bitbridge6 -R -l eth0 &
 sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
 
 pre_main
-
-if [[ ! -f $FIREWALLA_HOME/node_modules/bleno/package.json && ! -f ~/.node_modules/bleno/package.json ]]; then
-    echo "Updating NPM BLENO"
-    sudo cp $FIREWALLA_HOME/config/netbot.config /encipher.config/.
-    sudo apt-get install -y bluetooth bluez libbluetooth-dev libudev-dev
-    npm install bleno --save
-    sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
-fi
 
 function check_upgrade {
     PACKAGE_NAME=$1
@@ -251,34 +250,11 @@ function check_upgrade {
     fi
 }
 
-if [[ "$branch" == "release_pi_1_0" ]]; then
-  #check_upgrade external-ip ^0.2.4
-  check_upgrade jsonfile ^2.4.0
-  check_upgrade lodash ^4.17.2
-  check_upgrade random-seed 0.3.0
-  check_upgrade pty.js 0.3.1
-  check_upgrade stats-lite 2.0.3
-  check_upgrade cron 1.1.0
-  check_upgrade nat-pmp 1.0.0
-  check_upgrade nat-upnp 1.0.3
-  check_upgrade mobile-detect 1.3.3
-  check_upgrade socket.io-client 1.4.8
-  check_upgrade swagger-node-express ~2.0
-  check_upgrade minimist 1.2.x
-  check_upgrade express ^4.14.0
-  check_upgrade body-parser 1.9.x
-  check_upgrade passport 0.3.2
-  check_upgrade passport-http-bearer 1.0.1
-  check_upgrade debug 2.2.0
-  check_upgrade serve-favicon 2.3.0
-  check_upgrade jade 1.11.0
+if [[ $CPU_PLATFORM != "x86_64" ]]; then
+  # x86_64 is using ramfs for / partition, this can save memory
+  sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
+  sudo setcap cap_net_raw+eip $(eval readlink -f `which node`)
 fi
-
-if ! fgrep '"version": "0.3.1",' $FIREWALLA_HOME/node_modules/network/package.json &>/dev/null && ! fgrep '"version": "0.3.1",' ~/.node_modules/network/package.json &>/dev/null; then
-    npm install network@git+https://git@github.com/melvinto/network.git
-fi
-
-sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
 
 # Take care of upgrade differently
 
@@ -307,10 +283,10 @@ function create_bootstrap_scripts_folder() {
     if [[ ! -f /.dockerenv ]]; then
         if [ -s /home/pi/scripts/fireupgrade.sh ]; then
             [ -s /home/pi/firewalla/etc/fireupgrade2.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade2.service /etc/systemd/system/fireupgrade.service
-        else 
+        else
             [ -s /home/pi/firewalla/etc/fireupgrade.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/fireupgrade.service
         fi
-    fi 
+    fi
     sync
     sync
 }
@@ -328,9 +304,11 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireui.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/fireapi.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/firehb.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemain.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/dnscrypt/dnscrypt.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/docker-compose@.service /etc/systemd/system/
     sudo cp /home/pi/firewalla/extension/ss_client/ss_client@.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/devicemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firehttpd.service /etc/systemd/system/.
@@ -338,17 +316,13 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo systemctl daemon-reload
+    sudo systemctl enable firehb
+    sudo systemctl restart firehb # start if not started
 fi
 
 # it is no longer used since 1.965
 sudo systemctl stop devicemasq
 sudo systemctl disable devicemasq
-
-# restart brofish if local.bro is changed
-if ! diff /home/pi/firewalla/etc/local.bro /usr/local/bro/share/bro/site/local.bro > /dev/null ; then
-    echo "Restarting Brofish due to local.bro is changed ..."
-    sudo systemctl restart brofish
-fi
 
 cd sys
 #forever start  --uid ui kickstart.js --config /encipher.config/netbot.config
@@ -424,8 +398,7 @@ sync
 #    sync
 #fi
 
-DEFAULT_ROUTE=$(/sbin/ip r |grep eth0 | grep default | cut -d ' ' -f 3 | sed -n '1p')
-#sudo /home/pi/firewalla/bin/bitbridge3 eth0 $DEFAULT_ROUTE > /dev/null 2>&1
+DEFAULT_ROUTE=$(/sbin/ip r | grep default | cut -d ' ' -f 3 | sed -n '1p')
 
 #NMAP_DATA_FILE=$FIREWALLA_HOME/extension/nmap/nmap-mac-prefixes
 #

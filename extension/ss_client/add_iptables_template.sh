@@ -4,7 +4,7 @@ if [[ -z $FW_SS_SERVER || -z $FW_SS_LOCAL_PORT ]]; then
   exit 1;
 fi
 
-CHAIN_NAME=FW_SHADOWSOCKS${FW_NAME}
+CHAIN_NAME=FW_SS${FW_NAME}
 
 sudo iptables -w -t nat -N $CHAIN_NAME
 sudo iptables -w -t nat -A $CHAIN_NAME -d $FW_SS_SERVER -j RETURN

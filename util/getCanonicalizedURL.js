@@ -51,7 +51,7 @@ function getCanonicalizedHostname(hostname) {
 function getCanonicalizedDomainname(hostname) {
   return hostname.toLowerCase().replace(/^\.+/, '')
     .replace(/\.+$/, '')
-    .replace(/\.+/, '.')
+    .replace(/\.+/g, '.')
     .replace(/[^\w.-]/g, '')
 }
 

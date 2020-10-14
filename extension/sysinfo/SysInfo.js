@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,11 +24,12 @@ const logFolder = f.getLogFolder();
 
 const config = require("../../net2/config.js").getConfig();
 
-const df = require('node-df');
+const df = util.promisify(require('node-df'))
 
 const os = require('../../vendor_lib/osutils.js');
 
 const exec = require('child-process-promise').exec;
+const { execSync } = require('child_process')
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 
@@ -36,6 +37,8 @@ const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
+
+const fs = require('fs');
 
 let cpuUsage = 0;
 let realMemUsage = 0;
@@ -53,7 +56,7 @@ let redisMemory = 0;
 
 let updateFlag = 0;
 
-let updateInterval = 120 * 1000; // every 2 minutes
+let updateInterval = 600 * 1000; // every 10 minutes
 
 let threadInfo = {};
 
@@ -62,6 +65,11 @@ let diskInfo = null;
 let intelQueueSize = 0;
 
 let multiProfileSupport = false;
+
+let no_auto_upgrade = false;
+
+let uptimeInfo = {};
+let updateTime = null;
 
 getMultiProfileSupportFlag();
 
@@ -82,6 +90,8 @@ async function update() {
       .then(getThreadInfo)
       .then(getDiskInfo)
       .then(getMultiProfileSupportFlag)
+      .then(getAutoUpgrade)
+      .then(getUptimeInfo)
   ])
 
   if(updateFlag) {
@@ -115,26 +125,69 @@ async function getThreadInfo() {
   }
 }
 
+async function getUptimeInfo() {
+  try {
+    uptimeInfo.fireMain = 0;
+    uptimeInfo.FireApi = 0;
+    uptimeInfo.FireMon = 0;
+    uptimeInfo.bitbridge6 = 0;
+    uptimeInfo.bitbridge7 = 0;
+    uptimeInfo.dnscrypt = 0;
+    uptimeInfo.dnsmasq = 0;
+    uptimeInfo.openvpn = 0;
+
+    const cmdResult = await exec("ps -eo etimes,cmd | awk '{print $1, $2}'", {encoding: 'utf8'});
+    let lines = cmdResult.stdout.split("\n");
+    lines.shift();
+    lines.pop();
+    updateTime = Date.now() / 1000;
+    for (const line of lines) {
+      let contents = line.split(' ');
+      if (contents[1] == "FireMain") {
+        uptimeInfo.fireMain = Number(contents[0])
+      } else if (contents[1] == "FireApi") {
+        uptimeInfo.FireApi = Number(contents[0])
+      } else if (contents[1] == "FireMon") {
+        uptimeInfo.FireMon = Number(contents[0])
+      } else if (contents[1].indexOf("bitbridge6") > -1) {
+        uptimeInfo.bitbridge6 = Number(contents[0])
+      } else if (contents[1].indexOf("bitbridge7") > -1) {
+        uptimeInfo.bitbridge7 = Number(contents[0])
+      } else if (contents[1].indexOf("dnscrypt") > -1) {
+        uptimeInfo.dnscrypt = Number(contents[0])
+      } else if (contents[1].indexOf("dnsmasq") > -1) {
+        uptimeInfo.dnsmasq = Number(contents[0])
+      } else if (contents[1].indexOf("openvpn") > -1) {
+        uptimeInfo.openvpn = Number(contents[0])
+      }
+    }
+  } catch(err) {
+    log.error("Failed to get uptime info", err);
+  }
+}
+
 async function getRateLimitInfo() {
   rateLimitInfo = await rateLimit.getLastTS();
 }
 
-function getDiskInfo() {
+async function getDiskInfo() {
+  try {
+    const response = await df()
+    const disks = response.filter(entry => {
+      return entry.filesystem.startsWith("/dev/mmc");
+    })
+
+    diskInfo = disks;
+  } catch(err) {
+    log.error("Failed to get disk info", err);
+  }
+}
+
+function getAutoUpgrade() {
   return new Promise((resolve, reject) => {
-    df((err, response) => {
-      if (err || !response) {
-        log.error("Failed to get disk info", err);
-        resolve();
-        return
-      }
-
-      const disks = response.filter((entry) => {
-        return entry.filesystem.startsWith("/dev/mmc");
-      })
-
-      diskInfo = disks;
-
-      resolve();
+    fs.exists("/home/pi/.firewalla/config/.no_auto_upgrade", function(exists) {
+      no_auto_upgrade = exists;
+      resolve(no_auto_upgrade);
     });
   })
 }
@@ -172,7 +225,8 @@ async function getRealMemoryUsage() {
 
 async function getTemp() {
   try {
-    curTemp = platform.getCpuTemperature();
+    curTemp = await platform.getCpuTemperature();
+    if (Array.isArray(curTemp)) curTemp = curTemp[0]
     log.debug("Current Temp: ", curTemp);
     peakTemp = peakTemp > curTemp ? peakTemp : curTemp;
   } catch(err) {
@@ -225,7 +279,7 @@ async function getRedisMemoryUsage() {
 
 function getCategoryStats() {
   try {
-    const output = require('child_process').execSync(`${f.getFirewallaHome()}/scripts/category_blocking_stats.sh`, {encoding: 'utf8'})
+    const output = execSync(`${f.getFirewallaHome()}/scripts/category_blocking_stats.sh`, {encoding: 'utf8'})
     const lines = output.split("\n");
 
     let stats = {};
@@ -248,6 +302,7 @@ function getSysInfo() {
     cpu: cpuUsage,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
+    totalMem: os.totalmem(),
     load1: os.loadavg(1),
     load5: os.loadavg(5),
     load15: os.loadavg(15),
@@ -264,9 +319,20 @@ function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     diskInfo: diskInfo,
-    categoryStats: getCategoryStats(),
-    multiProfileSupport: multiProfileSupport
+    //categoryStats: getCategoryStats(),
+    multiProfileSupport: multiProfileSupport,
+    no_auto_upgrade: no_auto_upgrade
   }
+
+  let newUptimeInfo = {};
+  Object.keys(uptimeInfo).forEach((uptimeName) => {
+    if (uptimeInfo[uptimeName] > 0 ) {
+      newUptimeInfo[uptimeName] = uptimeInfo[uptimeName] + Date.now() / 1000 - updateTime; // add time difference between update and getSysInfo()
+    } else {
+      newUptimeInfo[uptimeName] = 0;
+    }
+  });
+  sysinfo.uptimeInfo = newUptimeInfo;
 
   if(rateLimitInfo) {
     sysinfo.rateLimitInfo = rateLimitInfo;
@@ -294,7 +360,7 @@ async function getRecentLogs() {
 }
 
 function getTopStats() {
-  return require('child_process').execSync("top -b -n 1 -o %MEM | head -n 20").toString('utf-8').split("\n");
+  return execSync("top -b -n 1 -o %MEM | head -n 20").toString('utf-8').split("\n");
 }
 
 async function getTop5Flows() {
@@ -304,7 +370,7 @@ async function getTop5Flows() {
     let count = await rclient.zcountAsync(flow, "-inf", "+inf")
     return {name: flow, count: count};
   }))
-    
+
   return stats.sort((a, b) => b.count - a.count).slice(0, 5);
 }
 

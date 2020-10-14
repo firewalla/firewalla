@@ -26,8 +26,7 @@ const hostTool = new HostTool();
 const DNSTool = require('../../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
-const SysManager = require('../../net2/SysManager.js');
-const sysManager = new SysManager('info');
+const sysManager = require('../../net2/SysManager.js');
 
 const config = require('../../net2/config.js').getConfig();
 

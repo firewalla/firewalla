@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,8 +13,6 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-
-// config.discovery.networkInterface
 
 process.title = "FireMain";
 
@@ -38,9 +36,7 @@ function updateTouchFile() {
 
   fs.open(mainTouchFile, 'w', (err, fd) => {
     if(!err) {
-      fs.close(fd, (err2) => {
-
-      })
+      fs.close(fd, () => { })
     }
   })
 }
@@ -51,45 +47,65 @@ const firewalla = require("./Firewalla.js");
 
 const ModeManager = require('./ModeManager.js')
 const mode = require('./Mode.js')
-const WifiInterface = require('./WifiInterface.js');
+
+const fireRouter = require('./FireRouter.js')
 
 // api/main/monitor all depends on sysManager configuration
-const SysManager = require('./SysManager.js');
-const sysManager = new SysManager('info');
-const config = JSON.parse(fs.readFileSync(`${__dirname}/config.json`, 'utf8'));
+const sysManager = require('./SysManager.js');
 
 const sensorLoader = require('../sensor/SensorLoader.js');
 
 const fc = require('./config.js')
 const cp = require('child_process');
 
-const pclient = require('../util/redis_manager.js').getPublishClient()
+let interfaceDetected = false;
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for cloud token created by kickstart job...");
 }
 
+detectInterface()
 resetModeInInitStage()
 run0()
 
-function run0() {
-  if (bone.cloudready()==true &&
+async function detectInterface() {
+  await fireRouter.waitTillReady()
+  interfaceDetected = true;
+}
+
+
+async function run0() {
+  const isModeConfigured = await mode.isModeConfigured();
+  await sysManager.waitTillInitialized();
+
+  if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
+      isModeConfigured &&
       sysManager.isConfigInitialized()) {
+    // do not touch any sensor until everything is ready, otherwise the sensor may require a chain of other objects, which needs to be executed after sysManager is initialized
+    fireRouter.waitTillReady().then(() => {
+      const NetworkStatsSensor = sensorLoader.initSingleSensor('NetworkStatsSensor');
+      NetworkStatsSensor.run()
+    });
+        
     const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
-    boneSensor.checkIn()
-      .then(() => {
-        run() // start running after bone checkin successfully
-      }).catch((err) => {
-        run() // running firewalla in non-license mode if checkin failed
-      });
+    await boneSensor.checkIn().catch((err) => {
+      log.error("Got error when checkin, err", err);
+      // running firewalla in non-license mode if checkin failed, do not return, continue run()
+    })
+
+    await run();
   } else {
-    if(!bone.cloudready()) {
+    if (!interfaceDetected) {
+      log.info("Awaiting interface detection...");
+    } else if(!bone.cloudready()) {
       log.info("Connecting to Firewalla Cloud...");
     } else if(!bone.isAppConnected()) {
       log.forceInfo("Waiting for first app to connect...");
     } else if(!sysManager.isConfigInitialized()) {
       log.info("Waiting for configuration setup...");
+    } else if(!isModeConfigured) {
+      log.info("Waiting for mode setup...");
     }
 
     setTimeout(()=>{
@@ -134,8 +150,8 @@ process.on('unhandledRejection', (reason, p)=>{
 
 async function resetModeInInitStage() {
   // this needs to be execute early!!
-  let bootingComplete = await firewalla.isBootingComplete()
-  let firstBindDone = await firewalla.isFirstBindDone()
+  const bootingComplete = await firewalla.isBootingComplete()
+  const firstBindDone = await firewalla.isFirstBindDone()
 
   // always reset to none mode if
   //        bootingComplete flag is off
@@ -145,7 +161,12 @@ async function resetModeInInitStage() {
   // in case something wrong with the spoof, firemain will not
   // start spoofing again when restarting
 
-  if(!bootingComplete && firstBindDone) {
+  // Do not fallback to none on router/DHCP mode
+  const isSpoofOn = await mode.isSpoofModeOn(); 
+  const isDHCPSpoofOn = await mode.isDHCPSpoofModeOn();
+
+  if(!bootingComplete && firstBindDone && (isSpoofOn || isDHCPSpoofOn)) {
+    log.warn("Reverting to limited mode");
     await mode.noneModeOn()
   }
 }
@@ -174,73 +195,44 @@ async function run() {
   const si = require('../extension/sysinfo/SysInfo.js');
   si.startUpdating();
 
-  const firewallaConfig = require('../net2/config.js').getConfig();
-  sysManager.setConfig(firewallaConfig).then(() => {
-    sysManager.syncVersionUpdate();
-  }) // update sys config when start
+  const firewallaConfig = fc.getConfig();
+  sysManager.syncVersionUpdate();
+
+
+  const HostManager = require('./HostManager.js');
+  const hostManager= new HostManager();
 
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();
   hl.run();
 
-  sensorLoader.initSensors();
+  await sensorLoader.initSensors();
   sensorLoader.run();
 
   var VpnManager = require('../vpn/VpnManager.js');
 
-  var BroDetector = require("./BroDetect.js");
-  let bd = new BroDetector("bro_detector", config, "info");
-  //bd.enableRecordHitsTimer()
-
   var Discovery = require("./Discovery.js");
-  let d = new Discovery("nmap", config, "info");
+  let d = new Discovery("nmap", firewallaConfig, "info");
 
-  // make sure there is at least one usable ethernet
-  d.discoverInterfaces(function(err, list) {
-    var failure = 1;
-    if (list.length > 0) {
-      for(var i in list) {
-        var interf = list[i];
-        log.info("Active ethernet is found: " + interf.name + " (" + interf.ip_address + ")");
-        failure = 0;
-      }
-    }
-
-    if(failure) {
-      log.error("Failed to find any alive ethernet, taking down the entire main.js")
-      process.exit(1);
-    }
-  });
+  sysManager.update(null) // if new interface is found, update sysManager
 
   let c = require('./MessageBus.js');
   let publisher = new c('debug');
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
-  d.start();
-  bd.start();
+  const BroDetect = require('./BroDetect.js');
+  const bro = new BroDetect("bro_detector", firewallaConfig)
+  bro.start()
 
-
-
-  var HostManager = require('./HostManager.js');
-  var hostManager= new HostManager("cli",'server','debug');
-  var os = require('os');
-
-  // always create the secondary interface
-  await ModeManager.enableSecondaryInterface()
-  d.discoverInterfaces((err, list) => {
-    if(!err && list && list.length >= 2) {
-      sysManager.update(null) // if new interface is found, update sysManager
-      pclient.publishAsync("System:IPChange", "");
-      // recreate port direct after secondary interface is created
-      // require('child-process-promise').exec(`${firewalla.getFirewallaHome()}/scripts/prep/05_install_diag_port_redirect.sh`).catch((err) => undefined)
-    }
-  })
+  // although they are not used here, it is still needed to create them
+  const NetworkProfileManager = require('./NetworkProfileManager.js');
+  const TagManager = require('./TagManager.js');
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
   dnsmasq.cleanUpFilter('policy').then(() => {}).catch(()=>{});
-  dnsmasq.cleanUpLeftoverConfig()
+  dnsmasq.cleanUpLeftoverConfig();
 
   // Launch PortManager
 
@@ -252,7 +244,7 @@ async function run() {
     var policyManager = new PolicyManager();
 
     try {
-      await policyManager.flush(config)
+      await policyManager.flush(firewallaConfig)
     } catch(err) {
       log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
       return;
@@ -261,48 +253,41 @@ async function run() {
     await mode.reloadSetupMode() // make sure get latest mode from redis
     await ModeManager.apply()
 
-    WifiInterface.listenOnChange();
-
     // when mode is changed by anyone else, reapply automatically
     ModeManager.listenOnChange();
     await portforward.start();
 
     // initialize VPN after Iptables is flushed
     const vpnManager = new VpnManager();
-    hostManager.loadPolicy((err, data) => {
-      if (err != null) {
-        log.error("Failed to load system policy for VPN", err);
-      } else {
-        var vpnConfig = {state: false}; // default value
-        if(data && data["vpn"]) {
-          vpnConfig = JSON.parse(data["vpn"]);
-        }
-        vpnManager.install("server", (err)=>{
-          if (err!=null) {
-            log.info("Unable to install vpn server instance: server", err);
-            hostManager.setPolicy("vpnAvaliable",false);
-          } else {
-            (async () => {
-              const conf = await vpnManager.configure(vpnConfig);
-              if (conf == null) {
-                log.error("Failed to configure VPN manager");
-                vpnConfig.state = false;
-                hostManager.setPolicy("vpn", vpnConfig);
-              } else {
-                hostManager.setPolicy("vpnAvaliable", true, (err) => { // old typo, DO NOT fix it for backward compatibility.
-                  vpnConfig = Object.assign({}, vpnConfig, conf);
-                  hostManager.setPolicy("vpn", vpnConfig);
-                });
-              }
-            })();
-          }
-        });
-      }
-    });
+    const data = await hostManager.loadPolicyAsync().catch(err =>
+      log.error("Failed to load system policy for VPN", err)
+    )
+
+    var vpnConfig = {state: false}; // default value
+    if(data && data["vpn"]) {
+      vpnConfig = JSON.parse(data["vpn"]);
+    }
+
+    try {
+      await vpnManager.installAsync("server")
+    } catch(err) {
+      log.info("Unable to install vpn server instance: server", err);
+      await hostManager.setPolicyAsync("vpnAvaliable",false);
+    }
+
+    const conf = await vpnManager.configure(vpnConfig);
+    if (conf == null) {
+      log.error("Failed to configure VPN manager");
+      vpnConfig.state = false;
+      await hostManager.setPolicyAsync("vpn", vpnConfig);
+    } else {
+      await hostManager.setPolicyAsync("vpnAvaliable", true); // old typo, DO NOT fix it for backward compatibility.
+      vpnConfig = Object.assign({}, vpnConfig, conf);
+      await hostManager.setPolicyAsync("vpn", vpnConfig);
+    }
 
     // ensure getHosts is called after Iptables is flushed
     hostManager.getHosts((err,result)=>{
-      let listip = [];
       for (let i in result) {
 //        log.info(result[i].toShortString());
         result[i].on("Notice:Detected",(type,ip,obj)=>{
@@ -315,7 +300,6 @@ async function run() {
           log.info("Notice :", type,ip,obj);
           log.info("=================================");
         });
-	//            result[i].spoof(true);
       }
     });
 
@@ -326,11 +310,12 @@ async function run() {
 
     try {
       await pm2.cleanupPolicyData()
-      await pm2.enforceAllPolicies()
+      //await pm2.enforceAllPolicies()
+      await pm2.checkRunPolicies(true)
       log.info("========= All existing policy rules are applied =========");
     } catch (err) {
       log.error("Failed to apply some policy rules: ", err);
-    };
+    }
     require('./UpgradeManager').finishUpgrade();
 
   },1000*2);
@@ -385,6 +370,11 @@ async function run() {
     }
   })
 
+  process.on('SIGUSR1', () => {
+    log.info('Received SIGUSR1. Trigger check.');
+    const dnsmasqCount = dnsmasq.getCounterInfo();
+    log.warn(dnsmasqCount);
+  });
 }
 
 sem.on("ChangeLogLevel", (event) => {

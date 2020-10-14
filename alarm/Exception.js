@@ -50,7 +50,7 @@ module.exports = class {
   getMatchingKeys() {
     let keys = []
     for(let k in this) {
-      if (k === "type" || k.startsWith("p.")) {
+      if (k === "type" || k.startsWith("p.") || k.startsWith("e.")) {
         keys.push(k)
       }
     }
@@ -110,13 +110,54 @@ module.exports = class {
     return false;
   }
   
+  valueMatch(val, val2) {
+    //special exception
+    if (val.endsWith("*")) {
+      if (minimatch(val2, val)) {
+        return true
+      }
+    }
+
+    if(val.startsWith("*.")) {
+      // use glob matching
+      if(!minimatch(val2, val) && // NOT glob match
+        val.slice(2) !== val2) { // NOT exact sub domain match
+        return false
+      }
+    } else {
+      let cidrParts = val.split("/", 2);
+      if (cidrParts.length == 2) {
+        let addr = cidrParts[0];
+        let mask = cidrParts[1];
+        if (ip.isV4Format(addr) && RegExp("^\\d+$").test(mask) && ip.isV4Format(val2)) {
+          // try matching cidr subnet iff value in alarm is an ipv4 address and value in exception is a cidr notation
+          if(!ip.cidrSubnet(val).contains(val2)) {
+            return false;
+          }
+        }
+      } else {
+        // not a cidr subnet exception
+
+        // alarm might has field in number
+        // and assume exceptions are always loaded from redis before comparing
+        if (_.isNumber(val2)) {
+          val = _.toNumber(val)
+          if (isNaN(val)) return false;
+        }
+        if(val2 !== val) return false;
+      }
+    }
+
+    return true;
+  }
+
   match(alarm) {
 
     let matched = false;
     // FIXME: exact match only for now, and only supports String
     for (var key in this) {
 
-      if(!key.startsWith("p.") && key !== "type") {
+      if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
         continue;
       }
 
@@ -136,43 +177,33 @@ module.exports = class {
         }
       }
 
-      //special exception
-      if (key === "p.upnp.description") {
-        if (val.endsWith("*")) {
-          if (minimatch(val2, val)) {
-            matched = true;
-            continue;
-          }
+      if (key === "p.tag.ids") {
+        const intersect = _.intersection(val, val2);
+        if (intersect.length > 0) {
+          matched = true;
+          continue;
         }
       }
 
-      if(val.startsWith("*.")) {
-        // use glob matching
-        if(!minimatch(val2, val) && // NOT glob match
-           val.slice(2) !== val2) { // NOT exact sub domain match
-          return false
+      let valArray = null;
+      if (_.isString(val) && validator.isJSON(val)) {
+        valArray = JSON.parse(val);
+      }
+      if (_.isArray(valArray)) {
+        let matchInArray = false;
+        for (const valCurrent of valArray) {
+          if (this.valueMatch(valCurrent + "", val2)) {
+            matchInArray = true;
+            break;
+          }
+        }
+
+        if (!matchInArray) {
+          return false;
         }
       } else {
-        let cidrParts = val.split("/", 2);
-        if (cidrParts.length == 2) {
-          let addr = cidrParts[0];
-          let mask = cidrParts[1];
-          if (ip.isV4Format(addr) && RegExp("^\\d+$").test(mask) && ip.isV4Format(val2)) {
-            // try matching cidr subnet iff value in alarm is an ipv4 address and value in exception is a cidr notation
-            if(!ip.cidrSubnet(val).contains(val2)) {
-              return false;
-            }
-          }
-        } else {
-          // not a cidr subnet exception
-
-          // alarm might has field in number
-          // and assume exceptions are always loaded from redis before comparing
-          if (_.isNumber(val2)) {
-            val = _.toNumber(val)
-            if (isNaN(val)) return false;
-          }
-          if(val2 !== val) return false;
+        if (!this.valueMatch(val, val2)) {
+          return false;
         }
       }
 

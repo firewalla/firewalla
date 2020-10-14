@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -98,10 +98,25 @@ function argumentsToString(v) {
   return str;
 }
 
+function isSimilarHost(h1, h2) {
+  if (!h1 || !h2)
+    return false;
+  const h1Sections = h1.split('.').reverse();
+  const h2Sections = h2.split('.').reverse();
+  // compare at most last three sections
+  const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 2);
+  for (let i = 0; i <= limit; i++) {
+    if (h1Sections[i] !== h2Sections[i])
+      return false;
+  }
+  return true;
+}
+
 module.exports = {
-  extend: extend,
-  getPreferredBName: getPreferredBName,
-  getPreferredName: getPreferredName,
-  delay: delay,
-  argumentsToString: argumentsToString
+  extend,
+  getPreferredBName,
+  getPreferredName,
+  delay,
+  argumentsToString,
+  isSimilarHost
 }

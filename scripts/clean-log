@@ -7,6 +7,14 @@ cp /home/pi/.forever/monitor.log /home/pi/.forever/monitor_last.log
 cp /home/pi/.forever/api.log /home/pi/.forever/api_last.log
 cp /home/pi/.forever/dns.log /home/pi/.forever/dns_last.log
 cp /home/pi/.forever/blue.log /home/pi/.forever/blue_last.log
+if [[ -f /home/pi/.forever/router.log ]]; then
+  cp /home/pi/.forever/router.log /home/pi/.forever/router_last.log
+  cat /dev/null > /home/pi/.forever/router.log
+fi
+if [[ -f /home/pi/.forever/firereset.log ]]; then
+  sudo cp /home/pi/.forever/firereset.log /home/pi/.forever/firereset_last.log
+  sudo bash -c "cat /dev/null > /home/pi/.forever/firereset.log"
+fi
 cat /dev/null > /home/pi/.forever/main.log
 cat /dev/null > /home/pi/.forever/kickui.log
 cat /dev/null > /home/pi/.forever/blue.log

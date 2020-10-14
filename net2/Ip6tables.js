@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,11 +13,11 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-const ip = require('ip');
 const cp = require('child_process');
 const execAsync = require('util').promisify(cp.exec)
 
 const log = require('./logger.js')(__filename);
+const ipset = require('./Ipset.js');
 
 var running = false;
 var workqueue = [];
@@ -46,7 +46,7 @@ exports.deleteRule = deleteRule;
 function iptables(rule, callback) {
   log.debug("IP6TABLE: rule:",rule);
   running = true;
-  
+
   let cmd = 'ip6tables';
   let args = iptablesArgs(rule);
 
@@ -60,9 +60,10 @@ function iptables(rule, callback) {
     checkRule.action = '-C'
     let checkArgs = iptablesArgs(checkRule)
     let checkCmd = ['sudo', 'ip6tables', '-w'].concat(checkArgs).join(" ")
-    
+
     switch(rule.action) {
     case "-A":
+    case "-I":
       // check if exits before insertion
       cmd = `${checkCmd} || ${cmd}`
       break
@@ -71,9 +72,9 @@ function iptables(rule, callback) {
       break
     default:
       break
-    }    
+    }
   }
-  
+
   log.debug("IPTABLE6:", cmd, workqueue.length);
 
   // for testing purpose only
@@ -86,16 +87,16 @@ function iptables(rule, callback) {
     newRule(null, null);
     return
   }
-  
+
   cp.exec(cmd, (err, stdout, stderr) => {
     if (err) {
       log.error("Failed to execute cmd ", cmd, err);
     }
     if (stdout) {
-      log.info("stdout captured for:", cmd, "\n", stdout)
+      log.debug("stdout captured for:", cmd, "\n", stdout)
     }
     if (stderr) {
-      log.info("stderr captured for:", cmd, "\n", stderr)
+      log.debug("stderr captured for:", cmd, "\n", stderr)
     }
 
     callback(err, stdout)
@@ -154,9 +155,17 @@ function deleteRule(rule, callback) {
     iptables(rule, callback);
 }
 
+function prepare() {
+  return execAsync(
+    "(sudo ip6tables -w -N FW_FORWARD || true) && (sudo ip6tables -w -t nat -N FW_PREROUTING || true) && (sudo ip6tables -w -t nat -N FW_POSTROUTING || true) && (sudo ip6tables -w -t mangle -N FW_PREROUTING || true)"
+  ).catch(err => {
+    log.error("IP6TABLE:PREPARE:Unable to prepare", err);
+  })
+}
+
 function flush() {
   return execAsync(
-    "sudo ip6tables -w -F && sudo ip6tables -w -F -t nat && sudo ip6tables -w -F -t raw && sudo ip6tables -w -F -t mangle",
+    "sudo ip6tables -w -F FW_FORWARD && sudo ip6tables -w -t nat -F FW_PREROUTING && sudo ip6tables -w -t nat -F FW_POSTROUTING && sudo ip6tables -w -t mangle -F FW_PREROUTING",
   ).catch(err => {
     log.error("IP6TABLE:FLUSH:Unable to flush", err)
   });
@@ -164,19 +173,17 @@ function flush() {
 
 function _getDNSRedirectChain(type) {
   type = type || "local";
-  let chain = "PREROUTING_DNS_DEFAULT";
+  let chain;
   switch (type) {
-    case "local":
-      chain = "PREROUTING_DNS_DEFAULT";
-      break;
     case "vpn":
-      chain = "PREROUTING_DNS_VPN";
+      chain = "FW_PREROUTING_DNS_VPN";
       break;
     case "vpnClient":
-      chain = "PREROUTING_DNS_VPN_CLIENT";
+      chain = "FW_PREROUTING_DNS_VPN_CLIENT";
       break;
+    case "local":
     default:
-      chain = "PREROUTING_DNS_DEFAULT";
+      chain = "FW_PREROUTING_DNS_DEFAULT";
   }
   return chain;
 }
@@ -196,7 +203,7 @@ async function dnsFlushAsync(type) {
     newRule(rule, (err) => {
       if (err) {
         log.error("Failed to apply rule: ", rule);
-        reject(err);  
+        reject(err);
       } else {
         resolve();
       }
@@ -204,7 +211,7 @@ async function dnsFlushAsync(type) {
   });
 }
 
-// run() is deleted as same functionality is provided in Iptables.run() 
+// run() is deleted as same functionality is provided in Iptables.run()
 
 function dnsRedirectAsync(server, port, type) {
   return new Promise((resolve, reject) => {
@@ -227,11 +234,11 @@ function dnsRedirect(server, port, type, cb) {
     action: '-A',
     table: 'nat',
     protocol: 'udp',
-    extra: '-m set ! --match-set no_dns_caching_mac_set src',
+    extra: `-m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`,
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
-    checkBeforeAction: true    
+    checkBeforeAction: true
   }
 
   newRule(rule, (err) => {
@@ -266,7 +273,7 @@ function dnsUnredirect(server, port, type, cb) {
     action: '-D',
     table: 'nat',
     protocol: 'udp',
-    extra: '-m set ! --match-set no_dns_caching_mac_set src',
+    extra: `-m set ! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`,
     dport: '53',
     target: 'DNAT',
     todest: `[${server}]:${port}`,
@@ -284,45 +291,56 @@ function dnsUnredirect(server, port, type, cb) {
   })
 }
 
-function switchMonitoringAsync(state) {
+function switchInterfaceMonitoringAsync(state, iface) {
   return new Promise((resolve, reject) => {
-    switchMonitoring(state, (err) => {
+    switchInterfaceMonitoring(state, iface, (err) => {
       if (err) {
         reject(err);
       } else {
         resolve();
       }
-    })
+    });
   });
 }
 
-function switchMonitoring(state, cb) {
+function switchInterfaceMonitoring(state, uuid, cb) {
   let action = "-D";
   if (state !== true)
-    action = "-I";
+    action = "-A";
+  const ipset = require('./NetworkProfile.js').getNetIpsetName(uuid, 6);
   let rule = {
     sudo: true,
     chain: "FW_NAT_BYPASS",
     action: action,
     table: "nat",
+    extra: `-m set --match-set ${ipset} src`,
     target: "ACCEPT",
     checkBeforeAction: true
-  }
-
+  };
+  
   newRule(rule, (err) => {
-    if (err) {
+    if (err)
       log.error("Failed to apply rule: ", rule);
-      cb(err);
-    } else {
+    rule.extra = `-m set --match-set ${ipset} dst`;
+    newRule(rule, (err) => {
+      if (err)
+        log.error("Failed to apply rule: ", rule);
       rule.chain = "FW_BYPASS";
       rule.table = "filter";
-      newRule(rule, cb);
-    }
+      rule.extra = `-m set --match-set ${ipset} src`;
+      newRule(rule, (err) => {
+        if (err)
+          log.error("Failed to apply rule: ", rule);
+        rule.extra = `-m set --match-set ${ipset} dst`;
+        newRule(rule, cb);
+      });
+    });
   });
 }
 
 exports.dnsRedirectAsync = dnsRedirectAsync
 exports.dnsUnredirectAsync = dnsUnredirectAsync
-exports.switchMonitoringAsync = switchMonitoringAsync
+exports.switchInterfaceMonitoringAsync = switchInterfaceMonitoringAsync
 exports.dnsFlushAsync = dnsFlushAsync
-exports.flush = flush 
+exports.prepare = prepare
+exports.flush = flush

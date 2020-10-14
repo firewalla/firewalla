@@ -1,8 +1,6 @@
 'use strict';
 
 var natUpnp = require('nat-upnp');
-var UPNP = require('../extension/upnp/upnp.js');
-var upnp = new UPNP("info", "192.168.2.1");
 
 var client = natUpnp.createClient();
 

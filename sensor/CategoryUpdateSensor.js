@@ -51,7 +51,7 @@ class CategoryUpdateSensor extends Sensor {
   async regularJob() {
     try {
       const categories = Object.keys(categoryHashsetMapping)
-      log.info('Active categories', categories);
+      log.info('Native categories', categories);
       for (const category of categories) {
         await this.updateCategory(category);
       }
@@ -167,7 +167,20 @@ class CategoryUpdateSensor extends Sensor {
         } catch(err) {
           log.error("Failed to update conuntry set", event.country, err)
         }
-      })
+      });
+
+      sem.on('Policy:CategoryActivated', async (event) => {
+        const category = event.category;
+        if (!categoryHashsetMapping[category]) {
+          log.error(`Cannot activate unrecognized category ${category}`);
+          return;
+        }
+        await categoryUpdater.refreshCategoryRecord(category).then(() => {
+          return categoryUpdater.recycleIPSet(category)
+        }).catch((err) => {
+          log.error(`Failed to activate category ${category}`, err.message);
+        });
+      });
 
       await this.regularJob()
       await this.securityJob()
