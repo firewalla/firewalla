@@ -1075,7 +1075,6 @@ module.exports = class DNSMASQ {
     this.counter.writeHostsFile++;
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
-    const lease_time = '24h';
     const HostManager = require('../../net2/HostManager.js');
     const hostManager = new HostManager();
 
@@ -1131,13 +1130,13 @@ module.exports = class DNSMASQ {
         reservedIp = reservedIp ? reservedIp + ',' : ''
         if (reservedIp !== "") {
           hostsList.push(
-            `${h.mac},set:${monitor},${reservedIp}${lease_time}`
+            `${h.mac},set:${monitor},${reservedIp}`
           );
           reserved = true;
         }
       }
       if (!reserved) {
-        hostsList.push(`${h.mac},set:${monitor},${lease_time}`);
+        hostsList.push(`${h.mac},set:${monitor}`);
       }
     }
     // remove duplicate items
