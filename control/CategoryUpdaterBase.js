@@ -147,9 +147,7 @@ class CategoryUpdaterBase {
   async updatePersistentIPSets(category, options) {
     if (this.isActivated(category)) {
       await this.updateIpset(category, false, options)
-      if (fc.isFeatureOn('ipv6')) {
-        await this.updateIpset(category, true, options)
-      }
+      await this.updateIpset(category, true, options)
     }
   }
 

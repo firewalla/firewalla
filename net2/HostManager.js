@@ -94,6 +94,9 @@ const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
 const Alarm = require('../alarm/Alarm.js');
 
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
+
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -797,6 +800,8 @@ module.exports = class HostManager {
     const versionUpdate = await sysManager.getVersionUpdate();
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
+    const customizedCategories = await categoryUpdater.getCustomizedCategories();
+    json.customizedCategories = customizedCategories;
   }
 
   async getRecentFlows(json) {
