@@ -61,11 +61,11 @@ class IPv6DiscoverySensor extends Sensor {
   }
 
   async ping6ForDiscovery(intf, obj) {
-    await execAsync(`ping6 -c2 -I ${intf} ff02::1`).catch((err) => {});
+    await execAsync(`ping6 -c2 -I ${intf} ff02::1`).catch((err) => { });
     return asyncNative.eachLimit(obj.ip6_addresses, 5, async (o) => {
       let pcmd = `ping6 -B -c 2 -I ${intf} -I ${o} ff02::1`;
       log.info("Discovery:v6Neighbor:Ping6", pcmd);
-      return execAsync(pcmd).catch((err) => {});
+      return execAsync(pcmd).catch((err) => { });
     })
   }
 
@@ -126,6 +126,14 @@ class IPv6DiscoverySensor extends Sensor {
       }
       for (let mac in macHostMap) {
         this.addV6Host(macHostMap[mac], mac, intf);
+      }
+      //Removing learned entries from the ARP cache with ip neighbor flush
+      try {
+        const flushCommand = `sudo ip neighbor flush dev ${intf.name}`
+        log.info("Running commandline: ", flushCommand);
+        await execAsync(flushCommand);
+      } catch (e) {
+        log.warn('Removing learned entries from the ARP cache with ip neighbor flush error', e);
       }
     }
 
