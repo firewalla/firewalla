@@ -1742,6 +1742,25 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+      case "includedElements": {
+        (async () => {
+          const category = value.category;
+          const elements = await categoryUpdater.getIncludedElements(category);
+          this.simpleTxData(msg, {elements: elements}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        });
+        break;
+      }
+      case "customizedCategories": {
+        (async () => {
+          const categories = await categoryUpdater.getCustomizedCategories();
+          this.simpleTxData(msg, {categories: categories}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        });
+        break;
+      }
       case "whois":
         (async () => {
           const target = value.target;
@@ -3222,6 +3241,43 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "updateIncludedElements": {
+        (async () => {
+          const category = value.category;
+          const elements = value.elements;
+          await categoryUpdater.updateIncludedElements(category, elements);
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          });
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        });
+        break;
+      }
+      case "createOrUpdateCustomizedCategory": {
+        (async () => {
+          const category = value.category;
+          const obj = value.obj;
+          const c = await categoryUpdater.createOrUpdateCustomizedCategory(category, obj);
+          this.simpleTxData(msg, c, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback)
+        });
+        break;
+      }
+      case "removeCustomizedCategory": {
+        (async () => {
+          const category = value.category;
+          await categoryUpdater.removeCustomizedCategory(category);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
 
       case "boneMessage": {
         this.boneMsgHandler(value);
@@ -4315,7 +4371,7 @@ process.on('unhandledRejection', (reason, p) => {
     type: 'FIREWALLA.UI.unhandledRejection',
     msg: msg,
     stack: reason.stack,
-    err: JSON.stringify(reason)
+    err: reason
   });
 });
 
@@ -4325,7 +4381,7 @@ process.on('uncaughtException', (err) => {
     type: 'FIREWALLA.UI.exception',
     msg: err.message,
     stack: err.stack,
-    err: JSON.stringify(err)
+    err: err
   });
   setTimeout(() => {
     try {

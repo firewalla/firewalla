@@ -700,7 +700,7 @@ module.exports = class {
         return;
       }
 
-      const safeCheckThreshold = platform.getBroSafeCheckThreshold();
+      const threshold = this.config.bro.threshold;
 
       // drop layer 4
       if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
@@ -708,45 +708,45 @@ module.exports = class {
         return;
       }
 
-      if (obj.missed_bytes > safeCheckThreshold.missedBytes) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
+      if (obj.missed_bytes > threshold.missedBytes) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
         log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
         return;
       }
 
       if (obj.proto && obj.proto == "tcp") {
-        if (obj.resp_bytes > 1000000 && obj.orig_bytes == 0 && obj.conn_state == "SF") {
+        if (obj.resp_bytes > threshold.tcpZeroBytesResp && obj.orig_bytes == 0 && obj.conn_state == "SF") {
           log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
           return;
         }
-        else if (obj.orig_bytes > 1000000 && obj.resp_bytes == 0 && obj.conn_state == "SF") {
+        else if (obj.orig_bytes > threshold.tcpZeroBytesOrig && obj.resp_bytes == 0 && obj.conn_state == "SF") {
           log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
           return;
         }
       }
 
       //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
-      if (obj.resp_bytes > 100000000) {
+      if (obj.resp_bytes > threshold.burstBytesResp) {
         let rate = obj.resp_bytes / obj.duration;
-        if (rate > safeCheckThreshold.respRate) {
+        if (rate > threshold.burstRateResp) {
           log.debug("Conn:Burst:Drop", rate, obj);
           return;
         }
         let packet = obj.resp_bytes / obj.resp_pkts;
-        if (packet > 10000000) {
+        if (packet > threshold.burstPacketsResp) {
           log.debug("Conn:Burst:Drop2", packet, obj);
           return;
         }
       }
 
 
-      if (obj.orig_bytes > 100000000) {
+      if (obj.orig_bytes > threshold.burstBytesOrig) {
         let rate = obj.orig_bytes / obj.duration;
-        if (rate > safeCheckThreshold.origRate) {
+        if (rate > threshold.burstRateOrig) {
           log.debug("Conn:Burst:Drop:Orig", rate, obj);
           return;
         }
         let packet = obj.orig_bytes / obj.orig_pkts;
-        if (packet > 10000000) {
+        if (packet > threshold.burstPacketsOrig) {
           log.debug("Conn:Burst:Drop2:Orig", packet, obj);
           return;
         }
@@ -934,16 +934,16 @@ module.exports = class {
         obj.duration = Number(obj.duration);
       }
 
-      if (obj.orig_bytes > 100000000) {
+      if (obj.orig_bytes > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
       }
-      if (obj.resp_bytes > 100000000) {
+      if (obj.resp_bytes > threshold.logLargeBytesResp) {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
-      if (Number(obj.orig_bytes) > 100000000) {
+      if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
       }
-      if (Number(obj.resp_bytes) > 100000000) {
+      if (Number(obj.resp_bytes) > threshold.logLargeBytesResp) {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
 
@@ -1137,7 +1137,7 @@ module.exports = class {
           if (tags.length > 0) {
             for (let index = 0; index < tags.length; index++) {
               const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'tag:' + tag, true); 
+              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'tag:' + tag, true);
             }
           }
         } else {
@@ -1148,7 +1148,7 @@ module.exports = class {
           if (tags.length > 0) {
             for (let index = 0; index < tags.length; index++) {
               const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'tag:' + tag, true); 
+              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'tag:' + tag, true);
             }
           }
         }
@@ -1156,27 +1156,27 @@ module.exports = class {
         if (localMac) {
           let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
           let strdata = JSON.stringify(tmpspec);
-  
+
           //let redisObj = [key, tmpspec.ts, strdata];
           // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
           let redisObj = [key, now, strdata];
           log.debug("Conn:Save:Temp", redisObj);
-  
+
           sem.sendEventToFireMain({
             type: "NewGlobalFlow",
             flow: tmpspec,
             suppressEventLogging: true
           });
-  
+
           if (tmpspec.fd == 'out') {
             this.recordOutPort(tmpspec);
           }
-  
+
           rclient.zadd(redisObj, (err, response) => {
             if (err == null) {
-  
+
               let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-  
+
               setTimeout(() => {
                 sem.emitEvent({
                   type: 'DestIPFound',
@@ -1187,7 +1187,7 @@ module.exports = class {
                   suppressEventLogging: true
                 });
               }, 1 * 1000); // make it a little slower so that dns record will be handled first
-  
+
             } else {
               log.error("Failed to save tmpspec: ", tmpspec, err);
             }
@@ -1596,6 +1596,7 @@ module.exports = class {
   recordTraffic(ts, inBytes, outBytes, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
+
       const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 
       // lastNTS starts with null and assigned with normalizedTS every 10s
@@ -1618,6 +1619,12 @@ module.exports = class {
 
       // append current status
       if (!ignoreGlobal) {
+        // for traffic account
+        (async () => {
+          await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
+          await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+        })()
+
         this.timeSeriesCache.global.download += Number(inBytes)
         this.timeSeriesCache.global.upload += Number(outBytes)
       }
@@ -1629,7 +1636,7 @@ module.exports = class {
       this.timeSeriesCache[mac].upload += Number(outBytes)
     }
   }
-  
+
   recordOutPort(tmpspec) {
     log.debug("recordOutPort: ", tmpspec);
     const key = tmpspec.mac + ":" + tmpspec.dp;
@@ -1643,7 +1650,7 @@ module.exports = class {
     let newData = {key: key, ts: tmpspec.ts, ats: ats};
     const expireInterval = 15 * 60; // 15 minute;
     if (oldData == null || (oldData != null && oldData.ats < newData.ts - expireInterval)) {
-      newData.ats = newData.ts;  //set 
+      newData.ats = newData.ts;  //set
       sem.sendEventToFireMain({
         type: "NewOutPortConn",
         flow: tmpspec,

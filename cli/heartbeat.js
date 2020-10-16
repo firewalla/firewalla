@@ -158,12 +158,21 @@ async function getLicenseInfo() {
   },{});
 }
 
+async function getServiceActiveSince() {
+  let fireServices = ['firekick', 'firemain', 'fireapi', 'firemon','firemasq','firerouter','firereset','firerouter_dns','firerouter_dhcp']
+  return fireServices.reduce( async (result,svc) => {
+    result = await result;
+    result[svc] = (await getShellOutput(`sudo systemctl status ${svc} | sed -n 's/.*since \\(.*\\);.*/\\1/p'`));
+    return result;
+  },{});
+}
+
 async function getSysinfo(status) {
   const ifs = os.networkInterfaces();
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, redisEid] =
+  const [arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, serviceActiveSince, redisEid] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
@@ -178,6 +187,7 @@ async function getSysinfo(status) {
       getLicenseInfo(),
       getShellOutput("cat /sys/class/net/eth0/address"),
       getShellOutput("redis-cli get mode"),
+      getServiceActiveSince(),
       getShellOutput("redis-cli hget sys:ept eid")
     ]);
 
@@ -201,6 +211,7 @@ async function getSysinfo(status) {
     mac,
     memory,
     mode,
+    serviceActiveSince,
     redisEid,
     status,
     timestamp,
