@@ -162,7 +162,7 @@ async function getServiceActiveSince() {
   let fireServices = ['firekick', 'firemain', 'fireapi', 'firemon','firemasq','firerouter','firereset','firerouter_dns','firerouter_dhcp']
   return fireServices.reduce( async (result,svc) => {
     result = await result;
-    result[svc] = (await getShellOutput(`sudo systemctl status ${svc} | sed -n 's/.* \(since .*\);.*/\1/p'`));
+    result[svc] = (await getShellOutput(`sudo systemctl status ${svc} | sed -n 's/.*since \\(.*\\);.*/\\1/p'`));
     return result;
   },{});
 }
