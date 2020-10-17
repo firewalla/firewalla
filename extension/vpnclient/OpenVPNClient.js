@@ -340,9 +340,6 @@ class OpenVPNClient extends VPNClient {
             const settings = await this.loadSettings();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
             await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-            for (const serverSubnet of (settings.serverSubnets || [])) {
-              await execAsync(iptables.wrapIptables(`sudo iptables -w -t mangle -A FW_RT_VC_REPLY -m conntrack --ctorigsrc ${serverSubnet} -j FW_RT_VC`)).catch((err => {}));
-            }
             // loosen reverse path filter
             await execAsync(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => {});
             await this._processPushOptions("start");
@@ -403,9 +400,6 @@ class OpenVPNClient extends VPNClient {
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     const settings = await this.loadSettings();
-    for (const serverSubnet of (settings.serverSubnets || [])) {
-      await execAsync(iptables.wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_REPLY -m conntrack --ctorigsrc ${serverSubnet} -j FW_RT_VC`)).catch((err => {}));
-    }
     await this._processPushOptions("stop");
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd).catch((err) => {
