@@ -803,12 +803,14 @@ sudo iptables -w -t mangle -F FW_FORWARD
 sudo iptables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo iptables -w -t mangle -D FORWARD -j FW_FORWARD
 sudo iptables -w -t mangle -I FORWARD -j FW_FORWARD
 
+# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
+sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -j RETURN
+
 sudo iptables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_SWITCH
 sudo iptables -w -t mangle -A FW_FORWARD -j FW_QOS_SWITCH
 # second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
 # the packet will be mirrored to ifb only if this bit is set
-sudo iptables -w -t mangle -A FW_QOS_SWITCH -m connmark --mark 0x80000000/0x80000000 -j RETURN
 sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
 sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
 sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
@@ -910,12 +912,14 @@ sudo ip6tables -w -t mangle -F FW_FORWARD
 sudo ip6tables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo ip6tables -w -t mangle -D FORWARD -j FW_FORWARD
 sudo ip6tables -w -t mangle -I FORWARD -j FW_FORWARD
 
+# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
+sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -j RETURN
+
 sudo ip6tables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_SWITCH
 sudo ip6tables -w -t mangle -A FW_FORWARD -j FW_QOS_SWITCH
 # second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
 # the packet will be mirrored to ifb only if this bit is set
-sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m connmark --mark 0x80000000/0x80000000 -j RETURN
 sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
 sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
 sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
