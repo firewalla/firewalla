@@ -816,7 +816,7 @@ sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst
 
 sudo iptables -w -t mangle -N FW_QOS &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS
-sudo iptables -w -t mangle -A FW_FORWARD -j FW_QOS
+sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x40000000/0x40000000 -j FW_QOS
 # global qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_GLOBAL
@@ -923,7 +923,7 @@ sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,ds
 
 sudo ip6tables -w -t mangle -N FW_QOS &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS
-sudo ip6tables -w -t mangle -A FW_FORWARD -j FW_QOS
+sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x40000000/0x40000000 -j FW_QOS
 # global qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL
