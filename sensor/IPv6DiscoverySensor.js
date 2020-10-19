@@ -129,7 +129,7 @@ class IPv6DiscoverySensor extends Sensor {
       }
       //Removing learned entries from the ARP cache with ip neighbor flush
       try {
-        const flushCommand = `sudo ip neighbor flush dev ${intf.name}`
+        const flushCommand = `sudo ip -6 neighbor flush dev ${intf.name}`
         log.info("Running commandline: ", flushCommand);
         await execAsync(flushCommand);
       } catch (e) {
