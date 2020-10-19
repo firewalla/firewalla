@@ -136,7 +136,6 @@ sudo iptables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo iptables -w -A FOR
 sudo iptables -w -N FW_INPUT_ACCEPT &> /dev/null
 sudo iptables -w -F FW_INPUT_ACCEPT
 sudo iptables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_ACCEPT
-sudo iptables -w -A FW_INPUT_ACCEPT -p tcp -m multiport --dports 22 -j ACCEPT
 
 sudo iptables -w -N FW_INPUT_DROP &> /dev/null
 sudo iptables -w -F FW_INPUT_DROP
@@ -474,7 +473,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_INPUT_ACCEPT &> /dev/null
   sudo ip6tables -w -F FW_INPUT_ACCEPT
   sudo ip6tables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_ACCEPT
-  sudo ip6tables -w -A FW_INPUT_ACCEPT -p tcp -m multiport --dports 22 -j ACCEPT
 
   sudo ip6tables -w -N FW_INPUT_DROP &> /dev/null
   sudo ip6tables -w -F FW_INPUT_DROP
