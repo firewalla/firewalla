@@ -570,7 +570,9 @@ class FireRouter {
       const intf2Obj = intfList.find(i => i.name == intf2)
       if (intf2Obj && intf2Obj.ip_address) {
 
-        if (wanOnPrivateIP) monitoringIntfNames.push(intf2);
+        //if (wanOnPrivateIP)
+        // need to think of a better way to check wan on private network
+        monitoringIntfNames.push(intf2);
         logicIntfNames.push(intf2);
         const subnet2 = intf2Obj.subnet
         intfNameMap[intf2] = {
