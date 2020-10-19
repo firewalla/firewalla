@@ -277,16 +277,12 @@ let legoEptCloud = class {
 
   eptHandleError(code, callback) {
     if (code == '401' || code == 401) {
-      this.eptRelogin((err, eid) => {
-        if (err == null) {
-          if (callback) {
-            callback(202, null);
-          }
-        } else {
-          if (callback) {
-            callback(code, null);
-          }
-        }
+      this.eptRelogin().then(() => {
+        if (callback)
+          callback(202, null);
+      }).catch((err) => {
+        if (callback)
+          callback(code, null);
       });
     } else {
       if (callback) {
@@ -296,20 +292,14 @@ let legoEptCloud = class {
   }
 
   async rrWithEptRelogin(options) {
-    try {
-      options.auth = { bearer: this.token }
-      const result = rrWithErrHandling(options)
-      return result
-    } catch(err) {
-      if (err.statusCode == 401) {
-        // throw errors out here
-        await this.eptRelogin();
-        return this.rrWithErrHandling(
-          Object.assign({}, options, { auth: { bearer: this.token }})
-        )
-      }
-      else throw err
-    }
+    options.auth = { bearer: this.token }
+    const result = await rrWithErrHandling(options).catch((err) => {
+      if (err && err.statusCode == 401) {
+        return this.eptRelogin().then(() => rrWithErrHandling(Object.assign({}, options, { auth: { bearer: this.token } })));
+      } else
+        throw err;
+    });
+    return result
   }
 
   async rename(gid, name) {

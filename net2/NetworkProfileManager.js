@@ -79,13 +79,25 @@ class NetworkProfileManager {
     if (this.refreshTask)
       clearTimeout(this.refreshTask);
     this.refreshTask = setTimeout(async () => {
-      await this.refreshNetworkProfiles();
-      if (f.isMain()) {
-        if (this.iptablesReady) {
-          for (let uuid in this.networkProfiles) {
-            const networkProfile = this.networkProfiles[uuid];
-            networkProfile.scheduleApplyPolicy();
+      if (this._refreshInProgress) {
+        log.info("Refresh profile in progress, will schedule later ...");
+        this.scheduleRefresh();
+      } else {
+        try {
+          this._refreshInProgress = true;
+          await this.refreshNetworkProfiles();
+          if (f.isMain()) {
+            if (this.iptablesReady) {
+              for (let uuid in this.networkProfiles) {
+                const networkProfile = this.networkProfiles[uuid];
+                networkProfile.scheduleApplyPolicy();
+              }
+            }
           }
+        } catch (err) {
+          log.error("Failed to refresh profiles", err);
+        } finally {
+          this._refreshInProgress = false;
         }
       }
     }, 3000);
@@ -165,7 +177,7 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = [];
+    const excludedKeys = ["ready", "active"];
     for (const excludedKey of excludedKeys) {
       if (thenCopy[excludedKey])
         delete thenCopy[excludedKey];
