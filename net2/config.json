@@ -711,7 +711,8 @@
     "acl_audit": false,
     "new_device_tag": false,
     "dual_wan": true,
-    "clash": false
+    "clash": false,
+    "single_wan_conn_check": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

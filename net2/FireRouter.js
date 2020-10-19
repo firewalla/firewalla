@@ -883,6 +883,10 @@ class FireRouter {
     const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
+    if (type === "single" && !Config.isFeatureOn('single_wan_conn_check')) {
+      log.warn("Single WAN connectivity check is not enabled, ignore conn change event", changeDesc);
+      return;
+    }
     let msg = "";
     if (!ready)
       msg = `Internet connectivity on ${ifaceName} was lost.`;
