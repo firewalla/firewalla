@@ -57,6 +57,10 @@ function getPreferredBName(hostObject) {
     return hostObject.dhcpName
   }
 
+  if (hostObject['dnsmasq.dhcp.leaseName']) {
+    return hostObject['dnsmasq.dhcp.leaseName']
+  }
+
   if (hostObject.bonjourName) {
     return hostObject.bonjourName
   }
