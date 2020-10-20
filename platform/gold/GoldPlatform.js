@@ -180,14 +180,6 @@ class GoldPlatform extends Platform {
     return false;
   }
 
-  getBroSafeCheckThreshold() {
-    return {
-      missedBytes: 1000000000,
-      respRate: 256000000,
-      origRate: 256000000
-    };
-  }
-
   isIFBSupported() {
     return true;
   }
