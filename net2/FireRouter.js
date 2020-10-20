@@ -564,7 +564,9 @@ class FireRouter {
       }
 
       const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
-      monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
+      // need to think of a better way to check wan on private network
+      // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
+      monitoringIntfNames = [ intf ];
       logicIntfNames = [ intf ];
 
       const intf2Obj = intfList.find(i => i.name == intf2)
