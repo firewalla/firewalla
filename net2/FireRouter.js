@@ -564,13 +564,17 @@ class FireRouter {
       }
 
       const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
-      monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
+      // need to think of a better way to check wan on private network
+      // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
+      monitoringIntfNames = [ intf ];
       logicIntfNames = [ intf ];
 
       const intf2Obj = intfList.find(i => i.name == intf2)
       if (intf2Obj && intf2Obj.ip_address) {
 
-        if (wanOnPrivateIP) monitoringIntfNames.push(intf2);
+        //if (wanOnPrivateIP)
+        // need to think of a better way to check wan on private network
+        monitoringIntfNames.push(intf2);
         logicIntfNames.push(intf2);
         const subnet2 = intf2Obj.subnet
         intfNameMap[intf2] = {
@@ -645,13 +649,17 @@ class FireRouter {
       await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
       })
-      // redirect ingress (upload) traffic to ifb0
-      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 0x1 protocol all u32 match u32 0 0 action connmark pipe action mirred egress redirect dev ifb0`).catch((err) => {
+      // redirect ingress (upload) traffic to ifb0, 0x40000000/0x40000000 is the QoS switch fwmark/mask
+      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol all u32 match u32 0 0 action connmark pipe action continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol all u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0`);
+      }).catch((err) => {
         log.error(`Failed to add tc filter to redirect ingress traffic on ${iface} to ifb0`, err.message);
       });
-      // redirect egress (download) traffic to ifb1
-      await exec(`sudo tc filter add dev ${iface} parent 1: handle 0x1 protocol all u32 match u32 0 0 action connmark pipe action mirred egress redirect dev ifb1`).catch((err) => {
-        log.error(`Failed to add tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
+      // redirect egress (download) traffic to ifb1, 0x40000000/0x40000000 is the QoS switch fwmark/mask
+      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol all u32 match u32 0 0 action connmark pipe action continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol all u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1`);
+      }).catch((err) => {
+        log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
       });
     }
     this._qosIfaces = ifaces;
@@ -879,6 +887,10 @@ class FireRouter {
     const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
+    if (type === "single" && !Config.isFeatureOn('single_wan_conn_check')) {
+      log.warn("Single WAN connectivity check is not enabled, ignore conn change event", changeDesc);
+      return;
+    }
     let msg = "";
     if (!ready)
       msg = `Internet connectivity on ${ifaceName} was lost.`;

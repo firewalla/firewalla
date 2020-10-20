@@ -640,29 +640,25 @@ class SysManager {
   }
 
   myIpMask(intf = this.config.monitoringInterface) {
-    if (this.getInterface(intf)) {
-      let mask = this.getInterface(intf).netmask;
-      if (mask.startsWith("Mask:")) {
-        mask = mask.substr(5);
+    const intfObj = this.getInterface(intf)
+    if (intfObj) {
+      const mask = this.getInterface(intf).netmask;
+      if (mask) {
+        if (mask.startsWith("Mask:"))
+          return mask.substr(5);
+        else
+          return mask;
+      } else {
+        // parse subnet when netmask does not exist
+        return iptool.cidrSubnet(intfObj.subnet).subnetMask
       }
-      return mask;
     } else {
       return undefined;
     }
   }
 
   myIpMask2(intf = this.config.monitoringInterface) {
-    const if2 = intf + ':0'
-
-    if (this.getInterface(if2)) {
-      let mask = this.getInterface(if2).netmask;
-      if (mask.startsWith("Mask:")) {
-        mask = mask.substr(5);
-      }
-      return mask;
-    } else {
-      return undefined;
-    }
+    return this.myIpMask(intf + ':0')
   }
 
   isMyMac(mac) {

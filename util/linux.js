@@ -88,8 +88,10 @@ exports.gateway_ip_for = function(nic_name) {
 };
 
 exports.netmask_for = async function (nic_name) {
-  var cmd = "ifconfig " + nic_name + " 2> /dev/null | egrep 'netmask|Mask:' | awk '{print $4}'";
+  var cmd = "/sbin/ifconfig " + nic_name + " 2> /dev/null | egrep 'netmask|Mask:' | awk '{print $4}'";
   let result = await trim_exec_async(cmd);
+  if (!result)
+    return null;
   // FIXME: should completely remove Mask: in the future
   if (result.startsWith("Mask:")) {
     return result;

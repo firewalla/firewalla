@@ -76,16 +76,6 @@ class Alarm {
     this.timestamp = timestamp;
 
     if (info) {
-      let tagIds = info['p.tag.ids'];
-      if (_.isArray(tagIds)) {
-        info['p.tag.ids'] = tagIds.map(String);
-      } else if (_.isString(tagIds)) {
-        try {
-          info['p.tag.ids'] = JSON.parse(tagIds).map(String);
-        } catch (e) {
-          log.warn("Failed to parse alarm p.tag.ids string:", tagIds);
-        }
-      }
       Object.assign(this, info);
     }
     //    this.validate(type);
@@ -796,7 +786,7 @@ class OverDataPlanUsageAlarm extends Alarm {
     return true;
   }
   getExpirationTime() {
-    return fc.getTimingConfig("alarm.data_plan.cooldown") || 60 * 60 * 24 * 30
+    return fc.getTimingConfig("alarm.data_plan_alarm.cooldown") || 60 * 60 * 24 * 30
   }
   requiredKeys() {
     return [];

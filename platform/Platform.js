@@ -16,7 +16,6 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const fConfig = require('../net2/config.js').getConfig();
 const f = require('../net2/Firewalla.js');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -35,9 +34,9 @@ class Platform {
     const nics = this.getAllNicNames();
     const result = {};
     for (const nic of nics) {
-      const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch((err) => "");
-      const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
-      const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch((err) => "");
+      const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
+      const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       result[nic] = {address, speed, carrier};
     }
     return result;
@@ -55,7 +54,7 @@ class Platform {
 
   async getNetworkSpeed() {
     try {
-      const output = await fs.readFileAsync(`/sys/class/net/${fConfig.monitoringInterface}/speed`, {encoding: 'utf8'});
+      const output = await fs.readFileAsync(`/sys/class/net/${this.getAllNicNames[0]}/speed`, {encoding: 'utf8'});
       return output.trim();
     } catch(err) {
       log.debug('Error getting network speed', err)
@@ -180,14 +179,6 @@ class Platform {
 
   getRetentionCountMultiplier() {
     return 1;
-  }
-
-  getBroSafeCheckThreshold() {
-    return {
-      missedBytes: 10000000,
-      respRate: 70000000,
-      origRate: 70000000
-    };
   }
 
   isIFBSupported() {

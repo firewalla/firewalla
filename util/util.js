@@ -14,7 +14,7 @@
  */
 'use strict';
 
-const Promise = require('bluebird');
+const _ = require('lodash')
 
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
@@ -57,6 +57,10 @@ function getPreferredBName(hostObject) {
     return hostObject.dhcpName
   }
 
+  if (hostObject['dnsmasq.dhcp.leaseName']) {
+    return hostObject['dnsmasq.dhcp.leaseName']
+  }
+
   if (hostObject.bonjourName) {
     return hostObject.bonjourName
   }
@@ -75,7 +79,21 @@ function getPreferredBName(hostObject) {
     let name = hostObject.macVendor
     return name
   }
-  return hostObject.ipv4Addr
+
+  if (hostObject.ipv4Addr)
+    return hostObject.ipv4Addr
+
+  if (hostObject.ipv6Addr) {
+    let v6Addrs = hostObject.ipv6Addr || [];
+    if (_.isString(v6Addrs)) {
+      try {
+        v6Addrs = JSON.parse(v6Addrs);
+      } catch (err) { }
+    }
+    return v6Addrs[0]
+  }
+
+  return undefined;
 }
 
 function delay(t) {
