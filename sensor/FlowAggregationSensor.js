@@ -262,7 +262,7 @@ class FlowAggregationSensor extends Sensor {
       begin: begin,
       end: end,
       interval: this.config.interval,
-      expireTime: this.config.sumFlowExpireTime,
+      expireTime: this.config.sumFlowExpireTime, // hourly sumflow retention time should be blue/red 24hours, navy/gold 72hours
       skipIfExists: skipIfExists,
       max_flow: 200
     }
@@ -359,7 +359,10 @@ class FlowAggregationSensor extends Sensor {
       begin: begin,
       end: end,
       interval: this.config.interval,
-      expireTime: 24 * 60, // if working properly, sumFlowRange should be refreshed in every 10 minutes
+      // if working properly, flowaggregation sensor run every 10 mins
+      // last 24 hours sum flows will generate every 10 mins
+      // make sure expireTime greater than 10 mins and expire key to reduce memonry usage, differnet with hourly sum flows should retention
+      expireTime: 24 * 60,
       setLastSumFlow: true,
       max_flow: this.config.sumFlowMaxFlow
     }
