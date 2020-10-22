@@ -607,6 +607,9 @@
       "flowstashExpires": 900,
       "expires": 86400
     },
+    "connLong": {
+      "path": "/blog/current/conn_long.log"
+    },
     "ssh": {
       "path": "/blog/current/ssh.log",
       "expires": 86400
