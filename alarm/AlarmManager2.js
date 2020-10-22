@@ -562,16 +562,6 @@ module.exports = class {
 
     let proto = Alarm.mapping[json.type];
     if (proto) {
-      let tagIds = json['p.tag.ids'];
-      if (_.isArray(tagIds)) {
-        json['p.tag.ids'] = tagIds.map(String);
-      } else if (_.isString(tagIds)) {
-        try {
-          json['p.tag.ids'] = JSON.parse(tagIds).map(String); //Backward compatible
-        } catch (e) {
-          log.warn("Failed to parse alarm p.tag.ids string:", tagIds);
-        }
-      }
       let obj = Object.assign(Object.create(proto), json);
       obj.message = obj.localizedMessage(); // append locaized message info
       if (obj["p.flow"]) {
@@ -728,6 +718,17 @@ module.exports = class {
       .zrem(alarmActiveKey, alarmID)
       .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
       .execAsync();
+  }
+  async archiveAlarmByExceptionAsync(exceptionID) {
+    const exception = await exceptionManager.getException(exceptionID);
+    const alarms = await this.findSimilarAlarmsByException(exception);
+    for (const alarm of alarms) {
+      alarm.result_exception = exception.eid;
+      alarm.result = "archiveByException";
+      await this.updateAlarm(alarm);
+      await this.archiveAlarm(alarm.aid);
+    }
+    return alarms;
   }
 
   async listExtendedAlarms() {
@@ -921,7 +922,7 @@ module.exports = class {
   }
 
   async findSimilarAlarmsByException(exception, curAlarmID) {
-    let alarms = await this.loadActiveAlarmsAsync();
+    let alarms = await this.loadActiveAlarmsAsync(200);
     return alarms.filter((alarm) => {
       if (alarm.aid === curAlarmID) {
         return false // ignore current alarm id, since it's already blocked

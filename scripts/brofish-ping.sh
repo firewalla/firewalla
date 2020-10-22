@@ -12,6 +12,7 @@ SLEEP_TIMEOUT=10
 CPU_THRESHOLD=${FW_ZEEK_CPU_THRESHOLD:-80}
 RSS_THRESHOLD=${FW_ZEEK_RSS_THRESHOLD:-800000}
 NOT_AVAILABLE='n/a'
+FREEMEM_THRESHOLD=${FREEMEM_THRESHOLD:-60}
 
 # there should be updated logs in log file
 MMIN="-15"
@@ -37,7 +38,7 @@ brofish_cmd() {
 }
 
 brofish_cpu() {
-  bcpu=$(top -bn1 | awk "\$12==\"$BRO_PROC_NAME\" {print \$9}")
+  bcpu=$(top -bn1 | awk "\$12==\"$BRO_PROC_NAME\" {print \$9}" | sort -rn | head -n 1)
   if [[ -n "$bcpu" ]]; then
     echo $bcpu
     if [[ ${bcpu%%.*} -ge $CPU_THRESHOLD ]]; then
@@ -53,12 +54,28 @@ brofish_cpu() {
   fi
 }
 
+get_free_memory() {
+  swapmem=$(free -m | awk '/Swap:/{print $4}')
+  realmem=$(free -m | awk '/Mem:/{print $7}')
+  totalmem=$(( swapmem + realmem ))
+
+  if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
+    mem=$totalmem
+  else
+    mem=$realmem
+  fi
+
+  echo $mem
+}
+
 brofish_rss() {
-  brss=$(ps -eo rss,cmd | awk "\$2~/${BRO_PROC_NAME}\$/ {print \$1}")
+  # there may be multiple bro/zeek processes, need to find out the max rss 
+  brss=$(ps -eo rss,cmd | awk "\$2~/${BRO_PROC_NAME}\$/ {print \$1}" | sort -k 1 -rn | head -n 1)
   if [[ -n "$brss" ]]; then
     echo $brss
-    if [[ $brss -ge $RSS_THRESHOLD ]]; then
-      /home/pi/firewalla/scripts/firelog -t cloud -m "brofish RSS($brss) is over threshold($RSS_THRESHOLD): $(brofish_cmd)"
+    mem=$(get_free_memory)
+    if [[ $brss -ge $RSS_THRESHOLD && $mem -le $FREEMEM_THRESHOLD ]]; then
+      /home/pi/firewalla/scripts/firelog -t cloud -m "abnormal brofish RSS($brss >= $RSS_THRESHOLD) and free memory($mem <= $FREEMEM_THRESHOLD): $(brofish_cmd)"
       return 1
     else
       return 0

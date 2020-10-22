@@ -401,9 +401,13 @@ module.exports = class FlowMonitor {
         data = {};
       } else {
         for (let n in data) {
-          data[n] = JSON.parse(data[n]);
-          data[n].neighbor = n;
-          neighborArray.push(data[n]);
+          try {
+            data[n] = JSON.parse(data[n]);
+            data[n].neighbor = n;
+            neighborArray.push(data[n]);
+          } catch (e) {
+            log.warn('parse neighbor data error', data[n], key);
+          }
         }
       }
       let now = Date.now() / 1000;
