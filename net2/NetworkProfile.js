@@ -388,7 +388,7 @@ async createEnv() {
     let realIntf = this.o.intf;
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
-    const inputRule = new Rule().chn("FW_INPUT_DROP").pro("tcp").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
     if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
       // add DROP rule on WAN interface in router mode
@@ -487,7 +487,7 @@ async createEnv() {
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
     // remove WAN INPUT protection rules
-    const inputRule = new Rule().chn("FW_INPUT_DROP").pro("tcp").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
     await exec(inputRule.toCmd("-D")).catch((err) => {});
     await exec(inputRule6.toCmd("-D")).catch((err) => {});
