@@ -328,9 +328,9 @@ class NetworkProfile {
       return null;
   }
 
-  static getRouteIpsetName(uuid, af = 4) {
+  static getRouteIpsetName(uuid) {
     if (uuid) {
-      return `c_route_${uuid.substring(0, 13)}_set` + (af === 4 ? "": "6");
+      return `c_route_${uuid.substring(0, 13)}_set`;
     } else
       return null;
   }
@@ -362,14 +362,18 @@ class NetworkProfile {
     }
     // routing ipset with skbmark extensions
     const routeIpsetName = NetworkProfile.getRouteIpsetName(uuid);
-    const routeIpsetName6 = NetworkProfile.getRouteIpsetName(uuid, 6);
-    if (!routeIpsetName || !routeIpsetName6) {
+    const routeIpsetName4 = `${routeIpsetName}4`;
+    const routeIpsetName6 = `${routeIpsetName}6`;
+    if (!routeIpsetName || !routeIpsetName4 || !routeIpsetName6) {
       log.error(`Failed to get route ipset name for ${uuid}`);
     } else {
-      await exec(`sudo ipset create -! ${routeIpsetName} hash:net maxelem 10 skbinfo`).catch((err) => {
+      await exec(`sudo ipset create -! ${routeIpsetName} list:set skbinfo`).catch((err) => {
         log.error(`Failed to create network profile routing ipset ${routeIpsetName}`, err.message);
       });
-      await exec(`sudo ipset create -! ${routeIpsetName6} hash:net family inet6 maxelem 10 skbinfo`).catch((err) => {
+      await exec(`sudo ipset create -! ${routeIpsetName4} hash:net maxelem 10`).catch((err) => {
+        log.error(`Failed to create network profile routing ipset ${routeIpsetName4}`, err.message);
+      });
+      await exec(`sudo ipset create -! ${routeIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
         log.error(`Failed to create network profile ipset ${routeIpsetName6}`, err.message);
       });
     }
@@ -453,8 +457,9 @@ async createEnv() {
     }
 
     const routeIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
-    const routeIpsetName6 = NetworkProfile.getRouteIpsetName(this.o.uuid, 6);
-    if (!routeIpsetName || !routeIpsetName6) {
+    const routeIpsetName4 = `${routeIpsetName}4`;
+    const routeIpsetName6 = `${routeIpsetName}6`;
+    if (!routeIpsetName || !routeIpsetName4 || !routeIpsetName6) {
       log.error(`Failed to get route ipset name for ${this.o.uuid}`);
     } else {
       await exec(`sudo ipset flush -! ${routeIpsetName}`).catch((err) => {});
@@ -463,20 +468,26 @@ async createEnv() {
         const rtIdHex = Number(this.o.rtid).toString(16);
         // since hash:net does not allow /0 as cidr subnet, need to add two complementary entries to the ipset
         if (this.o.gateway) {
-          await exec(`sudo ipset add -! ${routeIpsetName} 0.0.0.0/1 skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
-            log.error(`Failed to add 0.0.0.0/1 skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName4} 0.0.0.0/1`).catch((err) => {
+            log.error(`Failed to add 0.0.0.0/1 to ${routeIpsetName4}`, err.message);
           });
-          await exec(`sudo ipset add -! ${routeIpsetName} 128.0.0.0/1 skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
-            log.error(`Failed to add 128.0.0.0/1 skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName4} 128.0.0.0/1`).catch((err) => {
+            log.error(`Failed to add 128.0.0.0/1 to ${routeIpsetName4}`, err.message);
+          });
+          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName4} skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
+            log.error(`Failed to add ipv4 route set ${routeIpsetName4} skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
           });
         }
         if (this.o.gateway6) {
-          await exec(`sudo ipset add -! ${routeIpsetName6} ::/1 skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
-            log.error(`Failed to add ::/1 skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName6}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName6} ::/1`).catch((err) => {
+            log.error(`Failed to add ::/1 to ${routeIpsetName6}`, err.message);
           });
-          await exec(`sudo ipset add -! ${routeIpsetName6} 8000::/1 skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
-            log.error(`Failed to add 8000::/1 skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName6}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName6} 8000::/1`).catch((err) => {
+            log.error(`Failed to add 8000::/1 to ${routeIpsetName6}`, err.message);
           });
+          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName6} skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
+            log.error(`Failed to add ipv6 route set ${routeIpsetName6} skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          })
         }
       }
     }
@@ -526,15 +537,19 @@ async createEnv() {
     }
 
     const routeIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
-    const routeIpsetName6 = NetworkProfile.getRouteIpsetName(this.o.uuid, 6);
-    if (!routeIpsetName || !routeIpsetName6) {
+    const routeIpsetName4 = `${routeIpsetName}4`;
+    const routeIpsetName6 = `${routeIpsetName}6`;
+    if (!routeIpsetName || !routeIpsetName4 || !routeIpsetName6) {
       log.error(`Failed to get route ipset name for ${this.o.uuid}`);
     } else {
-      await exec(`sudo ipset flush -! ${routeIpsetName}`).catch((err) => {
-        log.debug(`Failed to flush network profile route ipset ${routeIpsetName}`, err.message);
+      await exec(`sudo ipset flush -! ${routeIpsetName4}`).catch((err) => {
+        log.debug(`Failed to flush network profile route ipset ${routeIpsetName4}`, err.message);
       });
       await exec(`sudo ipset flush -! ${routeIpsetName6}`).catch((err) => {
         log.debug(`Failed to flush network profile route ipset ${routeIpsetName6}`, err.message);
+      });
+      await exec(`sudo ipset flush -! ${routeIpsetName}`).catch((err) => {
+        log.debug(`Failed to flush network profile route ipset ${routeIpsetName}`, err.message);
       });
     }
     this.oper = null; // clear oper cache used in PolicyManager.js
