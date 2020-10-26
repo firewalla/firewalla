@@ -224,7 +224,7 @@ class FlowAggregationSensor extends Sensor {
     // let now = Math.floor(new Date() / 1000);
     let now = ts; // actually it's NOT now, typically it's 3 mins earlier than NOW;
     let lastHourTick = Math.floor(now / 3600) * 3600;
-    const hourlySteps = 24 * this.retentionTimeMultipler;
+    const hourlySteps = 24; // houlry steps should be consistent with aggrFlowExpireTime
 
     if (this.firstTime) {
       // the 24th last hours -> the 2nd last hour
