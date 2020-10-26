@@ -1521,6 +1521,9 @@ module.exports = class HostManager {
           } else {
             await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
           }
+          // enable VPN client chain in mangle PREROUTING chain
+          await iptables.switchVPNClientAsync(true, 4);
+          await iptables.switchVPNClientAsync(true, 6);
           if (result) {
             if (ovpnClient.listenerCount('link_broken') === 0) {
               ovpnClient.once('link_broken', async () => {
@@ -1614,6 +1617,9 @@ module.exports = class HostManager {
           await ovpnClient.stop();
           // will do no harm to unenforce strict VPN even if strict VPN is not set
           await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
+          // disable VPN client chain in mangle PREROUTING chain
+          await iptables.switchVPNClientAsync(false, 4);
+          await iptables.switchVPNClientAsync(false, 6);
           return {running: false, reconnecting: 0};
         }
         break;
