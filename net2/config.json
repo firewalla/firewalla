@@ -154,7 +154,7 @@
     "FlowAggregationSensor": {
       "interval": 600,
       "flowRange": 86400,
-      "sumFlowExpireTime": 1800,
+      "sumFlowExpireTime": 86400,
       "aggrFlowExpireTime": 86400,
       "sumFlowMaxFlow": 200
     },

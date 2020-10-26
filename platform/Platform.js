@@ -200,6 +200,9 @@ class Platform {
   async applyProfile() {
     log.info("NO need to apply profile");
   }
+  getStatsSpecs(){
+    return [];
+  }
 }
 
 module.exports = Platform;

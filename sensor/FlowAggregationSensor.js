@@ -43,7 +43,6 @@ const config = require('../net2/config.js').getConfig();
 const excludedCategories = (config.category && config.category.exclude) || [];
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const bone = require('../lib/Bone.js');
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -69,21 +68,27 @@ class FlowAggregationSensor extends Sensor {
     const apps = await appFlowTool.getTypes('*'); // all mac addresses
     const categories = await categoryFlowTool.getTypes('*') // all mac addresses
 
-    await this.sumAll(ts, apps, categories)
+    await this.sumFlowRange(ts, apps, categories)
     await this.updateAllHourlySummedFlows(ts, apps, categories)
+    /* todo
+    const periods = platform.sumPeriods()
+    for(const period  of periods){
+       period => last 24  use 10 mins aggr
+       period => daily    use houlry sum
+       period => weekly   use daily sum
+    }
+    */
     this.firstTime = false;
     log.info("Summarized flow generation is complete");
   }
 
   run() {
-    this.config.flowRange *= this.retentionTimeMultipler;
     this.config.sumFlowExpireTime *= this.retentionTimeMultipler;
-    this.config.aggrFlowExpireTime *= this.retentionTimeMultipler;
     this.config.sumFlowMaxFlow *= this.retentionCountMultipler;
     log.debug("config.interval="+ this.config.interval);
     log.debug("config.flowRange="+ this.config.flowRange);
     log.debug("config.sumFlowExpireTime="+ this.config.sumFlowExpireTime);
-    log.debug("config.aggrFlowExpireTime="+ this.config.aggrFlowExpireTime);
+    log.debug("config.aggrFlowExpireTime="+ this.config.aggrFlowExpireTime); // aggrFlowExpireTime shoud be same as flowRange or bigger
     log.debug("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
     sem.once('IPTABLES_READY', async () => {
       // init host
@@ -219,11 +224,11 @@ class FlowAggregationSensor extends Sensor {
     // let now = Math.floor(new Date() / 1000);
     let now = ts; // actually it's NOT now, typically it's 3 mins earlier than NOW;
     let lastHourTick = Math.floor(now / 3600) * 3600;
-
+    const hourlySteps = 24 * this.retentionTimeMultipler;
 
     if (this.firstTime) {
       // the 24th last hours -> the 2nd last hour
-      for (let i = 1; i < 24; i++) {
+      for (let i = 1; i < hourlySteps; i++) {
         let ts = lastHourTick - i * 3600;
         await this.hourlySummedFlows(ts, {
           skipIfExists: true
@@ -257,7 +262,7 @@ class FlowAggregationSensor extends Sensor {
       begin: begin,
       end: end,
       interval: this.config.interval,
-      expireTime: 24 * 3600, // keep for 24 hours
+      expireTime: this.config.sumFlowExpireTime, // hourly sumflow retention time should be blue/red 24hours, navy/gold 72hours
       skipIfExists: skipIfExists,
       max_flow: 200
     }
@@ -276,7 +281,7 @@ class FlowAggregationSensor extends Sensor {
 
     // aggregate intf
     const intfs = hostManager.getActiveIntfs();
-    log.debug(`hourlySummedFlows intfs:`, intfs);
+    log.debug(`sumViews intfs:`, intfs);
 
     for (const intf of intfs) {
       if(!intf || _.isEmpty(intf.macs)) {
@@ -297,7 +302,7 @@ class FlowAggregationSensor extends Sensor {
 
     // aggregate tags
     const tags = hostManager.getActiveTags();
-    log.debug(`hourlySummedFlows tags:`, tags);
+    log.debug(`sumViews tags:`, tags);
 
     for (const tag of tags) {
       if(!tag || _.isEmpty(tag.macs)) {
@@ -336,7 +341,7 @@ class FlowAggregationSensor extends Sensor {
     }
   }
 
-  async sumAll(ts, apps, categories) {
+  async sumFlowRange(ts, apps, categories) {
     const now = new Date() / 1000;
 
     if(now < ts + 60) {
@@ -354,7 +359,10 @@ class FlowAggregationSensor extends Sensor {
       begin: begin,
       end: end,
       interval: this.config.interval,
-      expireTime: this.config.sumFlowExpireTime,
+      // if working properly, flowaggregation sensor run every 10 mins
+      // last 24 hours sum flows will generate every 10 mins
+      // make sure expireTime greater than 10 mins and expire key to reduce memonry usage, differnet with hourly sum flows should retention
+      expireTime: 24 * 60,
       setLastSumFlow: true,
       max_flow: this.config.sumFlowMaxFlow
     }

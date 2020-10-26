@@ -180,6 +180,13 @@ class NavyPlatform extends Platform {
       log.error("Error applying profile", err)
     }
   }
+  getStatsSpecs() {
+    return [{
+      granularities: '1hour',
+      hits: 72,
+      stat: '3d'
+    }]
+  }
 }
 
 module.exports = NavyPlatform;
