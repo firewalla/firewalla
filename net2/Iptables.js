@@ -95,6 +95,7 @@ exports.switchACLAsync = switchACLAsync;
 exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
 exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
 exports.switchQoSAsync = switchQoSAsync;
+exports.switchVPNClientAsync = switchVPNClientAsync;
 
 var workqueue = [];
 var running = false;
@@ -441,6 +442,15 @@ function flush() {
     "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING && sudo iptables -w -t mangle -F FW_FORWARD",
   ).catch(err => {
     log.error("IPTABLE:FLUSH:Unable to flush", err)
+  });
+}
+
+async function switchVPNClientAsync(state, family = 4) {
+  // TODO:// this only works for single VPN client connection globally
+  const op = state ? "-D" : "-I";
+  const rule = new Rule('mangle').chn('FW_RT_VC').jmp('RETURN').fam(family);
+  await execAsync(rule.toCmd(op)).catch((err) => {
+    log.error(`Failed to switch VPN client: ${rule}`, err.message);
   });
 }
 
