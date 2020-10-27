@@ -447,7 +447,7 @@ module.exports = class {
       if (obj == null || obj["id.resp_p"] != 53) {
         return;
       }
-      if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
+      if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0 && obj["query"] && obj["query"].length > 0) {
         //await rclient.zaddAsync(`dns:`, Math.ceil(obj.ts), )
         if (this.lastDNS!=null) {
           if (this.lastDNS['query'] == obj['query']) {
