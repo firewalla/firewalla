@@ -76,6 +76,7 @@ const dnsmasqBinary = __dirname + "/dnsmasq";
 const startScriptFile = __dirname + "/dnsmasq.sh";
 
 const configFile = __dirname + "/dnsmasq.conf";
+const formulateHostname = require('../../util/util.js').formulateHostname;
 
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
@@ -468,6 +469,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
+      domains = domains.map(d => formulateHostname(d));
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
           if (!_.isEmpty(options.scope)) {
@@ -655,7 +657,7 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    domains = domains.sort();
+    domains = domains.map(d => formulateHostname(d)).sort();
     for (const domain of domains) {
       blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
