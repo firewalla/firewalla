@@ -130,11 +130,22 @@ function isSimilarHost(h1, h2) {
   return true;
 }
 
+function formulateHostname(domain) {
+  if (!domain || !_.isString(domain))
+    return null;
+  domain = domain.substring(domain.indexOf(':') + 1);
+  domain = domain.replace(/\/+/g, '/');
+  domain = domain.replace(/^\//, '');
+  domain = domain.substring(0, domain.indexOf('/') > 0 ? domain.indexOf('/') : domain.length);
+  return domain;
+}
+
 module.exports = {
   extend,
   getPreferredBName,
   getPreferredName,
   delay,
   argumentsToString,
-  isSimilarHost
+  isSimilarHost,
+  formulateHostname
 }

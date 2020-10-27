@@ -64,6 +64,8 @@ const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+
+const formulateHostname = require('../util/util.js').formulateHostname;
 /*
  *
  *  config.bro.notice.path {
@@ -457,7 +459,7 @@ module.exports = class {
         }
         this.lastDNS = obj;
         // record reverse dns as well for future reverse lookup
-        await dnsTool.addReverseDns(obj['query'], obj['answers'])
+        await dnsTool.addReverseDns(formulateHostname(obj['query']), obj['answers'])
 
         for (let i in obj['answers']) {
           // answer can be an alias or ip address
@@ -469,7 +471,7 @@ module.exports = class {
             // do not add domain alias to dns entry
             continue;
 
-          await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
+          await dnsTool.addDns(answer, formulateHostname(obj['query']), this.config.bro.dns.expires);
           sem.emitEvent({
             type: 'DestIPFound',
             ip: answer,
