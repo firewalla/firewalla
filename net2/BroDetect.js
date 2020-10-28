@@ -63,8 +63,6 @@ const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
-const { retryUntilInitComplete } = require('./FireRouter.js');
-const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const {formulateHostname, isDomainValid} = require('../util/util.js');
 /*
