@@ -913,8 +913,10 @@ module.exports = class DNSMASQ {
         await execAsync(redirectUDP.toCmd('-A'));
       }
     }
-    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -j ACCEPT`)).catch((err) => {});
-    await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p tcp --dport 53 -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p udp --dport 53 -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p tcp --dport 53 -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p udp --dport 53 -j ACCEPT`)).catch((err) => {});
   }
 
   async _add_all_iptables_rules() {
