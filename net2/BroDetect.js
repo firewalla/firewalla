@@ -282,6 +282,7 @@ module.exports = class {
       this.enableRecording = true
       this.cc = 0
       this.activeMac = {};
+
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
@@ -645,6 +646,30 @@ module.exports = class {
     return !accounting.isBlockedDevice(mac);
   }
 
+  normalizeConnData(obj) {
+    const threshold = this.config.bro.threshold;
+
+    if(threshold.maxSpeed) {
+      const maxMissingBytesPerSecond = threshold.maxSpeed / 8;
+      const duration = obj.duration; 
+      const maxMissingBytes = maxMissingBytesPerSecond * duration;
+
+      // more than the therotical possible number
+      if(obj.missed_bytes > maxMissingBytes) {
+        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+        return;
+      }
+    }
+
+    const missed_bytes = obj.missed_bytes;
+    const resp_bytes = obj.resp_bytes;
+    const orig_bytes = obj.orig_bytes;
+    if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
+        log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
+        return;
+    }
+  }
+
   // Only log ipv4 packets for now
   async processConnData(data) {
     try {
@@ -690,10 +715,7 @@ module.exports = class {
         return;
       }
 
-      if (obj.missed_bytes > threshold.missedBytes) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
-        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
-        return;
-      }
+      this.normalizeConnData(obj);
 
       if (obj.proto && obj.proto == "tcp") {
         if (obj.resp_bytes > threshold.tcpZeroBytesResp && obj.orig_bytes == 0 && obj.conn_state == "SF") {
@@ -734,29 +756,13 @@ module.exports = class {
         }
       }
 
-      if (obj.missed_bytes > 0) {
-        let adjusted = false;
-        if (obj.orig_bytes - obj.missed_bytes > 0) {
-          obj.orig_bytes = obj.orig_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (obj.resp_bytes - obj.missed_bytes > 0) {
-          obj.resp_bytes = obj.resp_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (adjusted == false) {
-          log.debug("Conn:Drop:MissedBytes", obj.conn_state, obj);
-          return;
-        } else {
-          log.debug("Conn:Adjusted:MissedBytes", obj.conn_state, obj);
-        }
-      }
-
+      /*
       if ((obj.orig_bytes > obj.orig_ip_bytes || obj.resp_bytes > obj.resp_ip_bytes) && obj.proto == "tcp") {
         log.debug("Conn:Burst:Adjust1", obj);
         obj.orig_bytes = obj.orig_ip_bytes;
         obj.resp_bytes = obj.resp_ip_bytes;
       }
+      */
 
       /*
        * the s flag is a short packet flag,

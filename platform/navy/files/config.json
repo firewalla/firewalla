@@ -1,6 +1,8 @@
 {
   "bro": {
     "threshold": {
+      "maxSpeed": 1000000000,
+      "missedBytesRatio": 0.98,
       "missedBytes": 10000000,
 
       "tcpZeroBytesResp": 1000000,
