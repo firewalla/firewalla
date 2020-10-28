@@ -649,24 +649,35 @@ module.exports = class {
   normalizeConnData(obj) {
     const threshold = this.config.bro.threshold;
 
-    if(threshold.maxSpeed) {
-      const maxMissingBytesPerSecond = threshold.maxSpeed / 8;
-      const duration = obj.duration; 
-      const maxMissingBytes = maxMissingBytesPerSecond * duration;
-
-      // more than the therotical possible number
-      if(obj.missed_bytes > maxMissingBytes) {
-        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
-        return;
-      }
-    }
-
     const missed_bytes = obj.missed_bytes;
     const resp_bytes = obj.resp_bytes;
     const orig_bytes = obj.orig_bytes;
+
     if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
         return;
+    }
+
+    if(threshold.maxSpeed) {
+      const maxBytesPerSecond = threshold.maxSpeed / 8;
+      const duration = obj.duration; 
+      const maxBytes = maxBytesPerSecond * duration;
+
+      // more than the therotical possible number
+      if(obj.missed_bytes > maxBytes) {
+        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+        return;
+      }
+
+      if(obj.resp_bytes > maxBytes) {
+        log.debug("Conn:Drop:RespBytes:TooLarge", obj.conn_state, obj);
+        return;
+      }
+
+      if(obj.orig_bytes > maxBytes) {
+        log.debug("Conn:Drop:OrigBytes:TooLarge", obj.conn_state, obj);
+        return;
+      }
     }
   }
 
@@ -724,34 +735,6 @@ module.exports = class {
         }
         else if (obj.orig_bytes > threshold.tcpZeroBytesOrig && obj.resp_bytes == 0 && obj.conn_state == "SF") {
           log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
-          return;
-        }
-      }
-
-      //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
-      if (obj.resp_bytes > threshold.burstBytesResp) {
-        let rate = obj.resp_bytes / obj.duration;
-        if (rate > threshold.burstRateResp) {
-          log.debug("Conn:Burst:Drop", rate, obj);
-          return;
-        }
-        let packet = obj.resp_bytes / obj.resp_pkts;
-        if (packet > threshold.burstPacketsResp) {
-          log.debug("Conn:Burst:Drop2", packet, obj);
-          return;
-        }
-      }
-
-
-      if (obj.orig_bytes > threshold.burstBytesOrig) {
-        let rate = obj.orig_bytes / obj.duration;
-        if (rate > threshold.burstRateOrig) {
-          log.debug("Conn:Burst:Drop:Orig", rate, obj);
-          return;
-        }
-        let packet = obj.orig_bytes / obj.orig_pkts;
-        if (packet > threshold.burstPacketsOrig) {
-          log.debug("Conn:Burst:Drop2:Orig", packet, obj);
           return;
         }
       }
