@@ -65,7 +65,7 @@ const _ = require('lodash');
 const Message = require('../net2/Message.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
-const formulateHostname = require('../util/util.js').formulateHostname;
+const {formulateHostname, isDomainValid} = require('../util/util.js');
 /*
  *
  *  config.bro.notice.path {
@@ -458,6 +458,8 @@ module.exports = class {
           }
         }
         this.lastDNS = obj;
+        if (!isDomainValid(obj["query"]))
+          return;
         // record reverse dns as well for future reverse lookup
         await dnsTool.addReverseDns(formulateHostname(obj['query']), obj['answers'])
 

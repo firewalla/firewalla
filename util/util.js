@@ -16,6 +16,8 @@
 
 const _ = require('lodash')
 
+const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
+
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
   sources.forEach(function (source) {
@@ -140,6 +142,12 @@ function formulateHostname(domain) {
   return domain;
 }
 
+function isDomainValid(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return validDomainRegex.test(domain);
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -147,5 +155,6 @@ module.exports = {
   delay,
   argumentsToString,
   isSimilarHost,
-  formulateHostname
+  formulateHostname,
+  isDomainValid
 }
