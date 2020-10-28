@@ -62,6 +62,8 @@ let FLOWSTASH_EXPIRES;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
+const { retryUntilInitComplete } = require('./FireRouter.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 /*
  *
@@ -646,7 +648,7 @@ module.exports = class {
     return !accounting.isBlockedDevice(mac);
   }
 
-  normalizeConnData(obj) {
+  validateConnData(obj) {
     const threshold = this.config.bro.threshold;
 
     const missed_bytes = obj.missed_bytes;
@@ -655,7 +657,7 @@ module.exports = class {
 
     if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
-        return;
+        return false;
     }
 
     if(threshold.maxSpeed) {
@@ -666,19 +668,21 @@ module.exports = class {
       // more than the therotical possible number
       if(obj.missed_bytes > maxBytes) {
         log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
-        return;
+        return false;
       }
 
       if(obj.resp_bytes > maxBytes) {
         log.debug("Conn:Drop:RespBytes:TooLarge", obj.conn_state, obj);
-        return;
+        return false;
       }
 
       if(obj.orig_bytes > maxBytes) {
         log.debug("Conn:Drop:OrigBytes:TooLarge", obj.conn_state, obj);
-        return;
+        return false;
       }
     }
+
+    return true;
   }
 
   // Only log ipv4 packets for now
@@ -726,7 +730,9 @@ module.exports = class {
         return;
       }
 
-      this.normalizeConnData(obj);
+      if(!this.validateConnData(obj)) {
+        log.debug("Validate Failed", obj.conn_state, obj);
+      }
 
       if (obj.proto && obj.proto == "tcp") {
         if (obj.resp_bytes > threshold.tcpZeroBytesResp && obj.orig_bytes == 0 && obj.conn_state == "SF") {
@@ -806,12 +812,14 @@ module.exports = class {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
+        log.debug("Local Traffic, both sides are in private network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
         //log.debug("Dropping both ip address", host,dst);
+        log.debug("Local Traffic, both sides are in local network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == false) {
         flowdir = "in";
