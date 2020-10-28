@@ -65,6 +65,8 @@ const _ = require('lodash');
 const Message = require('../net2/Message.js');
 const { retryUntilInitComplete } = require('./FireRouter.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+
+const {formulateHostname, isDomainValid} = require('../util/util.js');
 /*
  *
  *  config.bro.notice.path {
@@ -447,7 +449,7 @@ module.exports = class {
       if (obj == null || obj["id.resp_p"] != 53) {
         return;
       }
-      if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
+      if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0 && obj["query"] && obj["query"].length > 0) {
         //await rclient.zaddAsync(`dns:`, Math.ceil(obj.ts), )
         if (this.lastDNS!=null) {
           if (this.lastDNS['query'] == obj['query']) {
@@ -458,8 +460,10 @@ module.exports = class {
           }
         }
         this.lastDNS = obj;
+        if (!isDomainValid(obj["query"]))
+          return;
         // record reverse dns as well for future reverse lookup
-        await dnsTool.addReverseDns(obj['query'], obj['answers'])
+        await dnsTool.addReverseDns(formulateHostname(obj['query']), obj['answers'])
 
         for (let i in obj['answers']) {
           // answer can be an alias or ip address
@@ -471,7 +475,7 @@ module.exports = class {
             // do not add domain alias to dns entry
             continue;
 
-          await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
+          await dnsTool.addDns(answer, formulateHostname(obj['query']), this.config.bro.dns.expires);
           sem.emitEvent({
             type: 'DestIPFound',
             ip: answer,

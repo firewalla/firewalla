@@ -328,6 +328,8 @@ sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null ||
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+# traverse DNS fallback chain if default chain is not taken
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
 
 # initialize nat firewall chain
 sudo iptables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
@@ -629,6 +631,8 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+  # traverse DNS fallback chain if default chain is not taken
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
 
   # initialize nat firewall chain
   sudo ip6tables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
