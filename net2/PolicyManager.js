@@ -410,6 +410,8 @@ module.exports = class {
         })();
       } else if (p === "monitor") {
         target.spoof(policy[p]);
+      } else if (p === "qos") {
+        target.qos(policy[p]);
       } else if (p === "acl") {
         target.acl(policy[p]);
       } else if (p === "vpnClient") {
