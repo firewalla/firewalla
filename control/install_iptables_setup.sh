@@ -299,8 +299,8 @@ sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
 # create dmz host chain, this is used in ipv4 only
 sudo iptables -w -t nat -N FW_PREROUTING_DMZ_HOST &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DMZ_HOST
-sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 22,53,8853,8837,8833,8834,8835 -j ACCEPT
-sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j ACCEPT
+sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 22,53,8853,8837,8833,8834,8835 -j RETURN
+sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j RETURN
 # add dmz host chain to the end of port forward chain
 sudo iptables -w -t nat -A FW_PREROUTING_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
 # create vpn client dns redirect chain in FW_PREROUTING
