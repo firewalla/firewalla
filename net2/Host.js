@@ -60,6 +60,7 @@ Promise.promisifyAll(fs);
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
+const {Address4, Address6} = require('ip-address');
 
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
@@ -821,10 +822,13 @@ class Host {
     for (const suffix of suffixes) {
       for (const alias of aliases) {
         const fqdn = `${alias}.${suffix}`;
-        entries.push(`${ipv4Addr} ${fqdn}`);
+        if (new Address4(ipv4Addr).isValid())
+          entries.push(`${ipv4Addr} ${fqdn}`);
         if (_.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
-            entries.push(`${addr} ${fqdn}`);
+            const addr6 = new Address6(addr);
+            if (addr6.isValid() && !addr6.isLinkLocal())
+              entries.push(`${addr} ${fqdn}`);
           }
         }
       }
