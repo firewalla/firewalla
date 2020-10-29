@@ -751,6 +751,7 @@ module.exports = class {
 
       if(!this.validateConnData(obj)) {
         log.debug("Validate Failed", obj.conn_state, obj);
+        return;
       }
 
       if (obj.proto && obj.proto == "tcp") {
