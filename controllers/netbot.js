@@ -1978,8 +1978,15 @@ class netBot extends ControllerBot {
           } else {
             target = target.toUpperCase();
           }
+          let date;
+          try {
+            let dataPlan = await rclient.getAsync('sys:data:plan');
+            if (dataPlan) dataPlan = JSON.parse(dataPlan);
+            date = dataPlan.date;
+          } catch (e) {
+          }
           const { download, upload, totalDownload, totalUpload,
-            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
+            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target, date || 1);
           this.simpleTxData(msg, {
             download: download,
             upload: upload,
