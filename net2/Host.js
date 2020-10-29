@@ -752,7 +752,8 @@ class Host {
 
         delete instances[this.o.mac]
       }
-    });
+      await this.updateHostsFile();
+    }, 3000);
   }
 
   scheduleUpdateHostData() {
