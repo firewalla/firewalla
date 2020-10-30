@@ -154,7 +154,7 @@
     "FlowAggregationSensor": {
       "interval": 600,
       "flowRange": 86400,
-      "sumFlowExpireTime": 1800,
+      "sumFlowExpireTime": 86400,
       "aggrFlowExpireTime": 86400,
       "sumFlowMaxFlow": 200
     },
@@ -629,18 +629,11 @@
       "expires": 14400
     },
     "threshold": {
-      "missedBytes": 10000000,
+      "maxSpeed": 100000000,
+      "missedBytesRatio": 0.98,
 
       "tcpZeroBytesResp": 1000000,
       "tcpZeroBytesOrig": 1000000,
-
-      "burstBytesResp": 100000000,
-      "burstRateResp": 70000000,
-      "burstPacketsResp": 10000000,
-
-      "burstBytesOrig": 100000000,
-      "burstRateOrig": 70000000,
-      "burstPacketsOrig": 10000000,
 
       "logLargeBytesResp": 100000000,
       "logLargeBytesOrig": 100000000
@@ -714,7 +707,8 @@
     "acl_audit": false,
     "new_device_tag": false,
     "dual_wan": true,
-    "clash": false
+    "clash": false,
+    "single_wan_conn_check": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

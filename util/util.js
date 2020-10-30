@@ -16,6 +16,8 @@
 
 const _ = require('lodash')
 
+const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
+
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
   sources.forEach(function (source) {
@@ -55,6 +57,10 @@ function getPreferredBName(hostObject) {
 
   if (hostObject.dhcpName) {
     return hostObject.dhcpName
+  }
+
+  if (hostObject['dnsmasq.dhcp.leaseName']) {
+    return hostObject['dnsmasq.dhcp.leaseName']
   }
 
   if (hostObject.bonjourName) {
@@ -126,11 +132,29 @@ function isSimilarHost(h1, h2) {
   return true;
 }
 
+function formulateHostname(domain) {
+  if (!domain || !_.isString(domain))
+    return null;
+  domain = domain.substring(domain.indexOf(':') + 1);
+  domain = domain.replace(/\/+/g, '/');
+  domain = domain.replace(/^\//, '');
+  domain = domain.substring(0, domain.indexOf('/') > 0 ? domain.indexOf('/') : domain.length);
+  return domain;
+}
+
+function isDomainValid(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return validDomainRegex.test(domain);
+}
+
 module.exports = {
   extend,
   getPreferredBName,
   getPreferredName,
   delay,
   argumentsToString,
-  isSimilarHost
+  isSimilarHost,
+  formulateHostname,
+  isDomainValid
 }

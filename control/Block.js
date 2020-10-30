@@ -187,8 +187,8 @@ function setupIpset(element, ipset, remove = false) {
   return action(ipset, element)
 }
 
-async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}`);
+async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
+  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   let table = null;
   let chain = null;
@@ -214,6 +214,16 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       table = "mangle";
       chain = "FW_QOS_GLOBAL"
       target = `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`;
+      break;
+    }
+    case "route": {
+      const NetworkProfile = require('../net2/NetworkProfile.js');
+      await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+      table = "mangle";
+      chain = "FW_RT_REG_GLOBAL";
+      target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      // policy-based routing can only apply to outbound connection
+      direction = "outbound";
       break;
     }
     case "allow": {
@@ -286,8 +296,8 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
 }
 
 // device-wise rules
-async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes) {
-  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}`);
+async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
+  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   let table = null;
   let chain = null;
@@ -313,6 +323,16 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       table = "mangle";
       chain = "FW_QOS_DEV"
       target = `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`;
+      break;
+    }
+    case "route": {
+      const NetworkProfile = require('../net2/NetworkProfile.js');
+      await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+      table = "mangle";
+      chain = "FW_RT_REG_DEVICE";
+      target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      // policy-based routing can only apply to outbound connection
+      direction = "outbound";
       break;
     }
     case "allow": {
@@ -384,8 +404,8 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
   }
 }
 
-async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes) {
-  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}`);
+async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
+  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   let table = null;
   let devChain = null;
@@ -413,6 +433,17 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
       devChain = "FW_QOS_DEV_G";
       netChain = "FW_QOS_NET_G";
       target = `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`;
+      break;
+    }
+    case "route": {
+      const NetworkProfile = require('../net2/NetworkProfile.js');
+      await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+      table = "mangle";
+      devChain = "FW_RT_REG_TAG_DEVICE";
+      netChain = "FW_RT_REG_TAG_NETWORK";
+      target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      // policy-based routing can only apply to outbound connection
+      direction = "outbound";
       break;
     }
     case "allow": {
@@ -510,8 +541,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
   }
 }
 
-async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes) {
-  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}`);
+async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
+  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}`);
   if (_.isEmpty(uuids))
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
@@ -539,6 +570,15 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       table = "mangle";
       chain = "FW_QOS_NET"
       target = `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`;
+      break;
+    }
+    case "route": {
+      const NetworkProfile = require('../net2/NetworkProfile.js');
+      await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+      table = "mangle";
+      chain = "FW_RT_REG_NETWORK";
+      target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      direction = "outbound";
       break;
     }
     case "allow": {
