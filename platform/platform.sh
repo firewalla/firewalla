@@ -74,6 +74,12 @@ esac
 
 
 function before_bro {
+  if [[ -d ${FW_PLATFORM_DIR}/all/hooks/before_bro ]]; then
+    for script in `ls -1 ${FW_PLATFORM_DIR}/all/hooks/before_bro/*.sh`; do
+      PLATFORM_HOOK_DIR="$FW_PLATFORM_CUR_DIR/hooks/before_bro" $script
+    done
+  fi
+
   if [[ -d ${FW_PLATFORM_CUR_DIR}/hooks/before_bro ]]; then
     for script in `ls -1 ${FW_PLATFORM_CUR_DIR}/hooks/before_bro/*.sh`; do
       $script
@@ -82,6 +88,12 @@ function before_bro {
 }
 
 function after_bro {
+  if [[ -d ${FW_PLATFORM_DIR}/all/hooks/after_bro ]]; then
+    for script in `ls -1 ${FW_PLATFORM_DIR}/all/hooks/after_bro/*.sh`; do
+      PLATFORM_HOOK_DIR="$FW_PLATFORM_CUR_DIR/hooks/after_bro" $script
+    done
+  fi
+
   if [[ -d ${FW_PLATFORM_CUR_DIR}/hooks/after_bro ]]; then
     for script in `ls -1 ${FW_PLATFORM_CUR_DIR}/hooks/after_bro/*.sh`; do
       $script

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -212,6 +212,20 @@ module.exports = class {
         failed = true
       }
     }
+    if (this.connLongLog == null) {
+      this.connLongLog = new Tail(this.config.bro.connLong.path, '\n');
+      if (this.connLongLog != null) {
+        log.debug("Initializing watchers: connLongInitialized", this.config.bro.connLong.path);
+        this.connLongLog.on('line', async (data) => {
+          await this.processConnData(data, true);
+        });
+        this.connLongLog.on('error', (err) => {
+          log.error("Error while reading conn long log", err.message);
+        });
+      } else {
+        failed = true
+      }
+    }
     if (this.connLogdev == null) {
       this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
       if (this.connLogdev != null) {
@@ -290,6 +304,8 @@ module.exports = class {
       }, 60000);
 
       this.lastNTS = null;
+
+      this.activeLongConns = {}
     }
   }
 
@@ -401,9 +417,7 @@ module.exports = class {
 
 
   /*
-    {"ts":1464244116.539545,"uid":"CwMpfX2Ya0NkxBCqbe","id.orig_h":"192.168.2.221","id.orig_p":58937,"id.resp_h":"199.27.79.143","id.resp_p":443,"fuid":"FmjEXV3czWtY9ykTG8","file_mime_type":"app
-    lication/pkix-cert","file_desc":"199.27.79.143:443/tcp","seen.indicator":"forms.aweber.com","seen.indicator_type":"Intel::DOMAIN","seen.where":"X509::IN_CERT","seen.node":"bro","sources":["f
-    rom http://hosts-file.net/psh.txt via intel.criticalstack.com"]}
+    {"ts":1464244116.539545,"uid":"CwMpfX2Ya0NkxBCqbe","id.orig_h":"192.168.2.221","id.orig_p":58937,"id.resp_h":"199.27.79.143","id.resp_p":443,"fuid":"FmjEXV3czWtY9ykTG8","file_mime_type":"application/pkix-cert","file_desc":"199.27.79.143:443/tcp","seen.indicator":"forms.aweber.com","seen.indicator_type":"Intel::DOMAIN","seen.where":"X509::IN_CERT","seen.node":"bro","sources":["from http://hosts-file.net/psh.txt via intel.criticalstack.com"]}
     */
 
   processIntelData(data) {
@@ -705,7 +719,7 @@ module.exports = class {
   }
 
   // Only log ipv4 packets for now
-  async processConnData(data) {
+  async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -773,6 +787,21 @@ module.exports = class {
       }
       */
 
+      // Long connection aggregation
+      const uid = obj.uid
+      if (long || this.activeLongConns[uid]) {
+        const previous = this.activeLongConns[uid] || { orig_bytes:0, resp_bytes: 0, duration: 0}
+
+        if (long) // segemented log from conn_long.log
+          this.activeLongConns[uid] = _.pick(obj, ['orig_bytes', 'resp_bytes', 'duration'])
+        else      // aggregated log from conn.log
+          delete this.activeLongConns[uid]
+
+        obj.orig_bytes -= previous.orig_bytes
+        obj.resp_bytes -= previous.resp_bytes
+        obj.duration -= previous.duration
+      }
+
       /*
        * the s flag is a short packet flag,
        * meaning the flow was not detect complete.  This can happen due to pcap runs before
@@ -795,14 +824,13 @@ module.exports = class {
         }
       }
 
-      let host = obj["id.orig_h"];
-      let dst = obj["id.resp_h"];
+      const host = obj["id.orig_h"];
+      const dst = obj["id.resp_h"];
       let flowdir = "in";
       let lhost = null;
-      let origMac = obj["orig_l2_addr"];
-      let respMac = obj["resp_l2_addr"];
+      const origMac = obj["orig_l2_addr"];
+      const respMac = obj["resp_l2_addr"];
       let localMac = null;
-      let remoteMac = null;
       let intfId = null;
 
       log.debug("ProcessingConection:", obj.uid, host, dst);
