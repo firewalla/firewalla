@@ -126,6 +126,7 @@ fi
 
 $FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
+
 # gold branch mapping, don't source platform.sh here as depencencies will be massive
 function map_target_branch {
   if [ "$(uname -m)" = "x86_64" ]; then
