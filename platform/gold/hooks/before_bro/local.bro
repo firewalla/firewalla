@@ -101,4 +101,5 @@ redef SSL::disable_analyzer_after_detection = F;
 #redef Communication::listen_interface = 127.0.0.1;
 
 @load base/protocols/dhcp
-#@load /home/pi/.zkg/script_dir/packages
+
+@load /home/pi/.firewalla/run/zeek/scripts/bro-long-connection
