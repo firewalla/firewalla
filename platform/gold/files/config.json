@@ -1,18 +1,11 @@
 {
   "bro": {
     "threshold": {
-      "missedBytes": 1000000000,
+      "maxSpeed": 2000000000,
+      "missedBytesRatio": 0.98,
 
       "tcpZeroBytesResp": 1000000,
       "tcpZeroBytesOrig": 1000000,
-
-      "burstBytesResp": 100000000,
-      "burstRateResp": 256000000,
-      "burstPacketsResp": 10000000,
-
-      "burstBytesOrig": 100000000,
-      "burstRateOrig": 256000000,
-      "burstPacketsOrig": 10000000,
 
       "logLargeBytesResp": 100000000,
       "logLargeBytesOrig": 100000000
