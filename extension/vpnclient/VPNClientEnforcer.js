@@ -111,6 +111,13 @@ class VPNClientEnforcer {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
     }
+    // add inbound connmark rule for vpn client interface
+    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/0xffff`)).catch((err) => {
+      log.error(`Failed to add VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
+    });
+    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/0xffff`)).catch((err) => {
+      log.error(`Failed to add VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
+    });
   }
 
   async flushVPNClientRoutes(vpnIntf) {
@@ -120,8 +127,19 @@ class VPNClientEnforcer {
     const rtId = await routing.createCustomizedRoutingTable(tableName);
     await routing.flushRoutingTable(tableName);
     // remove policy based rule
-    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`);
-    await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
+    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    // remove inbound connmark rule for vpn client interface
+    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/0xffff`)).catch((err) => {
+      log.error(`Failed to remove VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
+    });
+    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/0xffff`)).catch((err) => {
+      log.error(`Failed to remove VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
+    });
   }
 
   _getVPNClientIPSetName(vpnIntf) {

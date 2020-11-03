@@ -1978,8 +1978,15 @@ class netBot extends ControllerBot {
           } else {
             target = target.toUpperCase();
           }
+          let date;
+          try {
+            let dataPlan = await rclient.getAsync('sys:data:plan');
+            if (dataPlan) dataPlan = JSON.parse(dataPlan);
+            date = dataPlan.date;
+          } catch (e) {
+          }
           const { download, upload, totalDownload, totalUpload,
-            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
+            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target, date || 1);
           this.simpleTxData(msg, {
             download: download,
             upload: upload,
@@ -2257,13 +2264,19 @@ class netBot extends ControllerBot {
     ])
 
     if (target != '0.0.0.0') {
-      await Promise.all([
+      const requiredPromises = [
         this.hostManager.yesterdayStatsForInit(jsonobj, target),
         this.hostManager.last60MinStatsForInit(jsonobj, target),
         this.hostManager.last30daysStatsForInit(jsonobj, target),
         this.hostManager.newLast24StatsForInit(jsonobj, target),
         this.hostManager.last12MonthsStatsForInit(jsonobj, target)
-      ])
+      ];
+      const platformSpecificStats = platform.getStatsSpecs();
+      jsonobj.stats = {};
+      for (const statSetting of platformSpecificStats) {
+        requiredPromises.push(this.hostManager.getStat(jsonobj, statSetting, target));
+      }
+      await Promise.all(requiredPromises)
     }
 
     if (!jsonobj.flows['appDetails']) { // fallback to old way

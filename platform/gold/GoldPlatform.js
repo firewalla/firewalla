@@ -195,6 +195,13 @@ class GoldPlatform extends Platform {
   getRetentionCountMultiplier() {
     return 3;
   }
+  getStatsSpecs() {
+    return [{
+      granularities: '1hour',
+      hits: 72,
+      stat: '3d'
+    }]
+  }
 }
 
 module.exports = GoldPlatform;

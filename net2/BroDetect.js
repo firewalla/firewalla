@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -63,7 +63,8 @@ const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
-const platform = require('../platform/PlatformLoader.js').getPlatform();
+
+const {formulateHostname, isDomainValid} = require('../util/util.js');
 /*
  *
  *  config.bro.notice.path {
@@ -211,6 +212,20 @@ module.exports = class {
         failed = true
       }
     }
+    if (this.connLongLog == null) {
+      this.connLongLog = new Tail(this.config.bro.connLong.path, '\n');
+      if (this.connLongLog != null) {
+        log.debug("Initializing watchers: connLongInitialized", this.config.bro.connLong.path);
+        this.connLongLog.on('line', async (data) => {
+          await this.processConnData(data, true);
+        });
+        this.connLongLog.on('error', (err) => {
+          log.error("Error while reading conn long log", err.message);
+        });
+      } else {
+        failed = true
+      }
+    }
     if (this.connLogdev == null) {
       this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
       if (this.connLogdev != null) {
@@ -283,11 +298,14 @@ module.exports = class {
       this.enableRecording = true
       this.cc = 0
       this.activeMac = {};
+
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
 
       this.lastNTS = null;
+
+      this.activeLongConns = {}
     }
   }
 
@@ -399,9 +417,7 @@ module.exports = class {
 
 
   /*
-    {"ts":1464244116.539545,"uid":"CwMpfX2Ya0NkxBCqbe","id.orig_h":"192.168.2.221","id.orig_p":58937,"id.resp_h":"199.27.79.143","id.resp_p":443,"fuid":"FmjEXV3czWtY9ykTG8","file_mime_type":"app
-    lication/pkix-cert","file_desc":"199.27.79.143:443/tcp","seen.indicator":"forms.aweber.com","seen.indicator_type":"Intel::DOMAIN","seen.where":"X509::IN_CERT","seen.node":"bro","sources":["f
-    rom http://hosts-file.net/psh.txt via intel.criticalstack.com"]}
+    {"ts":1464244116.539545,"uid":"CwMpfX2Ya0NkxBCqbe","id.orig_h":"192.168.2.221","id.orig_p":58937,"id.resp_h":"199.27.79.143","id.resp_p":443,"fuid":"FmjEXV3czWtY9ykTG8","file_mime_type":"application/pkix-cert","file_desc":"199.27.79.143:443/tcp","seen.indicator":"forms.aweber.com","seen.indicator_type":"Intel::DOMAIN","seen.where":"X509::IN_CERT","seen.node":"bro","sources":["from http://hosts-file.net/psh.txt via intel.criticalstack.com"]}
     */
 
   processIntelData(data) {
@@ -445,7 +461,7 @@ module.exports = class {
       if (obj == null || obj["id.resp_p"] != 53) {
         return;
       }
-      if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
+      if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0 && obj["query"] && obj["query"].length > 0) {
         //await rclient.zaddAsync(`dns:`, Math.ceil(obj.ts), )
         if (this.lastDNS!=null) {
           if (this.lastDNS['query'] == obj['query']) {
@@ -456,8 +472,10 @@ module.exports = class {
           }
         }
         this.lastDNS = obj;
+        if (!isDomainValid(obj["query"]))
+          return;
         // record reverse dns as well for future reverse lookup
-        await dnsTool.addReverseDns(obj['query'], obj['answers'])
+        await dnsTool.addReverseDns(formulateHostname(obj['query']), obj['answers'])
 
         for (let i in obj['answers']) {
           // answer can be an alias or ip address
@@ -469,7 +487,7 @@ module.exports = class {
             // do not add domain alias to dns entry
             continue;
 
-          await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
+          await dnsTool.addDns(answer, formulateHostname(obj['query']), this.config.bro.dns.expires);
           sem.emitEvent({
             type: 'DestIPFound',
             ip: answer,
@@ -663,8 +681,45 @@ module.exports = class {
     return !accounting.isBlockedDevice(mac);
   }
 
+  validateConnData(obj) {
+    const threshold = this.config.bro.threshold;
+
+    const missed_bytes = obj.missed_bytes;
+    const resp_bytes = obj.resp_bytes;
+    const orig_bytes = obj.orig_bytes;
+
+    if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
+        log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
+        return false;
+    }
+
+    if(threshold.maxSpeed) {
+      const maxBytesPerSecond = threshold.maxSpeed / 8;
+      const duration = obj.duration; 
+      const maxBytes = maxBytesPerSecond * duration;
+
+      // more than the therotical possible number
+      if(obj.missed_bytes > maxBytes) {
+        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+
+      if(obj.resp_bytes > maxBytes) {
+        log.debug("Conn:Drop:RespBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+
+      if(obj.orig_bytes > maxBytes) {
+        log.debug("Conn:Drop:OrigBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   // Only log ipv4 packets for now
-  async processConnData(data) {
+  async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -708,8 +763,8 @@ module.exports = class {
         return;
       }
 
-      if (obj.missed_bytes > threshold.missedBytes) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
-        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+      if(!this.validateConnData(obj)) {
+        log.debug("Validate Failed", obj.conn_state, obj);
         return;
       }
 
@@ -724,56 +779,35 @@ module.exports = class {
         }
       }
 
-      //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
-      if (obj.resp_bytes > threshold.burstBytesResp) {
-        let rate = obj.resp_bytes / obj.duration;
-        if (rate > threshold.burstRateResp) {
-          log.debug("Conn:Burst:Drop", rate, obj);
-          return;
-        }
-        let packet = obj.resp_bytes / obj.resp_pkts;
-        if (packet > threshold.burstPacketsResp) {
-          log.debug("Conn:Burst:Drop2", packet, obj);
-          return;
-        }
-      }
-
-
-      if (obj.orig_bytes > threshold.burstBytesOrig) {
-        let rate = obj.orig_bytes / obj.duration;
-        if (rate > threshold.burstRateOrig) {
-          log.debug("Conn:Burst:Drop:Orig", rate, obj);
-          return;
-        }
-        let packet = obj.orig_bytes / obj.orig_pkts;
-        if (packet > threshold.burstPacketsOrig) {
-          log.debug("Conn:Burst:Drop2:Orig", packet, obj);
-          return;
-        }
-      }
-
-      if (obj.missed_bytes > 0) {
-        let adjusted = false;
-        if (obj.orig_bytes - obj.missed_bytes > 0) {
-          obj.orig_bytes = obj.orig_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (obj.resp_bytes - obj.missed_bytes > 0) {
-          obj.resp_bytes = obj.resp_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (adjusted == false) {
-          log.debug("Conn:Drop:MissedBytes", obj.conn_state, obj);
-          return;
-        } else {
-          log.debug("Conn:Adjusted:MissedBytes", obj.conn_state, obj);
-        }
-      }
-
+      /*
       if ((obj.orig_bytes > obj.orig_ip_bytes || obj.resp_bytes > obj.resp_ip_bytes) && obj.proto == "tcp") {
         log.debug("Conn:Burst:Adjust1", obj);
         obj.orig_bytes = obj.orig_ip_bytes;
         obj.resp_bytes = obj.resp_ip_bytes;
+      }
+      */
+
+      // Long connection aggregation
+      const uid = obj.uid
+      if (long || this.activeLongConns[uid]) {
+        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0}
+
+        if (long) // segemented log from conn_long.log
+          this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
+        else      // aggregated log from conn.log
+          delete this.activeLongConns[uid]
+
+        const connCount = Object.keys(this.activeLongConns)
+
+        if (connCount > 100)
+          log.warn('Active long conn:', connCount);
+        else
+          log.debug('Active long conn:', connCount);
+
+        obj.ts = previous.ts + previous.duration
+        obj.orig_bytes -= previous.orig_bytes
+        obj.resp_bytes -= previous.resp_bytes
+        obj.duration -= previous.duration
       }
 
       /*
@@ -798,14 +832,13 @@ module.exports = class {
         }
       }
 
-      let host = obj["id.orig_h"];
-      let dst = obj["id.resp_h"];
+      const host = obj["id.orig_h"];
+      const dst = obj["id.resp_h"];
       let flowdir = "in";
       let lhost = null;
-      let origMac = obj["orig_l2_addr"];
-      let respMac = obj["resp_l2_addr"];
+      const origMac = obj["orig_l2_addr"];
+      const respMac = obj["resp_l2_addr"];
       let localMac = null;
-      let remoteMac = null;
       let intfId = null;
 
       log.debug("ProcessingConection:", obj.uid, host, dst);
@@ -835,12 +868,14 @@ module.exports = class {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
+        log.debug("Local Traffic, both sides are in private network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
         //log.debug("Dropping both ip address", host,dst);
+        log.debug("Local Traffic, both sides are in local network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == false) {
         flowdir = "in";

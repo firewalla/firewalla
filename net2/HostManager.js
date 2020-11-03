@@ -351,6 +351,14 @@ module.exports = class HostManager {
     return json;
   }
 
+  async getStat(json, statSetting, target) {
+    const subKey = target ? ':' + target : '';
+    const { granularities, hits, stat } = statSetting;
+    let downloadStats = await getHitsAsync("download" + subKey, granularities, hits)
+    let uploadStats = await getHitsAsync("upload" + subKey, granularities, hits)
+    json.stats[stat] = this.generateStats(downloadStats, uploadStats);
+  }
+
   async newLast24StatsForInit(json, target) {
     const subKey = target ? ':' + target : ''
     let downloadStats = await getHitsAsync("download" + subKey, "1hour", 24)
@@ -963,6 +971,12 @@ module.exports = class HostManager {
           this.btMacForInit(json),
           this.loadStats(json)
         ];
+        const platformSpecificStats = platform.getStatsSpecs();
+        json.stats = {};
+        for (const statSetting of platformSpecificStats) {
+          requiredPromises.push(this.getStat(json, statSetting));
+        }
+        await Promise.all(requiredPromises)
 
         await this.basicDataForInit(json, options);
 
@@ -1521,6 +1535,9 @@ module.exports = class HostManager {
           } else {
             await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
           }
+          // enable VPN client chain in mangle PREROUTING chain
+          await iptables.switchVPNClientAsync(true, 4);
+          await iptables.switchVPNClientAsync(true, 6);
           if (result) {
             if (ovpnClient.listenerCount('link_broken') === 0) {
               ovpnClient.once('link_broken', async () => {
@@ -1614,6 +1631,9 @@ module.exports = class HostManager {
           await ovpnClient.stop();
           // will do no harm to unenforce strict VPN even if strict VPN is not set
           await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
+          // disable VPN client chain in mangle PREROUTING chain
+          await iptables.switchVPNClientAsync(false, 4);
+          await iptables.switchVPNClientAsync(false, 6);
           return {running: false, reconnecting: 0};
         }
         break;

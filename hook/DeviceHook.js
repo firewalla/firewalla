@@ -85,22 +85,31 @@ class DeviceHook extends Hook {
 
       // 0. update a special name key for source
       if (host.from) {
-        let skey = `${host.from}Name`
-        host[skey] = host.bname
-        host.lastFrom = host.from
+        let skey = `${host.from}Name`;
+        host[skey] = host.bname;
+        host.lastFrom = host.from;
         delete host.from
       }
 
       // 1. if this is a brand new mac address => NewDeviceFound
       let found = await hostTool.macExists(mac)
       if (!found) {
-        log.info(`A new device is found: '${mac}' `)
-        sem.emitEvent({
-          type: "NewDeviceFound",
-          message: "A new device (mac address) found @ DeviceHook",
-          host: host,
-          suppressAlarm: event.suppressAlarm
-        })
+        log.info(`A new device is found: '${mac}' '${ipv4Addr}'`);
+        if (ipv4Addr) {
+          sem.emitEvent({
+            type: "NewDeviceFound",
+            message: "A new device (mac address) found @ DeviceHook",
+            host: host,
+            suppressAlarm: event.suppressAlarm
+          })
+        } else {
+          sem.emitEvent({
+            type: "NewDeviceWithMacOnly",
+            message: "A new device (mac address) found @ DeviceHook",
+            host: host,
+            suppressAlarm: event.suppressAlarm
+          })
+        }
         return
       }
 

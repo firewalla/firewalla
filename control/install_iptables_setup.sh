@@ -136,7 +136,6 @@ sudo iptables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo iptables -w -A FOR
 sudo iptables -w -N FW_INPUT_ACCEPT &> /dev/null
 sudo iptables -w -F FW_INPUT_ACCEPT
 sudo iptables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_ACCEPT
-sudo iptables -w -A FW_INPUT_ACCEPT -p tcp -m multiport --dports 22 -j ACCEPT
 
 sudo iptables -w -N FW_INPUT_DROP &> /dev/null
 sudo iptables -w -F FW_INPUT_DROP
@@ -161,6 +160,8 @@ sudo iptables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo iptables -w -A FORW
 # initialize vpn client kill switch chain
 sudo iptables -w -N FW_VPN_CLIENT &>/dev/null
 sudo iptables -w -F FW_VPN_CLIENT
+# randomly bypass vpn client kill switch check for previous accepted connection to reduce softirq overhead
+sudo iptables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
 sudo iptable -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
 
@@ -283,6 +284,11 @@ sudo iptables -w -t nat -N FW_PREROUTING_VPN_OVERLAY &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_VPN_OVERLAY
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_VPN_OVERLAY &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_VPN_OVERLAY
 
+# VPN client chain to mark VPN client inbound connection
+sudo iptables -w -t nat -N FW_PREROUTING_VC_INBOUND &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_VC_INBOUND &> /dev/null
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_VC_INBOUND &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_VC_INBOUND
+
 # DNAT related chain comes first
 # create port forward chain in PREROUTING, this is used in ipv4 only
 sudo iptables -w -t nat -N FW_PREROUTING_EXT_IP &> /dev/null
@@ -293,8 +299,8 @@ sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD
 # create dmz host chain, this is used in ipv4 only
 sudo iptables -w -t nat -N FW_PREROUTING_DMZ_HOST &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DMZ_HOST
-sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 22,53,8853,8837,8833,8834,8835 -j ACCEPT
-sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j ACCEPT
+sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 22,53,8853,8837,8833,8834,8835 -j RETURN
+sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j RETURN
 # add dmz host chain to the end of port forward chain
 sudo iptables -w -t nat -A FW_PREROUTING_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
 # create vpn client dns redirect chain in FW_PREROUTING
@@ -322,6 +328,8 @@ sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null ||
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+# traverse DNS fallback chain if default chain is not taken
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
 
 # initialize nat firewall chain
 sudo iptables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
@@ -469,7 +477,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_INPUT_ACCEPT &> /dev/null
   sudo ip6tables -w -F FW_INPUT_ACCEPT
   sudo ip6tables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_ACCEPT
-  sudo ip6tables -w -A FW_INPUT_ACCEPT -p tcp -m multiport --dports 22 -j ACCEPT
 
   sudo ip6tables -w -N FW_INPUT_DROP &> /dev/null
   sudo ip6tables -w -F FW_INPUT_DROP
@@ -594,6 +601,11 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
   sudo ip6tables -w -t nat -A FW_NAT_HOLE -j RETURN
 
+  # VPN client chain to mark VPN client inbound connection
+  sudo ip6tables -w -t nat -N FW_PREROUTING_VC_INBOUND &> /dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING_VC_INBOUND &> /dev/null
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_VC_INBOUND &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_VC_INBOUND
+
   # create vpn client dns redirect chain in FW_PREROUTING
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
@@ -619,6 +631,8 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+  # traverse DNS fallback chain if default chain is not taken
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
 
   # initialize nat firewall chain
   sudo ip6tables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
@@ -726,10 +740,11 @@ sudo iptables -w -t mangle -F FW_PREROUTING
 sudo iptables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null && sudo iptables -w -t mangle -D PREROUTING -j FW_PREROUTING
 sudo iptables -w -t mangle -I PREROUTING -j FW_PREROUTING
 
-# vpn client inbound reply chain
-sudo iptables -w -t mangle -N FW_RT_VC_REPLY &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_REPLY &> /dev/null
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir REPLY -j FW_RT_VC_REPLY
+# do not change fwmark if it is an existing connection, both for session sticky and reducing iptables overhead
+sudo iptables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+sudo iptables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
+sudo iptables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
+
 # vpn client chain
 sudo iptables -w -t mangle -N FW_RT_VC &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_VC
@@ -763,7 +778,9 @@ sudo iptables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_se
 sudo iptables -w -t mangle -N FW_RT_REG &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_REG
 # only for outbound traffic and not being marked by previous vpn client chain
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000 -j FW_RT_REG
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000/0xffff -j FW_RT_REG
+# save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 # global regular route chain
 sudo iptables -w -t mangle -N FW_RT_REG_GLOBAL &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_REG_GLOBAL
@@ -790,19 +807,22 @@ sudo iptables -w -t mangle -F FW_FORWARD
 sudo iptables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo iptables -w -t mangle -D FORWARD -j FW_FORWARD
 sudo iptables -w -t mangle -I FORWARD -j FW_FORWARD
 
+# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
+sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
+
 sudo iptables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_SWITCH
 sudo iptables -w -t mangle -A FW_FORWARD -j FW_QOS_SWITCH
 # second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
 # the packet will be mirrored to ifb only if this bit is set
-sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
-sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
-sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
-sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo iptables -w -t mangle -A FW_QOS_SWITCH -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
 
 sudo iptables -w -t mangle -N FW_QOS &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS
-sudo iptables -w -t mangle -A FW_FORWARD -j FW_QOS
+sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x40000000/0x40000000 -j FW_QOS
 # global qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_GLOBAL
@@ -829,10 +849,11 @@ sudo ip6tables -w -t mangle -F FW_PREROUTING
 sudo ip6tables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null && sudo ip6tables -w -t mangle -D PREROUTING -j FW_PREROUTING
 sudo ip6tables -w -t mangle -I PREROUTING -j FW_PREROUTING
 
-# vpn client inbound reply chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_REPLY &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_REPLY &> /dev/null
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir REPLY -j FW_RT_VC_REPLY
+# do not change fwmark if it is an existing connection, both for session sticky and reducing iptables overhead
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
+
 # vpn client chain
 sudo ip6tables -w -t mangle -N FW_RT_VC &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_VC
@@ -866,7 +887,9 @@ sudo ip6tables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_s
 sudo ip6tables -w -t mangle -N FW_RT_REG &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_REG
 # only for outbound traffic and not being marked by previous vpn client chain
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000 -j FW_RT_REG
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000/0xffff -j FW_RT_REG
+# save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 # global regular route chain
 sudo ip6tables -w -t mangle -N FW_RT_REG_GLOBAL &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_REG_GLOBAL
@@ -893,19 +916,22 @@ sudo ip6tables -w -t mangle -F FW_FORWARD
 sudo ip6tables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo ip6tables -w -t mangle -D FORWARD -j FW_FORWARD
 sudo ip6tables -w -t mangle -I FORWARD -j FW_FORWARD
 
+# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
+sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
+
 sudo ip6tables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_SWITCH
 sudo ip6tables -w -t mangle -A FW_FORWARD -j FW_QOS_SWITCH
 # second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
 # the packet will be mirrored to ifb only if this bit is set
-sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
-sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
-sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
-sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set c_lan_set dst,dst -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x40000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+sudo ip6tables -w -t mangle -A FW_QOS_SWITCH -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
 
 sudo ip6tables -w -t mangle -N FW_QOS &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS
-sudo ip6tables -w -t mangle -A FW_FORWARD -j FW_QOS
+sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x40000000/0x40000000 -j FW_QOS
 # global qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL
