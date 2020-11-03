@@ -67,7 +67,7 @@ function long_callback(c: connection, cnt: count): interval
     {
     # local check_it = get_durations(c);
 
-    if ( c$duration >= ( cnt * 15min ) - 30sec )
+    if ( c$duration >= ( cnt * 15min ) - 1min )
         {
         Conn::set_conn_log_data_hack(c);
         Log::write(LongConnection::LOG, c$conn);
