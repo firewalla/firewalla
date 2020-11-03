@@ -790,13 +790,21 @@ module.exports = class {
       // Long connection aggregation
       const uid = obj.uid
       if (long || this.activeLongConns[uid]) {
-        const previous = this.activeLongConns[uid] || { orig_bytes:0, resp_bytes: 0, duration: 0}
+        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0}
 
         if (long) // segemented log from conn_long.log
-          this.activeLongConns[uid] = _.pick(obj, ['orig_bytes', 'resp_bytes', 'duration'])
+          this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
         else      // aggregated log from conn.log
           delete this.activeLongConns[uid]
 
+        const connCount = Object.keys(this.activeLongConns)
+
+        if (connCount > 100)
+          log.warn('Active long conn:', connCount);
+        else
+          log.debug('Active long conn:', connCount);
+
+        obj.ts = previous.ts + previous.duration
         obj.orig_bytes -= previous.orig_bytes
         obj.resp_bytes -= previous.resp_bytes
         obj.duration -= previous.duration
