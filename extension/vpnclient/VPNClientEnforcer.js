@@ -127,8 +127,12 @@ class VPNClientEnforcer {
     const rtId = await routing.createCustomizedRoutingTable(tableName);
     await routing.flushRoutingTable(tableName);
     // remove policy based rule
-    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`);
-    await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
+    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/0xffff`).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
     // remove inbound connmark rule for vpn client interface
     await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/0xffff`)).catch((err) => {
       log.error(`Failed to remove VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
