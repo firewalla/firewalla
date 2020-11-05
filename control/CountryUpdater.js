@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2020 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,7 +28,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 48 // one hour
+const EXPIRE_TIME = 60 * 60 * 48 // 2 days
 
 const iptool = require("ip");
 
