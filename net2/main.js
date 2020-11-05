@@ -41,6 +41,9 @@ function updateTouchFile() {
   })
 }
 
+const rclient = require('../util/redis_manager.js').getRedisClient()
+rclient.del('sys:bone:url') // always try configured server for 1st checkin
+
 const bone = require("../lib/Bone.js");
 
 const firewalla = require("./Firewalla.js");
@@ -77,6 +80,16 @@ async function detectInterface() {
 async function run0() {
   const isModeConfigured = await mode.isModeConfigured();
   await sysManager.waitTillInitialized();
+
+  if (platform.isFireRouterManaged()) {
+    const fwReleaseType = firewalla.getReleaseType();
+    const frReleaseType = await fireRouter.getReleaseType();
+    log.info(`Current firerouter release type: ${frReleaseType}. Current firewalla release type: ${fwReleaseType}`);
+    if (fwReleaseType && fwReleaseType !== "unknown" && fwReleaseType !== frReleaseType) {
+      log.info(`firerouter release type will be switched to ${fwReleaseType}`);
+      await fireRouter.switchBranch(fwReleaseType);
+    }
+  }
 
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
@@ -126,7 +139,7 @@ process.on('uncaughtException',(err)=>{
     type: 'FIREWALLA.MAIN.exception',
     msg: err.message,
     stack: err.stack,
-    err: JSON.stringify(err)
+    err: err
   });
   setTimeout(()=>{
     try {
@@ -140,11 +153,13 @@ process.on('uncaughtException',(err)=>{
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
+  if (msg.includes("Redis connection"))
+    return;
   bone.logAsync("error", {
     type: 'FIREWALLA.MAIN.unhandledRejection',
     msg: msg,
     stack: reason.stack,
-    err: JSON.stringify(reason)
+    err: reason
   });
 });
 

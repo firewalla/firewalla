@@ -99,12 +99,13 @@ class IntelRevalidationSensor extends Sensor {
       return;
     }
     const ip = intelKey.replace("intel:ip:", "");
-    log.info(`Revalidating intel for IP ${ip} ...`);
+    log.debug(`Revalidating intel for IP ${ip} ...`);
     sem.emitEvent({
       type: 'DestIP',
       skipReadLocalCache: true,
       noUpdateOnError: true,
-      ip: ip
+      ip: ip,
+      suppressEventLogging: true
     });
   }
 

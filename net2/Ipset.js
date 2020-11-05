@@ -29,7 +29,7 @@ let ipsetProcessing = false;
 
 async function readAllIpsets() {
   const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
-  const jsonResult = await exec(`sudo ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 2 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
+  const jsonResult = await exec(`sudo ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
     log.error(`Failed to convert ipset to json`, err.message);
     return {};
   });
@@ -170,6 +170,24 @@ function del(name, target) {
   return exec('sudo ipset ' + cmd);
 }
 
+async function list(name) {
+  try {
+    const result = await exec(`sudo ipset -S ${name}`);
+    const lines = result.stdout.split('\n')
+    lines.pop()
+    return lines
+      .filter(line => line.startsWith('add'))
+      .map(str => str.substring(name.length + 5)) // 'add <name> <target>'
+  } catch(err) {
+    if (err.name == 'ChildProcessError') {
+      log.warn(name, err.stderr) // set not exist
+      return []
+    }
+
+    throw err
+  }
+}
+
 function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
@@ -179,10 +197,15 @@ function batchOp(operations) {
 
 const CONSTANTS = {
   IPSET_MONITORED_NET: "monitored_net_set",
+  IPSET_LAN: "c_lan_set",
   IPSET_ACL_OFF: "acl_off_set",
   IPSET_ACL_OFF_MAC: "acl_off_mac_set",
   IPSET_NO_DNS_BOOST: "no_dns_caching_set",
-  IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set"
+  IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set",
+  IPSET_QOS_OFF: "qos_off_set",
+  IPSET_QOS_OFF_MAC: "qos_off_mac_set",
+  IPSET_DOCKER_WAN_ROUTABLE: 'docker_wan_routable_net_set',
+  IPSET_DOCKER_LAN_ROUTABLE: 'docker_lan_routable_net_set'
 }
 
 module.exports = {
@@ -193,6 +216,7 @@ module.exports = {
   create,
   add,
   del,
+  list,
   batchOp,
   CONSTANTS,
   readAllIpsets

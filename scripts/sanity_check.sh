@@ -1,37 +1,74 @@
 #!/bin/bash
 
+UNAME=$(uname -m)
+case "$UNAME" in
+  "x86_64")
+    PLATFORM='gold'
+    ;;
+  "aarch64")
+    if [[ -e /etc/firewalla-release ]]; then
+      PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      PLATFORM='unknown'
+    fi
+    ;;
+  "armv7l")
+    PLATFORM='red'
+    ;;
+  *)
+    PLATFORM='unknown'
+    ;;
+esac
+
 check_cloud() {
     echo -n "  checking cloud access ... "
     curl_result=$(curl -w '%{http_code}' -Lks --connect-timeout 5 https://firewalla.encipher.io)
-    test $curl_result == '200' && echo OK || { echo "fail($curl_result)"; return 1; }
+    test $curl_result == '200' && echo OK || {
+        echo "fail($curl_result)"
+        return 1
+    }
     return 0
 }
 
 check_process() {
     echo -n "  checking process $1 ... "
-    ps -ef | grep -w $1 | grep -qv grep && echo OK || { echo fail; return 1; }
+    ps -ef | grep -w $1 | grep -qv grep && echo OK || {
+        echo fail
+        return 1
+    }
     return 0
 }
 
 check_partition() {
     echo -n "  checking partition $1 ... "
-    mount | grep -qw $1 && echo OK || { echo fail; return 1; }
+    mount | grep -qw $1 && echo OK || {
+        echo fail
+        return 1
+    }
     return 0
 }
 
 check_zram() {
     echo -n "  checking zram ... "
-    test $(swapon -s | wc -l) -eq 5 && echo OK || { echo fail; return 1; }
+    test $(swapon -s | wc -l) -eq 5 && echo OK || {
+        echo fail
+        return 1
+    }
     return 0
 }
 
 check_file() {
     echo -n "  check file $1 ... "
-    if [[ -n "$2" ]]
-    then
-        grep -q "$2" $1 && echo OK || { echo fail; return 1; }
+    if [[ -n "$2" ]]; then
+        grep -q "$2" $1 && echo OK || {
+            echo fail
+            return 1
+        }
     else
-        test -f $1 && echo OK || { echo fail; return 1; }
+        test -f $1 && echo OK || {
+            echo fail
+            return 1
+        }
     fi
     return 0
 }
@@ -52,12 +89,10 @@ check_git() {
     echo -n "  check Git repository $repo_dir ... "
     pushd $repo_dir >/dev/null
     git_output=$(git status -uno --porcelain 2>&1)
-    if [[ -n "$git_output" || $? -ne 0 ]]
-    then
+    if [[ -n "$git_output" || $? -ne 0 ]]; then
         echo fail
         _rc=1
-    elif [[ $remote_origin != $(git remote -v | awk '/origin/ {print $2}' | uniq) ]]
-    then
+    elif [[ $remote_origin != $(git remote -v | awk '/origin/ {print $2}' | uniq) ]]; then
         echo fail
         _rc=1
     else
@@ -70,19 +105,19 @@ check_git() {
 check_each_system_service() {
     local SERVICE_NAME=$1
     local EXPECTED_STATUS=$2
-    local ACTUAL_STATUS=$(systemctl show -p SubState $SERVICE_NAME | sed 's/SubState=//')
-    printf "%20s %10s %10s\n" $SERVICE_NAME $EXPECTED_STATUS $ACTUAL_STATUS
+    local RESTART_TIMES=$(systemctl show $1 -p NRestarts | awk -F= '{print $2}')
+    local ACTUAL_STATUS=$(systemctl status $1 | grep 'Active: ' | sed 's=Active: ==')
+    printf "%20s %10s %5s %s\n" $SERVICE_NAME $EXPECTED_STATUS "$RESTART_TIMES" "$ACTUAL_STATUS"
 
 }
 
 check_systemctl_services() {
     echo "----------------------- System Services ----------------------------"
-    printf "%20s %10s %10s\n" "Service Name" "Expect" "Actual"
+    printf "%20s %10s %5s %s\n" "Service Name" "Expect" "RestartedTimes" "Actual"
 
     check_each_system_service fireapi "running"
     check_each_system_service firemain "running"
     check_each_system_service firemon "running"
-    check_each_system_service firemasq "running"
     check_each_system_service firekick "dead"
     check_each_system_service redis-server "running"
     check_each_system_service openvpn@server "running"
@@ -90,6 +125,15 @@ check_systemctl_services() {
     check_each_system_service brofish "running"
     check_each_system_service firewalla "dead"
     check_each_system_service fireupgrade "dead"
+    check_each_system_service fireboot "dead"
+
+    if [[ $PLATFORM != 'gold' ]]; then # non gold
+        check_each_system_service firemasq "running"
+    else # gold
+        check_each_system_service firerouter "running"
+        check_each_system_service firerouter_dns "running"
+        check_each_system_service firerouter_dhcp "running"
+    fi
 
     echo ""
     echo ""
@@ -131,6 +175,13 @@ check_each_system_config() {
     elif [[ $VALUE == "0" ]]; then
         VALUE="false"
     fi
+    if [[ $3 == "reverse" ]]; then
+        if [[ $VALUE == "false" ]]; then
+            VALUE="true"
+        else
+            VALUE="false"
+        fi
+    fi
     printf "%30s %20s\n" "$1" "$VALUE"
 }
 
@@ -138,7 +189,7 @@ get_redis_key_with_no_ttl() {
     local OUTPUT=$(redis-cli info keyspace | tail -n 1 | awk -F: '{print $2}')
     local TOTAL=$(echo $OUTPUT | sed 's/keys=//' | sed 's/,.*$//')
     local EXPIRES=$(echo $OUTPUT | sed 's/.*expires=//' | sed 's/,.*$//')
-    local NOTTL=$(( $TOTAL - $EXPIRES ))
+    local NOTTL=$(($TOTAL - $EXPIRES))
 
     local COLOR=""
     local UNCOLOR="\e[0m"
@@ -149,17 +200,27 @@ get_redis_key_with_no_ttl() {
     echo -e "$COLOR $NOTTL $UNCOLOR"
 }
 
+get_mode() {
+    MODE=$(redis-cli get mode)
+    if [ $MODE = "spoof" ] && [ "$(redis-cli hget policy:system enhancedSpoof)" = "true" ]; then
+        echo "enhancedSpoof"
+    else
+        echo "$MODE"
+    fi
+}
+
 check_system_config() {
     echo "----------------------- System Config ------------------------------"
-    check_each_system_config Mode $(redis-cli get mode)
+    check_each_system_config "Mode" $(get_mode)
     check_each_system_config "Adblock" $(redis-cli hget policy:system adblock)
     check_each_system_config "Family" $(redis-cli hget policy:system family)
     check_each_system_config "Monitor" $(redis-cli hget policy:system monitor)
+    check_each_system_config "Emergency Access" $(redis-cli hget policy:system acl) reverse
     check_each_system_config "vpnAvailable" $(redis-cli hget policy:system vpnAvaliable)
     check_each_system_config "vpn" $(redis-cli hget policy:system vpn)
     check_each_system_config "Redis Usage" $(redis-cli info | grep memory_human | awk -F: '{print $2}')
     check_each_system_config "Redis Total Key" $(redis-cli dbsize)
-    check_each_system_config "Redis key without ttl"  "$(get_redis_key_with_no_ttl)"
+    check_each_system_config "Redis key without ttl" "$(get_redis_key_with_no_ttl)"
 
     echo ""
     echo ""
@@ -168,7 +229,7 @@ check_system_config() {
 check_policies() {
     echo "----------------------- Blocking Rules ------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
-    printf "%5s %30s %10s %25s %10s %15s %15s %10s %15s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Direction" "Action"
+    printf "%8s %38s %10s %25s %10s %15s %15s %10s %15s %10s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Direction" "Action" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
@@ -177,9 +238,24 @@ check_policies() {
         local ALARM_ID=$(redis-cli hget $RULE aid)
         local FLOW_DESCRIPTION=$(redis-cli hget $RULE flowDescription)
         local ACTION=$(redis-cli hget $RULE action)
+        local DISABLED=$(redis-cli hget $RULE disabled)
+
+        local COLOR=""
+        local UNCOLOR="\e[0m"
+
         if [[ "x$ACTION" == "x" ]]; then
             ACTION="block"
+        elif [ "$ACTION" = "allow" ]; then
+            COLOR="\e[38;5;28m"
         fi
+
+        if [[ $DISABLED == "1" ]]; then
+            DISABLED=true
+            COLOR="\e[2m" #dim
+        else
+            DISABLED=false
+        fi
+
         local DIRECTION=$(redis-cli hget $RULE direction)
         if [[ "x$DIRECTION" == "x" || "x$DIRECTION" == "xbidirection" ]]; then
             DIRECTION="both"
@@ -206,7 +282,7 @@ check_policies() {
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
         fi
-        printf "%8s %30s %10s %25s %10s %15s %15s %10s %15s\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION"
+        printf "$COLOR%8s %38s %10s %25s %10s %15s %15s %10s %15s %10s $UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$DISABLED"
     done
 
     echo ""
@@ -245,15 +321,41 @@ is_simple_mode() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %35s %25s %25s %10s %10s %10s %10s %12s %13s %20s\n" "Host" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount" "Group"
+    printf "%35s %15s %25s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount" "Group" "Emergency Access"
     NOW=$(date +%s)
+    FRCC=$(curl -s "http://localhost:8837/v1/config/active")
     for DEVICE in $DEVICES; do
+
+        local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
+        DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
+        if [[ ! -n $DEVICE_ONLINE_TS ]]; then
+            local DEVICE_ONLINE="N/A"
+        elif (($DEVICE_ONLINE_TS < $NOW - 2592000)); then # 30days ago, hide entry
+            continue
+        elif (($DEVICE_ONLINE_TS > $NOW - 1800)); then
+            local DEVICE_ONLINE="yes"
+        else
+            local DEVICE_ONLINE="no"
+        fi
+
         local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
         local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
+        local DEVICE_NETWORK_NAME=
+        if [[ -n "$FRCC" ]]; then
+            local DEVICE_INTF=$(redis-cli hget $DEVICE intf)
+            DEVICE_NETWORK_NAME=$(echo "$FRCC"| jq -r ".interface|..|select(.uuid?==\"${DEVICE_INTF}\")|.name")
+            # : ${DEVICE_NETWORK_NAME:='NA'}
+        fi
         local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
         local DEVICE_MAC=${DEVICE/host:mac:/""}
         local POLICY_MAC="policy:mac:${DEVICE_MAC}"
         local DEVICE_MONITORING=$(redis-cli hget $POLICY_MAC monitor)
+        local DEVICE_ACL=$(redis-cli hget $POLICY_MAC acl)
+        local DEVICE_EMERGENCY_ACCESS=false
+        if [[ $DEVICE_ACL == "false" ]]; then
+            DEVICE_EMERGENCY_ACCESS="true"
+        fi
+
         if [[ ! -n $DEVICE_MONITORING ]]; then
             if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP; then
                 DEVICE_MONITORING="true"
@@ -267,18 +369,6 @@ check_hosts() {
             DEVICE_B7_MONITORING="true"
         else
             DEVICE_B7_MONITORING="false"
-        fi
-
-        local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
-        DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
-        if [[ ! -n $DEVICE_ONLINE_TS ]]; then
-            local DEVICE_ONLINE="N/A"
-            else
-                if (( $DEVICE_ONLINE_TS > $NOW - 1800 )); then
-                    local DEVICE_ONLINE="yes"
-                else
-                    local DEVICE_ONLINE="no"
-                fi
         fi
 
         local DEVICE_VPN="N/A"
@@ -298,25 +388,29 @@ check_hosts() {
 
         local COLOR=""
         local UNCOLOR="\e[0m"
-        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_B7_MONITORING == "false" ]]; then
-          if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
+        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_MONITORING == 'true' && $DEVICE_B7_MONITORING == "false" ]] &&
+          ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
             COLOR="\e[91m"
-          fi
+        elif [ $DEVICE_FLOWINCOUNT -gt 2000 ] || [ $DEVICE_FLOWOUTCOUNT -gt 2000 ]; then
+            COLOR="\e[33m" #yellow
+        elif [ $DEVICE_ONLINE = "no" ]; then
+            COLOR="\e[2m" #dim
         fi
-        local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=\[==" | sed "s=\]==" | sed "s=,= =")
+
+        local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=[][\" ]==g" | sed "s=,= =")
         TAGNAMES=""
         for tag in $TAGS; do
             TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
         done
         TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
-        printf "$COLOR %35s %35s %25s %25s %10s %10s %10s %10s %12s %13s %20s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES"
+        printf "$COLOR%35s %15s %25s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
     done
 
     echo ""
     echo ""
 }
 
-check_iptables() {
+check_ipset() {
     echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
@@ -338,23 +432,40 @@ check_sys_features() {
     echo "---------------------- System Features ------------------"
     declare -A FEATURES
     local FILE="$FIREWALLA_HOME/net2/config.json"
-    if [[ -f "$FILE" ]]; then
-        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
-        while IFS="=" read -r key value
-        do
-            FEATURES["$key"]="$value"
-        done <<< "$JSON"
-    fi
+    local USERFILE="$HOME/.firewalla/config/config.json"
 
-    FILE="$HOME/.firewalla/config/config.json"
-    if [[ -f "$FILE" ]]; then
-        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
+    # use jq where available
+    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' ]]; then
+      if [[ -f "$FILE" ]]; then
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
+        while read key value; do
+          FEATURES["$key"]="$value"
+        done
+      fi
+
+      if [[ -f "$USERFILE" ]]; then
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $USERFILE |
+        while read key value; do
+          FEATURES["$key"]="$value"
+        done
+      fi
+    else
+      # lagacy python 2.7 solution
+      if [[ -f "$FILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
+        while IFS="=" read -r key value; do
+          FEATURES["$key"]="$value"
+        done <<<"$JSON"
+      fi
+
+      if [[ -f "$USERFILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$USERFILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
         if [[ "$JSON" != "" ]]; then
-            while IFS="=" read -r key value
-            do
-                FEATURES["$key"]="$value"
-            done <<< "$JSON"
+          while IFS="=" read -r key value; do
+            FEATURES["$key"]="$value"
+          done <<<"$JSON"
         fi
+      fi
     fi
 
     local HKEYS=$(redis-cli hkeys sys:features)
@@ -376,7 +487,7 @@ check_sys_config() {
     local HKEYS=$(redis-cli hkeys sys:config)
 
     for hkey in $HKEYS; do
-      check_each_system_config $hkey $(redis-cli hget sys:config $hkey)
+        check_each_system_config $hkey $(redis-cli hget sys:config $hkey)
     done
 
     echo ""
@@ -409,34 +520,92 @@ check_network() {
     curl localhost:8837/v1/config/interfaces -o /tmp/scc_interfaces &>/dev/null
     INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
 
-    echo "Interface,Name,UUID,Enabled,IPv4,IPv6,Gateway,Gateway6,DNS" > /tmp/scc_csv
+    echo "Interface,Name,UUID,Enabled,IPv4,IPv6,Gateway,Gateway6,DNS" >/tmp/scc_csv
     for INTF in $INTFS; do
-        cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | [\"$INTF\", .config.meta.name // \"\", .config.meta.uuid[0:8], .config.enabled, .state.ip4 // \"\", (.state.ip6 // [] | join(\",\")), .state.gateway // \"\", .state.gateway6 // \"\", (.state.dns // [] | join(\";\"))] | @csv" >> /tmp/scc_csv
+        cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | [\"$INTF\", .config.meta.name // \"\", .config.meta.uuid[0:8], .config.enabled, .state.ip4 // \"\", (.state.ip6 // [] | join(\",\")), .state.gateway // \"\", .state.gateway6 // \"\", (.state.dns // [] | join(\";\"))] | @csv" >>/tmp/scc_csv
     done
-    cat /tmp/scc_csv | column -t -s, | sed 's=\"==g'
+    cat /tmp/scc_csv | column -t -s, | sed 's=\"= =g'
+    echo ""
+    echo ""
+}
+
+check_dhcp() {
+    echo "---------------------- DHCP ------------------"
+    #find /log/blog/ -mmin -120 -name "dhcp*log.gz" | sort | xargs zcat  | jq -r  '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' | sed 's="==g' | grep -v INFORM | awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' | column -s "," -t -n
+    #find /log/blog/ -mmin -120 -name "dhcp*log.gz" | sort | xargs zcat
+    find /log/blog/ -mmin -120 -name "dhcp*log.gz" | sort | xargs zcat  | jq -r  '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' | sed 's="==g' | grep -v "INFORM|ACK" | awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' | column -s "," -t -n
     echo ""
     echo ""
 }
 
 usage() {
+    echo "Options:"
+    echo "  -s  | --service"
+    echo "  -n  | --network"
+    echo "  -sc | --config"
+    echo "  -sf | --feature"
+    echo "  -r  | --rule"
+    echo "  -i  | --ipset"
+    echo "  -d  | --dhcp"
+    echo "  -f  | --fast | --host"
+    echo "  -h  | --help"
     return
 }
 
 FAST=false
 while [ "$1" != "" ]; do
     case $1 in
-        -f | --fast )           shift
-                                FAST=true
-                                ;;
-        -h | --help )           usage
-                                exit
-                                ;;
-        * )                     usage
-                                exit 1
+    -s | --service)
+        shift
+        check_systemctl_services
+        FAST=true
+        ;;
+    -n | --network)
+        shift
+        check_network
+        FAST=true
+        ;;
+    -sc | --config)
+        shift
+        check_system_config
+        check_sys_config
+        FAST=true
+        ;;
+    -sf | --feature)
+        shift
+        check_sys_features
+        FAST=true
+        ;;
+    -r | --rule)
+        shift
+        check_policies
+        FAST=true
+        ;;
+    -i | --ipset)
+        shift
+        check_ipset
+        FAST=true
+        ;;
+    -d | --dhcp)
+        shift
+        check_dhcp
+        FAST=true
+        ;;
+    -f | --fast | --host)
+        check_hosts
+        shift
+        FAST=true
+        ;;
+    -h | --help)
+        usage
+        exit
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
     esac
-    shift
 done
-
 
 if [ "$FAST" == false ]; then
     check_systemctl_services
@@ -449,8 +618,9 @@ if [ "$FAST" == false ]; then
     check_sys_features
     check_sys_config
     check_policies
-    check_iptables
+    check_ipset
     check_conntrack
+    check_dhcp
     test -z $SPEED || check_speed
+    check_hosts
 fi
-check_hosts

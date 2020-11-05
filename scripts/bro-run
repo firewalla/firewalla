@@ -21,7 +21,7 @@ mount -t tmpfs -o size=30m tmpfs /bspool
 
 sleep 3
 
-sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourly/.
+${FW_SCHEDULE_BRO:-true} && sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourly/.
 
 before_bro
 
@@ -36,5 +36,7 @@ if [[ $branch = "master" ]]; then
   # enable core_dump for development branch
   sudo sysctl -w kernel.core_pattern="/home/pi/core.%e"
 fi
+
+after_bro
 
 logger "FIREWALLA: BRO-RUN Finished"

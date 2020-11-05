@@ -203,34 +203,46 @@ class OpenVPNClient extends VPNClient {
     const version = result.stdout;
     let content = await readFileAsync(ovpnPath, 'utf8');
     let revisedContent = content;
+    let revised = false;
     const intf = this.getInterfaceName();
     await this._parseProfile(ovpnPath);
     // used customized interface name
-    revisedContent = revisedContent.replace(/^dev\s+.*$/gm, `dev ${intf}`);
+    if (!revisedContent.includes(`dev ${intf}`)) {
+      revisedContent = revisedContent.replace(/^dev\s+.*$/gm, `dev ${intf}`);
+      revised = true;
+    }
     // specify interface type with 'dev-type'
     if (this._intfType === "tun") {
       if (!revisedContent.match(/^dev-type\s+tun\s*/gm)) {
         revisedContent = "dev-type tun\n" + revisedContent;
+        revised = true;
       }
     } else {
       if (!revisedContent.match(/^dev-type\s+tap\s*/gm)) {
         revisedContent = "dev-type tap\n" + revisedContent;
+        revised = true;
       }
     }
     // add private key password file to profile if present
     if (await accessAsync(this.getPasswordPath(), fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
-      if (!revisedContent.match(/^askpass.*$/gm)) {
-        revisedContent = `askpass ${this.getPasswordPath()}\n${revisedContent}`;
-      } else {
-        revisedContent = revisedContent.replace(/^askpass.*$/gm, `askpass ${this.getPasswordPath()}`);
+      if (!revisedContent.includes(`askpass ${this.getPasswordPath()}`)) {
+        if (!revisedContent.match(/^askpass.*$/gm)) {
+          revisedContent = `askpass ${this.getPasswordPath()}\n${revisedContent}`;
+        } else {
+          revisedContent = revisedContent.replace(/^askpass.*$/gm, `askpass ${this.getPasswordPath()}`);
+        }
+        revised = true;
       }
     }
     // add user/pass file to profile if present
     if (await accessAsync(this.getUserPassPath(), fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
-      if (!revisedContent.match(/^auth-user-pass.*$/gm)) {
-        revisedContent = `auth-user-pass ${this.getUserPassPath()}\n${revisedContent}`;
-      } else {
-        revisedContent = revisedContent.replace(/^auth-user-pass.*$/gm, `auth-user-pass ${this.getUserPassPath()}`);
+      if (!revisedContent.includes(`auth-user-pass ${this.getUserPassPath()}`)) {
+        if (!revisedContent.match(/^auth-user-pass.*$/gm)) {
+          revisedContent = `auth-user-pass ${this.getUserPassPath()}\n${revisedContent}`;
+        } else {
+          revisedContent = revisedContent.replace(/^auth-user-pass.*$/gm, `auth-user-pass ${this.getUserPassPath()}`);
+        }
+        revised = true;
       }
     }
 
@@ -248,10 +260,12 @@ class OpenVPNClient extends VPNClient {
                 throw util.format("Unsupported compress algorithm for OpenVPN 2.3: %s", algorithm);
               } else {
                 revisedContent = revisedContent.replace(/compress\s+lzo/g, "comp-lzo");
+                revised = true;
               }
             } else {
               // turn off compression, set 'comp-lzo' to no
               revisedContent = revisedContent.replace(/compress/g, "comp-lzo no");
+              revised = true;
             }
             break;
           default:
@@ -264,7 +278,8 @@ class OpenVPNClient extends VPNClient {
       revisedContent = revisedContent.replace(/comp\-lzo/g, "compress lzo");
     }
     */
-    await writeFileAsync(ovpnPath, revisedContent, 'utf8');
+    if (revised)
+      await writeFileAsync(ovpnPath, revisedContent, 'utf8');
   }
 
   async _refreshRoutes() {
@@ -325,9 +340,6 @@ class OpenVPNClient extends VPNClient {
             const settings = await this.loadSettings();
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
             await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-            for (const serverSubnet of (settings.serverSubnets || [])) {
-              await execAsync(iptables.wrapIptables(`sudo iptables -w -t mangle -A FW_RT_VC_REPLY -m conntrack --ctorigsrc ${serverSubnet} -j FW_RT_VC`)).catch((err => {}));
-            }
             // loosen reverse path filter
             await execAsync(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => {});
             await this._processPushOptions("start");
@@ -388,14 +400,13 @@ class OpenVPNClient extends VPNClient {
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     const settings = await this.loadSettings();
-    for (const serverSubnet of (settings.serverSubnets || [])) {
-      await execAsync(iptables.wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_REPLY -m conntrack --ctorigsrc ${serverSubnet} -j FW_RT_VC`)).catch((err => {}));
-    }
     await this._processPushOptions("stop");
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
-    await execAsync(cmd);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to stop openvpn client ${this.profileId}`, err.message);
+    });
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
-    await execAsync(cmd);
+    await execAsync(cmd).catch((err) => {});
   }
 
   async status() {

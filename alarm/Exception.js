@@ -18,7 +18,6 @@
 let log = require('../net2/logger.js')(__filename, 'info');
 let ip = require('ip')
 
-var extend = require('util')._extend
 
 const minimatch = require('minimatch')
 
@@ -40,11 +39,30 @@ function arraysEqual(a, b) {
   return true;
 }
 
+function isJsonString(str){
+  return _.isString(str) && validator.isJSON(str)
+}
+
 module.exports = class {
-  constructor(rules) {
-    // FIXME: ignore any rules not begin with prefix "p"
-    extend(this, rules);
-    this.timestamp = new Date() / 1000;
+  constructor(raw) {
+    for (const key in raw) {
+      if (isJsonString(raw[key])) {
+        // parse will always be successful if passed check
+        raw[key] = JSON.parse(raw[key])
+      }
+      if (key == 'p.tag.ids' && Array.isArray(raw[key])) {
+        raw[key] = raw[key].map(String) //Backward compatibility
+      }
+      if ((/^p\.tag\.ids\.[0-9]+$/).test(key)) {
+        log.debug('legacy field found', key, raw[key])
+        this['p.tag.ids'] = this['p.tag.ids'] || []
+        this['p.tag.ids'].push(raw[key])
+        delete raw[key]
+      }
+    }
+    Object.assign(this, raw);
+
+    if (!this.timestamp) this.timestamp = new Date() / 1000;
   }
 
   getMatchingKeys() {
@@ -106,10 +124,10 @@ module.exports = class {
         return true;
       }
     }
-    
+
     return false;
   }
-  
+
   valueMatch(val, val2) {
     //special exception
     if (val.endsWith("*")) {
@@ -152,64 +170,66 @@ module.exports = class {
   }
 
   match(alarm) {
+    try{
+      let matched = false;
 
-    let matched = false;
-    // FIXME: exact match only for now, and only supports String
-    for (var key in this) {
+      for (const key in this) {
 
-      if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
-        continue;
-      }
+        if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+          continue;
+        }
 
-      var val = this[key];
-      if(!alarm[key]) return false;
-      let val2 = alarm[key];
+        var val = this[key];
+        if(!alarm[key]) return false;
+        let val2 = alarm[key];
 
-      if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
-        matched = true;
-        continue;
-      }
-
-      if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
-        if (this.jsonComparisonMatch(val, val2)) {
+        if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
           matched = true;
           continue;
         }
-      }
 
-      if (key === "p.tag.ids") {
-        const intersect = _.intersection(val, val2);
-        if (intersect.length > 0) {
-          matched = true;
-          continue;
+        if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
+          if (this.jsonComparisonMatch(val, val2)) {
+            matched = true;
+            continue;
+          }
         }
-      }
+        let val2Array = val2;
+        // Exception will be parsed at object creation
+        // while alarm will always use string to avoid compatibility issue with clients
+        isJsonString(val2) && (val2Array = JSON.parse(val2));
 
-      let valArray = null;
-      if (_.isString(val) && validator.isJSON(val)) {
-        valArray = JSON.parse(val);
-      }
-      if (_.isArray(valArray)) {
-        let matchInArray = false;
-        for (const valCurrent of valArray) {
-          if (this.valueMatch(valCurrent + "", val2)) {
-            matchInArray = true;
-            break;
+        if (key.startsWith("p.tag.ids")) {
+          if (_.intersection(val, val2Array.map(String)).length > 0) {
+            matched = true;
+            continue;
           }
         }
 
-        if (!matchInArray) {
-          return false;
+        if (_.isArray(val)) {
+          let matchInArray = false;
+          for (const valCurrent of val) {
+            if (this.valueMatch(valCurrent + "", val2)) {
+              matchInArray = true;
+              break;
+            }
+          }
+
+          if (!matchInArray) {
+            return false;
+          }
+        } else {
+          if (!this.valueMatch(val, val2)) {
+            return false;
+          }
         }
-      } else {
-        if (!this.valueMatch(val, val2)) {
-          return false;
-        }
+
+        matched = true;
       }
-
-      matched = true;
+      return matched;
+    } catch(e) {
+      log.warn("Error on alarm matching", e);
+      return false;
     }
-
-    return matched;
   }
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,6 +25,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const complexNodes = [ 'sensors', 'apiSensors', 'features', 'userFeatures', 'bro' ]
 const dynamicConfigKey = "sys:features"
 
 var dynamicConfigs = {}
@@ -37,6 +38,8 @@ let userConfig = null;
 const util = require('util');
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
+
+const platform = require('../platform/PlatformLoader').getPlatform()
 
 async function updateUserConfig(updatedPart) {
   await getUserConfig(true);
@@ -56,12 +59,12 @@ function updateUserConfigSync(updatedPart) {
 
 async function removeUserNetworkConfig() {
   await getUserConfig(true);
-  
+
   delete userConfig.alternativeInterface;
   delete userConfig.secondaryInterface;
   delete userConfig.wifiInterface;
   delete userConfig.dhcpLeaseTime;
-  
+
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
 }
@@ -77,10 +80,25 @@ async function getUserConfig(reload) {
   return userConfig;
 }
 
+function getPlatformConfig() {
+  const path = `${f.getFirewallaHome()}/platform/${platform.getName()}/files/config.json`;
+  if (fs.existsSync(path))
+    try {
+      return JSON.parse(fs.readFileSync(path, 'utf8'));
+    } catch (err) {
+      log.error('Error parsing platform config', err)
+    }
+
+  return {}
+}
+
 function getConfig(reload) {
   if(!config || reload === true) {
-    let defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
-    let userConfigFile = f.getUserConfigFolder() + "/config.json";
+    const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
+
+    const platformConfig = getPlatformConfig()
+
+    const userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
     for (let i = 0; i !== 5; i++) {
       try {
@@ -107,7 +125,12 @@ function getConfig(reload) {
     }
 
     // user config will override system default config file
-    config = Object.assign({}, defaultConfig, userConfig, testConfig);
+    config = Object.assign({}, defaultConfig, platformConfig, userConfig, testConfig);
+
+    // 1 more level of Object.assign grants more flexibility to configurations
+    for (const key of complexNodes) {
+      config[key] = Object.assign({}, defaultConfig[key], platformConfig[key], userConfig[key], testConfig[key])
+    }
   }
   return config;
 }
@@ -144,10 +167,10 @@ function isFeatureHidden(featureName) {
   if(!f.isProductionOrBeta()) {
     return false; // for dev mode, never hide features
   }
-  
+
   const config = getConfig();
-  if(config.hiddenFeatures && 
-    Array.isArray(config.hiddenFeatures) && 
+  if(config.hiddenFeatures &&
+    Array.isArray(config.hiddenFeatures) &&
     config.hiddenFeatures.includes(featureName)) {
     return true;
   } else {
@@ -237,7 +260,7 @@ function getFeatures() {
         }
       });
     }
-  }  
+  }
 
   return merged
 }
@@ -269,7 +292,7 @@ sclient.on("message", (channel, message) => {
   case "config:feature:dynamic:clear":
     delete dynamicConfigs[theFeature]
     break
-  }  
+  }
 });
 
 syncDynamicFeaturesConfigs()

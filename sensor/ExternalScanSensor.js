@@ -233,7 +233,7 @@ class ExternalScanSensor extends Sensor {
 
   async scan(publicIP) {
     let hostResult = {};
-    let cmd = util.format('sudo nmap -Pn -F %s -oX - | %s', publicIP, xml2jsonBinary);
+    let cmd = util.format('sudo timeout 1200s nmap -Pn -F %s -oX - | %s', publicIP, xml2jsonBinary);
 
     log.info("Running command:", cmd);
     try {

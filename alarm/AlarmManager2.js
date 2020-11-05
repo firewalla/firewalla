@@ -90,7 +90,7 @@ module.exports = class {
     return instance;
   }
 
-  setupAlarmQueue() {
+  async setupAlarmQueue() {
 
     this.queue = new Queue(`alarm-${f.getProcessName()}`, {
       removeOnFailure: true,
@@ -141,6 +141,8 @@ module.exports = class {
           break
       }
     })
+
+    return this.queue.ready();
   }
 
   createAlarmIDKey() {
@@ -386,13 +388,29 @@ module.exports = class {
     });
   }
 
-  enqueueAlarm(alarm) {
+  enqueueAlarm(alarm, retry = true) {
     if (this.queue) {
       const job = this.queue.createJob({
         alarm: alarm,
         action: "create"
       })
-      job.timeout(60000).save()
+      job.timeout(60000).save((err) => {
+        if (err) {
+          log.error("Failed to create alarm job", err.message);
+          if (err.message && err.message.includes("NOSCRIPT")) {
+            // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
+            log.info("Re-creating alarm queue ...");
+            this.queue.close(() => {
+              this.setupAlarmQueue().then(() => {
+                if (retry) {
+                  log.info("Retry creating alarm ...", alarm);
+                  this.enqueueAlarm(alarm, false);
+                }
+              });
+            });
+          }
+        }
+      })
     }
   }
 
@@ -701,6 +719,17 @@ module.exports = class {
       .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
       .execAsync();
   }
+  async archiveAlarmByExceptionAsync(exceptionID) {
+    const exception = await exceptionManager.getException(exceptionID);
+    const alarms = await this.findSimilarAlarmsByException(exception);
+    for (const alarm of alarms) {
+      alarm.result_exception = exception.eid;
+      alarm.result = "archiveByException";
+      await this.updateAlarm(alarm);
+      await this.archiveAlarm(alarm.aid);
+    }
+    return alarms;
+  }
 
   async listExtendedAlarms() {
     const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
@@ -893,7 +922,7 @@ module.exports = class {
   }
 
   async findSimilarAlarmsByException(exception, curAlarmID) {
-    let alarms = await this.loadActiveAlarmsAsync();
+    let alarms = await this.loadActiveAlarmsAsync(200);
     return alarms.filter((alarm) => {
       if (alarm.aid === curAlarmID) {
         return false // ignore current alarm id, since it's already blocked
@@ -940,7 +969,7 @@ module.exports = class {
     return util.callbackify(this.blockFromAlarmAsync).bind(this)(alarmID, info, callback || function(){})
   }
 
-  async blockFromAlarmAsync(alarmID, value, callback) {
+  async blockFromAlarmAsync(alarmID, value) {
     log.info("Going to block alarm " + alarmID);
     log.info("value: ", value);
 
@@ -952,8 +981,7 @@ module.exports = class {
 
     if (!alarm) {
       log.error("Invalid alarm ID:", alarmID);
-      callback(new Error("Invalid alarm ID: " + alarmID));
-      return;
+      throw new Error("Invalid alarm ID: " + alarmID);
     }
 
     let p = {
@@ -982,8 +1010,7 @@ module.exports = class {
       //     p.target = target;
       //   } else {
       //     log.error("Unsupported alarm type for blocking: ", alarm)
-      //     callback(new Error("Unsupported alarm type for blocking: " + alarm.type))
-      //     return
+      //     throw new Error("Unsupported alarm type for blocking: " + alarm.type)
       //   }
       //   break;
 
@@ -999,8 +1026,7 @@ module.exports = class {
           dnsManager.resolveLocalHost(targetIp, (err, result) => {
             if (err || result == null) {
               log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
-              callback(new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp));
-              return;
+              throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
             }
 
             targetMac = result.mac;
@@ -1061,8 +1087,7 @@ module.exports = class {
     }
 
     if (!p.type || !p.target) {
-      callback(new Error("Unsupported Action!"));
-      return;
+      throw new Error("Unsupported Action!")
     }
 
     p["if.type"] = p.type;
@@ -1573,17 +1598,16 @@ module.exports = class {
       e["p.device.mac"] = userInput.device; // limit exception to a single device
     }
 
-    if (!_.isEmpty(userInput.tag)) {
+    if (userInput && !_.isEmpty(userInput.tag)) {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
-      e["p.tag.ids"] = [];
       for (const tagStr of userInput.tag) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length)
-          e["p.tag.ids"].push(tagUid);
+          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
+          e["p.tag.ids"] = [tagUid];
         }
       }
     }
