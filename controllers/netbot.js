@@ -1883,7 +1883,7 @@ class netBot extends ControllerBot {
           let profiles = [];
           for (let type of types) {
             switch (type) {
-              case "openvpn":
+              case "openvpn": {
                 const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
                 const cmd = "mkdir -p " + dirPath;
                 await execAsync(cmd);
@@ -1923,6 +1923,7 @@ class netBot extends ControllerBot {
                   return profile;
                 })));
                 break;
+              }
               default:
                 this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
                 return;
