@@ -137,43 +137,6 @@ function map_target_branch {
         echo "beta_8_0"
         ;;
       "beta_7_0")
-        echo "beta_8_0"
-        ;;
-      "master")
-        echo "master"
-        ;;
-      *)
-        echo $1
-        ;;
-    esac
-  elif [[ $(head -n 1 /etc/firewalla-release 2>/dev/null) == "BOARD=navy" ]]; then
-    case "$1" in
-      "release_6_0")
-        echo "release_8_0"
-        ;;
-      "beta_6_0")
-        echo "beta_7_0"
-        ;;
-      *)
-        echo $1
-        ;;
-    esac
-  else
-    echo $1
-  fi
-}
-
-# gold branch mapping, don't source platform.sh here as depencencies will be massive
-function map_target_branch {
-  if [ "$(uname -m)" = "x86_64" ]; then
-    case "$1" in
-      "release_6_0")
-        echo "release_7_0"
-        ;;
-      "beta_6_0")
-        echo "beta_8_0"
-        ;;
-      "beta_7_0")
         echo "beta_9_0"
         ;;
       "master")
@@ -187,9 +150,6 @@ function map_target_branch {
     case "$1" in
       "release_6_0")
         echo "release_8_0"
-        ;;
-      "beta_6_0")
-        echo "beta_7_0"
         ;;
       *)
         echo $1
