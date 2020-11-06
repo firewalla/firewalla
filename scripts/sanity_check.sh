@@ -436,6 +436,7 @@ check_sys_features() {
 
     # use jq where available
     if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' ]]; then
+      echo 'using jq'
       if [[ -f "$FILE" ]]; then
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
         while read key value; do

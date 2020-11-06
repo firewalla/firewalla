@@ -64,8 +64,8 @@ const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-
 const {formulateHostname, isDomainValid} = require('../util/util.js');
+const { retryUntilInitComplete } = require('./FireRouter.js');
 /*
  *
  *  config.bro.notice.path {
@@ -285,6 +285,7 @@ module.exports = class {
       this.enableRecording = true
       this.cc = 0
       this.activeMac = {};
+
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
@@ -667,6 +668,43 @@ module.exports = class {
     return !accounting.isBlockedDevice(mac);
   }
 
+  validateConnData(obj) {
+    const threshold = this.config.bro.threshold;
+
+    const missed_bytes = obj.missed_bytes;
+    const resp_bytes = obj.resp_bytes;
+    const orig_bytes = obj.orig_bytes;
+
+    if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
+        log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
+        return false;
+    }
+
+    if(threshold.maxSpeed) {
+      const maxBytesPerSecond = threshold.maxSpeed / 8;
+      const duration = obj.duration; 
+      const maxBytes = maxBytesPerSecond * duration;
+
+      // more than the therotical possible number
+      if(obj.missed_bytes > maxBytes) {
+        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+
+      if(obj.resp_bytes > maxBytes) {
+        log.debug("Conn:Drop:RespBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+
+      if(obj.orig_bytes > maxBytes) {
+        log.debug("Conn:Drop:OrigBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   // Only log ipv4 packets for now
   async processConnData(data) {
     try {
@@ -712,8 +750,8 @@ module.exports = class {
         return;
       }
 
-      if (obj.missed_bytes > threshold.missedBytes) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
-        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+      if(!this.validateConnData(obj)) {
+        log.debug("Validate Failed", obj.conn_state, obj);
         return;
       }
 
@@ -728,57 +766,13 @@ module.exports = class {
         }
       }
 
-      //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
-      if (obj.resp_bytes > threshold.burstBytesResp) {
-        let rate = obj.resp_bytes / obj.duration;
-        if (rate > threshold.burstRateResp) {
-          log.debug("Conn:Burst:Drop", rate, obj);
-          return;
-        }
-        let packet = obj.resp_bytes / obj.resp_pkts;
-        if (packet > threshold.burstPacketsResp) {
-          log.debug("Conn:Burst:Drop2", packet, obj);
-          return;
-        }
-      }
-
-
-      if (obj.orig_bytes > threshold.burstBytesOrig) {
-        let rate = obj.orig_bytes / obj.duration;
-        if (rate > threshold.burstRateOrig) {
-          log.debug("Conn:Burst:Drop:Orig", rate, obj);
-          return;
-        }
-        let packet = obj.orig_bytes / obj.orig_pkts;
-        if (packet > threshold.burstPacketsOrig) {
-          log.debug("Conn:Burst:Drop2:Orig", packet, obj);
-          return;
-        }
-      }
-
-      if (obj.missed_bytes > 0) {
-        let adjusted = false;
-        if (obj.orig_bytes - obj.missed_bytes > 0) {
-          obj.orig_bytes = obj.orig_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (obj.resp_bytes - obj.missed_bytes > 0) {
-          obj.resp_bytes = obj.resp_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (adjusted == false) {
-          log.debug("Conn:Drop:MissedBytes", obj.conn_state, obj);
-          return;
-        } else {
-          log.debug("Conn:Adjusted:MissedBytes", obj.conn_state, obj);
-        }
-      }
-
+      /*
       if ((obj.orig_bytes > obj.orig_ip_bytes || obj.resp_bytes > obj.resp_ip_bytes) && obj.proto == "tcp") {
         log.debug("Conn:Burst:Adjust1", obj);
         obj.orig_bytes = obj.orig_ip_bytes;
         obj.resp_bytes = obj.resp_ip_bytes;
       }
+      */
 
       /*
        * the s flag is a short packet flag,
@@ -839,12 +833,14 @@ module.exports = class {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
+        log.debug("Local Traffic, both sides are in private network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
         //log.debug("Dropping both ip address", host,dst);
+        log.debug("Local Traffic, both sides are in local network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == false) {
         flowdir = "in";

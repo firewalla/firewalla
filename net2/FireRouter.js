@@ -199,7 +199,6 @@ async function generateNetworkInfo() {
     // always consider wan as lan in DHCP mode, which will affect port forward and VPN client
     if (mode === Mode.MODE_DHCP && type === "wan")
       type = "lan";
-
     const redisIntf = {
       name:         intfName,
       uuid:         intf.config.meta.uuid,
