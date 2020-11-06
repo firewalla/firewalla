@@ -66,27 +66,8 @@ class DNSTool {
       })
   }
 
-  async _convertHashToSortedSet(key) {
-    const now = Math.ceil(Date.now() / 1000);
-    const keyType = await rclient.typeAsync(key);
-    try {
-      // convert hash to zset
-      // although there is a migration task in DataMigrationSensor, it may be not finished when this function is invoked
-      if (keyType === "hash") {
-        const oldDns = await rclient.hgetallAsync(key);
-        await rclient.delAsync(key);
-        if (oldDns.host)
-          rclient.zaddAsync(key, oldDns.lastActive || now, oldDns.host);
-      }
-    } catch (err) {
-      log.warn("Failed to convert " + key + " to zset.");
-    }
-  }
-
   async getDns(ip) {
     let key = this.getDNSKey(ip);
-    // FIXME: remove this type conversion code after it is released for several months
-    await this._convertHashToSortedSet(key);
     const domain = await rclient.zrevrangeAsync(key, 0, 1); // get domain with latest timestamp
     if (domain && domain.length != 0)
       return domain[0];
