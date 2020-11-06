@@ -126,7 +126,6 @@ fi
 
 $FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
-
 # gold branch mapping, don't source platform.sh here as depencencies will be massive
 function map_target_branch {
   if [ "$(uname -m)" = "x86_64" ]; then
@@ -151,9 +150,6 @@ function map_target_branch {
     case "$1" in
       "release_6_0")
         echo "release_8_0"
-        ;;
-      "beta_6_0")
-        echo "beta_7_0"
         ;;
       *)
         echo $1
