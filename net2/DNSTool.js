@@ -77,8 +77,6 @@ class DNSTool {
 
   async getAllDns(ip) {
     const key = this.getDNSKey(ip);
-    // FIXME: remove this type conversion code after it is released for several months
-    await this._convertHashToSortedSet(key);
     const domains = await rclient.zrangeAsync(key, 0, -1);
     return domains || [];
   }
@@ -94,8 +92,6 @@ class DNSTool {
     
     domain = domain.toLowerCase();
     let key = this.getDNSKey(ip);
-    // FIXME: remove this type conversion code after it is released for several months
-    await this._convertHashToSortedSet(key);
     const now = Math.ceil(Date.now() / 1000);
     await rclient.zaddAsync(key, now, domain);
     await rclient.expireAsync(key, expire);
