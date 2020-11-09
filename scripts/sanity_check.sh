@@ -402,7 +402,6 @@ check_hosts() {
 
         if [ $DEVICE_ONLINE = "no" ]; then
             COLOR=$COLOR"\e[2m" #dim
-            UNCOLOR=$UNCOLOR"\e[22m"
         fi
 
         local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=[][\" ]==g" | sed "s=,= =")
@@ -544,6 +543,20 @@ check_dhcp() {
     echo ""
 }
 
+check_redis() {
+    echo "---------------------- Redis ----------------------"
+    local INTEL_IP=$(redis-cli --scan --pattern intel:ip:*|wc -l)
+    local INTEL_IP_COLOR=""
+    if [ $INTEL_IP -gt 20000 ]; then
+        INTEL_IP_COLOR="\e[31m"
+    elif [ $INTEL_IP -gt 10000 ]; then
+        INTEL_IP_COLOR="\e[33m"
+    fi
+    printf "%20s $INTEL_IP_COLOR%10s\e[0m\n" "intel:ip:*" $INTEL_IP
+    echo ""
+    echo ""
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -553,6 +566,7 @@ usage() {
     echo "  -r  | --rule"
     echo "  -i  | --ipset"
     echo "  -d  | --dhcp"
+    echo "  -re | --redis"
     echo "  -f  | --fast | --host"
     echo "  -h  | --help"
     return
@@ -597,6 +611,11 @@ while [ "$1" != "" ]; do
         check_dhcp
         FAST=true
         ;;
+    -re | --redis)
+        shift
+        check_redis
+        FAST=true
+        ;;
     -f | --fast | --host)
         check_hosts
         shift
@@ -627,6 +646,7 @@ if [ "$FAST" == false ]; then
     check_ipset
     check_conntrack
     check_dhcp
+    check_redis
     test -z $SPEED || check_speed
     check_hosts
 fi
