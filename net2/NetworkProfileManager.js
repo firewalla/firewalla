@@ -47,9 +47,10 @@ class NetworkProfileManager {
         if (!this.iptablesReady)
           return;
         const host = event.host;
-        const mac = host.mac;
+        let mac = host.mac;
         if (!mac)
           return;
+        mac = mac.toUpperCase();
         if (_.isString(host.ipv4)) {
           const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
           if (intfInfo && host.ipv4 !== intfInfo.gateway)
