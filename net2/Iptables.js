@@ -480,9 +480,9 @@ async function switchACLAsync(state, family = 4) {
     .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
     .mdl("conntrack", "--ctdir ORIGINAL").jmp('RETURN').fam(family);
   const byPassIn = new Rule().chn('FW_DROP')
-  .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-  .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
-  .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+    .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+    .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
   const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS')
     .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`).jmp('FW_PREROUTING_DNS_FALLBACK').fam(family)
 
