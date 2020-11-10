@@ -137,6 +137,10 @@ sudo iptables -w -N FW_INPUT_ACCEPT &> /dev/null
 sudo iptables -w -F FW_INPUT_ACCEPT
 sudo iptables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_ACCEPT
 
+# accept packet to DHCP client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
+sudo iptables -w -A FW_INPUT_ACCEPT -p udp --dport 68 -j ACCEPT
+sudo iptables -w -A FW_INPUT_ACCEPT -p tcp --dport 68 -j ACCEPT
+
 sudo iptables -w -N FW_INPUT_DROP &> /dev/null
 sudo iptables -w -F FW_INPUT_DROP
 sudo iptables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_DROP
@@ -477,6 +481,14 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_INPUT_ACCEPT &> /dev/null
   sudo ip6tables -w -F FW_INPUT_ACCEPT
   sudo ip6tables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_ACCEPT
+
+  # accept traffic to DHCPv6 client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p udp --dport 546 -j ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p tcp --dport 546 -j ACCEPT
+  # accept neighbor discovery packets
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-solicitation -j ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
 
   sudo ip6tables -w -N FW_INPUT_DROP &> /dev/null
   sudo ip6tables -w -F FW_INPUT_DROP
