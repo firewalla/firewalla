@@ -386,15 +386,22 @@ check_hosts() {
         local DEVICE_FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$DEVICE_MAC -inf +inf)
         local DEVICE_FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$DEVICE_MAC -inf +inf)
 
-        local COLOR=""
+        local COLOR="\e[39m"
         local UNCOLOR="\e[0m"
         if [[ $DEVICE_ONLINE == "yes" && $DEVICE_MONITORING == 'true' && $DEVICE_B7_MONITORING == "false" ]] &&
           ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
             COLOR="\e[91m"
         elif [ $DEVICE_FLOWINCOUNT -gt 2000 ] || [ $DEVICE_FLOWOUTCOUNT -gt 2000 ]; then
             COLOR="\e[33m" #yellow
-        elif [ $DEVICE_ONLINE = "no" ]; then
-            COLOR="\e[2m" #dim
+        fi
+
+        local DEVICE_MAC_COLOR="$COLOR"
+        if [[ $DEVICE_MAC =~ ^.[26AEae].*$ ]]; then
+          DEVICE_MAC_COLOR="\e[95m"
+        fi
+
+        if [ $DEVICE_ONLINE = "no" ]; then
+            COLOR=$COLOR"\e[2m" #dim
         fi
 
         local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=[][\" ]==g" | sed "s=,= =")
@@ -403,7 +410,7 @@ check_hosts() {
             TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
         done
         TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
-        printf "$COLOR%35s %15s %25s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
+        printf "$COLOR%35s %15s %25s %25s $DEVICE_MAC_COLOR%25s$COLOR %10s %10s %10s %10s %12s %13s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
     done
 
     echo ""
@@ -536,6 +543,20 @@ check_dhcp() {
     echo ""
 }
 
+check_redis() {
+    echo "---------------------- Redis ----------------------"
+    local INTEL_IP=$(redis-cli --scan --pattern intel:ip:*|wc -l)
+    local INTEL_IP_COLOR=""
+    if [ $INTEL_IP -gt 20000 ]; then
+        INTEL_IP_COLOR="\e[31m"
+    elif [ $INTEL_IP -gt 10000 ]; then
+        INTEL_IP_COLOR="\e[33m"
+    fi
+    printf "%20s $INTEL_IP_COLOR%10s\e[0m\n" "intel:ip:*" $INTEL_IP
+    echo ""
+    echo ""
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -545,6 +566,7 @@ usage() {
     echo "  -r  | --rule"
     echo "  -i  | --ipset"
     echo "  -d  | --dhcp"
+    echo "  -re | --redis"
     echo "  -f  | --fast | --host"
     echo "  -h  | --help"
     return
@@ -589,6 +611,11 @@ while [ "$1" != "" ]; do
         check_dhcp
         FAST=true
         ;;
+    -re | --redis)
+        shift
+        check_redis
+        FAST=true
+        ;;
     -f | --fast | --host)
         check_hosts
         shift
@@ -619,6 +646,7 @@ if [ "$FAST" == false ]; then
     check_ipset
     check_conntrack
     check_dhcp
+    check_redis
     test -z $SPEED || check_speed
     check_hosts
 fi
