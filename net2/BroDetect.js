@@ -683,14 +683,27 @@ module.exports = class {
 
   validateConnData(obj) {
     const threshold = this.config.bro.threshold;
+    const iptcpRatio = threshold.IPTCPRatio || 0.1;
 
     const missed_bytes = obj.missed_bytes;
     const resp_bytes = obj.resp_bytes;
     const orig_bytes = obj.orig_bytes;
+    const orig_ip_bytes = obj.orig_ip_bytes;
+    const resp_ip_bytes = obj.resp_ip_bytes;
 
     if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
         return false;
+    }
+
+    if (orig_ip_bytes && orig_bytes && (orig_ip_bytes / orig_bytes) < iptcpRatio) {
+      log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
+      return false;
+    }
+
+    if (resp_ip_bytes && resp_bytes && (resp_ip_bytes / resp_bytes) < iptcpRatio) {
+      log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
+      return false;
     }
 
     if(threshold.maxSpeed) {
