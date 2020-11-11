@@ -210,6 +210,9 @@ class DomainBlock {
       list.push.apply(list, patternAddresses)
     }
 
+    if (list.length === 0)
+      return;
+      
     return rclient.saddAsync(key, list)
   }
 
