@@ -29,7 +29,8 @@ const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 const abnormalBandwidthUsageFeatureName = 'abnormal_bandwidth_usage';
-const dataPlanFeatureName = 'data_plan_alarm';
+const dataPlanFeatureName = 'data_plan';
+const dataPlanAlarm = 'data_plan_alarm';
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const fc = require('../net2/config.js');
 const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan_alarm.cooldown") || 60 * 60 * 24 * 30;
@@ -52,8 +53,9 @@ class DataUsageSensor extends Sensor {
         this.hookFeature();
     }
     job() {
-        fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage()
-        fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage()
+        fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage();
+        // only check the monthly data usage when feature/alarm setting both enabled
+        fc.isFeatureOn(dataPlanAlarm) && fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage();
     }
     globalOn() {
     }
@@ -200,8 +202,8 @@ class DataUsageSensor extends Sensor {
         if (!dataPlan) return;
         dataPlan = JSON.parse(dataPlan);
         const { date, total } = dataPlan;
-        const { totalDownload, totalUpload, monthlyBeginTs, 
-                monthlyEndTs, download, upload
+        const { totalDownload, totalUpload, monthlyBeginTs,
+            monthlyEndTs, download, upload
             } = await hostManager.monthlyDataStats(null, date);
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
