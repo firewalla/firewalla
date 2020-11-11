@@ -3,6 +3,7 @@
     "threshold": {
       "maxSpeed": 700000000,
       "missedBytesRatio": 0.98,
+      "IPTCPRatio": 0.1,
 
       "tcpZeroBytesResp": 1000000,
       "tcpZeroBytesOrig": 1000000,
