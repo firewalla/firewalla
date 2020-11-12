@@ -1557,7 +1557,7 @@ class PolicyManager2 {
   async match(alarm) {
     const policies = await this.loadActivePoliciesAsync()
 
-    const matchedPolicies = policies.filter(policy => policy.match(alarm))
+    const matchedPolicies = policies.filter(policy => !policy.action || ["allow", "block"].includes(policy.action)).filter(policy => policy.match(alarm))
 
     if(matchedPolicies.length > 0) {
       log.debug('1st matched policy', matchedPolicies[0])

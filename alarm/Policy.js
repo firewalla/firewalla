@@ -207,9 +207,10 @@ class Policy {
     return this.disabled && this.disabled == '1'
   }
   inSchedule(alarmTimestamp) {
+    const sysManager = require('../net2/SysManager.js');
     const cronTime = this.cronTime;
     const duration = parseFloat(this.duration); // in seconds
-    const interval = cronParser.parseExpression(cronTime);
+    const interval = cronParser.parseExpression(cronTime, {tz: sysManager.getTimezone()});
     const lastDate = interval.prev().getTime() / 1000;
     log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
 
