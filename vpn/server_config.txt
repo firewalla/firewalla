@@ -1,4 +1,4 @@
-#local LOCAL_IP
+local LOCAL_IP
 dev tun_fwvpn
 proto PROTO
 port LOCAL_PORT

@@ -31,6 +31,8 @@ const exec = require('child-process-promise').exec;
 
 const iptable = require("../../net2/Iptables.js");
 const Message = require('../../net2/Message.js');
+const pl = require('../../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -152,10 +154,8 @@ class PortForward {
         const ipv4Addr = macEntry.ipv4Addr;
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
-          if (map.toIP) {
-            log.info("IP address has changed, remove old rule: ", map);
-            await this.removePort(map);
-          }
+          log.info("IP address has changed, remove old rule: ", map);
+          await this.removePort(map);
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
@@ -272,9 +272,11 @@ class PortForward {
     let old = this.find(map);
     while (old >= 0) {
       this.config.maps[old].state = false;
-      log.info(`Remove port forward`, map);
-      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
-      await iptable.portforwardAsync(dupMap);
+      if (this.config.maps[old].active !== false) {
+        log.info(`Remove port forward`, this.config.maps[old]);
+        const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
+        await iptable.portforwardAsync(dupMap);
+      }
 
       this.config.maps.splice(old, 1);
       old = this.find(map);
@@ -317,10 +319,16 @@ class PortForward {
 
   _isLANInterfaceIP(ip) {
     const iface = sysManager.getInterfaceViaIP4(ip);
-    if (iface && iface.type === "lan")
-      return true;
-    else
+    if (!iface || !iface.name)
       return false;
+    if (iface.type === "lan")
+      return true;
+    if (platform.isOverlayNetworkAvailable()) {
+      // on red/blue/navy, if overlay and primary network are in the same subnet, getInterfaceViaIP4 will return primary network, which is LAN
+      if (sysManager.inMySubnets4(ip, `${iface.name}:0`))
+        return true;
+    }
+    return false;
   }
 }
 

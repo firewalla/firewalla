@@ -154,8 +154,7 @@ storage.initSync({
   }
 
   // start a diagnostic page for people to access during first binding process
-  diag.start()
-  diag.iptablesRedirection()
+  await diag.start()
 
   await eptcloud.loadKeys()
   await login()
@@ -428,7 +427,7 @@ async function sendTerminatedInfoToDiagServer(gid) {
 async function exitHandler(options, err) {
   if (err) log.info("Exiting", options.event, err.message, err.stack);
   if (options.cleanup) {
-    await diag.iptablesRedirection(false);
+    await diag.stop();
     await platform.turnOffPowerLED();
   }
   if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
@@ -468,6 +467,8 @@ process.on('uncaughtException',(err)=>{
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
+  if (msg.includes("Redis connection"))
+    return;
   bone.logAsync("error", {
     type: 'FIREWALLA.KICKSTART.unhandledRejection',
     msg: msg,

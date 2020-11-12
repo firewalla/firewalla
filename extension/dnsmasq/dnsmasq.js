@@ -1128,9 +1128,9 @@ module.exports = class DNSMASQ {
         let reservedIp = null;
         if (h.intfIp && h.intfIp[intf.uuid]) {
           reservedIp = h.intfIp[intf.uuid].ipv4
-        } else if (h.staticAltIp && (!monitor || this.mode == Mode.MODE_DHCP_SPOOF)) {
+        } else if (h.staticAltIp && (monitor === 'unmonitor' || this.mode == Mode.MODE_DHCP_SPOOF)) {
           reservedIp = h.staticAltIp
-        } else if (h.staticSecIp && monitor && this.mode == Mode.MODE_DHCP) {
+        } else if (h.staticSecIp && monitor === 'monitor' && this.mode == Mode.MODE_DHCP) {
           reservedIp = h.staticSecIp
         }
 

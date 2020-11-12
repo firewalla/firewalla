@@ -981,7 +981,7 @@ module.exports = class HostManager {
           json.isBindingOpen = 0;
         }
 
-        const suffix = await rclient.get('local:domain:suffix');
+        const suffix = await rclient.getAsync('local:domain:suffix');
         json.localDomainSuffix = suffix ? suffix : 'lan';
         callback(null, json);
       } catch(err) {
@@ -1322,6 +1322,23 @@ module.exports = class HostManager {
 
   isMonitoring() {
     return this.spoofing;
+  }
+
+  async qos(policy) {
+    let state = null;
+    let qdisc = "fq_codel";
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+        qdisc = policy.qdisc || "fq_codel";
+        break;
+      default:
+        return;
+    }
+    await platform.switchQoS(state, qdisc);
   }
 
   async acl(state) {

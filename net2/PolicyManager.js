@@ -147,7 +147,8 @@ module.exports = class {
     switch (target.constructor.name) {
       case "HostManager": {
         const result = await target.vpnClient(policy); // result optionally contains value of state and running
-        const updatedPolicy = Object.assign({}, policy, result); // this may trigger an extra system policy apply but the result should be idempotent
+        const latestPolicy = target.getPolicyFast() || {}; // in case latest policy has changed before the vpnClient function returns
+        const updatedPolicy = Object.assign({}, latestPolicy.vpnClient || policy, result); // this may trigger an extra system policy apply but the result should be idempotent
         target.setPolicy("vpnClient", updatedPolicy);
         break;
       }
@@ -409,6 +410,8 @@ module.exports = class {
         })();
       } else if (p === "monitor") {
         target.spoof(policy[p]);
+      } else if (p === "qos") {
+        target.qos(policy[p]);
       } else if (p === "acl") {
         target.acl(policy[p]);
       } else if (p === "vpnClient") {
