@@ -62,3 +62,12 @@ function map_target_branch {
     ;;
   esac
 }
+
+function run_horse_light {
+  sudo pkill -9 ethtool
+  for ((i=3;i>=0;i--))
+  do
+    sudo timeout 2 ethtool -p eth${i}
+    sleep 1
+  done
+}
