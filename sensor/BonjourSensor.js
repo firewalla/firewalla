@@ -196,6 +196,7 @@ class BonjourSensor extends Sensor {
     if (!mac)
       return;
 
+    mac = mac.toUpperCase();
     log.info("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let host = {
