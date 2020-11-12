@@ -49,9 +49,9 @@ class DeviceMgmtTool {
   async resetGold() {
     log.info("Resetting Gold...")
     try {
-      await cpp.exec("sudo pkill -SIGUSR1 firereset");
-      await cpp.exec("sudo pkill -SIGUSR1 firereset");
-      await cpp.exec("sudo pkill -SIGUSR1 firereset");
+      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
+      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
+      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
     } catch(err) {
       log.error("Got error when resetting gold, err:", err);
     }
@@ -60,9 +60,9 @@ class DeviceMgmtTool {
   async resetGoldAndShutdown() {
     log.info("Resetting Gold and Shutdown...")
     try {
-      await cpp.exec("sudo pkill -SIGUSR2 firereset");
-      await cpp.exec("sudo pkill -SIGUSR2 firereset");
-      await cpp.exec("sudo pkill -SIGUSR2 firereset");
+      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
+      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
+      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
     } catch(err) {
       log.error("Got error when resetting gold and shutdown, err:", err);
     }
@@ -82,8 +82,8 @@ class DeviceMgmtTool {
     if(Firewalla.isOverlayFS()) {
       log.info("OverlayFS is enabled");
       return new Promise((resolve, reject) => {
-        let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/system-reset-all-overlayfs.sh";
-
+        let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/"+platform.getSystemResetAllOverlayfsScriptName();
+        log.info("cmd: ",cmd);
         cp.exec(cmd, (err) => {
           if(err) {
             log.error("Failed to rename overlay upper work directory to backup:", err);

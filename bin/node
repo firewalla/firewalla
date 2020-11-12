@@ -1,6 +1,8 @@
 #!/bin/bash
 
-if [[ -e /home/pi/.nvm/versions/node/v8.7.0/bin/node ]]; then
+if [[ -e /home/pi/.nvm/versions/node/v12.18.3/bin/node ]] && fgrep -qi navy /etc/firewalla-release; then
+  NODE=/home/pi/.nvm/versions/node/v12.18.3/bin/node
+elif [[ -e /home/pi/.nvm/versions/node/v8.7.0/bin/node ]]; then
   NODE=/home/pi/.nvm/versions/node/v8.7.0/bin/node
 elif [[ -e /home/pi/.nvm/versions/node/v12.14.0/bin/node && $(uname -m) == "x86_64" ]]; then
   NODE=/home/pi/.nvm/versions/node/v12.14.0/bin/node

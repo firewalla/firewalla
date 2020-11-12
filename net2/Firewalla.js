@@ -192,7 +192,7 @@ function isOverlayFS() {
   if(_isOverlayFS === null) {
     let result = true;
     try {
-      cp.execSync("grep 'overlayroot / ' /proc/mounts &>/dev/null");
+      cp.execSync("egrep 'overlay(root)? / ' /proc/mounts &>/dev/null");
     } catch(err) {
       result = false;
     }

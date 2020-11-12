@@ -62,6 +62,9 @@ let FLOWSTASH_EXPIRES;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
+const { retryUntilInitComplete } = require('./FireRouter.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 /*
  *
  *  config.bro.notice.path {
@@ -281,6 +284,7 @@ module.exports = class {
       this.enableRecording = true
       this.cc = 0
       this.activeMac = {};
+
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
@@ -644,6 +648,60 @@ module.exports = class {
     return !accounting.isBlockedDevice(mac);
   }
 
+  validateConnData(obj) {
+    const threshold = this.config.bro.threshold;
+    const iptcpRatio = threshold.IPTCPRatio || 0.1;
+
+    const missed_bytes = obj.missed_bytes;
+    const resp_bytes = obj.resp_bytes;
+    const orig_bytes = obj.orig_bytes;
+    const orig_ip_bytes = obj.orig_ip_bytes;
+    const resp_ip_bytes = obj.resp_ip_bytes;
+
+    if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
+        log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
+        return false;
+    }
+
+    if (orig_ip_bytes && orig_bytes && 
+      orig_ip_bytes > 1000 && orig_bytes > 1000 && 
+      (orig_ip_bytes / orig_bytes) < iptcpRatio) {
+      log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
+      return false;
+    }
+
+    if (resp_ip_bytes && resp_bytes && 
+      resp_ip_bytes > 1000 && resp_bytes > 1000 && 
+      (resp_ip_bytes / resp_bytes) < iptcpRatio) {
+      log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
+      return false;
+    }
+
+    if(threshold.maxSpeed) {
+      const maxBytesPerSecond = threshold.maxSpeed / 8;
+      const duration = obj.duration; 
+      const maxBytes = maxBytesPerSecond * duration;
+
+      // more than the therotical possible number
+      if(obj.missed_bytes > maxBytes) {
+        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+
+      if(obj.resp_bytes > maxBytes) {
+        log.debug("Conn:Drop:RespBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+
+      if(obj.orig_bytes > maxBytes) {
+        log.debug("Conn:Drop:OrigBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   // Only log ipv4 packets for now
   async processConnData(data) {
     try {
@@ -681,87 +739,37 @@ module.exports = class {
         return;
       }
 
+      const threshold = this.config.bro.threshold;
+
       // drop layer 4
       if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
         log.debug("Conn:Drop:ZeroLength2", obj.conn_state, obj);
         return;
       }
 
-      if (obj.missed_bytes > 10000000) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
-        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+      if(!this.validateConnData(obj)) {
+        log.debug("Validate Failed", obj.conn_state, obj);
         return;
       }
 
       if (obj.proto && obj.proto == "tcp") {
-        if (obj.resp_bytes > 1000000 && obj.orig_bytes == 0 && obj.conn_state == "SF") {
+        if (obj.resp_bytes > threshold.tcpZeroBytesResp && obj.orig_bytes == 0 && obj.conn_state == "SF") {
           log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
           return;
         }
-        else if (obj.orig_bytes > 1000000 && obj.resp_bytes == 0 && obj.conn_state == "SF") {
+        else if (obj.orig_bytes > threshold.tcpZeroBytesOrig && obj.resp_bytes == 0 && obj.conn_state == "SF") {
           log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
           return;
         }
       }
 
-      //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
-      if (obj.resp_bytes > 100000000) {
-        if (obj.duration < 1) {
-          log.debug("Conn:Burst:Drop", obj);
-          return;
-        }
-        let rate = obj.resp_bytes / obj.duration;
-        if (rate > 20000000) {
-          log.debug("Conn:Burst:Drop", rate, obj);
-          return;
-        }
-        let packet = obj.resp_bytes / obj.resp_pkts;
-        if (packet > 10000000) {
-          log.debug("Conn:Burst:Drop2", packet, obj);
-          return;
-        }
-      }
-
-
-      if (obj.orig_bytes > 100000000) {
-        if (obj.duration < 1) {
-          log.debug("Conn:Burst:Drop:Orig", obj);
-          return;
-        }
-        let rate = obj.orig_bytes / obj.duration;
-        if (rate > 20000000) {
-          log.debug("Conn:Burst:Drop:Orig", rate, obj);
-          return;
-        }
-        let packet = obj.orig_bytes / obj.orig_pkts;
-        if (packet > 10000000) {
-          log.debug("Conn:Burst:Drop2:Orig", packet, obj);
-          return;
-        }
-      }
-
-      if (obj.missed_bytes > 0) {
-        let adjusted = false;
-        if (obj.orig_bytes - obj.missed_bytes > 0) {
-          obj.orig_bytes = obj.orig_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (obj.resp_bytes - obj.missed_bytes > 0) {
-          obj.resp_bytes = obj.resp_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (adjusted == false) {
-          log.debug("Conn:Drop:MissedBytes", obj.conn_state, obj);
-          return;
-        } else {
-          log.debug("Conn:Adjusted:MissedBytes", obj.conn_state, obj);
-        }
-      }
-
+      /*
       if ((obj.orig_bytes > obj.orig_ip_bytes || obj.resp_bytes > obj.resp_ip_bytes) && obj.proto == "tcp") {
         log.debug("Conn:Burst:Adjust1", obj);
         obj.orig_bytes = obj.orig_ip_bytes;
         obj.resp_bytes = obj.resp_ip_bytes;
       }
+      */
 
       /*
        * the s flag is a short packet flag,
@@ -822,12 +830,14 @@ module.exports = class {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
+        log.debug("Local Traffic, both sides are in private network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
         //log.debug("Dropping both ip address", host,dst);
+        log.debug("Local Traffic, both sides are in local network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == false) {
         flowdir = "in";
@@ -921,16 +931,16 @@ module.exports = class {
         obj.duration = Number(obj.duration);
       }
 
-      if (obj.orig_bytes > 100000000) {
+      if (obj.orig_bytes > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
       }
-      if (obj.resp_bytes > 100000000) {
+      if (obj.resp_bytes > threshold.logLargeBytesResp) {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
-      if (Number(obj.orig_bytes) > 100000000) {
+      if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
       }
-      if (Number(obj.resp_bytes) > 100000000) {
+      if (Number(obj.resp_bytes) > threshold.logLargeBytesResp) {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
 
@@ -1124,7 +1134,7 @@ module.exports = class {
           if (tags.length > 0) {
             for (let index = 0; index < tags.length; index++) {
               const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'tag:' + tag, true); 
+              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'tag:' + tag, true);
             }
           }
         } else {
@@ -1135,7 +1145,7 @@ module.exports = class {
           if (tags.length > 0) {
             for (let index = 0; index < tags.length; index++) {
               const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'tag:' + tag, true); 
+              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'tag:' + tag, true);
             }
           }
         }
@@ -1143,27 +1153,27 @@ module.exports = class {
         if (localMac) {
           let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
           let strdata = JSON.stringify(tmpspec);
-  
+
           //let redisObj = [key, tmpspec.ts, strdata];
           // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
           let redisObj = [key, now, strdata];
           log.debug("Conn:Save:Temp", redisObj);
-  
+
           sem.sendEventToFireMain({
             type: "NewGlobalFlow",
             flow: tmpspec,
             suppressEventLogging: true
           });
-  
+
           if (tmpspec.fd == 'out') {
             this.recordOutPort(tmpspec);
           }
-  
+
           rclient.zadd(redisObj, (err, response) => {
             if (err == null) {
-  
+
               let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-  
+
               setTimeout(() => {
                 sem.emitEvent({
                   type: 'DestIPFound',
@@ -1174,7 +1184,7 @@ module.exports = class {
                   suppressEventLogging: true
                 });
               }, 1 * 1000); // make it a little slower so that dns record will be handled first
-  
+
             } else {
               log.error("Failed to save tmpspec: ", tmpspec, err);
             }
@@ -1616,7 +1626,7 @@ module.exports = class {
       this.timeSeriesCache[mac].upload += Number(outBytes)
     }
   }
-  
+
   recordOutPort(tmpspec) {
     log.debug("recordOutPort: ", tmpspec);
     const key = tmpspec.mac + ":" + tmpspec.dp;
@@ -1630,7 +1640,7 @@ module.exports = class {
     let newData = {key: key, ts: tmpspec.ts, ats: ats};
     const expireInterval = 15 * 60; // 15 minute;
     if (oldData == null || (oldData != null && oldData.ats < newData.ts - expireInterval)) {
-      newData.ats = newData.ts;  //set 
+      newData.ats = newData.ts;  //set
       sem.sendEventToFireMain({
         type: "NewOutPortConn",
         flow: tmpspec,

@@ -26,6 +26,7 @@
 #   0 - process exits before timeout
 #   1 - process killed due to timeout
 
+: ${SCRIPTS_DIR:=/home/pi/scripts}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 source ${FIREWALLA_HOME}/platform/platform.sh
@@ -118,7 +119,7 @@ restore_values() {
 
 await_ip_assigned || restore_values
 
-$FIREWALLA_HOME/scripts/fire-time.sh
+[ -s $SCRIPTS_DIR/fire-time.sh ] && $SCRIPTS_DIR/fire-time.sh || $FIREWALLA_HOME/scripts/fire-time.sh
 
 GITHUB_STATUS_API=https://api.github.com
 
@@ -152,6 +153,42 @@ fi
 
 /usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
 
+# gold branch mapping, don't source platform.sh here as depencencies will be massive
+function map_target_branch {
+  if [ "$(uname -m)" = "x86_64" ]; then
+    case "$1" in
+      "release_6_0")
+        echo "release_7_0"
+        ;;
+      "beta_6_0")
+        echo "beta_8_0"
+        ;;
+      "beta_7_0")
+        echo "beta_8_0"
+        ;;
+      "master")
+        echo "master"
+        ;;
+      *)
+        echo $1
+        ;;
+    esac
+  elif [[ $(head -n 1 /etc/firewalla-release 2>/dev/null) == "BOARD=navy" ]]; then
+    case "$1" in
+      "release_6_0")
+        echo "release_8_0"
+        ;;
+      "beta_6_0")
+        echo "beta_6_0"
+        ;;
+      *)
+        echo $1
+        ;;
+    esac
+  else
+    echo $1
+  fi
+}
 
 cd /home/pi/firewalla
 sudo chown -R pi /home/pi/firewalla/.git
@@ -200,17 +237,6 @@ sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
 #[ -s /home/pi/firewalla/etc/fireupgrade.service ]  && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
 sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
-
-if [[ $(uname -m) == "x86_64" ]]; then
-    sudo systemctl disable firewalla
-    sudo systemctl disable fireupgrade
-    sudo systemctl disable brofish
-else
-    sudo systemctl reenable firewalla
-    sudo systemctl reenable fireupgrade
-    sudo systemctl reenable brofish
-fi
-
 
 case $mode in
     normal)
