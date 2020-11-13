@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,11 +14,10 @@
  */
 'use strict';
 
-const util = require('util');
 const _ = require('lodash');
 const log = require("../net2/logger.js")(__filename);
 
-const iptool = require("ip");
+const { Address4, Address6 } = require('ip-address')
 
 const sysManager = require("../net2/SysManager.js")
 
@@ -41,7 +40,7 @@ async function setupBlockChain() {
 
   await exec(cmd);
 
-  
+
   await Promise.all([
     /*
     setupCategoryEnv("games"),
@@ -137,7 +136,7 @@ async function batchSetupIpset(elements, ipset, remove = false) {
   const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = remove ? 'del' : 'add';
-  
+
   for (const element of elements) {
     const ipSpliterIndex = element.search(/[/,]/)
     const ipAddr = ipSpliterIndex > 0 ? element.substring(0, ipSpliterIndex) : element;
@@ -150,15 +149,18 @@ async function batchSetupIpset(elements, ipset, remove = false) {
     if (ipAddr.match(/^\d+(-\d+)?$/)) {
       // ports
       cmds.push(`${op} ${v4Set} ${ipAddr}`);
-    } else if (iptool.isV4Format(ipAddr)) {
+    } else if (new Address4(ipAddr).isValid()) {
       cmds.push(`${op} ${v4Set} ${ipAddr}`);
-    } else if (iptool.isV6Format(ipAddr)) {
-      cmds.push(`${op} ${v6Set} ${ipAddr}`);
+    } else {
+      const ip6 = new Address6(ipAddr);
+      if (ip6.isValid() && ip6.correctForm() != '::') {
+        cmds.push(`${op} ${v6Set} ${ipAddr}`);
+      }
     }
   }
   log.debug(`Batch setup IP set ${op}`, cmds);
   return Ipset.batchOp(cmds);
-} 
+}
 
 function setupIpset(element, ipset, remove = false) {
   const ipSpliterIndex = element.search(/[/,]/)
@@ -167,12 +169,17 @@ function setupIpset(element, ipset, remove = false) {
   // check and add v6 suffix
   if (ipAddr.match(/^\d+(-\d+)?$/)) {
     // ports
-  } else if (iptool.isV4Format(ipAddr)) {
-    // ip.isV6Format() will return true on v4 addresses
-    // ip.isV6Format() will return true for number
-    // TODO: we should consider deprecate ip library
-  } else if (iptool.isV6Format(ipAddr)) {
-    ipset = ipset + '6';
+  } else if (new Address4(ipAddr).isValid()) {
+    // nothing needs to be done for v4 addresses
+  } else {
+    const ip6 = new Address6(ipAddr);
+    if (ip6.correctForm() == '::') return
+
+    if (ip6.isValid() && ip6.correctForm() != '::') {
+      ipset = ipset + '6';
+    } else {
+      return
+    }
   }
   const gateway6 = sysManager.myGateway6()
   const gateway = sysManager.myDefaultGateway()
@@ -210,7 +217,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
-      } 
+      }
       table = "mangle";
       chain = "FW_QOS_GLOBAL"
       target = `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`;
@@ -252,7 +259,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
   const localSet = platform.isFireRouterManaged() ? Ipset.CONSTANTS.IPSET_MONITORED_NET : null;
   const localSrcSpec = platform.isFireRouterManaged() ? "src,src" : null;
   const localDstSpec = platform.isFireRouterManaged() ? "dst,dst" : null;
-  
+
   switch (direction) {
     case "bidirection": {
       // filter rules
@@ -292,7 +299,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
     }
     default:
   }
-    
+
 }
 
 // device-wise rules
@@ -319,7 +326,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
-      } 
+      }
       table = "mangle";
       chain = "FW_QOS_DEV"
       target = `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`;
@@ -428,7 +435,7 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
-      } 
+      }
       table = "mangle";
       devChain = "FW_QOS_DEV_G";
       netChain = "FW_QOS_NET_G";
@@ -489,7 +496,7 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
           await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, devSet, "dst", true, localPortSet, proto, "ORIGINAL", target, devChain, table, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original");
           await this.manipulateFiveTupleRule(op, devSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, devChain, table, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original");
           await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, devSet, "dst", true, localPortSet, proto, "REPLY", target, devChain, table, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply");
-  
+
           await this.manipulateFiveTupleRule(op, netSet, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, netChain, table, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply");
           await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, netSet, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, netChain, table, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original");
           await this.manipulateFiveTupleRule(op, netSet, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, netChain, table, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original");
@@ -503,7 +510,7 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
           await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, devSet, "dst", true, localPortSet, proto, null, target, devChain, table, 4, `rule_${pid}`, ctstate);
           await this.manipulateFiveTupleRule(op, devSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, devChain, table, 6, `rule_${pid}`, ctstate);
           await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, devSet, "dst", true, localPortSet, proto, null, target, devChain, table, 6, `rule_${pid}`, ctstate);
-  
+
           await this.manipulateFiveTupleRule(op, netSet, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, netChain, table, 4, `rule_${pid}`, ctstate);
           await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, netSet, "dst,dst", true, localPortSet, proto, null, target, netChain, table, 4, `rule_${pid}`, ctstate);
           await this.manipulateFiveTupleRule(op, netSet, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, netChain, table, 6, `rule_${pid}`, ctstate);
@@ -566,7 +573,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
-      } 
+      }
       table = "mangle";
       chain = "FW_QOS_NET"
       target = `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`;
@@ -604,7 +611,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
 
   const remoteSrcSpec = remoteSrcSpecs.join(",");
   const remoteDstSpec = remoteDstSpecs.join(",");
-  
+
   const NetworkProfile = require('../net2/NetworkProfile.js');
   for (const uuid of uuids) {
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
