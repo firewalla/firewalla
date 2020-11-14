@@ -50,6 +50,8 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
 
+const accounting = require('../extension/accounting/accounting.js');
+
 class FlowAggregationSensor extends Sensor {
   constructor() {
     super();
@@ -108,7 +110,7 @@ class FlowAggregationSensor extends Sensor {
     });
   }
 
-  async accountTrafficByX(flows, x) {
+  async accountTrafficByX(mac, flows) {
     let traffic = {};
 
     for (const flow of flows) {
@@ -126,6 +128,9 @@ class FlowAggregationSensor extends Sensor {
 
       for(const flow of flows) {
         log.info("App flow", flow)
+        if (flow.ts && flow.ets) {
+          await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
+        }
       }
     }
   }
@@ -459,7 +464,7 @@ class FlowAggregationSensor extends Sensor {
     // now flows array should only contain flows having intels
 
     // record app/category flows by duration
-    await this.accountTrafficByX(flows, "x");
+    await this.accountTrafficByX(macAddress, flows);
 
     let appTraffic = await this.trafficGroupByApp(flows);
     await flowAggrTool.addAppActivityFlows(macAddress, this.config.interval, end, appTraffic, this.config.aggrFlowExpireTime);

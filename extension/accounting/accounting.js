@@ -25,6 +25,8 @@ const log = require('../../net2/logger.js')(__filename);
  * each bucket is one day
  * so each bucket should have 1440 bit
  * if the bit is 1, it means the user is doing this kind of activity (watching youtube for example) in that minute
+ * 
+ * when creating buckets, it should take timezone into consideration
  */
 class Accounting {
   constructor() {
@@ -50,9 +52,9 @@ class Accounting {
     }
   }
 
-  async _count(mac, tag, bucket) {
+  async _count(mac, tag, bucket, begin, end) {
     const key = this.getKey(mac, tag, bucket);
-    return rclient.bitcountAsync(key);
+    return rclient.bitcountAsync(key, begin, end); // begin and end should be between 0 - this.bits / 8 => 180
   }
 
   // begin, end - timestamps
@@ -62,7 +64,7 @@ class Accounting {
     const endBucket = Math.floor(end / this.bucketRange);
     const endBit = Math.floor((end - endBucket * this.bucketRange) / this.step);
 
-    log.info(beginBucket, beginBit, endBucket, endBit);
+    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
 
     for (let i = beginBucket; i <= endBucket; i++) {
       if (i === beginBucket && i === endBucket) { // mostly should be this case
@@ -83,16 +85,83 @@ class Accounting {
     const endBucket = Math.floor(end / this.bucketRange);
     const endBit = Math.floor((end - endBucket * this.bucketRange) / this.step);
 
-    log.info(beginBucket, beginBit, endBucket, endBit);
+    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
 
     let count = 0;
 
     for (let i = beginBucket; i <= endBucket; i++) {
-      const _count = await this._count(mac, tag, i);
-      count += _count;      
+      let _count = 0;
+      if (i === beginBucket && i === endBucket) { // mostly should be this case
+        _count = await this._count(mac, tag, i, beginBit / 8, endBit / 8);
+      } else if (i === beginBucket) {
+        _count = await this._count(mac, tag, i, beginBit / 8, this.bits / 8);
+      } else if (i === endBucket) {
+        _count = await this._count(mac, tag, i, 0, endBit / 8);
+      } else {
+        _count = await this._count(mac, tag, i, 0, this.bits / 8);
+      }
+      count += _count;
     }
 
     return count;
+  }
+
+  stringToBytes ( str ) {
+    var ch, st, re = [];
+    for (var i = 0; i < str.length; i++ ) {
+      ch = str.charCodeAt(i);  // get char 
+      st = [];                 // set up "stack"
+      do {
+        st.push( ch & 0xFF );  // push byte to stack
+        ch = ch >> 8;          // shift value down by 1 byte
+      }  
+      while ( ch );
+      // add stack contents to result
+      // done because chars have "wrong" endianness
+      re = re.concat( st.reverse() );
+    }
+    // return an array of bytes
+    return re;
+  }
+
+  async _detail(mac, tag, bucket, begin, end) {
+    const key = this.getKey(mac, tag, bucket);
+    const value = await rclient.getAsync(key);
+    const byteArray = this.stringToBytes(value); // each byte takes one element in the array
+    let binaryOutput = "";
+    for(let i = 0; i < byteArray.length; i++) {
+      if(i >= begin && i < end) {
+        binaryOutput += b.toString(2);
+      }
+    }
+    return binaryOutput;
+  }
+
+  async detail(mac, tag, begin, end) {
+    const beginBucket = Math.floor(begin / this.bucketRange);
+    const beginBit = Math.floor((begin - beginBucket * this.bucketRange) / this.step);
+    const endBucket = Math.floor(end / this.bucketRange);
+    const endBit = Math.floor((end - endBucket * this.bucketRange) / this.step);
+
+    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
+
+    let output = 0;
+
+    for (let i = beginBucket; i <= endBucket; i++) {
+      let _output = 0;
+      if (i === beginBucket && i === endBucket) { // mostly should be this case
+        _output = await this._detail(mac, tag, i, beginBit / 8, endBit / 8);
+      } else if (i === beginBucket) {
+        _output = await this._detail(mac, tag, i, beginBit / 8, this.bits / 8);
+      } else if (i === endBucket) {
+        _output = await this._detail(mac, tag, i, 0, endBit / 8);
+      } else {
+        _output = await this._detail(mac, tag, i, 0, this.bits / 8);
+      }
+      output += _output;
+    }
+
+    return output;
   }
 }
 
