@@ -136,18 +136,23 @@ decbin(dec,length){
     const value = await rclient.getAsync(key);
     let binaryOutput = "";
     if(value == null) {
-	    binaryOutput = "0".repeat((end-begin) * 8)
+	    binaryOutput = "0".repeat((end-begin) * 2)
     log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
 	    return binaryOutput;
 	    }
     const byteArray = this.stringToBytes(value); // each byte takes one element in the array
     for(let i = 0; i < end; i++) {
       if(i >= begin && i < byteArray.length) {
-        binaryOutput += this.decbin(byteArray[i], 8);
-	    log.info("XXXXXXXXXX", this.decbin(byteArray[i], 8));
+	      let hex = byteArray[i].toString(16);
+	      if(hex.length == 1)  {
+		      hex = "0" + hex;
+	      }
+	      binaryOutput += hex;
+        //binaryOutput += this.decbin(byteArray[i], 8);
+	    log.info("XXXXXXXXXX", hex);
       } else if (i >= begin) {
-	binaryOutput += "00000000"
-	    log.info("XXXXXXXXXX", "00000000");
+	binaryOutput += "00"
+	    log.info("XXXXXXXXXX", "00");
       }
     }
     log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
