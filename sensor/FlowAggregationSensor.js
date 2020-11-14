@@ -108,6 +108,28 @@ class FlowAggregationSensor extends Sensor {
     });
   }
 
+  async accountTrafficByX(flows, x) {
+    let traffic = {};
+
+    for (const flow of flows) {
+      let destIP = flowTool.getDestIP(flow);
+      let intel = await intelTool.getIntel(destIP);
+
+      // skip if no app or category intel
+      if(!(intel && (intel.app || intel.category)))
+        return;
+
+      // TEMP, only focus on app
+      if (!intel.app) {
+        return;
+      }
+
+      for(const flow of flows) {
+        log.info("App flow", flow)
+      }
+    }
+  }
+
   async trafficGroupByX(flows, x) {
     let traffic = {};
 
@@ -437,6 +459,8 @@ class FlowAggregationSensor extends Sensor {
     // now flows array should only contain flows having intels
 
     // record app/category flows by duration
+    await this.accountTrafficByX(flows, "x");
+
     let appTraffic = await this.trafficGroupByApp(flows);
     await flowAggrTool.addAppActivityFlows(macAddress, this.config.interval, end, appTraffic, this.config.aggrFlowExpireTime);
 
