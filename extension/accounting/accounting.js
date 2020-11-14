@@ -124,16 +124,33 @@ class Accounting {
     return re;
   }
 
+decbin(dec,length){
+  var out = "";
+  while(length--)
+    out += (dec >> length ) & 1;
+  return out;
+}
+
   async _detail(mac, tag, bucket, begin, end) {
     const key = this.getKey(mac, tag, bucket);
     const value = await rclient.getAsync(key);
-    const byteArray = this.stringToBytes(value); // each byte takes one element in the array
     let binaryOutput = "";
-    for(let i = 0; i < byteArray.length; i++) {
-      if(i >= begin && i < end) {
-        binaryOutput += b.toString(2);
+    if(value == null) {
+	    binaryOutput = "0".repeat((end-begin) * 8)
+    log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
+	    return binaryOutput;
+	    }
+    const byteArray = this.stringToBytes(value); // each byte takes one element in the array
+    for(let i = 0; i < end; i++) {
+      if(i >= begin && i < byteArray.length) {
+        binaryOutput += this.decbin(byteArray[i], 8);
+	    log.info("XXXXXXXXXX", this.decbin(byteArray[i], 8));
+      } else if (i >= begin) {
+	binaryOutput += "00000000"
+	    log.info("XXXXXXXXXX", "00000000");
       }
     }
+    log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
     return binaryOutput;
   }
 
@@ -150,13 +167,13 @@ class Accounting {
     for (let i = beginBucket; i <= endBucket; i++) {
       let _output = 0;
       if (i === beginBucket && i === endBucket) { // mostly should be this case
-        _output = await this._detail(mac, tag, i, beginBit / 8, endBit / 8);
+        _output = await this._detail(mac, tag, i, Math.floor(beginBit / 8), Math.floor(endBit / 8));
       } else if (i === beginBucket) {
-        _output = await this._detail(mac, tag, i, beginBit / 8, this.bits / 8);
+        _output = await this._detail(mac, tag, i, Math.floor(beginBit / 8), Math.floor(this.bits / 8));
       } else if (i === endBucket) {
-        _output = await this._detail(mac, tag, i, 0, endBit / 8);
+        _output = await this._detail(mac, tag, i, 0, Math.floor(endBit / 8));
       } else {
-        _output = await this._detail(mac, tag, i, 0, this.bits / 8);
+        _output = await this._detail(mac, tag, i, 0, Math.floor(this.bits / 8));
       }
       output += _output;
     }
