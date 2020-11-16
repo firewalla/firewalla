@@ -463,6 +463,7 @@ class FlowAggregationSensor extends Sensor {
     // now flows array should only contain flows having intels
 
     // record app/category flows by duration
+    // TODO: add recording for network/group/global as well
     await this.accountTrafficByX(macAddress, flows);
 
     let appTraffic = await this.trafficGroupByApp(flows);
