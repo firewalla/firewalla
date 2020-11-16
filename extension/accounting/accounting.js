@@ -34,6 +34,7 @@ class Accounting {
       this.step = 60 * 1000; // every minute as a slot           
       this.bits = 24 * 60;
       this.bucketRange = this.step * this.bits;
+      this.expireTime = 3600 * 24 * 7;
       instance = this;
     }
 
@@ -49,6 +50,7 @@ class Accounting {
     const key = this.getKey(mac, tag, bucket);
     for (let i = beginBit; i <= endBit && i <= this.bits; i++) {
       await rclient.setbitAsync(key, i, 1);
+      await rclient.expireAsync(key, this.expireTime);
     }
   }
 
@@ -106,56 +108,53 @@ class Accounting {
     return count;
   }
 
-  stringToBytes ( str ) {
+  stringToBytes(str) {
     var ch, st, re = [];
-    for (var i = 0; i < str.length; i++ ) {
+    for (var i = 0; i < str.length; i++) {
       ch = str.charCodeAt(i);  // get char 
       st = [];                 // set up "stack"
       do {
-        st.push( ch & 0xFF );  // push byte to stack
+        st.push(ch & 0xFF);  // push byte to stack
         ch = ch >> 8;          // shift value down by 1 byte
-      }  
-      while ( ch );
+      }
+      while (ch);
       // add stack contents to result
       // done because chars have "wrong" endianness
-      re = re.concat( st.reverse() );
+      re = re.concat(st.reverse());
     }
     // return an array of bytes
     return re;
   }
 
-decbin(dec,length){
-  var out = "";
-  while(length--)
-    out += (dec >> length ) & 1;
-  return out;
-}
+  decbin(dec, length) {
+    var out = "";
+    while (length--)
+      out += (dec >> length) & 1;
+    return out;
+  }
 
   async _detail(mac, tag, bucket, begin, end) {
     const key = this.getKey(mac, tag, bucket);
     const value = await rclient.getAsync(key);
     let binaryOutput = "";
-    if(value == null) {
-	    binaryOutput = "0".repeat((end-begin) * 2)
-    log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
-	    return binaryOutput;
-	    }
+    if (value == null) {
+      binaryOutput = "0".repeat((end - begin) * 2)
+//      log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
+      return binaryOutput;
+    }
     const byteArray = this.stringToBytes(value); // each byte takes one element in the array
-    for(let i = 0; i < end; i++) {
-      if(i >= begin && i < byteArray.length) {
-	      let hex = byteArray[i].toString(16);
-	      if(hex.length == 1)  {
-		      hex = "0" + hex;
-	      }
-	      binaryOutput += hex;
-        //binaryOutput += this.decbin(byteArray[i], 8);
-	    log.info("XXXXXXXXXX", hex);
+    for (let i = 0; i < end; i++) {
+      if (i >= begin && i < byteArray.length) {
+        let hex = byteArray[i].toString(16);
+        if (hex.length == 1) {
+          hex = "0" + hex;
+        }
+        binaryOutput += hex;
       } else if (i >= begin) {
-	binaryOutput += "00"
-	    log.info("XXXXXXXXXX", "00");
+        binaryOutput += "00"
       }
     }
-    log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
+//    log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
     return binaryOutput;
   }
 
