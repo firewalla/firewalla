@@ -126,13 +126,6 @@ class Accounting {
     return re;
   }
 
-  decbin(dec, length) {
-    var out = "";
-    while (length--)
-      out += (dec >> length) & 1;
-    return out;
-  }
-
   async _detail(mac, tag, bucket, begin, end) {
     const key = this.getKey(mac, tag, bucket);
     const value = await rclient.getAsync(key);
