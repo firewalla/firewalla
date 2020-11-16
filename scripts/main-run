@@ -46,6 +46,7 @@ heartbeatLED
 
 # remove overlay backup files
 sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
+sudo rm -rf /media/home-rw/overlay.bak /media/home-rw/overlay-work.bak
 
 # ensure that run directory already exists
 mkdir -p /home/pi/.firewalla/run
@@ -68,7 +69,9 @@ logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
-sudo -u pi crontab -r ; sudo -u pi crontab $CRONTAB_FILE
+
+$FIREWALLA_HOME/scripts/update_crontab.sh
+
 $FIREWALLA_HOME/scripts/fire-time.sh
 logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
 
@@ -82,8 +85,8 @@ $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset
 # should be safe at current stage of boot
-sudo rm -rf /media/root-rw/overlay.bak
-sudo rm -rf /media/root-rw/overlay-workdir.bak
+sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
+sudo rm -rf /media/home-rw/overlay.bak /media/home-rw/overlay-work.bak
 
 if [ -e /home/pi/.firewalla/config/disable_watchdog ]; then
     sudo service watchdog stop

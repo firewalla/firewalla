@@ -124,7 +124,7 @@ function update_node_modules_link {
 
   # ~/firewalla/node_modules => ~/.node_modules/node_modules
   # keep name node_modules because its the default name for node to search node modulers in upper level folders
-  test -e $NM_PATH && sudo -u pi ln -sf $NM_PATH $FIREWALLA_HOME/node_modules
+  test -e $NM_PATH && sudo -u pi ln -sfn $NM_PATH $FIREWALLA_HOME/node_modules
 }
 
 function update_node_modules {
@@ -235,6 +235,8 @@ sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6
 
 sudo sysctl -w net.core.default_qdisc=fq &>/dev/null
 
+sudo sysctl -w net.netfilter.nf_conntrack_acct=1
+
 # Enable TCP_BBR
 if [[ "x$TCP_BBR" == "xyes" ]]; then
     logger "FIREWALLA:MAIN:ENABLE_TCP_BBR"
@@ -295,6 +297,7 @@ function create_bootstrap_scripts_folder() {
         return 1 # checksum failed
     fi
 
+    [ -s /home/pi/firewalla/scripts/network_settings.sh ] && cp /home/pi/firewalla/scripts/network_settings.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/fire-time.sh ] && cp /home/pi/firewalla/scripts/fire-time.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/fireupgrade.sh ] && cp /home/pi/firewalla/scripts/fireupgrade.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.

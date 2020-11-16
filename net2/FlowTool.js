@@ -189,7 +189,7 @@ class FlowTool {
         outgoing = await this.getAllRecentOutgoingConnections(options)
         incoming = await this.getAllRecentIncomingConnections(options)
       }
-      recentFlows = _.orderBy(outgoing.concat(incoming), 'ts', options.asc ? 'asc' : 'desc')
+      recentFlows = _.orderBy(outgoing.concat(incoming), 'scope', options.asc ? 'asc' : 'desc')
         .slice(0, options.count);
     }
 
@@ -224,7 +224,7 @@ class FlowTool {
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFlow(flow) {
     let f = {};
-
+    f.score = flow._ts;
     f.ts = flow.ts;
     f.fd = flow.fd;
     f.duration = flow.du
@@ -338,7 +338,7 @@ class FlowTool {
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
       const hostManager = new HostManager();
-      allMacs = hostManager.getTagMacs(_.toNumber(options.tag));
+      allMacs = hostManager.getTagMacs(options.tag);
     } else {
       allMacs = await hostTool.getAllMACs();
     }

@@ -126,7 +126,7 @@ class FlowUploadSensor extends Sensor {
 
     compressData(data) {
         return new Promise(function (resolve, reject) {
-            let input = new Buffer(data, 'utf8');
+            let input = Buffer.from(data, 'utf8');
             zlib.deflate(input, (err, output) => {
                 if (err) {
                     reject(err)

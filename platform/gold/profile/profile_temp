@@ -1,0 +1,60 @@
+{
+  "smp_affinity": [
+    ["eth0", 1 ],
+    ["eth0-rx-0", 8 ],
+    ["eth0-rx-1", 8 ],
+    ["eth0-tx-0", 8 ],
+    ["eth0-tx-1", 8 ],
+    ["eth1", 4 ],
+    ["eth1-rx-0", 1 ],
+    ["eth1-rx-1", 8 ],
+    ["eth1-tx-0", 2 ],
+    ["eth1-tx-1", 4 ],
+    ["eth2", 8 ],
+    ["eth2-rx-0", 8 ],
+    ["eth2-rx-1", 8 ],
+    ["eth2-tx-0", 8 ],
+    ["eth2-tx-1", 8 ],
+    ["eth3", 1 ],
+    ["eth3-rx-0", 8 ],
+    ["eth3-rx-1", 8 ],
+    ["eth3-tx-0", 8 ],
+    ["eth3-tx-1", 8 ]
+  ],
+  "rps_cpus": [
+    [ "eth0", "rx-0", 0 ],
+    [ "eth0", "rx-1", 0 ],
+    [ "eth1", "rx-0", 0 ],
+    [ "eth1", "rx-1", 0 ],
+    [ "eth2", "rx-0", 0 ],
+    [ "eth2", "rx-1", 0 ],
+    [ "eth3", "rx-0", 0 ],
+    [ "eth3", "rx-1", 0 ],
+    [ "vpn_*", "rx-0", 9 ],
+    [ "vpn_*", "rx-0", 9 ],
+    [ "tun_fwvpn", "rx-0", 9 ]
+  ],
+  "taskset": [
+    ["zeek", "0-3"],
+    ["FireApi", "0-3"],
+    ["FireMain", "0-3"],
+    ["FireMon", "0-3"],
+    ["redis-server", "0-3"],
+    ["ovpn-server", "2", "match"],
+    ["vpnclient", "2", "match"]
+  ],
+  "cpufreq": [ 816000, 1200000, "ondemand" ],
+  "priority": [
+    ["ovpn-server", 0, "match"],
+    ["vpnclient", 0, "match"]
+  ],
+  "sysctl": [
+    [ "net.core.netdev_max_backlog", 2000 ]
+  ],
+  "iplink": [
+      [ "eth0", "txqueuelen", 10000],
+      [ "eth1", "txqueuelen", 1000],
+      [ "eth2", "txqueuelen", 1000],
+      [ "eth3", "txqueuelen", 1000]
+  ]
+}
