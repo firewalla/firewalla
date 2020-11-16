@@ -122,7 +122,7 @@ class Accounting {
     for (let i = 0; i < maxStrLen; i++) {
       if (i < str.length) {
         let ch = str.charCodeAt(i) & 0xff; // 0xff is important to only use the last 8bits of the char (it was 0-65535)
-        let padCH = this.pad(ch, 8);
+        let padCH = this.pad(ch, 8); // add leading 0 if needed
         for (const cc of padCH) {
           array.push(Number(cc));
         }
