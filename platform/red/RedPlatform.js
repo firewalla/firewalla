@@ -86,7 +86,7 @@ class RedPlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
-  
+
   getAllowCustomizedProfiles(){
     return 0;
   }
@@ -102,6 +102,9 @@ class RedPlatform extends Platform {
     return "firewalla"
   }
 
+  isBluetoothAvailable() {
+    return false
+  }
 }
 
 module.exports = RedPlatform;

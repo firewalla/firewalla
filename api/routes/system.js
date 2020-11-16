@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -63,7 +63,7 @@ router.get('/status',
 
                if(compressed) {
                  let jsonString = JSON.stringify(json);
-                 zlib.deflate(new Buffer(jsonString, 'utf8'), (err, output) => {
+                 zlib.deflate(Buffer.from(jsonString, 'utf8'), (err, output) => {
                    if(err) {
                      res.status(500).send({error: err});
                      return;
@@ -146,7 +146,7 @@ router.get('/apps',
     let json = {};
 
     (async() =>{
-      await netBotTool.prepareDetailedAppFlows(json, {
+      await netBotTool.prepareDetailedFlows(json, 'app', {
         begin: begin,
         end: end
       })

@@ -14,7 +14,9 @@
  */
 'use strict';
 
-const Promise = require('bluebird');
+const _ = require('lodash')
+
+const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
@@ -57,6 +59,10 @@ function getPreferredBName(hostObject) {
     return hostObject.dhcpName
   }
 
+  if (hostObject['dnsmasq.dhcp.leaseName']) {
+    return hostObject['dnsmasq.dhcp.leaseName']
+  }
+
   if (hostObject.bonjourName) {
     return hostObject.bonjourName
   }
@@ -75,7 +81,21 @@ function getPreferredBName(hostObject) {
     let name = hostObject.macVendor
     return name
   }
-  return hostObject.ipv4Addr
+
+  if (hostObject.ipv4Addr)
+    return hostObject.ipv4Addr
+
+  if (hostObject.ipv6Addr) {
+    let v6Addrs = hostObject.ipv6Addr || [];
+    if (_.isString(v6Addrs)) {
+      try {
+        v6Addrs = JSON.parse(v6Addrs);
+      } catch (err) { }
+    }
+    return v6Addrs[0]
+  }
+
+  return undefined;
 }
 
 function delay(t) {
@@ -112,11 +132,29 @@ function isSimilarHost(h1, h2) {
   return true;
 }
 
+function formulateHostname(domain) {
+  if (!domain || !_.isString(domain))
+    return null;
+  domain = domain.substring(domain.indexOf(':') + 1);
+  domain = domain.replace(/\/+/g, '/');
+  domain = domain.replace(/^\//, '');
+  domain = domain.substring(0, domain.indexOf('/') > 0 ? domain.indexOf('/') : domain.length);
+  return domain;
+}
+
+function isDomainValid(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return validDomainRegex.test(domain);
+}
+
 module.exports = {
   extend,
   getPreferredBName,
   getPreferredName,
   delay,
   argumentsToString,
-  isSimilarHost
+  isSimilarHost,
+  formulateHostname,
+  isDomainValid
 }

@@ -183,6 +183,18 @@ class GoldPlatform extends Platform {
   isIFBSupported() {
     return true;
   }
+
+  isDockerSupported() {
+    return true;
+  }
+
+  getRetentionTimeMultiplier() {
+    return 3;
+  }
+
+  getRetentionCountMultiplier() {
+    return 3;
+  }
 }
 
 module.exports = GoldPlatform;

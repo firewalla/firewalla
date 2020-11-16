@@ -11,6 +11,8 @@ USB_DEV=/dev/sdb1
 MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.x86_64'
+FW_PROBABILITY="0.99"
+IFB_SUPPORTED=yes
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -47,7 +49,10 @@ function map_target_branch {
     echo "beta_8_0"
     ;;
   "beta_7_0")
-    echo "beta_8_0"
+    echo "beta_9_0"
+    ;;
+  "beta_8_0")
+    echo "beta_9_0"
     ;;
   "master")
     echo "master"

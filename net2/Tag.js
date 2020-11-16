@@ -27,6 +27,8 @@ const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js')
 const {Rule, wrapIptables} = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 Promise.promisifyAll(fs);
 
 const envCreatedMap = {};
@@ -205,6 +207,11 @@ class Tag {
     // delete related dnsmasq config files
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async qos(state) {
+    // do nothing for qos on tag
   }
 
   async acl(state) {

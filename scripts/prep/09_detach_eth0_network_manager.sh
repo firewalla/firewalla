@@ -1,5 +1,9 @@
 #!/bin/bash
 
+if [[ $FIREWALLA_PLATFORM == "gold" ]]; then
+  exit
+fi
+
 if [[ -e /etc/NetworkManager/NetworkManager.conf ]]; then
   # do not use native dnsmasq
   changed=0

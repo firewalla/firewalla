@@ -63,8 +63,9 @@ const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
-const { retryUntilInitComplete } = require('./FireRouter.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const {formulateHostname, isDomainValid} = require('../util/util.js');
+const { retryUntilInitComplete } = require('./FireRouter.js');
 /*
  *
  *  config.bro.notice.path {
@@ -447,7 +448,7 @@ module.exports = class {
       if (obj == null || obj["id.resp_p"] != 53) {
         return;
       }
-      if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0) {
+      if (obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["answers"] && obj["answers"].length > 0 && obj["query"] && obj["query"].length > 0) {
         //await rclient.zaddAsync(`dns:`, Math.ceil(obj.ts), )
         if (this.lastDNS!=null) {
           if (this.lastDNS['query'] == obj['query']) {
@@ -458,8 +459,10 @@ module.exports = class {
           }
         }
         this.lastDNS = obj;
+        if (!isDomainValid(obj["query"]))
+          return;
         // record reverse dns as well for future reverse lookup
-        await dnsTool.addReverseDns(obj['query'], obj['answers'])
+        await dnsTool.addReverseDns(formulateHostname(obj['query']), obj['answers'])
 
         for (let i in obj['answers']) {
           // answer can be an alias or ip address
@@ -471,7 +474,7 @@ module.exports = class {
             // do not add domain alias to dns entry
             continue;
 
-          await dnsTool.addDns(answer, obj['query'], this.config.bro.dns.expires);
+          await dnsTool.addDns(answer, formulateHostname(obj['query']), this.config.bro.dns.expires);
           sem.emitEvent({
             type: 'DestIPFound',
             ip: answer,
@@ -493,6 +496,23 @@ module.exports = class {
           //changeset['lastActiveTimestamp'] = Math.ceil(Date.now() / 1000);
           log.debug("Dns:Redis:Merge", key, changeset);
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
+        }
+      }
+      if (fc.isFeatureOn("acl_audit")) {
+        // detect DNS level block (NXDOMAIN) in dns log
+        if (obj["rcode_name"] === "NXDOMAIN" && (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") && obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["query"] != null && obj["query"].length > 0) {
+          if (!sysManager.isMyIP(obj["id.orig_h"]) && !sysManager.isMyIP6(obj["id.orig_h"])) {
+            const record = {
+              src: obj["id.orig_h"],
+              domain: obj["query"],
+              qtype: obj["qtype_name"]
+            };
+            sem.emitEvent({
+              type: Message.MSG_ACL_DNS_NXDOMAIN,
+              record: record,
+              suppressEventLogging: true
+            });
+          }
         }
       }
     } catch (e) {
@@ -876,7 +896,7 @@ module.exports = class {
       if (localMac) {
         localMac = localMac.toUpperCase();
         const hostInfo = hostManager.getHostFastByMAC(localMac);
-        tags = hostInfo ? hostInfo.getTags() : [];
+        tags = hostInfo ? await hostInfo.getTags() : [];
       }
 
       if (intfId !== '') {
@@ -1472,7 +1492,7 @@ module.exports = class {
 
       l2.getMAC(ip, (err, mac) => {
 
-        if (err) {
+        if (err || !mac) {
           // not found, ignore this host
           log.error("Not able to found mac address for host:", ip, mac);
           return;
@@ -1576,6 +1596,7 @@ module.exports = class {
   recordTraffic(ts, inBytes, outBytes, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
+
       const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
 
       // lastNTS starts with null and assigned with normalizedTS every 10s
@@ -1598,6 +1619,12 @@ module.exports = class {
 
       // append current status
       if (!ignoreGlobal) {
+        // for traffic account
+        (async () => {
+          await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
+          await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+        })()
+
         this.timeSeriesCache.global.download += Number(inBytes)
         this.timeSeriesCache.global.upload += Number(outBytes)
       }
