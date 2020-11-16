@@ -985,13 +985,7 @@ module.exports = class {
       } else {
         obj.duration = Number(obj.duration);
       }
-
-      if (obj.orig_bytes > threshold.logLargeBytesOrig) {
-        log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
-      }
-      if (obj.resp_bytes > threshold.logLargeBytesResp) {
-        log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
-      }
+      
       if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
       }
