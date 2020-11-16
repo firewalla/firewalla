@@ -2759,22 +2759,6 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback)
         })
         break;
-      case "policy:batch":
-        (async () => {
-          /*
-            actions: {create: [policy instance], delete: [policy instance], update:[policyID]}
-          */
-          const actions = value.actions;
-          if (actions) {
-            const result = await pm2.batchPolicy(actions)
-            this.simpleTxData(msg, result, null, callback);
-          } else {
-            this.simpleTxData(msg, null, new Error("invalid actions"), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
       case "policy:enable":
         (async () => {
           const policyID = value.policyID
