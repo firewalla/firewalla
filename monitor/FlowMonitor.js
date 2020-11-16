@@ -891,13 +891,13 @@ module.exports = class FlowMonitor {
         alarmPayload["p.dest.urls"] = flowObj.urls;
 
         if (!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
-          alarmPayload["p.dest.url"] = `http${alarmPayload['p.dest.port'] == 443 ? 's' : ''}://${flowObj.urls[0].url}`;
+          alarmPayload["p.dest.url"] = `http://${flowObj.urls[0].url}`;
         }
       } else {
 
         alarmPayload["p.device.urls"] = flowObj.urls;
         if (!_.isEmpty(flowObj.urls) && flowObj.urls[0].url) {
-          alarmPayload["p.device.url"] = `http${alarmPayload['p.device.port'] == 443 ? 's' : ''}://${flowObj.urls[0].url}`;
+          alarmPayload["p.device.url"] = `http://${flowObj.urls[0].url}`;
         }
       }
     }
