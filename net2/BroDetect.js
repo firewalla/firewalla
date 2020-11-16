@@ -474,20 +474,21 @@ module.exports = class {
         this.lastDNS = obj;
         if (!isDomainValid(obj["query"]))
           return;
+        
+        const answers = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && (iptool.isV4Format(answer) || iptool.isV6Format(answer)));
+        const cnames = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && !iptool.isV4Format(answer) && !iptool.isV6Format(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
+        const query = formulateHostname(obj['query']);
+
         // record reverse dns as well for future reverse lookup
-        await dnsTool.addReverseDns(formulateHostname(obj['query']), obj['answers'])
+        await dnsTool.addReverseDns(query, answers);
+        for (const cname of cnames)
+          await dnsTool.addReverseDns(cname, answers);
 
-        for (let i in obj['answers']) {
-          // answer can be an alias or ip address
-          const answer = obj['answers'][i];
-          if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
-            continue;
-
-          if (!iptool.isV4Format(answer) && !iptool.isV6Format(answer))
-            // do not add domain alias to dns entry
-            continue;
-
-          await dnsTool.addDns(answer, formulateHostname(obj['query']), this.config.bro.dns.expires);
+        for (const answer of answers) {
+          await dnsTool.addDns(answer, query, this.config.bro.dns.expires);
+          for (const cname of cnames) {
+            await dnsTool.addDns(answer, cname, this.config.bro.dns.expires);
+          }
           sem.emitEvent({
             type: 'DestIPFound',
             ip: answer,
