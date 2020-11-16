@@ -26,7 +26,9 @@ const log = require('../../net2/logger.js')(__filename);
  * so each bucket should have 1440 bit
  * if the bit is 1, it means the user is doing this kind of activity (watching youtube for example) in that minute
  * 
- * when creating buckets, it should take timezone into consideration
+ * all buckets are GMT+0 based, the api caller should specify the range that they want to look up.
+ * 
+ * The minimal step for api query is 8 mins
  */
 class Accounting {
   constructor() {
