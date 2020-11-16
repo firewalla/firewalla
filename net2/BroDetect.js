@@ -1068,8 +1068,13 @@ module.exports = class {
         // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
         flowspec.du += obj.duration;
         flowspec.flows.push(flowDescriptor);
-        if (flag) {
+        // only when all of flows for the same flowspec flagged as small packet
+        // flowspec should be falgged as 's'
+        // otherwise, it will be ignored when query flows
+        if (flowspec.f == 's' && flag == 's') {
           flowspec.f = flag;
+        } else {
+          flowspec.f = '';
         }
       }
 
