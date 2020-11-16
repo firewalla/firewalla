@@ -311,6 +311,15 @@ class PolicyManager2 {
         policy: policy,
         oldPolicy: oldPolicy
       })
+      if (action == 'enforce' ||
+        (action == 'reenforce' && policy.disabled != '1' && oldPolicy.disabled == '1')) {
+        // one time pause policy might be resumed by user
+        sem.emitEvent({
+          type: "Policy:Enabled",
+          toProcess: "FireApi",
+          pid: policy.pid
+        })
+      }
     }
   }
 
@@ -855,7 +864,7 @@ class PolicyManager2 {
 
     sem.emitEvent({
       type: 'Policy:AllInitialized',
-      toProcess: 'FireMain', //make sure firemain process handle enforce policy event
+      toProcess: '*',
       message: 'All policies are enforced'
     })
   }

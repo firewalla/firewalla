@@ -85,7 +85,8 @@
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
-    "WireGuardPlugin": {}
+    "WireGuardPlugin": {},
+    "PolicySensor":{}
   },
   "intels": [
     "DedupAlarm",

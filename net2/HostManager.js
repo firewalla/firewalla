@@ -596,7 +596,7 @@ module.exports = class HostManager {
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
     return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicies({includingDisabled: 1}, (err, rules) => {
+      policyManager2.loadActivePolicies({includingDisabled: 1}, async (err, rules) => {
         if(err) {
           reject(err);
           return;
@@ -604,11 +604,16 @@ module.exports = class HostManager {
           // filters out rules with inactive devices
           rules = rules.filter(rule => {
             if (_.isEmpty(rule.scope)) return true;
-
             return rule.scope.some(mac =>
               this.hosts.all.some(host => host.o.mac == mac)
             )
           })
+          
+          for (const rule of rules) {
+            if (rule.disabled == '1') {
+              await this.attchPauseInfo(rule);
+            }
+          }
 
           let alarmIDs = rules.map((p) => p.aid);
 
@@ -1948,6 +1953,14 @@ module.exports = class HostManager {
       }
     } catch (e) {
       log.warn('getCpuProfile error', e)
+    }
+  }
+  async attchPauseInfo(rule) {
+    try {
+      const oneTimePausePolicyKey = `policy:onetime:pause:${rule.pid}`;
+      rule.pauseInfo = _.pick(await rclient.hgetallAsync(oneTimePausePolicyKey), ['expire', 'activatedTime']);
+    } catch (e) {
+      log.warn('attach pause info failed', e);
     }
   }
 }
