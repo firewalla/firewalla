@@ -20,23 +20,22 @@ let instance = null;
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const log = require('../../net2/logger.js')(__filename);
 
+const _ = require('lodash');
+
 /*
  * interval: 1 min => each bit in the redis bit string
  * each bucket is one day
  * so each bucket should have 1440 bit
  * if the bit is 1, it means the user is doing this kind of activity (watching youtube for example) in that minute
- * 
- * all buckets are GMT+0 based, the api caller should specify the range that they want to look up.
- * 
- * The minimal step for api query is 8 mins
+ *
+ * when querying buckets, it should take timezone into consideration
  */
 class Accounting {
   constructor() {
     if (instance === null) {
-      this.step = 60 * 1000; // every minute as a slot           
+      this.step = 60 * 1000; // every minute as a slot
       this.bits = 24 * 60;
       this.bucketRange = this.step * this.bits;
-      this.expireTime = 3600 * 24 * 7;
       instance = this;
     }
 
@@ -52,7 +51,6 @@ class Accounting {
     const key = this.getKey(mac, tag, bucket);
     for (let i = beginBit; i <= endBit && i <= this.bits; i++) {
       await rclient.setbitAsync(key, i, 1);
-      await rclient.expireAsync(key, this.expireTime);
     }
   }
 
@@ -110,47 +108,53 @@ class Accounting {
     return count;
   }
 
-  stringToBytes(str) {
-    var ch, st, re = [];
-    for (var i = 0; i < str.length; i++) {
-      ch = str.charCodeAt(i);  // get char 
-      st = [];                 // set up "stack"
-      do {
-        st.push(ch & 0xFF);  // push byte to stack
-        ch = ch >> 8;          // shift value down by 1 byte
-      }
-      while (ch);
-      // add stack contents to result
-      // done because chars have "wrong" endianness
-      re = re.concat(st.reverse());
-    }
-    // return an array of bytes
-    return re;
+
+  pad(num, size) {
+    num = num.toString(2);
+    while (num.length < size) num = "0" + num;
+    return num;
   }
 
+  // convert redis bit string (hex output) to bit string in nodejs, each array item represents 1 min
+  redisStringToBitArray(str) {
+    var array = [];
+    const maxStrLen = this.bits / 8; // each char in the string represents 8 bits
+    for (let i = 0; i < maxStrLen; i++) {
+      if (i < str.length) {
+        let ch = str.charCodeAt(i) & 0xff; // 0xff is important to only use the last 8bits of the char (it was 0-65535)
+        let padCH = this.pad(ch, 8);
+        for (const cc of padCH) {
+          array.push(Number(cc));
+        }
+      } else { // if the string stored in redis is a sub string
+        array.push(...[0,0,0,0,0,0,0,0]);
+      }
+    }
+    return array;
+  }
+
+  groupBits(array) { // every 5 mins
+    let groupedArray = [];
+    var i, j, temparray, chunk = 5;
+    for (i = 0, j = array.length; i < j; i += chunk) {
+      temparray = array.slice(i, i + chunk);
+      groupedArray.push(temparray.reduce((a, b) => a + b, 0))
+    }
+    return groupedArray;
+  }
+
+  // begin, end - bit location
   async _detail(mac, tag, bucket, begin, end) {
     const key = this.getKey(mac, tag, bucket);
     const value = await rclient.getAsync(key);
-    let binaryOutput = "";
-    if (value == null) {
-      binaryOutput = "0".repeat((end - begin) * 2)
-//      log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
-      return binaryOutput;
+    const resultLen = end - begin;
+
+    if (value == null) { // no such key in redis, return the same size of array filled with 0
+      return Array.apply(null, Array(resultLen)).map(Number.prototype.valueOf, 0);
+    } else {
+      const bitArray = this.redisStringToBitArray(value);
+      return bitArray.slice(begin, end);
     }
-    const byteArray = this.stringToBytes(value); // each byte takes one element in the array
-    for (let i = 0; i < end; i++) {
-      if (i >= begin && i < byteArray.length) {
-        let hex = byteArray[i].toString(16);
-        if (hex.length == 1) {
-          hex = "0" + hex;
-        }
-        binaryOutput += hex;
-      } else if (i >= begin) {
-        binaryOutput += "00"
-      }
-    }
-//    log.info("_detail", mac, tag, bucket, begin, end, binaryOutput);
-    return binaryOutput;
   }
 
   async detail(mac, tag, begin, end) {
@@ -159,25 +163,37 @@ class Accounting {
     const endBucket = Math.floor(end / this.bucketRange);
     const endBit = Math.floor((end - endBucket * this.bucketRange) / this.step);
 
-    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
-
-    let output = 0;
+    let output = [];
 
     for (let i = beginBucket; i <= endBucket; i++) {
-      let _output = 0;
+      let _output = [];
       if (i === beginBucket && i === endBucket) { // mostly should be this case
-        _output = await this._detail(mac, tag, i, Math.floor(beginBit / 8), Math.floor(endBit / 8));
+        _output = await this._detail(mac, tag, i, beginBit, endBit);
       } else if (i === beginBucket) {
-        _output = await this._detail(mac, tag, i, Math.floor(beginBit / 8), Math.floor(this.bits / 8));
+        _output = await this._detail(mac, tag, i, beginBit, this.bits);
       } else if (i === endBucket) {
-        _output = await this._detail(mac, tag, i, 0, Math.floor(endBit / 8));
+        _output = await this._detail(mac, tag, i, 0, endBit);
       } else {
-        _output = await this._detail(mac, tag, i, 0, Math.floor(this.bits / 8));
+        _output = await this._detail(mac, tag, i, 0, this.bits);
       }
-      output += _output;
+      output.push(..._output);
     }
 
     return output;
+  }
+
+  async hourlyDetail(mac, tag, begin, hourCount) {
+    const end = begin + hourCount * 3600 * 1000;
+    const bitArray = await this.detail(mac, tag, begin, end);
+
+    const rawHourlyBitArray = _.chunk(bitArray, 60)
+
+    const resultArray = [];
+
+    for (const hourArray of rawHourlyBitArray) {
+      resultArray.push(hourArray.reduce((a, b) => a + b, 0))
+    }
+    return resultArray;
   }
 }
 

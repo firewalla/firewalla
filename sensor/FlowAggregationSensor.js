@@ -127,7 +127,7 @@ class FlowAggregationSensor extends Sensor {
         if (intel.app) {
           await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
         }
-        if (intel.category && !excludedCategories.includes(category)) {
+        if (intel.category && !excludedCategories.includes(intel.category)) {
           await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
         }
       }
