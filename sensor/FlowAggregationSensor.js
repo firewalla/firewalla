@@ -121,15 +121,14 @@ class FlowAggregationSensor extends Sensor {
       if(!(intel && (intel.app || intel.category)))
         return;
 
-      // TEMP, only focus on app
-      if (!intel.app) {
-        return;
-      }
 
       for(const flow of flows) {
-        log.info("App flow", flow)
-        if (flow.ts && flow.ets) {
+        // log.info("App flow", flow)
+        if (intel.app) {
           await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
+        }
+        if (intel.category && !excludedCategories.includes(category)) {
+          await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
         }
       }
     }
