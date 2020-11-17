@@ -181,6 +181,10 @@ class DestIPFoundHook extends Hook {
         intel.v = info.v;
       }
 
+      if(info.a) {
+        intel.a = info.a;
+      }
+
       if(info.originIP) {
         intel.originIP = info.originIP
       }
