@@ -32,6 +32,10 @@ const { Rule } = require('../net2/Iptables.js');
 const qos = require('./QoS.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const VPN_CLIENT_WAN_PREFIX = "VC:";
+
 // =============== block @ connection level ==============
 
 // This function MUST be called at the beginning of main.js
@@ -217,13 +221,27 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       break;
     }
     case "route": {
-      const NetworkProfile = require('../net2/NetworkProfile.js');
-      await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
       table = "mangle";
-      chain = "FW_RT_REG_GLOBAL";
-      target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
       // policy-based routing can only apply to outbound connection
       direction = "outbound";
+      if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
+        const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
+        const ovpnClient = new OpenVPNClient({profileId: profileId});
+        const intf = ovpnClient.getInterfaceName();
+        const rtId = await vpnClientEnforcer.getRtId(intf);
+        if (!rtId) {
+          log.error(`Cannot find rtId of VPN client ${profileId}`);
+          return;
+        }
+        const rtIdHex = Number(rtId).toString(16);
+        chain = "FW_RT_VC_GLOBAL";
+        target = `MARK --set-xmark 0x${rtIdHex}/0xffff`;
+      } else {
+        const NetworkProfile = require('../net2/NetworkProfile.js');
+        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+        chain = "FW_RT_REG_GLOBAL";
+        target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      }
       break;
     }
     case "allow": {
@@ -326,13 +344,27 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       break;
     }
     case "route": {
-      const NetworkProfile = require('../net2/NetworkProfile.js');
-      await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
       table = "mangle";
-      chain = "FW_RT_REG_DEVICE";
-      target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
       // policy-based routing can only apply to outbound connection
       direction = "outbound";
+      if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
+        const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
+        const ovpnClient = new OpenVPNClient({profileId: profileId});
+        const intf = ovpnClient.getInterfaceName();
+        const rtId = await vpnClientEnforcer.getRtId(intf);
+        if (!rtId) {
+          log.error(`Cannot find rtId of VPN client ${profileId}`);
+          return;
+        }
+        const rtIdHex = Number(rtId).toString(16);
+        chain = "FW_RT_VC_DEVICE";
+        target = `MARK --set-xmark 0x${rtIdHex}/0xffff`;
+      } else {
+        const NetworkProfile = require('../net2/NetworkProfile.js');
+        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+        chain = "FW_RT_REG_DEVICE";
+        target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      }
       break;
     }
     case "allow": {
@@ -436,14 +468,29 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
       break;
     }
     case "route": {
-      const NetworkProfile = require('../net2/NetworkProfile.js');
-      await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
       table = "mangle";
-      devChain = "FW_RT_REG_TAG_DEVICE";
-      netChain = "FW_RT_REG_TAG_NETWORK";
-      target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
       // policy-based routing can only apply to outbound connection
       direction = "outbound";
+      if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
+        const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
+        const ovpnClient = new OpenVPNClient({profileId: profileId});
+        const intf = ovpnClient.getInterfaceName();
+        const rtId = await vpnClientEnforcer.getRtId(intf);
+        if (!rtId) {
+          log.error(`Cannot find rtId of VPN client ${profileId}`);
+          return;
+        }
+        const rtIdHex = Number(rtId).toString(16);
+        devChain = "FW_RT_VC_TAG_DEVICE";
+        netChain = "FW_RT_VC_TAG_NETWORK";
+        target = `MARK --set-xmark 0x${rtIdHex}/0xffff`;
+      } else {
+        const NetworkProfile = require('../net2/NetworkProfile.js');
+        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+        devChain = "FW_RT_REG_TAG_DEVICE";
+        netChain = "FW_RT_REG_TAG_NETWORK";
+        target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      }
       break;
     }
     case "allow": {
@@ -573,12 +620,27 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       break;
     }
     case "route": {
-      const NetworkProfile = require('../net2/NetworkProfile.js');
-      await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
       table = "mangle";
-      chain = "FW_RT_REG_NETWORK";
-      target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      // policy-based routing can only apply to outbound connection
       direction = "outbound";
+      if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
+        const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
+        const ovpnClient = new OpenVPNClient({profileId: profileId});
+        const intf = ovpnClient.getInterfaceName();
+        const rtId = await vpnClientEnforcer.getRtId(intf);
+        if (!rtId) {
+          log.error(`Cannot find rtId of VPN client ${profileId}`);
+          return;
+        }
+        const rtIdHex = Number(rtId).toString(16);
+        chain = "FW_RT_VC_NETWORK";
+        target = `MARK --set-xmark 0x${rtIdHex}/0xffff`;
+      } else {
+        const NetworkProfile = require('../net2/NetworkProfile.js');
+        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+        chain = "FW_RT_REG_NETWORK";
+        target = `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`;
+      }
       break;
     }
     case "allow": {
@@ -698,5 +760,6 @@ module.exports = {
   existsBlockingEnv: existsBlockingEnv,
   setupTagsRules: setupTagsRules,
   setupIntfsRules: setupIntfsRules,
-  manipulateFiveTupleRule: manipulateFiveTupleRule
+  manipulateFiveTupleRule: manipulateFiveTupleRule,
+  VPN_CLIENT_WAN_PREFIX: VPN_CLIENT_WAN_PREFIX
 }
