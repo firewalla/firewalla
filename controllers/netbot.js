@@ -3593,6 +3593,7 @@ class netBot extends ControllerBot {
                   const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
                   const files = await readdirAsync(dirPath);
                   const filesToDelete = files.filter(filename => filename.startsWith(`${profileId}.`));
+                  await pm2.deleteVpnClientRelatedPolicies(profileId);
                   if (filesToDelete.length > 0) {
                     for (let file of filesToDelete) {
                       await unlinkAsync(`${dirPath}/${file}`).catch((err) => {
