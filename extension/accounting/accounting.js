@@ -66,7 +66,7 @@ class Accounting {
     const endBucket = Math.floor(end / this.bucketRange);
     const endBit = Math.floor((end - endBucket * this.bucketRange) / this.step);
 
-    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
+    // log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
 
     for (let i = beginBucket; i <= endBucket; i++) {
       if (i === beginBucket && i === endBucket) { // mostly should be this case
@@ -87,7 +87,7 @@ class Accounting {
     const endBucket = Math.floor(end / this.bucketRange);
     const endBit = Math.floor((end - endBucket * this.bucketRange) / this.step);
 
-    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
+//    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
 
     let count = 0;
 
