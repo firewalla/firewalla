@@ -50,9 +50,6 @@ const al = require('../util/accountingAudit.js');
 
 const f = require('../net2/Firewalla.js');
 
-const LRU = require("lru-cache");
-const cache = new LRU(100);
-
 // This sensor is to aggregate device's flow every 10 minutes
 
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
@@ -128,28 +125,21 @@ class FlowAggregationSensor extends Sensor {
       if(!(intel && (intel.app || intel.category)))
         return;
 
+      if(!intel.a) { // a new field a to indicate accounting
+        return;
+      }
 
-      for(const flow of flows) {
-        // log.info("App flow", flow)
-        if (intel.app) {
-          const cacheKey = `${mac}-${intel.app}-${flow.ts}-${flow.ets}`; // this is to save some i/o
-          if(cache.get(cacheKey) === undefined) {
-            await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
-            if(f.isDevelopmentVersion()) {
-              al("app", intel.app, mac, intel.host, destIP);
-            }
-            cache.set(cacheKey, true);
-          }
+      if (intel.app) {
+        await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
+        if(f.isDevelopmentVersion()) {
+          al("app", intel.app, mac, intel.host, destIP);
         }
-        if (intel.category && !excludedCategories.includes(intel.category) && ["av", "games", "social", "porn"].includes(intel.category)) {
-          const cacheKey = `${mac}-${intel.category}-${flow.ts}-${flow.ets}`;
-          if(cache.get(cacheKey) === undefined) {
-            await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
-            if(f.isDevelopmentVersion()) {
-              al("category", intel.category, mac, intel.host, destIP);
-            }
-            cache.set(cacheKey, true);
-          }
+      }
+
+      if (intel.category && !excludedCategories.includes(intel.category)) {
+        await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
+        if(f.isDevelopmentVersion()) {
+          al("category", intel.category, mac, intel.host, destIP);
         }
       }
     }
