@@ -1178,6 +1178,5 @@ module.exports = {
   OpenPortAlarm,
   UpnpAlarm,
   DualWanAlarm,
-  LongConnAlarm,
   mapping: classMapping
 }
