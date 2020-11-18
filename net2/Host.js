@@ -786,7 +786,7 @@ class Host {
     const macEntry = await hostTool.getMACEntry(this.o.mac);
     // update hosts file in dnsmasq
     const hostsFile = Host.getHostsFilePath(this.o.mac);
-    const lastActiveTimestamp = Number(macEntry.lastActiveTimestamp || 0);
+    const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
     if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 1800) {
       // remove hosts file if it is not active in the last 30 minutes or it is already removed from host:mac:*
       await fs.unlinkAsync(hostsFile).catch((err) => { });

@@ -118,7 +118,7 @@ module.exports = class DNSMASQ {
       this.deleteInProgress = false;
       this.updatingLocalDomain = false;
       this.throttleTimer = {};
-      this.failCount = 0 // this is used to track how many dnsmasq status check fails in a row
+      this.networkFailCountMap = {};
 
       this.hashTypes = {
         adblock: 'ads',
@@ -894,23 +894,29 @@ module.exports = class DNSMASQ {
       const netSet = NetworkProfile.getNetIpsetName(uuid);
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
-        const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
-          .mdl("set", `--match-set ${netSet} src,src`)
-          .mth(myIp4, null, "dst")
-          .mth(53, null, 'dport')
-          .jmp(`DNAT --to-destination ${resolver4[0]}:53`);
-        const redirectUDP = redirectTCP.clone().pro('udp');
-        await execAsync(redirectTCP.toCmd('-A'));
-        await execAsync(redirectUDP.toCmd('-A'));
+        for (const i in resolver4) {
+          const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
+            .mdl("set", `--match-set ${netSet} src,src`)
+            .mth(myIp4, null, "dst")
+            .mth(53, null, 'dport')
+            .mdl("statistic", `--mode nth --every ${resolver4.length - i} --packet 0`)
+            .jmp(`DNAT --to-destination ${resolver4[i]}:53`);
+          const redirectUDP = redirectTCP.clone().pro('udp');
+          await execAsync(redirectTCP.toCmd('-A'));
+          await execAsync(redirectUDP.toCmd('-A'));
+        }
       }
       if (resolver6 && resolver6.length > 0) {
-        const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
-          .mdl("set", `--match-set ${netSet} src,src`)
-          .mth(53, null, 'dport')
-          .jmp(`DNAT --to-destination ${resolver6[0]}:53`);
-        const redirectUDP = redirectTCP.clone().pro('udp');
-        await execAsync(redirectTCP.toCmd('-A'));
-        await execAsync(redirectUDP.toCmd('-A'));
+        for (const i in resolver6) {
+          const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
+            .mdl("set", `--match-set ${netSet} src,src`)
+            .mth(53, null, 'dport')
+            .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
+            .jmp(`DNAT --to-destination ${resolver6[i]}:53`);
+          const redirectUDP = redirectTCP.clone().pro('udp');
+          await execAsync(redirectTCP.toCmd('-A'));
+          await execAsync(redirectUDP.toCmd('-A'));
+        }
       }
     }
     await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p tcp --dport 53 -j ACCEPT`)).catch((err) => {});
@@ -929,56 +935,67 @@ module.exports = class DNSMASQ {
 
   async _add_iptables_rules() {
     const interfaces = sysManager.getMonitoringInterfaces();
-    const NetworkProfile = require('../../net2/NetworkProfile.js');
     for (const intf of interfaces) {
       const uuid = intf.uuid;
       if (!uuid) {
         log.error(`uuid is not defined for ${intf.name}`);
-        continue;
+        return;
       }
-      if (!intf.ip_address) {
-        log.error(`No ipv4 address is found on ${intf.name}`);
-        continue;
-      }
-      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const netSet = NetworkProfile.getNetIpsetName(uuid);
-      const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mdl("set", `--match-set ${netSet} src,src`)
-        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
-        .mth(53, null, 'dport')
-        .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
-      const redirectUDP = redirectTCP.clone().pro('udp')
-      await execAsync(redirectTCP.toCmd('-A'))
-      await execAsync(redirectUDP.toCmd('-A'))
+      await this._manipulate_ipv4_iptables_rule(intf, '-A');
+      this.networkFailCountMap[uuid] = 0;
     }
   }
 
   async _add_ip6tables_rules() {
     const interfaces = sysManager.getMonitoringInterfaces();
-    const NetworkProfile = require('../../net2/NetworkProfile.js');
     for (const intf of interfaces) {
       const uuid = intf.uuid;
       if (!uuid) {
         log.error(`uuid is not defined for ${intf.name}`);
-        continue;
+        return;
       }
-      const ip6Addrs = intf.ip6_addresses;
-      if (!ip6Addrs || ip6Addrs.length == 0) {
-        log.info(`No ipv6 address is found on ${intf.name}`);
-        continue;
-      }
-      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
-      const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
-      const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-        .mdl("set", `--match-set ${netSet} src,src`)
-        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
-        .mth(53, null, 'dport')
-        .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
-      const redirectUDP = redirectTCP.clone().pro('udp');
-      await execAsync(redirectTCP.toCmd('-A'));
-      await execAsync(redirectUDP.toCmd('-A'));
+      await this._manipulate_ipv6_iptables_rule(intf, '-A');
     }
+  }
+
+  async _manipulate_ipv4_iptables_rule(intf, action) {
+    const NetworkProfile = require('../../net2/NetworkProfile.js');
+    const uuid = intf.uuid;
+    if (!intf.ip_address) {
+      log.error(`No ipv4 address is found on ${intf.name}`);
+      return;
+    }
+    await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+    const netSet = NetworkProfile.getNetIpsetName(uuid);
+    const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
+      .mdl("set", `--match-set ${netSet} src,src`)
+      .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
+      .mth(53, null, 'dport')
+      .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
+    const redirectUDP = redirectTCP.clone().pro('udp');
+    await execAsync(redirectTCP.toCmd(action));
+    await execAsync(redirectUDP.toCmd(action));
+  }
+
+  async _manipulate_ipv6_iptables_rule(intf, action) {
+    const NetworkProfile = require('../../net2/NetworkProfile.js');
+    const uuid = intf.uuid;
+    const ip6Addrs = intf.ip6_addresses;
+    if (!ip6Addrs || ip6Addrs.length == 0) {
+      log.info(`No ipv6 address is found on ${intf.name}`);
+      return;
+    }
+    await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+    const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
+    const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
+    const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
+      .mdl("set", `--match-set ${netSet} src,src`)
+      .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
+      .mth(53, null, 'dport')
+      .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
+    const redirectUDP = redirectTCP.clone().pro('udp');
+    await execAsync(redirectTCP.toCmd(action));
+    await execAsync(redirectUDP.toCmd(action));
   }
 
   async _remove_all_iptables_rules() {
@@ -987,6 +1004,7 @@ module.exports = class DNSMASQ {
     }
     await this._remove_iptables_rules()
     await this._remove_ip6tables_rules();
+    this.networkFailCountMap = {};
   }
 
   async _remove_iptables_rules() {
@@ -1381,10 +1399,12 @@ module.exports = class DNSMASQ {
   }
 
   async verifyDNSConnectivity() {
+    const result = {};
     for (const monitoringInterface of sysManager.getMonitoringInterfaces()) {
-      if (!monitoringInterface || !monitoringInterface.ip_address)
+      if (!monitoringInterface || !monitoringInterface.ip_address || !monitoringInterface.uuid)
         continue;
       const STATUS_CHECK_INTERFACE = monitoringInterface.ip_address;
+      const uuid = monitoringInterface.uuid;
       let resolved = false;
       for (const domain of VERIFICATION_DOMAINS) {
         // if there are 3 verification domains and each takes at most 6 seconds to fail the test, it will take 18 seconds to fail the test on one network interface
@@ -1404,47 +1424,45 @@ module.exports = class DNSMASQ {
           log.error(`Failed to resolve ${domain} on ${STATUS_CHECK_INTERFACE}`, err.stdout, err.stderr);
         }
       }
-      if (resolved)
-        continue;
-      log.error(`Failed to resolve all domains on ${STATUS_CHECK_INTERFACE}.`);
-      return false;
+      if (!resolved)
+        log.error(`Failed to resolve all domains on ${STATUS_CHECK_INTERFACE}.`);
+      result[uuid] = resolved;
     }
-    return true;
+    return result;
   }
 
   async dnsStatusCheck() {
     log.debug("Keep-alive checking dnsmasq status")
-    let checkResult = await this.verifyDNSConnectivity();
-
-    if (checkResult) {
-      if (this.failCount > 8) {
-        log.info(`DNS is reachable again, add back DNS redirect rules ...`);
-        // add back dns redirect rules
-        await this._add_all_iptables_rules().catch((err) => {
-          log.error("Failed to add back DNS redirect rules", err.message);
-        });
+    let checkResult = await this.verifyDNSConnectivity() || {};
+    let needRestart = false;
+    
+    for (const uuid in checkResult) {
+      const intf = sysManager.getInterfaceViaUUID(uuid);
+      if (this.networkFailCountMap[uuid] === undefined || !intf) {
+        log.warn(`Network uuid ${uuid} in dns status check result is not found`);
+        continue;
       }
-      this.failCount = 0 // reset
-      return;
-    }
-
-    this.failCount++
-    log.warn(`DNS status check has failed ${this.failCount} times`);
-
-    if (this.failCount > 8) {
-      if (!f.isProductionOrBeta()) {
-        pclient.publishAsync("DNS:DOWN", this.failCount);
-      }
-      // simply removes dns redirect rules, no need to stop dns service
-      await this._remove_all_iptables_rules();
-      if ((this.failCount & (this.failCount - 1)) === 0) { // do not send error log to cloud unless fail count is power of 2
-        bone.logAsync("error", {
-          type: 'DNSMASQ UNREPLIED',
-          msg: `dnsmasq does not respond after ${this.failCount} restarts`,
-        });
+      if (checkResult[uuid] === true) {
+        if (this.networkFailCountMap[uuid] > 2) {
+          log.info(`DNS of network ${intf.name} is restored, add back DNS redirect rules ...`);
+          await this._manipulate_ipv4_iptables_rule(intf, '-A');
+          await this._manipulate_ipv6_iptables_rule(intf, '-A');
+        }
+        this.networkFailCountMap[uuid] = 0;
+      } else {
+        this.networkFailCountMap[uuid]++;
+        needRestart = true;
+        if (this.networkFailCountMap[uuid] > 2) {
+          log.info(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
+          await this._manipulate_ipv4_iptables_rule(intf, '-D');
+          await this._manipulate_ipv6_iptables_rule(intf, '-D');
+        }
       }
     }
-    this.scheduleRestartDNSService(true);
+
+    if (needRestart) {
+      this.scheduleRestartDNSService(true);
+    }
   }
 
   async cleanUpLeftoverConfig() {
