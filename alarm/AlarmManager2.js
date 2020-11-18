@@ -1325,7 +1325,7 @@ module.exports = class {
   async enrichDeviceInfo(alarm) {
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
-      return Promise.reject(new Error("requiring p.device.ip"));
+      throw new Error("requiring p.device.ip");
     }
 
     if (deviceIP === "0.0.0.0") {
@@ -1337,33 +1337,28 @@ module.exports = class {
         "p.device.macVendor": "Unknown"
       });
 
-      return Promise.resolve(alarm);
+      return alarm;
     }
 
-    return new Promise((resolve, reject) => {
-      dnsManager.resolveLocalHost(deviceIP, (err, result) => {
+    // resolveLocalHost gets all info from redis, doesn't really use DNS on the fly
+    const result = await dnsManager.resolveLocalHostAsync(deviceIP)
 
-        if (err || result == null) {
-          log.error("Failed to find host " + deviceIP + " in database: " + err);
-          if (err)
-            reject(err);
-          reject(new Error("host " + deviceIP + " not found"));
-          return;
-        }
+    if (result == null) {
+      log.error("Failed to find host " + deviceIP + " in database");
+      throw new Error("host " + deviceIP + " not found");
+    }
 
-        let deviceName = getPreferredName(result);
-        let deviceID = result.mac;
+    let deviceName = getPreferredName(result);
+    let deviceID = result.mac;
 
-        Object.assign(alarm, {
-          "p.device.name": deviceName,
-          "p.device.id": deviceID,
-          "p.device.mac": deviceID,
-          "p.device.macVendor": result.macVendor || "Unknown"
-        });
-
-        resolve(alarm);
-      });
+    Object.assign(alarm, {
+      "p.device.name": deviceName,
+      "p.device.id": deviceID,
+      "p.device.mac": deviceID,
+      "p.device.macVendor": result.macVendor || "Unknown"
     });
+
+    return alarm;
   }
 
   async loadRelatedAlarms(alarm, userInput) {
