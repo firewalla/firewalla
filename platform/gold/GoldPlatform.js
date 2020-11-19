@@ -189,11 +189,11 @@ class GoldPlatform extends Platform {
   }
 
   getRetentionTimeMultiplier() {
-    return 3;
+    return 1;
   }
 
   getRetentionCountMultiplier() {
-    return 3;
+    return 1;
   }
   getStatsSpecs() {
     return [{
