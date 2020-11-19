@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,6 +21,7 @@ const sysManager = require('./SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const iptool = require('ip')
+const { Address4, Address6 } = require('ip-address')
 
 const util = require('util');
 
@@ -81,15 +82,24 @@ class DNSTool {
     return domains || [];
   }
 
+  isValidIP(ip) {
+    const ip4 = new Address4(ip)
+    const ip6 = new Address6(ip)
+    if (ip4.isValid() && ip4.correctForm() != '0.0.0.0' || ip6.isValid() && ip6.correctForm() != '::')
+      return true
+    else
+      return false
+  }
+
   async addDns(ip, domain, expire) {
     expire = expire || 24 * 3600; // one day by default
-    if (!iptool.isV4Format(ip) && !iptool.isV6Format(ip))
+    if (!this.isValidIP(ip))
       return;
     if (firewalla.isReservedBlockingIP(ip))
       return;
     if (!domain)
       return;
-    
+
     domain = domain.toLowerCase();
     let key = this.getDNSKey(ip);
     const now = Math.ceil(Date.now() / 1000);
@@ -121,7 +131,7 @@ class DNSTool {
     for (let i = 0; i < addresses.length; i++) {
       const addr = addresses[i];
 
-      if (iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
+      if (this.isValidIP(addr)) {
         await rclient.zaddAsync(key, new Date() / 1000, addr)
         validAddresses.push(addr);
         updated = true
@@ -168,7 +178,7 @@ class DNSTool {
     // target can be either ip or domain
     if (!target)
       return [];
-    if (iptool.isV4Format(target) || iptool.isV6Format(target)) {
+    if (this.isValidIP(target)) {
       // target is ip
       const domains = await this.getAllDns(target);
       return domains || [];

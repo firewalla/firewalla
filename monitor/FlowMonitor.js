@@ -984,7 +984,7 @@ module.exports = class FlowMonitor {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given, no protocol is very unusual
-      "p.dest.id": remoteIP,
+      // "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain,
       "p.dest.port": this.getRemotePort(flowObj),
@@ -1068,7 +1068,7 @@ module.exports = class FlowMonitor {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given
-      "p.dest.id": remoteIP,
+      // "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain || remoteIP,
       "p.dest.port": this.getRemotePort(flowObj),

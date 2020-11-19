@@ -306,6 +306,14 @@ module.exports = class {
       this.lastNTS = null;
 
       this.activeLongConns = {}
+      setInterval(() => {
+        const now = new Date() / 1000
+        for (const uid of Object.keys(this.activeLongConns)) {
+          const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
+          if (lastTick + this.config.bro.connLong.expires < now)
+            delete this.activeLongConns[uid]
+        }
+      }, 3600 * 15)
     }
   }
 
@@ -839,7 +847,7 @@ module.exports = class {
        * when flag is set to 's', intel should ignore
        */
       let flag;
-      if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
+      if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
         if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||
           obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
@@ -862,7 +870,6 @@ module.exports = class {
       log.debug("ProcessingConection:", obj.uid, host, dst);
 
       // ignore multicast IP
-      // if (sysManager.isMulticastIP(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
       try {
         if (sysManager.isMulticastIP4(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
           return;
@@ -958,21 +965,6 @@ module.exports = class {
           tags = _.concat(tags, networkProfile.getTags());
       }
       tags = _.uniq(tags);
-
-      // Mark all flows that are partially completed.
-      // some of these flows may be valid
-      //
-      //  flag == s
-      if (obj.proto == "tcp") {
-        // beware that OTH may occur in long lasting connections intermittently
-        if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||
-          obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
-          obj.conn_state == "SH" || obj.conn_state == "SHR" ||
-          obj.conn_state == "S0") {
-          log.debug("Conn:Drop:State:P2", obj.conn_state, JSON.stringify(obj));
-          flag = 's';
-        }
-      }
 
       if (obj.orig_bytes == null) {
         obj.orig_bytes = 0;
@@ -1535,6 +1527,9 @@ module.exports = class {
         log.error("Invalid knownHosts entry:", obj);
         return;
       }
+
+      if (sysManager.isMyIP(ip)) return
+
       const intfInfo = sysManager.getInterfaceViaIP4(ip);
       if (!intfInfo || !intfInfo.uuid) {
         log.error(`Unable to find nif uuid, ${ip}`);
