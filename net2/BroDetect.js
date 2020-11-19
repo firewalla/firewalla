@@ -846,6 +846,8 @@ module.exports = class {
           obj.conn_state == "S0") {
           log.debug("Conn:Drop:State:P1", obj.conn_state, JSON.stringify(obj));
           flag = 's';
+          // return directly for the traffic flagged as 's'
+          return;
         }
       }
 
@@ -970,6 +972,8 @@ module.exports = class {
           obj.conn_state == "S0") {
           log.debug("Conn:Drop:State:P2", obj.conn_state, JSON.stringify(obj));
           flag = 's';
+          // return directly for the traffic flagged as 's'
+          return;
         }
       }
 
@@ -1062,13 +1066,8 @@ module.exports = class {
         // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
         flowspec.du += obj.duration;
         flowspec.flows.push(flowDescriptor);
-        // only when all of flows for the same flowspec flagged as small packet
-        // flowspec should be falgged as 's'
-        // otherwise, it will be ignored when query flows
-        if (flowspec.f == 's' && flag == 's') {
+        if (flag) {
           flowspec.f = flag;
-        } else {
-          flowspec.f = '';
         }
       }
 
