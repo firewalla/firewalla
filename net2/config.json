@@ -704,7 +704,7 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": true,
+    "smart_block": false,
     "internal_scan": false,
     "acl_audit": false,
     "new_device_tag": false,
