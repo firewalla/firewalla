@@ -894,23 +894,29 @@ module.exports = class DNSMASQ {
       const netSet = NetworkProfile.getNetIpsetName(uuid);
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
-        const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
-          .mdl("set", `--match-set ${netSet} src,src`)
-          .mth(myIp4, null, "dst")
-          .mth(53, null, 'dport')
-          .jmp(`DNAT --to-destination ${resolver4[0]}:53`);
-        const redirectUDP = redirectTCP.clone().pro('udp');
-        await execAsync(redirectTCP.toCmd('-A'));
-        await execAsync(redirectUDP.toCmd('-A'));
+        for (const i in resolver4) {
+          const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
+            .mdl("set", `--match-set ${netSet} src,src`)
+            .mth(myIp4, null, "dst")
+            .mth(53, null, 'dport')
+            .mdl("statistic", `--mode nth --every ${resolver4.length - i} --packet 0`)
+            .jmp(`DNAT --to-destination ${resolver4[i]}:53`);
+          const redirectUDP = redirectTCP.clone().pro('udp');
+          await execAsync(redirectTCP.toCmd('-A'));
+          await execAsync(redirectUDP.toCmd('-A'));
+        }
       }
       if (resolver6 && resolver6.length > 0) {
-        const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
-          .mdl("set", `--match-set ${netSet} src,src`)
-          .mth(53, null, 'dport')
-          .jmp(`DNAT --to-destination ${resolver6[0]}:53`);
-        const redirectUDP = redirectTCP.clone().pro('udp');
-        await execAsync(redirectTCP.toCmd('-A'));
-        await execAsync(redirectUDP.toCmd('-A'));
+        for (const i in resolver6) {
+          const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
+            .mdl("set", `--match-set ${netSet} src,src`)
+            .mth(53, null, 'dport')
+            .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
+            .jmp(`DNAT --to-destination ${resolver6[i]}:53`);
+          const redirectUDP = redirectTCP.clone().pro('udp');
+          await execAsync(redirectTCP.toCmd('-A'));
+          await execAsync(redirectUDP.toCmd('-A'));
+        }
       }
     }
     await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p tcp --dport 53 -j ACCEPT`)).catch((err) => {});

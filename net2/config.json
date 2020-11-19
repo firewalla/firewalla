@@ -608,7 +608,8 @@
       "expires": 86400
     },
     "connLong": {
-      "path": "/blog/current/conn_long.log"
+      "path": "/blog/current/conn_long.log",
+      "expires": 108000
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
@@ -703,7 +704,7 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": true,
+    "smart_block": false,
     "internal_scan": false,
     "acl_audit": false,
     "new_device_tag": false,

@@ -46,9 +46,15 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
+const al = require('../util/accountingAudit.js');
+
+const f = require('../net2/Firewalla.js');
+
 // This sensor is to aggregate device's flow every 10 minutes
 
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
+
+const accounting = require('../extension/accounting/accounting.js');
 
 class FlowAggregationSensor extends Sensor {
   constructor() {
@@ -106,6 +112,37 @@ class FlowAggregationSensor extends Sensor {
       }, this.config.interval * 1000)
 
     });
+  }
+
+  async accountTrafficByX(mac, flows) {
+    let traffic = {};
+
+    for (const flow of flows) {
+      let destIP = flowTool.getDestIP(flow);
+      let intel = await intelTool.getIntel(destIP);
+
+      // skip if no app or category intel
+      if(!(intel && (intel.app || intel.category)))
+        return;
+
+      if(!intel.a) { // a new field a to indicate accounting
+        return;
+      }
+
+      if (intel.app) {
+        await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
+        if(f.isDevelopmentVersion()) {
+          al("app", intel.app, mac, intel.host, destIP);
+        }
+      }
+
+      if (intel.category && !excludedCategories.includes(intel.category)) {
+        await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
+        if(f.isDevelopmentVersion()) {
+          al("category", intel.category, mac, intel.host, destIP);
+        }
+      }
+    }
   }
 
   async trafficGroupByX(flows, x) {
@@ -437,6 +474,9 @@ class FlowAggregationSensor extends Sensor {
     // now flows array should only contain flows having intels
 
     // record app/category flows by duration
+    // TODO: add recording for network/group/global as well
+    await this.accountTrafficByX(macAddress, flows);
+
     let appTraffic = await this.trafficGroupByApp(flows);
     await flowAggrTool.addAppActivityFlows(macAddress, this.config.interval, end, appTraffic, this.config.aggrFlowExpireTime);
 

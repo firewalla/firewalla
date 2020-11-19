@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla INC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -211,7 +211,7 @@ class Alarm {
         const idsA = _.isString(alarm[k]) ? JSON.parse(alarm[k]) : alarm[k];
         const idsB = _.isString(alarm2[k]) ? JSON.parse(alarm2[k]) : alarm2[k];
         if (!_.isEqual(idsA, idsB)) {
-          return false; 
+          return false;
         }
       } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k])) {
 
@@ -628,7 +628,7 @@ class IntelAlarm extends Alarm {
       if (name) {
         return name
       } else {
-        return this["p.dest.id"]
+        return this["p.dest.ip"]
       }
     }
   }
@@ -674,17 +674,21 @@ class OutboundAlarm extends Alarm {
 
   constructor(type, timestamp, device, destinationID, info) {
     super(type, timestamp, device, info);
+    // p.dest.id looks like a total redundent field, p.dest.name should be able to repleace it
+    // none of the clients seems to be actually using it either, 11-05-20
+    this['p.dest.name'] = destinationID;
     this["p.dest.id"] = destinationID;
     if (this.timestamp) {
       this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
     }
   }
+
   needPolicyMatch(){
     return true;
   }
 
   requiredKeys() {
-    return super.requiredKeys().concat(["p.dest.id"]);
+    return super.requiredKeys().concat(['p.dest.name']);
   }
 
   getDestinationHostname() {
@@ -713,7 +717,7 @@ class OutboundAlarm extends Alarm {
 
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.id", "p.intf.id", "p.tag.ids"];
+    return ["p.device.mac", "p.dest.name", "p.intf.id", "p.tag.ids"];
   }
 
   isDup(alarm) {
@@ -725,7 +729,7 @@ class OutboundAlarm extends Alarm {
 
     const macKey = "p.device.mac";
     const destDomainKey = "p.dest.domain";
-    const destNameKey = "p.dest.id";
+    const destNameKey = "p.dest.name";
 
     // Mac
     if (!alarm[macKey] ||
@@ -759,6 +763,7 @@ class OutboundAlarm extends Alarm {
     return true;
   }
 }
+
 class AbnormalBandwidthUsageAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
@@ -771,6 +776,7 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
     ];
   }
 }
+
 class OverDataPlanUsageAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_OVER_DATA_PLAN_USAGE", timestamp, device, info);
@@ -868,11 +874,12 @@ class LargeTransferAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"],
-    this["p.transfer.outbound.humansize"],
-    this["p.dest.name"],
-    this["p.timestampTimezone"],
-    this.getCountryName()
+    return [
+      this["p.device.name"],
+      this["p.transfer.outbound.humansize"],
+      this["p.dest.name"],
+      this["p.timestampTimezone"],
+      this.getCountryName()
     ];
   }
 
@@ -1031,7 +1038,7 @@ class UpnpAlarm extends Alarm {
     this["p.upnp.private.port"],
     this["p.device.name"]];
   }
-  
+
   isDup(alarm) {
     if (alarm.type === this.type) {
       return super.isDup(alarm);
@@ -1113,13 +1120,13 @@ class DualWanAlarm extends Alarm {
 
     return key;
   }
-  
+
   isDup() {
     return false;
   }
 }
 
-let classMapping = {
+const classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
@@ -1146,30 +1153,30 @@ let classMapping = {
 }
 
 module.exports = {
-  Alarm: Alarm,
-  OutboundAlarm: OutboundAlarm,
-  VideoAlarm: VideoAlarm,
-  GameAlarm: GameAlarm,
-  PornAlarm: PornAlarm,
-  VpnAlarm: VpnAlarm,
-  LargeTransferAlarm: LargeTransferAlarm,
-  AbnormalBandwidthUsageAlarm: AbnormalBandwidthUsageAlarm,
-  OverDataPlanUsageAlarm: OverDataPlanUsageAlarm,
-  NewDeviceAlarm: NewDeviceAlarm,
-  DeviceBackOnlineAlarm: DeviceBackOnlineAlarm,
-  DeviceOfflineAlarm: DeviceOfflineAlarm,
-  SpoofingDeviceAlarm: SpoofingDeviceAlarm,
-  VPNClientConnectionAlarm: VPNClientConnectionAlarm,
-  VPNRestoreAlarm: VPNRestoreAlarm,
-  VPNDisconnectAlarm: VPNDisconnectAlarm,
-  BroNoticeAlarm: BroNoticeAlarm,
-  IntelAlarm: IntelAlarm,
-  VulnerabilityAlarm: VulnerabilityAlarm,
-  IntelReportAlarm: IntelReportAlarm,
-  SubnetAlarm: SubnetAlarm,
-  WeakPasswordAlarm: WeakPasswordAlarm,
-  OpenPortAlarm: OpenPortAlarm,
-  UpnpAlarm: UpnpAlarm,
-  DualWanAlarm: DualWanAlarm,
+  Alarm,
+  OutboundAlarm,
+  VideoAlarm,
+  GameAlarm,
+  PornAlarm,
+  VpnAlarm,
+  LargeTransferAlarm,
+  AbnormalBandwidthUsageAlarm,
+  OverDataPlanUsageAlarm,
+  NewDeviceAlarm,
+  DeviceBackOnlineAlarm,
+  DeviceOfflineAlarm,
+  SpoofingDeviceAlarm,
+  VPNClientConnectionAlarm,
+  VPNRestoreAlarm,
+  VPNDisconnectAlarm,
+  BroNoticeAlarm,
+  IntelAlarm,
+  VulnerabilityAlarm,
+  IntelReportAlarm,
+  SubnetAlarm,
+  WeakPasswordAlarm,
+  OpenPortAlarm,
+  UpnpAlarm,
+  DualWanAlarm,
   mapping: classMapping
 }
