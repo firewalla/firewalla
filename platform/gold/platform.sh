@@ -74,3 +74,12 @@ function run_horse_light {
     sleep $pause_interval
   done
 }
+
+function fw_blink {
+  sudo pkill -9 ethtool
+  sudo ethtool -p $1 &
+}
+
+function fw_unblink {
+  sudo pkill -9 ethtool
+}
