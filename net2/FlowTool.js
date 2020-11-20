@@ -55,9 +55,6 @@ class FlowTool {
     if("pf" in flow)
       delete flow.pf;
 
-    if("bl" in flow)
-      delete flow.bl;
-
     if("af" in flow)
       delete flow.af;
 

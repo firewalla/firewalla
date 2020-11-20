@@ -482,7 +482,7 @@ module.exports = class {
         this.lastDNS = obj;
         if (!isDomainValid(obj["query"]))
           return;
-        
+
         const answers = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && (iptool.isV4Format(answer) || iptool.isV6Format(answer)));
         const cnames = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && !iptool.isV4Format(answer) && !iptool.isV6Format(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
         const query = formulateHostname(obj['query']);
@@ -705,15 +705,15 @@ module.exports = class {
         return false;
     }
 
-    if (orig_ip_bytes && orig_bytes && 
-      orig_ip_bytes > 1000 && orig_bytes > 1000 && 
+    if (orig_ip_bytes && orig_bytes &&
+      orig_ip_bytes > 1000 && orig_bytes > 1000 &&
       (orig_ip_bytes / orig_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
     }
 
-    if (resp_ip_bytes && resp_bytes && 
-      resp_ip_bytes > 1000 && resp_bytes > 1000 && 
+    if (resp_ip_bytes && resp_bytes &&
+      resp_ip_bytes > 1000 && resp_bytes > 1000 &&
       (resp_ip_bytes / resp_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
@@ -721,7 +721,7 @@ module.exports = class {
 
     if(threshold.maxSpeed) {
       const maxBytesPerSecond = threshold.maxSpeed / 8;
-      const duration = obj.duration; 
+      const duration = obj.duration;
       const maxBytes = maxBytesPerSecond * duration;
 
       // more than the therotical possible number
@@ -744,7 +744,6 @@ module.exports = class {
     return true;
   }
 
-  // Only log ipv4 packets for now
   async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
@@ -939,14 +938,14 @@ module.exports = class {
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
           localMac = await l2.getMACAsync(lhost).catch((err) => {
-            log.error("Failed to get MAC address from link layer for " + lhost);
-            return null;
+            log.error("Failed to get MAC address from link layer for " + lhost, err);
+            return;
           }); // Don't worry about performance issue, this function has internal cache
         }
         if (!localMac) {
           localMac = await hostTool.getMacByIPWithCache(lhost).catch((err) => {
             log.error("Failed to get MAC address from cache for " + lhost, err);
-            return null;
+            return;
           });
         }
       }
@@ -1022,7 +1021,6 @@ module.exports = class {
           intf: intfId, // intf id
           tags: tags,
           du: obj.duration,
-          bl: FLOWSTASH_EXPIRES,
           pf: {}, //port flow
           af: {}, //application flows
           pr: obj.proto,
@@ -1077,7 +1075,6 @@ module.exports = class {
         lh: lhost, // this is local ip address
         mac: localMac, // mac address of local device
         du: obj.duration,
-        bl: 0,
         pf: {},
         af: {},
         pr: obj.proto,
