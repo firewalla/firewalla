@@ -47,6 +47,7 @@ if [ -z "$2" ]
      ls -lt /home/pi/logs/FireKick*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
      ls -lt /home/pi/logs/Trace*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
      ls -lt /var/log/syslog* |head -3 | awk '{print $NF}' | xargs -i sudo cp -p {} .
+     ls -lt /var/log/openvpn* | awk '{print $NF}' | xargs -i sudo cp -p {} .
      ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp -p {} .
 fi
 sudo chmod 777 syslog*
