@@ -1087,10 +1087,7 @@ module.exports = class {
       if (afobj) {
         tmpspec.af[afobj.host] = afobj;
         let flow_afobj = flowspec.af[afobj.host];
-        if (flow_afobj) {
-          flow_afobj.rqbl += afobj.rqbl;  // request_body_len
-          flow_afobj.rsbl += afobj.rsbl;  // response_body_len
-        } else {
+        if (!flow_afobj) {
           flowspec.af[afobj.host] = afobj;
           delete afobj['host'];
         }
@@ -1102,10 +1099,7 @@ module.exports = class {
           if (afobj) {
             log.debug("DEBUG AFOBJ DELAY RESOLVE", afobj);
             let flow_afobj = flowspec.af[afobj.host];
-            if (flow_afobj) {
-              flow_afobj.rqbl += afobj.rqbl;
-              flow_afobj.rsbl += afobj.rsbl;
-            } else {
+            if (!flow_afobj) {
               flowspec.af[afobj.host] = afobj;
               delete afobj['host'];
             }
@@ -1250,10 +1244,7 @@ module.exports = class {
                 let afobj = this.lookupAppMap(i);
                 if (afobj) {
                   let flow_afobj = spec.af[afobj.host];
-                  if (flow_afobj) {
-                    flow_afobj.rqbl += afobj.rqbl;
-                    flow_afobj.rsbl += afobj.rsbl;
-                  } else {
+                  if (!flow_afobj) {
                     spec.af[afobj.host] = afobj;
                     delete afobj['host'];
                   }
@@ -1458,9 +1449,7 @@ module.exports = class {
       let appCacheObj = {
         uid: obj.uid,
         host: obj.server_name,
-        ssl: obj.established,
-        rqbl: 0,
-        rsbl: 0,
+        ssl: obj.established
       };
 
       this.addAppMap(appCacheObj.uid, appCacheObj);
