@@ -77,7 +77,7 @@ function run_horse_light {
 
 function fw_blink {
   sudo pkill -9 ethtool
-  sudo ethtool -p $1 &
+  sudo timeout 3600s ethtool -p $1 &
 }
 
 function fw_unblink {
