@@ -116,7 +116,7 @@ class HttpFlow {
         if (sysManager.isLocalIP(destIP)) {
           return; // ignore any local http traffic
         } else {
-          flowDirection = "outbound";
+          flowDirection = "outbound"; // outbound means initiated from local devices
           localIP = srcIP;
         }
       } else if (sysManager.isLocalIP(destIP)) {
@@ -161,7 +161,7 @@ class HttpFlow {
       }
 
       /* this piece of code uses http to map dns */
-      if (flowDirection === "inbound" && obj.host) {
+      if (flowDirection === "outbound" && obj.host) {
         await this.refreshDNSMapping(obj);
       }
     } catch (e) {
