@@ -122,16 +122,25 @@ while read proto orig oport resp rport state local_orig local_resp; do
     ((SRCPORT[$host, $srcPort]=1));
     ((DESTPORT[$host, $destPort]=1));
     ((DEST[$host, $dest]=1));
+    ((SRCPORT["total", $srcPort]=1));
+    ((DESTPORT["total", $destPort]=1));
+    ((DEST["total", $dest]=1));
 
     # only check conn_state for TCP connections
     if [[ "$proto" == "tcp" ]]; then
         ((CONN[$host, "tcp"]++));
         ((CONN[$host, $state]++));
+        ((CONN["total", "tcp"]++));
+        ((CONN["total", $state]++));
     else
         ((CONN[$host, "udp"]++));
+        ((CONN["total", "udp"]++));
     fi
 
 done
+
+((HOST["total"]=1));
+
 
 STATES=("SF" "S0" "S1" "REJ" "S2" "S3" "RSTO" "RSTR" "RSTOS0" "RSTRH" "SH" "SHR" "OTH")
 
