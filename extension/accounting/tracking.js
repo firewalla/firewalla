@@ -29,6 +29,7 @@ class Tracking {
     if (instance === null) {
       this.expireInterval = 3600 * 24; // one hour, use 24 hours temporarily 
       this.bucketInterval = 5 * 60 * 1000; // every 5 mins
+      this.maxBuckets = 288;
       this.maxItemsInBucket = 100;
       this.resetOffset = 0; // local timezone, starting from 0 O'Clock
       instance = this;
@@ -45,10 +46,14 @@ class Tracking {
   
   // begin/end is js epoch time
   getBuckets(begin, end) {
+    if(begin > end) {
+      return [];
+    }
+    
     let buckets = [];
     let beginBucket = Math.floor(begin / this.bucketInterval);
     let endBucket = Math.floor(end / this.bucketInterval);
-    if(endBucket - beginBucket > 288 || endBucket < beginBucket) {
+    if(endBucket - beginBucket > this.maxBuckets || endBucket < beginBucket) {
       log.info("Invalid bucket setup, skipped:", beginBucket, endBucket);
       return [];
     }
