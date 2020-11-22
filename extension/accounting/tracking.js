@@ -40,8 +40,12 @@ class Tracking {
 
   // each buckets represents 5 min activities
   // this key is a set of unique IP/domains
-  getKey(mac, bucket) {
-    return `tracking:${mac}:${bucket}`
+  getDestinationKey(mac, bucket) {
+    return `tracking:dest:${mac}:${bucket}`;
+  }
+  
+  getTrafficKey(mac, bucket) {
+    return `tracking:traffic:${mac}:${bucket}`;
   }
   
   // begin/end is js epoch time
@@ -70,16 +74,41 @@ class Tracking {
     await rclient.expireAsync(key, this.expireInterval);
   }
   
+  async appendTraffic(key, traffic) {
+    await rclient.incrAsync(key, Math.floor(traffic));
+    await rclient.expireAsync(key, this.expireInterval);    
+  }
+  
   // begin, end - timestamps
-  async record(mac, destination, begin, end) {
+  async recordDestination(mac, destination, begin, end) {
     const buckets = this.getBuckets(begin, end);
     if (buckets.length !== 2) {
       return;
     }
     
     for (let b = buckets[0]; b <= buckets[1]; b++) {
-      const key = this.getKey(mac, b);
+      const key = this.getDestinationKey(mac, b);
       await this.appendDestination(key, destination);
+    }      
+  }
+  
+  async recordTraffic(mac, flow, begin, end) {
+    const buckets = this.getBuckets(begin, end);
+    if (buckets.length !== 2) {
+      return;
+    }
+    
+    for (let b = buckets[0]; b <= buckets[1]; b++) {
+      const trafficKey = this.getTrafficKey(mac, b);
+      const duration = flow.du;
+      const traffic = flow.ob + flow.rb;
+      
+      // FIXME: may need to be more accurate
+      if (duration < this.bucketInterval / 1000) {
+        await this.appendTraffic(trafficKey, traffic);
+      } else {
+        await this.appendTraffic(trafficKey, traffic * this.bucketInterval / 1000 / duration);
+      }
     }      
   }
   
@@ -88,7 +117,8 @@ class Tracking {
       const destIP = flowTool.getDestIP(flow);
       const begin = flow.ts * 1000;
       const end = flow.ets * 1000;
-      await this.record(mac, destIP, begin, end);
+      await this.recordDestination(mac, destIP, begin, end);
+      await this.recordTraffic(mac, flow, begin, end);
     }
   }
 }
