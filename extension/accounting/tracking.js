@@ -48,6 +48,10 @@ class Tracking {
     let buckets = [];
     let beginBucket = Math.floor(begin / this.bucketInterval);
     let endBucket = Math.floor(end / this.bucketInterval);
+    if(endBucket - beginBucket > 288 || endBucket < beginBucket) {
+      log.info("Invalid bucket setup, skipped:", beginBucket, endBucket);
+      return [];
+    }
     return [beginBucket, endBucket];
   }
   
