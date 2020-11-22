@@ -75,7 +75,7 @@ class Tracking {
   }
   
   async appendTraffic(key, traffic) {
-    await rclient.incrAsync(key, Math.floor(traffic));
+    await rclient.incrbyAsync(key, Math.floor(traffic));
     await rclient.expireAsync(key, this.expireInterval);    
   }
   
