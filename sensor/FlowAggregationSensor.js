@@ -475,7 +475,7 @@ class FlowAggregationSensor extends Sensor {
     // now flows array should only contain flows having intels
 
     // tracking devices
-    await tracking.recordFlows(mac, flows);
+    await tracking.recordFlows(macAddress, flows);
     
     // record app/category flows by duration
     // TODO: add recording for network/group/global as well
