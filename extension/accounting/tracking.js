@@ -46,8 +46,8 @@ class Tracking {
   // begin/end is js epoch time
   getBuckets(begin, end) {
     let buckets = [];
-    let beginBucket = Math.floor(begin / 1000 / this.bucketInterval);
-    let endBucket = Math.floor(end / 1000 / 60 / 5);
+    let beginBucket = Math.floor(begin / this.bucketInterval);
+    let endBucket = Math.floor(end / this.bucketInterval);
     return [beginBucket, endBucket];
   }
   
