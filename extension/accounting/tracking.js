@@ -31,8 +31,9 @@ class Tracking {
       this.bucketInterval = 5 * 60 * 1000; // every 5 mins
       this.maxBuckets = 288;
       this.maxAggrBuckets = 576;
+      this.maxResultAggrBuckets = 2016; // 7 days
       this.bucketCountPerAggr = 12;
-      this.maxItemsInBucket = 100;      
+      this.maxItemsInBucket = 100;
       this.resetOffset = 0; // local timezone, starting from 0 O'Clock
       instance = this;
     }
@@ -56,6 +57,10 @@ class Tracking {
   
   getAggregateDestinationCountKey(mac) {
     return `tracking:aggr:dest:${mac}`;
+  }
+
+  getAggregateResultKey(mac) {
+    return `tracking:aggr:result:${mac}`;
   }
   
   // begin/end is js epoch time
@@ -147,12 +152,17 @@ class Tracking {
       return;
     }
     
+    let results = {};
+    
     // traffic
     const aggrTrafficKey = this.getAggregateTrafficKey(mac);
     for(let b = buckets[0]; b <= buckets[1]; b++) {
       const key = this.getTrafficKey(mac, b);
       const x = await rclient.getAsync(key) || 0;
       await rclient.hset(aggrTrafficKey, b, x);
+      if (x > 50 * 1000) { // hard code, 50k
+        results[b] = 1;
+      }
     }
     
     // count
@@ -161,7 +171,31 @@ class Tracking {
       const key = this.getDestinationKey(mac, b);
       const x = await rclient.scardAsync(key) || 0;
       await rclient.hset(aggrDestKey, b, x);
+      if (x > 5) { // hard code, 5 conns
+        results[b] = 1;
+      }
     }
+    
+    const aggrResultKey = this.getAggregateResultKey(mac);
+    for(let b = buckets[0]; b <= buckets[1]; b++) {
+      if (result[b]) {
+        await rclient.hset(aggrResultKey, b, 1);
+      } else {
+        await rclient.hset(aggrResultKey, b, 0);
+      }
+    }
+  }
+  
+  async _cleanup(key, expireBucketIndex) {
+    const keys = rclient.hkeysAsync(key);
+    let count = 0;
+    for(const key of keys) {
+      if(key < expireBucketIndex) {
+        count ++;
+        await rclient.hdelAsync(aggrDestinationKey, key);
+      }
+    }
+    log.info("Cleaned up", count, "old aggr data for key", key);
   }
   
   async cleanup(mac) {
@@ -170,27 +204,31 @@ class Tracking {
       return;
     }
     
-    const aggrTrafficKey = this.getAggregateTrafficKey(mac);
-    const keys = rclient.hkeysAsync(aggrTrafficKey);
-    let count = 0;
-    for(const key of keys) {
-      if(key < buckets[0]) {
-        count++;
-        await rclient.hdelAsync(aggrTrafficKey, key);        
-      }
-    }
-    log.info("Cleaned up", count, "old aggr traffic key for mac", mac);
+    await this._cleanup(this.getAggregateTrafficKey(mac), buckets[0]);
+    await this._cleanup(this.getAggregateDestinationCountKey(mac), buckets[0]);
+    await this._cleanup(this.getAggregateResultKey(mac), buckets[0] - 2016); // 2016 = 3600*24*7/5/60 => how many 5-min time slots in last 7 days, keep the result date for 7 more days       
+  }
+  
+  async getUsedTime(mac, time) {
+    time = time || Math.floor(new Date() / 1);
+    const d = new Date();
+    const offset = d.getTimezoneOffset(); // in mins
     
-    const aggrDestinationKey = this.getAggregateDestinationCountKey(mac);
-    const keys2 = rclient.hkeysAsync(aggrDestinationKey);
-    count = 0;
-    for(const key of keys2) {
-      if(key < buckets[0]) {
-        count ++;
-        await rclient.hdelAsync(aggrDestinationKey, key);
+    const timeWithTimezoneOffset = time - offset * 60 * 1000;
+    const beginOfDate = Math.floor(timeWithTimezoneOffset / 1000 / 3600 / 24) * 3600 * 24 * 1000;
+    const beginOfDateWithTimezoneOffset = beginOfDate + offset * 60 * 1000;    
+    const beginBucket = Math.floor(beginOfDateWithTimezoneOffset / this.bucketInterval);
+    const endBucket = beginBucket + this.maxBuckets;
+    
+    const key = this.getAggregateResultKey(mac);
+    const results = await rclient.hgetallAsync(key);
+    let count = 0;
+    for(let i = beginBucket; i < endBucket; i++) {
+      if(result[i]) {
+        count += Math.floor(this.bucketInterval / 1000 / 60); // 5 mins by default
       }
     }
-    log.info("Cleaned up", count, "old aggr dest key for mac", mac);    
+    return count;
   }
 }
 
