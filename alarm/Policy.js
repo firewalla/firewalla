@@ -81,15 +81,6 @@ class Policy {
       if (!_.isArray(this.tag) || _.isEmpty(this.tag))
         delete this.tag;
     }
-    if (raw.idleInfo) {
-      if (_.isString(raw.idleInfo)) {
-        try {
-          this.idleInfo = JSON.parse(raw.idleInfo);
-        } catch (e) {
-          log.error("Failed to parse policy idle info string:", raw.idleInfo, e)
-        }
-      }
-    }
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
@@ -189,15 +180,13 @@ class Policy {
     }
   }
   getIdleInfo() {
-    const idleInfo = this.idleInfo;
-    if (idleInfo) {
-      const { expire, activatedTime } = idleInfo;
+    if (this.idleTs) {
+      const idleTs = Number(this.idleTs);
       const now = new Date() / 1000;
-      const idleExpireTime = parseFloat(activatedTime) + parseFloat(expire);
-      const idleExpireFromNow = idleExpireTime - now;
-      const idleExpireSoon = idleExpireTime < (now + POLICY_MIN_EXPIRE_TIME);
+      const idleTsFromNow = idleTs - now;
+      const idleExpireSoon = idleTs < (now + POLICY_MIN_EXPIRE_TIME);
       return {
-        idleExpireFromNow, idleExpireSoon
+        idleTsFromNow, idleExpireSoon
       }
     } else {
       return null;
@@ -428,9 +417,6 @@ class Policy {
       delete p.cronTime;
     }
 
-    if (p.idleInfo) {
-      p.idleInfo = JSON.stringify(p.idleInfo);
-    }
 
     return flat.flatten(p);
   }
