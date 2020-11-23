@@ -30,7 +30,9 @@ class Tracking {
       this.expireInterval = 3600 * 24; // one hour, use 24 hours temporarily 
       this.bucketInterval = 5 * 60 * 1000; // every 5 mins
       this.maxBuckets = 288;
-      this.maxItemsInBucket = 100;
+      this.maxAggrBuckets = 576;
+      this.bucketCountPerAggr = 12;
+      this.maxItemsInBucket = 100;      
       this.resetOffset = 0; // local timezone, starting from 0 O'Clock
       instance = this;
     }
@@ -46,6 +48,14 @@ class Tracking {
   
   getTrafficKey(mac, bucket) {
     return `tracking:traffic:${mac}:${bucket}`;
+  }
+  
+  getAggregateTrafficKey(mac) {
+    return `tracking:aggr:traffic:${mac}`;
+  }
+  
+  getAggregateDestinationCountKey(mac) {
+    return `tracking:aggr:dest:${mac}`;
   }
   
   // begin/end is js epoch time
@@ -120,6 +130,67 @@ class Tracking {
       await this.recordDestination(mac, destIP, begin, end);
       await this.recordTraffic(mac, flow, begin, end);
     }
+  }
+  
+  // aggr the last 24 hours data, this is only for debugging purpose.
+  async aggrLast24Hours(mac) {
+    return this._aggr(mac, 24 * 3600 * 1000);
+  }
+  
+  async aggr(mac) {
+    return this._aggr(mac, this.bucketCountPerAggr * this.bucketInterval);
+  }
+  
+  async _aggr(mac, interval) {
+    const buckets = this.getBuckets(new Date() - interval, new Date());
+    if (buckets.length !== 2) {
+      return;
+    }
+    
+    // traffic
+    const aggrTrafficKey = this.getAggregateTrafficKey(mac);
+    for(let b = buckets[0]; b <= buckets[1]; b++) {
+      const key = this.getTrafficKey(mac, b);
+      const x = await rclient.getAsync(key) || 0;
+      await rclient.hset(aggrTrafficKey, b, x);
+    }
+    
+    // count
+    const aggrDestKey = this.getAggregateDestinationCountKey(mac);
+    for(let b = buckets[0]; b <= buckets[1]; b++) {
+      const key = this.getDestinationKey(mac, b);
+      const x = await rclient.scardAsync(key) || 0;
+      await rclient.hset(aggrDestKey, b, x);
+    }
+  }
+  
+  async cleanup(mac) {
+    const buckets = this.getBuckets(new Date() - this.maxAggrBuckets * this.bucketInterval, new Date());
+    if (buckets.length !== 2) {
+      return;
+    }
+    
+    const aggrTrafficKey = this.getAggregateTrafficKey(mac);
+    const keys = rclient.hkeysAsync(aggrTrafficKey);
+    let count = 0;
+    for(const key of keys) {
+      if(key < buckets[0]) {
+        count++;
+        await rclient.hdelAsync(aggrTrafficKey, key);        
+      }
+    }
+    log.info("Cleaned up", count, "old aggr traffic key for mac", mac);
+    
+    const aggrDestinationKey = this.getAggregateDestinationCountKey(mac);
+    const keys2 = rclient.hkeysAsync(aggrDestinationKey);
+    count = 0;
+    for(const key of keys2) {
+      if(key < buckets[0]) {
+        count ++;
+        await rclient.hdelAsync(aggrDestinationKey, key);
+      }
+    }
+    log.info("Cleaned up", count, "old aggr dest key for mac", mac);    
   }
 }
 
