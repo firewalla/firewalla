@@ -130,6 +130,10 @@ class Tracking {
   async recordFlows(mac, flows) {
     for(const flow of flows) {
       const destIP = flowTool.getDestIP(flow);
+      const intel = await intelTool.getIntel(destIP);
+      if(intel && intel.b) { // ignore background traffic
+        continue;
+      }
       const begin = flow.ts * 1000;
       const end = flow.ets * 1000;
       await this.recordDestination(mac, destIP, begin, end);
