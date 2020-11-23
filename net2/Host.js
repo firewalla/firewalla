@@ -381,7 +381,7 @@ class Host {
   }
 
   setScreenTime(count) {
-    this.o.screenTime = count;
+    this.o.screenTime = count || 0;
     this.redisfy();
 
     rclient.hmset("host:mac:" + this.o.mac, {
