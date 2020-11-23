@@ -29,6 +29,7 @@ class AccountingPlugin extends Sensor {
   constructor() {
     super();
     this.interval = 5 * 60 * 1000; // every 5 minutes;
+    this.cleanupInterval = 3600 * 1000; // every hour;
   }
 
   async scheduledJob() {
@@ -52,10 +53,25 @@ class AccountingPlugin extends Sensor {
     log.info("Updating data usage for all devices is complete");
   }
 
+  async cleanupJob() {
+    log.info("Clean up data usage for all devices...");
+
+    const macs = hostManager.getActiveMACs();
+    for(const mac of macs) {
+      await tracking.cleanup(mac);
+    }
+
+    log.info("Clean up data usage for all devices is complete");
+  }
+
   run() {
     setInterval(() => {
       this.scheduledJob();
     }, this.interval);
+
+    setInterval(() => {
+      this.cleanupJob();
+    }, this.cleanupInterval);
   }
 }
 
