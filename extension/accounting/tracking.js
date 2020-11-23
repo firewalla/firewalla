@@ -229,7 +229,7 @@ class Tracking {
     let distribution = [];
     
     for(let i = beginBucket; i < endBucket; i++) {      
-      distribution.push([i * this.bucketInterval, results[i] === '1' ? 1 : 0);
+      distribution.push([i * this.bucketInterval, results[i] === '1' ? 1 : 0]);
     }
     
     return distribution;
