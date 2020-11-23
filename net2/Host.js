@@ -1151,7 +1151,7 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
-      screenTime: this.o.screenTime || 0,
+      screenTime: this.o.screenTime ? Number(this.o.screenTime) : 0,
       intf: this.o.intf ? this.o.intf : 'Unknown'
     }
 
