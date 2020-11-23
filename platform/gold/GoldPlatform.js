@@ -195,6 +195,11 @@ class GoldPlatform extends Platform {
   getRetentionCountMultiplier() {
     return 1;
   }
+
+  isAccountingSupported() {
+    return true;
+  }
+  
   getStatsSpecs() {
     return [{
       granularities: '1hour',

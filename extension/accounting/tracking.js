@@ -27,7 +27,7 @@ const _ = require('lodash');
 class Tracking {
   constructor() {
     if (instance === null) {
-      this.expireInterval = 3600 * 24; // one hour, use 24 hours temporarily 
+      this.expireInterval = 3600 * 2; // two hours;
       this.bucketInterval = 5 * 60 * 1000; // every 5 mins
       this.maxBuckets = 288;
       this.maxAggrBuckets = 576;
