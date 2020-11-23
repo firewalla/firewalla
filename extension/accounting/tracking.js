@@ -178,7 +178,7 @@ class Tracking {
     
     const aggrResultKey = this.getAggregateResultKey(mac);
     for(let b = buckets[0]; b <= buckets[1]; b++) {
-      if (result[b]) {
+      if (results[b]) {
         await rclient.hset(aggrResultKey, b, 1);
       } else {
         await rclient.hset(aggrResultKey, b, 0);
@@ -224,7 +224,7 @@ class Tracking {
     const results = await rclient.hgetallAsync(key);
     let count = 0;
     for(let i = beginBucket; i < endBucket; i++) {
-      if(result[i]) {
+      if(results[i] === '1') {
         count += Math.floor(this.bucketInterval / 1000 / 60); // 5 mins by default
       }
     }
