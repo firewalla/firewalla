@@ -95,6 +95,7 @@ let legoEptCloud = class {
         ursa = require('ursa');
       }
     }
+    return instance[name];
     // NO LONGER create keypair in sync node during constructor
   }
 
