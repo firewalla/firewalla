@@ -209,6 +209,28 @@ class Tracking {
     await this._cleanup(this.getAggregateResultKey(mac), buckets[0] - 2016); // 2016 = 3600*24*7/5/60 => how many 5-min time slots in last 7 days, keep the result date for 7 more days       
   }
   
+  async getDistribution(mac, time) {
+    time = time || Math.floor(new Date() / 1);
+    const d = new Date();
+    const offset = d.getTimezoneOffset(); // in mins
+    
+    const timeWithTimezoneOffset = time - offset * 60 * 1000;
+    const beginOfDate = Math.floor(timeWithTimezoneOffset / 1000 / 3600 / 24) * 3600 * 24 * 1000;
+    const beginOfDateWithTimezoneOffset = beginOfDate + offset * 60 * 1000;    
+    const beginBucket = Math.floor(beginOfDateWithTimezoneOffset / this.bucketInterval);
+    const endBucket = beginBucket + this.maxBuckets;
+    
+    const key = this.getAggregateResultKey(mac);
+    const results = await rclient.hgetallAsync(key);
+    let distribution = [];
+    
+    for(let i = beginBucket; i < endBucket; i++) {      
+      distribution.push([i * this.bucketInterval, results[i] === '1' ? 1 : 0);
+    }
+    
+    return distribution;
+  }
+  
   async getUsedTime(mac, time) {
     time = time || Math.floor(new Date() / 1);
     const d = new Date();
@@ -225,11 +247,15 @@ class Tracking {
     let count = 0;
     for(let i = beginBucket; i < endBucket; i++) {
       if(results[i] === '1') {
-        count += Math.floor(this.bucketInterval / 1000 / 60); // 5 mins by default
+        if(i == beginBucket || i == endBucket - 1 ) {
+          count += Math.floor(this.bucketInterval / 1000 / 60); // 5 mins by default  
+        } else if(results[i-1] === '1' || results[i+1] === '1') {
+            count += Math.floor(this.bucketInterval / 1000 / 60); // 5 mins by default
+        }
       }
     }
     return count;
-  }
+  }    
 }
 
 module.exports = new Tracking();
