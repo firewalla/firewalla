@@ -147,7 +147,6 @@ class Policy {
     }
 
     this.timestamp = this.timestamp || new Date() / 1000;
-
   }
 
   isEqualToPolicy(policy) {
@@ -178,6 +177,19 @@ class Policy {
       return (this.type == 'mac' || arraysEqual(this.scope, policy.scope)) && arraysEqual(this.tag, policy.tag);
     } else {
       return false
+    }
+  }
+  getIdleInfo() {
+    if (this.idleTs) {
+      const idleTs = Number(this.idleTs);
+      const now = new Date() / 1000;
+      const idleTsFromNow = idleTs - now;
+      const idleExpireSoon = idleTs < (now + POLICY_MIN_EXPIRE_TIME);
+      return {
+        idleTsFromNow, idleExpireSoon
+      }
+    } else {
+      return null;
     }
   }
 
@@ -404,6 +416,7 @@ class Policy {
     if (p.cronTime === "") {
       delete p.cronTime;
     }
+
 
     return flat.flatten(p);
   }
