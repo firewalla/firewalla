@@ -40,6 +40,10 @@ class DHCPSensor extends Sensor {
           if (this.cache[obj.mac])
             return;
 
+          // only process DHCP packets from the client, so DHCPOFFER and DHCPACK do not count
+          if (obj.mtype !== "DHCPDISCOVER" && obj.mtype !== "DHCPREQUEST")
+            return;
+
           this.cache[obj.mac] = 1;
           setTimeout(() => {
             delete this.cache[obj.mac];
