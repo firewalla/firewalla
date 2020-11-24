@@ -21,7 +21,9 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const log = require('../../net2/logger.js')(__filename);
 
 const flowTool = require('../../net2/FlowTool.js')();
-const intelTool = require('../../net2/IntelTool');
+
+const IntelTool = require('../../net2/IntelTool');
+const intelTool = new IntelTool();
 
 const _ = require('lodash');
 
