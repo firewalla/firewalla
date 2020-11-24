@@ -817,10 +817,11 @@ module.exports = class {
       if (long || this.activeLongConns[uid]) {
         const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0}
 
-        if (long) // segemented log from conn_long.log
-          this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
-        else      // aggregated log from conn.log
-          delete this.activeLongConns[uid]
+        // already aggregated
+        if (previous.duration > obj.duration) return;
+
+        // this.activeLongConns[uid] will be cleaned after certain time of inactivity
+        this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
 
         const connCount = Object.keys(this.activeLongConns)
 

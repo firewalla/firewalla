@@ -609,7 +609,7 @@
     },
     "connLong": {
       "path": "/blog/current/conn_long.log",
-      "expires": 108000
+      "expires": 10800
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
