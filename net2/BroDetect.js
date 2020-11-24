@@ -480,28 +480,50 @@ module.exports = class {
           }
         }
         this.lastDNS = obj;
-        if (!isDomainValid(obj["query"]))
-          return;
-
-        const answers = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && (iptool.isV4Format(answer) || iptool.isV6Format(answer)));
-        const cnames = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && !iptool.isV4Format(answer) && !iptool.isV6Format(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
-        const query = formulateHostname(obj['query']);
-
-        // record reverse dns as well for future reverse lookup
-        await dnsTool.addReverseDns(query, answers);
-        for (const cname of cnames)
-          await dnsTool.addReverseDns(cname, answers);
-
-        for (const answer of answers) {
-          await dnsTool.addDns(answer, query, this.config.bro.dns.expires);
-          for (const cname of cnames) {
-            await dnsTool.addDns(answer, cname, this.config.bro.dns.expires);
+        if (obj["qtype_name"] === "PTR") {
+          // reverse DNS query, the IP address is in the query parameter, the domain is in the answers
+          if (obj["query"].endsWith(".in-addr.arpa")) {
+            // ipv4 reverse DNS query
+            const address = obj["query"].substring(0, obj["query"].length - ".in-addr.arpa".length).split('.').reverse().join('.');
+            if (!address || !iptool.isV4Format(address) || iptool.isPrivate(address))
+              return;
+            const domains = obj["answers"].filter(answer => !firewalla.isReservedBlockingIP(answer) && !iptool.isV4Format(answer) && !iptool.isV6Format(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
+            if (domains.length == 0)
+              return;
+            for (const domain of domains) {
+              await dnsTool.addReverseDns(domain, [address]);
+              await dnsTool.addDns(address, domain, this.config.bro.dns.expires);
+            }
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: address,
+              suppressEventLogging: true
+            });
           }
-          sem.emitEvent({
-            type: 'DestIPFound',
-            ip: answer,
-            suppressEventLogging: true
-          });
+        } else {
+          if (!isDomainValid(obj["query"]))
+            return;
+
+          const answers = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && (iptool.isV4Format(answer) || iptool.isV6Format(answer)));
+          const cnames = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && !iptool.isV4Format(answer) && !iptool.isV6Format(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
+          const query = formulateHostname(obj['query']);
+
+          // record reverse dns as well for future reverse lookup
+          await dnsTool.addReverseDns(query, answers);
+          for (const cname of cnames)
+            await dnsTool.addReverseDns(cname, answers);
+
+          for (const answer of answers) {
+            await dnsTool.addDns(answer, query, this.config.bro.dns.expires);
+            for (const cname of cnames) {
+              await dnsTool.addDns(answer, cname, this.config.bro.dns.expires);
+            }
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: answer,
+              suppressEventLogging: true
+            });
+          }
         }
       } else if (obj['id.orig_p'] == 5353 && obj['id.resp_p'] == 5353 && obj['answers'].length > 0) {
         let hostname = obj['answers'][0];
