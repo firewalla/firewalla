@@ -979,7 +979,7 @@ module.exports = class {
       } else {
         obj.duration = Number(obj.duration);
       }
-      
+
       if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
       }
@@ -1004,32 +1004,37 @@ module.exports = class {
         Number(obj.orig_bytes),
         Number(obj.resp_bytes)
       ];
+
+      const tmpspec = {
+        ts: obj.ts, // ts stands for start timestamp
+        ets: obj.ts + obj.duration, // ets stands for end timestamp
+        _ts: now, // _ts is the last time updated
+        __ts: obj.ts, // __ts is the first time found
+        sh: host, // source
+        dh: dst, // dstination
+        ob: Number(obj.orig_bytes), // transfer bytes
+        rb: Number(obj.resp_bytes),
+        ct: 1, // count
+        fd: flowdir, // flow direction
+        lh: lhost, // this is local ip address
+        mac: localMac, // mac address of local device
+        intf: intfId, // intf id
+        tags: tags,
+        du: obj.duration,
+        pf: {}, //port flow
+        af: {}, //application flows
+        pr: obj.proto,
+        f: flag,
+        flows: [flowDescriptor],
+        uids: [obj.uid]
+      };
+
+      if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
+      if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
+
+
       if (flowspec == null) {
-        flowspec = {
-          ts: obj.ts, // ts stands for start timestamp
-          ets: obj.ts + obj.duration, // ets stands for end timestamp
-          _ts: now, // _ts is the last time updated
-          __ts: obj.ts,  // __ts is the first time found
-          sh: host, // source
-          dh: dst, // dstination
-          ob: Number(obj.orig_bytes), // transfer bytes
-          rb: Number(obj.resp_bytes),
-          ct: 1, // count
-          fd: flowdir, // flow direction
-          lh: lhost, // this is local ip address
-          mac: localMac, // mac address of local device
-          intf: intfId, // intf id
-          tags: tags,
-          du: obj.duration,
-          pf: {}, //port flow
-          af: {}, //application flows
-          pr: obj.proto,
-          f: flag,
-          flows: [flowDescriptor],
-          _afmap: {}
-        }
-        if (obj['id.orig_p'] != null) flowspec.sp = [obj['id.orig_p']];
-        if (obj['id.resp_p'] != null) flowspec.dp = obj['id.resp_p'];
+        flowspec = tmpspec
         this.flowstash[flowspecKey] = flowspec;
         log.debug("Conn:FlowSpec:Create:", flowspec);
         this.indicateNewFlowSpec(flowspec);
@@ -1058,65 +1063,24 @@ module.exports = class {
         if (flag) {
           flowspec.f = flag;
         }
-      }
+        flowspec.uids.includes(obj.uid) || flowspec.uids.push(obj.uid)
 
-      let tmpspec = {
-        ts: obj.ts, // ts stands for start timestamp
-        ets: obj.ts + obj.duration, // ets stands for end timestamp
-        sh: host, // source
-        _ts: now, // _ts is the last time updated
-        dh: dst, // dstination
-        ob: Number(obj.orig_bytes), // transfer bytes
-        rb: Number(obj.resp_bytes),
-        ct: 1, // count
-        fd: flowdir, // flow direction
-        intf: intfId, // intf id
-        tags: tags,
-        lh: lhost, // this is local ip address
-        mac: localMac, // mac address of local device
-        du: obj.duration,
-        pf: {},
-        af: {},
-        pr: obj.proto,
-        f: flag,
-        flows: [flowDescriptor],
-        uids: [obj.uid]
-      };
-
-      let afobj = this.lookupAppMap(obj.uid);
-      if (afobj) {
-        tmpspec.af[afobj.host] = afobj;
-        let flow_afobj = flowspec.af[afobj.host];
-        if (!flow_afobj) {
-          flowspec.af[afobj.host] = afobj;
-          delete afobj['host'];
-        }
-      } else {
-        flowspec._afmap[obj.uid] = obj.uid;
-        // redo some older lookup ...
-        for (let i in flowspec._afmap) {
-          let afobj = this.lookupAppMap(i);
-          if (afobj) {
-            log.debug("DEBUG AFOBJ DELAY RESOLVE", afobj);
-            let flow_afobj = flowspec.af[afobj.host];
-            if (!flow_afobj) {
-              flowspec.af[afobj.host] = afobj;
-              delete afobj['host'];
-            }
-          }
-        }
-      }
-
-      if (obj['id.orig_p'] != null) {
-        if (!flowspec.sp.includes(obj['id.orig_p'])) {
+        if (obj['id.orig_p'] && !flowspec.sp.includes(obj['id.orig_p'])) {
           flowspec.sp.push(obj['id.orig_p']);
         }
-        tmpspec.sp = [obj['id.orig_p']];
       }
-      if (obj['id.resp_p'] != null) tmpspec.dp = obj['id.resp_p'];
+
+      const afobj = this.lookupAppMap(obj.uid);
+      if (afobj) {
+        tmpspec.af[afobj.host] = afobj;
+        if (!flowspec.af[afobj.host]) {
+          flowspec.af[afobj.host] = afobj;
+        }
+        delete afobj.host;
+      }
 
       // TODO: obsolete flow.pf and the following aggregation as flowstash now use port as part of its key
-      if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
+      if (obj['id.orig_p'] && obj['id.resp_p']) {
 
         let portflowkey = obj.proto + "." + obj['id.resp_p'];
         let port_flow = flowspec.pf[portflowkey];
@@ -1134,16 +1098,11 @@ module.exports = class {
           port_flow.rb += Number(obj.resp_bytes);
           port_flow.ct += 1;
         }
-        tmpspec.pf[portflowkey] = {
-          sp: [obj['id.orig_p']],
-          ob: Number(obj.orig_bytes),
-          rb: Number(obj.resp_bytes),
-          ct: 1
-        };
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
       }
 
-      // Single flow is written to redis first to prevent data loss, will be removed in most cases
+      // Single flow is written to redis first to prevent data loss
+      // will be aggregated on flow stash expiration and removed in most cases
       if (tmpspec) {
         if (tmpspec.lh === tmpspec.sh && localMac) {
           // record device as active if and only if device originates the connection
@@ -1204,26 +1163,23 @@ module.exports = class {
             this.recordOutPort(tmpspec);
           }
 
-          rclient.zadd(redisObj, (err, response) => {
-            if (err == null) {
+          await rclient.zaddAsync(redisObj).catch(
+            err => log.error("Failed to save tmpspec: ", tmpspec, err)
+          )
 
-              let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+          const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
-              setTimeout(() => {
-                sem.emitEvent({
-                  type: 'DestIPFound',
-                  ip: remoteIPAddress,
-                  fd: tmpspec.fd,
-                  ob: tmpspec.ob,
-                  rb: tmpspec.rb,
-                  suppressEventLogging: true
-                });
-              }, 1 * 1000); // make it a little slower so that dns record will be handled first
+          setTimeout(() => {
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: remoteIPAddress,
+              fd: tmpspec.fd,
+              ob: tmpspec.ob,
+              rb: tmpspec.rb,
+              suppressEventLogging: true
+            });
+          }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
-            } else {
-              log.error("Failed to save tmpspec: ", tmpspec, err);
-            }
-          });
         }
       }
 
@@ -1234,32 +1190,27 @@ module.exports = class {
       if (now > this.flowstashExpires) {
         let stashed = {};
         log.info("Processing Flow Stash");
-        for (let i in this.flowstash) {
-          let spec = this.flowstash[i];
+        for (const specKey in this.flowstash) {
+          const spec = this.flowstash[specKey];
           if (!spec.mac)
             continue;
           try {
-            if (spec._afmap && Object.keys(spec._afmap).length > 0) {
-              for (let i in spec._afmap) {
-                let afobj = this.lookupAppMap(i);
-                if (afobj) {
-                  let flow_afobj = spec.af[afobj.host];
-                  if (!flow_afobj) {
-                    spec.af[afobj.host] = afobj;
-                    delete afobj['host'];
-                  }
-                }
+            // try resolve host info for previous flows again here
+            for (const uid of spec.uids) {
+              const afobj = this.lookupAppMap(uid);
+              if (afobj && !spec.af[afobj.host]) {
+                spec.af[afobj.host] = afobj;
+                delete afobj['host'];
               }
             }
           } catch (e) {
             log.error("Conn:Save:AFMAP:EXCEPTION", e);
           }
-          spec.uids = Object.keys(spec._afmap);
-          delete spec._afmap;
-          let key = "flow:conn:" + spec.fd + ":" + spec.mac;
-          let strdata = JSON.stringify(spec);
-          let ts = spec._ts; // this is the last time when this flowspec is updated
-          let redisObj = [key, ts, strdata];
+
+          const key = "flow:conn:" + spec.fd + ":" + spec.mac;
+          const strdata = JSON.stringify(spec);
+          const ts = spec._ts; // this is the last time when this flowspec is updated
+          const redisObj = [key, ts, strdata];
           if (stashed[key]) {
             stashed[key].push(redisObj);
           } else {
@@ -1296,7 +1247,7 @@ module.exports = class {
             transaction.push(['zremrangebyscore', key, sstart, send]);
             stash.forEach(robj => transaction.push(['zadd', robj]));
             if (this.config.bro.conn.expires) {
-              transaction.push(['expireat', key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires])
+              transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.bro.conn.expires])
             }
 
             try {
