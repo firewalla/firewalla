@@ -72,56 +72,19 @@ class FlowTool {
   }
 
   _mergeFlow(targetFlow, flow) {
-    targetFlow.rb += flow.rb;
-    targetFlow.ct += flow.ct;
-    targetFlow.ob += flow.ob;
-    targetFlow.du += flow.du;
+    targetFlow.download += flow.download;
+    targetFlow.upload += flow.upload;
+    targetFlow.duration += flow.duration;
     if (targetFlow.ts < flow.ts) {
       targetFlow.ts = flow.ts;
     }
-    if (flow.pf) {
-      for (let k in flow.pf) {
-        if (targetFlow.pf[k] != null) {
-          targetFlow.pf[k].rb += flow.pf[k].rb;
-          targetFlow.pf[k].ob += flow.pf[k].ob;
-          targetFlow.pf[k].ct += flow.pf[k].ct;
-        } else {
-          targetFlow.pf[k] = flow.pf[k]
-        }
-      }
-    }
-
-    if (flow.flows) {
-      if (targetFlow.flows) {
-        targetFlow.flows = targetFlow.flows.concat(flow.flows);
-      } else {
-        targetFlow.flows = flow.flows;
-      }
+    if (targetFlow.score < flow.score) {
+      targetFlow.score = flow.score;
     }
   }
-
-  _getKey(flow) {
-    let key = "";
-    if (flow.sh === flow.lh) {
-      key = flow.dh + ":" + flow.fd;
-    } else {
-      key = flow.sh + ":" + flow.fd;
-    }
-    return key;
-  }
-
-  // append to existing flow or create new
-  _appendFlow(conndb, flowObject, ip) {
-    let o = flowObject;
-
-    let key = this._getKey(o, ip);
-
-    let flow = conndb[key];
-    if (flow == null) {
-      conndb[key] = o;
-    } else {
-      this._mergeFlow(flow, o);
-    }
+  _shouldMerge(targetFlow, flow) {
+    const compareKeys = ['device', 'ip', 'fd', 'port', 'protocol'];
+    return _.isEqual(_.pick(targetFlow, compareKeys), _.pick(flow, compareKeys));
   }
 
   _flowStringToJSON(flow) {
@@ -189,8 +152,12 @@ class FlowTool {
         outgoing = await this.getAllRecentOutgoingConnections(options)
         incoming = await this.getAllRecentIncomingConnections(options)
       }
-      recentFlows = _.orderBy(outgoing.concat(incoming), 'scope', options.asc ? 'asc' : 'desc')
-        .slice(0, options.count);
+      recentFlows = [].concat(outgoing,incoming);
+    }
+    if(!options.no_merge) {
+      recentFlows = this._mergeFlows(
+        _.orderBy(recentFlows, 'score', options.asc ? 'asc' : 'desc')
+      ).slice(0, options.count);
     }
 
     json.flows.recent = recentFlows;
@@ -198,7 +165,6 @@ class FlowTool {
     return recentFlows
   }
 
-  // merge adjacent flows with same key via this._getKey()
   _mergeFlows(flowObjects) {
     let mergedFlowObjects = [];
     let lastFlowObject = null;
@@ -210,7 +176,7 @@ class FlowTool {
         return;
       }
 
-      if (this._getKey(lastFlowObject) === this._getKey(flowObject)) {
+      if (this._shouldMerge(lastFlowObject, flowObject)) {
         this._mergeFlow(lastFlowObject, flowObject);
       } else {
         mergedFlowObjects.push(flowObject);
@@ -573,17 +539,7 @@ class FlowTool {
       if (x.ets) x.ts = x.ets
     });
 
-    let mergedFlow = null
-
-    if(!options.no_merge) {
-      mergedFlow = this._mergeFlows(
-        _.orderBy(flowObjects, 'ts', options.asc ? 'asc' : 'desc')
-      );
-    } else {
-      mergedFlow = flowObjects
-    }
-
-    let simpleFlows = mergedFlow
+    let simpleFlows = flowObjects
       .map((f) => {
         let s = this.toSimpleFlow(f)
         s.device = target; // record the mac address here
