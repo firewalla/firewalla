@@ -157,10 +157,10 @@ class FlowTool {
     if(!options.no_merge) {
       recentFlows = this._mergeFlows(
         _.orderBy(recentFlows, 'score', options.asc ? 'asc' : 'desc')
-      ).slice(0, options.count);
+      );
     }
 
-    json.flows.recent = recentFlows;
+    json.flows.recent = recentFlows.slice(0, options.count);
 
     return recentFlows
   }
