@@ -119,7 +119,7 @@ class EventRequestHandler {
             }
 
             if ( savedValue !== null && parseInt(savedValue) === newValue ) {
-                log.debug(`ignore repeated state ${newValue}`);
+                log.warn(`ignore repeated state ${newValue}`);
             } else {
                 log.debug(`update state value from ${savedValue} to ${newValue}`);
                 this.sendEvent(eventRequest,"state");
@@ -165,5 +165,4 @@ class EventRequestHandler {
 
 }
 
-let x = new EventRequestHandler();
 module.exports = EventRequestHandler;
