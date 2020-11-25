@@ -15,7 +15,7 @@ fi
 : ${VPN_PORT:=1194}
 : ${VPN_PROTOCOL:=udp}
 
-EXTERNAL_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
+EXTERNAL_IP=$(ip addr show dev eth0 | awk '/inet /' | grep -vw secondary | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
 
 VPN_CONFIG=$(redis-cli hget policy:system vpn)
 
