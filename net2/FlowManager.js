@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -393,30 +393,7 @@ module.exports = class FlowManager {
       });
   }
 
-  // no parameters accepted
-  getSystemStats() {
-    let flowsummary = {};
-    flowsummary.inbytes = 0;
-    flowsummary.outbytes = 0;
-    flowsummary.type = "hour";
-
-    let tsnow = Math.ceil(Date.now() / 1000);
-    tsnow = tsnow - tsnow % 3600;
-    flowsummary.tophour = tsnow;
-
-    let download = this.getLast24HoursDownloadsStats();
-    let upload = this.getLast24HoursUploadsStats();
-
-    return Promise.join(download, upload, (d, u) => {
-      flowsummary.flowinbytes = this.flowToLegacyFormat(d);
-      flowsummary.inbytes = this.sumBytes(d);
-      flowsummary.flowoutbytes = this.flowToLegacyFormat(u);
-      flowsummary.outbytes = this.sumBytes(u);
-      return new Promise((resolve) => resolve(flowsummary));
-    });
-  }
-
-  // use for intf or tag
+  // omitting target parameter for system flow summary
   getTargetStats(target) {
     let flowsummary = {};
     flowsummary.inbytes = 0;
@@ -435,50 +412,8 @@ module.exports = class FlowManager {
       flowsummary.inbytes = this.sumBytes(d);
       flowsummary.flowoutbytes = this.flowToLegacyFormat(u);
       flowsummary.outbytes = this.sumBytes(u);
-      return new Promise((resolve) => resolve(flowsummary));
-    }); 
-  }
-
-  // no parameters accepted
-  getStats2(host) {
-    if (!host) {
-      // if host is null, consider this is system stats
-      return this.getSystemStats();
-    }
-
-
-    host.flowsummary = {};
-    host.flowsummary.inbytes = 0;
-    host.flowsummary.outbytes = 0;
-    host.flowsummary.type = "hour";
-
-    let tsnow = Math.ceil(Date.now() / 1000);
-    tsnow = tsnow - tsnow % 3600;
-
-    host.flowsummary.tophour = tsnow;
-
-    const mac = host.o.mac;
-    let downloadPromiseList = [this.getLast24HoursDownloadsStats(mac)]; // you may be wondering why a single element list is used here.
-    // It is changed from a previous implementation which aggregates stats by ip addresses, and a host may have multiple ip addresses. The promise list is retained to avoid changing code structure too much.
-
-
-    return Promise.all(downloadPromiseList)
-      .then((results) => {
-        let sum = this.sumFlows(results);
-        let legacyFormat = this.flowToLegacyFormat(sum);
-        host.flowsummary.flowinbytes = legacyFormat;
-        host.flowsummary.inbytes = this.sumBytes(sum);
-
-        let uploadPromiseList = [this.getLast24HoursUploadsStats(mac)]; // the reason why a single element list is used here is same as the one above.
-
-        return Promise.all(uploadPromiseList)
-          .then((results) => {
-            let sum2 = this.sumFlows(results);
-            let legacyFormat2 = this.flowToLegacyFormat(sum2);
-            host.flowsummary.flowoutbytes = legacyFormat2;
-            host.flowsummary.outbytes = this.sumBytes(sum2);
-          });
-      });
+      return flowsummary
+    })
   }
 
   //

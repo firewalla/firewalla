@@ -38,7 +38,6 @@ const cloud = require('../../encipher');
 const Bone = require('./../../lib/Bone');
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const { delay } = require('../../util/util.js')
-const sem = require('../../sensor/SensorEventManager.js')
 
 const util = require('util')
 
@@ -93,7 +92,7 @@ module.exports = class {
         const { gid } = await Bone.checkCloud()
         if (!nbControllers[gid]) {
           const name = await rclient.getAsync('groupName')
-          this.createController(gid, name, null, true)
+          this.createController(gid, name, [], true)
         }
       } catch(err) {
         log.error('Error creating controller', err)
@@ -115,7 +114,7 @@ module.exports = class {
 
     log.info("Success logged in Firewalla Cloud");
 
-    const groups = await this.eptcloud.eptGroupList(this.eptcloud.eid)
+    const groups = await this.eptcloud.eptGroupList()
 
     log.info(`Found ${groups.length} groups this device has joined`);
 

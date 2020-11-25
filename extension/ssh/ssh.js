@@ -117,6 +117,8 @@ module.exports = class {
         switch(data.toString('utf8')) {
           case "Enter new UNIX password: ":
           case "Retype new UNIX password: ":
+          case "New password: ": // Navy
+          case "Retype new password: ": // Navy
             passwd.stdin.write(newPassword+"\n");
             break;
           case "passwd: password updated successfully\n":

@@ -240,6 +240,10 @@ function onError(error) {
       console.error(bind + ' is already in use');
       process.exit(1);
       break;
+    case 'EADDRNOTAVAIL':
+      console.error(`${bind} is currently unavailable`);
+      // no need to exit process for this error
+      break;
     default:
       throw error;
   }
@@ -258,7 +262,7 @@ if((f.isProductionOrBeta())
       type: 'FIREWALLA.UI.exception',
       msg: err.message,
       stack: err.stack,
-      err: JSON.stringify(err)
+      err: err
     });
     setTimeout(()=>{
       process.exit(1);

@@ -47,9 +47,10 @@ class NetworkProfileManager {
         if (!this.iptablesReady)
           return;
         const host = event.host;
-        const mac = host.mac;
+        let mac = host.mac;
         if (!mac)
           return;
+        mac = mac.toUpperCase();
         if (_.isString(host.ipv4)) {
           const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
           if (intfInfo && host.ipv4 !== intfInfo.gateway)
@@ -80,7 +81,7 @@ class NetworkProfileManager {
       clearTimeout(this.refreshTask);
     this.refreshTask = setTimeout(async () => {
       if (this._refreshInProgress) {
-        log.info("Refresh profile in progress, will schedule later ...");
+        log.info("Refresh network profiles in progress, will schedule later ...");
         this.scheduleRefresh();
       } else {
         try {
@@ -95,7 +96,7 @@ class NetworkProfileManager {
             }
           }
         } catch (err) {
-          log.error("Failed to refresh profiles", err);
+          log.error("Failed to refresh network profiles", err);
         } finally {
           this._refreshInProgress = false;
         }
@@ -105,9 +106,9 @@ class NetworkProfileManager {
 
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring"];
+    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
     for (const key of convertKeys) {
-      if (obj[key])
+      if (obj.hasOwnProperty(key))
         redisObj[key] = JSON.stringify(obj[key]);
     }
     return redisObj;
@@ -115,16 +116,16 @@ class NetworkProfileManager {
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring"];
+    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
     for (const key of convertKeys) {
-      if (redisObj[key])
+      if (redisObj.hasOwnProperty(key))
         try {
           obj[key] = JSON.parse(redisObj[key]);
         } catch (err) {}
     }
     const numberKeys = ["rtid"];
     for (const key of numberKeys) {
-      if (redisObj[key])
+      if (redisObj.hasOwnProperty(key))
         try {
           obj[key] = Number(redisObj[key]);
         } catch (err) {}
@@ -179,9 +180,9 @@ class NetworkProfileManager {
     // in case there is any key to exclude in future
     const excludedKeys = ["ready", "active"];
     for (const excludedKey of excludedKeys) {
-      if (thenCopy[excludedKey])
+      if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];
-      if (nowCopy[excludedKey])
+      if (nowCopy.hasOwnProperty(excludedKey))
         delete nowCopy[excludedKey];
     }
     return !_.isEqual(thenCopy, nowCopy);
@@ -243,6 +244,10 @@ class NetworkProfileManager {
         type: intf.type || "",
         rtid: intf.rtid || 0
       };
+      if (intf.hasOwnProperty("ready"))
+        updatedProfile.ready = intf.ready;
+      if (intf.hasOwnProperty("active"))
+        updatedProfile.active = intf.active;
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
         if (f.isMain()) {
@@ -254,7 +259,7 @@ class NetworkProfileManager {
         if (changed) {
           // network profile changed, need to reapply createEnv
           if (f.isMain()) {
-            log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, updatedProfile);
+            log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ......`, updatedProfile);
             await this.scheduleUpdateEnv(networkProfile, updatedProfile);
           }
         }
@@ -285,7 +290,8 @@ class NetworkProfileManager {
 
     for (let uuid in this.networkProfiles) {
       const key = `network:uuid:${uuid}`;
-      const profileJson = this.networkProfiles[uuid].o;
+      const networkProfile = this.networkProfiles[uuid];
+      const profileJson = networkProfile.o;
       if (f.isMain()) {
         await rclient.hmsetAsync(key, this.redisfy(profileJson));
       }

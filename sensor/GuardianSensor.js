@@ -161,7 +161,7 @@ class GuardianSensor extends Sensor {
     }
 
     this.socket.on('connect', () => {
-      log.info(`Socket IO connection to ${server}, ${region} is connected.`);
+      log.forceInfo(`Socket IO connection to ${server}, ${region} is connected.`);
       this.socket.emit("box_registration", {
         gid: gid,
         eid: eid
@@ -169,13 +169,15 @@ class GuardianSensor extends Sensor {
     });
 
     this.socket.on('disconnect', () => {
-      log.info(`Socket IO connection to ${server}, ${region} is disconnected.`);
+      log.forceInfo(`Socket IO connection to ${server}, ${region} is disconnected.`);
     });
 
     const key = `send_to_box_${gid}`;
     this.socket.on(key, (message) => {
       if(message.gid === gid) {
-        this.onMessage(gid, message);
+        this.onMessage(gid, message).catch((err) => {
+          log.error(`Failed to process message from group ${gid}`, err);
+        });
       }
     })
   }
@@ -201,7 +203,7 @@ class GuardianSensor extends Sensor {
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
 
-      const input = new Buffer(JSON.stringify(response), 'utf8');
+      const input = Buffer.from(JSON.stringify(response), 'utf8');
       const output = await deflateAsync(input);
 
       const compressedResponse = JSON.stringify({

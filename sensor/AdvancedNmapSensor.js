@@ -155,7 +155,7 @@ class AdvancedNmapSensor extends Sensor {
 
     // nmap -Pn -p445 -n --script ~/Downloads/smb-vuln-ms17-010.nse 10.0.1.0/24 -oX - | ./xml2json
     const cmd = util.format(
-      'sudo nmap -n -Pn -p%s --host-timeout 60s %s %s -oX - | %s',
+      'sudo timeout 1200s nmap -n -Pn -p%s --host-timeout 60s %s %s -oX - | %s',
       portString,
       scriptPaths.join(' '),
       range,

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -401,9 +401,13 @@ module.exports = class FlowMonitor {
         data = {};
       } else {
         for (let n in data) {
-          data[n] = JSON.parse(data[n]);
-          data[n].neighbor = n;
-          neighborArray.push(data[n]);
+          try {
+            data[n] = JSON.parse(data[n]);
+            data[n].neighbor = n;
+            neighborArray.push(data[n]);
+          } catch (e) {
+            log.warn('parse neighbor data error', data[n], key);
+          }
         }
       }
       let now = Date.now() / 1000;
@@ -642,7 +646,7 @@ module.exports = class FlowMonitor {
       }
 
       try {
-        await this.genLargeTransferAlarm(direction, flow);
+        this.genLargeTransferAlarm(direction, flow);
       } catch (err) {
         log.error('Failed to generate alarm', fullkey, err);
       }
@@ -719,7 +723,7 @@ module.exports = class FlowMonitor {
   // Reslve v6 or v4 address into a local host
 
 
-  async genLargeTransferAlarm(direction, flow) {
+  genLargeTransferAlarm(direction, flow) {
     if (!flow) return;
 
     let copy = JSON.parse(JSON.stringify(flow));
@@ -785,7 +789,7 @@ module.exports = class FlowMonitor {
       // ideally each destination should have a unique ID, now just use hostname as a workaround
       // so destionationName, destionationHostname, destionationID are the same for now
 
-      await alarmManager2.enqueueAlarm(alarm);
+      alarmManager2.enqueueAlarm(alarm);
     }
   }
 

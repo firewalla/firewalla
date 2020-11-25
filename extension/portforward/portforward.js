@@ -31,6 +31,8 @@ const exec = require('child-process-promise').exec;
 
 const iptable = require("../../net2/Iptables.js");
 const Message = require('../../net2/Message.js');
+const pl = require('../../platform/PlatformLoader.js');
+const platform = pl.getPlatform();
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -49,6 +51,7 @@ const configKey = 'extension.portforward.config'
 //   ]
 // }
 
+// only supports IPv4 for now
 class PortForward {
   constructor() {
     if(!instance) {
@@ -57,19 +60,21 @@ class PortForward {
         if (f.isMain()) {
           let c = require('../../net2/MessageBus.js');
           this.channel = new c('debug');
-          this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, (channel, type, ip, obj) => {
-            if (type == "Extension:PortForwarding") {
-              (async ()=>{
-                if (obj!=null) {
-                  if (obj.state == false) {
-                    await this.removePort(obj);
-                  } else {
-                    await this.addPort(obj);
-                  }
-                  // TODO: config should be saved after rule successfully applied
-                  await this.refreshConfig();
+          this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
+            if (type != "Extension:PortForwarding") return
+
+            try {
+              if (obj != null) {
+                if (obj.state == false) {
+                  await this.removePort(obj);
+                } else {
+                  await this.addPort(obj);
                 }
-              })();
+                // TODO: config should be saved after rule successfully applied
+                await this.refreshConfig();
+              }
+            } catch(err) {
+              log.error('Error applying port-forward', obj, err)
             }
           });
 
@@ -102,7 +107,7 @@ class PortForward {
     for (const extIP of extIPs) {
       const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PREROUTING_PORT_FORWARD`);
       await exec(cmd).catch((err) => {
-        log.error(`Failed to update FW_PREROUTING_EXT_IP with ${extIP}`, err.message);
+        log.error(`Failed to update FW_PREROUTING_EXT_IP with command: ${cmd}`, err.message);
       });
     }
   }
@@ -152,10 +157,8 @@ class PortForward {
         const ipv4Addr = macEntry.ipv4Addr;
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
-          if (map.toIP) {
-            log.info("IP address has changed, remove old rule: ", map);
-            await this.removePort(map);
-          }
+          log.info("IP address has changed, remove old rule: ", map);
+          await this.removePort(map);
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
@@ -222,7 +225,8 @@ class PortForward {
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
           (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
-          _map.toIP == map.toIP
+          (!map.toIP && map.toMac && _map.toMac == map.toMac || _map.toIP == map.toIP) &&
+          (map._type == "*" || (_map._type || "port_forward") === (map._type || "port_forward"))
         ) {
           return i;
         }
@@ -272,9 +276,11 @@ class PortForward {
     let old = this.find(map);
     while (old >= 0) {
       this.config.maps[old].state = false;
-      log.info(`Remove port forward`, map);
-      const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
-      await iptable.portforwardAsync(dupMap);
+      if (this.config.maps[old].active !== false) {
+        log.info(`Remove port forward`, this.config.maps[old]);
+        const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
+        await iptable.portforwardAsync(dupMap);
+      }
 
       this.config.maps.splice(old, 1);
       old = this.find(map);
@@ -291,7 +297,7 @@ class PortForward {
           await this.addPort(map, true)
         }
       }
-    } catch (err) { };
+    } catch (err) { }
   }
 
   async start() {
@@ -311,16 +317,21 @@ class PortForward {
 
   async stop() {
     log.info("PortForwarder:Stopping PortForwarder ...")
-    await this.saveConfig().catch((err) => {
-    })
+    await this.saveConfig().catch(() => { })
   }
 
   _isLANInterfaceIP(ip) {
     const iface = sysManager.getInterfaceViaIP4(ip);
-    if (iface && iface.type === "lan")
-      return true;
-    else
+    if (!iface || !iface.name)
       return false;
+    if (iface.type === "lan")
+      return true;
+    if (platform.isOverlayNetworkAvailable()) {
+      // on red/blue/navy, if overlay and primary network are in the same subnet, getInterfaceViaIP4 will return primary network, which is LAN
+      if (sysManager.inMySubnets4(ip, `${iface.name}:0`))
+        return true;
+    }
+    return false;
   }
 }
 
