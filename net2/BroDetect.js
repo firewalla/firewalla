@@ -1018,7 +1018,7 @@ module.exports = class {
       // }
 
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
-      let now = Math.ceil(Date.now() / 1000);
+      let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
       let flowspec = this.flowstash[flowspecKey];
       let flowDescriptor = [
