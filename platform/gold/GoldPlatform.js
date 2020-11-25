@@ -183,6 +183,14 @@ class GoldPlatform extends Platform {
   isIFBSupported() {
     return true;
   }
+
+  getRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getRetentionCountMultiplier() {
+    return 1;
+  }
 }
 
 module.exports = GoldPlatform;
