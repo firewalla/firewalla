@@ -39,7 +39,7 @@ async function removeCustomizedRoutingTable(tableName) {
 async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
   // separate bits in fwmark for vpn client and regular WAN
   const bitOffset = type === RT_TYPE_VC ? 10 : 0;
-  const maxTableId = type === RT_TYPE_VC ? 1 << (16 - bitOffset) : 1 << bitOffset;
+  const maxTableId = type === RT_TYPE_VC ? 64 : 1024;
   let cmd = "cat /etc/iproute2/rt_tables | grep -v '#' | awk '{print $1,\"\\011\",$2}'";
   let result = await exec(cmd);
   if (result.stderr !== "") {
