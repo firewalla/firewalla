@@ -246,51 +246,6 @@ class FlowTool {
     return this.getAllRecentConnections("out", options);
   }
 
-  async getAllRecentOutgoingConnectionsMixed(options) {
-
-    //   {
-    //     country = US;
-    //     device = "9C:3D:CF:FA:95:75";
-    //     download = 11984;
-    //     duration = "1.121203";
-    //     fd = in;
-    //     host = "logs.us-west-2.amazonaws.com";
-    //     ip = "52.94.209.50";
-    //     ts = "1519653614.804147";
-    //     upload = 1392;
-    // }
-
-    const outgoing = await this.getAllRecentOutgoingConnections(options)
-    const incoming = await this.getAllRecentIncomingConnections(options)
-
-    const all = outgoing.concat(incoming)
-
-    all.sort((a, b) => a.ip < b.ip)
-
-    let merged = []
-    let last_entry = null
-
-    for (let i = 0; i < all.length; i++) {
-      const entry = all[i];
-      if (last_entry === null) {
-        last_entry = entry
-      } else {
-        if (last_entry.ip === entry.ip) {
-          last_entry.upload += entry.upload
-          last_entry.download += entry.download
-          last_entry.duration = parseFloat(last_entry.duration) + parseFloat(entry.duration)
-        } else {
-          merged.push(last_entry)
-          last_entry = entry
-        }
-      }
-    }
-
-    merged.push(last_entry)
-
-    return merged
-  }
-
   // this is to get all recent connections in the network
   // regardless which device it belongs to
   async getAllRecentConnections(direction, options) {
