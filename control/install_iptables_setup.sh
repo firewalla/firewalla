@@ -789,8 +789,8 @@ sudo iptables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_se
 # regular route chain
 sudo iptables -w -t mangle -N FW_RT_REG &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_REG
-# only for outbound traffic and not being marked by previous vpn client chain
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000/0xffff -j FW_RT_REG
+# only for outbound traffic
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 # global regular route chain
@@ -898,8 +898,8 @@ sudo ip6tables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_s
 # regular route chain
 sudo ip6tables -w -t mangle -N FW_RT_REG &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_REG
-# only for outbound traffic and not being marked by previous vpn client chain
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000/0xffff -j FW_RT_REG
+# only for outbound traffic
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 # global regular route chain
