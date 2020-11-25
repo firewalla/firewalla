@@ -30,6 +30,7 @@ const Ipset = require('../net2/Ipset.js');
 const { Rule } = require('../net2/Iptables.js');
 const qos = require('./QoS.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const routing = require('../extension/routing/routing.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
@@ -242,7 +243,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
         }
         const rtIdHex = Number(rtId).toString(16);
         chain = "FW_RT_VC_GLOBAL";
-        target = `MARK --set-xmark 0x${rtIdHex}/0xffff`;
+        target = `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`;
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
@@ -365,7 +366,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
         }
         const rtIdHex = Number(rtId).toString(16);
         chain = "FW_RT_VC_DEVICE";
-        target = `MARK --set-xmark 0x${rtIdHex}/0xffff`;
+        target = `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`;
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
@@ -490,7 +491,7 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         const rtIdHex = Number(rtId).toString(16);
         devChain = "FW_RT_VC_TAG_DEVICE";
         netChain = "FW_RT_VC_TAG_NETWORK";
-        target = `MARK --set-xmark 0x${rtIdHex}/0xffff`;
+        target = `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`;
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
@@ -641,7 +642,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
         }
         const rtIdHex = Number(rtId).toString(16);
         chain = "FW_RT_VC_NETWORK";
-        target = `MARK --set-xmark 0x${rtIdHex}/0xffff`;
+        target = `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`;
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);

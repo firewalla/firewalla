@@ -497,6 +497,10 @@ class OpenVPNClient extends VPNClient {
     }
     return `vpn_${this.profileId}`
   }
+
+  async destroy() {
+    await vpnClientEnforcer.destroyRtId(this.getInterfaceName());
+  }
 }
 
 module.exports = OpenVPNClient;
