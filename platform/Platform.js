@@ -189,6 +189,10 @@ class Platform {
     return false;
   }
 
+  isAccountingSupported() {
+    return false;
+  }  
+
   async onWanIPChanged(ip) {
     log.info("WanIP is changed to", ip);
   }

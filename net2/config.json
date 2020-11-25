@@ -552,6 +552,7 @@
     },
     "ACLAuditLogPlugin": {},
     "NewDeviceTagSensor": {},
+    "AccountingPlugin": {},
     "DockerSensor": {}
   },
   "hooks": {
@@ -710,7 +711,8 @@
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
-    "single_wan_conn_check": false
+    "single_wan_conn_check": false,
+    "accounting": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

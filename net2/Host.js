@@ -381,6 +381,15 @@ class Host {
     });
   }
 
+  setScreenTime(count) {
+    this.o.screenTime = count || 0;
+    this.redisfy();
+
+    rclient.hmset("host:mac:" + this.o.mac, {
+      'screenTime': this.o.screenTime
+    });
+  }
+
   getAdmin(tuple) {
     if (this.admin == null) {
       return null;
@@ -1143,6 +1152,7 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
+      screenTime: this.o.screenTime ? Number(this.o.screenTime) : 0,
       intf: this.o.intf ? this.o.intf : 'Unknown'
     }
 
