@@ -28,6 +28,7 @@ const {Rule, wrapIptables} = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const routing = require('../extension/routing/routing.js');
 const dnsmasq = new DNSMASQ();
 Promise.promisifyAll(fs);
 
@@ -246,9 +247,9 @@ class Tag {
       // remove old mark first
       await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)}`);
       if (this._netFwMark) {
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/${routing.MASK_VC}`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/${routing.MASK_VC}`);
         await exec(cmd).catch((err) => {});
       }
       this._netFwMark = null;
@@ -266,11 +267,11 @@ class Tag {
         // do not change skbmark
       }
       if (this._netFwMark) {
-        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)} skbmark 0x${this._netFwMark}/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)} skbmark 0x${this._netFwMark}/${routing.MASK_VC}`);
         // add to the beginning of the chain so that it has the lowest priority and can be overriden by the subsequent rules 
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        let cmd = wrapIptables(`sudo iptables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/${routing.MASK_VC}`);
         await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/0xffff`);
+        cmd = wrapIptables(`sudo ip6tables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/${routing.MASK_VC}`);
         await exec(cmd).catch((err) => {});
       }
       return true;
