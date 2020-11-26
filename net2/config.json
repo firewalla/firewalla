@@ -552,7 +552,8 @@
     },
     "ACLAuditLogPlugin": {},
     "NewDeviceTagSensor": {},
-    "DockerSensor": {}
+    "DockerSensor": {},
+    "EventSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
