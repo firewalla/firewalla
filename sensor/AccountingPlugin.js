@@ -25,6 +25,8 @@ const tracking = require('../extension/accounting/tracking.js');
 
 const fc = require('../net2/config.js');
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 class AccountingPlugin extends Sensor {
   constructor() {
     super();
@@ -33,8 +35,8 @@ class AccountingPlugin extends Sensor {
   }
 
   async scheduledJob() {
-    if(!fc.isFeatureOn("accounting")) {
-      log.info("Accounting feature is disabled.");
+    if(!platform.isAccountingSupported() || !fc.isFeatureOn("accounting")) {
+      log.info("Accounting feature is not supported or disabled.");
       return;
     }
     

@@ -25,6 +25,8 @@ const flowTool = require('../../net2/FlowTool.js')();
 const IntelTool = require('../../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const f = require('../../net2/Firewalla.js');
+
 const _ = require('lodash');
 
 class Tracking {
@@ -72,7 +74,6 @@ class Tracking {
       return [];
     }
     
-    let buckets = [];
     let beginBucket = Math.floor(begin / this.bucketInterval);
     let endBucket = Math.floor(end / this.bucketInterval);
     if(endBucket - beginBucket > this.maxBuckets || endBucket < beginBucket) {
@@ -166,7 +167,11 @@ class Tracking {
     for(let b = buckets[0]; b <= buckets[1]; b++) {
       const key = this.getTrafficKey(mac, b);
       const x = await rclient.getAsync(key) || 0;
-      await rclient.hset(aggrTrafficKey, b, x);
+
+      if(!f.isProduction()) {
+        await rclient.hset(aggrTrafficKey, b, x);
+      }
+
       if (x > 50 * 1000) { // hard code, 50k
         results[b] = 1;
       }
@@ -177,7 +182,11 @@ class Tracking {
     for(let b = buckets[0]; b <= buckets[1]; b++) {
       const key = this.getDestinationKey(mac, b);
       const x = await rclient.scardAsync(key) || 0;
-      await rclient.hset(aggrDestKey, b, x);
+
+      if(!f.isProduction()) {
+        await rclient.hset(aggrDestKey, b, x);
+      }
+      
       if (x > 5) { // hard code, 5 conns
         results[b] = 1;
       }

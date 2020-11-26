@@ -49,6 +49,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const al = require('../util/accountingAudit.js');
 
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 // This sensor is to aggregate device's flow every 10 minutes
 
@@ -116,8 +117,7 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async accountTrafficByX(mac, flows) {
-    let traffic = {};
-
+    
     for (const flow of flows) {
       let destIP = flowTool.getDestIP(flow);
       let intel = await intelTool.getIntel(destIP);
@@ -474,12 +474,14 @@ class FlowAggregationSensor extends Sensor {
 
     // now flows array should only contain flows having intels
 
-    // tracking devices
-    await tracking.recordFlows(macAddress, flows);
+    if (platform.isAccountingSupported() && fc.isFeatureOn("accounting")) {
+      // tracking devices
+      await tracking.recordFlows(macAddress, flows);
     
-    // record app/category flows by duration
-    // TODO: add recording for network/group/global as well
-    await this.accountTrafficByX(macAddress, flows);
+      // record app/category flows by duration
+      // TODO: add recording for network/group/global as well
+      await this.accountTrafficByX(macAddress, flows);
+    }
 
     let appTraffic = await this.trafficGroupByApp(flows);
     await flowAggrTool.addAppActivityFlows(macAddress, this.config.interval, end, appTraffic, this.config.aggrFlowExpireTime);
