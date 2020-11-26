@@ -165,4 +165,4 @@ class EventRequestHandler {
 
 }
 
-module.exports = EventRequestHandler;
+module.exports = new EventRequestHandler();

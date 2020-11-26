@@ -16,13 +16,13 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 
 usage() {
     cat <<EOU
-usage: $CMD {get|state|action|del} [<options>]
+usage: $CMD {list|state|action|clean} [<options>]
 
-  # get events from <begin> till <end>
-  $CMD get <begin> <end>
+  # list events from <begin> till <end>
+  $CMD list <begin> <end>
 
-  # delete events from <begin> till <end>
-  $CMD del <begin> <end>
+  # clean events from <begin> till <end>
+  $CMD clean <begin> <end>
 
   # add state event with state_type/state_key/state_value
   $CMD state <state_type> <state_key> <state_value>
@@ -51,17 +51,17 @@ add_state_event() {
 }
 
 add_action_event() {
-    test $# -ge 3 || { logerror need action_type/action_value; return 1; }
+    test $# -ge 2 || { logerror need action_type/action_value; return 1; }
     redis-cli publish 'event:request:action' "{\"action_type\":\"$1\",\"action_value\":$2}"
 }
 
-del_event() {
+clean_event() {
     begin=${1:-0}
     end=${2:-0}
     redis-cli publish 'event:request:clean' "{\"begin\":\"$begin\",\"end\":"$end"}"
 }
 
-get_event() {
+list_event() {
     redis-cli zrangebyscore 'event:log' ${1:-'0'} ${2:-'inf'} withscores
 }
 
@@ -76,13 +76,13 @@ test $# -gt 0 || { usage; exit 0; }
 cmd=$1; shift
 
 case $cmd in 
-    get) get_event "$@" || rc=1
+    list) list_event "$@" || rc=1
         ;;
     state) add_state_event "$@" || rc=1
         ;;
     action) add_action_event "$@" || rc=1
         ;;
-    del) del_event "$@" || rc=1
+    clean) clean_event "$@" || rc=1
         ;;
     *) usage
        logerror "un-supported command - $cmd"
