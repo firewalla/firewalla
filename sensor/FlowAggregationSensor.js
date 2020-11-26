@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,30 +14,28 @@
  */
 'use strict';
 const _ = require('lodash');
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let util = require('util');
+const util = require('util');
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
 
-let flowTool = require('../net2/FlowTool')();
-let FlowAggrTool = require('../net2/FlowAggrTool');
-let flowAggrTool = new FlowAggrTool();
+const flowTool = require('../net2/FlowTool')();
+const FlowAggrTool = require('../net2/FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
 
-let AppFlowTool = require('../flow/AppFlowTool.js')
-let appFlowTool = new AppFlowTool()
+const TypeFlowTool = require('../flow/TypeFlowTool.js')
+const appFlowTool = new TypeFlowTool('app')
+const categoryFlowTool = new TypeFlowTool('category')
 
-let CategoryFlowTool = require('../flow/CategoryFlowTool.js')
-let categoryFlowTool = new CategoryFlowTool()
+const HostTool = require('../net2/HostTool')
+const hostTool = new HostTool();
 
-let HostTool = require('../net2/HostTool')
-let hostTool = new HostTool();
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
 
-let IntelTool = require('../net2/IntelTool');
-let intelTool = new IntelTool();
-
-let HostManager = require('../net2/HostManager.js');
-let hostManager = new HostManager();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 
 const flowUtil = require('../net2/FlowUtil')
 
@@ -47,6 +45,8 @@ const excludedCategories = (config.category && config.category.exclude) || [];
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const bone = require('../lib/Bone.js');
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 // This sensor is to aggregate device's flow every 10 minutes
 
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
@@ -54,24 +54,20 @@ const bone = require('../lib/Bone.js');
 class FlowAggregationSensor extends Sensor {
   constructor() {
     super();
-    this.config.interval = 600; // default 10 minutes, might be overwrote by net2/config.json
-    this.config.cleanupInterval = 60 * 60 // default one hour
-    this.config.flowRange = 24 * 3600 // 24 hours
-    this.config.sumFlowExpireTime = 0.5 * 3600 // 30 minutes
-    this.config.aggrFlowExpireTime = 24 * 3600 // 24 hours
-
     this.firstTime = true; // some work only need to be done once, use this flag to check
+    this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
+    this.retentionCountMultipler = platform.getRetentionCountMultiplier();
   }
 
   async scheduledJob() {
     log.info("Generating summarized flows info...")
-    
+
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
     await this.aggrAll(ts)
 
     // preload apps and categories to improve performance
-    const apps = await appFlowTool.getApps('*'); // all mac addresses
-    const categories = await categoryFlowTool.getCategories('*') // all mac addresses
+    const apps = await appFlowTool.getTypes('*'); // all mac addresses
+    const categories = await categoryFlowTool.getTypes('*') // all mac addresses
 
     await this.sumAll(ts, apps, categories)
     await this.updateAllHourlySummedFlows(ts, apps, categories)
@@ -79,13 +75,16 @@ class FlowAggregationSensor extends Sensor {
     log.info("Summarized flow generation is complete");
   }
 
-  async cleanupJob() {
-    log.info("Cleaning up app/category flows...")
-    await appFlowTool.cleanupAppFlow()
-    await categoryFlowTool.cleanupCategoryFlow()
-  }
-
   run() {
+    this.config.flowRange *= this.retentionTimeMultipler;
+    this.config.sumFlowExpireTime *= this.retentionTimeMultipler;
+    this.config.aggrFlowExpireTime *= this.retentionTimeMultipler;
+    this.config.sumFlowMaxFlow *= this.retentionCountMultipler;
+    log.debug("config.interval="+ this.config.interval);
+    log.debug("config.flowRange="+ this.config.flowRange);
+    log.debug("config.sumFlowExpireTime="+ this.config.sumFlowExpireTime);
+    log.debug("config.aggrFlowExpireTime="+ this.config.aggrFlowExpireTime);
+    log.debug("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
     sem.once('IPTABLES_READY', async () => {
       // init host
       if (hostManager.hosts.all.length == 0) {
@@ -101,9 +100,6 @@ class FlowAggregationSensor extends Sensor {
         this.scheduledJob();
       }, this.config.interval * 1000)
 
-      setInterval(() => {
-        this.cleanupJob()
-      }, this.config.cleanupInterval * 1000)
     });
   }
 
@@ -133,7 +129,7 @@ class FlowAggregationSensor extends Sensor {
         let t = traffic[app];
 
         if (! (app in traffic) ) {
-            traffic[app] = {
+          traffic[app] = {
             duration: flow.du,
             ts: flow.ts,
             ets: flow.ets || Date.now() / 1000,
@@ -249,15 +245,15 @@ class FlowAggregationSensor extends Sensor {
   async hourlySummedFlows(ts, opts, apps, categories) {
     // ts is the end timestamp of the hour
     ts = Math.floor(ts / 3600) * 3600
-    let end = ts;
-    let begin = end - 3600;
-    let skipIfExists = opts && opts.skipIfExists;
+    const end = ts;
+    const begin = end - 3600;
+    const skipIfExists = opts && opts.skipIfExists;
 
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
+    const endString = new Date(end * 1000).toLocaleTimeString();
+    const beginString = new Date(begin * 1000).toLocaleTimeString();
     log.debug(`Aggregating hourly flows for ${beginString} - ${endString}, skipIfExists flag: ${skipIfExists}`)
 
-    let options = {
+    const options = {
       begin: begin,
       end: end,
       interval: this.config.interval,
@@ -266,62 +262,64 @@ class FlowAggregationSensor extends Sensor {
       max_flow: 200
     }
 
+
+    await this.sumViews(options, apps, categories)
+  }
+
+  async sumViews(options, apps, categories) {
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
     await flowAggrTool.addSumFlow("app", options);
-
-    await this.cleanupAppActivity(options, apps); // to filter idle activities
-
+    await this.summarizeActivity(options, 'app', apps); // to filter idle activities
     await flowAggrTool.addSumFlow("category", options);
+    await this.summarizeActivity(options, 'category', categories);
 
-    await this.cleanupCategoryActivity(options, categories);
-    
     // aggregate intf
-    let intfs = hostManager.getActiveIntfs();
+    const intfs = hostManager.getActiveIntfs();
     log.debug(`hourlySummedFlows intfs:`, intfs);
 
-    await Promise.all(intfs.map(async intf => {
+    for (const intf of intfs) {
       if(!intf || _.isEmpty(intf.macs)) {
         return;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
 
-      optionsCopy.intf = intf;
-      optionsCopy.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
+      optionsCopy.intf = intf.intf;
+      optionsCopy.macs = intf.macs;
       await flowAggrTool.addSumFlow("download", optionsCopy);
       await flowAggrTool.addSumFlow("upload", optionsCopy);
       await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy, apps); // to filter idle activities if updated
+      await this.summarizeActivity(optionsCopy, 'app', apps); // to filter idle activities if updated
       await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy, categories);
-    }));
+      await this.summarizeActivity(optionsCopy, 'category', categories);
+    }
 
     // aggregate tags
-    let tags = hostManager.getActiveTags();
+    const tags = hostManager.getActiveTags();
     log.debug(`hourlySummedFlows tags:`, tags);
 
-    await Promise.all(tags.map(async tag => {
+    for (const tag of tags) {
       if(!tag || _.isEmpty(tag.macs)) {
         return;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
 
-      optionsCopy.tag = tag;
-      optionsCopy.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
+      optionsCopy.tag = tag.tag;
+      optionsCopy.macs = tag.macs;
       await flowAggrTool.addSumFlow("download", optionsCopy);
       await flowAggrTool.addSumFlow("upload", optionsCopy);
       await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy, apps); // to filter idle activities if updated
+      await this.summarizeActivity(optionsCopy, 'app', apps); // to filter idle activities if updated
       await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy, categories);
-    }));
+      await this.summarizeActivity(optionsCopy, 'category', categories);
+    }
 
     // aggregate all
-    let macs = hostManager.getActiveMACs();
+    const macs = hostManager.getActiveMACs();
 
-    await Promise.all(macs.map(async mac => {
+    for (const mac of macs) {
       if(!mac) {
         return
       }
@@ -329,18 +327,17 @@ class FlowAggregationSensor extends Sensor {
       const optionsCopy = JSON.parse(JSON.stringify(options));
 
       optionsCopy.mac = mac
-      optionsCopy.expireTime = 3600 * 24 // for each device, the expire time is 24 hours
       await flowAggrTool.addSumFlow("download", optionsCopy);
       await flowAggrTool.addSumFlow("upload", optionsCopy);
       await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy, apps); // to filter idle activities if updated
+      await this.summarizeActivity(optionsCopy, 'app', apps); // to filter idle activities if updated
       await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy, categories);
-    }));
+      await this.summarizeActivity(optionsCopy, 'category', categories);
+    }
   }
 
   async sumAll(ts, apps, categories) {
-    let now = new Date() / 1000;
+    const now = new Date() / 1000;
 
     if(now < ts + 60) {
       // TODO: could have some enhancement here!
@@ -349,76 +346,20 @@ class FlowAggregationSensor extends Sensor {
       throw new Error("sum too soon")
     }
 
-    let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
-    let begin = end - this.config.flowRange;
+    const end = flowAggrTool.getIntervalTick(ts, this.config.interval);
+    const begin = end - this.config.flowRange;
 
 
-    let options = {
+    const options = {
       begin: begin,
       end: end,
       interval: this.config.interval,
       expireTime: this.config.sumFlowExpireTime,
       setLastSumFlow: true,
-      max_flow: 200
+      max_flow: this.config.sumFlowMaxFlow
     }
 
-    await flowAggrTool.addSumFlow("download", options);
-    await flowAggrTool.addSumFlow("upload", options);
-    await flowAggrTool.addSumFlow("app", options);
-    await this.cleanupAppActivity(options, apps); // to filter idle activities
-    await flowAggrTool.addSumFlow("category", options);
-    await this.cleanupCategoryActivity(options, categories);
-
-    // aggregate intf
-    let intfs = hostManager.getActiveIntfs();
-
-    await Promise.all(intfs.map(async intf => {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-
-      optionsCopy.intf = intf;
-      await flowAggrTool.addSumFlow("download", optionsCopy);
-      await flowAggrTool.addSumFlow("upload", optionsCopy);
-
-      await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy, apps);
-
-      await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy, categories);
-    }));
-
-    // aggregate tag
-    let tags = hostManager.getActiveTags();
-
-    await Promise.all(tags.map(async tag => {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-
-      optionsCopy.tag = tag;
-      await flowAggrTool.addSumFlow("download", optionsCopy);
-      await flowAggrTool.addSumFlow("upload", optionsCopy);
-
-      await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy, apps);
-
-      await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy, categories);
-    }));
-
-    // aggreate all
-    let macs = hostManager.getActiveMACs();
-
-    await Promise.all(macs.map(async mac => {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-
-      optionsCopy.mac = mac;
-      await flowAggrTool.addSumFlow("download", optionsCopy);
-      await flowAggrTool.addSumFlow("upload", optionsCopy);
-
-      await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.cleanupAppActivity(optionsCopy, apps);
-
-      await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.cleanupCategoryActivity(optionsCopy, categories);
-    }))
+    await this.sumViews(options, apps, categories)
   }
 
   async _flowHasActivity(flow, cache) {
@@ -536,7 +477,7 @@ class FlowAggregationSensor extends Sensor {
   async recordApp(mac, traffic) {
     for(let app in traffic) {
       let object = traffic[app]
-      await appFlowTool.addAppFlowObject(mac, app, object)
+      await appFlowTool.addTypeFlowObject(mac, app, object)
     }
   }
 
@@ -549,7 +490,7 @@ class FlowAggregationSensor extends Sensor {
         continue;
       }
       let object = traffic[category]
-      await categoryFlowTool.addCategoryFlowObject(mac, category, object)
+      await categoryFlowTool.addTypeFlowObject(mac, category, object)
     }
   }
 
@@ -574,29 +515,31 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
   }
 
-  async getAppFlow(app, options) {
+  async getFlow(dimension, type, options) {
     let flows = []
 
     let macs = []
 
-    if (options.intf) {
-      macs = options.intf.macs;
-    } else if (options.tag) {
-      macs = options.tag.macs;
+    if (options.intf || options.tag) {
+      macs = options.macs;
     } else if (options.mac) {
       macs = [options.mac]
     } else {
-      macs = await appFlowTool.getAppMacAddresses(app)
+      macs = hostManager.getActiveMACs()
     }
 
+
+    const typeFlowTool = new TypeFlowTool(dimension)
+    const getTypeFlow = typeFlowTool.getTypeFlow.bind(typeFlowTool)
+
     for (const mac of macs) {
-      let appFlows = await appFlowTool.getAppFlow(mac, app, options)
-      appFlows = appFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
-      appFlows.forEach((f) => {
+      let typeFlows = await getTypeFlow(mac, type, options)
+      typeFlows = typeFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
+      typeFlows.forEach((f) => {
         f.device = mac
       })
 
-      flows.push.apply(flows, appFlows)
+      flows.push.apply(flows, typeFlows)
     }
 
     flows.sort((a, b) => {
@@ -606,7 +549,7 @@ class FlowAggregationSensor extends Sensor {
     return flows
   }
 
-  async cleanupAppActivity(options, apps) {
+  async summarizeActivity(options, dimension, types) {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
 
@@ -614,13 +557,13 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     if (options.intf) {
-      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for intf`, options.intf);
+      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for intf`, options.intf);
     } else if (options.tag) {
-      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for tag`, options.tag);
+      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for tag`, options.tag);
     } if(options.mac) {
-      log.debug(`Cleaning up app activities between ${beginString} and ${endString} for device ${options.mac}`);
+      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for device ${options.mac}`);
     } else {
-      log.debug(`Cleaning up app activities between ${beginString} and ${endString}`);
+      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString}`);
     }
 
     try {
@@ -633,10 +576,10 @@ class FlowAggregationSensor extends Sensor {
 
       let allFlows = {}
 
-      for (const app of apps) {
-        let flows = await this.getAppFlow(app, options)
+      for (const type of types) {
+        let flows = await this.getFlow(dimension, type, options)
         if(flows.length > 0) {
-          allFlows[app] = flows
+          allFlows[type] = flows
         }
       }
 
@@ -655,97 +598,9 @@ class FlowAggregationSensor extends Sensor {
         await flowAggrTool.setCleanedAppActivity(begin, end, {}, options) // if no data, set an empty {}
       }
     } catch(err) {
-      log.error(`Failed to clean app activity: `, err);
+      log.error(`Failed to summarize ${dimension} activity: `, err);
     }
   }
-
-  async getCategoryFlow(category, options) {
-    let flows = []
-
-    let macs = []
-
-    if (options.intf) {
-      macs = options.intf.macs;
-    } else if (options.tag) {
-      macs = options.tag.macs;
-    } else if (options.mac) {
-      macs = [options.mac]
-    } else {
-      macs = await categoryFlowTool.getCategoryMacAddresses(category)
-    }
-
-    for (const mac of macs) {
-      let categoryFlows = await categoryFlowTool.getCategoryFlow(mac, category, options)
-      categoryFlows = categoryFlows.filter((f) => f.duration >= 5) // ignore activities less than 5 seconds
-      categoryFlows.forEach((f) => {
-        f.device = mac
-      })
-
-      flows.push.apply(flows, categoryFlows)
-    }
-
-    flows.sort((a, b) => {
-      return b.ts - a.ts
-    })
-
-    return flows
-  }
-
-  // TODO: Why call it cleanup? This looks confusing. It actually summarize different category flows, i.e., categoryflow:(mac:)?
-  async cleanupCategoryActivity(options, categories) {
-    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
-    let end = options.end || (begin + 3600);
-
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
-
-    if (options.intf) {
-      log.debug(`Cleaning up category activities between ${beginString} and ${endString} for intf`, options.intf);
-    } else if (options.tag) {
-      log.debug(`Cleaning up category activities between ${beginString} and ${endString} for tag`, options.tag);
-    } else if (options.mac) {
-      log.debug(`Cleaning up category activities between ${beginString} and ${endString} for device ${options.mac}`)
-    } else {
-      log.debug(`Cleaning up category activities between ${beginString} and ${endString}`)
-    }
-
-    try {
-
-      if (options.skipIfExists) {
-        let exists = await flowAggrTool.cleanedCategoryKeyExists(begin, end, options)
-        if (exists) {
-          return
-        }
-      }
-
-      let allFlows = {}
-
-      for (const category of categories) {
-        let flows = await this.getCategoryFlow(category, options)
-        if (flows.length > 0) {
-          allFlows[category] = flows
-        }
-      }
-
-      // allFlows now contains all raw category activities during this range
-
-      let hashCache = {}
-
-      if (Object.keys(allFlows).length > 0) {
-        await flowAggrTool.setCleanedCategoryActivity(begin, end, allFlows, options)
-
-        // change after store
-        flowUtil.hashIntelFlows(allFlows, hashCache);
-//        await bone.flowgraphAsync('summarizeActivity', allFlows);
-//        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
-      } else {
-        await flowAggrTool.setCleanedCategoryActivity(begin, end, {}, options) // if no data, set an empty {}
-      }
-    } catch (err) {
-      log.error(`Failed to clean category activity: `, err);
-    }
-  }
-
 }
 
 module.exports = FlowAggregationSensor;

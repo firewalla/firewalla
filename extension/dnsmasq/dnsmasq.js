@@ -76,6 +76,7 @@ const dnsmasqBinary = __dirname + "/dnsmasq";
 const startScriptFile = __dirname + "/dnsmasq.sh";
 
 const configFile = __dirname + "/dnsmasq.conf";
+const {formulateHostname, isDomainValid} = require('../../util/util.js');
 
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
@@ -468,6 +469,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
+      domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
           if (!_.isEmpty(options.scope)) {
@@ -528,8 +530,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async addPolicyCategoryFilterEntry(domains, options) {
-    log.debug("addPolicyCategoryFilterEntry", domains, options)
+  async addPolicyCategoryFilterEntry(options) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
@@ -537,18 +538,7 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     options = options || {};
     const category = options.category;
-    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
-    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
-    const blockEntries = [];
-    const allowEntries = [];
     try {
-      for (const domain of domains) {
-        blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
-        allowEntries.push(`server=/${domain}/#$${category}_allow`);
-      }
-      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
-      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
-
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
         if (options.scope && options.scope.length > 0) {
           // use single config for all devices configuration
@@ -606,8 +596,7 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async removePolicyCategoryFilterEntry(domains, options) {
-    log.debug("removePolicyCategoryFilterEntry", domains, options)
+  async removePolicyCategoryFilterEntry(options) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
@@ -668,7 +657,7 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    domains = domains.sort();
+    domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
     for (const domain of domains) {
       blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
@@ -900,11 +889,14 @@ module.exports = class DNSMASQ {
       }
       const resolver4 = sysManager.myResolver(intf.name);
       const resolver6 = sysManager.myResolver6(intf.name);
+      const myIp4 = sysManager.myIp(intf.name);
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const netSet = NetworkProfile.getNetIpsetName(uuid);
-      if (resolver4 && resolver4.length > 0) {
+      if (myIp4 && resolver4 && resolver4.length > 0) {
+        // redirect dns request that is originally sent to box itself to the upstream resolver
         const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
           .mdl("set", `--match-set ${netSet} src,src`)
+          .mth(myIp4, null, "dst")
           .mth(53, null, 'dport')
           .jmp(`DNAT --to-destination ${resolver4[0]}:53`);
         const redirectUDP = redirectTCP.clone().pro('udp');
@@ -921,8 +913,10 @@ module.exports = class DNSMASQ {
         await execAsync(redirectUDP.toCmd('-A'));
       }
     }
-    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -j ACCEPT`)).catch((err) => {});
-    await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p tcp --dport 53 -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p udp --dport 53 -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p tcp --dport 53 -j ACCEPT`)).catch((err) => {});
+    await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p udp --dport 53 -j ACCEPT`)).catch((err) => {});
   }
 
   async _add_all_iptables_rules() {
@@ -1085,11 +1079,14 @@ module.exports = class DNSMASQ {
     this.counter.writeHostsFile++;
     log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
 
-    const lease_time = '24h';
+    const HostManager = require('../../net2/HostManager.js');
+    const hostManager = new HostManager();
 
     // legacy ip reservation is set in host:mac:*
     const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
       .filter((x) => (x && x.mac) != null)
+      .filter((x) => hostManager.getHostFastByMAC(x.mac)) // do not apply host IP assignment for devices that are inactive
+      .filter((x) => !sysManager.isMyMac(x.mac))
       .sort((a, b) => a.mac.localeCompare(b.mac));
 
     hosts.forEach(h => {
@@ -1128,22 +1125,22 @@ module.exports = class DNSMASQ {
         let reservedIp = null;
         if (h.intfIp && h.intfIp[intf.uuid]) {
           reservedIp = h.intfIp[intf.uuid].ipv4
-        } else if (h.staticAltIp && (!monitor || this.mode == Mode.MODE_DHCP_SPOOF)) {
+        } else if (h.staticAltIp && (monitor === 'unmonitor' || this.mode == Mode.MODE_DHCP_SPOOF)) {
           reservedIp = h.staticAltIp
-        } else if (h.staticSecIp && monitor && this.mode == Mode.MODE_DHCP) {
+        } else if (h.staticSecIp && monitor === 'monitor' && this.mode == Mode.MODE_DHCP) {
           reservedIp = h.staticSecIp
         }
 
         reservedIp = reservedIp ? reservedIp + ',' : ''
         if (reservedIp !== "") {
           hostsList.push(
-            `${h.mac},set:${monitor},${reservedIp}${lease_time}`
+            `${h.mac},set:${monitor},${reservedIp}`
           );
           reserved = true;
         }
       }
       if (!reserved) {
-        hostsList.push(`${h.mac},set:${monitor},${lease_time}`);
+        hostsList.push(`${h.mac},set:${monitor}`);
       }
     }
     // remove duplicate items
@@ -1176,7 +1173,11 @@ module.exports = class DNSMASQ {
     // use restart to ensure the latest configuration is loaded
     let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
 
-    cmd = await this.prepareDnsmasqCmd(cmd);
+    try {
+      cmd = await this.prepareDnsmasqCmd(cmd);
+    } catch(err) {
+      log.error('Error adding DHCP arguments', err)
+    }
 
     this.writeStartScript(cmd);
 

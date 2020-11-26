@@ -35,6 +35,8 @@ const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
 const FlowManager = require('./FlowManager.js');
 const flowManager = new FlowManager('debug');
+const FlowAggrTool = require('./FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
 
 const FireRouter = require('./FireRouter.js');
 
@@ -54,9 +56,6 @@ const policyManager2 = new PolicyManager2();
 
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
-
-const NetBotTool = require('../net2/NetBotTool');
-const netBotTool = new NetBotTool();
 
 const SpooferManager = require('./SpooferManager.js')
 
@@ -95,6 +94,9 @@ const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
 const Alarm = require('../alarm/Alarm.js');
 
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
+
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -119,6 +121,25 @@ module.exports = class HostManager {
       this.messageBus = new c("info");
       this.iptablesReady = false;
       this.spoofing = true;
+
+      // make sure cached host is deleted in all processes
+      this.messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, (channel, type, mac, obj) => {
+        const host = this.getHostFastByMAC(mac)
+        log.info('Removing host cache', mac)
+
+        delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
+        log.info('Removing host cache', host.o.ipv4Addr)
+        if (Array.isArray(host.ipv6Addr)) {
+          host.ipv6Addr.forEach(ip6 => {
+            log.info('Removing host cache', ip6)
+            delete this.hostsdb[`host:ip6:${ip6}`]
+          })
+        }
+        delete this.hostsdb[`host:mac:${mac}`]
+
+        this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
+        log.info(this.getHostFastByMAC(mac))
+      })
 
       // ONLY register for these events in FireMain process
       if(f.isMain()) {
@@ -149,24 +170,22 @@ module.exports = class HostManager {
             }
           });
         });
-        if (f.isMain()) {
-          this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
-            if (!this.iptablesReady) {
-              log.warn("Iptables is not ready yet");
-              return;
-            }
-  
-            this.scheduleExecPolicy();
-  
-            /*
+        this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
+          if (!this.iptablesReady) {
+            log.warn("Iptables is not ready yet");
+            return;
+          }
+
+          this.scheduleExecPolicy();
+
+          /*
             this.loadPolicy((err,data)=> {
                 log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
                 policyManager.execute(this,"0.0.0.0",this.policy,null);
             });
             */
-            log.info("SystemPolicy:Changed", channel, ip, type, obj);
-          });
-        }
+          log.info("SystemPolicy:Changed", channel, ip, type, obj);
+        });
 
         this.keepalive();
         setInterval(()=>{
@@ -202,7 +221,7 @@ module.exports = class HostManager {
     this.callbacks[event] = callback;
   }
 
-  basicDataForInit(json, options) {
+  async basicDataForInit(json, options) {
     let networkinfo = sysManager.getDefaultWanInterface();
     if(networkinfo.gateway === null) {
       delete networkinfo.gateway;
@@ -232,6 +251,8 @@ module.exports = class HostManager {
     }
 
     json.releaseType = f.getReleaseType()
+    if (platform.isFireRouterManaged())
+      json.firmwareReleaseType = await FireRouter.getReleaseType();
 
     if(sysManager.timezone) {
       json.timezone = sysManager.timezone;
@@ -306,6 +327,7 @@ module.exports = class HostManager {
     }
     json.hosts = _hosts;
   }
+
   async yesterdayStatsForInit(json, target) {
     const downloadKey = `download${target ? ':' + target : ''}`;
     const uploadKey = `upload${target ? ':' + target : ''}`;
@@ -328,6 +350,7 @@ module.exports = class HostManager {
 
     return json;
   }
+
   async newLast24StatsForInit(json, target) {
     const subKey = target ? ':' + target : ''
     let downloadStats = await getHitsAsync("download" + subKey, "1hour", 24)
@@ -354,8 +377,7 @@ module.exports = class HostManager {
     let days = now.getDate();
     const month = now.getMonth(),
       year = now.getFullYear(),
-      lastMonthDays = new Date(year, month, 0).getDate(),
-      currentMonthDays = new Date(year, month + 1, 0).getDate();
+      lastMonthDays = new Date(year, month, 0).getDate();
     let monthlyBeginTs, monthlyEndTs;
     if (date && date != 1) {
       if (days < date) {
@@ -519,7 +541,7 @@ module.exports = class HostManager {
 
   legacyStats(json) {
     log.debug("Reading legacy stats");
-    return flowManager.getSystemStats()
+    return flowManager.getTargetStats()
       .then((flowsummary) => {
         json.flowsummary = flowsummary;
       });
@@ -528,10 +550,11 @@ module.exports = class HostManager {
   async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
-    let promises = this.hosts.all.map((host) => flowManager.getStats2(host));
-    await Promise.all(promises);
+    for (const host of this.hosts.all) {
+      host.flowsummary = await flowManager.getTargetStats(host.o.mac)
+    }
     await this.loadHostsPolicyRules();
-    await this.hostsInfoForInit(json);
+    this.hostsInfoForInit(json);
     return json;
   }
 
@@ -715,7 +738,7 @@ module.exports = class HostManager {
       this.networkProfilesForInit(json),
     ]
 
-    this.basicDataForInit(json, {});
+    await this.basicDataForInit(json, {});
 
     await Promise.all(requiredPromises);
 
@@ -777,6 +800,8 @@ module.exports = class HostManager {
     const versionUpdate = await sysManager.getVersionUpdate();
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
+    const customizedCategories = await categoryUpdater.getCustomizedCategories();
+    json.customizedCategories = customizedCategories;
   }
 
   async getRecentFlows(json) {
@@ -936,10 +961,10 @@ module.exports = class HostManager {
           this.networkProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
-          netBotTool.loadSystemStats(json)
+          this.loadStats(json)
         ];
 
-        this.basicDataForInit(json, options);
+        await this.basicDataForInit(json, options);
 
         await Promise.all(requiredPromises);
 
@@ -981,8 +1006,9 @@ module.exports = class HostManager {
           json.isBindingOpen = 0;
         }
 
-        const suffix = await rclient.get('local:domain:suffix');
+        const suffix = await rclient.getAsync('local:domain:suffix');
         json.localDomainSuffix = suffix ? suffix : 'lan';
+        json.cpuProfile = await this.getCpuProfile();
         callback(null, json);
       } catch(err) {
         log.error("Caught error when preparing init data: " + err);
@@ -1037,7 +1063,7 @@ module.exports = class HostManager {
         return host;
       }
 
-      
+
     } else {
       o = await dnsManager.resolveLocalHostAsync(target)
 
@@ -1051,7 +1077,7 @@ module.exports = class HostManager {
 
     if (o == null) return null;
 
-    host = new Host(o, this);
+    host = new Host(o);
 
     //this.hostsdb[`host:mac:${o.mac}`] = host
     // do not update host:mac entry in this.hostsdb intentionally,
@@ -1186,43 +1212,51 @@ module.exports = class HostManager {
       let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
 
       if (hostbymac == null) {
-        hostbymac = new Host(o,this);
+        hostbymac = new Host(o);
         this.hosts.all.push(hostbymac);
-        this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
+        // it will be updated later by checking if there is double mapping
+        // this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         this.hostsdb['host:mac:' + o.mac] = hostbymac;
 
         let ipv6Addrs = hostbymac.ipv6Addr
         if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
           for(let i in ipv6Addrs) {
             let ip6 = ipv6Addrs[i]
+            // ipv6 address conflict hardly happens, so update here is relatively safe
             let key = `host:ip6:${ip6}`
             this.hostsdb[key] = hostbymac
           }
         }
 
       } else {
-        if (o.ipv4!=hostbymac.o.ipv4) {
+        if (o.ipv4 != hostbymac.o.ipv4) {
           // the physical host get a new ipv4 address
-          //
-          this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+          // remove host:ip4 entry from this.hostsdb only if the entry belongs to this mac
+          if (hostbyip && hostbyip.o.mac === o.mac)
+            this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
         }
-        this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
+        // do not update host:ip4 entries here for the same reason in if cause
+        // this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
-        if (hostbymac.o.ipv6Addr && Array.isArray(hostbymac.o.ipv6Addr)) {
-          // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
-          for (const oldIpv6 of hostbymac.o.ipv6Addr) {
-            if (!o.ipv6Addr || !Array.isArray(o.ipv6Addr) || !o.ipv6Addr.includes(oldIpv6)) {
-              // the physical host dropped old ipv6 address
-              this.hostsdb['host:ip6:' + oldIpv6] = null;
+        try {
+          const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
+          if (hostbymac.ipv6Addr && Array.isArray(hostbymac.ipv6Addr)) {
+            // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
+            for (const oldIpv6 of hostbymac.ipv6Addr) {
+              if (!ipv6Addr.includes(oldIpv6)) {
+                // the physical host dropped old ipv6 address
+                this.hostsdb['host:ip6:' + oldIpv6] = null;
+              }
             }
           }
-        }
-        if (o.ipv6Addr && Array.isArray(o.ipv6Addr)) {
-          for (const newIpv6 of o.ipv6Addr) {
+          for (const newIpv6 of ipv6Addr) {
             this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
           }
+        } catch(err) {
+          log.error('Failed to check v6 address of', o.mac, err)
         }
-        
+
         hostbymac.update(o);
       }
       hostbymac._mark = true;
@@ -1233,8 +1267,15 @@ module.exports = class HostManager {
       if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
         log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
         if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
+          log.info(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        } else {
+          log.info(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
+          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbyip;
         }
+      } else {
+        // update host:ip4 entries in this.hostsdb here if it is a new IPv4 address or belongs to the same device
+        this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
       }
       await hostbymac.cleanV6()
       if (f.isMain()) {
@@ -1259,7 +1300,7 @@ module.exports = class HostManager {
       let hostbymac = this.hostsdb[h];
       if (hostbymac && h.startsWith("host:mac")) {
         if (hostbymac.ipv6Addr!=null && hostbymac.ipv6Addr.length>0) {
-          if (!sysManager.isMyIP(hostbymac.ipv4Addr)) {   // local ipv6 do not count
+          if (hostbymac.o.ipv4Addr && !sysManager.isMyIP(hostbymac.o.ipv4Addr)) {   // local ipv6 do not count
             allIPv6Addrs = allIPv6Addrs.concat(hostbymac.ipv6Addr);
           }
         }
@@ -1271,7 +1312,7 @@ module.exports = class HostManager {
         let index = this.hosts.all.indexOf(this.hostsdb[h]);
         if (index!=-1) {
           this.hosts.all.splice(index,1);
-          log.info("Removing host due to sweeping");
+          log.info("Removing host due to sweeping", h);
         }
         removedHosts.push(h);
       }  else {
@@ -1293,6 +1334,11 @@ module.exports = class HostManager {
       spoofer.validateV4Spoofs(allIPv4Addrs);
     }
     log.info("done Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
+    if (f.isMain()) {
+      const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+      const dnsmasq = new Dnsmasq();
+      dnsmasq.onDHCPReservationChanged(); // trigger dhcp hosts file update
+    }
     return this.hosts.all;
   }
 
@@ -1322,6 +1368,23 @@ module.exports = class HostManager {
 
   isMonitoring() {
     return this.spoofing;
+  }
+
+  async qos(policy) {
+    let state = null;
+    let qdisc = "fq_codel";
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+        qdisc = policy.qdisc || "fq_codel";
+        break;
+      default:
+        return;
+    }
+    await platform.switchQoS(state, qdisc);
   }
 
   async acl(state) {
@@ -1364,7 +1427,7 @@ module.exports = class HostManager {
   }
 
   async shield(policy) {
-    
+
   }
 
   async getVpnActiveDeviceCount(profileId) {
@@ -1458,6 +1521,9 @@ module.exports = class HostManager {
           } else {
             await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
           }
+          // enable VPN client chain in mangle PREROUTING chain
+          await iptables.switchVPNClientAsync(true, 4);
+          await iptables.switchVPNClientAsync(true, 6);
           if (result) {
             if (ovpnClient.listenerCount('link_broken') === 0) {
               ovpnClient.once('link_broken', async () => {
@@ -1549,8 +1615,11 @@ module.exports = class HostManager {
             await this.setPolicyAsync("vpnClient", updatedPolicy);
           });
           await ovpnClient.stop();
-          // will do no harm to unenforce strict VPN even if strict VPN is not set  
+          // will do no harm to unenforce strict VPN even if strict VPN is not set
           await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
+          // disable VPN client chain in mangle PREROUTING chain
+          await iptables.switchVPNClientAsync(false, 4);
+          await iptables.switchVPNClientAsync(false, 6);
           return {running: false, reconnecting: 0};
         }
         break;
@@ -1666,7 +1735,7 @@ module.exports = class HostManager {
         inftMap[host.intf] = [host.mac];
       }
     });
-    
+
     return _.map(inftMap, (macs, intf) => {
       return {intf, macs: _.uniq(macs)};
     });
@@ -1699,9 +1768,10 @@ module.exports = class HostManager {
 
   // need active host?
   getTagMacs(tag) {
-    let macs =  this.hosts.all.map(host => host.o)
-    .filter(host => !_.isEmpty(host.tags) && JSON.parse(host.tags).includes(tag))
-    .map(host => host.mac);
+    tag = tag.toString();
+    const macs = this.hosts.all.filter(host => {
+      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.includes(tag)
+    }).map(host => host.o.mac);
     return _.uniq(macs);
   }
 
@@ -1767,6 +1837,7 @@ module.exports = class HostManager {
       }
     }
   }
+
   generateStats(downloadStats = [], uploadStats = []) {
     let totalDownload = 0, totalUpload = 0;
     downloadStats.forEach((s) => {
@@ -1780,6 +1851,89 @@ module.exports = class HostManager {
       download: downloadStats,
       totalUpload: totalUpload,
       totalDownload: totalDownload
+    }
+  }
+
+  async loadStats(json={}, target='', count=50) {
+    target = target == '0.0.0.0' ? '' : target;
+    const systemFlows = {};
+
+    const keys = ['upload', 'download'];
+
+    for (const key of keys) {
+      const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if (!realSumKey) {
+        continue;
+      }
+
+      const elements = target ? realSumKey.replace(`${target}:`,'').split(":") : realSumKey.split(":");
+      if (elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+
+      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, count);
+
+      const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        flows: enriched
+      }
+    }
+
+    const actitivityKeys = ['app', 'category'];
+
+    for (const key of actitivityKeys) {
+
+      const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;
+      const realSumKey = await rclient.getAsync(lastSumKey);
+      if (!realSumKey) {
+        continue;
+      }
+
+      const elements = target ? realSumKey.replace(`${target}:`,'').split(":") : realSumKey.split(":");
+      if (elements.length !== 4) {
+        continue;
+      }
+
+      const begin = elements[2];
+      const end = elements[3];
+
+      const traffic = await flowAggrTool.getXYActivitySumFlowByKey(realSumKey, key, count);
+
+      traffic.sort((a, b) => {
+        return b.count - a.count;
+      });
+
+      systemFlows[key] = {
+        begin,
+        end,
+        activities: traffic
+      }
+    }
+
+    json.systemFlows = systemFlows;
+    return systemFlows;
+  }
+  async getCpuProfile() {
+    try {
+      const name = await rclient.getAsync('platform:profile:active');
+      const content = name ? await rclient.hgetAsync('platform:profile', name) : null;
+      if (name && content) {
+        return {
+          name: name,
+          content: content
+        }
+      }
+    } catch (e) {
+      log.warn('getCpuProfile error', e)
     }
   }
 }

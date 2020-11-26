@@ -94,6 +94,8 @@ exports.switchACL = util.callbackify(switchACLAsync);
 exports.switchACLAsync = switchACLAsync;
 exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
 exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
+exports.switchQoSAsync = switchQoSAsync;
+exports.switchVPNClientAsync = switchVPNClientAsync;
 
 var workqueue = [];
 var running = false;
@@ -268,15 +270,29 @@ function iptables(rule, callback) {
         let dport = rule.dport;
         let toIP = rule.toIP;
         let toPort = rule.toPort;
-        let action = "-A";
+        const type = rule._type || "port_forward";
+        let action = "-I";
         if (state == false || state == null) {
             action = "-D";
         }
 
         let cmdline = [];
 
-        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_PREROUTING_PORT_FORWARD -p ${protocol} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
-        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
+        switch (type) {
+          case "port_forward": {
+            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
+            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
+            break;
+          }
+          case "dmz_host": {
+            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
+            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_POSTROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} -d ${toIP} ${dport ? `--dport ${dport}` : ""} -j FW_POSTROUTING_HAIRPIN`));
+            break;
+          }
+          default:
+            log.error("Unrecognized port forward type", type);
+            return;
+        }
 
         log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
         cp.exec(cmdline.join(";"), (err, stdout, stderr) => {
@@ -415,7 +431,7 @@ function dhcpSubnetChange(ip, state, callback) {
 
 function prepare() {
   return execAsync(
-    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true) && (sudo iptables -w -t mangle -N FW_PREROUTING || true)"
+    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true) && (sudo iptables -w -t mangle -N FW_PREROUTING || true) && (sudo iptables -w -t mangle -N FW_FORWARD || true)"
   ).catch(err => {
     log.error("IPTABLE:PREPARE:Unable to prepare", err);
   })
@@ -423,9 +439,36 @@ function prepare() {
 
 function flush() {
   return execAsync(
-    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING",
+    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING && sudo iptables -w -t mangle -F FW_FORWARD",
   ).catch(err => {
     log.error("IPTABLE:FLUSH:Unable to flush", err)
+  });
+}
+
+async function switchVPNClientAsync(state, family = 4) {
+  // TODO:// this only works for single VPN client connection globally
+  const op = state ? "-D" : "-I";
+  const rule = new Rule('mangle').chn('FW_RT_VC').jmp('RETURN').fam(family);
+  await execAsync(rule.toCmd(op)).catch((err) => {
+    log.error(`Failed to switch VPN client: ${rule}`, err.message);
+  });
+}
+
+async function switchQoSAsync(state, family = 4) {
+  const op = state ? '-D' : '-A'
+
+  const inRule = new Rule('mangle').chn('FW_QOS_SWITCH')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_LAN} dst,dst`)
+    .jmp(`CONNMARK --set-xmark 0x0/0x40000000`).fam(family);
+  const outRule = new Rule('mangle').chn('FW_QOS_SWITCH')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_LAN} src,src`)
+    .jmp(`CONNMARK --set-xmark 0x0/0x40000000`).fam(family);
+
+  await execAsync(inRule.toCmd(op)).catch((err) => {
+    log.error(`Failed to switch QoS: ${inRule}`, err.message);
+  });
+  await execAsync(outRule.toCmd(op)).catch((err) => {
+    log.error(`Failed to switch QoS: ${outRule}`, err.message);
   });
 }
 

@@ -35,7 +35,7 @@ class IpInfo {
       log.debug("ipInfo from ipinfo is:", resp.body);
       return resp.body;
     } catch (err) {
-      log.error(err.msg);
+      log.error(err.message);
       log.debug(err.stack)
       return null
     }

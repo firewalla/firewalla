@@ -27,9 +27,11 @@ const Promise = require('bluebird')
 const exec = require('child-process-promise').exec
 const fs = require('fs')
 Promise.promisifyAll(fs)
+const http = require('http');
 
 const Config = require('../../net2/config.js');
 const sysManager = require('../../net2/SysManager.js');
+const Message = require('../../net2/Message.js');
 
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
@@ -37,6 +39,9 @@ const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 const { wrapIptables } = require('../../net2/Iptables.js')
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
+
+const platformLoader = require('../../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 const Mode = require('../../net2/Mode.js');
 
@@ -57,6 +62,7 @@ const errorCodes = {
 
 class App {
   constructor() {
+    this.servers = [];
     this.app = express();
 
     this.app.engine('mustache', require('mustache-express')());
@@ -66,6 +72,18 @@ class App {
     //this.app.disable('view cache'); //for debug only
 
     this.routes();
+
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      if (this._started)
+        this.scheduleRebindServerInstances();
+    });
+
+    sem.on("DiagRedirectionRenew", (event) => {
+      if (this._started) {
+        log.info("Renew port redirection")
+        this.iptablesRedirection();
+      }
+    });
   }
 
   getSystemTime() {
@@ -107,6 +125,48 @@ class App {
     }
 
     return 0
+  }
+
+  async getFireResetStatus() {
+    try {
+      await exec("systemctl is-active firereset")
+    } catch(err) {
+      log.error("firereset is not active", err);
+      return 1;
+    }
+
+    try {
+      const result = await exec("hcitool -i hci0 dev | wc -l")
+      if (result.stdout.replace("\n", "") !== "2") {
+        return 6;
+      }
+    } catch(err) {
+      log.error("bluetooth not found");
+      return 5;
+    }
+
+    try {
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'Invalid Bluetooth'")
+      log.error("Invalid bluetooth plugged in");
+      return 2;
+    } catch(err) {
+    }
+
+    try {
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'Failed to start service'")
+      log.error("Likely bluetooth not plugged in");
+      return 3;
+    } catch(err) {
+    }
+
+    try {
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'can\'t read hci socket'")
+      log.error("Unknown error");
+      return 4;
+    } catch(err) {
+    }
+
+    return 0;
   }
 
   getCloudConnectivity() {
@@ -181,19 +241,7 @@ class App {
   }
 
   async getPrimaryIP() {
-    const config = Config.getConfig(true);
-    const eths = require('os').networkInterfaces()[config.monitoringInterface];
-
-    if (eths) {
-      for (let index = 0; index < eths.length; index++) {
-        const eth = eths[index]
-        if (eth.family == "IPv4") {
-          return eth.address
-        }
-      }
-    }
-
-    return ''
+    return sysManager.myDefaultWanIp() || '';
   }
 
   async getQRImage() {
@@ -256,6 +304,27 @@ class App {
       })
     });
 
+    this.app.use('/bluetooth_log', (req, res) => {
+      const filename = "/home/pi/.forever/firereset.log";
+      (async () => {
+        await fs.accessAsync(filename, fs.constants.F_OK)
+        const result = (await exec(`tail -n 100 ${filename}`)).stdout
+        let lines = result.split("\n")
+        lines = lines.map((originLine) => {
+          let line = originLine
+          line = line.replace(/password.........................................../, "*************************");
+          line = line.replace(/username.........................................../, "*************************")
+          return line
+        })
+
+        res.setHeader('content-type', 'text/plain');
+        res.end(lines.join("\n"))
+      })().catch((err) => {
+        log.error("Failed to fetch log", err);
+        res.status(404).send('')
+      })
+    });
+
     this.app.use('/pairing', (req, res) => {
       if (this.broadcastInfo) {
         res.json(this.broadcastInfo);
@@ -288,6 +357,24 @@ class App {
         });
       }
     });
+
+
+    this.app.use('/raw', async (req, res) => {
+      log.info("Got a request in /raw")
+
+      try {
+        const values = await this.getPairingStatus();
+        if(values.error) {
+          log.error("Failed to process request", err);
+          res.status(500).send({})
+        } else {
+          res.render('raw', values)
+        }
+      } catch(err) {
+        log.error("Failed to process request", err);
+        res.status(500).send({})
+      }
+    })
 
     this.app.use('*', async (req, res) => {
       log.info("Got a request in *")
@@ -369,6 +456,15 @@ class App {
         success = false
       }
 
+      values.has_bluetooth = platform.isBluetoothAvailable();
+      if(values.has_bluetooth) {
+        const btStatus = await this.getFireResetStatus();
+        if(btStatus !== 0) {
+          values.err_bluetooth = btStatus
+          // no need to set success to false, because it's not a blocking issue for QR code pairing
+        }
+      }
+
       values.success = success
 
       return values;
@@ -383,36 +479,71 @@ class App {
   }
 
   async iptablesRedirection(create = true) {
-    let interfaces = sysManager.getLogicInterfaces()
-    if (await Mode.isRouterModeOn()) {
-      interfaces = interfaces.filter(intf => intf.type != 'wan')
-    }
-    const IPv4List = interfaces.map(intf => intf.ip_address)
-
-    log.info("", IPv4List);
-
     const action = create ? '-I' : '-D';
 
-    for (const ip of IPv4List) {
-      if (!ip) continue;
+    for (const server of this.servers) {
+      if (!server || !server.ip || !server.port) continue;
 
       // should use primitive chains here, since it needs to be working before install_iptables.sh
-      log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${port} on ${ip}`);
-      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${ip} --destination-port 80 -j REDIRECT --to-ports ${port}`);
+      log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${server.port} on ${server.ip}`);
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${server.ip} --destination-port 80 -j REDIRECT --to-ports ${server.port}`);
       await exec(cmd);
     }
   }
 
-  start() {
-    this.app.listen(port, () => {
-      log.info(`Httpd listening on port ${port}!`)
+  scheduleRebindServerInstances() {
+    if (this.rebindTask)
+      clearTimeout(this.rebindTask);
+    this.rebindTask = setTimeout(async () => {
+      await this.stop();
+      setTimeout(() => {
+        this.start();
+      }, 2000);
+    }, 6000);
+  }
 
-      sem.on("DiagRedirectionRenew", (event) => {
-        log.info("Renew port redirection")
-        this.iptablesRedirection();
-      })
+  _stopHttpServers() {
+    for (const server of this.servers) {
+      if (server.server)
+        server.server.close();
+    }
+    this.servers = [];
+  }
 
+  _startHttpServers() {
+    for (const iface of sysManager.getMonitoringInterfaces()) {
+      const ip = iface && sysManager.myIp(iface.name);
+      if (ip) {
+        const server = http.createServer(this.app);
+        server.on('error', (err) => {
+          console.error(`Error from diag http server ${err.code}`);
+        });
+        server.listen(port, ip, () => {
+          log.info(`Diag http server listening on ${ip}:${port}`);
+        });
+        this.servers.push({
+          ip: ip,
+          port: port,
+          server: server
+        });
+      }
+    }
+  }
+
+  async stop() {
+    await this.iptablesRedirection(false).catch((err) => {
+      log.error(`Failed to remove diag iptables redirect`, err.message);
     });
+    this._stopHttpServers();
+    this._started = false;
+  }
+
+  async start() {
+    this._startHttpServers();
+    await this.iptablesRedirection(true).catch((err) => {
+      log.error(`Failed to add diag iptables redirect`, err.message);
+    });
+    this._started = true;
   }
 }
 

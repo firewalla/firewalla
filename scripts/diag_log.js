@@ -16,6 +16,7 @@
 
 const fwDiag = require("../extension/install/diag.js");
 const program = require('commander');
+const sysManager = require('../net2/SysManager.js');
 
 program.version('1.0.0')
   .option('--data <data>', 'json data to send, string will send as { msg }')
@@ -39,6 +40,7 @@ if (!program.data) {
     json = { msg: program.data }
   }
 
+  await sysManager.waitTillInitialized()
   await fwDiag.log(program.level, json);
   process.exit(0);
 })().catch(err => {

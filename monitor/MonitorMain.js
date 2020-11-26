@@ -71,7 +71,7 @@ process.on('uncaughtException',(err)=>{
     type: 'FIREWALLA.MON.exception',
     msg: err.message,
     stack: err.stack,
-    err: JSON.stringify(err)
+    err: err
   });
   setTimeout(()=>{
     try {
@@ -85,11 +85,13 @@ process.on('uncaughtException',(err)=>{
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
+  if (msg.includes("Redis connection"))
+    return;
   bone.logAsync("error", {
     type: 'FIREWALLA.MON.unhandledRejection',
     msg: msg,
     stack: reason.stack,
-    err: JSON.stringify(reason)
+    err: reason
   });
 });
 
