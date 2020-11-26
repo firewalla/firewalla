@@ -35,7 +35,7 @@ class EventApi {
     constructor() {
     }
 
-    async getEvents(begin="-inf", end="inf") {
+    async listEvents(begin="-inf", end="inf") {
       let result = null
       try {
         log.info(`getting events from ${begin} to ${end}`);
@@ -72,26 +72,19 @@ class EventApi {
     }
 }
 
-function getInstance() {
-  if (!instance) {
-    instance = new EventApi();
-  }
-  return instance;
-}
-
 module.exports = new EventApi();
 
 /* unit test
 (async () => {
   try {
     let x = new EventApi();
-    console.log( await x.getEvents() );
+    console.log( await x.listEvents() );
     // add a new event
     x.addEvent({"key1":Date.now()});
-    console.log( await x.getEvents() );
+    console.log( await x.listEvents() );
     // del events older than 10 seconds
     x.delEvents(0,Math.round(Date.now())-10000);
-    console.log( await x.getEvents() );
+    console.log( await x.listEvents() );
   } catch (e) {
     console.error(e);
   }
