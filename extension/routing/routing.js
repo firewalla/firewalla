@@ -54,7 +54,7 @@ async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
     const name = line[1];
     usedTid.push(tid);
     if (name === tableName) {
-      if (Number(tid) >>> bitOffset === 0 || Number(tid) >= maxTableId) {
+      if (Number(tid) >>> bitOffset === 0 || Number(tid) >>> bitOffset >= maxTableId) {
         log.info(`Previous table id of ${tableName} is out of range ${tid}, removing old entry for ${tableName} ...`);
         await removeCustomizedRoutingTable(tableName);
       } else {
