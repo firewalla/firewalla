@@ -302,7 +302,7 @@ function getCategoryStats() {
 
 async function getMaxPid() {
   try {
-    const cmd = await exec('ps -eo pid|sort -rn|head -n 1')
+    const cmd = await exec('echo $$')
     const pid = Number(cmd.stdout)
     if (pid < maxPid) {
       log.error(`maxPid decresing, something is wrong. pre: ${maxPid}, now: ${pid}`)
