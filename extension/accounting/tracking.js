@@ -193,13 +193,13 @@ class Tracking {
     }
   }
   
-  async _cleanup(key, expireBucketIndex) {
-    const keys = rclient.hkeysAsync(key);
+  async _cleanup(hashKey, expireBucketIndex) {
+    const keys = rclient.hkeysAsync(hashKey);
     let count = 0;
     for(const key of keys) {
       if(key < expireBucketIndex) {
         count ++;
-        await rclient.hdelAsync(aggrDestinationKey, key);
+        await rclient.hdelAsync(hashKey, key);
       }
     }
     log.info("Cleaned up", count, "old aggr data for key", key);
