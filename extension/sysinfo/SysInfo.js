@@ -71,6 +71,8 @@ let no_auto_upgrade = false;
 let uptimeInfo = {};
 let updateTime = null;
 
+let maxPid = 0;
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -92,6 +94,7 @@ async function update() {
       .then(getMultiProfileSupportFlag)
       .then(getAutoUpgrade)
       .then(getUptimeInfo)
+      .then(getMaxPid)
   ])
 
   if(updateFlag) {
@@ -297,6 +300,21 @@ function getCategoryStats() {
   }
 }
 
+async function getMaxPid() {
+  try {
+    const cmd = await exec('echo $$')
+    const pid = Number(cmd.stdout)
+    if (pid < maxPid) {
+      log.error(`maxPid decresing, something is wrong. pre: ${maxPid}, now: ${pid}`)
+    } else {
+      maxPid = pid
+    }
+  } catch(err) {
+    log.error("Error getting max pid", err)
+  }
+}
+
+
 function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
@@ -321,7 +339,8 @@ function getSysInfo() {
     diskInfo: diskInfo,
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
-    no_auto_upgrade: no_auto_upgrade
+    no_auto_upgrade: no_auto_upgrade,
+    maxPid
   }
 
   let newUptimeInfo = {};
@@ -388,10 +407,6 @@ function getHeapDump(file, callback) {
   // heapdump.writeSnapshot(file, callback);
 }
 
-function getSystemInfo() {
-  return "a good test"
-}
-
 module.exports = {
   getSysInfo: getSysInfo,
   startUpdating: startUpdating,
@@ -399,6 +414,5 @@ module.exports = {
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump,
-  getSystemInfo: getSystemInfo
+  getHeapDump: getHeapDump
 };
