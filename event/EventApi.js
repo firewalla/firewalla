@@ -35,13 +35,13 @@ class EventApi {
     constructor() {
     }
 
-    async listEvents(begin="-inf", end="inf") {
+    async listEvents(begin="-inf", end="inf", limit_offset=0, limit_count=-1) {
       let result = null
       try {
         log.info(`getting events from ${begin} to ${end}`);
-        result = await rclient.zrangebyscoreAsync([KEY_EVENT_LOG, begin, end, "withscores"]);
+        result = await rclient.zrangebyscoreAsync([KEY_EVENT_LOG, begin, end, "withscores","limit",limit_offset,limit_count]);
       } catch (err) {
-        log.error(`failed to get events between ${begin} and ${end}, ${err}`);
+        log.error(`failed to get events between ${begin} and ${end}, with limit offset(${limit_offset}) and count(${limit_count}), ${err}`);
         result = null;
       }
       return result;

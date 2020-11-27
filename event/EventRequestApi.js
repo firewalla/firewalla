@@ -104,11 +104,11 @@ class EventRequestApi {
         }
     }
 
-    async listEvents(begin=0, end=0) {
+    async listEvents(begin=0, end=0, limit_offset, limit_count) {
         log.info("list events");
 
         try {
-            let result = await eapi.listEvents(begin,end);
+            let result = await eapi.listEvents(begin,end,limit_offset,limit_count);
             return result;
         } catch (err) {
             log.error(`failed to list events(${begin},${end}), ${err}`);

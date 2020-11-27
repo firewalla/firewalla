@@ -46,13 +46,15 @@ logerror() {
 }
 
 add_state_event() {
-    test $# -ge 3 || { logerror need state_type/state_key/state_value; return 1; }
+    test $# -ge 3 || { logerror "need state_type/state_key/state_value"; return 1; }
+    ts=${4:-$(date +%s)000}
     redis-cli publish 'event:request:state' "{\"state_type\":\"$1\",\"state_key\":\"$2\",\"state_value\":$3}"
 }
 
 add_action_event() {
-    test $# -ge 2 || { logerror need action_type/action_value; return 1; }
-    redis-cli publish 'event:request:action' "{\"action_type\":\"$1\",\"action_value\":$2}"
+    test $# -ge 2 || { logerror "need action_type/action_value"; return 1; }
+    ts=${3:-$(date +%s)000}
+    redis-cli publish 'event:request:action' "{\"action_type\":\"$1\",\"action_value\":$2, "ts":$ts}"
 }
 
 clean_event() {
@@ -62,7 +64,11 @@ clean_event() {
 }
 
 list_event() {
-    redis-cli zrangebyscore 'event:log' ${1:-'0'} ${2:-'inf'} withscores
+    if [[ $# -ge 4 ]]; then
+        redis-cli zrangebyscore 'event:log' ${1:-'0'} ${2:-'inf'} withscores limit $3 $4
+    else
+        redis-cli zrangebyscore 'event:log' ${1:-'0'} ${2:-'inf'} withscores
+    fi
 }
 
 # ----------------------------------------------------------------------------

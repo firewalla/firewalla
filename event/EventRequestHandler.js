@@ -48,7 +48,7 @@ class EventRequestHandler {
         log.info("setup EventHandler");
 
         sclient.on("message", async (channel, message) => {
-            log.info(`got message in ${channel} - ${message}`);
+            log.debug(`got message in ${channel} - ${message}`);
             switch (channel) {
                 case KEY_EVENT_REQUEST_STATE:
                     await this.processStateEvent(message);
