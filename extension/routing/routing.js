@@ -66,7 +66,7 @@ async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
   // find unoccupied table id between 1 - maxTableId
   let id = 1;
   while (id < maxTableId) {
-    if (!usedTid.includes(id << bitOffset + "")) // convert number to string
+    if (!usedTid.includes((id << bitOffset) + "")) // convert number to string
       break;
     id++;
   }
