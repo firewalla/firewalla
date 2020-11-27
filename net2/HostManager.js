@@ -1545,14 +1545,8 @@ module.exports = class HostManager {
                 if (!updatedPolicy) return;
                 updatedPolicy.running = false;
                 settings = await ovpnClient.loadSettings(); // reload settings in case settings is changed
-                if (!settings.overrideDefaultRoute || !settings.strictVPN) { // do not disable VPN client automatically unless strict VPN is not set or override default route is not set
-                  // update vpnClient system policy to state false
-                  updatedPolicy.state = false;
-                  updatedPolicy.reconnecting = 0;
-                } else {
-                  // increment reconnecting count and trigger reconnection
-                  updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
-                }
+                // increment reconnecting count and trigger reconnection
+                updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
                 await this.setPolicyAsync("vpnClient", updatedPolicy);
                 if (fc.isFeatureOn("vpn_disconnect")) {
                   const broken_time = new Date() / 1000;
