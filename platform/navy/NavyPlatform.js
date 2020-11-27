@@ -172,6 +172,10 @@ class NavyPlatform extends Platform {
     await exec("sudo systemctl restart brofish");
   }
 
+  isAccountingSupported() {
+    return true;
+  }
+  
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
