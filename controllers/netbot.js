@@ -4000,6 +4000,10 @@ class netBot extends ControllerBot {
   }
 
   async switchBranch(target) {
+    if (this.switchingBranch) {
+      throw new Error("Can not switch branch at the same time");
+    }
+    this.switchingBranch = true;
     let targetBranch = null
     let prodBranch = await f.getProdBranch()
 
@@ -4022,13 +4026,16 @@ class netBot extends ControllerBot {
     }
 
     log.info("Going to switch to branch", targetBranch);
-
-    await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
-    if (platform.isFireRouterManaged()) {
-      // firerouter switch branch will trigger fireboot and restart firewalla services
-      await FireRouter.switchBranch(target);
-    } else {
-      sysTool.upgradeToLatest()
+    try {
+      await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
+      if (platform.isFireRouterManaged()) {
+        // firerouter switch branch will trigger fireboot and restart firewalla services
+        await FireRouter.switchBranch(target);
+      } else {
+        sysTool.upgradeToLatest()
+      }
+    } catch (e) { } finally {
+      this.switchingBranch = false;
     }
   }
 
