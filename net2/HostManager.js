@@ -107,6 +107,8 @@ const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 let instance = null;
 
+const VpnManager = require('../vpn/VpnManager.js');
+
 module.exports = class HostManager {
   constructor() {
     if (!instance) {
@@ -982,6 +984,9 @@ module.exports = class HostManager {
 
         await Promise.all(requiredPromises);
 
+        // add connected vpn client count
+        const statistics = await new VpnManager().getStatistics();
+        json.policy.vpn.vpnClientActiveCount = statistics.clients.length;
         // mode should already be set in json
         if (json.mode === "dhcp") {
           await this.dhcpRangeForInit("alternative", json);
