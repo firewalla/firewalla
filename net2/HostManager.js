@@ -107,6 +107,8 @@ const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 
 let instance = null;
 
+const VpnManager = require('../vpn/VpnManager.js');
+
 module.exports = class HostManager {
   constructor() {
     if (!instance) {
@@ -810,6 +812,8 @@ module.exports = class HostManager {
       json.versionUpdate = versionUpdate;
     const customizedCategories = await categoryUpdater.getCustomizedCategories();
     json.customizedCategories = customizedCategories;
+    // add connected vpn client statistics
+    json.vpnCliStatistics = await new VpnManager().getStatistics();
   }
 
   async getRecentFlows(json) {
