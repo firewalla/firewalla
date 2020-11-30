@@ -812,6 +812,8 @@ module.exports = class HostManager {
       json.versionUpdate = versionUpdate;
     const customizedCategories = await categoryUpdater.getCustomizedCategories();
     json.customizedCategories = customizedCategories;
+    // add connected vpn client statistics
+    json.vpnCliStatistics = await new VpnManager().getStatistics();
   }
 
   async getRecentFlows(json) {
@@ -984,9 +986,6 @@ module.exports = class HostManager {
 
         await Promise.all(requiredPromises);
 
-        // add connected vpn client count
-        const statistics = await new VpnManager().getStatistics();
-        json.policy.vpn.vpnClientActiveCount = statistics.clients.length;
         // mode should already be set in json
         if (json.mode === "dhcp") {
           await this.dhcpRangeForInit("alternative", json);
