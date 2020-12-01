@@ -25,7 +25,7 @@ STATE_TYPE='ethernet_state'
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
-for intf in $(ip --br l | awk '/eth*/ {print $1}')
+for intf in $(ls -l /sys/class/net  | awk '/pci/ {print $9}')
 do
     sudo ethtool $intf | fgrep -q 'Link detected: yes'
     state_value=$?
