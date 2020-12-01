@@ -118,7 +118,7 @@ class EventRequestHandler {
                 throw new Error(`state_value(${newValue}) of event request is NOT a number`);
             }
 
-            if ( savedValue !== null && parseInt(savedValue) === newValue ) {
+            if ( savedValue !== null && parseFloat(savedValue) === parseFloat(newValue) ) {
                 log.warn(`ignore repeated state ${newValue}`);
             } else {
                 log.debug(`update state value from ${savedValue} to ${newValue}`);

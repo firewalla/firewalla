@@ -43,7 +43,7 @@ class EventRequestApi {
         return ( typeof x === 'number' && ! isNaN(x));
     }
 
-    async addStateEvent(state_type,state_key,state_value,labels={}, ts=Date.now()) {
+    async addStateEvent(state_type,state_key,state_value,labels=null, ts=Date.now()) {
         log.info("add state event");
 
         try {
@@ -52,9 +52,13 @@ class EventRequestApi {
                 "event_type": "state",
                 "state_type": state_type,
                 "state_key": state_key,
-                "state_value": state_value,
-                "labels" : labels
+                "state_value": state_value
             }
+
+            if ( labels !== null ) {
+                event_obj["labels"] = labels;
+            }
+
             if ( ! this.isNumber(state_value) ) {
                 throw new Error(`state_value(${state_value}) is NOT a number`);
             }
@@ -65,7 +69,7 @@ class EventRequestApi {
         }
     }
 
-    async addActionEvent(action_type,action_value,labels={}, ts=Date.now()) {
+    async addActionEvent(action_type,action_value,labels=null, ts=Date.now()) {
         log.info("add action event");
 
         try {
@@ -73,9 +77,12 @@ class EventRequestApi {
                 "ts": ts,
                 "event_type": "action",
                 "action_type": action_type,
-                "action_value": action_value,
-                "labels" : labels
+                "action_value": action_value
             }
+            if ( labels !== null ) {
+                event_obj["labels"] = labels;
+            }
+
             if ( ! this.isNumber(action_value) ) {
                 throw new Error(`action_value(${action_value}) is NOT a number`);
             }

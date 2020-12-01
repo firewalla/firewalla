@@ -49,7 +49,7 @@ class EventApi {
 
     async addEvent(event_obj, ts=Math.round(Date.now())) {
       // inject ts in "event_json" to make event unique in case of duplicate actions
-      let redis_obj = Object.assign({},event_obj,{"ts":ts});
+      let redis_obj = ("ts" in event_obj) ? event_obj : Object.assign({},event_obj,{"ts":ts});
       let redis_json = JSON.stringify(redis_obj);
       try {
         log.info(`adding event ${redis_json} at ${ts}`);

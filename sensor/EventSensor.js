@@ -22,9 +22,15 @@ const { date } = require('later');
 const extensionManager = require('./ExtensionManager.js')
 const sysManager = require('../net2/SysManager.js');
 
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+
 let erh = null;
 let era = null;
 let ea = require('../event/EventApi.js');
+const f = require('../net2/Firewalla.js');
+const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
 
 class EventSensor extends Sensor {
 
@@ -48,16 +54,16 @@ class EventSensor extends Sensor {
         era = require('../event/EventRequestApi.js');
         setTimeout(() => {
                 this.scheduledJob();
-                setInterval(() => { this.scheduledJob(); }, 1000 * 60 ); // run every minute
+                setInterval(() => { this.scheduledJob(); }, 1000 * 60 * 60 ); // run every hour
             },
-            1000 * 5
-        ); // first time in 5 seconds
+            1000 * 60 * 5
+        ); // first time in 5 minutes
     }
 
     async scheduledJob() {
         try {
             log.info("Start monitoring and generate events if needed")
-            await this.networkUpDown();
+            await this.processCollectorOutputs();
             await this.pingGateway();
             log.info("scheduledJob is executed successfully");
         } catch(err) {
@@ -65,25 +71,60 @@ class EventSensor extends Sensor {
         }
     }
 
-    async networkUpDown() {
-        for (let i=0;i<4;i++) {
-            const ethx=`eth${i}`;
-            log.info(`checking network state of ${ethx}`);
-            try {
-                const result = await exec(`sudo ethtool ${ethx} | awk '/Link detected:/ {print $3}'`);
-                log.info("result: ",result.stdout);
-                switch ( result.stdout.replace(/\n$/,'') ) {
-                    case "yes":
-                        era.addStateEvent("network",ethx,1);
+    async processCollectorOutputs() {
+        try {
+            const collectors = await fs.readdirAsync(COLLECTOR_DIR);
+            for (const collector of collectors) {
+                this.processCollectorOutput(`${COLLECTOR_DIR}/${collector}`);
+            }
+        } catch (err) {
+            log.error(`failed to process collectors under ${COLLECTOR_DIR}, ${err}`);
+        }
+    }
+
+    /*
+     * supported collector output:
+     *   state <state_type> <state_key> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
+     *   action <action_type> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
+     */
+    async processCollectorOutput(collector) {
+        try{
+            log.info(`Process output of ${collector}`);
+            // get collector output
+            const result = await exec(collector);
+            // trigger events API with parameters line by line
+            result.stdout.split("\n").forEach( (line) => {
+                log.info("output line:", line);
+                let eventLabels = null;
+                const words = line.split(/\s+/);
+                switch (words[0]) {
+                    case 'state':
+                        eventLabels = this.getEventLabels(words.slice(4));
+                        era.addStateEvent(words[1],words[2],parseFloat(words[3]),eventLabels);
                         break;
-                    case "no":
-                        era.addStateEvent("network",ethx,0);
+                    case 'action':
+                        eventLabels = this.getEventLabels(words.slice(3));
+                        era.addActionEvent(words[1],parseFloat(words[2]),eventLabels);
                         break;
                 }
-            } catch (err) {
-                log.error(`failed to check network state of ${ethx}, ${err}`)
-            }
+            })
+        } catch (err) {
+            log.error(`failed to process collector output of ${collector},${err}`);
         }
+    }
+
+    getEventLabels(words) {
+        if (words.length === 0) {
+            return null;
+        }
+        return words.reduce(
+            (acc,cur) => {
+                const kv = cur.split('=');
+                acc[kv[0]] = kv[1];
+                return acc;
+            },
+            {}
+        );
     }
 
     async pingGateway() {
@@ -91,8 +132,8 @@ class EventSensor extends Sensor {
         try {
             log.info(`try to ping ${gw}`);
             const {stdout, stderr} = await exec(`ping -w 3 ${gw}`);
-            log.info("stdout:", stdout);
-            log.info("stderr:", stderr);
+            log.debug("stdout:", stdout);
+            log.debug("stderr:", stderr);
             era.addStateEvent("ping",gw,1);
         } catch (err) {
             log.error(`failed to ping ${gw}, ${err}`)
