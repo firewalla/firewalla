@@ -85,7 +85,8 @@
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
-    "WireGuardPlugin": {}
+    "WireGuardPlugin": {},
+    "EventSensor":{}
   },
   "intels": [
     "DedupAlarm",
@@ -553,7 +554,8 @@
     "ACLAuditLogPlugin": {},
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
-    "DockerSensor": {}
+    "DockerSensor": {},
+    "EventSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
