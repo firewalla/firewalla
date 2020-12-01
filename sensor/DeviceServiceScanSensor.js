@@ -57,7 +57,7 @@ class DeviceServiceScanSensor extends Sensor {
       });
     }, firstScanTime);
 
-    let interval = this.config.interval * 1000 || 30 * 60 * 1000; // 30 minutes
+    let interval = this.config.interval * 1000 || 3 * 3600 * 1000; // 3 hours
     setInterval(() => {
       this.checkAndRunOnce();
     }, interval);

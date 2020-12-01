@@ -321,7 +321,7 @@ is_simple_mode() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %25s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount" "Group" "Emergency Access"
+    printf "%35s %15s %25s %25s %20s %7s %6s %6s %10s %7s %8s %20s %10s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitor" "B7" "Online" "vpnClient" "FlowIn" "FlowOut" "Group" "Emerg Acc"
     NOW=$(date +%s)
     FRCC=$(curl -s "http://localhost:8837/v1/config/active")
     for DEVICE in $DEVICES; do
@@ -410,7 +410,7 @@ check_hosts() {
             TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
         done
         TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
-        printf "$COLOR%35s %15s %25s %25s $DEVICE_MAC_COLOR%25s$COLOR %10s %10s %10s %10s %12s %13s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
+        printf "$COLOR%35s %15s %25s %25s $DEVICE_MAC_COLOR%20s$COLOR %7s %6s %6s %10s %7s %8s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
     done
 
     echo ""

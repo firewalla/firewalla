@@ -829,7 +829,9 @@ class PolicyManager2 {
         if (options.includingDisabled) {
           callback(err, policyRules)
         } else {
-          callback(err, err ? [] : policyRules.filter((r) => r.disabled != "1")) // remove all disabled one
+          callback(err, err ? [] : policyRules.filter((r) => {
+            return r.disabled != "1" || r.idleTs;
+          })) // remove all disabled one or it was disabled cause idle
         }
       });
     });
@@ -909,6 +911,21 @@ class PolicyManager2 {
     }
 
     if (policy.disabled == 1) {
+      const idleInfo = policy.getIdleInfo();
+      if (!idleInfo) return;
+      const { idleTsFromNow, idleExpireSoon } = idleInfo;
+      if (idleExpireSoon) {
+        await delay(idleTsFromNow * 1000);
+        await this.enablePolicy(policy);
+        log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
+      } else {
+        const policyTimer = setTimeout(async () => {
+          log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
+          await this.enablePolicy(policy);
+        }, idleTsFromNow * 1000)
+        this.invalidateExpireTimer(policy); // remove old one if exists
+        this.enabledTimers[pid] = policyTimer;
+      }
       return // ignore disabled policy rules
     }
 
@@ -961,7 +978,8 @@ class PolicyManager2 {
     await this.updatePolicyAsync({
       pid: policy.pid,
       disabled: 0,
-      activatedTime: now
+      activatedTime: now,
+      idleTs: ''
     })
     policy.disabled = 0
     policy.activatedTime = now

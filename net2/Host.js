@@ -24,6 +24,7 @@ const Spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const routing = require('../extension/routing/routing.js');
 
 const util = require('util')
 
@@ -380,6 +381,13 @@ class Host {
     });
   }
 
+  setScreenTime(count) {
+    this.o.screenTime = count || 0;
+    rclient.hmset("host:mac:" + this.o.mac, {
+      'screenTime': this.o.screenTime
+    });
+  }
+
   getAdmin(tuple) {
     if (this.admin == null) {
       return null;
@@ -458,13 +466,13 @@ class Host {
       if (state === true) {
         // set skbmark
         await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
       }
       // null means off
       if (state === null) {
         // clear skbmark
         await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x0000/${routing.MASK_VC}`);
       }
       // false means N/A
       if (state === false) {
@@ -1142,6 +1150,7 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
+      screenTime: this.o.screenTime ? Number(this.o.screenTime) : 0,
       intf: this.o.intf ? this.o.intf : 'Unknown'
     }
 

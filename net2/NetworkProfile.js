@@ -38,7 +38,7 @@ const SpooferManager = require('./SpooferManager.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const pl = require('../platform/PlatformLoader.js');
-const platform = pl.getPlatform();
+const routing = require('../extension/routing/routing.js');
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -267,13 +267,13 @@ class NetworkProfile {
       if (state === true) {
         // set skbmark
         await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
-        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
       }
       // null means off
       if (state === null) {
         // reset skbmark
         await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
-        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/${routing.MASK_VC}`);
       }
       // false means N/A
       if (state === false) {
@@ -474,8 +474,8 @@ async createEnv() {
           await exec(`sudo ipset add -! ${routeIpsetName4} 128.0.0.0/1`).catch((err) => {
             log.error(`Failed to add 128.0.0.0/1 to ${routeIpsetName4}`, err.message);
           });
-          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName4} skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
-            log.error(`Failed to add ipv4 route set ${routeIpsetName4} skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_REG}`).catch((err) => {
+            log.error(`Failed to add ipv4 route set ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_REG} to ${routeIpsetName}`, err.message);
           });
         }
         if (this.o.gateway6) {
@@ -485,8 +485,8 @@ async createEnv() {
           await exec(`sudo ipset add -! ${routeIpsetName6} 8000::/1`).catch((err) => {
             log.error(`Failed to add 8000::/1 to ${routeIpsetName6}`, err.message);
           });
-          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName6} skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
-            log.error(`Failed to add ipv6 route set ${routeIpsetName6} skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_REG}`).catch((err) => {
+            log.error(`Failed to add ipv6 route set ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_REG} to ${routeIpsetName}`, err.message);
           })
         }
       }
