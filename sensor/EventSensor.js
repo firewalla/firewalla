@@ -54,7 +54,7 @@ class EventSensor extends Sensor {
         era = require('../event/EventRequestApi.js');
         setTimeout(() => {
                 this.scheduledJob();
-                setInterval(() => { this.scheduledJob(); }, 1000 * 60 * 60 ); // run every hour
+                setInterval(() => { this.scheduledJob(); }, 1000 * 3600 ); // run every hour
             },
             1000 * 60 * 5
         ); // first time in 5 minutes
@@ -65,9 +65,20 @@ class EventSensor extends Sensor {
             log.info("Start monitoring and generate events if needed")
             await this.processCollectorOutputs();
             await this.pingGateway();
+            await this.cleanOldEvents(1000*3600*24*7); // clean events more than 7 days old
+            //await this.cleanOldEvents(1000*60*3);
             log.info("scheduledJob is executed successfully");
         } catch(err) {
             log.error("Failed to run scheduled job, err:", err);
+        }
+    }
+
+    async cleanOldEvents(cleanBefore) {
+        try {
+            await log.info(`clean events before ${cleanBefore}`);
+            era.cleanEvents(0, Date.now()-cleanBefore );
+        } catch (err) {
+            log.error(`failed to clean events before ${cleanBefore}, ${err}`);
         }
     }
 
@@ -83,34 +94,77 @@ class EventSensor extends Sensor {
     }
 
     /*
-     * supported collector output:
-     *   state <state_type> <state_key> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
-     *   action <action_type> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
+     * Supported collector output:
+     * 1) JSON output
+     *   STATE:
+     *     { "event_type"  : "state",
+     *       "state_type"  : <state_type>,
+     *       "state_key"   : <state_key>,
+     *       "state_value" : <state_value>,
+     *       "labels"      : {...}
+     *     }
+     *   ACTION:
+     *     { "event_type"  : "state",
+     *       "action_type"  : <action_type>,
+     *       "action_value" : <action_value>,
+     *       "labels"      : {...}
+     *     }
+     * 2) Simple output
+     *   STATE:
+     *     state <state_type> <state_key> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
+     *   ACTION:
+     *     action <action_type> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
      */
     async processCollectorOutput(collector) {
         try{
             log.info(`Process output of ${collector}`);
             // get collector output
             const result = await exec(collector);
-            // trigger events API with parameters line by line
-            result.stdout.split("\n").forEach( (line) => {
-                log.info("output line:", line);
-                let eventLabels = null;
-                const words = line.split(/\s+/);
-                switch (words[0]) {
-                    case 'state':
-                        eventLabels = this.getEventLabels(words.slice(4));
-                        era.addStateEvent(words[1],words[2],parseFloat(words[3]),eventLabels);
-                        break;
-                    case 'action':
-                        eventLabels = this.getEventLabels(words.slice(3));
-                        era.addActionEvent(words[1],parseFloat(words[2]),eventLabels);
-                        break;
+
+            // try to parse as JSON if possible
+            let result_obj = null
+            try {
+                result_obj = JSON.parse(result.stdout);
+                this.processJSONOutput(result_obj);
+            } catch (err) {
+                if (result_obj === null) {
+                    this.processSimpleOutput(result.stdout);
                 }
-            })
+            }
         } catch (err) {
             log.error(`failed to process collector output of ${collector},${err}`);
         }
+    }
+
+    processJSONOutput(result_obj) {
+        switch (result_obj.event_type) {
+            case 'state':
+                era.addStateEvent(result_obj.state_type,result_obj.state_key,parseFloat(result_obj.state_value),result_obj.labels);
+                break;
+            case 'action':
+                era.addActionEvent(result_obj.action_type,parseFloat(result_obj.action_value),result_obj.labels);
+                break;
+        }
+
+    }
+
+    processSimpleOutput(output) {
+        // trigger events API with parameters line by line
+        output.split("\n").forEach( (line) => {
+            log.info("output line:", line);
+            let eventLabels = null;
+            const words = line.split(/\s+/);
+            switch (words[0]) {
+                case 'state':
+                    eventLabels = this.getEventLabels(words.slice(4));
+                    era.addStateEvent(words[1],words[2],parseFloat(words[3]),eventLabels);
+                    break;
+                case 'action':
+                    eventLabels = this.getEventLabels(words.slice(3));
+                    era.addActionEvent(words[1],parseFloat(words[2]),eventLabels);
+                    break;
+            }
+        })
     }
 
     getEventLabels(words) {

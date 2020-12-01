@@ -28,18 +28,18 @@ SPEEDCLI_PYTHON="$FIREWALLA_HOME/extension/speedtest/speedtest-cli"
 # Functions
 # ----------------------------------------------------------------------------
 check_speed_python() {
-    python $SPEEDCLI_PYTHON | while read line; do
-        speed_download=$(echo "$line"| awk '/Download: / {print $2}')
-        unit_download=$(echo "$line" | awk '/Download: / {print $3}')
-        speed_upload=$(echo "$line" | awk '/Upload: / {print $2}')
-        unit_upload=$(echo "$line" | awk '/Upload: / {print $3}')
-        if [[ -n "$speed_download" && -n "$unit_download" ]]; then
-            echo "state $STATE_TYPE download $speed_download unit=$unit_download"
-        elif [[ -n "$speed_upload" && -n "$unit_upload" ]]; then
-            echo "state $STATE_TYPE upload $speed_upload unit=$unit_upload"
-        fi
-    done
+    python $SPEEDCLI_PYTHON --json | jq -r '[.download,.upload,.ping,.server.host,.client.ip]|@tsv' |\
+      while read download upload ping server client
+      do
+          labels="server=$server client=$client"
+          cat <<EOS
+state speed_test download $download $labels
+state speed_test upload $upload $labels
+state speed_test ping $ping $labels
+EOS
+      done
 }
+
 
 # ----------------------------------------------------------------------------
 # MAIN goes here
