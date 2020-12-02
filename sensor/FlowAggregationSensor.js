@@ -124,23 +124,27 @@ class FlowAggregationSensor extends Sensor {
 
       // skip if no app or category intel
       if(!(intel && (intel.app || intel.category)))
-        return;
+        continue;
 
       if(!intel.a) { // a new field a to indicate accounting
-        return;
+        continue;
       }
+
+      const duration = Math.floor(flow.ets - flow.ts); // seconds
+      const fromTime = new Date(flow.ts * 1000).toLocaleString();
+      const toTime = new Date(flow.ets * 1000).toLocaleString();
 
       if (intel.app) {
         await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
         if(f.isDevelopmentVersion()) {
-          al("app", intel.app, mac, intel.host, destIP);
+          al("app", intel.app, mac, intel.host, destIP, duration, fromTime, toTime);
         }
       }
 
       if (intel.category && !excludedCategories.includes(intel.category)) {
         await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
         if(f.isDevelopmentVersion()) {
-          al("category", intel.category, mac, intel.host, destIP);
+          al("category", intel.category, mac, intel.host, destIP, duration, fromTime, toTime);
         }
       }
     }
@@ -155,12 +159,13 @@ class FlowAggregationSensor extends Sensor {
 
       // skip if no app or category intel
       if(!(intel && (intel.app || intel.category)))
-        return;
+        continue;
 
       let appInfos = [];
 
-      if(intel[x])
+      if(intel[x]) {
         appInfos.push(intel[x])
+      }        
 
       appInfos.forEach((app) => {
 
@@ -323,7 +328,7 @@ class FlowAggregationSensor extends Sensor {
 
     for (const intf of intfs) {
       if(!intf || _.isEmpty(intf.macs)) {
-        return;
+        continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
@@ -344,7 +349,7 @@ class FlowAggregationSensor extends Sensor {
 
     for (const tag of tags) {
       if(!tag || _.isEmpty(tag.macs)) {
-        return;
+        continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
@@ -364,7 +369,7 @@ class FlowAggregationSensor extends Sensor {
 
     for (const mac of macs) {
       if(!mac) {
-        return
+        continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
@@ -413,9 +418,12 @@ class FlowAggregationSensor extends Sensor {
 
     let destIP = flowTool.getDestIP(flow);
 
-    if(cache && cache[destIP] === 0) {
-      return false;
-    }
+    // comment out "false" cache
+    // because IP may be reused by multiple domains/categories, so if one domain has no category while the other has category
+    // it may miss some domains having category
+    // if(cache && cache[destIP] === 0) {
+    //   return false;
+    // }
 
     if(cache && cache[destIP] === 1) {
       return true;
