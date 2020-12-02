@@ -123,9 +123,11 @@ class EventRequestApi {
     }
 }
 
+/*
 ( async () => {
     let x = new EventRequestApi();
     console.log(await x.listEvents(0,Date.now()));
 })();
+*/
 
 module.exports = new EventRequestApi();
