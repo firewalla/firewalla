@@ -29,7 +29,7 @@ ifconfig > ifconfig.txt
 ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
 top -n 10 -b > top-output.txt
-cp -rfp /home/pi/.firewalla .
+rsync -a /home/pi/.firewalla ./ --exclude run/docker
 if [ -z "$1" ]
    then
      cp /data/redis/dump.rdb .
