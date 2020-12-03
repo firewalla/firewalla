@@ -189,7 +189,7 @@ class FlowTool {
         outgoing = await this.getAllRecentOutgoingConnections(options)
         incoming = await this.getAllRecentIncomingConnections(options)
       }
-      recentFlows = _.orderBy(outgoing.concat(incoming), 'scope', options.asc ? 'asc' : 'desc')
+      recentFlows = _.orderBy(outgoing.concat(incoming), 'ts', options.asc ? 'asc' : 'desc')
         .slice(0, options.count);
     }
 
