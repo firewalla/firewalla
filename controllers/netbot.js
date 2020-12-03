@@ -58,6 +58,8 @@ const Promise = require('bluebird');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
 
+const Constants = require('../net2/Constants.js');
+
 const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip');
@@ -394,6 +396,7 @@ class netBot extends ControllerBot {
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
+    this.vpnProfileManager = require('../net2/VPNProfileManager.js');
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
@@ -2230,21 +2233,43 @@ class netBot extends ControllerBot {
         const intf = this.networkProfileManager.getNetworkProfile(target);
         if (!intf) throw new Error("Invalid Network ID")
         options.intf = target;
+        if (intf.o && intf.o.intf === "tun_fwvpn") {
+          // add additional macs into options for VPN server network
+          const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
+          options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+        }
         target = `${type}:${target}`
         jsonobj = intf.toJson();
         break
       }
       case 'host': {
-        if (target == '0.0.0.0') break;
-
-        const host = await this.hostManager.getHostAsync(target);
-        if (!host || !host.o.mac) {
-          let error = new Error("Invalid Host");
-          error.code = 404;
-          throw error;
+        if (target == '0.0.0.0') {
+          // add additional macs into options for VPN profiles
+          const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
+          options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+          break;
         }
-        options.mac = host.o.mac;
-        jsonobj = host.toJson();
+
+        if (target.startsWith(`${Constants.NS_VPN_PROFILE}:`)) {
+          // the target is a vpn profile cn
+          const vpnProfile = this.vpnProfileManager.getVPNProfile(target.substring(`${Constants.NS_VPN_PROFILE}:`.length));
+          if (!vpnProfile || !vpnProfile.o.cn) {
+            let error = new Error("Invalid VPN profile");
+            error.code = 404;
+            throw error;
+          }
+          options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
+          jsonobj = vpnProfile.toJson();
+        } else {
+          const host = await this.hostManager.getHostAsync(target);
+          if (!host || !host.o.mac) {
+            let error = new Error("Invalid Host");
+            error.code = 404;
+            throw error;
+          }
+          options.mac = host.o.mac;
+          jsonobj = host.toJson();
+        }
         break
       }
       default:

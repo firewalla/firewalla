@@ -58,6 +58,10 @@ const fc = require('../net2/config.js');
 const accounting = require('../extension/accounting/accounting.js');
 const tracking = require('../extension/accounting/tracking.js');
 
+const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const Constants = require('../net2/Constants.js');
+const sysManager = require('../net2/SysManager.js');
+
 class FlowAggregationSensor extends Sensor {
   constructor() {
     super();
@@ -253,6 +257,16 @@ class FlowAggregationSensor extends Sensor {
       await this.aggrActivity(mac, ts);
       await this.aggrActivity(mac, ts + this.config.interval);
     }))
+
+    const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
+    await Promise.all(Object.keys(vpnProfiles).map(async cn => {
+      log.debug("FlowAggrSensor on VPN profile", cn);
+      // use specific namespace to identify vpn profiles
+      await this.aggr(`${Constants.NS_VPN_PROFILE}:${cn}`, ts);
+      await this.aggr(`${Constants.NS_VPN_PROFILE}:${cn}`, ts + this.config.interval);
+      await this.aggrActivity(`${Constants.NS_VPN_PROFILE}:${cn}`, ts);
+      await this.aggrActivity(`${Constants.NS_VPN_PROFILE}:${cn}`, ts + this.config.interval);
+    }));
   }
 
   // this will be periodically called to update the summed flows in last 24 hours
@@ -377,7 +391,37 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow("category", optionsCopy);
       await this.summarizeActivity(optionsCopy, 'category', categories);
     }
-  }
+
+    const vpnIntf = sysManager.getInterface("tun_fwvpn");
+    if (vpnIntf && vpnIntf.uuid) {
+      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
+      const cns = Object.keys(vpnProfiles);
+      // aggregate vpn server interface
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+
+      optionsCopy.intf = vpnIntf.uuid;
+      optionsCopy.macs = cns;
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.summarizeActivity(optionsCopy, 'app', apps);
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.summarizeActivity(optionsCopy, 'category', categories);
+
+      // aggregate vpn profiles using specific namespace
+      for (const cn of cns) {
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+
+        optionsCopy.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
+        await flowAggrTool.addSumFlow("download", optionsCopy);
+        await flowAggrTool.addSumFlow("upload", optionsCopy);
+        await flowAggrTool.addSumFlow("app", optionsCopy);
+        await this.summarizeActivity(optionsCopy, 'app', apps);
+        await flowAggrTool.addSumFlow("category", optionsCopy);
+        await this.summarizeActivity(optionsCopy, 'category', categories);
+      }
+    }
+  } 
 
   async sumFlowRange(ts, apps, categories) {
     const now = new Date() / 1000;
