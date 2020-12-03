@@ -72,11 +72,11 @@ class FlowTool {
     targetFlow.download += flow.download;
     targetFlow.upload += flow.upload;
     targetFlow.duration += flow.duration;
-    if (targetFlow.ts < flow.ts) {
+    if (targetFlow.ts > flow.ts) {
       targetFlow.ts = flow.ts;
     }
-    if (targetFlow.score < flow.score) {
-      targetFlow.score = flow.score;
+    if (targetFlow._ts < flow._ts) {
+      targetFlow._ts = flow._ts;
     }
   }
   _shouldMerge(targetFlow, flow) {
@@ -153,7 +153,7 @@ class FlowTool {
     }
     if(!options.no_merge) {
       recentFlows = this._mergeFlows(
-        _.orderBy(recentFlows, 'score', options.asc ? 'asc' : 'desc')
+        _.orderBy(recentFlows, '_ts', options.asc ? 'asc' : 'desc')
       );
     }
 
@@ -187,7 +187,7 @@ class FlowTool {
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFlow(flow) {
     let f = {};
-    f.score = flow._ts;
+    f._ts = flow._ts;
     f.ts = flow.ts;
     f.fd = flow.fd;
     f.duration = flow.du
