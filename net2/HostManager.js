@@ -1571,11 +1571,8 @@ module.exports = class HostManager {
               });
             }
           }
-          // do not change state if strict VPN is set
-          if (settings.overrideDefaultRoute && settings.strictVPN) {
-            // clear reconnecting count if successfully connected, otherwise increment the reconnecting count
-            return {running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1)};
-          } else return {state: result, running: result, reconnecting: 0}; // clear reconnecting count if strict VPN is not set
+          // clear reconnecting count if successfully connected, otherwise increment the reconnecting count
+          return {running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1)};
         } else {
           // proceed to stop anyway even if setup is failed
           await ovpnClient.setup().catch((err) => {
