@@ -148,10 +148,9 @@ class FlowTool {
       }
       recentFlows = [].concat(outgoing,incoming);
     }
+    recentFlows = _.orderBy(recentFlows, 'ts', options.asc ? 'asc' : 'desc');
     if(!options.no_merge) {
-      recentFlows = this._mergeFlows(
-        _.orderBy(recentFlows, 'ts', options.asc ? 'asc' : 'desc')
-      );
+      recentFlows = this._mergeFlows(recentFlows);
     }
 
     json.flows.recent = recentFlows.slice(0, options.count);
@@ -270,10 +269,6 @@ class FlowTool {
 
       allFlows.push.apply(allFlows, flows);
     }));
-
-    allFlows.sort((a, b) => {
-      return b.ts - a.ts;
-    })
 
     return allFlows;
   }
@@ -484,7 +479,6 @@ class FlowTool {
 
     flowObjects.forEach((x) => {
       this.trimFlow(x)
-      if (x.ets) x.ts = x.ets
     });
 
     let simpleFlows = flowObjects
@@ -496,7 +490,7 @@ class FlowTool {
 
     let enrichedFlows = await this.enrichWithIntel(simpleFlows);
 
-    return _.orderBy(enrichedFlows, 'ts', options.asc ? 'asc' : 'desc')
+    return enrichedFlows
   }
 
   getFlowKey(mac, type) {
