@@ -834,6 +834,10 @@ module.exports = class {
       }
       */
 
+      // keep only 2 digits after decimal to save memory
+      obj.ts = Math.round(obj.ts * 100) / 100
+      obj.duration = Math.round(obj.duration * 100) / 100
+
       // Long connection aggregation
       const uid = obj.uid
       if (long || this.activeLongConns[uid]) {
@@ -1048,7 +1052,7 @@ module.exports = class {
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
-        flows: [flowDescriptor],
+        flows: [flowDescriptor], // TODO: deprecate this to save memory
         uids: [obj.uid]
       };
 
