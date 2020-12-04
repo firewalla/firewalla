@@ -189,7 +189,7 @@ class FlowTool {
         outgoing = await this.getAllRecentOutgoingConnections(options)
         incoming = await this.getAllRecentIncomingConnections(options)
       }
-      recentFlows = _.orderBy(outgoing.concat(incoming), 'scope', options.asc ? 'asc' : 'desc')
+      recentFlows = _.orderBy(outgoing.concat(incoming), 'score', options.asc ? 'asc' : 'desc')
         .slice(0, options.count);
     }
 
@@ -225,7 +225,7 @@ class FlowTool {
   toSimpleFlow(flow) {
     let f = {};
     f.score = flow._ts;
-    f.ts = flow.ts;
+    f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
     f.duration = flow.du
     f.intf = flow.intf;
