@@ -35,6 +35,9 @@ let instance = null;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 
+const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const Constants = require('../net2/Constants.js');
+
 const default_stddev_limit = 8;
 const default_inbound_min_length = 1000000;
 const deafult_outbound_min_length = 500000;
@@ -532,7 +535,8 @@ module.exports = class FlowMonitor {
     }
 
     this.flowIntel(result.connections, mac);
-    this.summarizeNeighbors(host, result.connections);
+    if (host)
+      this.summarizeNeighbors(host, result.connections);
     if (result.activities != null) {
       /*
       if (host.activities!=null) {
@@ -547,8 +551,10 @@ module.exports = class FlowMonitor {
       }
       host.save("activities",null);
       */
-      host.activities = result.activities;
-      host.save("activities", null);
+      if (host) {
+        host.activities = result.activities;
+        host.save("activities", null);
+      }
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
@@ -558,7 +564,8 @@ module.exports = class FlowMonitor {
       });
     }
     this.flowIntel(result.connections, mac);
-    this.summarizeNeighbors(host, result.connections);
+    if (host)
+      this.summarizeNeighbors(host, result.connections);
   }
 
 
@@ -710,6 +717,16 @@ module.exports = class FlowMonitor {
             log.info("Running Detect:", mac);
           }
           await this.detect(mac, period, host);
+        }
+      }
+
+      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
+      for (const cn of Object.keys(vpnProfiles)) {
+        const vpnProfile = vpnProfiles[cn];
+        if (service === "detect") {
+          const uid = `${Constants.NS_VPN_PROFILE}:${cn}`;
+          log.info("Running Detect:", uid);
+          await this.detect(uid, period);
         }
       }
     } catch (e) {

@@ -432,8 +432,6 @@ class VpnManager {
               for (let j in colNames) {
                 switch (colNames[j]) {
                   case "Virtual Address":
-                    if (!ip.subnet(this.serverNetwork, this.netmask).contains(values[j]))
-                      continue;
                     clientDesc.vAddr = values[j];
                     break;
                   case "Common Name":
