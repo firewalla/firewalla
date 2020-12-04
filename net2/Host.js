@@ -387,6 +387,10 @@ class Host {
       'screenTime': this.o.screenTime
     });
   }
+  setAccounting(accounting) {
+    this.o.accounting = accounting || {};
+    rclient.hmset("host:mac:" + this.o.mac, { accounting: JSON.stringify(accounting) })
+  }
 
   getAdmin(tuple) {
     if (this.admin == null) {
@@ -1217,6 +1221,13 @@ class Host {
         json.openports = JSON.parse(this.o.openports);
       } catch(err) {
         log.error("Failed to parse openports:", err);
+      }
+    }
+    if (this.o.accounting) {
+      try {
+        json.accounting = JSON.parse(this.o.accounting);
+      } catch (err) {
+        log.error("Failed to parse accounting:", err);
       }
     }
 

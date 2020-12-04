@@ -22,11 +22,12 @@ const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 
 const tracking = require('../extension/accounting/tracking.js');
-
+const accounting = require('../extension/accounting/accounting.js');
 const fc = require('../net2/config.js');
-
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater()
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-
+const { generateStrictDateTs } = require('../util/util.js');
 class AccountingPlugin extends Sensor {
   constructor() {
     super();
@@ -49,6 +50,15 @@ class AccountingPlugin extends Sensor {
       if(host) {
         const count = await tracking.getUsedTime(mac);
         host.setScreenTime(count);
+        // const customizedCategories = categoryUpdater.customizedCategories;
+        const defaultCategories = ['av','games','social','shopping','porn','p2p','gamble','vpn']; // TBD dynamic categories categoryUpdater.activeCategories
+        const { beginTs, endTs } = generateStrictDateTs();
+        const accountingInfo = {};
+        for(const category of defaultCategories){
+          accountingInfo[category] = await accounting.count(mac, category, beginTs, endTs)
+        }
+        //TBD: attach app accounting info
+        host.setAccounting(accountingInfo);
       }
     }
 

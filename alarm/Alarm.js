@@ -1125,6 +1125,21 @@ class DualWanAlarm extends Alarm {
     return false;
   }
 }
+class ScreenTimeAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_SCREEN_TIME', timestamp, device, info);
+    this['p.showMap'] = false;
+  }
+  keysToCompareForDedup() {
+    return ['p.scope','p.threshold','p.timeframe.begin','p.timeframe.end'];
+  }
+  requiredKeys(){
+    return this.keysToCompareForDedup()
+  }
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.alarm_screen_time.cooldown') || super.getExpirationTime();
+  }
+}
 
 const classMapping = {
   ALARM_PORN: PornAlarm.prototype,
@@ -1149,7 +1164,8 @@ const classMapping = {
   ALARM_WEAK_PASSWORD: WeakPasswordAlarm.prototype,
   ALARM_OPENPORT: OpenPortAlarm.prototype,
   ALARM_UPNP: UpnpAlarm.prototype,
-  ALARM_DUAL_WAN: DualWanAlarm.prototype
+  ALARM_DUAL_WAN: DualWanAlarm.prototype,
+  ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype
 }
 
 module.exports = {
@@ -1178,5 +1194,6 @@ module.exports = {
   OpenPortAlarm,
   UpnpAlarm,
   DualWanAlarm,
+  ScreenTimeAlarm,
   mapping: classMapping
 }
