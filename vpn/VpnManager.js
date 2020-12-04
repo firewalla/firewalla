@@ -432,6 +432,7 @@ class VpnManager {
               for (let j in colNames) {
                 switch (colNames[j]) {
                   case "Virtual Address":
+                    clientDesc.vAddr = values[j];
                     break;
                   case "Common Name":
                     clientDesc.cn = values[j];
@@ -758,6 +759,10 @@ class VpnManager {
         if (err) {
           log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
         }
+        sem.emitEvent({
+          type: "VPNProfiles:Updated",
+          cn: commonName
+        });
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
           if (callback) {
             (async () => {

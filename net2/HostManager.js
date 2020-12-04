@@ -92,6 +92,7 @@ const dnsTool = new DNSTool()
 
 const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
+const VPNProfileManager = require('./VPNProfileManager.js');
 const Alarm = require('../alarm/Alarm.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
@@ -949,6 +950,11 @@ module.exports = class HostManager {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
+  async vpnProfilesForInit(json) {
+    await VPNProfileManager.refreshVPNProfiles();
+    json.vpnProfiles = await VPNProfileManager.toJson();
+  }
+
   toJson(includeHosts, options, callback) {
 
     if(typeof options === 'function') {
@@ -989,6 +995,7 @@ module.exports = class HostManager {
           this.getDataUsagePlan(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
+          this.vpnProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
           this.loadStats(json),
