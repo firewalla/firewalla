@@ -798,11 +798,6 @@ module.exports = class HostManager {
     json.vpnCliStatistics = await new VpnManager().getStatistics();
   }
 
-  async getRecentFlows(json) {
-    const recentFlows = await flowTool.getGlobalRecentConns();
-    json.recentFlows = recentFlows;
-  }
-
   async getGuessedRouters(json) {
     try {
       const routersString = await rclient.getAsync("guessed_router");
@@ -946,7 +941,6 @@ module.exports = class HostManager {
           this.jwtTokenForInit(json),
           this.groupNameForInit(json),
           this.asyncBasicDataForInit(json),
-          this.getRecentFlows(json),
           this.getGuessedRouters(json),
           this.getGuardian(json),
           this.getDataUsagePlan(json),

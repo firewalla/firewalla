@@ -1176,12 +1176,6 @@ module.exports = class {
           let redisObj = [key, now, strdata];
           log.debug("Conn:Save:Temp", redisObj);
 
-          sem.sendEventToFireMain({
-            type: "NewGlobalFlow",
-            flow: tmpspec,
-            suppressEventLogging: true
-          });
-
           if (tmpspec.fd == 'out') {
             this.recordOutPort(tmpspec);
           }

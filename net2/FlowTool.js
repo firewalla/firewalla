@@ -370,42 +370,6 @@ class FlowTool {
     return this._aggregateTransferBy10Min(transfers);
   }
 
-  async saveGlobalRecentConns(flow) {
-    const key = "flow:global:recent";
-    const now = new Date() / 1000;
-    const limit = -1001; // only keep the latest 1000 entries
-    let flowCopy = JSON.parse(JSON.stringify(flow));
-
-    if(!this._isFlowValid(flowCopy)) {
-      return;
-    }
-
-    // TODO: might need to cut small traffics
-    flowCopy = this.toSimpleFlow(flowCopy);
-    flowCopy.now = now;
-
-    // if(flowCopy.deviceIP && !flowCopy.device) {
-    //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
-    //   flowCopy.device = mac;
-    // }
-
-    await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
-    await rclient.zremrangebyrankAsync(key, 0, limit);
-
-    for (let index = 0; index < flowCopy.tags.length; index++) {
-      const tag = flowCopy.tags[index];
-      const tagKey = `flow:tag:${tag}:recent`;
-      await rclient.zaddAsync(tagKey, now, JSON.stringify(flowCopy));
-      await rclient.zremrangebyrankAsync(tagKey, 0, limit);
-    }
-
-    const intfKey = `flow:intf:${flowCopy.intf}:recent`;
-    await rclient.zaddAsync(intfKey, now, JSON.stringify(flowCopy));
-    await rclient.zremrangebyrankAsync(intfKey, 0, limit);
-
-    return;
-  }
-
   async enrichWithIntel(flows) {
     return await Promise.map(flows, async f => {
       // get intel from redis. if failed, create a new one
@@ -430,35 +394,6 @@ class FlowTool {
 
       return f;
     }, {concurrency: 10}); // limit to 10
-  }
-
-  async getGlobalRecentConns(options) {
-    options = options || {};
-
-    const key = "flow:global:recent";
-    const limit = options.limit || 50;
-    let offset = options.offset || "-inf";
-
-    if(offset !== '-inf') {
-      offset = `(${offset}`;
-    }
-
-    const results = await rclient.zrangebyscoreAsync([key, offset, "+inf", "LIMIT", 0 , limit]);
-
-    if(_.isEmpty(results)) {
-      return [];
-    }
-
-    let flowObjects = results
-        .map((x) => this._flowStringToJSON(x));
-
-    let enrichedFlows = await this.enrichWithIntel(flowObjects);
-
-    enrichedFlows.sort((a, b) => {
-      return b.ts - a.ts;
-    });
-
-    return enrichedFlows;
   }
 
   async getRecentConnections(target, direction, options) {
