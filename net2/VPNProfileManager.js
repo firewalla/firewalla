@@ -55,8 +55,12 @@ class VPNProfileManager {
     return this;
   }
 
-  getProfileByIP(ip) {
-    return this.ipProfileMap && this.ipProfileMap[ip] && this.ipProfileMap[ip].cn;
+  getProfileCNByVirtualAddr(vaddr) {
+    return this.ipProfileMap && this.ipProfileMap[vaddr] && this.ipProfileMap[vaddr].cn;
+  }
+
+  getRealAddrByVirtualAddr(vaddr) {
+    return this.ipProfileMap && this.ipProfileMap[vaddr] && this.ipProfileMap[vaddr].addr;
   }
 
   scheduleUpdateConnectedClients() {

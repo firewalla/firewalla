@@ -78,7 +78,7 @@ module.exports = class DNSManager {
       if (data && data.mac) {
         mac = data.mac
       } else {
-        const cn = VPNProfileManager.getProfileByIP(ip);
+        const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
         if (cn) {
           const vpnProfile = VPNProfileManager.getVPNProfile(cn);
           return {

@@ -982,10 +982,12 @@ module.exports = class {
       }
 
       let localType = TYPE_MAC;
+      let realLocal = null;
       if (!localMac && intfInfo && intfInfo.name === "tun_fwvpn") {
-        localMac = lhost && VPNProfileManager.getProfileByIP(lhost);
+        localMac = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
         if (localMac) {
           localMac = `${Constants.NS_VPN_PROFILE}:${localMac}`;
+          realLocal = VPNProfileManager.getRealAddrByVirtualAddr(lhost);
           localType = TYPE_VPN;
         }
       }
@@ -1068,7 +1070,8 @@ module.exports = class {
         f: flag,
         flows: [flowDescriptor],
         uids: [obj.uid],
-        ltype: localType
+        ltype: localType,
+        realLocal: realLocal
       };
 
       if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
