@@ -100,7 +100,9 @@ class VPNProfileManager {
     for (const client of clients) {
       if (!client.vAddr || !client.cn)
         continue;
-      newIpProfileMap[client.vAddr] = client;
+      for (const addr of client.vAddr) {
+        newIpProfileMap[addr] = client;
+      }
     }
     this.ipProfileMap = newIpProfileMap;
   }
