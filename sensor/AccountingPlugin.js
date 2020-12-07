@@ -78,7 +78,7 @@ class AccountingPlugin extends Sensor {
       const type = key.replace(new RegExp(`${keyPrefix}:${macReg}:`),'');
       result.push(type);
     }
-    return _.uniq(type);
+    return _.uniq(result);
   }
 
   async cleanupJob() {
