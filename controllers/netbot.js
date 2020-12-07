@@ -1357,7 +1357,7 @@ class netBot extends ControllerBot {
           let data = {
             count: flows.length,
             flows,
-            nextTs: flows.length ? flows[flows.length - 1].score : null
+            nextTs: flows.length ? flows[flows.length - 1].ts : null
           }
           this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
