@@ -112,7 +112,7 @@ class DeviceServiceScanSensor extends Sensor {
         }
       }
     } catch (err) {
-      log.error("Got error when applying adblock policy", err);
+      log.error("Got error when applying device service scan policy", err);
     }
   }
 
