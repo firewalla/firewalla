@@ -21,5 +21,5 @@ fi
 test $(redis-cli type sys:nobeep) != "none" && redis-cli del sys:nobeep && exit 0
 
 sudo modprobe pcspkr
-sudo su -l pi -c "beep -r $NUM"
+sudo su -l root -c "beep -r $NUM"
 sudo rmmod pcspkr

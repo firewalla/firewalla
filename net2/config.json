@@ -78,7 +78,6 @@
     "AdditionalPairPlugin": {},
     "DockerPlugin": {},
     "EncipherPlugin": {},
-    "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
@@ -420,7 +419,6 @@
       "reportInterval": 7200,
       "temperatureThreshold": 95
     },
-    "RecentFlowPlugin": {},
     "FlowUploadSensor": {
       "interval": 900,
       "maxFlows": 50000,
@@ -714,7 +712,8 @@
     "dual_wan": true,
     "clash": false,
     "single_wan_conn_check": false,
-    "accounting": true
+    "accounting": true,
+    "event_schedule": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -92,6 +92,7 @@ const dnsTool = new DNSTool()
 
 const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
+const VPNProfileManager = require('./VPNProfileManager.js');
 const Alarm = require('../alarm/Alarm.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
@@ -770,6 +771,49 @@ module.exports = class HostManager {
     })
   }
 
+  async ovpnClientProfilesForInit(json) {
+    let profiles = [];
+    const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+    const cmd = "mkdir -p " + dirPath;
+    await exec(cmd);
+    const files = await fs.readdirAsync(dirPath);
+    const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+    Array.prototype.push.apply(profiles, await Promise.all(ovpns.map(async filename => {
+      const profileId = filename.slice(0, filename.length - 5);
+      const ovpnClient = new OpenVPNClient({ profileId: profileId });
+      const passwordPath = ovpnClient.getPasswordPath();
+      const profile = { profileId: profileId };
+      let password = "";
+      if (fs.existsSync(passwordPath)) {
+        password = await fs.readFileAsync(passwordPath, "utf8");
+        if (password === "dummy_ovpn_password")
+          password = ""; // not a real password, just a placeholder
+      }
+      profile.password = password;
+      const userPassPath = ovpnClient.getUserPassPath();
+      let user = "";
+      let pass = "";
+      if (fs.existsSync(userPassPath)) {
+        const userPass = await fs.readFileAsync(userPassPath, "utf8");
+        const lines = userPass.split("\n", 2);
+        if (lines.length == 2) {
+          user = lines[0];
+          pass = lines[1];
+        }
+      }
+      const settings = await ovpnClient.loadSettings();
+      profile.user = user;
+      profile.pass = pass;
+      profile.settings = settings;
+      const status = await ovpnClient.status();
+      profile.status = status;
+      const stats = await ovpnClient.getStatistics();
+      profile.stats = stats;
+      return profile;
+    })));
+    json.ovpnClientProfiles = profiles;
+  }
+
   async jwtTokenForInit(json) {
     const token = await tokenManager.getToken();
     if(token) {
@@ -796,11 +840,6 @@ module.exports = class HostManager {
     json.customizedCategories = customizedCategories;
     // add connected vpn client statistics
     json.vpnCliStatistics = await new VpnManager().getStatistics();
-  }
-
-  async getRecentFlows(json) {
-    const recentFlows = await flowTool.getGlobalRecentConns();
-    json.recentFlows = recentFlows;
   }
 
   async getGuessedRouters(json) {
@@ -911,6 +950,11 @@ module.exports = class HostManager {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
+  async vpnProfilesForInit(json) {
+    await VPNProfileManager.refreshVPNProfiles();
+    json.vpnProfiles = await VPNProfileManager.toJson();
+  }
+
   toJson(includeHosts, options, callback) {
 
     if(typeof options === 'function') {
@@ -946,15 +990,16 @@ module.exports = class HostManager {
           this.jwtTokenForInit(json),
           this.groupNameForInit(json),
           this.asyncBasicDataForInit(json),
-          this.getRecentFlows(json),
           this.getGuessedRouters(json),
           this.getGuardian(json),
           this.getDataUsagePlan(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
+          this.vpnProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
-          this.loadStats(json)
+          this.loadStats(json),
+          this.ovpnClientProfilesForInit(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};

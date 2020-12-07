@@ -30,7 +30,9 @@ let erh = null;
 let era = null;
 let ea = require('../event/EventApi.js');
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
+const FEATURE_EVENT = "event_schedule";
 
 class EventSensor extends Sensor {
 
@@ -62,6 +64,10 @@ class EventSensor extends Sensor {
 
     async scheduledJob() {
         try {
+            if (! fc.isFeatureOn(FEATURE_EVENT)) {
+                log.warn(`feature ${FEATURE_EVENT} disabled`);
+                return;
+            }
             log.info("Start monitoring and generate events if needed")
             await this.processCollectorOutputs();
             await this.pingGateway();

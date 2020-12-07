@@ -512,14 +512,32 @@ class OldDataCleanSensor extends Sensor {
     return;
   }
 
+  async deleteObsoletedData() {
+    await rclient.delAsync('flow:global:recent');
+    const recentFlowTagKeys = await rclient.scanResults('flow:tag:*:recent')
+    for (const key of recentFlowTagKeys) {
+      await rclient.delAsync(key)
+    }
+    const recentFlowIntfKeys = await rclient.scanResults('flow:intf:*:recent')
+    for (const key of recentFlowIntfKeys) {
+      await rclient.delAsync(key)
+    }
+  }
+
   run() {
     super.run();
 
-    this.listen();
+    try {
+      this.listen();
 
-    this.hostPolicyMigration()
+      this.hostPolicyMigration()
 
-    this.legacySchedulerMigration();
+      this.legacySchedulerMigration();
+
+      this.deleteObsoletedData();
+    } catch(err) {
+      log.error('Failed to run one time jobs', err)
+    }
 
     setTimeout(() => {
       this.scheduledJob();

@@ -35,6 +35,9 @@ const broNotice = require('../extension/bro/BroNotice.js');
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 
+const VPNProfileManager = require('./VPNProfileManager.js');
+const Constants = require('./Constants.js');
+
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
@@ -65,6 +68,11 @@ const _ = require('lodash');
 const Message = require('../net2/Message.js');
 
 const {formulateHostname, isDomainValid} = require('../util/util.js');
+
+const TYPE_MAC = "mac";
+const TYPE_VPN = "vpn";
+
+const PREFIX_VPN = "vpn:";
 /*
  *
  *  config.bro.notice.path {
@@ -976,12 +984,24 @@ module.exports = class {
           });
         }
       }
+
+      let localType = TYPE_MAC;
+      let realLocal = null;
+      if (!localMac && intfInfo && intfInfo.name === "tun_fwvpn") {
+        localMac = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
+        if (localMac) {
+          localMac = `${Constants.NS_VPN_PROFILE}:${localMac}`;
+          realLocal = VPNProfileManager.getRealAddrByVirtualAddr(lhost);
+          localType = TYPE_VPN;
+        }
+      }
+
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
       }
 
       let tags = [];
-      if (localMac) {
+      if (localMac && localType === TYPE_MAC) {
         localMac = localMac.toUpperCase();
         const hostInfo = hostManager.getHostFastByMAC(localMac);
         tags = hostInfo ? await hostInfo.getTags() : [];
@@ -1053,7 +1073,9 @@ module.exports = class {
         pr: obj.proto,
         f: flag,
         flows: [flowDescriptor], // TODO: deprecate this to save memory
-        uids: [obj.uid]
+        uids: [obj.uid],
+        ltype: localType,
+        realLocal: realLocal
       };
 
       if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
@@ -1131,7 +1153,7 @@ module.exports = class {
       // Single flow is written to redis first to prevent data loss
       // will be aggregated on flow stash expiration and removed in most cases
       if (tmpspec) {
-        if (tmpspec.lh === tmpspec.sh && localMac) {
+        if (tmpspec.lh === tmpspec.sh && localMac && localType === TYPE_MAC) {
           // record device as active if and only if device originates the connection
           let macIPEntry = this.activeMac[localMac];
           if (!macIPEntry)
@@ -1179,12 +1201,6 @@ module.exports = class {
           // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
           let redisObj = [key, now, strdata];
           log.debug("Conn:Save:Temp", redisObj);
-
-          sem.sendEventToFireMain({
-            type: "NewGlobalFlow",
-            flow: tmpspec,
-            suppressEventLogging: true
-          });
 
           if (tmpspec.fd == 'out') {
             this.recordOutPort(tmpspec);
