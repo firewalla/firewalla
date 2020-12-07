@@ -1139,6 +1139,10 @@ class ScreenTimeAlarm extends Alarm {
   getExpirationTime() {
     return fc.getTimingConfig('alarm.alarm_screen_time.cooldown') || super.getExpirationTime();
   }
+  localizedNotificationContentArray() {
+    return [this["p.scope.names"],
+    this["p.target"]];
+  }
 }
 
 const classMapping = {

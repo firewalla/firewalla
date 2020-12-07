@@ -381,15 +381,11 @@ class Host {
     });
   }
 
-  setScreenTime(count) {
-    this.o.screenTime = count || 0;
+  setScreenTime(screenTime) {
+    this.o.screenTime = screenTime || {};
     rclient.hmset("host:mac:" + this.o.mac, {
-      'screenTime': this.o.screenTime
+      'screenTime': JSON.stringify(screenTime)
     });
-  }
-  setAccounting(accounting) {
-    this.o.accounting = accounting || {};
-    rclient.hmset("host:mac:" + this.o.mac, { accounting: JSON.stringify(accounting) })
   }
 
   getAdmin(tuple) {
@@ -1154,7 +1150,6 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
-      screenTime: this.o.screenTime ? Number(this.o.screenTime) : 0,
       intf: this.o.intf ? this.o.intf : 'Unknown'
     }
 
@@ -1223,11 +1218,11 @@ class Host {
         log.error("Failed to parse openports:", err);
       }
     }
-    if (this.o.accounting) {
+    if (this.o.screenTime) {
       try {
-        json.accounting = JSON.parse(this.o.accounting);
+        json.screenTime = JSON.parse(this.o.screenTime);
       } catch (err) {
-        log.error("Failed to parse accounting:", err);
+        log.error("Failed to parse screenTime:", err);
       }
     }
 

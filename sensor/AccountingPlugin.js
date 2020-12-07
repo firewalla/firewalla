@@ -15,7 +15,7 @@
 'use strict';
 const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename);
-
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const Sensor = require('./Sensor.js').Sensor;
 
 const HostManager = require('../net2/HostManager.js');
@@ -24,8 +24,6 @@ const hostManager = new HostManager();
 const tracking = require('../extension/accounting/tracking.js');
 const accounting = require('../extension/accounting/accounting.js');
 const fc = require('../net2/config.js');
-const CategoryUpdater = require('../control/CategoryUpdater.js');
-const categoryUpdater = new CategoryUpdater()
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const { generateStrictDateTs } = require('../util/util.js');
 class AccountingPlugin extends Sensor {
@@ -42,27 +40,45 @@ class AccountingPlugin extends Sensor {
     }
     
     log.info("Updating data usage for all devices...");
-
+    const activeCategories = await this.getActiveX('category');
+    const activeApps = await this.getActiveX('app');
     const macs = hostManager.getActiveMACs();
     for(const mac of macs) {
       await tracking.aggr(mac);
       const host = hostManager.getHostFastByMAC(mac);
       if(host) {
-        const count = await tracking.getUsedTime(mac);
-        host.setScreenTime(count);
-        // const customizedCategories = categoryUpdater.customizedCategories;
-        const defaultCategories = ['av','games','social','shopping','porn','p2p','gamble','vpn']; // TBD dynamic categories categoryUpdater.activeCategories
+        const screenTime = {
+          total:0,
+          categories:{},
+          apps:{}
+        };
+        screenTime.total = await tracking.getUsedTime(mac);
         const { beginTs, endTs } = generateStrictDateTs();
-        const accountingInfo = {};
-        for(const category of defaultCategories){
-          accountingInfo[category] = await accounting.count(mac, category, beginTs, endTs)
+        for (const category of activeCategories) {
+          screenTime.categories[category] = await accounting.count(mac, category, beginTs, endTs)
         }
-        //TBD: attach app accounting info
-        host.setAccounting(accountingInfo);
+        for (const app of activeApps) {
+          screenTime.apps[app] = await accounting.count(mac, app, beginTs, endTs)
+        }
+        host.setScreenTime(screenTime);
       }
     }
 
     log.info("Updating data usage for all devices is complete");
+  }
+  async getActiveX(type){
+    const keyPrefix = `${type}flow`;
+    const keys = await rclient.keysAsync(`${keyPrefix}*`);
+    const macReg = '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})';
+    const result = [];
+    for(const key of keys){
+      // key
+      // categoryflow:mac:games
+      // appflow:mac:wechat
+      const type = key.replace(new RegExp(`${keyPrefix}:${macReg}:`),'');
+      result.push(type);
+    }
+    return _.uniq(type);
   }
 
   async cleanupJob() {
