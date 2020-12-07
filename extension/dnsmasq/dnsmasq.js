@@ -471,7 +471,7 @@ module.exports = class DNSMASQ {
     try {
       domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
       for (const domain of domains) {
-        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile)) {
           if (!_.isEmpty(options.scope)) {
             // use single config file for all devices configuration
             const entries = [];
@@ -509,6 +509,18 @@ module.exports = class DNSMASQ {
               else
                 entries.push(`server=/${domain}/#$policy_${options.pid}`);
               const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+              await fs.writeFileAsync(filePath, entries.join('\n'));
+            }
+          }
+
+          if (!_.isEmpty(options.vpnProfile)) {
+            for (const cn of options.vpnProfile) {
+              const entries = [`group-tag=@${cn}$policy_${options.pid}`];
+              if (options.action === "block")
+                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              else
+                entries.push(`server=/${domain}/#$policy_${options.pid}`);
+              const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
               await fs.writeFileAsync(filePath, entries.join('\n'));
             }
           }
@@ -681,7 +693,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile)) {
         if (!_.isEmpty(options.scope)) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
@@ -702,6 +714,15 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
             const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
+          }
+        }
+
+        if (!_.isEmpty(options.vpnProfile)) {
+          for (const cn of options.vpnProfile) {
+            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
             await fs.unlinkAsync(filePath).catch((err) => {
               log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
             });
