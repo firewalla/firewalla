@@ -34,6 +34,7 @@ const policyDisableAllKey = "policy:disable:all";
 const initID = 1;
 const {Address4, Address6} = require('ip-address');
 const Host = require('../net2/Host.js');
+const Constants = require('../net2/Constants.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -1082,7 +1083,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID} = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile } = policy;
 
     if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1142,7 +1143,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await ipset.create(remoteSet4, ruleSetTypeMap[type], true);
           await ipset.create(remoteSet6, ruleSetTypeMap[type], false);
           await Block.block(target, Block.getDstSet(pid));
@@ -1202,7 +1203,7 @@ class PolicyManager2 {
       case "dns":
         if (["allow", "block"].includes(action)) {
           if (direction !== "inbound") {
-            await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
+            await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
           if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
@@ -1210,7 +1211,7 @@ class PolicyManager2 {
         }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await ipset.create(remoteSet4, "hash:ip", true);
           await ipset.create(remoteSet6, "hash:ip", false);
           await domainBlock.blockDomain(target, {
@@ -1308,13 +1309,15 @@ class PolicyManager2 {
         throw new Error("Unsupported policy type");
     }
 
-    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
       if (!_.isEmpty(intfs))
         await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
+      if (!_.isEmpty(vpnProfile))
+        await Block.setupGenericIdentitiesRules(pid, vpnProfile, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, Constants.NS_VPN_PROFILE);
     } else {
       // apply to global
       await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
@@ -1350,7 +1353,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID} = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile } = policy;
 
     if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1406,7 +1409,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1461,13 +1464,13 @@ class PolicyManager2 {
       case "dns":
         if (["allow", "block"].includes(action)) {
           if (direction !== "inbound") {
-            await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, action }).catch(() => { });
+            await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
         }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid)
@@ -1555,13 +1558,15 @@ class PolicyManager2 {
         throw new Error("Unsupported policy");
     }
 
-    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
       if (!_.isEmpty(intfs))
         await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
+      if (!_.isEmpty(vpnProfile))
+        await Block.setupGenericIdentitiesRules(pid, vpnProfile, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, Constants.NS_VPN_PROFILE);
     } else {
       // apply to global
       await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);

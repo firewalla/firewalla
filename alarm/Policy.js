@@ -20,6 +20,7 @@ const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const minimatch = require("minimatch");
 const cronParser = require('cron-parser');
+const Constants = require('../net2/Constants.js');
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -80,6 +81,23 @@ class Policy {
 
       if (!_.isArray(this.tag) || _.isEmpty(this.tag))
         delete this.tag;
+    }
+
+    if (raw.vpnProfile) {
+      if (_.isString(raw.vpnProfile)) {
+        try {
+          this.vpnProfile = JSON.parse(raw.vpnProfile)
+        } catch (e) {
+          log.error("Failed to parse policy vpnProfile string:", raw.vpnProfile, e)
+        }
+      } else if (_.isArray(raw.vpnProfile)) {
+        this.vpnProfile = Array.from(raw.vpnProfile); // clone array to avoide side effects
+      } else {
+        log.error("Unsupported vpnProfile", raw.vpnProfile)
+      }
+
+      if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
+        delete this.vpnProfile;
     }
     this.upnp = false;
     if (raw.upnp)
@@ -182,7 +200,7 @@ class Policy {
       this.avgPacketBytes === policy.avgPacketBytes
     ) {
       // ignore scope if type is mac
-      return (this.type == 'mac' || arraysEqual(this.scope, policy.scope)) && arraysEqual(this.tag, policy.tag);
+      return (this.type == 'mac' || arraysEqual(this.scope, policy.scope)) && arraysEqual(this.tag, policy.tag) && arraysEqual(this.vpnProfile, policy.vpnProfile);
     } else {
       return false
     }
@@ -266,6 +284,16 @@ class Policy {
       !this.scope.includes(alarm['p.device.mac'])
     ) {
       return false; // scope not match
+    }
+
+    if (
+      this.vpnProfile &&
+      _.isArray(this.vpnProfile) &&
+      !_.isEmpty(this.vpnProfile) &&
+      alarm['p.device.vpnProfile'] &&
+      !this.vpnProfile.includes(alarm['p.device.vpnProfile'])
+    ) {
+      return false; // vpn profile not match
     }
 
     if (
@@ -408,6 +436,13 @@ class Policy {
         p.scope = JSON.stringify(p.scope);
       else
         delete p.scope;
+    }
+
+    if (p.vpnProfile) {
+      if (p.vpnProfile.length > 0)
+        p.vpnProfile = JSON.stringify(p.vpnProfile);
+      else
+        delete p.vpnProfile;
     }
 
     if (p.tag) {

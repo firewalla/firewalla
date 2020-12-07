@@ -80,6 +80,12 @@ function alarmBootstrap(flow, mac) {
     "p.tag.ids": flow.tags
   }
 
+  if (flow.rl)
+    obj["p.device.real.ip"] = flow.rl;
+
+  if (flow.vpf)
+    obj["p.device.vpnProfile"] = flow.vpf;
+
   if(mac) {
     obj["p.dest.ip.device.mac"] = mac;
   }

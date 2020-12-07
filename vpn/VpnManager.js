@@ -432,7 +432,10 @@ class VpnManager {
               for (let j in colNames) {
                 switch (colNames[j]) {
                   case "Virtual Address":
-                    clientDesc.vAddr = values[j];
+                    if (!clientDesc.vAddr)
+                      clientDesc.vAddr = [values[j]];
+                    else
+                      clientDesc.vAddr.push(values[j]);
                     break;
                   case "Common Name":
                     clientDesc.cn = values[j];
