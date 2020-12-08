@@ -842,6 +842,10 @@ module.exports = class {
       }
       */
 
+      // keep only 2 digits after decimal to save memory
+      obj.ts = Math.round(obj.ts * 100) / 100
+      obj.duration = Math.round(obj.duration * 100) / 100
+
       // Long connection aggregation
       const uid = obj.uid
       if (long || this.activeLongConns[uid]) {
@@ -983,10 +987,11 @@ module.exports = class {
 
       let localType = TYPE_MAC;
       let realLocal = null;
+      let vpnProfile = null;
       if (!localMac && intfInfo && intfInfo.name === "tun_fwvpn") {
-        localMac = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
-        if (localMac) {
-          localMac = `${Constants.NS_VPN_PROFILE}:${localMac}`;
+        vpnProfile = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
+        if (vpnProfile) {
+          localMac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
           realLocal = VPNProfileManager.getRealAddrByVirtualAddr(lhost);
           localType = TYPE_VPN;
         }
@@ -1068,11 +1073,15 @@ module.exports = class {
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
-        flows: [flowDescriptor],
+        flows: [flowDescriptor], // TODO: deprecate this to save memory
         uids: [obj.uid],
-        ltype: localType,
-        realLocal: realLocal
+        ltype: localType
       };
+
+      if (vpnProfile)
+        tmpspec.vpf = vpnProfile;
+      if (realLocal)
+        tmpSpec.rl = realLocal;
 
       if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
       if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
