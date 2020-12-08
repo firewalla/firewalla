@@ -22,6 +22,11 @@ const PolicyManager = require('./PolicyManager.js');
 const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
+const { Address4, Address6 } = require('ip-address');
+
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const routing = require('../extension/routing/routing.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -40,6 +45,7 @@ class VPNProfile {
     const c = require('./MessageBus.js');
     this.subscriber = new c('info');
     if (f.isMain()) {
+      this.monitoring = false;
       if (o && o.cn) {
         this.subscriber.subscribeOnce("DiscoveryEvent", "VPNProfilePolicy:Changed", this.o.cn, (channel, type, id, obj) => {
           log.info(`VPN profile policy is changed on ${this.o.cn}`, obj);
@@ -109,8 +115,8 @@ class VPNProfile {
     }
   }
 
-  static getVPNProfileSetName(cn) {
-    return `c_vpn_prof_${cn.substring(0, 12)}_set`;
+  static getVPNProfileSetName(cn, af = 4) {
+    return `c_vpn_prof_${cn.substring(0, 12)}_set` + (af === 4 ? "" : "6");
   }
 
   static async ensureCreateEnforcementEnv(cn) {
@@ -119,6 +125,9 @@ class VPNProfile {
     // create related ipsets
     await exec(`sudo ipset create -! ${VPNProfile.getVPNProfileSetName(cn)} hash:net`).catch((err) => {
       log.error(`Failed to create VPN profile ipset ${VPNProfile.getVPNProfileSetName(cn)}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${VPNProfile.getVPNProfileSetName(cn, 6)} hash:net`).catch((err) => {
+      log.error(`Failed to create VPN profile ipset ${VPNProfile.getVPNProfileSetName(cn, 6)}`, err.message);
     });
     envCreatedMap[cn] = 1;
   }
@@ -131,6 +140,12 @@ class VPNProfile {
     await exec(`sudo ipset flush -! ${VPNProfile.getVPNProfileSetName(this.o.cn)}`).catch((err) => {
       log.error(`Failed to flush VPN profile ipset ${VPNProfile.getVPNProfileSetName(this.o.cn)}`, err.message);
     });
+    await exec(`sudo ipset flush -! ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)}`).catch((err) => {
+      log.error(`Failed to flush VPN profile ipset ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)}`, err.message);
+    });
+    // delete related dnsmasq config files
+    await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/vpn_prof_${this.o.cn}.conf`).catch((err) => {});
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async updateClientIPs(clientIPs) {
@@ -142,17 +157,143 @@ class VPNProfile {
     await exec(`sudo ipset flush ${VPNProfile.getVPNProfileSetName(this.o.cn)}`).catch((err) => {
       log.error(`Failed to flush ${VPNProfile.getVPNProfileSetName(this.o.cn)}`, err.message);
     });
-    const cmds = clientIPs.map(ip => `add ${VPNProfile.getVPNProfileSetName(this.o.cn)} ${ip}`);
+    await exec(`sudo ipset flush ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)}`).catch((err) => {
+      log.error(`Failed to flush ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)}`, err.message);
+    });
+    const cmds = [];
+    for (const ip of clientIPs) {
+      if (new Address4(ip).isValid()) {
+        cmds.push(`add ${VPNProfile.getVPNProfileSetName(this.o.cn)} ${ip}`);
+      } else {
+        if (new Address6(ip).isValid()) {
+          cmds.push(`add ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)} ${ip}`);
+        }
+      }
+    }
     await ipset.batchOp(cmds).catch((err) => {
       log.error(`Failed to populate client ipset of ${this.o.cn}`, err.message);
     });
-    // TODO: update dnsmasq config file
-
+    // update dnsmasq config file
+    // TODO: only supports IPv4 address here
+    const entries = clientIPs.filter(ip => !ip.includes('/')).map(ip => `src-address-group=%${ip}@${this.o.cn}`);
+    await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vpn_prof_${this.o.cn}.conf`, entries.join('\n'), {encoding: 'utf8'});
     this._clientIPs = clientIPs;
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async spoof(state) {
+    this.monitoring = state;
+  }
 
+  isMonitoring() {
+    return this.monitoring;
+  }
+
+  async qos(state) {
+    const profileIpsetName = VPNProfile.getVPNProfileSetName(this.o.cn);
+    const profileIpsetName6 = VPNProfile.getVPNProfileSetName(this.o.cn, 6);
+    if (state === true) {  
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${profileIpsetName}`).catch((err) => {
+        log.error(`Failed to remove ${profileIpsetName} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${profileIpsetName6}`).catch((err) => {
+        log.error(`Failed to remove ${profileIpsetName6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    } else {
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${profileIpsetName}`).catch((err) => {
+        log.error(`Failed to add ${profileIpsetName} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${profileIpsetName6}`).catch((err) => {
+        log.error(`Failed to add ${profileIpsetName6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    }
+  }
+
+  async acl(state) {
+    const profileIpsetName = VPNProfile.getVPNProfileSetName(this.o.cn);
+    const profileIpsetName6 = VPNProfile.getVPNProfileSetName(this.o.cn, 6);
+    if (state === true) {  
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${profileIpsetName}`).catch((err) => {
+        log.error(`Failed to remove ${profileIpsetName} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${profileIpsetName6}`).catch((err) => {
+        log.error(`Failed to remove ${profileIpsetName6} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+    } else {
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${profileIpsetName}`).catch((err) => {
+        log.error(`Failed to add ${profileIpsetName} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${profileIpsetName6}`).catch((err) => {
+        log.error(`Failed to add ${profileIpsetName6} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+    }
+  }
+
+  async vpnClient(policy) {
+    try {
+      const state = policy.state;
+      const profileId = policy.profileId;
+      if (!profileId) {
+        log.warn("VPN client profileId is not specified for " + this.o.cn);
+        return false;
+      }
+      const ovpnClient = new OpenVPNClient({profileId: profileId});
+      const intf = ovpnClient.getInterfaceName();
+      const rtId = await vpnClientEnforcer.getRtId(intf);
+      if (!rtId)
+        return false;
+      const rtIdHex = Number(rtId).toString(16);
+      if (state === true) {
+        // set skbmark
+        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn)}`);
+        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn)} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
+        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)}`);
+        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
+      }
+      // null means off
+      if (state === null) {
+        // clear skbmark
+        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn)}`);
+        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn)} skbmark 0x0000/${routing.MASK_VC}`);
+        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)}`);
+        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)} skbmark 0x0000/${routing.MASK_VC}`);
+      }
+      // false means N/A
+      if (state === false) {
+        // do not change skbmark
+        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn)}`);
+        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${VPNProfile.getVPNProfileSetName(this.o.cn, 6)}`);
+      }
+      return true;
+    } catch (err) {
+      log.error("Failed to set VPN client access on " + this.o.cn);
+      return false;
+    }
+  }
+
+  async _dnsmasq(policy) {
+    const dnsCaching = policy.dnsCaching;
+    const profileIpsetName = VPNProfile.getVPNProfileSetName(this.o.cn);
+    const profileIpsetName6 = VPNProfile.getVPNProfileSetName(this.o.cn, 6);
+    if (dnsCaching === true) {
+      let cmd =  `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${profileIpsetName}`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to enable dns cache on ${profileIpsetName} ${this.o.intf}`, err);
+      });
+      cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${profileIpsetName6}`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to enable dns cache on ${profileIpsetName6} ${this.o.intf}`, err);
+      });
+    } else {
+      let cmd =  `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${profileIpsetName}`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to disable dns cache on ${profileIpsetName} ${this.o.intf}`, err);
+      });
+      cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${profileIpsetName6}`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to disable dns cache on ${profileIpsetName6} ${this.o.intf}`, err);
+      });
+    }
   }
 }
 
