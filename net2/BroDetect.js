@@ -635,11 +635,15 @@ module.exports = class {
       return false;
     let hostObject = null;
     let networkProfile = null;
+    let vpnProfile = null;
     if (iptool.isV4Format(ip)) {
       hostObject = hostManager.getHostFast(ip);
       const iface = sysManager.getInterfaceViaIP4(ip);
       const uuid = iface && iface.uuid;
       networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
+      if (cn)
+        vpnProfile = VPNProfileManager.getVPNProfile(cn);
     } else {
       if (iptool.isV6Format(ip)) {
         hostObject = hostManager.getHostFast6(ip);
@@ -653,6 +657,9 @@ module.exports = class {
       return false;
     }
     if (networkProfile && !networkProfile.isMonitoring()) {
+      return false;
+    }
+    if (vpnProfile && !vpnProfile.isMonitoring()) {
       return false;
     }
     return true;
@@ -1077,7 +1084,7 @@ module.exports = class {
       if (vpnProfile)
         tmpspec.vpf = vpnProfile;
       if (realLocal)
-        tmpSpec.rl = realLocal;
+        tmpspec.rl = realLocal;
 
       if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
       if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];

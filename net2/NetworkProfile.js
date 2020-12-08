@@ -302,20 +302,20 @@ class NetworkProfile {
     if (dnsCaching === true) {
       let cmd =  `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName6}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
       });
     } else {
       let cmd =  `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName6}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
       });
     }
   }

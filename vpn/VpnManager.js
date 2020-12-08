@@ -450,6 +450,7 @@ class VpnManager {
                 }
               }
               if (clientMap[clientDesc.addr]) {
+                Array.prototype.push.apply(clientDesc.vAddr, clientMap[clientDesc.addr].vAddr || []);
                 clientMap[clientDesc.addr] = Object.assign({}, clientMap[clientDesc.addr], clientDesc);
               } else {
                 clientMap[clientDesc.addr] = clientDesc;
