@@ -33,6 +33,7 @@ const { delay } = require('../util/util.js')
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const Mode = require('./Mode.js');
 
 const exec = require('child-process-promise').exec
 
@@ -579,6 +580,10 @@ class SysManager {
     return null;
   }
 
+  myPublicWanIps() {
+    return this.myWanIps().filter(ip => iptool.isPublic(ip));
+  }
+
   myDefaultGateway() {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     if (wanIntf)
@@ -869,11 +874,16 @@ class SysManager {
     }
     // ======== end of statics =========
 
+    let publicWanIps = null;
+    if (await Mode.isRouterModeOn()) {
+      publicWanIps = this.myPublicWanIps();
+    }
+
 
     const stat = require("../util/Stats.js");
     const memory = await util.promisify(stat.sysmemory)()
     return {
-      ip: this.myIp(),
+      ip: this.myDefaultWanIp(),
       mac: this.mySignatureMac(),
       serial: this.serial,
       repoBranch: this.repo.branch,
@@ -884,7 +894,8 @@ class SysManager {
       memory,
       cpuTemperature,
       cpuTemperatureList,
-      sss: sss.getSysInfo()
+      sss: sss.getSysInfo(),
+      publicWanIps
     }
   }
 
