@@ -11,7 +11,8 @@
 CMD=$(basename $0)
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${INTERVAL_RAW_SEC:=10}
-: ${INTERVAL_STAT_SEC:=30}
+: ${INTERVAL_STAT_SEC:=900}
+: ${EXPIRE_PERIOD:='60 seconds'}
 KEY_PREFIX=metric:throughput
 KEY_PREFIX_RAW=$KEY_PREFIX:raw
 KEY_PREFIX_STAT=$KEY_PREFIX:stat
@@ -46,23 +47,61 @@ record_raw_data() {
     done
 }
 
+clean_scan() {
+    cursor=$1;shift
+    ts_oldest=$1;shift
+    redis_key=$1;shift
+
+    redis-cli zscan $redis_key $cursor | {
+        read new_cursor
+        while read value
+        do
+            read score
+            if [[ $value -lt $ts_oldest ]]
+            then
+                logrun redis-cli zrem $redis_key $value
+            fi
+        done
+        if [[ $new_cursor -ne 0 ]]
+        then
+            clean_scan $new_cursor $ts_oldest $redis_key
+        fi
+    }
+}
+
+clean_old_data() {
+    redis_key=$1
+    ts_oldest=$(date -d "-$EXPIRE_PERIOD" +%s)
+    clean_scan 0 $ts_oldest $redis_key
+}
 
 calc_metrics() {
     key_suffix=$1:$2
     while true
     do
-        count=$(redis-cli zcount $KEY_PREFIX_RAW:$key_suffix 0 +inf)
-        let idx_median=count/2
-        let idx_pt75=(count*75)/100
-        let idx_pt90=(count*90)/100
-        val_median=$( redis-cli zrangebyscore $KEY_PREFIX_RAW:$key_suffix 0 +inf withscores limit $idx_median 1 | tail -1 )
-        val_pt75=$( redis-cli zrangebyscore $KEY_PREFIX_RAW:$key_suffix 0 +inf withscores limit $idx_pt75 1 | tail -1 )
-        val_pt90=$( redis-cli zrangebyscore $KEY_PREFIX_RAW:$key_suffix 0 +inf withscores limit $idx_pt90 1 | tail -1 )
+        # clean out-of-date data
+        clean_old_data $KEY_PREFIX_RAW:$key_suffix
 
-        logrun redis-cli hmset $KEY_PREFIX_STAT:$key_suffix \
-            median $val_median \
-            pt75   $val_pt75 \
-            pt90   $val_pt90
+        # calculate stats
+        count=$(redis-cli zcard $KEY_PREFIX_RAW:$key_suffix)
+        if [[ $count -gt 0 ]]
+        then
+            let idx_median=count/2
+            let idx_pt75=(count*75)/100
+            let idx_pt90=(count*90)/100
+            val_min=$( redis-cli zrangebyscore $KEY_PREFIX_RAW:$key_suffix 0 +inf withscores limit 0 1 | tail -1 )
+            val_median=$( redis-cli zrangebyscore $KEY_PREFIX_RAW:$key_suffix 0 +inf withscores limit $idx_median 1 | tail -1 )
+            val_max=$( redis-cli zrevrangebyscore $KEY_PREFIX_RAW:$key_suffix +inf 0 withscores limit 0 1 | tail -1 )
+            val_pt75=$( redis-cli zrangebyscore $KEY_PREFIX_RAW:$key_suffix 0 +inf withscores limit $idx_pt75 1 | tail -1 )
+            val_pt90=$( redis-cli zrangebyscore $KEY_PREFIX_RAW:$key_suffix 0 +inf withscores limit $idx_pt90 1 | tail -1 )
+
+            logrun redis-cli hmset $KEY_PREFIX_STAT:$key_suffix \
+                min    $val_min \
+                median $val_median \
+                max    $val_max \
+                pt75   $val_pt75 \
+                pt90   $val_pt90
+        fi
         sleep $INTERVAL_STAT_SEC
     done
     return 0
