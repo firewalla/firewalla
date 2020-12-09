@@ -10,8 +10,8 @@
 
 CMD=$(basename $0)
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-: ${INTERVAL_RAW_SEC:=2}
-: ${INTERVAL_STAT_SEC:=3}
+: ${INTERVAL_RAW_SEC:=10}
+: ${INTERVAL_STAT_SEC:=30}
 KEY_PREFIX=metric:throughput
 KEY_PREFIX_RAW=$KEY_PREFIX:raw
 KEY_PREFIX_STAT=$KEY_PREFIX:stat
@@ -61,8 +61,8 @@ calc_metrics() {
 
         logrun redis-cli hmset $KEY_PREFIX_STAT:$key_suffix \
             median $val_median \
-            pt75 $val_pt75 \
-            pt90 $val_pt90 \
+            pt75   $val_pt75 \
+            pt90   $val_pt90
         sleep $INTERVAL_STAT_SEC
     done
     return 0
