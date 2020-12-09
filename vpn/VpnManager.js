@@ -723,6 +723,12 @@ class VpnManager {
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
     });
+    const event = {
+      type: "VPNProfiles:Updated",
+      cn: commonName
+    };
+    sem.sendEventToAll(event);
+    sem.emitLocalEvent(event);
   }
 
   static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, callback) {
@@ -763,10 +769,12 @@ class VpnManager {
         if (err) {
           log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
         }
-        sem.emitEvent({
+        const event = {
           type: "VPNProfiles:Updated",
           cn: commonName
-        });
+        };
+        sem.sendEventToAll(event);
+        sem.emitLocalEvent(event);
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
           if (callback) {
             (async () => {
