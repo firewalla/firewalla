@@ -10,9 +10,10 @@
 
 CMD=$(basename $0)
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-: ${INTERVAL_RAW_SEC:=10}
-: ${INTERVAL_STAT_SEC:=900}
-: ${EXPIRE_PERIOD:='60 seconds'}
+: ${SAMPLE_DURATION:=10}      # sample throughput data average 10 seconds period
+: ${SAMPLE_INTERVAL:=900}     # sample every 15 minutes
+: ${CALC_INTERVAL:=900}       # calculate stats every 15 minutes
+: ${EXPIRE_PERIOD:='7 days'}  # throughput data expire after 7 days
 KEY_PREFIX=metric:throughput
 KEY_PREFIX_RAW=$KEY_PREFIX:raw
 KEY_PREFIX_STAT=$KEY_PREFIX:stat
@@ -33,17 +34,18 @@ logrun() {
 
 record_raw_data() {
     ethx=$1
-    read rx0 tx0 < <( awk "/$ethx/ {print \$2\" \"\$10}" /proc/net/dev )
     while true; do
         # read data from system
-        sleep $INTERVAL_RAW_SEC
+        read rx0 tx0 < <( awk "/$ethx/ {print \$2\" \"\$10}" /proc/net/dev )
+        sleep $SAMPLE_DURATION
         read rx1 tx1 < <( awk "/$ethx/ {print \$2\" \"\$10}" /proc/net/dev )
         ts=$(date +%s)
-        let rxd=(rx1-rx0)/INTERVAL_RAW_SEC
-        let txd=(tx1-tx0)/INTERVAL_RAW_SEC
+        let rxd=(rx1-rx0)/SAMPLE_DURATION
+        let txd=(tx1-tx0)/SAMPLE_DURATION
         rx0=$rx1; tx0=$tx1
         logrun redis-cli zadd $KEY_PREFIX_RAW:$ethx:rx $rxd $ts
         logrun redis-cli zadd $KEY_PREFIX_RAW:$ethx:tx $txd $ts
+        sleep $SAMPLE_INTERVAL
     done
 }
 
@@ -102,7 +104,7 @@ calc_metrics() {
                 pt75   $val_pt75 \
                 pt90   $val_pt90
         fi
-        sleep $INTERVAL_STAT_SEC
+        sleep $CALC_INTERVAL
     done
     return 0
 }
