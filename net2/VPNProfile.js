@@ -145,6 +145,7 @@ class VPNProfile {
     });
     // delete related dnsmasq config files
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/vpn_prof_${this.o.cn}.conf`).catch((err) => {});
+    await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/vpn_prof_${this.o.cn}_*.conf`).catch((err) => {});
     dnsmasq.scheduleRestartDNSService();
   }
 
