@@ -25,6 +25,7 @@ const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 const DNSTool = require('../../net2/DNSTool.js');
 const dnsTool = new DNSTool();
+const iptool = require('ip');
 
 const sysManager = require('../../net2/SysManager.js');
 
@@ -125,6 +126,12 @@ class HttpFlow {
       } else {
         log.error("HTTP:Error:Drop", flow);
         return;
+      }
+
+      if (localIP) {
+        const intf = iptool.isV4Format(localIP) ? sysManager.getInterfaceViaIP4(localIP) : sysManager.getInterfaceViaIP6(localIP);
+        if (intf && intf.name === "tun_fwvpn")
+          return;
       }
 
       const mac = await hostTool.getMacByIPWithCache(localIP);
