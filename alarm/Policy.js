@@ -99,6 +99,18 @@ class Policy {
       if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
         delete this.vpnProfile;
     }
+
+    if (this.scope) {
+      // convert vpn profiles in "scope" field to "vpnProfile" field
+      const vpnProfiles = this.scope.filter(v => v.startsWith(`${Constants.NS_VPN_PROFILE}:`)).map(v => v.substring(`${Constants.NS_VPN_PROFILE}:`.length));
+      this.scope = this.scope.filter(v => !v.startsWith(`${Constants.NS_VPN_PROFILE}:`));
+      this.vpnProfile = (this.vpnProfile || []).concat(vpnProfiles).filter((v, i, a) => a.indexOf(v) === i);
+      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
+        delete this.scope;
+      if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
+        delete this.vpnProfile;
+    }
+
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
