@@ -270,6 +270,7 @@ function iptables(rule, callback) {
         let dport = rule.dport;
         let toIP = rule.toIP;
         let toPort = rule.toPort;
+        let extIP = rule.extIP || null;
         const type = rule._type || "port_forward";
         let action = "-I";
         if (state == false || state == null) {
@@ -280,12 +281,12 @@ function iptables(rule, callback) {
 
         switch (type) {
           case "port_forward": {
-            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
+            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} ${extIP ? `-d ${extIP}`: ""} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
             cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
             break;
           }
           case "dmz_host": {
-            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
+            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${extIP ? `-d ${extIP}`: ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
             cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_POSTROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} -d ${toIP} ${dport ? `--dport ${dport}` : ""} -j FW_POSTROUTING_HAIRPIN`));
             break;
           }
