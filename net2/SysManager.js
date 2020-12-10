@@ -581,7 +581,7 @@ class SysManager {
   }
 
   myPublicWanIps() {
-    return this.myWanIps().filter(ip => iptool.isPublic(ip));
+    return this.myWanIps().filter(ip => iptool.isPublic(ip) && !iptool.subnet("100.64.0.0", "255.192.0.0").contains(ip)); // filter Carrier-Grade NAT address pool accordinig to rfc6598
   }
 
   myDefaultGateway() {
