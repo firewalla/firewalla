@@ -270,7 +270,24 @@ class PolicyManager2 {
         log.info("got policy enforcement event:" + event.action + ":" + event.policy.pid)
         if (this.queue) {
           const job = this.queue.createJob(event)
-          job.timeout(60 * 1000).save(function () { })
+          job.timeout(60 * 1000).save((err) => {
+            if (err) {
+              log.error("Failed to create policy job", err.message);
+              if (err.message && err.message.includes("NOSCRIPT")) {
+                // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
+                log.info("Re-creating policy queue ...");
+                this.queue.close(() => {
+                  this.setupPolicyQueue().then(() => {
+                    if (event.retry !== false) {
+                      log.info("Retry policy job ...", event);
+                      event.retry = false;
+                      sem.emitEvent(event);
+                    }
+                  });
+                });
+              }
+            }
+          })
         }
       }
     })
@@ -1940,6 +1957,7 @@ class PolicyManager2 {
               rule.localPort = data.port;
               rule.scope = [data.mac];
               rule.rank = 0;
+              rule.direction = "inbound";
             } else {
               rule.rank = -1;
             }
@@ -2110,6 +2128,19 @@ class PolicyManager2 {
             continue;
           break;
         }
+        case "intranet":
+          if (!remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)))
+            continue;
+          break;
+        case "network":
+          const iface = rule.target && sysManager.getInterfaceViaUUID(rule.target);
+          if (!iface || !remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip, iface.name) || sysManager.inMySubnet6(ip, iface.name)))
+            continue;
+          break;
+        case "tag":
+        case "device":
+          // not supported yet
+          continue;
         default:
       }
       // reach here if the rule matches the criteria

@@ -6,8 +6,14 @@ if [[ -e /.dockerenv ]]; then
     exit
 fi
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 BLACK_HOLE_IP="0.0.0.0"
 BLUE_HOLE_IP="198.51.100.100"
+
+: ${FW_PROBABILITY:=0.9}
 
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 
@@ -148,7 +154,7 @@ sudo iptables -w -N FW_FIREWALL &> /dev/null
 sudo iptables -w -F FW_FIREWALL
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
 # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability 0.9 -j ACCEPT
+sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device block/allow chains
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -253,6 +259,11 @@ sudo iptables -w -t nat -A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
 sudo iptables -w -t nat -A FW_NAT_HOLE -j RETURN
 
 
+# a special chain mainly for red/blue to redirect VPN connection on overlay IP to primary IP if two subnets are the same
+sudo iptables -w -t nat -N FW_PREROUTING_VPN_OVERLAY &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_VPN_OVERLAY
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_VPN_OVERLAY &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_VPN_OVERLAY
+
 # DNAT related chain comes first
 # create port forward chain in PREROUTING, this is used in ipv4 only
 sudo iptables -w -t nat -N FW_PREROUTING_EXT_IP &> /dev/null
@@ -275,6 +286,8 @@ sudo iptables -w -t nat -F FW_NAT_BYPASS
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
 # jump to DNS_FALLBACK for acl off devices/networks
 sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set acl_off_set src,src -j FW_PREROUTING_DNS_FALLBACK
+# jump to DNS_FALLBACK for dns boost off devices/networks
+sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_FALLBACK
 
 # create regular dns redirect chain in FW_PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
@@ -457,7 +470,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_FIREWALL
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
   # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability 0.9 -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device block/allow chains
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -570,6 +583,8 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_BYPASS &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_BYPASS
   # jump to DNS_FALLBACK for acl off devices/networks
   sudo ip6tables -w -t nat -A FW_NAT_BYPASS -m set --match-set acl_off_set src,src -j FW_PREROUTING_DNS_FALLBACK
+  # jump to DNS_FALLBACK for dns boost off devices/networks
+  sudo ip6tables -w -t nat -A FW_NAT_BYPASS -m set --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_FALLBACK
 
   # create regular dns redirect chain in FW_PREROUTING
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null

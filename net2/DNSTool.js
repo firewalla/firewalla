@@ -110,7 +110,8 @@ class DNSTool {
       return;
     if (!domain)
       return;
-
+    
+    domain = domain.toLowerCase();
     let key = this.getDNSKey(ip);
     // FIXME: remove this type conversion code after it is released for several months
     await this._convertHashToSortedSet(key);
@@ -126,6 +127,7 @@ class DNSTool {
 
   async addReverseDns(domain, addresses, expire) {
     expire = expire || 24 * 3600; // one day by default
+    domain = domain && domain.toLowerCase();
     addresses = addresses || []
 
     addresses = addresses.filter((addr) => {

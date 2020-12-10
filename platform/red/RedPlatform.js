@@ -90,10 +90,18 @@ class RedPlatform extends Platform {
   getAllowCustomizedProfiles(){
     return 0;
   }
+  getRatelimitConfig(){
+    return {
+      "appMax": 120,
+      "webMax": 240,
+      "duration": 60
+    }
+  }
 
   defaultPassword() {
     return "firewalla"
   }
+
 }
 
 module.exports = RedPlatform;
