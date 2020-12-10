@@ -222,6 +222,7 @@ class PortForward {
       for (let i in this.config.maps) {
         let _map = this.config.maps[i];
         if (
+          (!map.extIP || map.extIP == "*" || _map.extIP == map.extIP) && 
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
           (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
