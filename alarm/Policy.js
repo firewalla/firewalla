@@ -22,6 +22,7 @@ const minimatch = require("minimatch");
 const cronParser = require('cron-parser');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
+const Constants = require('../net2/Constants.js');
 
 const _ = require('lodash');
 const flat = require('flat');
