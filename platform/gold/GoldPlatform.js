@@ -21,6 +21,7 @@ const exec = require('child-process-promise').exec;
 const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
 const iptables = require('../../net2/Iptables.js');
+const { execSync } = require('child_process');
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
@@ -41,6 +42,14 @@ class GoldPlatform extends Platform {
 
   getDHCPServiceName() {
     return "firerouter_dhcp";
+  }
+
+  getDHKeySize() {
+    if (this.isUbuntu20()) {
+      return 2048;
+    } else {
+      return 1024;
+    }
   }
 
   getDNSServiceName() {
@@ -69,6 +78,14 @@ class GoldPlatform extends Platform {
       // "/sys/devices/platform/leds/leds/nanopi:green:status",
 //      "/sys/devices/platform/leds/leds/nanopi:red:pwr"
     ];
+  }
+
+  getLSBCodeName() {
+    return execSync("lsb_release -cs", {encoding: 'utf8'}).trim();
+  }
+
+  isUbuntu20() {
+    return this.getLSBCodeName() === 'focal';
   }
 
   async turnOnPowerLED() {
