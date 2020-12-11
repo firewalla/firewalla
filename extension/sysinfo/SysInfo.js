@@ -305,7 +305,7 @@ async function getMaxPid() {
     const cmd = await exec('echo $$')
     const pid = Number(cmd.stdout)
     if (pid < maxPid) {
-      log.error(`maxPid decresing, something is wrong. pre: ${maxPid}, now: ${pid}`)
+      log.warn(`maxPid decresed. max: ${maxPid}, now: ${pid}`)
     } else {
       maxPid = pid
     }
