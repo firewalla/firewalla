@@ -152,6 +152,7 @@ module.exports = class {
         target.setPolicy("vpnClient", updatedPolicy);
         break;
       }
+      case "VPNProfile":
       case "NetworkProfile":
       case "Tag":
       case "Host": {

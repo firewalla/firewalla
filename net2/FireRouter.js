@@ -146,6 +146,24 @@ async function generateNetworkInfo() {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
+    let ip4s = [];
+    let ip4Masks = [];
+    let ip4Subnets = [];
+    if (intf.state.ip4s && _.isArray(intf.state.ip4s)) {
+      for (const i of intf.state.ip4s) {
+        const ip4Addr = new Address4(i);
+        if (!ip4Addr.isValid())
+          continue;
+        ip4s.push(ip4Addr.correctForm());
+        ip4Masks.push(new Address4(`255.255.255.255/${ip4Addr.subnetMask}`).startAddress().correctForm());
+        ip4Subnets.push(i);
+      }
+    }
+    if (ip4s.length === 0 && ip4) {
+      ip4s.push(ip4.addressMinusSuffix);
+      ip4Masks.push(new Address4(`255.255.255.255/${ip4.subnetMask}`).startAddress().correctForm());
+      ip4Subnets.push(intf.state.ip4);
+    }
     let ip6s = [];
     let ip6Masks = [];
     let ip6Subnets = [];
@@ -209,6 +227,9 @@ async function generateNetworkInfo() {
       netmask:      ip4 ? Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address : null,
       gateway_ip:   gateway,
       gateway:      gateway,
+      ip4_addresses: ip4s.length > 0 ? ip4s : null,
+      ip4_subnets:  ip4Subnets.length > 0 ? ip4Subnets : null,
+      ip4_masks:    ip4Masks.length > 0 ? ip4Masks : null,
       ip6_addresses: ip6s.length > 0 ? ip6s : null,
       ip6_subnets:  ip6Subnets.length > 0 ? ip6Subnets : null,
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,

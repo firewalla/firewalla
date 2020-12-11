@@ -589,13 +589,18 @@ let legoEptCloud = class {
   }
 
   decrypt(text, key) {
-    let iv = Buffer.alloc(16);
-    iv.fill(0);
-    let bkey = Buffer.from(key.substring(0, 32), "utf8");
-    let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
-    let dec = decipher.update(text, 'base64', 'utf8');
-    dec += decipher.final('utf8');
-    return dec;
+    try {
+      let iv = Buffer.alloc(16);
+      iv.fill(0);
+      let bkey = Buffer.from(key.substring(0, 32), "utf8");
+      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
+      let dec = decipher.update(text, 'base64', 'utf8');
+      dec += decipher.final('utf8');
+      return dec;  
+    } catch(err) {
+      log.error("Failed to decrypt message, err:", err);
+      return null;
+    }
   }
 
   keygen() {

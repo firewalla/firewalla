@@ -264,19 +264,35 @@ class netBot extends ControllerBot {
           callback(new Error(`Network ${uuid} is not found`));
         }
       } else {
-        this.hostManager.getHost(target, (err, host) => {
-          if (host != null) {
-            host.loadPolicy((err, data) => {
-              if (err == null) {
-                host.setPolicy('dnsmasq', value, callback);
-              } else {
-                callback(new Error("Unable to change dnsmasq config of " + target));
-              }
+        if (target.startsWith("vpn_profile:")) {
+          const cn = target.substring(12);
+          const profile = this.vpnProfileManager.getVPNProfile(cn);
+          if (profile) {
+            profile.loadPolicy().then(() => {
+              profile.setPolicy("dnsmasq", value).then(() => {
+                callback(null);
+              });
+            }).catch((err) => {
+              callback(err);
             });
           } else {
-            callback(new Error("Host not found"));
+            callback(new Error(`VPN profile ${cn} is not found`));
           }
-        });
+        } else {
+          this.hostManager.getHost(target, (err, host) => {
+            if (host != null) {
+              host.loadPolicy((err, data) => {
+                if (err == null) {
+                  host.setPolicy('dnsmasq', value, callback);
+                } else {
+                  callback(new Error("Unable to change dnsmasq config of " + target));
+                }
+              });
+            } else {
+              callback(new Error("Host not found"));
+            }
+          });
+        }
       }
     }
   }
@@ -895,6 +911,13 @@ class netBot extends ControllerBot {
                 await tag.loadPolicy();
                 await tag.setPolicy(o, policyData)
               }
+            } else if (target.startsWith("vpn_profile:")) {
+              const cn = target.substring(12);
+              const profile = this.vpnProfileManager.getVPNProfile(cn);
+              if (profile) {
+                await profile.loadPolicy();
+                await profile.setPolicy(o, policyData);
+              }
             } else {
               let host = await this.hostManager.getHostAsync(target)
               if (host) {
@@ -1357,7 +1380,7 @@ class netBot extends ControllerBot {
           let data = {
             count: flows.length,
             flows,
-            nextTs: flows.length ? flows[flows.length - 1].score : null
+            nextTs: flows.length ? flows[flows.length - 1].ts : null
           }
           this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {

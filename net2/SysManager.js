@@ -33,6 +33,7 @@ const { delay } = require('../util/util.js')
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const Mode = require('./Mode.js');
 
 const exec = require('child-process-promise').exec
 
@@ -527,8 +528,7 @@ class SysManager {
 
   getInterfaceViaIP4(ip) {
     if (!ip) return null;
-    const ipAddress = new Address4(ip)
-    return this.getMonitoringInterfaces().find(i => i.subnetAddress4 && ipAddress.isInSubnet(i.subnetAddress4))
+    return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnets4(ip, i.name));
   }
 
   getInterfaceViaIP6(ip6) {
@@ -569,7 +569,14 @@ class SysManager {
 
   myWanIps() {
     const wanIntfs = fireRouter.getWanIntfNames() || [];
-    return wanIntfs.map(i => this.getInterface(i)).filter(iface => iface && iface.ip_address).map(i => i.ip_address);
+    const wanIps = [];
+    for (const wanIntf of wanIntfs) {
+      const intf = this.getInterface(wanIntf);
+      if (intf && intf.ip4_addresses) {
+        Array.prototype.push.apply(wanIps, intf.ip4_addresses);
+      }
+    }
+    return wanIps.filter((v, i, a) => a.indexOf(v) === i);
   }
 
   myDefaultWanIp() {
@@ -577,6 +584,10 @@ class SysManager {
     if (wanIntf)
       return this.myIp(wanIntf);
     return null;
+  }
+
+  myPublicWanIps() {
+    return this.myWanIps().filter(ip => iptool.isPublic(ip) && !iptool.subnet("100.64.0.0", "255.192.0.0").contains(ip)); // filter Carrier-Grade NAT address pool accordinig to rfc6598
   }
 
   myDefaultGateway() {
@@ -779,8 +790,9 @@ class SysManager {
     }
 
     return interfaces
-      .map(i => i.subnetAddress4 && ip4.isInSubnet(i.subnetAddress4))
-      .some(Boolean)
+      .map(i => Array.isArray(i.ip4_subnets) &&
+        i.ip4_subnets.map(subnet => ip4.isInSubnet(new Address4(subnet))).some(Boolean)
+      ).some(Boolean)
   }
 
   inMySubnet6(ip6, intf) {
@@ -869,11 +881,16 @@ class SysManager {
     }
     // ======== end of statics =========
 
+    let publicWanIps = null;
+    if (await Mode.isRouterModeOn()) {
+      publicWanIps = this.myPublicWanIps();
+    }
+
 
     const stat = require("../util/Stats.js");
     const memory = await util.promisify(stat.sysmemory)()
     return {
-      ip: this.myIp(),
+      ip: this.myDefaultWanIp(),
       mac: this.mySignatureMac(),
       serial: this.serial,
       repoBranch: this.repo.branch,
@@ -884,7 +901,8 @@ class SysManager {
       memory,
       cpuTemperature,
       cpuTemperatureList,
-      sss: sss.getSysInfo()
+      sss: sss.getSysInfo(),
+      publicWanIps
     }
   }
 
