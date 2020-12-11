@@ -52,8 +52,16 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       this.activeCountries = {}
       this.activeCategories = {}
-
+      this.batchOps = [];
       exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
+      setInterval(async () => {
+        if (firewalla.isMain()) {
+          await Ipset.batchOp(this.batchOps).catch((err) => {
+            log.error(`Failed to update country ipsets`, err.message);
+          });
+        }
+        this.batchOps = [];
+      }, 60000); // update country ipsets once every minute
     }
 
     return instance
@@ -225,17 +233,9 @@ class CountryUpdater extends CategoryUpdaterBase {
       return
     }
 
-    const check = `sudo ipset test ${ipset} ${ip}`
-
-    try {
-      await exec(check)
-    } catch(err) {
-      if (err.stderr.indexOf(`is NOT in set ${ipset}`) > 0)
-        await Block.block(ip, this.getIPSetName(category));
-    }
+    this.batchOps.push(`add ${ipset} ${ip}`);
 
     const now = Math.floor(new Date() / 1000)
-
     await rclient.zaddAsync(key, now, ip)
   }
 }
