@@ -50,7 +50,7 @@ async function initSensors() {
   await fireRouter.waitTillReady()
 
   Object.keys(config.sensors).forEach((sensorName) => {
-    if (!sensorsHash[sensorName])
+    if (!sensorsHash[sensorName] && config.sensors[sensorName].disable !== true)
       initSingleSensor(sensorName)
   });
 }
