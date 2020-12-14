@@ -28,7 +28,7 @@ get_eths() {
 }
 
 logrun() {
-    echo "> $@"
+    ${DEBUG:-false} && echo "> $@"
     rc=$(eval "$@")
 }
 
