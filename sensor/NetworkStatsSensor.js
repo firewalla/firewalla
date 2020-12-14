@@ -67,7 +67,7 @@ class NetworkStatsSensor extends Sensor {
           });
         break;
       case 'stop':
-        exec(`ps -ef | grep ${NETWORK_METRICS_SCRIPT} | awk '{print $2}'| xargs kill`);
+        exec(`ps -ef | grep 'network_metrics.s[h]' | awk '{print $2}'| xargs kill`).catch(err=>{ log.error(err); });
         break;
 
     }
