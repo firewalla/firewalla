@@ -110,6 +110,15 @@ class NetworkStatsSensor extends Sensor {
     } else {
       this.networkMetrics("stop");
     }
+    fc.onFeature(FEATURE_NETWORK_METRICS, (feature, status) => {
+      if (feature != FEATURE_NETWORK_METRICS)
+        return
+      if (status) {
+        this.networkMetrics("start");
+      } else {
+        this.networkMetrics("stop");
+      }
+    })
 
     this.previousLog = new Set();
     this.checkNetworkStatus();
