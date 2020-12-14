@@ -126,7 +126,7 @@ class VPNProfile {
     await exec(`sudo ipset create -! ${VPNProfile.getVPNProfileSetName(cn)} hash:net`).catch((err) => {
       log.error(`Failed to create VPN profile ipset ${VPNProfile.getVPNProfileSetName(cn)}`, err.message);
     });
-    await exec(`sudo ipset create -! ${VPNProfile.getVPNProfileSetName(cn, 6)} hash:net`).catch((err) => {
+    await exec(`sudo ipset create -! ${VPNProfile.getVPNProfileSetName(cn, 6)} hash:net family inet6`).catch((err) => {
       log.error(`Failed to create VPN profile ipset ${VPNProfile.getVPNProfileSetName(cn, 6)}`, err.message);
     });
     envCreatedMap[cn] = 1;

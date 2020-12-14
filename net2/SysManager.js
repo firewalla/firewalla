@@ -528,8 +528,7 @@ class SysManager {
 
   getInterfaceViaIP4(ip) {
     if (!ip) return null;
-    const ipAddress = new Address4(ip)
-    return this.getMonitoringInterfaces().find(i => i.subnetAddress4 && ipAddress.isInSubnet(i.subnetAddress4))
+    return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnets4(ip, i.name));
   }
 
   getInterfaceViaIP6(ip6) {
@@ -570,7 +569,14 @@ class SysManager {
 
   myWanIps() {
     const wanIntfs = fireRouter.getWanIntfNames() || [];
-    return wanIntfs.map(i => this.getInterface(i)).filter(iface => iface && iface.ip_address).map(i => i.ip_address);
+    const wanIps = [];
+    for (const wanIntf of wanIntfs) {
+      const intf = this.getInterface(wanIntf);
+      if (intf && intf.ip4_addresses) {
+        Array.prototype.push.apply(wanIps, intf.ip4_addresses);
+      }
+    }
+    return wanIps.filter((v, i, a) => a.indexOf(v) === i);
   }
 
   myDefaultWanIp() {
@@ -581,7 +587,7 @@ class SysManager {
   }
 
   myPublicWanIps() {
-    return this.myWanIps().filter(ip => iptool.isPublic(ip));
+    return this.myWanIps().filter(ip => iptool.isPublic(ip) && !iptool.subnet("100.64.0.0", "255.192.0.0").contains(ip)); // filter Carrier-Grade NAT address pool accordinig to rfc6598
   }
 
   myDefaultGateway() {
@@ -784,8 +790,9 @@ class SysManager {
     }
 
     return interfaces
-      .map(i => i.subnetAddress4 && ip4.isInSubnet(i.subnetAddress4))
-      .some(Boolean)
+      .map(i => Array.isArray(i.ip4_subnets) &&
+        i.ip4_subnets.map(subnet => ip4.isInSubnet(new Address4(subnet))).some(Boolean)
+      ).some(Boolean)
   }
 
   inMySubnet6(ip6, intf) {

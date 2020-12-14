@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,8 @@ const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const minimatch = require("minimatch");
 const cronParser = require('cron-parser');
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
 const Constants = require('../net2/Constants.js');
 
 const _ = require('lodash');
@@ -30,15 +32,11 @@ const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds,
 function arraysEqual(a, b) {
   if (a === b) return true;
   if (a == null || b == null) return false;
-  if (a.length != b.length) return false;
+  if (!a && !_.isNil(a) || !b && !_.isNil(b)) return false // exclude false, NaN
+  if (_.isEmpty(a) && _.isEmpty(b)) return true;  // [], undefined
+  if (!Array.isArray(a) || !Array.isArray(b)) return false
 
-  // If you don't care about the order of the elements inside
-  // the array, you should sort both arrays here.
-
-  for (var i = 0; i < a.length; ++i) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
+  return _.isEqual(a.sort(), b.sort())
 }
 
 class Policy {
@@ -99,6 +97,18 @@ class Policy {
       if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
         delete this.vpnProfile;
     }
+
+    if (this.scope) {
+      // convert vpn profiles in "scope" field to "vpnProfile" field
+      const vpnProfiles = this.scope.filter(v => v.startsWith(`${Constants.NS_VPN_PROFILE}:`)).map(v => v.substring(`${Constants.NS_VPN_PROFILE}:`.length));
+      this.scope = this.scope.filter(v => !v.startsWith(`${Constants.NS_VPN_PROFILE}:`));
+      this.vpnProfile = (this.vpnProfile || []).concat(vpnProfiles).filter((v, i, a) => a.indexOf(v) === i);
+      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
+        delete this.scope;
+      if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
+        delete this.vpnProfile;
+    }
+
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
@@ -121,7 +131,7 @@ class Policy {
 
     if (!raw.direction)
       this.direction = "bidirection";
-    
+
     if (!raw.action)
       this.action = "block";
 
@@ -189,13 +199,16 @@ class Policy {
       this.trafficDirection === policy.trafficDirection &&
       this.transferredBytes === policy.transferredBytes &&
       this.transferredPackets === policy.transferredPackets &&
-      this.avgPacketBytes === policy.avgPacketBytes
-    ) {
+      this.avgPacketBytes === policy.avgPacketBytes &&
       // ignore scope if type is mac
-      return (this.type == 'mac' || arraysEqual(this.scope, policy.scope)) && arraysEqual(this.tag, policy.tag) && arraysEqual(this.vpnProfile, policy.vpnProfile);
-    } else {
-      return false
+      (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
+      arraysEqual(this.tag, policy.tag) &&
+      arraysEqual(this.vpnProfile, policy.vpnProfile)
+    ) {
+      return true
     }
+
+    return false
   }
   getIdleInfo() {
     if (this.idleTs) {

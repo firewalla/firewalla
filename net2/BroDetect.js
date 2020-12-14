@@ -849,6 +849,17 @@ module.exports = class {
       }
       */
 
+      if (obj.orig_bytes == null) {
+        obj.orig_bytes = 0;
+      }
+      if (obj.resp_bytes == null) {
+        obj.resp_bytes = 0;
+      }
+
+      if (obj.duration == null) {
+        obj.duration = 0;
+      }
+
       // keep only 2 digits after decimal to save memory
       obj.ts = Math.round(obj.ts * 100) / 100
       obj.duration = Math.round(obj.duration * 100) / 100
@@ -871,10 +882,10 @@ module.exports = class {
         else
           log.debug('Active long conn:', connCount);
 
-        obj.ts = previous.ts + previous.duration
+        obj.ts = Math.round((previous.ts + previous.duration) * 100) / 100
         obj.orig_bytes -= previous.orig_bytes
         obj.resp_bytes -= previous.resp_bytes
-        obj.duration -= previous.duration
+        obj.duration = Math.round((obj.duration - previous.duration) * 100) / 100
       }
 
       /*
@@ -1022,19 +1033,6 @@ module.exports = class {
       }
       tags = _.uniq(tags);
 
-      if (obj.orig_bytes == null) {
-        obj.orig_bytes = 0;
-      }
-      if (obj.resp_bytes == null) {
-        obj.resp_bytes = 0;
-      }
-
-      if (obj.duration == null) {
-        obj.duration = Number(0);
-      } else {
-        obj.duration = Number(obj.duration);
-      }
-
       if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
       }
@@ -1062,7 +1060,7 @@ module.exports = class {
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
-        ets: obj.ts + obj.duration, // ets stands for end timestamp
+        ets: Math.round((obj.ts + obj.duration) * 100) / 100 , // ets stands for end timestamp
         _ts: now, // _ts is the last time updated
         __ts: obj.ts, // __ts is the first time found
         sh: host, // source
@@ -1107,9 +1105,9 @@ module.exports = class {
           // update start timestamp
           flowspec.ts = obj.ts;
         }
-        if (flowspec.ets < obj.ts + obj.duration) {
+        if (flowspec.ets < tmpspec.ets) {
           // update end timestamp
-          flowspec.ets = obj.ts + obj.duration;
+          flowspec.ets = tmpspec.ets;
         }
         // update last time updated
         flowspec._ts = now;
@@ -1119,7 +1117,7 @@ module.exports = class {
         // flowspec.du = flowspec.ets - flowspec.ts;
         // For now, we use total time of network transfer, since the rate calculation is based on this logic.
         // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
-        flowspec.du += obj.duration;
+        flowspec.du = Math.round((flowspec.du + obj.duration) * 100) / 100;
         flowspec.flows.push(flowDescriptor);
         if (flag) {
           flowspec.f = flag;
