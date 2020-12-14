@@ -71,7 +71,7 @@ class PortForward {
                   await this.addPort(obj);
                 }
                 // TODO: config should be saved after rule successfully applied
-                await this.refreshConfig();
+                await this.saveConfig();
               }
             } catch(err) {
               log.error('Error applying port-forward', obj, err)
