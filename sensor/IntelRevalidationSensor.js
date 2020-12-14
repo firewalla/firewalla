@@ -83,7 +83,7 @@ class IntelRevalidationSensor extends Sensor {
     // always query the most recent updated intels because these intels may be more impactful if access is still active + intel is already outdated
     // a better revalidation function should be added in the future
     const queryLimit = this.config.queryLimit || 100;
-    const intelKeys = await rclient.zrevrangebyscoreAsync(trackingKey, +inf, 0, "limit", 0, queryLimit);
+    const intelKeys = await rclient.zrevrangebyscoreAsync(trackingKey, "+inf", 0, "limit", 0, queryLimit);
 
     for(const intelKey of intelKeys) {
       if(intelKey.startsWith("intel:ip:")) {
