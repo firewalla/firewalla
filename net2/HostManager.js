@@ -729,6 +729,7 @@ module.exports = class HostManager {
       this.getCloudURL(json),
       this.networkConfig(json, true),
       this.networkProfilesForInit(json),
+      this.networkMetrics(json),
     ]
 
     await this.basicDataForInit(json, {});
@@ -950,6 +951,19 @@ module.exports = class HostManager {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
+  async networkMetrics(json) {
+    const nmkeys = await rclient.keysAsync("metric:throughput:stat:*");
+    let nm = {};
+    await Promise.all(nmkeys.map( async (nmkey) => {
+        const nmkeysArray = nmkey.split(':');
+        const ethx = nmkeysArray[nmkeysArray.length-2];
+        const rtx = nmkeysArray[nmkeysArray.length-1];
+        nm[ethx] = nm[ethx] || {};
+        nm[ethx][rtx] = await rclient.hgetallAsync(nmkey);
+    }));
+    json.networkMetrics = nm;
+  }
+
   async vpnProfilesForInit(json) {
     await VPNProfileManager.refreshVPNProfiles();
     json.vpnProfiles = await VPNProfileManager.toJson();
@@ -995,6 +1009,7 @@ module.exports = class HostManager {
           this.getDataUsagePlan(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
+          this.networkMetrics(json),
           this.vpnProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
