@@ -432,7 +432,10 @@ class VpnManager {
               for (let j in colNames) {
                 switch (colNames[j]) {
                   case "Virtual Address":
-                    clientDesc.vAddr = values[j];
+                    if (!clientDesc.vAddr)
+                      clientDesc.vAddr = [values[j]];
+                    else
+                      clientDesc.vAddr.push(values[j]);
                     break;
                   case "Common Name":
                     clientDesc.cn = values[j];
@@ -447,6 +450,7 @@ class VpnManager {
                 }
               }
               if (clientMap[clientDesc.addr]) {
+                Array.prototype.push.apply(clientDesc.vAddr, clientMap[clientDesc.addr].vAddr || []);
                 clientMap[clientDesc.addr] = Object.assign({}, clientMap[clientDesc.addr], clientDesc);
               } else {
                 clientMap[clientDesc.addr] = clientDesc;
@@ -719,6 +723,12 @@ class VpnManager {
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
     });
+    const event = {
+      type: "VPNProfiles:Updated",
+      cn: commonName
+    };
+    sem.sendEventToAll(event);
+    sem.emitLocalEvent(event);
   }
 
   static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, callback) {
@@ -759,10 +769,12 @@ class VpnManager {
         if (err) {
           log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
         }
-        sem.emitEvent({
+        const event = {
           type: "VPNProfiles:Updated",
           cn: commonName
-        });
+        };
+        sem.sendEventToAll(event);
+        sem.emitLocalEvent(event);
         fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
           if (callback) {
             (async () => {

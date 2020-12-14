@@ -56,7 +56,7 @@ class DomainUpdater {
       const options = config.options;
 
       if (domain.toLowerCase() === d.toLowerCase() || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())) {
-        const existingAddresses = await domainIPTool.getMappedIPAddresses(domain, options);
+        const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
         const existingSet = {};
         existingAddresses.forEach((addr) => {
           existingSet[addr] = 1;
@@ -66,11 +66,13 @@ class DomainUpdater {
         });
         let blockSet = "block_domain_set";
         const ipLevelBlockAddrs = [];
+        let updateIpsetNeeded = false;
         if (options.blockSet)
           blockSet = options.blockSet;
         for (let i in addresses) {
           const address = addresses[i];
           if (!existingSet[address]) {
+            updateIpsetNeeded = true;
             await rclient.saddAsync(key, address);
             if (!options.ignoreApplyBlock){
               const BlockManager = require('./BlockManager.js');
@@ -82,7 +84,7 @@ class DomainUpdater {
             }
           }
         }
-        if (!options.ignoreApplyBlock)
+        if (!options.ignoreApplyBlock && updateIpsetNeeded)
           await Block.batchBlock(ipLevelBlockAddrs, blockSet).catch((err) => {
             log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
           });

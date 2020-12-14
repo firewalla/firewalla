@@ -635,11 +635,15 @@ module.exports = class {
       return false;
     let hostObject = null;
     let networkProfile = null;
+    let vpnProfile = null;
     if (iptool.isV4Format(ip)) {
       hostObject = hostManager.getHostFast(ip);
       const iface = sysManager.getInterfaceViaIP4(ip);
       const uuid = iface && iface.uuid;
       networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
+      if (cn)
+        vpnProfile = VPNProfileManager.getVPNProfile(cn);
     } else {
       if (iptool.isV6Format(ip)) {
         hostObject = hostManager.getHostFast6(ip);
@@ -653,6 +657,9 @@ module.exports = class {
       return false;
     }
     if (networkProfile && !networkProfile.isMonitoring()) {
+      return false;
+    }
+    if (vpnProfile && !vpnProfile.isMonitoring()) {
       return false;
     }
     return true;
@@ -736,14 +743,14 @@ module.exports = class {
     }
 
     if (orig_ip_bytes && orig_bytes &&
-      orig_ip_bytes > 1000 && orig_bytes > 1000 &&
+      (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
       (orig_ip_bytes / orig_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
     }
 
     if (resp_ip_bytes && resp_bytes &&
-      resp_ip_bytes > 1000 && resp_bytes > 1000 &&
+      (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
       (resp_ip_bytes / resp_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
@@ -842,6 +849,21 @@ module.exports = class {
       }
       */
 
+      if (obj.orig_bytes == null) {
+        obj.orig_bytes = 0;
+      }
+      if (obj.resp_bytes == null) {
+        obj.resp_bytes = 0;
+      }
+
+      if (obj.duration == null) {
+        obj.duration = 0;
+      }
+
+      // keep only 2 digits after decimal to save memory
+      obj.ts = Math.round(obj.ts * 100) / 100
+      obj.duration = Math.round(obj.duration * 100) / 100
+
       // Long connection aggregation
       const uid = obj.uid
       if (long || this.activeLongConns[uid]) {
@@ -860,10 +882,10 @@ module.exports = class {
         else
           log.debug('Active long conn:', connCount);
 
-        obj.ts = previous.ts + previous.duration
+        obj.ts = Math.round((previous.ts + previous.duration) * 100) / 100
         obj.orig_bytes -= previous.orig_bytes
         obj.resp_bytes -= previous.resp_bytes
-        obj.duration -= previous.duration
+        obj.duration = Math.round((obj.duration - previous.duration) * 100) / 100
       }
 
       /*
@@ -983,10 +1005,11 @@ module.exports = class {
 
       let localType = TYPE_MAC;
       let realLocal = null;
+      let vpnProfile = null;
       if (!localMac && intfInfo && intfInfo.name === "tun_fwvpn") {
-        localMac = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
-        if (localMac) {
-          localMac = `${Constants.NS_VPN_PROFILE}:${localMac}`;
+        vpnProfile = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
+        if (vpnProfile) {
+          localMac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
           realLocal = VPNProfileManager.getRealAddrByVirtualAddr(lhost);
           localType = TYPE_VPN;
         }
@@ -1009,19 +1032,6 @@ module.exports = class {
           tags = _.concat(tags, networkProfile.getTags());
       }
       tags = _.uniq(tags);
-
-      if (obj.orig_bytes == null) {
-        obj.orig_bytes = 0;
-      }
-      if (obj.resp_bytes == null) {
-        obj.resp_bytes = 0;
-      }
-
-      if (obj.duration == null) {
-        obj.duration = Number(0);
-      } else {
-        obj.duration = Number(obj.duration);
-      }
 
       if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
@@ -1050,7 +1060,7 @@ module.exports = class {
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
-        ets: obj.ts + obj.duration, // ets stands for end timestamp
+        ets: Math.round((obj.ts + obj.duration) * 100) / 100 , // ets stands for end timestamp
         _ts: now, // _ts is the last time updated
         __ts: obj.ts, // __ts is the first time found
         sh: host, // source
@@ -1068,11 +1078,15 @@ module.exports = class {
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
-        flows: [flowDescriptor],
+        flows: [flowDescriptor], // TODO: deprecate this to save memory
         uids: [obj.uid],
-        ltype: localType,
-        realLocal: realLocal
+        ltype: localType
       };
+
+      if (vpnProfile)
+        tmpspec.vpf = vpnProfile;
+      if (realLocal)
+        tmpspec.rl = realLocal;
 
       if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
       if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
@@ -1091,9 +1105,9 @@ module.exports = class {
           // update start timestamp
           flowspec.ts = obj.ts;
         }
-        if (flowspec.ets < obj.ts + obj.duration) {
+        if (flowspec.ets < tmpspec.ets) {
           // update end timestamp
-          flowspec.ets = obj.ts + obj.duration;
+          flowspec.ets = tmpspec.ets;
         }
         // update last time updated
         flowspec._ts = now;
@@ -1103,7 +1117,7 @@ module.exports = class {
         // flowspec.du = flowspec.ets - flowspec.ts;
         // For now, we use total time of network transfer, since the rate calculation is based on this logic.
         // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
-        flowspec.du += obj.duration;
+        flowspec.du = Math.round((flowspec.du + obj.duration) * 100) / 100;
         flowspec.flows.push(flowDescriptor);
         if (flag) {
           flowspec.f = flag;

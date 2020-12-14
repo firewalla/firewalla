@@ -27,8 +27,6 @@ const Promise = require('bluebird');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
-const delay = require('../util/util.js').delay;
-
 class IntelRevalidationSensor extends Sensor {
 
   async run() {
@@ -88,10 +86,8 @@ class IntelRevalidationSensor extends Sensor {
     for(const intelKey of intelKeys) {
       if(intelKey.startsWith("intel:ip:")) {
         await this.revalidateIPIntel(intelKey);
-        await delay(250); // once every 250ms
       } else if(intelKey.startsWith("intel:url:")) {
         await this.revalidateURLIntel(intelKey);
-        await delay(250); // once every 250ms
       } else if(intelKey === '_') {
         // do nothing
       } else {

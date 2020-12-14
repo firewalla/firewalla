@@ -25,6 +25,8 @@ const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 const DNSTool = require('../../net2/DNSTool.js');
 const dnsTool = new DNSTool();
+const iptool = require('ip');
+const {formulateHostname, isDomainValid} = require('../../util/util.js');
 
 const sysManager = require('../../net2/SysManager.js');
 
@@ -91,7 +93,11 @@ class HttpFlow {
     if (firewalla.isReservedBlockingIP(destIP)) {
       return;
     }
-    await dnsTool.addDns(destIP, host, (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
+    if ((iptool.isV4Format(destIP) || iptool.isV6Format(destIP)) && isDomainValid(host)) {
+      const domain = formulateHostname(host);
+      await dnsTool.addDns(destIP, domain, (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
+      await dnsTool.addReverseDns(domain, [destIP], (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
+    }
   }
 
   async process(flow) {
@@ -125,6 +131,12 @@ class HttpFlow {
       } else {
         log.error("HTTP:Error:Drop", flow);
         return;
+      }
+
+      if (localIP) {
+        const intf = iptool.isV4Format(localIP) ? sysManager.getInterfaceViaIP4(localIP) : sysManager.getInterfaceViaIP6(localIP);
+        if (intf && intf.name === "tun_fwvpn")
+          return;
       }
 
       const mac = await hostTool.getMacByIPWithCache(localIP);
