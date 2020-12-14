@@ -743,14 +743,14 @@ module.exports = class {
     }
 
     if (orig_ip_bytes && orig_bytes &&
-      orig_ip_bytes > 1000 && orig_bytes > 1000 &&
+      (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
       (orig_ip_bytes / orig_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
     }
 
     if (resp_ip_bytes && resp_bytes &&
-      resp_ip_bytes > 1000 && resp_bytes > 1000 &&
+      (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
       (resp_ip_bytes / resp_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
