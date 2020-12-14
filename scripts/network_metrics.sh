@@ -113,11 +113,17 @@ calc_metrics() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-exec {lock_fd}> /var/lock/network_metrics.lock
-flock -x -n $lock_fd || {
+LOCK_FILE=/var/lock/network_metrics.lock
+if [[ -e $LOCK_FILE ]] && kill -0 $(cat $LOCK_FILE)
+then
     err "Another instance of $CMD is already running, abort"
     exit 1
-}
+else
+    rm -f $LOCK_FILE
+    echo $$ >$LOCK_FILE
+fi
+
+trap "{ rm -f $LOCK_FILE; }" INT TERM
 
 # start recording raw data
 for ethx in $(get_eths)
