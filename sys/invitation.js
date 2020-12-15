@@ -180,11 +180,10 @@ class FWInvitation {
       return;
     }
 
-    if(license === tempLicense) { // do not remove if license and temp license are the same
-      return;
+    if(license !== tempLicense) {
+      await rclient.delAsync("firereset:license"); // remove if they are different
     }
 
-    await rclient.delAsync("firereset:license"); // remove if they are different
   }
 
   async checkInvitation(rid) {
