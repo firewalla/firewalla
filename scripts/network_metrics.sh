@@ -24,7 +24,7 @@ err(){
 }
 
 get_eths() {
-    ls -l /sys/class/net | awk '/pci/ {print $9}'
+    ls -l /sys/class/net | awk '/^l/ && !/virtual/ {print $9}'
 }
 
 logrun() {

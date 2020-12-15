@@ -105,6 +105,7 @@ Promise.promisifyAll(fs);
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
 
@@ -952,16 +953,21 @@ module.exports = class HostManager {
   }
 
   async networkMetrics(json) {
-    const nmkeys = await rclient.keysAsync("metric:throughput:stat:*");
-    let nm = {};
-    await Promise.all(nmkeys.map( async (nmkey) => {
-        const nmkeysArray = nmkey.split(':');
-        const ethx = nmkeysArray[nmkeysArray.length-2];
-        const rtx = nmkeysArray[nmkeysArray.length-1];
-        nm[ethx] = nm[ethx] || {};
-        nm[ethx][rtx] = await rclient.hgetallAsync(nmkey);
-    }));
-    json.networkMetrics = nm;
+    try {
+      const config = FireRouter.getConfig();
+      const ethxs =  Object.keys(config.interface.phy);
+      let nm = {};
+      await Promise.all(ethxs.map( async (ethx) => {
+          nm[ethx] = nm[ethx] || {};
+          nm[ethx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:rx`);
+          nm[ethx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:tx`);
+      }));
+      log.info("YJDEBUG: ",nm);
+      json.networkMetrics = nm;
+    } catch (err) {
+      log.error("failed to get network metrics from redis: ", err);
+      json.networkMetrics = {};
+    }
   }
 
   async vpnProfilesForInit(json) {
