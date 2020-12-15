@@ -219,7 +219,7 @@ class NmapSensor extends Sensor {
         return // Skipping this scan
       }
 
-      log.info("Scanning network", range, "to detect new devices...");
+      log.info(`Scanning network ${range} (fastMode: ${fastMode}) ...`);
 
 
       const cmd = fastMode

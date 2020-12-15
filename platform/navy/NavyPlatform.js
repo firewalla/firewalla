@@ -158,11 +158,11 @@ class NavyPlatform extends Platform {
   */
 
   getRetentionTimeMultiplier() {
-    return 3;
+    return 1;
   }
 
   getRetentionCountMultiplier() {
-    return 3;
+    return 1;
   }
 
   async onWanIPChanged(ip) {
@@ -172,6 +172,10 @@ class NavyPlatform extends Platform {
     await exec("sudo systemctl restart brofish");
   }
 
+  isAccountingSupported() {
+    return true;
+  }
+  
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");

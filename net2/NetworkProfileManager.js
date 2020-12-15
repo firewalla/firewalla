@@ -47,9 +47,10 @@ class NetworkProfileManager {
         if (!this.iptablesReady)
           return;
         const host = event.host;
-        const mac = host.mac;
+        let mac = host.mac;
         if (!mac)
           return;
+        mac = mac.toUpperCase();
         if (_.isString(host.ipv4)) {
           const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
           if (intfInfo && host.ipv4 !== intfInfo.gateway)
@@ -105,7 +106,7 @@ class NetworkProfileManager {
 
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
     for (const key of convertKeys) {
       if (obj.hasOwnProperty(key))
         redisObj[key] = JSON.stringify(obj[key]);
@@ -115,7 +116,7 @@ class NetworkProfileManager {
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
     for (const key of convertKeys) {
       if (redisObj.hasOwnProperty(key))
         try {
@@ -234,6 +235,8 @@ class NetworkProfileManager {
         intf: intf.name,
         ipv4Subnet: intf.subnet,
         ipv4: intf.ip_address,
+        ipv4Subnets: intf.ip4_subnets || [],
+        ipv4s: intf.ip4_addresses || [],
         ipv6: intf.ip6_addresses || [],
         ipv6Subnets: intf.ip6_subnets || [],
         dns: intf.dns || [],

@@ -4,8 +4,8 @@ CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 [[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/zeekctl.cfg
 
-EXTERNAL_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
-OVERLAY_IP=$(ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0:0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
+EXTERNAL_IP=$(ip addr show dev eth0 | awk '/inet /'  | grep -vw secondary | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
+OVERLAY_IP=$(ip addr show dev eth0 | awk '/inet /'  | grep -vw secondary | awk '$NF=="eth0:0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
 
 if [[ -n "$EXTERNAL_IP" ]]; then
 

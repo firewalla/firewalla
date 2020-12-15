@@ -78,14 +78,14 @@
     "AdditionalPairPlugin": {},
     "DockerPlugin": {},
     "EncipherPlugin": {},
-    "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
-    "WireGuardPlugin": {}
+    "WireGuardPlugin": {},
+    "EventSensor":{}
   },
   "intels": [
     "DedupAlarm",
@@ -419,7 +419,6 @@
       "reportInterval": 7200,
       "temperatureThreshold": 95
     },
-    "RecentFlowPlugin": {},
     "FlowUploadSensor": {
       "interval": 900,
       "maxFlows": 50000,
@@ -552,7 +551,9 @@
     },
     "ACLAuditLogPlugin": {},
     "NewDeviceTagSensor": {},
-    "DockerSensor": {}
+    "AccountingPlugin": {},
+    "DockerSensor": {},
+    "EventSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -608,7 +609,8 @@
       "expires": 86400
     },
     "connLong": {
-      "path": "/blog/current/conn_long.log"
+      "path": "/blog/current/conn_long.log",
+      "expires": 10800
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
@@ -631,6 +633,7 @@
     "threshold": {
       "maxSpeed": 100000000,
       "missedBytesRatio": 0.98,
+      "IPTCPRatio": 0.1,
 
       "tcpZeroBytesResp": 1000000,
       "tcpZeroBytesOrig": 1000000,
@@ -702,13 +705,16 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": true,
+    "smart_block": false,
     "internal_scan": false,
     "acl_audit": false,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
-    "single_wan_conn_check": false
+    "single_wan_conn_check": false,
+    "accounting": true,
+    "event_schedule": true,
+    "network_metrics": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

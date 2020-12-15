@@ -29,7 +29,7 @@ ifconfig > ifconfig.txt
 ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
 top -n 10 -b > top-output.txt
-cp -rfp /home/pi/.firewalla .
+rsync -a /home/pi/.firewalla ./ --exclude run/docker
 if [ -z "$1" ]
    then
      cp /data/redis/dump.rdb .
@@ -47,6 +47,7 @@ if [ -z "$2" ]
      ls -lt /home/pi/logs/FireKick*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
      ls -lt /home/pi/logs/Trace*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
      ls -lt /var/log/syslog* |head -3 | awk '{print $NF}' | xargs -i sudo cp -p {} .
+     ls -lt /var/log/openvpn* | awk '{print $NF}' | xargs -i sudo cp -p {} .
      ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp -p {} .
 fi
 sudo chmod 777 syslog*

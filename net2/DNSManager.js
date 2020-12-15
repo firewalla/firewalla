@@ -29,6 +29,9 @@ const intelTool = new IntelTool()
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
 
+const VPNProfileManager = require("../net2/VPNProfileManager.js");
+const Constants = require('../net2/Constants.js');
+
 const flowUtil = require('../net2/FlowUtil.js');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
@@ -75,7 +78,15 @@ module.exports = class DNSManager {
       if (data && data.mac) {
         mac = data.mac
       } else {
-        throw new Error('IP Not Found: ' + ip);
+        const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
+        if (cn) {
+          const vpnProfile = VPNProfileManager.getVPNProfile(cn);
+          return {
+            mac: `${Constants.NS_VPN_PROFILE}:${cn}`,
+            name: vpnProfile && (vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn)
+          };
+        } else
+          throw new Error('IP Not Found: ' + ip);
       }
     } else if (iptool.isV6Format(ip)) {
       let data = await rclient.hgetallAsync("host:ip6:" + ip)
@@ -88,7 +99,7 @@ module.exports = class DNSManager {
       log.error("ResolveHost:BadIP", ip);
       throw new Error('bad ip');
     }
-
+    
     return hostTool.getMACEntry(mac);
   }
 
@@ -192,11 +203,14 @@ module.exports = class DNSManager {
             await this.enrichDeviceMac(_deviceMac, o, "src");
           } else {
             // enrichDeviceCount++;
-            await this.enrichDeviceIP(_ipsrc, o, "src");
+            if (_deviceMac && _deviceMac.startsWith(Constants.NS_VPN_PROFILE))
+              this.enrichVPNProfileCN(_deviceMac.substring(`${Constants.NS_VPN_PROFILE}:`.length), o, "src");
+            else
+              await this.enrichDeviceIP(_ipsrc, o, "src");
           }
         } else {
           // enrichDstCount++;
-          await this.enrichDestIP(_ipsrc, o, "src");
+            await this.enrichDestIP(_ipsrc, o, "src");
         }
 
         if(sysManager.isLocalIP(_ipdst)) {
@@ -204,7 +218,10 @@ module.exports = class DNSManager {
             await this.enrichDeviceMac(_deviceMac, o, "dst");
           } else {
             // enrichDeviceCount++;
-            await this.enrichDeviceIP(_ipdst, o, "dst");
+            if (_deviceMac && _deviceMac.startsWith(Constants.NS_VPN_PROFILE))
+              this.enrichVPNProfileCN(_deviceMac.substring(`${Constants.NS_VPN_PROFILE}:`.length), o, "dst");
+            else
+              await this.enrichDeviceIP(_ipdst, o, "dst");
           }
         } else {
           // enrichDstCount++;
@@ -222,6 +239,20 @@ module.exports = class DNSManager {
 
       //   throw err
       // });
+  }
+
+  enrichVPNProfileCN(cn, flowObject, srcOrDest) {
+    if (!cn)
+      return;
+    const vpnProfile = VPNProfileManager.getVPNProfile(cn);
+    if (vpnProfile) {
+      if (srcOrDest === "src") {
+        flowObject["shname"] = vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn;
+      } else {
+        flowObject["dhname"] = vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn;
+      }
+      flowObject.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
+    }
   }
 
   async enrichDeviceMac(mac, flowObject, srcOrDest) {

@@ -211,7 +211,6 @@ class FlowUploadSensor extends Sensor {
          *     "af":{}, application flow
          *     "flows":[]  flow details
          *     "pf":{}, destination port flows
-         *     "bl":"" response body length?
          *     "ob":"" total orig bytes
          *     "rb":"" total response bytes
          *     "ct":"" count
@@ -243,7 +242,6 @@ class FlowUploadSensor extends Sensor {
          *         "af":{},
          *         "pf":{},
          *         "flows":[],
-         *         "bl":"",
          *         "ob":"",
          *         "rb":"",
          *         "ct":"",

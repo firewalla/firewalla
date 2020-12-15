@@ -137,6 +137,10 @@ sudo iptables -w -N FW_INPUT_ACCEPT &> /dev/null
 sudo iptables -w -F FW_INPUT_ACCEPT
 sudo iptables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_ACCEPT
 
+# accept packet to DHCP client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
+sudo iptables -w -A FW_INPUT_ACCEPT -p udp --dport 68 -j ACCEPT
+sudo iptables -w -A FW_INPUT_ACCEPT -p tcp --dport 68 -j ACCEPT
+
 sudo iptables -w -N FW_INPUT_DROP &> /dev/null
 sudo iptables -w -F FW_INPUT_DROP
 sudo iptables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_DROP
@@ -478,6 +482,14 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_INPUT_ACCEPT
   sudo ip6tables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_ACCEPT
 
+  # accept traffic to DHCPv6 client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p udp --dport 546 -j ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p tcp --dport 546 -j ACCEPT
+  # accept neighbor discovery packets
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-solicitation -j ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
+
   sudo ip6tables -w -N FW_INPUT_DROP &> /dev/null
   sudo ip6tables -w -F FW_INPUT_DROP
   sudo ip6tables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_DROP
@@ -777,8 +789,8 @@ sudo iptables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_se
 # regular route chain
 sudo iptables -w -t mangle -N FW_RT_REG &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_REG
-# only for outbound traffic and not being marked by previous vpn client chain
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000/0xffff -j FW_RT_REG
+# only for outbound traffic
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 # global regular route chain
@@ -886,8 +898,8 @@ sudo ip6tables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_s
 # regular route chain
 sudo ip6tables -w -t mangle -N FW_RT_REG &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_REG
-# only for outbound traffic and not being marked by previous vpn client chain
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000/0xffff -j FW_RT_REG
+# only for outbound traffic
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 # global regular route chain

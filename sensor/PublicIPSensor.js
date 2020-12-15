@@ -21,6 +21,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const Message = require('../net2/Message.js');
+const sysManager = require('../net2/SysManager.js');
 
 const exec = require('child-process-promise').exec;
 
@@ -29,6 +30,9 @@ const rp = require('request-promise');
 const command = "dig +short myip.opendns.com @resolver1.opendns.com";
 const redisKey = "sys:network:info";
 const redisHashKey = "publicIp";
+const publicWanIPsHashKey = "publicWanIps";
+
+const _ = require('lodash');
 
 class PublicIPSensor extends Sensor {
   constructor() {
@@ -62,10 +66,15 @@ class PublicIPSensor extends Sensor {
         }
       }
 
+      const publicWanIps = sysManager.myPublicWanIps().sort();
+      const existingPublicWanIpsJSON = await rclient.hgetAsync(redisKey, publicWanIPsHashKey);
+      const existingPublicWanIps = ((existingPublicWanIpsJSON && JSON.parse(existingPublicWanIpsJSON)) || []).sort();
+
       let existingPublicIPJSON = await rclient.hgetAsync(redisKey, redisHashKey);
       let existingPublicIP = JSON.parse(existingPublicIPJSON);
-      if(publicIP !== existingPublicIP) {
+      if(publicIP !== existingPublicIP || !_.isEqual(publicWanIps, existingPublicWanIps)) {
         await rclient.hsetAsync(redisKey, redisHashKey, JSON.stringify(publicIP));
+        await rclient.hsetAsync(redisKey, publicWanIPsHashKey, JSON.stringify(publicWanIps));
         sem.emitEvent({
           type: "PublicIP:Updated",
           ip: publicIP
@@ -82,6 +91,7 @@ class PublicIPSensor extends Sensor {
   }
 
   async run() {
+    await sysManager.waitTillInitialized();
     this.publicIPAPI = this.config.publicIPAPI || "https://api.ipify.org?format=json";
     this.scheduleRunJob();
 

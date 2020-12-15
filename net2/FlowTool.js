@@ -55,9 +55,6 @@ class FlowTool {
     if("pf" in flow)
       delete flow.pf;
 
-    if("bl" in flow)
-      delete flow.bl;
-
     if("af" in flow)
       delete flow.af;
 
@@ -72,56 +69,16 @@ class FlowTool {
   }
 
   _mergeFlow(targetFlow, flow) {
-    targetFlow.rb += flow.rb;
-    targetFlow.ct += flow.ct;
-    targetFlow.ob += flow.ob;
-    targetFlow.du += flow.du;
-    if (targetFlow.ts < flow.ts) {
+    targetFlow.download += flow.download;
+    targetFlow.upload += flow.upload;
+    targetFlow.duration += flow.duration;
+    if (targetFlow.ts < flow.ts) { // ts had been converted to the _ts: update/record time
       targetFlow.ts = flow.ts;
     }
-    if (flow.pf) {
-      for (let k in flow.pf) {
-        if (targetFlow.pf[k] != null) {
-          targetFlow.pf[k].rb += flow.pf[k].rb;
-          targetFlow.pf[k].ob += flow.pf[k].ob;
-          targetFlow.pf[k].ct += flow.pf[k].ct;
-        } else {
-          targetFlow.pf[k] = flow.pf[k]
-        }
-      }
-    }
-
-    if (flow.flows) {
-      if (targetFlow.flows) {
-        targetFlow.flows = targetFlow.flows.concat(flow.flows);
-      } else {
-        targetFlow.flows = flow.flows;
-      }
-    }
   }
-
-  _getKey(flow) {
-    let key = "";
-    if (flow.sh === flow.lh) {
-      key = flow.dh + ":" + flow.fd;
-    } else {
-      key = flow.sh + ":" + flow.fd;
-    }
-    return key;
-  }
-
-  // append to existing flow or create new
-  _appendFlow(conndb, flowObject, ip) {
-    let o = flowObject;
-
-    let key = this._getKey(o, ip);
-
-    let flow = conndb[key];
-    if (flow == null) {
-      conndb[key] = o;
-    } else {
-      this._mergeFlow(flow, o);
-    }
+  _shouldMerge(targetFlow, flow) {
+    const compareKeys = ['device', 'ip', 'fd', 'port', 'protocol'];
+    return _.isEqual(_.pick(targetFlow, compareKeys), _.pick(flow, compareKeys));
   }
 
   _flowStringToJSON(flow) {
@@ -189,16 +146,18 @@ class FlowTool {
         outgoing = await this.getAllRecentOutgoingConnections(options)
         incoming = await this.getAllRecentIncomingConnections(options)
       }
-      recentFlows = _.orderBy(outgoing.concat(incoming), 'scope', options.asc ? 'asc' : 'desc')
-        .slice(0, options.count);
+      recentFlows = [].concat(outgoing,incoming);
+    }
+    recentFlows = _.orderBy(recentFlows, 'ts', options.asc ? 'asc' : 'desc');
+    if(!options.no_merge) {
+      recentFlows = this._mergeFlows(recentFlows);
     }
 
-    json.flows.recent = recentFlows;
+    json.flows.recent = recentFlows.slice(0, options.count);
 
     return recentFlows
   }
 
-  // merge adjacent flows with same key via this._getKey()
   _mergeFlows(flowObjects) {
     let mergedFlowObjects = [];
     let lastFlowObject = null;
@@ -210,7 +169,7 @@ class FlowTool {
         return;
       }
 
-      if (this._getKey(lastFlowObject) === this._getKey(flowObject)) {
+      if (this._shouldMerge(lastFlowObject, flowObject)) {
         this._mergeFlow(lastFlowObject, flowObject);
       } else {
         mergedFlowObjects.push(flowObject);
@@ -224,8 +183,7 @@ class FlowTool {
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFlow(flow) {
     let f = {};
-    f.score = flow._ts;
-    f.ts = flow.ts;
+    f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
     f.duration = flow.du
     f.intf = flow.intf;
@@ -280,51 +238,6 @@ class FlowTool {
     return this.getAllRecentConnections("out", options);
   }
 
-  async getAllRecentOutgoingConnectionsMixed(options) {
-
-    //   {
-    //     country = US;
-    //     device = "9C:3D:CF:FA:95:75";
-    //     download = 11984;
-    //     duration = "1.121203";
-    //     fd = in;
-    //     host = "logs.us-west-2.amazonaws.com";
-    //     ip = "52.94.209.50";
-    //     ts = "1519653614.804147";
-    //     upload = 1392;
-    // }
-
-    const outgoing = await this.getAllRecentOutgoingConnections(options)
-    const incoming = await this.getAllRecentIncomingConnections(options)
-
-    const all = outgoing.concat(incoming)
-
-    all.sort((a, b) => a.ip < b.ip)
-
-    let merged = []
-    let last_entry = null
-
-    for (let i = 0; i < all.length; i++) {
-      const entry = all[i];
-      if (last_entry === null) {
-        last_entry = entry
-      } else {
-        if (last_entry.ip === entry.ip) {
-          last_entry.upload += entry.upload
-          last_entry.download += entry.download
-          last_entry.duration = parseFloat(last_entry.duration) + parseFloat(entry.duration)
-        } else {
-          merged.push(last_entry)
-          last_entry = entry
-        }
-      }
-    }
-
-    merged.push(last_entry)
-
-    return merged
-  }
-
   // this is to get all recent connections in the network
   // regardless which device it belongs to
   async getAllRecentConnections(direction, options) {
@@ -332,15 +245,21 @@ class FlowTool {
 
     let allMacs = [];
     if (options.intf) {
-      const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager();
-      allMacs = hostManager.getIntfMacs(options.intf);
+      if (!_.isArray(options.macs) || options.macs.length === 0) {
+        const HostManager = require("../net2/HostManager.js");
+        const hostManager = new HostManager();
+        allMacs = hostManager.getIntfMacs(options.intf);
+      } else {
+        allMacs = options.macs;
+      }
     } else if (options.tag) {
       const HostManager = require("../net2/HostManager.js");
       const hostManager = new HostManager();
       allMacs = hostManager.getTagMacs(options.tag);
     } else {
       allMacs = await hostTool.getAllMACs();
+      if (_.isArray(options.macs))
+        allMacs = allMacs.concat(options.macs);
     }
 
     const allFlows = [];
@@ -356,10 +275,6 @@ class FlowTool {
 
       allFlows.push.apply(allFlows, flows);
     }));
-
-    allFlows.sort((a, b) => {
-      return b.ts - a.ts;
-    })
 
     return allFlows;
   }
@@ -452,42 +367,6 @@ class FlowTool {
     return this._aggregateTransferBy10Min(transfers);
   }
 
-  async saveGlobalRecentConns(flow) {
-    const key = "flow:global:recent";
-    const now = new Date() / 1000;
-    const limit = -1001; // only keep the latest 1000 entries
-    let flowCopy = JSON.parse(JSON.stringify(flow));
-
-    if(!this._isFlowValid(flowCopy)) {
-      return;
-    }
-
-    // TODO: might need to cut small traffics
-    flowCopy = this.toSimpleFlow(flowCopy);
-    flowCopy.now = now;
-
-    // if(flowCopy.deviceIP && !flowCopy.device) {
-    //   const mac = await hostTool.getMacByIP(flowCopy.deviceIP);
-    //   flowCopy.device = mac;
-    // }
-
-    await rclient.zaddAsync(key, now, JSON.stringify(flowCopy));
-    await rclient.zremrangebyrankAsync(key, 0, limit);
-
-    for (let index = 0; index < flowCopy.tags.length; index++) {
-      const tag = flowCopy.tags[index];
-      const tagKey = `flow:tag:${tag}:recent`;
-      await rclient.zaddAsync(tagKey, now, JSON.stringify(flowCopy));
-      await rclient.zremrangebyrankAsync(tagKey, 0, limit);
-    }
-
-    const intfKey = `flow:intf:${flowCopy.intf}:recent`;
-    await rclient.zaddAsync(intfKey, now, JSON.stringify(flowCopy));
-    await rclient.zremrangebyrankAsync(intfKey, 0, limit);
-
-    return;
-  }
-
   async enrichWithIntel(flows) {
     return await Promise.map(flows, async f => {
       // get intel from redis. if failed, create a new one
@@ -512,35 +391,6 @@ class FlowTool {
 
       return f;
     }, {concurrency: 10}); // limit to 10
-  }
-
-  async getGlobalRecentConns(options) {
-    options = options || {};
-
-    const key = "flow:global:recent";
-    const limit = options.limit || 50;
-    let offset = options.offset || "-inf";
-
-    if(offset !== '-inf') {
-      offset = `(${offset}`;
-    }
-
-    const results = await rclient.zrangebyscoreAsync([key, offset, "+inf", "LIMIT", 0 , limit]);
-
-    if(_.isEmpty(results)) {
-      return [];
-    }
-
-    let flowObjects = results
-        .map((x) => this._flowStringToJSON(x));
-
-    let enrichedFlows = await this.enrichWithIntel(flowObjects);
-
-    enrichedFlows.sort((a, b) => {
-      return b.ts - a.ts;
-    });
-
-    return enrichedFlows;
   }
 
   async getRecentConnections(target, direction, options) {
@@ -570,20 +420,9 @@ class FlowTool {
 
     flowObjects.forEach((x) => {
       this.trimFlow(x)
-      if (x.ets) x.ts = x.ets
     });
 
-    let mergedFlow = null
-
-    if(!options.no_merge) {
-      mergedFlow = this._mergeFlows(
-        _.orderBy(flowObjects, 'ts', options.asc ? 'asc' : 'desc')
-      );
-    } else {
-      mergedFlow = flowObjects
-    }
-
-    let simpleFlows = mergedFlow
+    let simpleFlows = flowObjects
       .map((f) => {
         let s = this.toSimpleFlow(f)
         s.device = target; // record the mac address here
@@ -592,7 +431,7 @@ class FlowTool {
 
     let enrichedFlows = await this.enrichWithIntel(simpleFlows);
 
-    return _.orderBy(enrichedFlows, 'ts', options.asc ? 'asc' : 'desc')
+    return enrichedFlows
   }
 
   getFlowKey(mac, type) {

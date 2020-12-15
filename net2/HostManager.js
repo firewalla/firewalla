@@ -92,6 +92,7 @@ const dnsTool = new DNSTool()
 
 const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
+const VPNProfileManager = require('./VPNProfileManager.js');
 const Alarm = require('../alarm/Alarm.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
@@ -104,8 +105,11 @@ Promise.promisifyAll(fs);
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
+
+const VpnManager = require('../vpn/VpnManager.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -429,24 +433,6 @@ module.exports = class HostManager {
     json.last60 = this.generateStats(downloadStats,uploadStats);
   }
 
-  async last60MinTopTransferForInit(json) {
-    const top = await rclient.hgetallAsync("last60stats")
-    let values = Object.values(top)
-
-    values = values.map((value) => {
-      try {
-        return JSON.parse(value)
-      } catch(err) {
-        return null
-      }
-    })
-
-    values.sort((x, y) => {
-      return x.ts - y.ts
-    })
-
-    json.last60top = values
-  }
 
   async last30daysStatsForInit(json, target) {
     const subKey = target ? ':' + target : ''
@@ -744,6 +730,7 @@ module.exports = class HostManager {
       this.getCloudURL(json),
       this.networkConfig(json, true),
       this.networkProfilesForInit(json),
+      this.networkMetrics(json),
     ]
 
     await this.basicDataForInit(json, {});
@@ -786,6 +773,49 @@ module.exports = class HostManager {
     })
   }
 
+  async ovpnClientProfilesForInit(json) {
+    let profiles = [];
+    const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+    const cmd = "mkdir -p " + dirPath;
+    await exec(cmd);
+    const files = await fs.readdirAsync(dirPath);
+    const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
+    Array.prototype.push.apply(profiles, await Promise.all(ovpns.map(async filename => {
+      const profileId = filename.slice(0, filename.length - 5);
+      const ovpnClient = new OpenVPNClient({ profileId: profileId });
+      const passwordPath = ovpnClient.getPasswordPath();
+      const profile = { profileId: profileId };
+      let password = "";
+      if (fs.existsSync(passwordPath)) {
+        password = await fs.readFileAsync(passwordPath, "utf8");
+        if (password === "dummy_ovpn_password")
+          password = ""; // not a real password, just a placeholder
+      }
+      profile.password = password;
+      const userPassPath = ovpnClient.getUserPassPath();
+      let user = "";
+      let pass = "";
+      if (fs.existsSync(userPassPath)) {
+        const userPass = await fs.readFileAsync(userPassPath, "utf8");
+        const lines = userPass.split("\n", 2);
+        if (lines.length == 2) {
+          user = lines[0];
+          pass = lines[1];
+        }
+      }
+      const settings = await ovpnClient.loadSettings();
+      profile.user = user;
+      profile.pass = pass;
+      profile.settings = settings;
+      const status = await ovpnClient.status();
+      profile.status = status;
+      const stats = await ovpnClient.getStatistics();
+      profile.stats = stats;
+      return profile;
+    })));
+    json.ovpnClientProfiles = profiles;
+  }
+
   async jwtTokenForInit(json) {
     const token = await tokenManager.getToken();
     if(token) {
@@ -810,11 +840,8 @@ module.exports = class HostManager {
       json.versionUpdate = versionUpdate;
     const customizedCategories = await categoryUpdater.getCustomizedCategories();
     json.customizedCategories = customizedCategories;
-  }
-
-  async getRecentFlows(json) {
-    const recentFlows = await flowTool.getGlobalRecentConns();
-    json.recentFlows = recentFlows;
+    // add connected vpn client statistics
+    json.vpnCliStatistics = await new VpnManager().getStatistics();
   }
 
   async getGuessedRouters(json) {
@@ -925,6 +952,28 @@ module.exports = class HostManager {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
+  async networkMetrics(json) {
+    try {
+      const config = FireRouter.getConfig();
+      const ethxs =  Object.keys(config.interface.phy);
+      let nm = {};
+      await Promise.all(ethxs.map( async (ethx) => {
+          nm[ethx] = nm[ethx] || {};
+          nm[ethx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:rx`);
+          nm[ethx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:tx`);
+      }));
+      json.networkMetrics = nm;
+    } catch (err) {
+      log.error("failed to get network metrics from redis: ", err);
+      json.networkMetrics = {};
+    }
+  }
+
+  async vpnProfilesForInit(json) {
+    await VPNProfileManager.refreshVPNProfiles();
+    json.vpnProfiles = await VPNProfileManager.toJson();
+  }
+
   toJson(includeHosts, options, callback) {
 
     if(typeof options === 'function') {
@@ -944,7 +993,6 @@ module.exports = class HostManager {
           this.last24StatsForInit(json),
           this.newLast24StatsForInit(json),
           this.last60MinStatsForInit(json),
-          //            this.last60MinTopTransferForInit(json),
           this.extensionDataForInit(json),
           this.last30daysStatsForInit(json),
           this.last12MonthsStatsForInit(json),
@@ -961,15 +1009,17 @@ module.exports = class HostManager {
           this.jwtTokenForInit(json),
           this.groupNameForInit(json),
           this.asyncBasicDataForInit(json),
-          this.getRecentFlows(json),
           this.getGuessedRouters(json),
           this.getGuardian(json),
           this.getDataUsagePlan(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
+          this.networkMetrics(json),
+          this.vpnProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
-          this.loadStats(json)
+          this.loadStats(json),
+          this.ovpnClientProfilesForInit(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};
@@ -1545,14 +1595,8 @@ module.exports = class HostManager {
                 if (!updatedPolicy) return;
                 updatedPolicy.running = false;
                 settings = await ovpnClient.loadSettings(); // reload settings in case settings is changed
-                if (!settings.overrideDefaultRoute || !settings.strictVPN) { // do not disable VPN client automatically unless strict VPN is not set or override default route is not set
-                  // update vpnClient system policy to state false
-                  updatedPolicy.state = false;
-                  updatedPolicy.reconnecting = 0;
-                } else {
-                  // increment reconnecting count and trigger reconnection
-                  updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
-                }
+                // increment reconnecting count and trigger reconnection
+                updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
                 await this.setPolicyAsync("vpnClient", updatedPolicy);
                 if (fc.isFeatureOn("vpn_disconnect")) {
                   const broken_time = new Date() / 1000;
@@ -1592,11 +1636,8 @@ module.exports = class HostManager {
               });
             }
           }
-          // do not change state if strict VPN is set
-          if (settings.overrideDefaultRoute && settings.strictVPN) {
-            // clear reconnecting count if successfully connected, otherwise increment the reconnecting count
-            return {running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1)};
-          } else return {state: result, running: result, reconnecting: 0}; // clear reconnecting count if strict VPN is not set
+          // clear reconnecting count if successfully connected, otherwise increment the reconnecting count
+          return {running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1)};
         } else {
           // proceed to stop anyway even if setup is failed
           await ovpnClient.setup().catch((err) => {

@@ -35,6 +35,9 @@ let instance = null;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 
+const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const Constants = require('../net2/Constants.js');
+
 const default_stddev_limit = 8;
 const default_inbound_min_length = 1000000;
 const deafult_outbound_min_length = 500000;
@@ -76,6 +79,12 @@ function alarmBootstrap(flow, mac) {
     "p.intf.id": flow.intf,
     "p.tag.ids": flow.tags
   }
+
+  if (flow.rl)
+    obj["p.device.real.ip"] = flow.rl;
+
+  if (flow.vpf)
+    obj["p.device.vpnProfile"] = flow.vpf;
 
   if(mac) {
     obj["p.dest.ip.device.mac"] = mac;
@@ -532,7 +541,8 @@ module.exports = class FlowMonitor {
     }
 
     this.flowIntel(result.connections, mac);
-    this.summarizeNeighbors(host, result.connections);
+    if (host)
+      this.summarizeNeighbors(host, result.connections);
     if (result.activities != null) {
       /*
       if (host.activities!=null) {
@@ -547,8 +557,10 @@ module.exports = class FlowMonitor {
       }
       host.save("activities",null);
       */
-      host.activities = result.activities;
-      host.save("activities", null);
+      if (host) {
+        host.activities = result.activities;
+        host.save("activities", null);
+      }
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
@@ -558,7 +570,8 @@ module.exports = class FlowMonitor {
       });
     }
     this.flowIntel(result.connections, mac);
-    this.summarizeNeighbors(host, result.connections);
+    if (host)
+      this.summarizeNeighbors(host, result.connections);
   }
 
 
@@ -710,6 +723,16 @@ module.exports = class FlowMonitor {
             log.info("Running Detect:", mac);
           }
           await this.detect(mac, period, host);
+        }
+      }
+
+      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
+      for (const cn of Object.keys(vpnProfiles)) {
+        const vpnProfile = vpnProfiles[cn];
+        if (service === "detect") {
+          const uid = `${Constants.NS_VPN_PROFILE}:${cn}`;
+          log.info("Running Detect:", uid);
+          await this.detect(uid, period);
         }
       }
     } catch (e) {
@@ -984,7 +1007,7 @@ module.exports = class FlowMonitor {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given, no protocol is very unusual
-      "p.dest.id": remoteIP,
+      // "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain,
       "p.dest.port": this.getRemotePort(flowObj),
@@ -1068,7 +1091,7 @@ module.exports = class FlowMonitor {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given
-      "p.dest.id": remoteIP,
+      // "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain || remoteIP,
       "p.dest.port": this.getRemotePort(flowObj),

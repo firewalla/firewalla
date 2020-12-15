@@ -46,9 +46,21 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
+const al = require('../util/accountingAudit.js');
+
+const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
+
 // This sensor is to aggregate device's flow every 10 minutes
 
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
+
+const accounting = require('../extension/accounting/accounting.js');
+const tracking = require('../extension/accounting/tracking.js');
+
+const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const Constants = require('../net2/Constants.js');
+const sysManager = require('../net2/SysManager.js');
 
 class FlowAggregationSensor extends Sensor {
   constructor() {
@@ -108,6 +120,40 @@ class FlowAggregationSensor extends Sensor {
     });
   }
 
+  async accountTrafficByX(mac, flows) {
+    
+    for (const flow of flows) {
+      let destIP = flowTool.getDestIP(flow);
+      let intel = await intelTool.getIntel(destIP);
+
+      // skip if no app or category intel
+      if(!(intel && (intel.app || intel.category)))
+        continue;
+
+      if(!intel.a) { // a new field a to indicate accounting
+        continue;
+      }
+
+      const duration = Math.floor(flow.ets - flow.ts); // seconds
+      const fromTime = new Date(flow.ts * 1000).toLocaleString();
+      const toTime = new Date(flow.ets * 1000).toLocaleString();
+
+      if (intel.app) {
+        await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
+        if(f.isDevelopmentVersion()) {
+          al("app", intel.app, mac, intel.host, destIP, duration, fromTime, toTime);
+        }
+      }
+
+      if (intel.category && !excludedCategories.includes(intel.category)) {
+        await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
+        if(f.isDevelopmentVersion()) {
+          al("category", intel.category, mac, intel.host, destIP, duration, fromTime, toTime);
+        }
+      }
+    }
+  }
+
   async trafficGroupByX(flows, x) {
     let traffic = {};
 
@@ -117,12 +163,13 @@ class FlowAggregationSensor extends Sensor {
 
       // skip if no app or category intel
       if(!(intel && (intel.app || intel.category)))
-        return;
+        continue;
 
       let appInfos = [];
 
-      if(intel[x])
+      if(intel[x]) {
         appInfos.push(intel[x])
+      }        
 
       appInfos.forEach((app) => {
 
@@ -215,6 +262,16 @@ class FlowAggregationSensor extends Sensor {
       await this.aggrActivity(mac, ts);
       await this.aggrActivity(mac, ts + this.config.interval);
     }))
+
+    const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
+    await Promise.all(Object.keys(vpnProfiles).map(async cn => {
+      log.debug("FlowAggrSensor on VPN profile", cn);
+      // use specific namespace to identify vpn profiles
+      await this.aggr(`${Constants.NS_VPN_PROFILE}:${cn}`, ts);
+      await this.aggr(`${Constants.NS_VPN_PROFILE}:${cn}`, ts + this.config.interval);
+      await this.aggrActivity(`${Constants.NS_VPN_PROFILE}:${cn}`, ts);
+      await this.aggrActivity(`${Constants.NS_VPN_PROFILE}:${cn}`, ts + this.config.interval);
+    }));
   }
 
   // this will be periodically called to update the summed flows in last 24 hours
@@ -285,7 +342,7 @@ class FlowAggregationSensor extends Sensor {
 
     for (const intf of intfs) {
       if(!intf || _.isEmpty(intf.macs)) {
-        return;
+        continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
@@ -306,7 +363,7 @@ class FlowAggregationSensor extends Sensor {
 
     for (const tag of tags) {
       if(!tag || _.isEmpty(tag.macs)) {
-        return;
+        continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
@@ -326,7 +383,7 @@ class FlowAggregationSensor extends Sensor {
 
     for (const mac of macs) {
       if(!mac) {
-        return
+        continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
@@ -339,7 +396,37 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow("category", optionsCopy);
       await this.summarizeActivity(optionsCopy, 'category', categories);
     }
-  }
+
+    const vpnIntf = sysManager.getInterface("tun_fwvpn");
+    if (vpnIntf && vpnIntf.uuid) {
+      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
+      const cns = Object.keys(vpnProfiles);
+      // aggregate vpn server interface
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+
+      optionsCopy.intf = vpnIntf.uuid;
+      optionsCopy.macs = cns;
+      await flowAggrTool.addSumFlow("download", optionsCopy);
+      await flowAggrTool.addSumFlow("upload", optionsCopy);
+      await flowAggrTool.addSumFlow("app", optionsCopy);
+      await this.summarizeActivity(optionsCopy, 'app', apps);
+      await flowAggrTool.addSumFlow("category", optionsCopy);
+      await this.summarizeActivity(optionsCopy, 'category', categories);
+
+      // aggregate vpn profiles using specific namespace
+      for (const cn of cns) {
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+
+        optionsCopy.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
+        await flowAggrTool.addSumFlow("download", optionsCopy);
+        await flowAggrTool.addSumFlow("upload", optionsCopy);
+        await flowAggrTool.addSumFlow("app", optionsCopy);
+        await this.summarizeActivity(optionsCopy, 'app', apps);
+        await flowAggrTool.addSumFlow("category", optionsCopy);
+        await this.summarizeActivity(optionsCopy, 'category', categories);
+      }
+    }
+  } 
 
   async sumFlowRange(ts, apps, categories) {
     const now = new Date() / 1000;
@@ -375,9 +462,12 @@ class FlowAggregationSensor extends Sensor {
 
     let destIP = flowTool.getDestIP(flow);
 
-    if(cache && cache[destIP] === 0) {
-      return false;
-    }
+    // comment out "false" cache
+    // because IP may be reused by multiple domains/categories, so if one domain has no category while the other has category
+    // it may miss some domains having category
+    // if(cache && cache[destIP] === 0) {
+    //   return false;
+    // }
 
     if(cache && cache[destIP] === 1) {
       return true;
@@ -436,7 +526,15 @@ class FlowAggregationSensor extends Sensor {
 
     // now flows array should only contain flows having intels
 
-    // record app/category flows by duration
+    if (platform.isAccountingSupported() && fc.isFeatureOn("accounting")) {
+      // tracking devices
+      await tracking.recordFlows(macAddress, flows);
+    
+      // record app/category flows by duration
+      // TODO: add recording for network/group/global as well
+      await this.accountTrafficByX(macAddress, flows);
+    }
+
     let appTraffic = await this.trafficGroupByApp(flows);
     await flowAggrTool.addAppActivityFlows(macAddress, this.config.interval, end, appTraffic, this.config.aggrFlowExpireTime);
 
