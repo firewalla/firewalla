@@ -962,7 +962,6 @@ module.exports = class HostManager {
           nm[ethx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:rx`);
           nm[ethx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:tx`);
       }));
-      log.info("YJDEBUG: ",nm);
       json.networkMetrics = nm;
     } catch (err) {
       log.error("failed to get network metrics from redis: ", err);
