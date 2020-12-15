@@ -171,16 +171,19 @@ class FWInvitation {
     const tempLicense = await rclient.getAsync("firereset:license");
     const license = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
 
-    if(!tempLicense) { // no need to remove if not existing
+    if(!tempLicense) {
+      log.forceInfo("No need to remove if not existing")
       return;
     }
 
     if(!license) { // always remove if no license has been fully registered in firekick
+      log.forceInfo("Cleaning temp license cache");
       await rclient.delAsync("firereset:license");
       return;
     }
 
     if(license !== tempLicense) {
+      log.forceInfo("Cleaning unmatched temp license cache");
       await rclient.delAsync("firereset:license"); // remove if they are different
     }
 
