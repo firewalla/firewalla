@@ -209,7 +209,7 @@ class FWInvitation {
     const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
 
     if(!tempLicense) {
-      log.forceInfo("No need to remove if not existing")
+      log.info("No need to remove if not existing")
       return;
     }
 
