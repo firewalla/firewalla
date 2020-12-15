@@ -165,6 +165,28 @@ class FWInvitation {
     }
   }
 
+  // check if the temperary license information in redis should be cleaned
+  async cleanupTempLicenseInfo() {
+    const licenseJSON = await license.getLicenseAsync();
+    const tempLicense = await rclient.getAsync("firereset:license");
+    const license = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+
+    if(!tempLicense) { // no need to remove if not existing
+      return;
+    }
+
+    if(!license) { // always remove if no license has been fully registered in firekick
+      await rclient.delAsync("firereset:license");
+      return;
+    }
+
+    if(license === tempLicense) { // do not remove if license and temp license are the same
+      return;
+    }
+
+    await rclient.delAsync("firereset:license"); // remove if they are different
+  }
+
   async checkInvitation(rid) {
     log.forceInfo(`${this.leftCheckCount} Inviting ${rid} to group ${this.gid}`);
     try {
@@ -214,8 +236,7 @@ class FWInvitation {
               // invalid license
               log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
 
-              // remove license record in redis
-              await rclient.delAsync("firereset:license");
+              await this.cleanupTempLicenseInfo();
 
               // record license error
               await rclient.setAsync("firereset:error", "invalid_license_type");
@@ -232,8 +253,7 @@ class FWInvitation {
         } catch (err) {
           log.error("Invalid license", err);
 
-          // remove license record in redis
-          await rclient.delAsync("firereset:license");
+          await this.cleanupTempLicenseInfo();
 
           // record license error
           await rclient.setAsync("firereset:error", "invalid_license");
