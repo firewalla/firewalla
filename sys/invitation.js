@@ -148,6 +148,13 @@ class FWInvitation {
       await rclient.delAsync(key); // this should always be used only once
 
       if(invite.eid && invite.license) {
+        const isValid = await this.isLocalLicenseValid(invite.license);
+
+        if(!isValid) {
+          log.info("License is not valid, ignore");
+          return null;
+        }
+
         log.info("Going to pair through local:", invite.eid);
         return {
           value: invite.eid,
@@ -163,6 +170,34 @@ class FWInvitation {
       await rclient.delAsync(key); // this should always be used only once
       return null
     }
+  }
+
+  // check if the temperary license is valid
+  async isLocalLicenseValid(targetLicense) {
+    const licenseJSON = await license.getLicenseAsync();
+    const tempLicense = await rclient.getAsync("firereset:license");
+    const license = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+
+    if(!tempLicense || !targetLicense) {
+      log.forceInfo("License info not exist");
+      return false;
+    }
+
+    if(tempLicense !== targetLicense) {
+      log.forceInfo("Unmatched License:", tempLicense.substring(0,8), targetLicense.substring(0,8));
+      return false;
+    }
+
+    if(!license) {
+      return true;
+    }
+
+    if(license !== targetLicense) {
+      log.forceInfo("Unmatched License 2:", license.substring(0,8), targetLicense.substring(0,8));
+      return false;
+    }
+
+    return true;
   }
 
   // check if the temperary license information in redis should be cleaned
