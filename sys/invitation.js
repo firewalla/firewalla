@@ -176,7 +176,7 @@ class FWInvitation {
   async isLocalLicenseValid(targetLicense) {
     const licenseJSON = await license.getLicenseAsync();
     const tempLicense = await rclient.getAsync("firereset:license");
-    const license = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+    const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
 
     if(!tempLicense || !targetLicense) {
       log.forceInfo("License info not exist");
@@ -188,12 +188,12 @@ class FWInvitation {
       return false;
     }
 
-    if(!license) {
+    if(!licenseString) {
       return true;
     }
 
-    if(license !== targetLicense) {
-      log.forceInfo("Unmatched License 2:", license.substring(0,8), targetLicense.substring(0,8));
+    if(licenseString !== targetLicense) {
+      log.forceInfo("Unmatched License 2:", licenseString.substring(0,8), targetLicense.substring(0,8));
       return false;
     }
 
@@ -204,20 +204,20 @@ class FWInvitation {
   async cleanupTempLicenseInfo() {
     const licenseJSON = await license.getLicenseAsync();
     const tempLicense = await rclient.getAsync("firereset:license");
-    const license = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+    const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
 
     if(!tempLicense) {
       log.forceInfo("No need to remove if not existing")
       return;
     }
 
-    if(!license) { // always remove if no license has been fully registered in firekick
+    if(!licenseString) { // always remove if no license has been fully registered in firekick
       log.forceInfo("Cleaning temp license cache");
       await rclient.delAsync("firereset:license");
       return;
     }
 
-    if(license !== tempLicense) {
+    if(licenseString !== tempLicense) {
       log.forceInfo("Cleaning unmatched temp license cache");
       await rclient.delAsync("firereset:license"); // remove if they are different
     }
