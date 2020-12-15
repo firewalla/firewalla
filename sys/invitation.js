@@ -152,6 +152,7 @@ class FWInvitation {
 
         if(!isValid) {
           log.info("License is not valid, ignore");
+          await rclient.setAsync("firereset:error", "invalid_license");
           return null;
         }
 
@@ -167,6 +168,7 @@ class FWInvitation {
       }
     } catch(err) {
       log.forceInfo("Invalid local payload:", payload)
+      await rclient.setAsync("firereset:error", "invalid_license");
       await rclient.delAsync(key); // this should always be used only once
       return null
     }
