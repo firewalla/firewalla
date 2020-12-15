@@ -713,7 +713,8 @@
     "clash": false,
     "single_wan_conn_check": false,
     "accounting": true,
-    "event_schedule": true
+    "event_schedule": true,
+    "network_metrics": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
