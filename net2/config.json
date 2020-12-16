@@ -1,5 +1,5 @@
 {
-  "version": 1.970,
+  "version": 1.971,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -28,9 +28,11 @@
     "alarm.cooldown": 900,
     "alarm.large_upload.cooldown": 14400,
     "alarm.abnormal_bandwidth_usage.cooldown": 28800,
-    "alarm.data_plan.cooldown": 2592000,
+    "alarm.data_plan_alarm.cooldown": 2592000,
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
+    "alarm.dual_wan.cooldown": 60,
+    "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
     "notification.box_online.cooldown": 900
@@ -74,6 +76,7 @@
     "VPNRelaySensor": {},
     "BoneSensor": {},
     "AdditionalPairPlugin": {},
+    "DockerPlugin": {},
     "EncipherPlugin": {},
     "RecentFlowPlugin": {},
     "GuardianSensor": {},
@@ -148,7 +151,13 @@
       "countryInterval": 86400
     },
     "AutoBlocksRevalidationSensor": {},
-    "FlowAggregationSensor": {},
+    "FlowAggregationSensor": {
+      "interval": 600,
+      "flowRange": 86400,
+      "sumFlowExpireTime": 1800,
+      "aggrFlowExpireTime": 86400,
+      "sumFlowMaxFlow": 200
+    },
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
     "SafeSearchPlugin": {
@@ -496,6 +505,10 @@
       "networkConfigHistory": {
         "expires": -1,
         "count": 32
+      },
+      "acl_audit": {
+        "expires": 1800,
+        "count": 4000
       }
     },
     "DeviceOfflineSensor": {
@@ -530,14 +543,20 @@
     "RuleCheckSensor": {},
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
-    "SS2Plugin": {},
+    "ClashPlugin": {},
     "WireGuardPlugin": {},
-    "PiHolePlugin": {}
+    "InternalScanSensor": {},
+    "LogScanSensor": {
+      "fireResetBluetooth": true,
+      "bonelogInterval": 900
+    },
+    "ACLAuditLogPlugin": {},
+    "NewDeviceTagSensor": {},
+    "DockerSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
-    "DeviceStatusUpdateHook": {},
     "DeviceHook": {
       "hostExpirationSecs": 2700
     },
@@ -641,6 +660,7 @@
     "large_upload": true,
     "abnormal_bandwidth_usage": true,
     "data_plan": true,
+    "data_plan_alarm": true,
     "new_device": true,
     "new_device_block": false,
     "device_online": true,
@@ -680,7 +700,13 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": true
+    "smart_block": true,
+    "internal_scan": false,
+    "acl_audit": false,
+    "new_device_tag": false,
+    "dual_wan": true,
+    "clash": false,
+    "single_wan_conn_check": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

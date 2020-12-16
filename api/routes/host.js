@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -64,7 +64,8 @@ router.get('/:host',
                });
              } else {
                hostManager.getHost(host, (err, h) => {
-                 flowManager.getStats2(h).then(() => {
+                 flowManager.getTargetStats(h.o.mac).then((flowsummary) => {
+                   h.flowsummary = flowsummary
                    h.loadPolicy((err) => {
                      if(err) {
                        res.status(500).send("");
@@ -72,15 +73,16 @@ router.get('/:host',
                      }
 
                      let jsonObj = h.toJson();
+                     const options = { mac: h.o.mac }
 
                      Promise.all([
-                       flowTool.prepareRecentFlows(jsonObj, {mac: h.o.mac}),
-                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareAppActivityFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareCategoryActivityFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareDetailedCategoryFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareDetailedAppFlowsForHost(jsonObj, h.o.mac, {})
+                       flowTool.prepareRecentFlows(jsonObj, options),
+                       netBotTool.prepareTopUploadFlows(jsonObj, options),
+                       netBotTool.prepareTopDownloadFlows(jsonObj, options),
+                       netBotTool.prepareAppActivityFlows(jsonObj, options),
+                       netBotTool.prepareCategoryActivityFlows(jsonObj, options),
+                       netBotTool.prepareDetailedFlows(jsonObj, 'app', options),
+                       netBotTool.prepareDetailedFlows(jsonObj, 'category', options),
                    ]).then(() => {
                        res.json(jsonObj);
                      });
@@ -158,7 +160,7 @@ router.get('/:host/topDownload',
       if(!mac) {
         return;
       }
-      await netBotTool.prepareTopDownloadFlowsForHost(json, mac);
+      await netBotTool.prepareTopDownloadFlows(json, { mac });
     })()
     .then(() => res.json(json))
     .catch((err) => {
@@ -179,7 +181,7 @@ router.get('/:host/topUpload',
       if(!mac) {
         return;
       }
-      await netBotTool.prepareTopUploadFlowsForHost(json, mac);
+      await netBotTool.prepareTopUploadFlows(json, { mac });
     })()
     .then(() => res.json(json))
     .catch((err) => {

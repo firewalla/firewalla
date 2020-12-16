@@ -6,10 +6,11 @@ UNAME=$(uname -m)
 
 # by default no
 MANAGED_BY_FIREBOOT=no
-FIREWALLA_PLATFORM=unknown
+export FIREWALLA_PLATFORM=unknown
 TCP_BBR=no
 FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
+IFB_SUPPORTED=no
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -28,7 +29,7 @@ case "$UNAME" in
     BRO_PROC_NAME="zeek"
     BRO_PROC_COUNT=6
     export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
-    FIREWALLA_PLATFORM=gold
+    export FIREWALLA_PLATFORM=gold
     ;;
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then
@@ -43,14 +44,14 @@ case "$UNAME" in
         BRO_PROC_NAME="zeek"
         BRO_PROC_COUNT=2
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
-        FIREWALLA_PLATFORM=navy
+        export FIREWALLA_PLATFORM=navy
         ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
         BRO_PROC_NAME="bro"
         BRO_PROC_COUNT=3
-        FIREWALLA_PLATFORM=blue
+        export FIREWALLA_PLATFORM=blue
         ;;
       *)
         unset FW_PLATFORM_CUR_DIR
@@ -65,7 +66,7 @@ case "$UNAME" in
     FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/red
     BRO_PROC_NAME="bro"
     BRO_PROC_COUNT=3
-    FIREWALLA_PLATFORM=red
+    export FIREWALLA_PLATFORM=red
     ;;
   *)
     ;;
