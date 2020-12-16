@@ -172,13 +172,6 @@ class NavyPlatform extends Platform {
     await exec("sudo systemctl restart brofish");
   }
 
-  async onVPNPortProtocolChanged() {
-    await super.onVPNPortProtocolChanged();
-
-    // to refresh VPN filter in zeek
-    await exec("sudo systemctl restart brofish");
-  }
-
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");

@@ -40,6 +40,9 @@ const { wrapIptables } = require('../../net2/Iptables.js')
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
+const platformLoader = require('../../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 const Mode = require('../../net2/Mode.js');
 
 const VIEW_PATH = 'view';
@@ -122,6 +125,48 @@ class App {
     }
 
     return 0
+  }
+
+  async getFireResetStatus() {
+    try {
+      await exec("systemctl is-active firereset")
+    } catch(err) {
+      log.error("firereset is not active", err);
+      return 1;
+    }
+
+    try {
+      const result = await exec("hcitool -i hci0 dev | wc -l")
+      if (result.stdout.replace("\n", "") !== "2") {
+        return 6;
+      }
+    } catch(err) {
+      log.error("bluetooth not found");
+      return 5;
+    }
+
+    try {
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'Invalid Bluetooth'")
+      log.error("Invalid bluetooth plugged in");
+      return 2;
+    } catch(err) {
+    }
+
+    try {
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'Failed to start service'")
+      log.error("Likely bluetooth not plugged in");
+      return 3;
+    } catch(err) {
+    }
+
+    try {
+      await exec("tail -n 8 /home/pi/.forever/firereset.log | grep 'can\'t read hci socket'")
+      log.error("Unknown error");
+      return 4;
+    } catch(err) {
+    }
+
+    return 0;
   }
 
   getCloudConnectivity() {
@@ -259,6 +304,27 @@ class App {
       })
     });
 
+    this.app.use('/bluetooth_log', (req, res) => {
+      const filename = "/home/pi/.forever/firereset.log";
+      (async () => {
+        await fs.accessAsync(filename, fs.constants.F_OK)
+        const result = (await exec(`tail -n 100 ${filename}`)).stdout
+        let lines = result.split("\n")
+        lines = lines.map((originLine) => {
+          let line = originLine
+          line = line.replace(/password.........................................../, "*************************");
+          line = line.replace(/username.........................................../, "*************************")
+          return line
+        })
+
+        res.setHeader('content-type', 'text/plain');
+        res.end(lines.join("\n"))
+      })().catch((err) => {
+        log.error("Failed to fetch log", err);
+        res.status(404).send('')
+      })
+    });
+
     this.app.use('/pairing', (req, res) => {
       if (this.broadcastInfo) {
         res.json(this.broadcastInfo);
@@ -291,6 +357,24 @@ class App {
         });
       }
     });
+
+
+    this.app.use('/raw', async (req, res) => {
+      log.info("Got a request in /raw")
+
+      try {
+        const values = await this.getPairingStatus();
+        if(values.error) {
+          log.error("Failed to process request", err);
+          res.status(500).send({})
+        } else {
+          res.render('raw', values)
+        }
+      } catch(err) {
+        log.error("Failed to process request", err);
+        res.status(500).send({})
+      }
+    })
 
     this.app.use('*', async (req, res) => {
       log.info("Got a request in *")
@@ -370,6 +454,15 @@ class App {
       if(systemServices != 0) {
         values.err_service = true
         success = false
+      }
+
+      values.has_bluetooth = platform.isBluetoothAvailable();
+      if(values.has_bluetooth) {
+        const btStatus = await this.getFireResetStatus();
+        if(btStatus !== 0) {
+          values.err_bluetooth = btStatus
+          // no need to set success to false, because it's not a blocking issue for QR code pairing
+        }
       }
 
       values.success = success

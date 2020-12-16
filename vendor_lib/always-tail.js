@@ -62,7 +62,7 @@ Tail = (function(_super) {
           self.queue.push(block); // for future data processing
         }
 
-        var buffer = new Buffer(size);
+        var buffer = Buffer.alloc(size);
 
         debug("reading:", block.fd, size, start);
         fs.read(block.fd, buffer, 0, size, start, function(err, bytesRead, buff) {

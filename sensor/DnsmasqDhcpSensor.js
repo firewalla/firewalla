@@ -59,6 +59,7 @@ class DnsmasqDhcpSensor extends Sensor {
         if (action == 'del') return;
         let hostInfo = {
             mac: host.mac,
+            bname: host.hostname,
             from: "dnsmasq.dhcp.lease"
         };
         if (ip.isV4Format(host.ip)) {

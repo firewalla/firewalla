@@ -238,15 +238,15 @@ async function inviteAdmin(gid) {
 
   const gidPrefix = gid.substring(0, 8);
 
-  const group = await eptcloud.groupFind(gid)
+  const findResult = await eptcloud.groupFind(gid)
 
-  if (!group || !group.symmetricKeys) {
+  if (!findResult) {
     return false;
   }
 
   // number of key sym keys equals to number of members in this group
   // set this number to redis so that other js processes get this info
-  let count = group.symmetricKeys.length;
+  let count = findResult.group.symmetricKeys.length;
 
   await rclient.hsetAsync("sys:ept", "group_member_cnt", count);
 
@@ -456,7 +456,7 @@ process.on('uncaughtException',(err)=>{
     type: 'FIREWALLA.KICKSTART.exception',
     msg: err.message,
     stack: err.stack,
-    err: JSON.stringify(err)
+    err: err
   });
   setTimeout(()=>{
     cp.execSync("touch /home/pi/.firewalla/managed_reboot")
@@ -473,6 +473,6 @@ process.on('unhandledRejection', (reason, p)=>{
     type: 'FIREWALLA.KICKSTART.unhandledRejection',
     msg: msg,
     stack: reason.stack,
-    err: JSON.stringify(reason)
+    err: reason
   });
 });

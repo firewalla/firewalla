@@ -81,6 +81,16 @@ async function run0() {
   const isModeConfigured = await mode.isModeConfigured();
   await sysManager.waitTillInitialized();
 
+  if (platform.isFireRouterManaged()) {
+    const fwReleaseType = firewalla.getReleaseType();
+    const frReleaseType = await fireRouter.getReleaseType();
+    log.info(`Current firerouter release type: ${frReleaseType}. Current firewalla release type: ${fwReleaseType}`);
+    if (fwReleaseType && fwReleaseType !== "unknown" && fwReleaseType !== frReleaseType) {
+      log.info(`firerouter release type will be switched to ${fwReleaseType}`);
+      await fireRouter.switchBranch(fwReleaseType);
+    }
+  }
+
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
       isModeConfigured &&
@@ -129,7 +139,7 @@ process.on('uncaughtException',(err)=>{
     type: 'FIREWALLA.MAIN.exception',
     msg: err.message,
     stack: err.stack,
-    err: JSON.stringify(err)
+    err: err
   });
   setTimeout(()=>{
     try {
@@ -149,7 +159,7 @@ process.on('unhandledRejection', (reason, p)=>{
     type: 'FIREWALLA.MAIN.unhandledRejection',
     msg: msg,
     stack: reason.stack,
-    err: JSON.stringify(reason)
+    err: reason
   });
 });
 

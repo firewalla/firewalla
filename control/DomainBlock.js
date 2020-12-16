@@ -265,17 +265,20 @@ class DomainBlock {
   }
 
   async blockCategory(category, options) {
-    const domains = await this.getCategoryDomains(category);
-    await dnsmasq.addPolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
+    if (!options.category)
+      options.category = category;
+    await dnsmasq.addPolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
 
   async unblockCategory(category, options) {
-    const domains = await this.getCategoryDomains(category);
-    await dnsmasq.removePolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
+    if (!options.category)
+      options.category = category;
+    await dnsmasq.removePolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
 
+  // this function updates category domain mappings in dnsmasq configurations
   async updateCategoryBlock(category) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
