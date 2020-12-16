@@ -24,11 +24,11 @@ err(){
 }
 
 get_eths() {
-    ls -l /sys/class/net | awk '/pci/ {print $9}'
+    ls -l /sys/class/net | awk '/^l/ && !/virtual/ {print $9}'
 }
 
 logrun() {
-    echo "> $@"
+    ${DEBUG:-false} && echo "> $@"
     rc=$(eval "$@")
 }
 
@@ -112,6 +112,18 @@ calc_metrics() {
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
+
+LOCK_FILE=/var/lock/network_metrics.lock
+if [[ -e $LOCK_FILE ]] && kill -0 $(cat $LOCK_FILE)
+then
+    err "Another instance of $CMD is already running, abort"
+    exit 1
+else
+    rm -f $LOCK_FILE
+    echo $$ >$LOCK_FILE
+fi
+
+trap "{ rm -f $LOCK_FILE; }" INT TERM
 
 # start recording raw data
 for ethx in $(get_eths)

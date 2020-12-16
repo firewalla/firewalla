@@ -105,6 +105,7 @@ Promise.promisifyAll(fs);
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
 
@@ -282,8 +283,8 @@ module.exports = class HostManager {
     }
 
     json.updateTime = Date.now();
-    if (sysManager.sshPassword && f.isApi()) {
-      json.ssh = sysManager.sshPassword;
+    if (sysManager.mySSHPassword() && f.isApi()) {
+      json.ssh = sysManager.mySSHPassword();
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
       json.lastscan = sysManager.sysinfo.oper.LastScan;
@@ -729,6 +730,7 @@ module.exports = class HostManager {
       this.getCloudURL(json),
       this.networkConfig(json, true),
       this.networkProfilesForInit(json),
+      this.networkMetrics(json),
     ]
 
     await this.basicDataForInit(json, {});
@@ -950,6 +952,23 @@ module.exports = class HostManager {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
+  async networkMetrics(json) {
+    try {
+      const config = FireRouter.getConfig();
+      const ethxs =  Object.keys(config.interface.phy);
+      let nm = {};
+      await Promise.all(ethxs.map( async (ethx) => {
+          nm[ethx] = nm[ethx] || {};
+          nm[ethx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:rx`);
+          nm[ethx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:tx`);
+      }));
+      json.networkMetrics = nm;
+    } catch (err) {
+      log.error("failed to get network metrics from redis: ", err);
+      json.networkMetrics = {};
+    }
+  }
+
   async vpnProfilesForInit(json) {
     await VPNProfileManager.refreshVPNProfiles();
     json.vpnProfiles = await VPNProfileManager.toJson();
@@ -995,6 +1014,7 @@ module.exports = class HostManager {
           this.getDataUsagePlan(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
+          this.networkMetrics(json),
           this.vpnProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
