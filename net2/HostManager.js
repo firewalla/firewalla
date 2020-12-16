@@ -1034,8 +1034,7 @@ module.exports = class HostManager {
           this.tagsForInit(json),
           this.btMacForInit(json),
           this.loadStats(json),
-          this.ovpnClientProfilesForInit(json),
-          this.getCpuUsage(json)
+          this.ovpnClientProfilesForInit(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};
