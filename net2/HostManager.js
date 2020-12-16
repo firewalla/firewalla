@@ -731,6 +731,7 @@ module.exports = class HostManager {
       this.networkConfig(json, true),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
+      this.getCpuUsage(json),
     ]
 
     await this.basicDataForInit(json, {});
@@ -967,6 +968,20 @@ module.exports = class HostManager {
       log.error("failed to get network metrics from redis: ", err);
       json.networkMetrics = {};
     }
+  }
+
+  async getCpuUsage(json) {
+    let result = {};
+    try{
+      const psOutput = await exec("ps -e -o %cpu=,cmd= | awk '$2~/Fire[AM]/ {print $0}'");
+      psOutput.stdout.match(/[^\n]+/g).forEach( line => {
+        const columns = line.match(/[^ ]+/g);
+        result[columns[1]] = columns[0];
+      })
+    } catch(err) {
+      log.error("failed to get CPU usage with ps: ", err);
+    }
+    json.cpuUsage = result;
   }
 
   async vpnProfilesForInit(json) {
