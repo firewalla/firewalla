@@ -283,8 +283,8 @@ module.exports = class HostManager {
     }
 
     json.updateTime = Date.now();
-    if (sysManager.sshPassword && f.isApi()) {
-      json.ssh = sysManager.sshPassword;
+    if (sysManager.mySSHPassword() && f.isApi()) {
+      json.ssh = sysManager.mySSHPassword();
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
       json.lastscan = sysManager.sysinfo.oper.LastScan;

@@ -245,6 +245,12 @@ class SysManager {
 
       ssh.getPassword((err, password) => {
         this.setSSHPassword(password);
+        if (f.isMain() && password && password.length > 0) {
+          // set back password during initialization, some platform may flush the old ssh password due to ramfs, e.g., gold
+          ssh.resetPasswordAsync(password).catch((err) => {
+            log.error("Failed to set back SSH password during initialization", err.message);
+          })
+        }
       });
     }, 2000);
   }
