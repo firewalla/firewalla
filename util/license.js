@@ -44,21 +44,8 @@ function getLicenseSync() {
     return jsonfile.readFileSync(licensePath)
   } catch (err) {
     log.error(`Failed to read license from ${licensePath}, ERROR: ${err}`);
-    return getLegacyLicense();
-  }
-}
-
-function getLegacyLicense() {
-  if (!fs.existsSync(path)) {
     return null;
   }
-  let license = fs.readFileSync(path, 'utf-8');
-  if (license == null) {
-    return null;
-  }
-  let licenseobj = JSON.parse(license);
-  license = licenseobj.DATA;
-  return licenseobj;
 }
 
 function getLicenseLicense() {
