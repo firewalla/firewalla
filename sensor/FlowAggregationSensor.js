@@ -20,7 +20,7 @@ const util = require('util');
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const flowTool = require('../net2/FlowTool')();
+const flowTool = require('../net2/FlowTool');
 const FlowAggrTool = require('../net2/FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 

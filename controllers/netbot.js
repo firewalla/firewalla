@@ -105,7 +105,8 @@ const fireWeb = require('../mgmt/FireWeb.js');
 
 const f = require('../net2/Firewalla.js');
 
-const flowTool = require('../net2/FlowTool')();
+const flowTool = require('../net2/FlowTool');
+const auditTool = require('../net2/AuditTool');
 
 const i18n = require('../util/i18n');
 
@@ -1304,6 +1305,43 @@ class netBot extends ControllerBot {
 
   }
 
+  async checkLogQueryArgs(msg) {
+    const options = Object.assign({}, msg.data);
+
+    if (hostTool.isMacAddress(msg.target)) {
+      const host = await this.hostManager.getHostAsync(msg.target);
+      if (!host || !host.o.mac) {
+        let error = new Error("Invalid Host");
+        error.code = 404;
+        throw error;
+      }
+      options.mac = host.o.mac
+      return options
+    }
+
+    if (msg.data.type == 'tag') {
+      const tag = this.tagManager.getTagByUid(msg.target);
+      if (!tag) {
+        const err = new Error('Invalid Tag')
+        err.code = 404
+        throw err
+      }
+      options.tag = msg.target;
+      await this.hostManager.getHostsAsync();
+    } else if (msg.data.type == 'intf') {
+      const intf = this.networkProfileManager.getNetworkProfile(msg.target);
+      if (!intf) {
+        const err = new Error('Invalid Interface')
+        err.code = 404
+        throw err
+      }
+      options.intf = msg.target;
+    }
+
+    await this.hostManager.getHostsAsync();
+    return options
+  }
+
   getHandler(gid, msg, appInfo, callback) {
 
     // backward compatible
@@ -1356,25 +1394,9 @@ class netBot extends ControllerBot {
           //  begin/end: time range used to query, will be ommitted when ts is set
           //  type: 'tag' || 'intf' || undefined
 
-          let options = Object.assign({}, msg.data);
+          const options = await this.checkLogQueryArgs(msg)
 
-          if (msg.data.type == 'tag') {
-            options.tag = msg.target;
-            await this.hostManager.getHostsAsync();
-          } else if (msg.data.type == 'intf') {
-            options.intf = msg.target;
-            await this.hostManager.getHostsAsync();
-          } else if (msg.target && msg.target != '0.0.0.0') {
-            let host = await this.hostManager.getHostAsync(msg.target);
-            if (!host || !host.o.mac) {
-              let error = new Error("Invalid Host");
-              error.code = 404;
-              throw error;
-            }
-            options.mac = host.o.mac
-          }
-
-          options.begin = options.begin || options.start;
+          if (options.start && !options.begin) options.begin = options.start;
 
           let flows = await flowTool.prepareRecentFlows({}, options)
           let data = {
@@ -1385,6 +1407,22 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      case "aclAuditLog": // arguments are the same as get flows
+        (async () => {
+
+          const options = await this.checkLogQueryArgs(msg)
+
+          const logs = await auditTool.getAllLogs(options)
+          let data = {
+            count: logs.length,
+            logs,
+            nextTs: logs.length ? logs[logs.length - 1].ts : null
+          }
+          this.simpleTxData(msg, data, null, callback);
+        })().catch(err => {
+          this.simpleTxData(msg, {}, err, callback);
         })
         break;
       case "topFlows":
@@ -2092,20 +2130,6 @@ class netBot extends ControllerBot {
         });
         break;
       }
-      case "aclAuditLog": {
-        (async () => {
-          const mac = hostTool.isMacAddress(msg.target) && msg.target;
-          if (!mac) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "MAC address is not specified in target."}, callback);
-          } else {
-            const records = await this.getACLAuditLogs(mac, value.from, value.to);
-            this.simpleTxData(msg, {records: records}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
-      }
       case "branchUpdateTime": {
         (async () => {
           const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
@@ -2174,44 +2198,6 @@ class netBot extends ControllerBot {
         flows.categoryDetails = flowUtil.unhashIntelFlows(data, hashCache)
       }
     }
-  }
-
-  async getACLAuditLogs(mac, from, to) {
-    if (!mac)
-      return null;
-    const now = Date.now() / 1000;
-    if (!from) {
-      if (!to)
-        to = now;
-      from = to - 900;
-    } else {
-      if (!to) {
-        if (!from)
-          from = now - 900;
-        to = Math.min(now, from + 900);
-      }
-    }
-    const results = await rclient.zrevrangebyscoreAsync(this._getAuditDropKey(mac), to, from, "withscores").catch((err) => {
-      log.error(`Failed to get audit drop log for ${mac} from ${from} to ${to}`, err.message);
-      return [];
-    });
-    const records = [];
-    for (let i = 0; i < results.length; i++) {
-      if (i % 2 === 1) {
-        try {
-          const record = JSON.parse(results[i - 1]);
-          record.timestamp = Math.floor(Number(results[i]));
-          records.push(record);
-        } catch (err) {
-          log.error("Failed to parse JSON", results[i - 1]);
-        }
-      }
-    }
-    return records;
-  }
-
-  _getAuditDropKey(mac) {
-    return `audit:drop:${mac}`;
   }
 
   async flowHandler(msg, type) {

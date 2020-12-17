@@ -24,7 +24,7 @@ const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool()
-const flowTool = require('../net2/FlowTool')()
+const flowTool = require('../net2/FlowTool')
 const flowUtil = require('../net2/FlowUtil')
 const Bone = require('../lib/Bone.js')
 

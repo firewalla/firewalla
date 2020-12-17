@@ -423,7 +423,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
-      await this.regularClean("acl_audit", "audit:drop:*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);

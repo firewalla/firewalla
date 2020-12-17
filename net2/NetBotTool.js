@@ -26,7 +26,7 @@ const hostTool = new HostTool();
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 
-const flowTool = require('./FlowTool.js')();
+const flowTool = require('./FlowTool.js');
 
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();

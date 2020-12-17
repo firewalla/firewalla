@@ -611,7 +611,7 @@ class SysManager {
   isMyIP(ip) {
     if (!ip) return false
     let interfaces = this.getMonitoringInterfaces();
-    return interfaces.map(i => i.ip_address === ip).some(Boolean);
+    return interfaces.some(i => i.ip_address === ip);
   }
 
   isIPv6GloballyConnected() {
@@ -647,7 +647,7 @@ class SysManager {
 
   isMyIP6(ip6) {
     let interfaces = this.getMonitoringInterfaces();
-    return interfaces.map(i => i.ip6_addresses && i.ip6_addresses.includes(ip6)).some(Boolean);
+    return interfaces.some(i => i.ip6_addresses && i.ip6_addresses.includes(ip6));
   }
 
   myIpMask(intf = this.config.monitoringInterface) {

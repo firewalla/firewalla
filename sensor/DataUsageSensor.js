@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC 
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,10 +21,7 @@ const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
-const FlowAggrTool = require('../net2/FlowAggrTool');
-const flowAggrTool = new FlowAggrTool();
-const FlowTool = require('../net2/FlowTool');
-const flowTool = new FlowTool();
+const flowTool = require('../net2/FlowTool');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
