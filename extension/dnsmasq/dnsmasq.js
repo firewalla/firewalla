@@ -1545,11 +1545,11 @@ module.exports = class DNSMASQ {
     try {
       let md5sumNow = '';
       for (const confs of paths) {
-        const stdout = await execAsync(`find ${confs} -type f | xargs cat | sort | md5sum | awk '{print $1}'`).then(r => r.stdout).catch((err) => null);
+        const stdout = await execAsync(`find ${confs} -type f | (while read FILE; do (cat "\${FILE}"; echo); done;) | sort | md5sum | awk '{print $1}'`).then(r => r.stdout).catch((err) => null);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);
-      log.info(`dnsmasq confs md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
+      log.info(`dnsmasq confs ${dnsmasqConfKey} md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
       if (md5sumNow != md5sumBefore) {
         await rclient.setAsync(dnsmasqConfKey, md5sumNow);
         return true;
