@@ -612,9 +612,9 @@ class FlowAggregationSensor extends Sensor {
 
     let flows = [];
     let outgoingFlows = await flowTool.queryFlows(macAddress, "in", begin, end); // in => outgoing
-    flows.push.apply(flows, outgoingFlows);
+    flows = flows.concat(outgoingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
     let incomingFlows = await flowTool.queryFlows(macAddress, "out", begin, end); // out => incoming
-    flows.push.apply(flows, incomingFlows);
+    flows = flows.concat(incomingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
 
     let traffic = this.trafficGroupByDestIP(flows);
     await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
