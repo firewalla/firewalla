@@ -45,6 +45,9 @@ EOS
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-check_speed_python
+branch=$(cd $FIREWALLA_HOME; git branch --show-current)
+test $branch == 'master' || exit 0
+
+check_speed_python || exit 1
 
 exit 0
