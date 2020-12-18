@@ -92,6 +92,7 @@ let Sensor = class {
 
       await this.job();
       if (this.refreshInterval) {
+        if (this.timer) clearInterval(this.timer);
         this.timer = setInterval(async () => {
           return this.job();
         }, this.refreshInterval);

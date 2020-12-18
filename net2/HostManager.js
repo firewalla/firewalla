@@ -588,9 +588,11 @@ module.exports = class HostManager {
           return;
         } else {
           // filters out rules with inactive devices
-          rules = rules.filter(rule => {
-            if (_.isEmpty(rule.scope)) return true;
+          const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
 
+          rules = rules.filter(rule => {
+            if (rule.action == 'screentime') return false;
+            if (_.isEmpty(rule.scope)) return true;
             return rule.scope.some(mac =>
               this.hosts.all.some(host => host.o.mac == mac)
             )
@@ -621,7 +623,7 @@ module.exports = class HostManager {
             })
 
             json.policyRules = rules;
-
+            json.screentimeRules = screentimeRules;
             resolve();
           });
         }
