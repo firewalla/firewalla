@@ -55,6 +55,7 @@ class DomainBlock {
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
   async blockDomain(domain, options) {
     options = options || {}
+    domain = domain && domain.toLowerCase();
     log.info(`Implementing Block on ${domain}`);
 
     await this.syncDomainIPMapping(domain, options)

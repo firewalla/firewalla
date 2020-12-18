@@ -320,7 +320,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const domainRegex = /^[-a-zA-Z0-9\.\*]+?/;
     const ipv4Addresses = elements.filter(e => new Address4(e).isValid());
     const ipv6Addresses = elements.filter(e => new Address6(e).isValid());
-    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && domainRegex.test(e));
+    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && domainRegex.test(e)).map(domain => domain.toLowerCase());
     if (ipv4Addresses.length > 0)
       await this.addIPv4Addresses(category, ipv4Addresses);
     if (ipv6Addresses.length > 0)
@@ -642,6 +642,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     let dd = _.union(domains, defaultDomains)
     dd = _.difference(dd, excludeDomains)
     dd = _.union(dd, includedDomains)
+    dd = dd.map(d => d.toLowerCase());
 
     const previousEffectiveDomains = this.effectiveCategoryDomains[category] || [];
     const removedDomains = previousEffectiveDomains.filter(d => !dd.includes(d));
