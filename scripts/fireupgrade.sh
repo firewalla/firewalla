@@ -28,6 +28,10 @@
 
 : ${SCRIPTS_DIR:=/home/pi/scripts}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+# Cleanup if almost full(discard stdout/stderr to avoid logging failure due to disk full)
+$FIREWALLA_HOME/scripts/clean_log.sh &>/dev/null
+
 MGIT=$(PATH=$SCRIPTS_DIR:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
 [ -s $FIREWALLA_HOME/scripts/firelog ] && FIRELOG=$FIREWALLA_HOME/scripts/firelog || FIRELOG=/usr/bin/logger
