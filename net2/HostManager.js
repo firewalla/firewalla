@@ -955,15 +955,29 @@ module.exports = class HostManager {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
+  async getVPNInterfaces() {
+      let intfs;
+      try {
+          const result = await exec("ls -l /sys/class/net | awk '/vpn_|tun_/ {print $9}'")
+          intfs = result.stdout.split("\n").filter(line => line.length > 0);
+      } catch (err) {
+          log.error("failed to get VPN interfaces: ",err);
+          intfs = [];
+      }
+      return intfs;
+  }
+
   async networkMetrics(json) {
     try {
       const config = FireRouter.getConfig();
       const ethxs =  Object.keys(config.interface.phy);
+      const vpns = await this.getVPNInterfaces();
+      const ifs = [ ...ethxs, ...vpns ];
       let nm = {};
-      await Promise.all(ethxs.map( async (ethx) => {
-          nm[ethx] = nm[ethx] || {};
-          nm[ethx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:rx`);
-          nm[ethx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:tx`);
+      await Promise.all(ifs.map( async (ifx) => {
+          nm[ifx] = nm[ifx] || {};
+          nm[ifx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ifx}:rx`);
+          nm[ifx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ifx}:tx`);
       }));
       json.networkMetrics = nm;
     } catch (err) {
