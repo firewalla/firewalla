@@ -152,8 +152,8 @@ class FlowTool {
     if(!options.no_merge) {
       recentFlows = this._mergeFlows(recentFlows);
     }
-
-    json.flows.recent = recentFlows.slice(0, options.count);
+    recentFlows = recentFlows.slice(0, options.count);
+    json.flows.recent = recentFlows;
 
     return recentFlows
   }
