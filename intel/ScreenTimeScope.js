@@ -51,8 +51,8 @@ class ScreenTimeScope extends Intel {
                 'p.scope.names': names,
                 'p.message': msg // debug purpose
             });
-            return alarm;
         }
+        return alarm;
     }
 }
 
