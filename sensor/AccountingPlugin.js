@@ -40,8 +40,8 @@ class AccountingPlugin extends Sensor {
     }
     
     log.info("Updating data usage for all devices...");
-    const activeCategories = await this.getActiveX('category');
-    const activeApps = await this.getActiveX('app');
+    const activeCategories = await accounting.getAccountList('category');
+    const activeApps = await accounting.getAccountList('app');
     const macs = hostManager.getActiveMACs();
     for(const mac of macs) {
       await tracking.aggr(mac);
@@ -65,20 +65,6 @@ class AccountingPlugin extends Sensor {
     }
 
     log.info("Updating data usage for all devices is complete");
-  }
-  async getActiveX(type){
-    const keyPrefix = `${type}flow`;
-    const keys = await rclient.keysAsync(`${keyPrefix}*`);
-    const macReg = '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})';
-    const result = [];
-    for(const key of keys){
-      // key
-      // categoryflow:mac:games
-      // appflow:mac:wechat
-      const type = key.replace(new RegExp(`${keyPrefix}:${macReg}:`),'');
-      result.push(type);
-    }
-    return _.uniq(result);
   }
 
   async cleanupJob() {
