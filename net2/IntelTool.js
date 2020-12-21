@@ -219,13 +219,13 @@ class IntelTool {
     const hashCache = {}
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
-    hds.push.apply(hds, _ipList);
+    const hashs = hds.concat(_ipList)
     
-    hds.forEach((hash) => {
+    hashs.forEach((hash) => {
       this.updateHashMapping(hashCache, hash, ip)
     })
-
-    const _hList = hds.map((x) => x.slice(1, 3)) // remove the origin domains
+        
+    const _hList = hds.map((x) => x.slice(1, 3)); // remove the origin domains
 
     _ipList.push.apply(_ipList, _hList);
 
