@@ -1022,7 +1022,8 @@ module.exports = class FlowMonitor {
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.from": intelObj.from,
       "p.intf.id": flowObj.intf,
-      "p.tag.ids": flowObj.tags
+      "p.tag.ids": flowObj.tags,
+      "p.originIP": intelObj.originIP
     };
 
     this.updateURLPart(alarmPayload, flowObj);
