@@ -139,14 +139,14 @@ class FlowAggregationSensor extends Sensor {
       const toTime = new Date(flow.ets * 1000).toLocaleString();
 
       if (intel.app) {
-        await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
+        await accounting.record(mac, 'app', intel.app, flow.ts * 1000, flow.ets * 1000);
         if(f.isDevelopmentVersion()) {
           al("app", intel.app, mac, intel.host, destIP, duration, fromTime, toTime);
         }
       }
 
       if (intel.category && !excludedCategories.includes(intel.category)) {
-        await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
+        await accounting.record(mac, 'category', intel.category, flow.ts * 1000, flow.ets * 1000);
         if(f.isDevelopmentVersion()) {
           al("category", intel.category, mac, intel.host, destIP, duration, fromTime, toTime);
         }

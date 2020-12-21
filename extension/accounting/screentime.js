@@ -214,7 +214,6 @@ class ScreenTime {
         }
         return _.uniq(allMacs);
     }
-    // TBD: get app used time
     async getMacsUsedTime(macs, policy, timeFrame) {
         if (!macs || macs.length == 0) return 0;
         const { target, type } = policy;
