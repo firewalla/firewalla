@@ -24,27 +24,31 @@ err(){
 }
 
 get_eths() {
-    ls -l /sys/class/net | awk '/pci/ {print $9}'
+    ls -l /sys/class/net | awk '/^l/ && !/virtual/ {print $9}'
+}
+
+get_vpns() {
+    ls -l /sys/class/net | awk '/vpn_|tun_/ {print $9}'
 }
 
 logrun() {
-    echo "> $@"
+    ${DEBUG:-false} && echo "> $@"
     rc=$(eval "$@")
 }
 
 record_raw_data() {
-    ethx=$1
+    ifx=$1
     while true; do
         # read data from system
-        read rx0 tx0 < <( awk "/$ethx/ {print \$2\" \"\$10}" /proc/net/dev )
+        read rx0 tx0 < <( awk "/$ifx/ {print \$2\" \"\$10}" /proc/net/dev )
         sleep $SAMPLE_DURATION
-        read rx1 tx1 < <( awk "/$ethx/ {print \$2\" \"\$10}" /proc/net/dev )
+        read rx1 tx1 < <( awk "/$ifx/ {print \$2\" \"\$10}" /proc/net/dev )
         ts=$(date +%s)
         let rxd=(rx1-rx0)/SAMPLE_DURATION
         let txd=(tx1-tx0)/SAMPLE_DURATION
         rx0=$rx1; tx0=$tx1
-        logrun redis-cli zadd $KEY_PREFIX_RAW:$ethx:rx $rxd $ts
-        logrun redis-cli zadd $KEY_PREFIX_RAW:$ethx:tx $txd $ts
+        logrun redis-cli zadd $KEY_PREFIX_RAW:$ifx:rx $rxd $ts
+        logrun redis-cli zadd $KEY_PREFIX_RAW:$ifx:tx $txd $ts
         sleep $SAMPLE_INTERVAL
     done
 }
@@ -113,18 +117,30 @@ calc_metrics() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
+LOCK_FILE=/var/lock/network_metrics.lock
+if [[ -e $LOCK_FILE ]] && kill -0 $(cat $LOCK_FILE)
+then
+    err "Another instance of $CMD is already running, abort"
+    exit 1
+else
+    rm -f $LOCK_FILE
+    echo $$ >$LOCK_FILE
+fi
+
+trap "{ rm -f $LOCK_FILE; }" INT TERM
+
 # start recording raw data
-for ethx in $(get_eths)
+for ifx in $(get_eths) $(get_vpns)
 do
-    record_raw_data $ethx &
+    record_raw_data $ifx &
 done
 
 # calculate stat data
-for ethx in $(get_eths)
+for ifx in $(get_eths) $(get_vpns)
 do
     for rt in rx tx
     do
-        calc_metrics $ethx $rt &
+        calc_metrics $ifx $rt &
     done
 done
 

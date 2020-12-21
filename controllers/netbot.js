@@ -3214,13 +3214,14 @@ class netBot extends ControllerBot {
       case "addIncludeDomain": {
         (async () => {
           const category = value.category
-          const domain = value.domain
+          let domain = value.domain
           const regex = /^[-a-zA-Z0-9\.\*]+?/;
           if (!regex.test(domain)) {
             this.simpleTxData(msg, {}, { code: 400, msg: "Invalid domain." }, callback);
             return;
           }
 
+          domain = domain.toLowerCase();
           await categoryUpdater.addIncludedDomain(category, domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DOMAIN",
@@ -3256,7 +3257,8 @@ class netBot extends ControllerBot {
       case "addExcludeDomain": {
         (async () => {
           const category = value.category
-          const domain = value.domain
+          let domain = value.domain
+          domain = domain.toLowerCase();
           await categoryUpdater.addExcludedDomain(category, domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DOMAIN",

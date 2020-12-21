@@ -753,14 +753,14 @@ module.exports = class {
     }
 
     if (orig_ip_bytes && orig_bytes &&
-      orig_ip_bytes > 1000 && orig_bytes > 1000 &&
+      (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
       (orig_ip_bytes / orig_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
     }
 
     if (resp_ip_bytes && resp_bytes &&
-      resp_ip_bytes > 1000 && resp_bytes > 1000 &&
+      (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
       (resp_ip_bytes / resp_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
@@ -1375,7 +1375,7 @@ module.exports = class {
   /*
   {"ts":1506313273.469781,"uid":"CX5UTb3cZi0zJdeQqe","id.orig_h":"192.168.2.191","id.orig_p":57334,"id.resp_h":"45.57.26.133","id.resp_p":443,"version":"TLSv12","cipher":"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256","server_name":"ipv4_1-lagg0-c004.1.sjc005.ix.nflxvideo.net","resumed":true,"established":true}
   */
-  processSslData(data) {
+  async processSslData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -1400,10 +1400,11 @@ module.exports = class {
         log.debug("SSL:CERT_ID ", cert_id, subject, dst);
       }
 
-      if (subject != null && dst != null) {
-        let xobj = {
-          'subject': subject
-        };
+      if ((subject != null || dsthost != null) && dst != null) {
+        let xobj = {};
+        if (subject != null) {
+          xobj['subject'] = subject;
+        }
         if (dsthost != null) {
           xobj['server_name'] = dsthost;
         }
@@ -1468,7 +1469,8 @@ module.exports = class {
       this.addAppMap(appCacheObj.uid, appCacheObj);
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
-        dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
+        await dnsTool.addReverseDns(obj.server_name, [dst]);
+        await dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
       }
     } catch (e) {
       log.error("SSL:Error Unable to save", e, e.stack, data);

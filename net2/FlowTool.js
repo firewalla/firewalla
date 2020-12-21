@@ -122,8 +122,8 @@ class FlowTool extends LogQuery {
     // actually ordering by ets here
     recentFlows = _.orderBy(recentFlows, 'ts', options.asc ? 'asc' : 'desc');
     recentFlows = this.mergeLogs(recentFlows, options);
-
-    json.flows.recent = recentFlows.slice(0, options.count);
+    recentFlows = recentFlows.slice(0, options.count);
+    json.flows.recent = recentFlows;
 
     return json.flows.recent
   }

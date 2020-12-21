@@ -32,6 +32,7 @@
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
     "alarm.dual_wan.cooldown": 60,
+    "alarm.alarm_screen_time.cooldown": 86400,
     "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
@@ -98,7 +99,8 @@
     "TransferContextIntel",
     "MonkeyIntel",
     "IntfInfoIntel",
-    "TagsInfoIntel"
+    "TagsInfoIntel",
+    "ScreenTimeScope"
   ],
   "sensors": {
     "DHCPSensor": {},
@@ -716,7 +718,8 @@
     "clash": false,
     "single_wan_conn_check": false,
     "accounting": true,
-    "event_schedule": true
+    "event_schedule": true,
+    "network_metrics": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -139,14 +139,14 @@ class FlowAggregationSensor extends Sensor {
       const toTime = new Date(flow.ets * 1000).toLocaleString();
 
       if (intel.app) {
-        await accounting.record(mac, intel.app, flow.ts * 1000, flow.ets * 1000);
+        await accounting.record(mac, 'app', intel.app, flow.ts * 1000, flow.ets * 1000);
         if(f.isDevelopmentVersion()) {
           al("app", intel.app, mac, intel.host, destIP, duration, fromTime, toTime);
         }
       }
 
       if (intel.category && !excludedCategories.includes(intel.category)) {
-        await accounting.record(mac, intel.category, flow.ts * 1000, flow.ets * 1000);
+        await accounting.record(mac, 'category', intel.category, flow.ts * 1000, flow.ets * 1000);
         if(f.isDevelopmentVersion()) {
           al("category", intel.category, mac, intel.host, destIP, duration, fromTime, toTime);
         }
@@ -612,9 +612,9 @@ class FlowAggregationSensor extends Sensor {
 
     let flows = [];
     let outgoingFlows = await flowTool.queryFlows(macAddress, "in", begin, end); // in => outgoing
-    flows.push.apply(flows, outgoingFlows);
+    flows = flows.concat(outgoingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
     let incomingFlows = await flowTool.queryFlows(macAddress, "out", begin, end); // out => incoming
-    flows.push.apply(flows, incomingFlows);
+    flows = flows.concat(incomingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
 
     let traffic = this.trafficGroupByDestIP(flows);
     await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);

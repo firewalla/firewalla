@@ -78,8 +78,6 @@ router.get('/:host',
                        flowTool.prepareRecentFlows(jsonObj, options),
                        netBotTool.prepareTopUploadFlows(jsonObj, options),
                        netBotTool.prepareTopDownloadFlows(jsonObj, options),
-                       netBotTool.prepareAppActivityFlows(jsonObj, options),
-                       netBotTool.prepareCategoryActivityFlows(jsonObj, options),
                        netBotTool.prepareDetailedFlows(jsonObj, 'app', options),
                        netBotTool.prepareDetailedFlows(jsonObj, 'category', options),
                    ]).then(() => {

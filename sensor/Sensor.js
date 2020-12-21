@@ -122,6 +122,7 @@ let Sensor = class {
         log.error(`Failed to run job of ${featureName}`, err)
       }
       if (this.refreshInterval) {
+        if (this.timer) clearInterval(this.timer);
         this.timer = setInterval(async () => {
           try {
             await this.job();

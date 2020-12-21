@@ -104,6 +104,7 @@ Promise.promisifyAll(fs);
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
 
@@ -281,8 +282,8 @@ module.exports = class HostManager {
     }
 
     json.updateTime = Date.now();
-    if (sysManager.sshPassword && f.isApi()) {
-      json.ssh = sysManager.sshPassword;
+    if (sysManager.mySSHPassword() && f.isApi()) {
+      json.ssh = sysManager.mySSHPassword();
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
       json.lastscan = sysManager.sysinfo.oper.LastScan;
@@ -586,9 +587,11 @@ module.exports = class HostManager {
           return;
         } else {
           // filters out rules with inactive devices
-          rules = rules.filter(rule => {
-            if (_.isEmpty(rule.scope)) return true;
+          const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
 
+          rules = rules.filter(rule => {
+            if (rule.action == 'screentime') return false;
+            if (_.isEmpty(rule.scope)) return true;
             return rule.scope.some(mac =>
               this.hosts.all.some(host => host.o.mac == mac)
             )
@@ -619,7 +622,7 @@ module.exports = class HostManager {
             })
 
             json.policyRules = rules;
-
+            json.screentimeRules = screentimeRules;
             resolve();
           });
         }
@@ -728,6 +731,8 @@ module.exports = class HostManager {
       this.getCloudURL(json),
       this.networkConfig(json, true),
       this.networkProfilesForInit(json),
+      this.networkMetrics(json),
+      this.getCpuUsage(json),
     ]
 
     await this.basicDataForInit(json, {});
@@ -949,6 +954,51 @@ module.exports = class HostManager {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
+  async getVPNInterfaces() {
+      let intfs;
+      try {
+          const result = await exec("ls -l /sys/class/net | awk '/vpn_|tun_/ {print $9}'")
+          intfs = result.stdout.split("\n").filter(line => line.length > 0);
+      } catch (err) {
+          log.error("failed to get VPN interfaces: ",err);
+          intfs = [];
+      }
+      return intfs;
+  }
+
+  async networkMetrics(json) {
+    try {
+      const config = FireRouter.getConfig();
+      const ethxs =  Object.keys(config.interface.phy);
+      const vpns = await this.getVPNInterfaces();
+      const ifs = [ ...ethxs, ...vpns ];
+      let nm = {};
+      await Promise.all(ifs.map( async (ifx) => {
+          nm[ifx] = nm[ifx] || {};
+          nm[ifx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ifx}:rx`);
+          nm[ifx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ifx}:tx`);
+      }));
+      json.networkMetrics = nm;
+    } catch (err) {
+      log.error("failed to get network metrics from redis: ", err);
+      json.networkMetrics = {};
+    }
+  }
+
+  async getCpuUsage(json) {
+    let result = {};
+    try{
+      const psOutput = await exec("ps -e -o %cpu=,cmd= | awk '$2~/Fire[AM]/ {print $0}'");
+      psOutput.stdout.match(/[^\n]+/g).forEach( line => {
+        const columns = line.match(/[^ ]+/g);
+        result[columns[1]] = columns[0];
+      })
+    } catch(err) {
+      log.error("failed to get CPU usage with ps: ", err);
+    }
+    json.cpuUsage = result;
+  }
+
   async vpnProfilesForInit(json) {
     await VPNProfileManager.refreshVPNProfiles();
     json.vpnProfiles = await VPNProfileManager.toJson();
@@ -994,6 +1044,7 @@ module.exports = class HostManager {
           this.getDataUsagePlan(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
+          this.networkMetrics(json),
           this.vpnProfilesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
