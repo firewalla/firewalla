@@ -1030,8 +1030,10 @@ module.exports = class FlowMonitor {
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
     if (intelObj.isOriginIPIP) {
       alarm['p.alarm.becauseof'] = 'ip';
+    } else if(intelObj.isOriginIPAPattern){
+      alarm['p.alarm.becauseof'] = 'subdomain';
     } else {
-      alarm['p.alarm.becauseof'] = 'domain';
+      alarm['p.alarm.becauseof'] = 'fulldomain';
     }
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
