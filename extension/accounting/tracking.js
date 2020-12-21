@@ -75,7 +75,7 @@ class Tracking {
     let beginBucket = Math.floor(begin / this.bucketInterval);
     let endBucket = Math.floor(end / this.bucketInterval);
     if(endBucket - beginBucket > this.maxBuckets || endBucket < beginBucket) {
-      log.info("Invalid bucket setup, skipped:", beginBucket, endBucket);
+      log.debug("Invalid bucket setup, skipped:", beginBucket, endBucket);
       return [];
     }
     return [beginBucket, endBucket];
