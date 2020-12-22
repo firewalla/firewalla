@@ -12,10 +12,10 @@
 CMD=$(basename $0)
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-SAMPLE_TYPES='ping dns http'
+: ${SAMPLE_TYPES:='ping dns http'}
 : ${PING_SAMPLE_COUNT:=20}         # number of samples to record for each sample period
 : ${PING_SAMPLE_PERIOD:=300}       # every number of seconds to sample at
-：${PING_TARGETS:='1.1.1.1 9.9.9.9'}
+: ${PING_TARGETS:='1.1.1.1 9.9.9.9'}
 : ${DNS_SAMPLE_COUNT:=5}         # number of samples to record for each sample period
 : ${DNS_SAMPLE_PERIOD:=180}       # every number of seconds to sample at
 : ${DNS_TARGETS:='1.1.1.1 8.8.8.8'}
@@ -108,7 +108,7 @@ sample_http() {
     for ht in $HTTP_TARGETS; do
         data=""
         for ((i=0;i<HTTP_SAMPLE_COUNT;i++)); do
-            data_point=$(curl -m 10 -w '%{time_total}\n' -L "$ht")
+            data_point=$(curl -s -m 10 -w '%{time_total}\n' -L "$ht")
             data="${data} $data_point"
         done
         record_data_with_stats_in_redis http $ht "$data"
@@ -143,19 +143,60 @@ run_sample() {
     done
 }
 
-clean_old_data() {
-    sample_type=$1
-    for sample_target in $PING_TARGETS; do
-        key=$KEY_PREFIX_RAW:${sample_type}:$sample_target
-        redis-cli hgetall $key |\
-        jq  '.|scalars'|\
-        jq -s "map(select(.<$tb_since))[]" |\
-        xargs -I x redis-cli hdel $key x
-    done
+scan_data() {
+    rkey=$1
+    cursor=$2
+    ts=$3
+    redis-cli hscan $rkey $cursor | jq -c . | {
+        read cursor
+        while read hkey; do
+            read hval
+            if [[ -n "$ts" && $ts -gt $hkey ]]; then
+                redis-cli hdel $rkey $hkey &> /dev/null
+            else
+                echo "$hval" | jq -r '.data[]|tonumber?'
+            fi
+        done
+        if [[ $cursor -ne 0 ]]; then
+            scan_data $rkey $cursor
+        fi
+    }
 }
 
 calc_metrics() {
-    loginfo "start calculate metrics ..."
+
+    sample_type=$1
+
+    while true; do
+
+        ts_since=$(date -d "-$EXPIRE_PERIOD" +%s)
+        loginfo "start calculate metrics on $sample_type since $(date -d @$ts_since) ..."
+
+        targets_var="${sample_type^^}_TARGETS"
+        # clean data during calculation
+        for sample_target in ${!targets_var}; do
+            rkey=$KEY_PREFIX_RAW:$sample_type:$sample_target
+            all_data_sorted=$(scan_data $rkey 0 $ts_since | sort -n)
+            test -n "$all_data_sorted" || continue
+            all_min=$(echo "$all_data_sorted"|head -1)
+            all_max=$(echo "$all_data_sorted"|tail -1)
+            all_size=$(echo "$all_data_sorted" | wc -l)
+            if (( all_size%2 == 0 )) ; then
+                let mid1=all_size/2
+                let mid2=all_size/2+1
+                all_median=$(echo "$all_data_sorted" | sed -ne "$mid1,$mid2 p"|awk '{x+=$1;} END{print x/2;}')
+            else
+                let mid=(all_size+1)/2
+                all_median=$(echo "$all_data_sorted"| sed -ne "${mid}p")
+            fi
+            redis-cli hset $KEY_PREFIX_STAT:$sample_type:$sample_target min $all_min
+            redis-cli hset $KEY_PREFIX_STAT:$sample_type:$sample_target max $all_max
+            redis-cli hset $KEY_PREFIX_STAT:$sample_type:$sample_target median $all_median
+        done
+
+        sleep $CALC_INTERVAL
+
+    done
     return 0
 }
 
@@ -181,8 +222,10 @@ for st in $SAMPLE_TYPES; do
 done
 
 # start calculate stats
-calc_metrics &
-PIDS="$PIDS $!"
+for st in $SAMPLE_TYPES; do
+    calc_metrics $st &
+    PIDS="$PIDS $!"
+done
 
 trap "{ rm -f $LOCK_FILE; kill $PIDS; }" INT TERM
 
