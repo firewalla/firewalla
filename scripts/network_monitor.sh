@@ -11,16 +11,24 @@
 
 CMD=$(basename $0)
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-: ${SAMPLE_COUNT:=20}         # number of samples to record for each sample period
-: ${SAMPLE_PERIOD:=300}       # every number of seconds to sample at
+
+SAMPLE_TYPES='ping dns http'
+: ${PING_SAMPLE_COUNT:=20}         # number of samples to record for each sample period
+: ${PING_SAMPLE_PERIOD:=300}       # every number of seconds to sample at
+：${PING_TARGETS:='1.1.1.1 9.9.9.9'}
+: ${DNS_SAMPLE_COUNT:=5}         # number of samples to record for each sample period
+: ${DNS_SAMPLE_PERIOD:=180}       # every number of seconds to sample at
+: ${DNS_TARGETS:='1.1.1.1 8.8.8.8'}
+: ${HTTP_SAMPLE_COUNT:=5}         # number of samples to record for each sample period
+: ${HTTP_SAMPLE_PERIOD:=60}       # every number of seconds to sample at
+: ${HTTP_TARGETS:='https://check.firewalla.com https://google.com/generate_204'}
 : ${CALC_INTERVAL:=300}       # every number of seconds to calculate stats at
-: ${EXPIRE_PERIOD:='7 days'}  # time period for data to expire
+: ${EXPIRE_PERIOD:='3 days'}  # time period for data to expire
 
 KEY_PREFIX=metric:monitor
 KEY_PREFIX_RAW=$KEY_PREFIX:raw
 KEY_PREFIX_STAT=$KEY_PREFIX:stat
 
-PING_TARGETS='1.1.1.1 9.9.9.9'
 
 mylog() {
     echo "$(date): $@"
@@ -43,43 +51,106 @@ logrun() {
     rc=$(eval "$@")
 }
 
-get_bucket_timestamp() {
-    t=$1
-    let t=t-t%SAMPLE_PERIOD
+get_timestamp_bucket() {
+    st=$1
+    t=$2
+    vname="${st^^}_SAMPLE_PERIOD"
+    sp=${!vname}
+    let t=t-t%sp
     echo $t
 }
 
 get_fping_latency() {
-    fping -C${SAMPLE_COUNT} -q -B1 -r1 $PING_TARGETS 2>&1
+    fping -C${PING_SAMPLE_COUNT} -q -B1 -r1 $PING_TARGETS 2>&1
 }
 
-run_sample_once() {
-    ts=$1
-    loginfo "sample once at $ts ..."
+get_stats() {
+    jq '{loss: map(select(.=="-"))|length, min:map(tonumber?)|min, max:map(tonumber?)|max, median: map(tonumber?)|(sort|if length%2==1 then .[length/2|floor] else [.[length/2-1,length/2]]|add/2 end)}'
+}
 
+record_data_with_stats_in_redis() {
+    sample_type=$1
+    sample_target=$2
+    sample_data=$3
+    data_json=$(echo $sample_data | tr ' ' '\n' | jq -R . | jq -s . | jq -cr .)
+    stats_json=$(echo $data_json | get_stats)
+    logdebug "data_json=$data_json"
+    key=$KEY_PREFIX_RAW:${sample_type}:${sample_target}
+    logrun "redis-cli hset $key $ts '{\"data\":$data_json, \"stats\":$stats_json}'"
+}
+
+sample_ping() {
+    ts=$1
+    loginfo "sample PING at $ts ..."
     get_fping_latency |\
-      while read ping_name colon pings; do
-        logdebug "ping_name=$ping_name"
-        logdebug "pings=$pings"
-        key=$KEY_PREFIX_RAW:ping:$ping_name
-        pings_json=$(echo $pings | tr ' ' '\n' | jq -R . | jq -s . | jq -cr .)
-        logdebug "pings_json=$pings_json"
-        stats_json=$(echo $pings_json| jq '{loss: map(select(.=="-"))|length, min:map(tonumber?)|min, max:map(tonumber?)|max, median: map(tonumber?)|(sort|if length%2==1 then .[length/2|floor] else [.[length/2-1,length/2]]|add/2 end)}')
-        logrun "redis-cli hset $key $ts '{\"data\":$pings_json, \"stats\":$stats_json}'"
+      while read ping_target colon pings; do
+        record_data_with_stats_in_redis ping $ping_target "$pings"
       done
 }
 
+sample_dns() {
+    ts=$1
+    loginfo "sample DNS at $ts ..."
+    for dt in $DNS_TARGETS; do
+        data=""
+        for ((i=0;i<DNS_SAMPLE_COUNT;i++)); do
+            data_point=$( /usr/bin/dig @${dt} help.firewalla.com | awk '/Query time:/ {print $4}')
+            data="${data} $data_point"
+        done
+        record_data_with_stats_in_redis dns $dt "$data"
+    done
+
+}
+
+sample_http() {
+    ts=$1
+    loginfo "sample HTTP at $ts ..."
+    for ht in $HTTP_TARGETS; do
+        data=""
+        for ((i=0;i<HTTP_SAMPLE_COUNT;i++)); do
+            data_point=$(curl -m 10 -w '%{time_total}\n' -L "$ht")
+            data="${data} $data_point"
+        done
+        record_data_with_stats_in_redis http $ht "$data"
+    done
+}
+
+run_sample_once() {
+    st=$1
+    ts=$2
+    loginfo "sample $st once at $ts ..."
+    case $st in
+        ping) sample_ping $ts ;;
+        dns) sample_dns $ts ;;
+        http) sample_http $ts ;;
+        *) logerror "unknown sample type $st"; return 1;;
+    esac
+    return 0
+}
+
 run_sample() {
-    loginfo "start sampling ..."
-    time_last=0
+    sample_type=$1
+    loginfo "start sampling ${sample_type} ..."
+    tb_last=0
     while sleep 1; do
-        time_now=$(get_bucket_timestamp $(date +%s))
-        logdebug "time_last: $time_last"
-        logdebug "time_now: $time_now"
-        if (( time_now > time_last )); then
-            run_sample_once $time_now
-            time_last=$time_now
+        tb_now=$(get_timestamp_bucket $sample_type $(date +%s))
+        logdebug "tb_last: $tb_last"
+        logdebug "tb_now: $tb_now"
+        if (( tb_now > tb_last )); then
+            run_sample_once $sample_type $tb_now
+            tb_last=$tb_now
         fi
+    done
+}
+
+clean_old_data() {
+    sample_type=$1
+    for sample_target in $PING_TARGETS; do
+        key=$KEY_PREFIX_RAW:${sample_type}:$sample_target
+        redis-cli hgetall $key |\
+        jq  '.|scalars'|\
+        jq -s "map(select(.<$tb_since))[]" |\
+        xargs -I x redis-cli hdel $key x
     done
 }
 
@@ -104,13 +175,15 @@ fi
 
 
 # start sampling
-run_sample &
-PID_SAMPLE=$!
+for st in $SAMPLE_TYPES; do
+    run_sample $st &
+    PIDS="$PIDS $!"
+done
 
 # start calculate stats
 calc_metrics &
-PID_CALC=$!
+PIDS="$PIDS $!"
 
-trap "{ rm -f $LOCK_FILE; kill $PID_SAMPLE $PID_CALC; }" INT TERM
+trap "{ rm -f $LOCK_FILE; kill $PIDS; }" INT TERM
 
 wait
