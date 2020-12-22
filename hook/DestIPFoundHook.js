@@ -196,9 +196,13 @@ class DestIPFoundHook extends Hook {
 
     const domain = this.getDomain(sslInfo, dnsInfo);
 
-    if(intel.originIP && domain != intel.originIP) {
+    if(intel.originIP && domain != intel.originIP && ip != intel.originIP ) {
       // it's a pattern
       intel.isOriginIPAPattern = true
+    }
+
+    if(intel.originIP && ip === intel.originIP) {
+      intel.isOriginIPIP = true
     }
 
     return intel;

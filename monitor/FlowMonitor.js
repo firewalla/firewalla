@@ -1028,8 +1028,7 @@ module.exports = class FlowMonitor {
     this.updateURLPart(alarmPayload, flowObj);
 
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
-
-
+    alarm['p.alarm.becauseof'] = intelObj.originIP;
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true;
