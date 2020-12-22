@@ -47,56 +47,7 @@ class Policy {
 
     Object.assign(this, raw);
 
-    if (raw.scope) {
-      if (_.isString(raw.scope)) {
-        try {
-          this.scope = JSON.parse(raw.scope)
-        } catch (e) {
-          log.error("Failed to parse policy scope string:", raw.scope, e)
-        }
-      } else if (_.isArray(raw.scope)) {
-        this.scope = raw.scope.slice(0) // clone array to avoide side effects
-      } else {
-        log.error("Unsupported scope", raw.scope)
-      }
-
-      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
-        delete this.scope;
-    }
-
-    if (raw.tag) {
-      if (_.isString(raw.tag)) {
-        try {
-          this.tag = JSON.parse(raw.tag)
-        } catch (e) {
-          log.error("Failed to parse policy tag string:", raw.tag, e)
-        }
-      } else if (_.isArray(raw.tag)) {
-        this.tag = Array.from(raw.tag); // clone array to avoide side effects
-      } else {
-        log.error("Unsupported tag", raw.tag)
-      }
-
-      if (!_.isArray(this.tag) || _.isEmpty(this.tag))
-        delete this.tag;
-    }
-
-    if (raw.vpnProfile) {
-      if (_.isString(raw.vpnProfile)) {
-        try {
-          this.vpnProfile = JSON.parse(raw.vpnProfile)
-        } catch (e) {
-          log.error("Failed to parse policy vpnProfile string:", raw.vpnProfile, e)
-        }
-      } else if (_.isArray(raw.vpnProfile)) {
-        this.vpnProfile = Array.from(raw.vpnProfile); // clone array to avoide side effects
-      } else {
-        log.error("Unsupported vpnProfile", raw.vpnProfile)
-      }
-
-      if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
-        delete this.vpnProfile;
-    }
+    this.parseRedisfyArray(raw);
 
     if (this.scope) {
       // convert vpn profiles in "scope" field to "vpnProfile" field
@@ -253,7 +204,7 @@ class Policy {
     const sysManager = require('../net2/SysManager.js');
     const cronTime = this.cronTime;
     const duration = parseFloat(this.duration); // in seconds
-    const interval = cronParser.parseExpression(cronTime, {tz: sysManager.getTimezone()});
+    const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
     const lastDate = interval.prev().getTime() / 1000;
     log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
 
@@ -431,31 +382,44 @@ class Policy {
     }
   }
 
+  redisfyArray(p) {
+    for (const key of Policy.ARRAR_VALUE_KEYS) {
+      if (p[key]) {
+        if (p[key].length > 0)
+          p[key] = JSON.stringify(p[key]);
+        else
+          delete p[key];
+      }
+    }
+  }
+
+  parseRedisfyArray(raw) {
+    for (const key of Policy.ARRAR_VALUE_KEYS) {
+      if (raw[key]) {
+        if (_.isString(raw[key])) {
+          try {
+            this[key] = JSON.parse(raw[key])
+          } catch (e) {
+            log.error(`Failed to parse policy ${key} string:`, raw[key], e)
+          }
+        } else if (_.isArray(raw[key])) {
+          this[key] = Array.from(raw[key]); // clone array to avoide side effects
+        } else {
+          log.error(`Unsupported ${key}`, raw[key])
+        }
+
+        if (!_.isArray(this[key]) || _.isEmpty(this[key]))
+          delete this[key];
+      }
+    }
+  }
+
   // return a new object ready for redis writing
   redisfy() {
     let p = JSON.parse(JSON.stringify(this))
 
     // convert array to string so that redis can store it as value
-    if (p.scope) {
-      if (p.scope.length > 0)
-        p.scope = JSON.stringify(p.scope);
-      else
-        delete p.scope;
-    }
-
-    if (p.vpnProfile) {
-      if (p.vpnProfile.length > 0)
-        p.vpnProfile = JSON.stringify(p.vpnProfile);
-      else
-        delete p.vpnProfile;
-    }
-
-    if (p.tag) {
-      if (p.tag.length > 0)
-        p.tag = JSON.stringify(p.tag);
-      else
-        delete p.tag;
-    }
+    this.redisfyArray(p);
 
     if (p.expire === "") {
       delete p.expire;
@@ -493,6 +457,7 @@ class Policy {
   }
 }
 
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "vpnProfile", "applyRules"];
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 
