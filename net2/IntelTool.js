@@ -162,16 +162,11 @@ class IntelTool {
     return rclient.delAsync(this.getURLIntelKey(url));
   }
 
-  updateHashMapping(hashCache, hash, ip) {
+  updateHashMapping(hashCache, hash) {
     if(Array.isArray(hash)) {
-      if (hash.length === 2) {
-        const hashedOrigin = hash[1]
-        hashCache[hashedOrigin] = ip
-      } else {
-        const origin = hash[0]
-        const hashedOrigin = hash[2]
-        hashCache[hashedOrigin] = origin
-      }
+      const origin = hash[0]
+      const hashedOrigin = hash[2]
+      hashCache[hashedOrigin] = origin
     }
   }
 
@@ -214,25 +209,24 @@ class IntelTool {
       fd = 'in';
     }
 
-    const _ipList = flowUtil.hashHost(ip) || [];
+    const _ipList = flowUtil.hashHost(ip, { keepOriginal: true }) || [];
 
     const hashCache = {}
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
-    const hashs = hds.concat(_ipList)
+    _ipList.push.apply(_ipList, hds);
     
-    hashs.forEach((hash) => {
-      this.updateHashMapping(hashCache, hash, ip)
+    _ipList.forEach((hash) => {
+      this.updateHashMapping(hashCache, hash)
     })
-        
-    const _hList = hds.map((x) => x.slice(1, 3)); // remove the origin domains
 
-    _ipList.push.apply(_ipList, _hList);
+    const _ips = _ipList.map((x) => x.slice(1, 3)); // remove the origin domains
+    const _hList = hds.map((x) => x.slice(1, 3));
 
     const _aList = flowUtil.hashApp(domain);
 
     const flowList = [{
-      _iplist: _ipList,
+      _iplist: _ips,
       _hlist: _hList,
       _alist: _aList,
       flow: { fd }

@@ -46,9 +46,13 @@ class DeviceOfflineSensor extends Sensor {
     hostEntries.forEach(async (host) => {
       if (host) {
         let customizedOfflineIdle;
+        let deviceOffline;
         const policy = await hostTool.loadDevicePolicyByMAC(host.mac);
-        if (policy && policy["customizedOfflineIdle"]) {
-          customizedOfflineIdle = Number(policy["customizedOfflineIdle"]);
+        if (policy && policy["device_offline"]) {
+          deviceOffline = JSON.parse(policy["device_offline"]);
+        }
+        if (deviceOffline && deviceOffline.idle) {
+          customizedOfflineIdle = deviceOffline.idle;
         } else {
           customizedOfflineIdle = this.idle;
         }

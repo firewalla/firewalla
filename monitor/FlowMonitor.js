@@ -1022,20 +1022,13 @@ module.exports = class FlowMonitor {
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.from": intelObj.from,
       "p.intf.id": flowObj.intf,
-      "p.tag.ids": flowObj.tags,
-      "p.originIP": intelObj.originIP
+      "p.tag.ids": flowObj.tags
     };
 
     this.updateURLPart(alarmPayload, flowObj);
 
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
-    if (intelObj.isOriginIPIP) {
-      alarm['p.alarm.becauseof'] = 'ip';
-    } else if(intelObj.isOriginIPAPattern){
-      alarm['p.alarm.becauseof'] = 'subdomain';
-    } else {
-      alarm['p.alarm.becauseof'] = 'fulldomain';
-    }
+    alarm['p.alarm.becauseof'] = intelObj.originIP;
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true;
