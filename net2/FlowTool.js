@@ -259,7 +259,7 @@ class FlowTool {
     } else {
       allMacs = await hostTool.getAllMACs();
       if (_.isArray(options.macs))
-        allMacs = allMacs.concat(options.macs);
+        allMacs = _.uniq(allMacs.concat(options.macs));
     }
 
     const allFlows = [];
