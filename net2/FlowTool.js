@@ -114,18 +114,19 @@ class FlowTool extends LogQuery {
     if (options.direction) {
       recentFlows = await this.getAllLogs(options)
     } else {
-      const outgoing = await this.getAllRecentOutgoingConnections(options)
-      const incoming = await this.getAllRecentIncomingConnections(options)
-      recentFlows = [].concat(outgoing,incoming);
+      const outgoing = await this.getAllLogs(Object.assign({direction: 'in'}, options))
+      while (outgoing.length) recentFlows.push(outgoing.shift());
+      const incoming = await this.getAllLogs(Object.assign({direction: 'out'}, options))
+      while (incoming.length) recentFlows.push(incoming.shift());
     }
 
     // actually ordering by ets here
     recentFlows = _.orderBy(recentFlows, 'ts', options.asc ? 'asc' : 'desc');
     recentFlows = this.mergeLogs(recentFlows, options);
     recentFlows = recentFlows.slice(0, options.count);
-    json.flows.recent = recentFlows;
 
-    return json.flows.recent
+    json.flows.recent = recentFlows;
+    return recentFlows
   }
 
   // convert flow json to a simplified json format that's more readable by app
@@ -167,14 +168,6 @@ class FlowTool extends LogQuery {
     }
 
     return f;
-  }
-
-  getAllRecentOutgoingConnections(options) {
-    return this.getAllLogs(Object.assign({direction: "in"}, options))
-  }
-
-  getAllRecentIncomingConnections(options) {
-    return this.getAllLogs(Object.assign({direction: "out"}, options))
   }
 
   _aggregateTransferBy10Min(results) {
@@ -290,11 +283,11 @@ class FlowTool extends LogQuery {
   }
 
   queryFlows(mac, type, begin, end) {
-    let key = this.getLogKey(mac, type);
+    let key = this.getLogKey(mac, {direction: type});
 
     return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
       .then((flowStrings) => {
-        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this._isFlowValid(x));
+        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this.isLogValid(x));
       })
   }
 
@@ -323,19 +316,6 @@ class FlowTool extends LogQuery {
       return flow.ob;
     } else {
       return flow.rb;
-    }
-  }
-  getTrafficPort(flow) {
-    let port;
-    if(flow.fd == "out"){
-      port = flow.sp
-    }else{
-      port = flow.dp
-    }
-    if(Array.isArray(port)){
-      return port
-    }else{
-      return [port]
     }
   }
 }

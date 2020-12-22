@@ -342,7 +342,7 @@ module.exports = class {
       if (host.ipv4Addr || host.ipv6Addr) {
         const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP4(host.ipv4Addr) : sysManager.getInterfaceViaIP6(host.ipv6Addr);
         if (!intfInfo || !intfInfo.uuid) {
-          log.error(`Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
+          log.error(`HeartBeat: Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
           continue;
         }
         sem.emitEvent({
@@ -986,7 +986,7 @@ module.exports = class {
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
       } else {
-        log.error(`Unable to find nif uuid, ${intfId}`);
+        log.error(`Conn: Unable to find nif uuid, ${intfId}`);
         intfId = '';
       }
 
@@ -1529,7 +1529,7 @@ module.exports = class {
 
       const intfInfo = sysManager.getInterfaceViaIP4(ip);
       if (!intfInfo || !intfInfo.uuid) {
-        log.error(`Unable to find nif uuid, ${ip}`);
+        log.warn(`KnownHosts: Unable to find nif uuid, ${ip}`);
         return;
       }
 

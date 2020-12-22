@@ -52,23 +52,23 @@ class AuditTool extends LogQuery {
 
   toSimpleFormat(entry) {
     const f = {
+      type: entry.type,
       ts: entry.ets || entry.ts,
       // ets: entry.ets || entry.ts,
-      dir: entry.dir,
-      duration: entry.du,
+      fd: entry.fd,
+      count: entry.ct,
+      protocol: entry.pr
     };
 
-    f.intf = entry.intf;
-    f.tags = entry.tags;
+    // f.intf = entry.intf;
+    // f.tags = entry.tags;
 
-    if(entry.mac) {
-      f.device = entry.mac;
-    }
+    if (entry.du) { f.duration = entry.du }
 
-    f.protocol = entry.pr;
+    if (entry.dn) { f.domain = entry.dn }
 
     try {
-      if(entry.lh === entry.sh) {
+      if (entry.fd === 'in') {
         f.port = Number(entry.dp);
         f.devicePort = Number(entry.sp[0]);
       } else {
@@ -78,7 +78,7 @@ class AuditTool extends LogQuery {
     } catch(err) {
     }
 
-    if(entry.fd === 'in') {
+    if (entry.fd === 'in') {
       f.ip = entry.dh;
       f.deviceIP = entry.sh;
     } else {

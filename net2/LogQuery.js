@@ -87,8 +87,7 @@ class LogQuery {
     return entry
   }
 
-  // get logs across different devices
-  async getAllLogs(options) {
+  checkArguments(options) {
     options = options || {}
     if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
     if (!options.asc) options.asc = false;
@@ -100,6 +99,14 @@ class LogQuery {
         (options.end || options.ts + MAX_RECENT_INTERVAL) :
         (options.begin || options.ts - MAX_RECENT_INTERVAL)
     }
+
+    return options
+  }
+
+  // get logs across different devices
+  async getAllLogs(options) {
+
+    options = this.checkArguments(options)
 
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
@@ -122,11 +129,13 @@ class LogQuery {
 
       const logs = await this.getDeviceLogs(mac, optionsCopy);
 
-      allLogs.push.apply(allLogs, logs);
+      while (logs.length) allLogs.push(logs.shift());
     }));
 
     allLogs = _.orderBy(allLogs, 'ts', options.asc ? 'asc' : 'desc');
     allLogs = this.mergeLogs(allLogs, options);
+
+    allLogs = await this.enrichWithIntel(allLogs);
 
     return allLogs;
   }
@@ -163,6 +172,8 @@ class LogQuery {
   }
 
   async getDeviceLogs(target, options) {
+    options = this.checkArguments(options)
+
     const key = this.getLogKey(target, options);
 
     const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
@@ -182,9 +193,7 @@ class LogQuery {
         return s;
       });
 
-    let enrichedLogs = await this.enrichWithIntel(simpleLogs);
-
-    return _.orderBy(enrichedLogs, 'ts', options.asc ? 'asc' : 'desc')
+    return simpleLogs
   }
 }
 

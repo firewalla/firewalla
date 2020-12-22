@@ -1295,7 +1295,7 @@ module.exports = class HostManager {
         o.ipv4Addr = o.ipv4;
       }
       if (o.ipv4Addr == null) {
-        log.warn("getHosts: no ipv4", o.uid, o.mac);
+        log.debug("getHosts: no ipv4", o.uid, o.mac); // probably just offline/inactive
         return;
       }
       if (!sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline) {
