@@ -630,8 +630,14 @@ class DeviceHook extends Hook {
     if (policy && policy[feature] === "true") {
       return true;
     }
-    if(policy && JSON.parse(policy[feature]).state) {
-      return true;
+    if (policy && policy[feature]) {
+      try {
+        if (JSON.parse(policy[feature]).state) {
+          return true;
+        }
+      } catch (e) {
+        log.error("Failed to parse feature value:", feature, policy[feature]);
+      }
     }
     return false; // by default return false, a conservative fallback
   }

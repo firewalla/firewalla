@@ -49,7 +49,11 @@ class DeviceOfflineSensor extends Sensor {
         let deviceOffline;
         const policy = await hostTool.loadDevicePolicyByMAC(host.mac);
         if (policy && policy["device_offline"]) {
-          deviceOffline = JSON.parse(policy["device_offline"]);
+          try {
+            deviceOffline = JSON.parse(policy["device_offline"]);
+          } catch (e) {
+            log.error("Failed to parse device_offline value ", policy["device_offline"]);
+          }
         }
         if (deviceOffline && deviceOffline.idle) {
           customizedOfflineIdle = deviceOffline.idle;
