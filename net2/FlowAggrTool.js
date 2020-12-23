@@ -340,7 +340,6 @@ class FlowAggrTool {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     const destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
     const results = {};
-    const totalPorts = {};
 
     for(let i = 0; i < destAndScores.length; i++) {
       if(i % 2 === 1) {
@@ -349,22 +348,23 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const dest = json.destIP;
+            const dest = json.destIP || json.domain;
             const ports = json.port;
             if(!dest) {
               continue;
             }
             if(results[dest]) {
-              results[dest] += count
+              results[dest].count += count
             } else {
-              results[dest] = count
+              results[dest] = { count }
+              if (json.type) results[dest].type = json.type
             }
 
             if(ports) {
-              if(totalPorts[dest]) {
-                totalPorts[dest].push.apply(totalPorts[dest], ports)
+              if(results[dest].ports) {
+                Array.prototype.push.apply(results[dest].ports, ports)
               } else {
-                totalPorts[dest] = ports
+                results[dest].ports = ports
               }
             }
           } catch(err) {
@@ -375,12 +375,16 @@ class FlowAggrTool {
     }
 
     const array = [];
-    for(const destIP in results) {
-      let ports = totalPorts[destIP] || [];
-      ports = ports.filter((v, i) => {
-        return ports.indexOf(v) === i;
-      })
-      array.push({ip: destIP, count: results[destIP], ports: ports});
+    for(const dest in results) {
+      const result = _.pick(results[dest], 'count', 'type', 'ports')
+      if (result.ports) result.ports = _.uniq(result.ports)
+      if (result.type == 'dns') {
+        result.domain = dest
+      }
+      else {
+        result.ip = dest
+      }
+      array.push(result);
     }
 
     array.sort(function(a, b) {
@@ -400,8 +404,11 @@ class FlowAggrTool {
         let count = destAndScores[i];
         if(payload !== '_' && count !== 0) {
           try {
-            let json = JSON.parse(payload);
-            results.push({ip: json.destIP, device: json.device, count: count,port:json.port});
+            const json = JSON.parse(payload);
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port');
+            flow.count = count
+            if (json.destIP) flow.ip = json.destIP
+            results.push(flow);
           } catch(err) {
             log.error("Failed to parse payload: ", payload);
           }
