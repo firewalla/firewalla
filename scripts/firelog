@@ -13,14 +13,14 @@ do
  esac
 done
 tracelog(){
-    if [[ $(whoami) == "pi" ]]; 
+    if [[ $(whoami) == "pi" ]];
     then
         echo "$(date +'%b %d %H:%M:%S') FIREWALLA:($DEBUG): $MESSAGE" >> /home/pi/logs/firelog.log
     fi
 }
 
-if [[ -e /tmp/FWPRODUCTION ]] 
-then  
+if [[ -e /tmp/FWPRODUCTION ]]
+then
     if [[ "$DEBUG" != "debug" ]]
     then
         /usr/bin/logger "FIREWALLA:($DEBUG): $MESSAGE"
