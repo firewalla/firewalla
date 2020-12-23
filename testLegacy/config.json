@@ -41,7 +41,6 @@
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
-    "DeviceStatusUpdateHook": {},
     "DeviceHook": {}
   },
   "bro": {

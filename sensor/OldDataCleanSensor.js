@@ -69,7 +69,7 @@ class OldDataCleanSensor extends Sensor {
         platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
         break;
     }
-    let expireInterval = (this.config[type] && this.config[type].expires * platform.getRetentionTimeMultiplier()) || 0;
+    let expireInterval = (this.config[type] && this.config[type].expires * platformRetentionTimeMultiplier) || 0;
     if(expireInterval < 0) {
       return null;
     }
@@ -89,7 +89,7 @@ class OldDataCleanSensor extends Sensor {
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
         break;
     }
-    let count = (this.config[type] && this.config[type].count * platform.getRetentionCountMultiplier()) || 10000;
+    let count = (this.config[type] && this.config[type].count * platformRetentionCountMultiplier) || 10000;
     if(count < 0) {
       return null;
     }
@@ -422,7 +422,8 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
-      await this.regularClean("networkConfigHistory", "history:networkConfig*")
+      await this.regularClean("networkConfigHistory", "history:networkConfig*");
+      await this.regularClean("acl_audit", "audit:drop:*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);

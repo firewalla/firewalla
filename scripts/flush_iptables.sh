@@ -16,6 +16,8 @@ mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | gre
 if [[ $(uname -m) == "x86_64" ]]; then
   sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
   sudo iptables -w -t mangle -F FW_PREROUTING
+  sudo iptables -w -t mangle -N FW_FORWARD &> /dev/null
+  sudo iptables -w -t mangle -F FW_FORWARD
   sudo iptables -w -t nat -N FW_PREROUTING &>/dev/null
   sudo iptables -w -t nat -F FW_PREROUTING
   sudo iptables -w -t nat -N FW_POSTROUTING &>/dev/null
@@ -25,6 +27,8 @@ if [[ $(uname -m) == "x86_64" ]]; then
     
   sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
   sudo ip6tables -w -t mangle -F FW_PREROUTING
+  sudo ip6tables -w -t mangle -N FW_FORWARD &>/dev/null
+  sudo ip6tables -w -t mangle -F FW_FORWARD
   sudo ip6tables -w -t nat -N FW_PREROUTING &>/dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING
   sudo ip6tables -w -t nat -N FW_POSTROUTING &>/dev/null
@@ -39,6 +43,7 @@ else
   sudo iptables -w -t nat -F
   sudo iptables -w -t filter -F
   sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
+  sudo iptables -w -t mangle -N FW_FORWARD &>/dev/null
   sudo iptables -w -t nat -N FW_PREROUTING &>/dev/null
   sudo iptables -w -t nat -N FW_POSTROUTING &>/dev/null
   sudo iptables -w -N FW_FORWARD &>/dev/null
@@ -48,6 +53,7 @@ else
   sudo ip6tables -w -t nat -F
   sudo ip6tables -w -t filter -F
   sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
+  sudo ip6tables -w -t mangle -N FW_FORWARD &>/dev/null
   sudo ip6tables -w -t nat -N FW_PREROUTING &>/dev/null
   sudo ip6tables -w -t nat -N FW_POSTROUTING &>/dev/null
   sudo ip6tables -w -N FW_FORWARD &>/dev/null

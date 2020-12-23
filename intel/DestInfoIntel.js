@@ -24,6 +24,11 @@ const intelTool = new IntelTool()
 const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager();
 
+const sysManager = require('../net2/SysManager.js');
+const DNSManager = require('../net2/DNSManager.js');
+const dnsManager = new DNSManager('info');
+const getPreferredName = require('../util/util.js').getPreferredName
+
 function formatBytes(bytes, decimals) {
   if (bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -55,6 +60,21 @@ class DestInfoIntel extends Intel {
     if (!destIP) {
       return alarm;
     }
+    if (sysManager.isLocalIP(destIP)) {
+      try {
+        const result = await dnsManager.resolveLocalHostAsync(destIP);
+        Object.assign(alarm, {
+          "p.dest.name": getPreferredName(result),
+          "p.dest.id": result.mac,
+          "p.dest.mac": result.mac,
+          "p.dest.macVendor": result.macVendor || "Unknown",
+          "p.dest.isLocal": "1"
+        });
+      } catch (err) {
+        log.error("Failed to find host " + destIP + " in database: " + err);
+      }
+      return alarm;
+    }
 
     // intel
     const intel = await intelTool.getIntel(destIP)
@@ -62,23 +82,21 @@ class DestInfoIntel extends Intel {
       alarm["p.dest.app"] = intel.app
     }
 
-    if (intel && intel.category) {
-      // some alarm types are determined by combination of values in intel.category and intel.cs
-      // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
-      switch (alarm["type"]) {
-        case 'ALARM_VIDEO':
-          alarm["p.dest.category"] = 'av';
-          break;
-        case 'ALARM_GAME':
-          alarm["p.dest.category"] = 'games';
-          break;
-        case 'ALARM_PORN':
-          alarm["p.dest.category"] = 'porn';
-          break;
-        default:
-          alarm["p.dest.category"] = intel.category
-      }
-
+    switch (alarm["type"]) {
+      case 'ALARM_VIDEO':
+        alarm["p.dest.category"] = 'av';
+        break;
+      case 'ALARM_GAME':
+        alarm["p.dest.category"] = 'games';
+        break;
+      case 'ALARM_PORN':
+        alarm["p.dest.category"] = 'porn';
+        break;
+      default:
+        // some alarm types are determined by combination of values in intel.category and intel.cs
+        // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
+        if (intel && intel.category)
+          alarm["p.dest.category"] = intel.category;
     }
 
     if (intel && intel.host) {
