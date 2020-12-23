@@ -222,50 +222,26 @@ class FlowAggregationSensor extends Sensor {
 
     flows.forEach((flow) => {
 
-      let destIP = flow.ip;
+      let destIP = flow.type == 'dns' ? flow.domain : flow.ip;
 
       let t = traffic[destIP];
 
-      if (! (destIP in traffic) ) {
-        traffic[destIP] = {upload: 0, download: 0, port:[]};
-        t = traffic[destIP];
-      }
-
-      t.upload += flow.upload;
-      t.download += flow.download;
-      const port = flow.port.toString();//make sure it is string
-      if (!t.port.includes(port)) {
-        t.port.push(port)
-        t.port.sort((a,b)=>{return a-b})
-      }
-    });
-
-    return traffic;
-  }
-
-  auditLogsGroupByType(flows) {
-
-    const traffic = { dns: {}, ip: {} };
-
-    flows.forEach((flow) => {
-
-      const type = flow.type
-      const bucket = traffic[type];
-
-      const target = type == 'dns' ? flow.domain : flow.ip
-      let t = bucket[target];
-
       if (!t) {
-        t = {};
-        t[type] = 0
-        bucket[target] = t
+        t = flow.type ? { count: 0, type: flow.type } : { upload: 0, download: 0 };
+        traffic[destIP] = t;
       }
 
-      t[type] += flow.count;
+      if (flow.type) {
+        t.count += flow.count;
+      } else {
+        t.upload += flow.upload;
+        t.download += flow.download;
+      }
 
-      if (type == 'ip') {
-        const port = String(flow.port);//make sure it is string
+      if (flow.port) {
         if (!t.port) t.port = []
+
+        const port = String(flow.port); //make sure it is string
         if (!t.port.includes(port)) {
           t.port.push(port)
           t.port.sort((a,b)=>{return a-b})
@@ -360,13 +336,18 @@ class FlowAggregationSensor extends Sensor {
     await this.sumViews(options, apps, categories)
   }
 
-  async sumViews(options, apps, categories) {
+  async addFlowsForView(options, apps, categories) {
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
+    await flowAggrTool.addSumFlow("block", options);
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
     await flowAggrTool.addSumFlow("category", options);
     await this.summarizeActivity(options, 'category', categories);
+  }
+
+  async sumViews(options, apps, categories) {
+    await this.addFlowsForView(options, apps, categories)
 
     // aggregate intf
     const intfs = hostManager.getActiveIntfs();
@@ -378,15 +359,10 @@ class FlowAggregationSensor extends Sensor {
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
-
       optionsCopy.intf = intf.intf;
       optionsCopy.macs = intf.macs;
-      await flowAggrTool.addSumFlow("download", optionsCopy);
-      await flowAggrTool.addSumFlow("upload", optionsCopy);
-      await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.summarizeActivity(optionsCopy, 'app', apps); // to filter idle activities if updated
-      await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.summarizeActivity(optionsCopy, 'category', categories);
+
+      await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
     // aggregate tags
@@ -399,15 +375,10 @@ class FlowAggregationSensor extends Sensor {
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
-
       optionsCopy.tag = tag.tag;
       optionsCopy.macs = tag.macs;
-      await flowAggrTool.addSumFlow("download", optionsCopy);
-      await flowAggrTool.addSumFlow("upload", optionsCopy);
-      await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.summarizeActivity(optionsCopy, 'app', apps); // to filter idle activities if updated
-      await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.summarizeActivity(optionsCopy, 'category', categories);
+
+      await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
     // aggregate all
@@ -419,14 +390,9 @@ class FlowAggregationSensor extends Sensor {
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
-
       optionsCopy.mac = mac
-      await flowAggrTool.addSumFlow("download", optionsCopy);
-      await flowAggrTool.addSumFlow("upload", optionsCopy);
-      await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.summarizeActivity(optionsCopy, 'app', apps); // to filter idle activities if updated
-      await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.summarizeActivity(optionsCopy, 'category', categories);
+
+      await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
     const vpnIntf = sysManager.getInterface("tun_fwvpn");
@@ -435,27 +401,17 @@ class FlowAggregationSensor extends Sensor {
       const cns = Object.keys(vpnProfiles);
       // aggregate vpn server interface
       const optionsCopy = JSON.parse(JSON.stringify(options));
-
       optionsCopy.intf = vpnIntf.uuid;
       optionsCopy.macs = cns;
-      await flowAggrTool.addSumFlow("download", optionsCopy);
-      await flowAggrTool.addSumFlow("upload", optionsCopy);
-      await flowAggrTool.addSumFlow("app", optionsCopy);
-      await this.summarizeActivity(optionsCopy, 'app', apps);
-      await flowAggrTool.addSumFlow("category", optionsCopy);
-      await this.summarizeActivity(optionsCopy, 'category', categories);
+
+      await this.addFlowsForView(optionsCopy, apps, categories)
 
       // aggregate vpn profiles using specific namespace
       for (const cn of cns) {
         const optionsCopy = JSON.parse(JSON.stringify(options));
-
         optionsCopy.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
-        await flowAggrTool.addSumFlow("download", optionsCopy);
-        await flowAggrTool.addSumFlow("upload", optionsCopy);
-        await flowAggrTool.addSumFlow("app", optionsCopy);
-        await this.summarizeActivity(optionsCopy, 'app', apps);
-        await flowAggrTool.addSumFlow("category", optionsCopy);
-        await this.summarizeActivity(optionsCopy, 'category', categories);
+
+        await this.addFlowsForView(optionsCopy, apps, categories)
       }
     }
   }
@@ -653,10 +609,8 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
 
     const auditLogs = await auditTool.getDeviceLogs(macAddress, {begin, end});
-    const groupedLogs = this.auditLogsGroupByType(auditLogs);
-    await flowAggrTool.addFlows(macAddress, "ip", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
-    await flowAggrTool.addFlows(macAddress, "dns", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
-    // await flowAggrTool.addFlows(macAddress, "security", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
+    const groupedLogs = this.trafficGroupByDestIP(auditLogs);
+    await flowAggrTool.addFlows(macAddress, "block", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
   }
 
   async getFlow(dimension, type, options) {

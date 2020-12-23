@@ -29,7 +29,6 @@ const MAX_FLOW_PER_SUM = 30000
 const MAX_FLOW_PER_HOUR = 7000
 
 const MIN_AGGR_TRAFFIC = 256
-const MIN_SUM_TRAFFIC = 1024
 
 function toInt(n){ return Math.floor(Number(n)) }
 
@@ -72,21 +71,21 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
-  addAppActivityFlows(mac, interval, ts, traffics, expire) {
-    return this.addXActivityFlows(mac, "app", interval, ts, traffics, expire)
+  addAppActivityFlows(mac, interval, ts, traffic, expire) {
+    return this.addXActivityFlows(mac, "app", interval, ts, traffic, expire)
   }
 
-  addCategoryActivityFlows(mac, interval, ts, traffics, expire) {
-    return this.addXActivityFlows(mac, "category", interval, ts, traffics, expire)
+  addCategoryActivityFlows(mac, interval, ts, traffic, expire) {
+    return this.addXActivityFlows(mac, "category", interval, ts, traffic, expire)
   }
 
-  async addXActivityFlows(mac, x, interval, ts, traffics, expire) {
+  async addXActivityFlows(mac, x, interval, ts, traffic, expire) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
     let key = this.getFlowKey(mac, x, interval, ts);
     let args = [key];
-    for(let t in traffics) {
-      let duration = (traffics[t] && traffics[t]['duration']) || 0;
+    for(let t in traffic) {
+      let duration = (traffic[t] && traffic[t]['duration']) || 0;
       args.push(duration)
 
       let payload = {}
@@ -106,16 +105,16 @@ class FlowAggrTool {
   async trimFlow(mac, trafficDirection, interval, ts) {
     const key = this.getFlowKey(mac, trafficDirection, interval, ts);
 
-    let count = await rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR) // only keep the MAX_FLOW_PER_SUM highest flows
+    let count = await rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR) // only keep the MAX_FLOW_PER_AGGR highest flows
     if(count > 0) {
       log.warn(`${count} flows are trimmed from ${key}`)
     }
   }
 
-  async addFlows(mac, trafficDirection, interval, ts, traffics, expire) {
+  async addFlows(mac, trafficDirection, interval, ts, traffic, expire) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
-    const length = Object.keys(traffics).length // number of dest ips in this aggr flow
+    const length = Object.keys(traffic).length // number of dest ips in this aggr flow
     const key = this.getFlowKey(mac, trafficDirection, interval, ts);
 
     let args = [key];
@@ -128,20 +127,27 @@ class FlowAggrTool {
       }))
     }
 
-    for(let destIP in traffics) {
-      let traffic = traffics[destIP] && traffics[destIP][trafficDirection] || 0;
-      let port = traffics[destIP] && traffics[destIP].port || [];
+    for(let destIP in traffic) {
+      const entry = traffic[destIP]
+      if (!entry) continue
 
-      if(traffic < MIN_AGGR_TRAFFIC) {
+      let t = entry && entry[trafficDirection] || 0;
+
+      if (['upload', 'download'].includes(trafficDirection) && t < MIN_AGGR_TRAFFIC) {
         continue                // skip very small traffic
       }
 
-      args.push(traffic)
-      args.push(JSON.stringify({
+      args.push(t)  // score
+
+      // TODO: mac is already in zset key, remove to save memory
+      const result = {
         device: mac,
         destIP: destIP,
-        port: port
-      }))
+      }
+      if (entry.port) result.port = entry.port
+      if (entry.type) result.type = entry.type
+
+      args.push(JSON.stringify(result))
     }
 
     args.push(0);

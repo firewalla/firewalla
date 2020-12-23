@@ -1409,7 +1409,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback);
         })
         break;
-      case "aclAuditLog": // arguments are the same as get flows
+      case "auditLogs": // arguments are the same as get flows
         (async () => {
 
           const options = await this.checkLogQueryArgs(msg)
@@ -2293,6 +2293,7 @@ class netBot extends ControllerBot {
       flowTool.prepareRecentFlows(jsonobj, options),
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
+      netBotTool.prepareTopFlows(jsonobj, 'block', options),
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
