@@ -578,6 +578,11 @@ module.exports = class HostManager {
       });
   }
 
+  async ruleGroupsForInit(json) {
+    const rgs = policyManager2.getAllRuleGroupMetaData();
+    json.ruleGroups = rgs;
+  }
+
   // what is blocked
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
@@ -1050,7 +1055,8 @@ module.exports = class HostManager {
           this.tagsForInit(json),
           this.btMacForInit(json),
           this.loadStats(json),
-          this.ovpnClientProfilesForInit(json)
+          this.ovpnClientProfilesForInit(json),
+          this.ruleGroupsForInit(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};

@@ -2327,6 +2327,17 @@ class PolicyManager2 {
     const key = this._getRuleGroupRedisKey(uuid);
     await rclient.delAsync(key);
   }
+
+  async getAllRuleGroupMetaData() {
+    const keys = await rclient.keysAsync("rule_group:*");
+    const objs = [];
+    for (key of keys) {
+      const obj = await rclient.hgetAllAsync(key);
+      if (obj)
+        objs.push(obj);
+    }
+    return objs;
+  }
 }
 
 module.exports = PolicyManager2;
