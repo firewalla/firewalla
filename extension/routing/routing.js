@@ -170,7 +170,7 @@ async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 
   }
 }
 
-async function removeRouteFromTable(dest, gateway, intf, tableName, af = 4) {
+async function removeRouteFromTable(dest, gateway, intf, tableName, preference = null, af = 4) {
   let cmd = null;
   dest = dest || "default";
   tableName = tableName || "main";
@@ -182,6 +182,8 @@ async function removeRouteFromTable(dest, gateway, intf, tableName, af = 4) {
     cmd = `${cmd} dev ${intf}`;
   }
   cmd = `${cmd} table ${tableName}`;
+  if (preference)
+    cmd = `${cmd} preference ${preference}`;
   let result = await exec(cmd);
   if (result.stderr !== "") {
     log.error("Failed to remove route from table.", result.stderr);

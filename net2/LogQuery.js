@@ -115,11 +115,19 @@ class LogQuery {
     if (options.mac) {
       allMacs = [ options.mac ]
     } else if (options.intf) {
-      allMacs = hostManager.getIntfMacs(options.intf);
+      if (!_.isArray(options.macs) || options.macs.length === 0) {
+        const HostManager = require("../net2/HostManager.js");
+        const hostManager = new HostManager();
+        allMacs = hostManager.getIntfMacs(options.intf);
+      } else {
+        allMacs = options.macs;
+      }
     } else if (options.tag) {
       allMacs = hostManager.getTagMacs(options.tag);
     } else {
       allMacs = await hostTool.getAllMACs();
+      if (_.isArray(options.macs))
+        allMacs = _.uniq(allMacs.concat(options.macs));
     }
 
     let allLogs = [];

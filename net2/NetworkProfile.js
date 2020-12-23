@@ -39,6 +39,7 @@ const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const pl = require('../platform/PlatformLoader.js');
 const routing = require('../extension/routing/routing.js');
+const iptool = require('ip');
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -447,6 +448,12 @@ class NetworkProfile {
           } else {
             await exec(rule.toCmd('-D')).catch((err) => {});
           }
+          // add subnet to wan_routable table in case it is actually a WAN in DHCP mode, which should be considered as LAN
+          if (this.o.type === "lan" && this.o.gateway && await Mode.isDHCPModeOn()) {
+            const subnet4 = iptool.cidrSubnet(subnet);
+            const prefix = `${subnet4.networkAddress}/${subnet4.subnetMaskLength}`;
+            await routing.addRouteToTable(prefix, null, realIntf, "wan_routable", 100, 4).catch((err) => {});
+          }
         }
       }
       // add to monitored net ipset accordingly
@@ -530,6 +537,10 @@ class NetworkProfile {
         for (const subnet of this.o.ipv4Subnets) {
           const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${subnet}`, null, "src").jmp("MASQUERADE");
           await exec(rule.toCmd('-D')).catch((err) => {});
+          // remove subnet from wan_routable table as a counter-part of createEnv
+          const subnet4 = iptool.cidrSubnet(subnet);
+          const prefix = `${subnet4.networkAddress}/${subnet4.subnetMaskLength}`;
+          await routing.removeRouteFromTable(prefix, null, realIntf, "wan_routable", 100, 4).catch((err) => {});
         }
       }
       // still remove it from monitored net set anyway to keep consistency
