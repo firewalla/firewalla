@@ -127,11 +127,11 @@ class FlowAggrTool {
       }))
     }
 
-    for(let destIP in traffic) {
-      const entry = traffic[destIP]
+    for (const target in traffic) {
+      const entry = traffic[target]
       if (!entry) continue
 
-      let t = entry && entry[trafficDirection] || 0;
+      let t = entry && (entry[trafficDirection] || entry.count) || 0;
 
       if (['upload', 'download'].includes(trafficDirection) && t < MIN_AGGR_TRAFFIC) {
         continue                // skip very small traffic
@@ -141,9 +141,13 @@ class FlowAggrTool {
 
       // TODO: mac is already in zset key, remove to save memory
       const result = {
-        device: mac,
-        destIP: destIP,
+        device: mac
       }
+      if (entry.type == 'dns')
+        result.domain = target
+      else
+        result.destIP = target
+
       if (entry.port) result.port = entry.port
       if (entry.type) result.type = entry.type
 
