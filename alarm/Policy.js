@@ -200,6 +200,8 @@ class Policy {
       this.transferredBytes === policy.transferredBytes &&
       this.transferredPackets === policy.transferredPackets &&
       this.avgPacketBytes === policy.avgPacketBytes &&
+      this.parentRgId === policy.parentRgId &&
+      this.targetRgId === policy.targetRgId &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&

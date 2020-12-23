@@ -3343,6 +3343,30 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "createOrUpdateRuleGroup": {
+        (async () => {
+          const uuid = value.uuid;
+          const obj = value.obj;
+          const rg = await pm2.createOrUpdateRuleGroup(uuid, obj);
+          this.simpleTxData(msg, rg, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "removeRuleGroup": {
+        (async () => {
+          const uuid = value.uuid;
+          await pm2.deleteRuleGroupRelatedPolicies(uuid);
+          await pm2.removeRuleGroup(uuid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "boneMessage": {
         this.boneMsgHandler(value);
         this.simpleTxData(msg, {}, null, callback);
