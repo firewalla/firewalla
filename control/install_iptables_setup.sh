@@ -151,7 +151,7 @@ sudo iptables -w -F FW_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 sudo iptables -w -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 sudo iptables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
-sudo iptables -w -A FW_DROP -p tcp -j REJECT
+sudo iptables -w -A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_DROP -j DROP
 
 # add FW_ACCEPT to the end of FORWARD chain
@@ -500,8 +500,8 @@ if [[ -e /sbin/ip6tables ]]; then
   # do not apply ACL enforcement for outbound connections of acl off devices/networks
   sudo ip6tables -w -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
   sudo ip6tables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
-  sudo ip6tables -w -C FW_DROP -p tcp -j REJECT &>/dev/null || sudo ip6tables -w -A FW_DROP -p tcp -j REJECT
-  sudo ip6tables -w -C FW_DROP -j DROP &>/dev/null || sudo ip6tables -w -A FW_DROP -j DROP
+  sudo ip6tables -w -A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
+  sudo ip6tables -w -A FW_DROP -j DROP
 
   # add FW_ACCEPT to the end of FORWARD chain
   sudo ip6tables -w -N FW_ACCEPT &>/dev/null
@@ -789,8 +789,8 @@ sudo iptables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_se
 # regular route chain
 sudo iptables -w -t mangle -N FW_RT_REG &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_REG
-# only for outbound traffic and not being marked by previous vpn client chain
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000/0xffff -j FW_RT_REG
+# only for outbound traffic
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 # global regular route chain
@@ -898,8 +898,8 @@ sudo ip6tables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_s
 # regular route chain
 sudo ip6tables -w -t mangle -N FW_RT_REG &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_REG
-# only for outbound traffic and not being marked by previous vpn client chain
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark --mark 0x0000/0xffff -j FW_RT_REG
+# only for outbound traffic
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 # global regular route chain

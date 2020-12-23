@@ -110,7 +110,7 @@ async function getDiskFree() {
 }
 
 async function getEthernetSpeed() {
-    const eths = await getShellOutput("cd /sys/class/net; ls -1d eth* | fgrep -v .");
+    const eths = await getShellOutput("ls -l /sys/class/net | awk '/^l/ && !/virtual/ {print $9}'");
     if (!eths) return "";
     const ethSpeed = {};
     for (const eth of eths.split("\n")) {

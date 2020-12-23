@@ -63,7 +63,7 @@ function getFileTransport() {
     name: 'log-file',
     filename: process.title + ".log",
     json: false,
-    dirname: "/home/pi/logs",
+    dirname: `${process.env.HOME}/logs`,
     maxsize: 1000000,
     maxFiles: 3,
     timestamp: function() {

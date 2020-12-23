@@ -189,6 +189,10 @@ class Platform {
     return false;
   }
 
+  isAccountingSupported() {
+    return false;
+  }  
+
   async onWanIPChanged(ip) {
     log.info("WanIP is changed to", ip);
   }
@@ -199,6 +203,9 @@ class Platform {
 
   async applyProfile() {
     log.info("NO need to apply profile");
+  }
+  getStatsSpecs(){
+    return [];
   }
 }
 

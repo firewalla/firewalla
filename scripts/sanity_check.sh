@@ -229,7 +229,7 @@ check_system_config() {
 check_policies() {
     echo "----------------------- Blocking Rules ------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
-    printf "%8s %38s %10s %25s %10s %15s %15s %10s %15s %10s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Direction" "Action" "Disabled"
+    printf "%8s %38s %10s %25s %10s %25s %15s %10s %15s %10s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Direction" "Action" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
@@ -282,7 +282,7 @@ check_policies() {
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
         fi
-        printf "$COLOR%8s %38s %10s %25s %10s %15s %15s %10s %15s %10s $UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$DISABLED"
+        printf "$COLOR%8s %38s %10s %25s %10s %25s %15s %10s %15s %10s $UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$DISABLED"
     done
 
     echo ""
@@ -321,7 +321,7 @@ is_simple_mode() {
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %25s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitored" "B7" "Online" "vpnClient" "FlowInCount" "FlowOutCount" "Group" "Emergency Access"
+    printf "%35s %15s %25s %25s %20s %7s %6s %6s %10s %7s %8s %20s %10s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitor" "B7" "Online" "vpnClient" "FlowIn" "FlowOut" "Group" "Emerg Acc"
     NOW=$(date +%s)
     FRCC=$(curl -s "http://localhost:8837/v1/config/active")
     for DEVICE in $DEVICES; do
@@ -386,15 +386,22 @@ check_hosts() {
         local DEVICE_FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$DEVICE_MAC -inf +inf)
         local DEVICE_FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$DEVICE_MAC -inf +inf)
 
-        local COLOR=""
+        local COLOR="\e[39m"
         local UNCOLOR="\e[0m"
         if [[ $DEVICE_ONLINE == "yes" && $DEVICE_MONITORING == 'true' && $DEVICE_B7_MONITORING == "false" ]] &&
           ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
             COLOR="\e[91m"
         elif [ $DEVICE_FLOWINCOUNT -gt 2000 ] || [ $DEVICE_FLOWOUTCOUNT -gt 2000 ]; then
             COLOR="\e[33m" #yellow
-        elif [ $DEVICE_ONLINE = "no" ]; then
-            COLOR="\e[2m" #dim
+        fi
+
+        local DEVICE_MAC_COLOR="$COLOR"
+        if [[ $DEVICE_MAC =~ ^.[26AEae].*$ ]]; then
+          DEVICE_MAC_COLOR="\e[95m"
+        fi
+
+        if [ $DEVICE_ONLINE = "no" ]; then
+            COLOR=$COLOR"\e[2m" #dim
         fi
 
         local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=[][\" ]==g" | sed "s=,= =")
@@ -403,7 +410,7 @@ check_hosts() {
             TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
         done
         TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
-        printf "$COLOR%35s %15s %25s %25s %25s %10s %10s %10s %10s %12s %13s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
+        printf "$COLOR%35s %15s %25s %25s $DEVICE_MAC_COLOR%20s$COLOR %7s %6s %6s %10s %7s %8s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
     done
 
     echo ""
@@ -531,9 +538,21 @@ check_network() {
 
 check_dhcp() {
     echo "---------------------- DHCP ------------------"
-    #find /log/blog/ -mmin -120 -name "dhcp*log.gz" | sort | xargs zcat  | jq -r  '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' | sed 's="==g' | grep -v INFORM | awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' | column -s "," -t -n
-    #find /log/blog/ -mmin -120 -name "dhcp*log.gz" | sort | xargs zcat
     find /log/blog/ -mmin -120 -name "dhcp*log.gz" | sort | xargs zcat  | jq -r  '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' | sed 's="==g' | grep -v "INFORM|ACK" | awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' | column -s "," -t -n
+    echo ""
+    echo ""
+}
+
+check_redis() {
+    echo "---------------------- Redis ----------------------"
+    local INTEL_IP=$(redis-cli --scan --pattern intel:ip:*|wc -l)
+    local INTEL_IP_COLOR=""
+    if [ $INTEL_IP -gt 20000 ]; then
+        INTEL_IP_COLOR="\e[31m"
+    elif [ $INTEL_IP -gt 10000 ]; then
+        INTEL_IP_COLOR="\e[33m"
+    fi
+    printf "%20s $INTEL_IP_COLOR%10s\e[0m\n" "intel:ip:*" $INTEL_IP
     echo ""
     echo ""
 }
@@ -547,6 +566,7 @@ usage() {
     echo "  -r  | --rule"
     echo "  -i  | --ipset"
     echo "  -d  | --dhcp"
+    echo "  -re | --redis"
     echo "  -f  | --fast | --host"
     echo "  -h  | --help"
     return
@@ -591,6 +611,11 @@ while [ "$1" != "" ]; do
         check_dhcp
         FAST=true
         ;;
+    -re | --redis)
+        shift
+        check_redis
+        FAST=true
+        ;;
     -f | --fast | --host)
         check_hosts
         shift
@@ -621,6 +646,7 @@ if [ "$FAST" == false ]; then
     check_ipset
     check_conntrack
     check_dhcp
+    check_redis
     test -z $SPEED || check_speed
     check_hosts
 fi

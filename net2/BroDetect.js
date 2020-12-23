@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,6 +35,9 @@ const broNotice = require('../extension/bro/BroNotice.js');
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 
+const VPNProfileManager = require('./VPNProfileManager.js');
+const Constants = require('./Constants.js');
+
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
@@ -63,9 +66,13 @@ const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
-const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const {formulateHostname, isDomainValid} = require('../util/util.js');
+
+const TYPE_MAC = "mac";
+const TYPE_VPN = "vpn";
+
+const PREFIX_VPN = "vpn:";
 /*
  *
  *  config.bro.notice.path {
@@ -213,6 +220,20 @@ module.exports = class {
         failed = true
       }
     }
+    if (this.connLongLog == null) {
+      this.connLongLog = new Tail(this.config.bro.connLong.path, '\n');
+      if (this.connLongLog != null) {
+        log.debug("Initializing watchers: connLongInitialized", this.config.bro.connLong.path);
+        this.connLongLog.on('line', async (data) => {
+          await this.processConnData(data, true);
+        });
+        this.connLongLog.on('error', (err) => {
+          log.error("Error while reading conn long log", err.message);
+        });
+      } else {
+        failed = true
+      }
+    }
     if (this.connLogdev == null) {
       this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
       if (this.connLogdev != null) {
@@ -285,11 +306,22 @@ module.exports = class {
       this.enableRecording = true
       this.cc = 0
       this.activeMac = {};
+
       setInterval(() => {
         this._activeMacHeartbeat();
       }, 60000);
 
       this.lastNTS = null;
+
+      this.activeLongConns = {}
+      setInterval(() => {
+        const now = new Date() / 1000
+        for (const uid of Object.keys(this.activeLongConns)) {
+          const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
+          if (lastTick + this.config.bro.connLong.expires < now)
+            delete this.activeLongConns[uid]
+        }
+      }, 3600 * 15)
     }
   }
 
@@ -401,9 +433,7 @@ module.exports = class {
 
 
   /*
-    {"ts":1464244116.539545,"uid":"CwMpfX2Ya0NkxBCqbe","id.orig_h":"192.168.2.221","id.orig_p":58937,"id.resp_h":"199.27.79.143","id.resp_p":443,"fuid":"FmjEXV3czWtY9ykTG8","file_mime_type":"app
-    lication/pkix-cert","file_desc":"199.27.79.143:443/tcp","seen.indicator":"forms.aweber.com","seen.indicator_type":"Intel::DOMAIN","seen.where":"X509::IN_CERT","seen.node":"bro","sources":["f
-    rom http://hosts-file.net/psh.txt via intel.criticalstack.com"]}
+    {"ts":1464244116.539545,"uid":"CwMpfX2Ya0NkxBCqbe","id.orig_h":"192.168.2.221","id.orig_p":58937,"id.resp_h":"199.27.79.143","id.resp_p":443,"fuid":"FmjEXV3czWtY9ykTG8","file_mime_type":"application/pkix-cert","file_desc":"199.27.79.143:443/tcp","seen.indicator":"forms.aweber.com","seen.indicator_type":"Intel::DOMAIN","seen.where":"X509::IN_CERT","seen.node":"bro","sources":["from http://hosts-file.net/psh.txt via intel.criticalstack.com"]}
     */
 
   processIntelData(data) {
@@ -458,27 +488,50 @@ module.exports = class {
           }
         }
         this.lastDNS = obj;
-        if (!isDomainValid(obj["query"]))
-          return;
-        // record reverse dns as well for future reverse lookup
-        await dnsTool.addReverseDns(formulateHostname(obj['query']), obj['answers'])
+        if (obj["qtype_name"] === "PTR") {
+          // reverse DNS query, the IP address is in the query parameter, the domain is in the answers
+          if (obj["query"].endsWith(".in-addr.arpa")) {
+            // ipv4 reverse DNS query
+            const address = obj["query"].substring(0, obj["query"].length - ".in-addr.arpa".length).split('.').reverse().join('.');
+            if (!address || !iptool.isV4Format(address) || iptool.isPrivate(address))
+              return;
+            const domains = obj["answers"].filter(answer => !firewalla.isReservedBlockingIP(answer) && !iptool.isV4Format(answer) && !iptool.isV6Format(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
+            if (domains.length == 0)
+              return;
+            for (const domain of domains) {
+              await dnsTool.addReverseDns(domain, [address]);
+              await dnsTool.addDns(address, domain, this.config.bro.dns.expires);
+            }
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: address,
+              suppressEventLogging: true
+            });
+          }
+        } else {
+          if (!isDomainValid(obj["query"]))
+            return;
 
-        for (let i in obj['answers']) {
-          // answer can be an alias or ip address
-          const answer = obj['answers'][i];
-          if (firewalla.isReservedBlockingIP(answer)) // ignore reserved blocking IP
-            continue;
+          const answers = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && (iptool.isV4Format(answer) || iptool.isV6Format(answer)));
+          const cnames = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && !iptool.isV4Format(answer) && !iptool.isV6Format(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
+          const query = formulateHostname(obj['query']);
 
-          if (!iptool.isV4Format(answer) && !iptool.isV6Format(answer))
-            // do not add domain alias to dns entry
-            continue;
+          // record reverse dns as well for future reverse lookup
+          await dnsTool.addReverseDns(query, answers);
+          for (const cname of cnames)
+            await dnsTool.addReverseDns(cname, answers);
 
-          await dnsTool.addDns(answer, formulateHostname(obj['query']), this.config.bro.dns.expires);
-          sem.emitEvent({
-            type: 'DestIPFound',
-            ip: answer,
-            suppressEventLogging: true
-          });
+          for (const answer of answers) {
+            await dnsTool.addDns(answer, query, this.config.bro.dns.expires);
+            for (const cname of cnames) {
+              await dnsTool.addDns(answer, cname, this.config.bro.dns.expires);
+            }
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: answer,
+              suppressEventLogging: true
+            });
+          }
         }
       } else if (obj['id.orig_p'] == 5353 && obj['id.resp_p'] == 5353 && obj['answers'].length > 0) {
         let hostname = obj['answers'][0];
@@ -582,11 +635,15 @@ module.exports = class {
       return false;
     let hostObject = null;
     let networkProfile = null;
+    let vpnProfile = null;
     if (iptool.isV4Format(ip)) {
       hostObject = hostManager.getHostFast(ip);
       const iface = sysManager.getInterfaceViaIP4(ip);
       const uuid = iface && iface.uuid;
       networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
+      if (cn)
+        vpnProfile = VPNProfileManager.getVPNProfile(cn);
     } else {
       if (iptool.isV6Format(ip)) {
         hostObject = hostManager.getHostFast6(ip);
@@ -600,6 +657,9 @@ module.exports = class {
       return false;
     }
     if (networkProfile && !networkProfile.isMonitoring()) {
+      return false;
+    }
+    if (vpnProfile && !vpnProfile.isMonitoring()) {
       return false;
     }
     return true;
@@ -667,8 +727,61 @@ module.exports = class {
     return !accounting.isBlockedDevice(mac);
   }
 
-  // Only log ipv4 packets for now
-  async processConnData(data) {
+  validateConnData(obj) {
+    const threshold = this.config.bro.threshold;
+    const iptcpRatio = threshold.IPTCPRatio || 0.1;
+
+    const missed_bytes = obj.missed_bytes;
+    const resp_bytes = obj.resp_bytes;
+    const orig_bytes = obj.orig_bytes;
+    const orig_ip_bytes = obj.orig_ip_bytes;
+    const resp_ip_bytes = obj.resp_ip_bytes;
+
+    if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
+        log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
+        return false;
+    }
+
+    if (orig_ip_bytes && orig_bytes &&
+      (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
+      (orig_ip_bytes / orig_bytes) < iptcpRatio) {
+      log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
+      return false;
+    }
+
+    if (resp_ip_bytes && resp_bytes &&
+      (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
+      (resp_ip_bytes / resp_bytes) < iptcpRatio) {
+      log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
+      return false;
+    }
+
+    if(threshold.maxSpeed) {
+      const maxBytesPerSecond = threshold.maxSpeed / 8;
+      const duration = obj.duration;
+      const maxBytes = maxBytesPerSecond * duration;
+
+      // more than the therotical possible number
+      if(obj.missed_bytes > maxBytes) {
+        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+
+      if(obj.resp_bytes > maxBytes) {
+        log.debug("Conn:Drop:RespBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+
+      if(obj.orig_bytes > maxBytes) {
+        log.debug("Conn:Drop:OrigBytes:TooLarge", obj.conn_state, obj);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -712,8 +825,8 @@ module.exports = class {
         return;
       }
 
-      if (obj.missed_bytes > threshold.missedBytes) { // based on 2 seconds of full blast at 50Mbit, max possible we can miss bytes
-        log.debug("Conn:Drop:MissedBytes:TooLarge", obj.conn_state, obj);
+      if(!this.validateConnData(obj)) {
+        log.debug("Validate Failed", obj.conn_state, obj);
         return;
       }
 
@@ -728,56 +841,51 @@ module.exports = class {
         }
       }
 
-      //log.error("Conn:Diff:",obj.proto, obj.resp_ip_bytes,obj.resp_pkts, obj.orig_ip_bytes,obj.orig_pkts,obj.resp_ip_bytes-obj.resp_bytes, obj.orig_ip_bytes-obj.orig_bytes);
-      if (obj.resp_bytes > threshold.burstBytesResp) {
-        let rate = obj.resp_bytes / obj.duration;
-        if (rate > threshold.burstRateResp) {
-          log.debug("Conn:Burst:Drop", rate, obj);
-          return;
-        }
-        let packet = obj.resp_bytes / obj.resp_pkts;
-        if (packet > threshold.burstPacketsResp) {
-          log.debug("Conn:Burst:Drop2", packet, obj);
-          return;
-        }
-      }
-
-
-      if (obj.orig_bytes > threshold.burstBytesOrig) {
-        let rate = obj.orig_bytes / obj.duration;
-        if (rate > threshold.burstRateOrig) {
-          log.debug("Conn:Burst:Drop:Orig", rate, obj);
-          return;
-        }
-        let packet = obj.orig_bytes / obj.orig_pkts;
-        if (packet > threshold.burstPacketsOrig) {
-          log.debug("Conn:Burst:Drop2:Orig", packet, obj);
-          return;
-        }
-      }
-
-      if (obj.missed_bytes > 0) {
-        let adjusted = false;
-        if (obj.orig_bytes - obj.missed_bytes > 0) {
-          obj.orig_bytes = obj.orig_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (obj.resp_bytes - obj.missed_bytes > 0) {
-          obj.resp_bytes = obj.resp_bytes - obj.missed_bytes;
-          adjusted = true;
-        }
-        if (adjusted == false) {
-          log.debug("Conn:Drop:MissedBytes", obj.conn_state, obj);
-          return;
-        } else {
-          log.debug("Conn:Adjusted:MissedBytes", obj.conn_state, obj);
-        }
-      }
-
+      /*
       if ((obj.orig_bytes > obj.orig_ip_bytes || obj.resp_bytes > obj.resp_ip_bytes) && obj.proto == "tcp") {
         log.debug("Conn:Burst:Adjust1", obj);
         obj.orig_bytes = obj.orig_ip_bytes;
         obj.resp_bytes = obj.resp_ip_bytes;
+      }
+      */
+
+      if (obj.orig_bytes == null) {
+        obj.orig_bytes = 0;
+      }
+      if (obj.resp_bytes == null) {
+        obj.resp_bytes = 0;
+      }
+
+      if (obj.duration == null) {
+        obj.duration = 0;
+      }
+
+      // keep only 2 digits after decimal to save memory
+      obj.ts = Math.round(obj.ts * 100) / 100
+      obj.duration = Math.round(obj.duration * 100) / 100
+
+      // Long connection aggregation
+      const uid = obj.uid
+      if (long || this.activeLongConns[uid]) {
+        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0}
+
+        // already aggregated
+        if (previous.duration > obj.duration) return;
+
+        // this.activeLongConns[uid] will be cleaned after certain time of inactivity
+        this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
+
+        const connCount = Object.keys(this.activeLongConns)
+
+        if (connCount > 100)
+          log.warn('Active long conn:', connCount);
+        else
+          log.debug('Active long conn:', connCount);
+
+        obj.ts = Math.round((previous.ts + previous.duration) * 100) / 100
+        obj.orig_bytes -= previous.orig_bytes
+        obj.resp_bytes -= previous.resp_bytes
+        obj.duration = Math.round((obj.duration - previous.duration) * 100) / 100
       }
 
       /*
@@ -791,7 +899,7 @@ module.exports = class {
        * when flag is set to 's', intel should ignore
        */
       let flag;
-      if (obj.proto == "tcp" && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
+      if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
         if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||
           obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
@@ -799,23 +907,23 @@ module.exports = class {
           obj.conn_state == "S0") {
           log.debug("Conn:Drop:State:P1", obj.conn_state, JSON.stringify(obj));
           flag = 's';
+          // return directly for the traffic flagged as 's'
+          return;
         }
       }
 
-      let host = obj["id.orig_h"];
-      let dst = obj["id.resp_h"];
+      const host = obj["id.orig_h"];
+      const dst = obj["id.resp_h"];
       let flowdir = "in";
       let lhost = null;
-      let origMac = obj["orig_l2_addr"];
-      let respMac = obj["resp_l2_addr"];
+      const origMac = obj["orig_l2_addr"];
+      const respMac = obj["resp_l2_addr"];
       let localMac = null;
-      let remoteMac = null;
       let intfId = null;
 
       log.debug("ProcessingConection:", obj.uid, host, dst);
 
       // ignore multicast IP
-      // if (sysManager.isMulticastIP(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
       try {
         if (sysManager.isMulticastIP4(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
           return;
@@ -839,12 +947,14 @@ module.exports = class {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
+        log.debug("Local Traffic, both sides are in private network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
         flowdir = 'local';
         lhost = host;
         localMac = origMac;
         //log.debug("Dropping both ip address", host,dst);
+        log.debug("Local Traffic, both sides are in local network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == false) {
         flowdir = "in";
@@ -881,23 +991,36 @@ module.exports = class {
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
           localMac = await l2.getMACAsync(lhost).catch((err) => {
-            log.error("Failed to get MAC address from link layer for " + lhost);
-            return null;
+            log.error("Failed to get MAC address from link layer for " + lhost, err);
+            return;
           }); // Don't worry about performance issue, this function has internal cache
         }
         if (!localMac) {
           localMac = await hostTool.getMacByIPWithCache(lhost).catch((err) => {
             log.error("Failed to get MAC address from cache for " + lhost, err);
-            return null;
+            return;
           });
         }
       }
+
+      let localType = TYPE_MAC;
+      let realLocal = null;
+      let vpnProfile = null;
+      if (!localMac && intfInfo && intfInfo.name === "tun_fwvpn") {
+        vpnProfile = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
+        if (vpnProfile) {
+          localMac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+          realLocal = VPNProfileManager.getRealAddrByVirtualAddr(lhost);
+          localType = TYPE_VPN;
+        }
+      }
+
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
       }
 
       let tags = [];
-      if (localMac) {
+      if (localMac && localType === TYPE_MAC) {
         localMac = localMac.toUpperCase();
         const hostInfo = hostManager.getHostFastByMAC(localMac);
         tags = hostInfo ? await hostInfo.getTags() : [];
@@ -910,40 +1033,6 @@ module.exports = class {
       }
       tags = _.uniq(tags);
 
-      // Mark all flows that are partially completed.
-      // some of these flows may be valid
-      //
-      //  flag == s
-      if (obj.proto == "tcp") {
-        // beware that OTH may occur in long lasting connections intermittently
-        if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||
-          obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
-          obj.conn_state == "SH" || obj.conn_state == "SHR" ||
-          obj.conn_state == "S0") {
-          log.debug("Conn:Drop:State:P2", obj.conn_state, JSON.stringify(obj));
-          flag = 's';
-        }
-      }
-
-      if (obj.orig_bytes == null) {
-        obj.orig_bytes = 0;
-      }
-      if (obj.resp_bytes == null) {
-        obj.resp_bytes = 0;
-      }
-
-      if (obj.duration == null) {
-        obj.duration = Number(0);
-      } else {
-        obj.duration = Number(obj.duration);
-      }
-
-      if (obj.orig_bytes > threshold.logLargeBytesOrig) {
-        log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
-      }
-      if (obj.resp_bytes > threshold.logLargeBytesResp) {
-        log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
-      }
       if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
       }
@@ -959,7 +1048,7 @@ module.exports = class {
       // }
 
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
-      let now = Math.ceil(Date.now() / 1000);
+      let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
       let flowspec = this.flowstash[flowspecKey];
       let flowDescriptor = [
@@ -968,33 +1057,43 @@ module.exports = class {
         Number(obj.orig_bytes),
         Number(obj.resp_bytes)
       ];
+
+      const tmpspec = {
+        ts: obj.ts, // ts stands for start timestamp
+        ets: Math.round((obj.ts + obj.duration) * 100) / 100 , // ets stands for end timestamp
+        _ts: now, // _ts is the last time updated
+        __ts: obj.ts, // __ts is the first time found
+        sh: host, // source
+        dh: dst, // dstination
+        ob: Number(obj.orig_bytes), // transfer bytes
+        rb: Number(obj.resp_bytes),
+        ct: 1, // count
+        fd: flowdir, // flow direction
+        lh: lhost, // this is local ip address
+        mac: localMac, // mac address of local device
+        intf: intfId, // intf id
+        tags: tags,
+        du: obj.duration,
+        pf: {}, //port flow
+        af: {}, //application flows
+        pr: obj.proto,
+        f: flag,
+        flows: [flowDescriptor], // TODO: deprecate this to save memory
+        uids: [obj.uid],
+        ltype: localType
+      };
+
+      if (vpnProfile)
+        tmpspec.vpf = vpnProfile;
+      if (realLocal)
+        tmpspec.rl = realLocal;
+
+      if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
+      if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
+
+
       if (flowspec == null) {
-        flowspec = {
-          ts: obj.ts, // ts stands for start timestamp
-          ets: obj.ts + obj.duration, // ets stands for end timestamp
-          _ts: now, // _ts is the last time updated
-          __ts: obj.ts,  // __ts is the first time found
-          sh: host, // source
-          dh: dst, // dstination
-          ob: Number(obj.orig_bytes), // transfer bytes
-          rb: Number(obj.resp_bytes),
-          ct: 1, // count
-          fd: flowdir, // flow direction
-          lh: lhost, // this is local ip address
-          mac: localMac, // mac address of local device
-          intf: intfId, // intf id
-          tags: tags,
-          du: obj.duration,
-          bl: FLOWSTASH_EXPIRES,
-          pf: {}, //port flow
-          af: {}, //application flows
-          pr: obj.proto,
-          f: flag,
-          flows: [flowDescriptor],
-          _afmap: {}
-        }
-        if (obj['id.orig_p'] != null) flowspec.sp = [obj['id.orig_p']];
-        if (obj['id.resp_p'] != null) flowspec.dp = obj['id.resp_p'];
+        flowspec = tmpspec
         this.flowstash[flowspecKey] = flowspec;
         log.debug("Conn:FlowSpec:Create:", flowspec);
         this.indicateNewFlowSpec(flowspec);
@@ -1006,9 +1105,9 @@ module.exports = class {
           // update start timestamp
           flowspec.ts = obj.ts;
         }
-        if (flowspec.ets < obj.ts + obj.duration) {
+        if (flowspec.ets < tmpspec.ets) {
           // update end timestamp
-          flowspec.ets = obj.ts + obj.duration;
+          flowspec.ets = tmpspec.ets;
         }
         // update last time updated
         flowspec._ts = now;
@@ -1018,77 +1117,29 @@ module.exports = class {
         // flowspec.du = flowspec.ets - flowspec.ts;
         // For now, we use total time of network transfer, since the rate calculation is based on this logic.
         // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
-        flowspec.du += obj.duration;
+        flowspec.du = Math.round((flowspec.du + obj.duration) * 100) / 100;
         flowspec.flows.push(flowDescriptor);
         if (flag) {
           flowspec.f = flag;
         }
-      }
+        flowspec.uids.includes(obj.uid) || flowspec.uids.push(obj.uid)
 
-      let tmpspec = {
-        ts: obj.ts, // ts stands for start timestamp
-        ets: obj.ts + obj.duration, // ets stands for end timestamp
-        sh: host, // source
-        _ts: now, // _ts is the last time updated
-        dh: dst, // dstination
-        ob: Number(obj.orig_bytes), // transfer bytes
-        rb: Number(obj.resp_bytes),
-        ct: 1, // count
-        fd: flowdir, // flow direction
-        intf: intfId, // intf id
-        tags: tags,
-        lh: lhost, // this is local ip address
-        mac: localMac, // mac address of local device
-        du: obj.duration,
-        bl: 0,
-        pf: {},
-        af: {},
-        pr: obj.proto,
-        f: flag,
-        flows: [flowDescriptor],
-        uids: [obj.uid]
-      };
-
-      let afobj = this.lookupAppMap(obj.uid);
-      if (afobj) {
-        tmpspec.af[afobj.host] = afobj;
-        let flow_afobj = flowspec.af[afobj.host];
-        if (flow_afobj) {
-          flow_afobj.rqbl += afobj.rqbl;  // request_body_len
-          flow_afobj.rsbl += afobj.rsbl;  // response_body_len
-        } else {
-          flowspec.af[afobj.host] = afobj;
-          delete afobj['host'];
-        }
-      } else {
-        flowspec._afmap[obj.uid] = obj.uid;
-        // redo some older lookup ...
-        for (let i in flowspec._afmap) {
-          let afobj = this.lookupAppMap(i);
-          if (afobj) {
-            log.debug("DEBUG AFOBJ DELAY RESOLVE", afobj);
-            let flow_afobj = flowspec.af[afobj.host];
-            if (flow_afobj) {
-              flow_afobj.rqbl += afobj.rqbl;
-              flow_afobj.rsbl += afobj.rsbl;
-            } else {
-              flowspec.af[afobj.host] = afobj;
-              delete afobj['host'];
-            }
-          }
-        }
-      }
-
-      if (obj['id.orig_p'] != null) {
-        if (!flowspec.sp.includes(obj['id.orig_p'])) {
+        if (obj['id.orig_p'] && !flowspec.sp.includes(obj['id.orig_p'])) {
           flowspec.sp.push(obj['id.orig_p']);
         }
-        tmpspec.sp = [obj['id.orig_p']];
       }
-      if (obj['id.resp_p'] != null) tmpspec.dp = obj['id.resp_p'];
+
+      const afobj = this.lookupAppMap(obj.uid);
+      if (afobj) {
+        tmpspec.af[afobj.host] = afobj;
+        if (!flowspec.af[afobj.host]) {
+          flowspec.af[afobj.host] = afobj;
+        }
+        delete afobj.host;
+      }
 
       // TODO: obsolete flow.pf and the following aggregation as flowstash now use port as part of its key
-      if (obj['id.orig_p'] != null && obj['id.resp_p'] != null) {
+      if (obj['id.orig_p'] && obj['id.resp_p']) {
 
         let portflowkey = obj.proto + "." + obj['id.resp_p'];
         let port_flow = flowspec.pf[portflowkey];
@@ -1106,18 +1157,13 @@ module.exports = class {
           port_flow.rb += Number(obj.resp_bytes);
           port_flow.ct += 1;
         }
-        tmpspec.pf[portflowkey] = {
-          sp: [obj['id.orig_p']],
-          ob: Number(obj.orig_bytes),
-          rb: Number(obj.resp_bytes),
-          ct: 1
-        };
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
       }
 
-      // Single flow is written to redis first to prevent data loss, will be removed in most cases
+      // Single flow is written to redis first to prevent data loss
+      // will be aggregated on flow stash expiration and removed in most cases
       if (tmpspec) {
-        if (tmpspec.lh === tmpspec.sh && localMac) {
+        if (tmpspec.lh === tmpspec.sh && localMac && localType === TYPE_MAC) {
           // record device as active if and only if device originates the connection
           let macIPEntry = this.activeMac[localMac];
           if (!macIPEntry)
@@ -1166,36 +1212,27 @@ module.exports = class {
           let redisObj = [key, now, strdata];
           log.debug("Conn:Save:Temp", redisObj);
 
-          sem.sendEventToFireMain({
-            type: "NewGlobalFlow",
-            flow: tmpspec,
-            suppressEventLogging: true
-          });
-
           if (tmpspec.fd == 'out') {
             this.recordOutPort(tmpspec);
           }
 
-          rclient.zadd(redisObj, (err, response) => {
-            if (err == null) {
+          await rclient.zaddAsync(redisObj).catch(
+            err => log.error("Failed to save tmpspec: ", tmpspec, err)
+          )
 
-              let remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+          const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
-              setTimeout(() => {
-                sem.emitEvent({
-                  type: 'DestIPFound',
-                  ip: remoteIPAddress,
-                  fd: tmpspec.fd,
-                  ob: tmpspec.ob,
-                  rb: tmpspec.rb,
-                  suppressEventLogging: true
-                });
-              }, 1 * 1000); // make it a little slower so that dns record will be handled first
+          setTimeout(() => {
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: remoteIPAddress,
+              fd: tmpspec.fd,
+              ob: tmpspec.ob,
+              rb: tmpspec.rb,
+              suppressEventLogging: true
+            });
+          }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
-            } else {
-              log.error("Failed to save tmpspec: ", tmpspec, err);
-            }
-          });
         }
       }
 
@@ -1206,35 +1243,27 @@ module.exports = class {
       if (now > this.flowstashExpires) {
         let stashed = {};
         log.info("Processing Flow Stash");
-        for (let i in this.flowstash) {
-          let spec = this.flowstash[i];
+        for (const specKey in this.flowstash) {
+          const spec = this.flowstash[specKey];
           if (!spec.mac)
             continue;
           try {
-            if (spec._afmap && Object.keys(spec._afmap).length > 0) {
-              for (let i in spec._afmap) {
-                let afobj = this.lookupAppMap(i);
-                if (afobj) {
-                  let flow_afobj = spec.af[afobj.host];
-                  if (flow_afobj) {
-                    flow_afobj.rqbl += afobj.rqbl;
-                    flow_afobj.rsbl += afobj.rsbl;
-                  } else {
-                    spec.af[afobj.host] = afobj;
-                    delete afobj['host'];
-                  }
-                }
+            // try resolve host info for previous flows again here
+            for (const uid of spec.uids) {
+              const afobj = this.lookupAppMap(uid);
+              if (afobj && !spec.af[afobj.host]) {
+                spec.af[afobj.host] = afobj;
+                delete afobj['host'];
               }
             }
           } catch (e) {
             log.error("Conn:Save:AFMAP:EXCEPTION", e);
           }
-          spec.uids = Object.keys(spec._afmap);
-          delete spec._afmap;
-          let key = "flow:conn:" + spec.fd + ":" + spec.mac;
-          let strdata = JSON.stringify(spec);
-          let ts = spec._ts; // this is the last time when this flowspec is updated
-          let redisObj = [key, ts, strdata];
+
+          const key = "flow:conn:" + spec.fd + ":" + spec.mac;
+          const strdata = JSON.stringify(spec);
+          const ts = spec._ts; // this is the last time when this flowspec is updated
+          const redisObj = [key, ts, strdata];
           if (stashed[key]) {
             stashed[key].push(redisObj);
           } else {
@@ -1271,7 +1300,7 @@ module.exports = class {
             transaction.push(['zremrangebyscore', key, sstart, send]);
             stash.forEach(robj => transaction.push(['zadd', robj]));
             if (this.config.bro.conn.expires) {
-              transaction.push(['expireat', key, parseInt((+new Date) / 1000) + this.config.bro.conn.expires])
+              transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.bro.conn.expires])
             }
 
             try {
@@ -1337,7 +1366,7 @@ module.exports = class {
   /*
   {"ts":1506313273.469781,"uid":"CX5UTb3cZi0zJdeQqe","id.orig_h":"192.168.2.191","id.orig_p":57334,"id.resp_h":"45.57.26.133","id.resp_p":443,"version":"TLSv12","cipher":"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256","server_name":"ipv4_1-lagg0-c004.1.sjc005.ix.nflxvideo.net","resumed":true,"established":true}
   */
-  processSslData(data) {
+  async processSslData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -1362,10 +1391,11 @@ module.exports = class {
         log.debug("SSL:CERT_ID ", cert_id, subject, dst);
       }
 
-      if (subject != null && dst != null) {
-        let xobj = {
-          'subject': subject
-        };
+      if ((subject != null || dsthost != null) && dst != null) {
+        let xobj = {};
+        if (subject != null) {
+          xobj['subject'] = subject;
+        }
         if (dsthost != null) {
           xobj['server_name'] = dsthost;
         }
@@ -1424,15 +1454,14 @@ module.exports = class {
       let appCacheObj = {
         uid: obj.uid,
         host: obj.server_name,
-        ssl: obj.established,
-        rqbl: 0,
-        rsbl: 0,
+        ssl: obj.established
       };
 
       this.addAppMap(appCacheObj.uid, appCacheObj);
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
-        dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
+        await dnsTool.addReverseDns(obj.server_name, [dst]);
+        await dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
       }
     } catch (e) {
       log.error("SSL:Error Unable to save", e, e.stack, data);
@@ -1486,6 +1515,9 @@ module.exports = class {
         log.error("Invalid knownHosts entry:", obj);
         return;
       }
+
+      if (sysManager.isMyIP(ip)) return
+
       const intfInfo = sysManager.getInterfaceViaIP4(ip);
       if (!intfInfo || !intfInfo.uuid) {
         log.error(`Unable to find nif uuid, ${ip}`);

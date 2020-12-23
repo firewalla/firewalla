@@ -101,10 +101,13 @@ class DestIPFoundHook extends Hook {
       intel.dnsHost = dnsInfo;
     }
 
-    if(sslInfo && sslInfo.server_name) {
-      intel.host = sslInfo.server_name
-      intel.sslHost = sslInfo.server_name
-      intel.org = sslInfo.O
+    if(sslInfo) {
+      if (sslInfo.server_name) {
+        intel.host = sslInfo.server_name
+        intel.sslHost = sslInfo.server_name
+      }
+      if (sslInfo.org)
+        intel.org = sslInfo.O
     }
 
     // app
@@ -181,6 +184,10 @@ class DestIPFoundHook extends Hook {
         intel.v = info.v;
       }
 
+      if(info.a) {
+        intel.a = info.a;
+      }
+
       if(info.originIP) {
         intel.originIP = info.originIP
       }
@@ -189,9 +196,13 @@ class DestIPFoundHook extends Hook {
 
     const domain = this.getDomain(sslInfo, dnsInfo);
 
-    if(intel.originIP && domain != intel.originIP) {
+    if(intel.originIP && domain != intel.originIP && ip != intel.originIP ) {
       // it's a pattern
       intel.isOriginIPAPattern = true
+    }
+
+    if(intel.originIP && ip === intel.originIP) {
+      intel.isOriginIPIP = true
     }
 
     return intel;

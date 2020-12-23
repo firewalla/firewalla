@@ -189,9 +189,9 @@ class FlowUploadSensor extends Sensor {
         let flows = [];
         for (const ip of ips) {
             let outgoingFlows = await flowTool.queryFlows(ip, "in", start, end); // in => outgoing
-            flows.push.apply(flows, outgoingFlows);
+            flows = flows.concat(outgoingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
             let incomingFlows = await flowTool.queryFlows(ip, "out", start, end); // out => incoming
-            flows.push.apply(flows, incomingFlows);
+            flows = flows.concat(incomingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
         }
         return flows
     }
@@ -211,7 +211,6 @@ class FlowUploadSensor extends Sensor {
          *     "af":{}, application flow
          *     "flows":[]  flow details
          *     "pf":{}, destination port flows
-         *     "bl":"" response body length?
          *     "ob":"" total orig bytes
          *     "rb":"" total response bytes
          *     "ct":"" count
@@ -243,7 +242,6 @@ class FlowUploadSensor extends Sensor {
          *         "af":{},
          *         "pf":{},
          *         "flows":[],
-         *         "bl":"",
          *         "ob":"",
          *         "rb":"",
          *         "ct":"",
