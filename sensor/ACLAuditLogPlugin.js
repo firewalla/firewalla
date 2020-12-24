@@ -34,12 +34,9 @@ const os = require('os')
 
 const auditTool = require('../net2/AuditTool.js')
 
-const auditLogFile = "/var/log/acl_audit.log";
+const auditLogFile = "/log/alog/acl-audit.log";
 
 const featureName = "acl_audit";
-
-const auditDropCounterKey = "audit:counter:drop";
-const auditDropCounterExpireTime = 3600 * 24 * 7; // one week
 
 class ACLAuditLogPlugin extends Sensor {
   constructor() {
@@ -55,12 +52,6 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async job() {
-    // ensure log file is readable
-    await exec(`sudo touch ${auditLogFile}`).catch(() => {});
-    await exec(`sudo chgrp adm ${auditLogFile}`).catch(() => {});
-    await exec(`sudo chown syslog ${auditLogFile}`).catch(() => {});
-    await exec(`sudo chmod 644 ${auditLogFile}`).catch(() => {});
-
     this.auditLogReader = new Tail(auditLogFile, '\n');
     if (this.auditLogReader != null) {
       this.auditLogReader.on('line', (line) => {
@@ -158,28 +149,6 @@ class ACLAuditLogPlugin extends Sensor {
       const key = this._getAuditDropKey(mac);
       await rclient.zaddAsync(key, ts, JSON.stringify(record));
     }
-
-    await this._recordCounter(record);
-  }
-
-  // dest could be a domain or ip
-  async _recordCounter(record) {
-    // invalid record if record.type is dns && record.dn doesn't exist
-    if (record.type === "dns" && !record.dn) {
-      return;
-    }
-
-    const target = record.type == 'dns' ? record.dn :
-                   record.fd == 'in' ? record.dh : record.sh // type === 'ip'
-
-    if (target) {
-      await rclient.zincrbyAsync(auditDropCounterKey, 1, target);
-      await rclient.expireAsync(auditDropCounterKey, auditDropCounterExpireTime);
-    }
-  }
-
-  async _rotateCounter() {
-    // TBD
   }
 
   async _processDnsNxdomainRecord(record) {
@@ -198,7 +167,6 @@ class ACLAuditLogPlugin extends Sensor {
       record.ct = 1;
       const key = this._getAuditDropKey(mac);
       await rclient.zaddAsync(key, record.ts, JSON.stringify(record));
-      await this._recordCounter(record);
     }
   }
 
@@ -266,13 +234,7 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async globalOn() {
-    // create rsyslog config that filters iptables log to specific syslog file
-    await exec(`sudo cp ${f.getFirewallaHome()}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/`)
-      .then(() => exec(`sudo systemctl restart rsyslog`))
-    const rule = new Rule("filter").chn("FW_DROP").jmp(`LOG --log-prefix "${LOG_PREFIX}"`);
-    const rule6 = rule.clone().fam(6);
-    await exec(rule.toCmd('-I'))
-    await exec(rule6.toCmd('-I'))
+    await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
 
     this.aggregator = this.aggregator || setInterval(this.mergeLogs.bind(this), (this.config.interval || 300) * 1000)
   }
@@ -282,12 +244,6 @@ class ACLAuditLogPlugin extends Sensor {
     const rule6 = rule.clone().fam(6);
     await exec(rule.toCmd('-D'))
     await exec(rule6.toCmd('-D'))
-
-    // // remove rsyslog config that filters iptables log to specific syslog file
-    // await exec(`sudo rm /etc/rsyslog.d/30-acl-audit.conf`)
-    //   .then(() => exec(`sudo systemctl restart rsyslog`))
-    // remove syslog file
-    // await exec(`sudo rm ${auditLogFile}`)
 
     clearInterval(this.aggregator)
     this.aggregator = undefined
