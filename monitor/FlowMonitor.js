@@ -50,6 +50,7 @@ const sysManager = require('../net2/SysManager.js');
 const fConfig = require('../net2/config.js').getConfig();
 
 const flowUtil = require('../net2/FlowUtil.js');
+const f = require('../net2/Firewalla.js');
 
 const validator = require('validator');
 
@@ -729,7 +730,7 @@ module.exports = class FlowMonitor {
       const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
       for (const cn of Object.keys(vpnProfiles)) {
         const vpnProfile = vpnProfiles[cn];
-        if (service === "detect") {
+        if (service === "detect" && f.isDevelopmentVersion()) { // TODO: remove this restriction in future version
           const uid = `${Constants.NS_VPN_PROFILE}:${cn}`;
           log.info("Running Detect:", uid);
           await this.detect(uid, period);
