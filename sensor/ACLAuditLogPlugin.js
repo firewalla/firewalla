@@ -32,7 +32,7 @@ const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const os = require('os')
 
-const auditTool = require('../net2/AuditTool.js')
+const _ = require('lodash')
 
 const auditLogFile = "/log/alog/acl-audit.log";
 
@@ -199,7 +199,12 @@ class ACLAuditLogPlugin extends Sensor {
             const descriptor = `${record.type}:${target}:${record.dp || ''}:${record.fd}`
 
             if (stash[descriptor]) {
-              auditTool.mergeLog(stash[descriptor], record)
+              const s = stash[descriptor]
+              // _.min() and _.max() will ignore non-number values
+              s.ts = _.min([s.ts, record.ts])
+              s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+              s.ct += record.ct
+              if (s.sp) s.sp = _.uniq(s.sp, record.sp)
             } else {
               stash[descriptor] = record
             }

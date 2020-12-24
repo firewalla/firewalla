@@ -25,16 +25,13 @@ const _ = require('lodash');
 class AuditTool extends LogQuery {
 
   mergeLog(result, incoming) {
-    // _.min() and _.max() will ignore non-number values
     result.ts = _.min([result.ts, incoming.ts])
-    result.ets = _.max([result.ts, result.ets, incoming.ts, incoming.ets])
-    result.ct += incoming.ct
-    if (result.sp)
-      result.sp = _.union(result.sp, incoming.sp)
+    result.count += incoming.count
   }
 
   shouldMerge(previous, incoming) {
-    const compareKeys = ['device', 'ip', 'fd', 'protocol'];
+    const compareKeys = ['device', 'fd', 'protocol', 'port'];
+    previous.type == 'dns' ? compareKeys.push('domain') : compareKeys.push('ip')
     return _.isEqual(_.pick(previous, compareKeys), _.pick(incoming, compareKeys));
   }
 
@@ -62,8 +59,6 @@ class AuditTool extends LogQuery {
 
     // f.intf = entry.intf;
     // f.tags = entry.tags;
-
-    if (entry.du) { f.duration = entry.du }
 
     if (entry.dn) { f.domain = entry.dn }
 
