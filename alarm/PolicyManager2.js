@@ -1996,6 +1996,132 @@ class PolicyManager2 {
     return false;
   }
 
+  async _matchLocal(rule, localMac) {
+    if (!localMac)
+      return false;
+    if (rule.scope && rule.scope.length > 0) {
+      if (!rule.scope.includes(localMac))
+        return false;
+    }
+    // matching local device group if applicable
+    if (rule.tags && rule.tags.length > 0) {
+      if (!rule.tags.some(uid => this.ipsetCache[Tag.getTagDeviceMacSetName(uid)] && this.ipsetCache[Tag.getTagDeviceMacSetName(uid)].includes(localMac)))
+        return false;
+    }
+    // matching local network if applicable
+    if (rule.intfs && rule.intfs.length > 0) {
+      const deviceIps = await ht.getIPsByMac(localMac);
+      const deviceIP4 = deviceIps.filter(i => new Address4(i).isValid());
+      const deviceIP6 = deviceIps.filter(i => new Address6(i).isValid());
+      if (!rule.intfs.some(uuid => {
+        const iface = sysManager.getInterfaceViaUUID(uuid);
+        if (deviceIP4.some(i => sysManager.inMySubnets4(i, iface.name)))
+          return true;
+        if (deviceIP6.some(i => sysManager.inMySubnet6(i, iface.name)))
+          return true;
+        return false;
+      }))
+        return false;
+    }
+    // matching vpn profile if applicable
+    if (rule.vpnProfile && rule.vpnProfile.length > 0) {
+      if (!rule.vpnProfile.some(cn => `${Constants.NS_VPN_PROFILE}:${cn}` === localMac))
+        return false;
+    }
+    return true;
+  }
+
+  async _matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck) {
+    // matching remote target
+    switch (rule.type) {
+      case "ip": {
+        if (!remoteIpsToCheck.includes(rule.target))
+          return false;
+        break;
+      }
+      case "net": {
+        const net4 = new Address4(rule.target);
+        const net6 = new Address6(rule.target);
+        if (net4.isValid()) {
+          if (!remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(net4)))
+            return false;
+        } else {
+          if (net6.isValid()) {
+            if (!remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(net6)))
+              return false;
+          }
+        }
+        break;
+      }
+      case "domain":
+      case "dns": {
+        if (remoteVal && (remoteVal === rule.target || remoteVal.endsWith(`.${rule.target}`)))
+          return true;
+        // matching ipset elements
+        if (!rule.dnsmasq_only) {
+          let remoteSet4 = null;
+          let remoteSet6 = null;
+          if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || !_.isEmpty(rule.vpnProfile) || rule.localPort || rule.remotePort || rule.parentRgId) {
+            remoteSet4 = Block.getDstSet(rule.pid);
+            remoteSet6 = Block.getDstSet6(rule.pid);
+            if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
+              return false;
+          } else {
+            remoteSet4 = (rule.action === "allow" ? 'allow_' : 'block_') + (rule.direction === "inbound" ? "ib_" : (rule.direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[rule.type];
+            remoteSet6 = remoteSet4 + "6";
+            const mappedAddresses = (await domainIPTool.getMappedIPAddresses(rule.target, {blockSet: remoteSet4})) || [];
+            if (!(_.intersection(mappedAddresses, remoteIpsToCheck).length > 0)
+              || !(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0)
+            )
+              return false;
+          }
+        } else return false;
+        break;
+      }
+      case "category": {
+        const domains = await domainBlock.getCategoryDomains(rule.target);
+        if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
+          return true;
+        if (!rule.dnsmasq_only) {
+          const remoteSet4 = categoryUpdater.getIPSetName(rule.target);
+          const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target);
+          if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
+            return false;
+        } else return false;
+        break;
+      }
+      case "country": {
+        const remoteSet4 = categoryUpdater.getIPSetName(countryUpdater.getCategory(rule.target));
+        const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(rule.target));
+        if (!(this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) &&
+            !(this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net)))))
+          )
+          return false;
+        break;
+      }
+      case "intranet":
+        if (!remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)))
+          return false;
+        break;
+      case "mac":
+      case "internet":
+        if (remoteIpsToCheck.filter(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)).length === remoteIpsToCheck.length)
+          return false;
+        break;
+      case "network":
+        const iface = rule.target && sysManager.getInterfaceViaUUID(rule.target);
+        if (!iface || !remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip, iface.name) || sysManager.inMySubnet6(ip, iface.name)))
+          return false;
+        break;
+      case "tag":
+      case "device":
+        // not supported yet
+        return false;
+      default:
+    }
+    return true;
+  }
+
   async checkACL(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
     if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
       this.ipsetCache = await ipset.readAllIpsets() || {};
@@ -2003,9 +2129,9 @@ class PolicyManager2 {
     }
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
-      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block"].includes(rule.action)).filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
       this.sortedActiveRulesCache = activeRules.map(rule => {
-        let {scope, target, action = "block", tag} = rule;
+        let {scope, target, action = "block", tag, vpnProfile} = rule;
         rule.type = rule["i.type"] || rule["type"];
         rule.direction = rule.direction || "bidirection";
         const intfs = [];
@@ -2034,8 +2160,12 @@ class PolicyManager2 {
           rule.rank = 0;
         if (tags && tags.length > 0)
           rule.rank = 2;
+        if (vpnProfile && vpnProfile.length > 0)
+          rule.rank = 2;
         if (intfs && intfs.length > 0)
           rule.rank = 4;
+        if (rule.parentRgId)
+          rule.rank = 8;
         switch (rule.type) {
           case "ip":
           case "net":
@@ -2080,6 +2210,9 @@ class PolicyManager2 {
         if (action === "block")
           // block has lower priority than allow
           rule.rank++;
+        if (action === "match_group" || rule.type === "match_group")
+          // a trick that makes match_group rule be checked after allow rule and before block rule
+          rule.rank += 0.5;
         return rule;
       }).filter(rule => rule.rank >= 0).sort((a, b) => {return a.rank - b.rank});
     }
@@ -2100,6 +2233,9 @@ class PolicyManager2 {
     }
 
     for (const rule of this.sortedActiveRulesCache) {
+      // rules in rule group will be checked in match_group rule
+      if (rule.parentRgId)
+        continue;
       // matching local port if applicable
       if (rule.localPort) {
         if (!localPort)
@@ -2133,123 +2269,25 @@ class PolicyManager2 {
         if (!protocol || rule.protocol !== protocol)
           continue;
       }
-      // matching local device if applicable
-      if (rule.scope && rule.scope.length > 0) {
-        if (!localMac)
+
+      if (!await this._matchLocal(rule, localMac))
+        continue;
+
+      if (rule.action === "match_group" || rule.type === "match_group") {
+        // check rules in the rule group against remote target
+        const targetRgId = rule.targetRgId;
+        if (!targetRgId)
           continue;
-        if (!rule.scope.includes(localMac))
-          continue;
-      }
-      // matching local device group if applicable
-      if (rule.tags && rule.tags.length > 0) {
-        if (!localMac)
-          continue;
-        if (!rule.tags.some(uid => this.ipsetCache[Tag.getTagDeviceMacSetName(uid)] && this.ipsetCache[Tag.getTagDeviceMacSetName(uid)].includes(localMac)))
-          continue;
-      }
-      // matching local network if applicable
-      if (rule.intfs && rule.intfs.length > 0) {
-        if (!localMac)
-          continue;
-        const deviceIps = await ht.getIPsByMac(localMac);
-        const deviceIP4 = deviceIps.filter(i => new Address4(i).isValid());
-        const deviceIP6 = deviceIps.filter(i => new Address6(i).isValid());
-        if (!rule.intfs.some(uuid => {
-          const iface = sysManager.getInterfaceViaUUID(uuid);
-          if (deviceIP4.some(i => sysManager.inMySubnets4(i, iface.name)))
-            return true;
-          if (deviceIP6.some(i => sysManager.inMySubnet6(i, iface.name)))
-            return true;
-          return false;
-        }))
-          continue;
-      }
-      // matching remote target
-      switch (rule.type) {
-        case "ip": {
-          if (!remoteIpsToCheck.includes(rule.target))
-            continue;
-          break;
-        }
-        case "net": {
-          const net4 = new Address4(rule.target);
-          const net6 = new Address6(rule.target);
-          if (net4.isValid()) {
-            if (!remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(net4)))
-              continue;
-          } else {
-            if (net6.isValid()) {
-              if (!remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(net6)))
-                continue;
-            }
+        const subRules = this.sortedActiveRulesCache.filter(r => r.parentRgId === targetRgId); // allow rules come first in the subRules list, the rank should be 8 and 9
+        for (const subRule of subRules) {
+          if (await this._matchRemote(subRule, remoteType, remoteVal, remoteIpsToCheck)) {
+            return subRule;
           }
-          break;
         }
-        case "domain":
-        case "dns": {
-          if (remoteVal && (remoteVal === rule.target || remoteVal.endsWith(`.${rule.target}`)))
-            return rule;
-          // matching ipset elements
-          if (!rule.dnsmasq_only) {
-            let remoteSet4 = null;
-            let remoteSet6 = null;
-            if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || rule.localPort || rule.remotePort) {
-              remoteSet4 = Block.getDstSet(rule.pid);
-              remoteSet6 = Block.getDstSet6(rule.pid);
-              if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
-                continue;
-            } else {
-              remoteSet4 = (rule.action === "allow" ? 'allow_' : 'block_') + (rule.direction === "inbound" ? "ib_" : (rule.direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[rule.type];
-              remoteSet6 = remoteSet4 + "6";
-              const mappedAddresses = (await domainIPTool.getMappedIPAddresses(rule.target, {blockSet: remoteSet4})) || [];
-              if (!(_.intersection(mappedAddresses, remoteIpsToCheck).length > 0)
-                || !(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0)
-              )
-                continue;
-            }
-          } else continue;
-          break;
-        }
-        case "category": {
-          const domains = await domainBlock.getCategoryDomains(rule.target);
-          if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
-            return rule;
-          if (!rule.dnsmasq_only) {
-            const remoteSet4 = categoryUpdater.getIPSetName(rule.target);
-            const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target);
-            if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
-              continue;
-          } else continue;
-          break;
-        }
-        case "country": {
-          const remoteSet4 = categoryUpdater.getIPSetName(countryUpdater.getCategory(rule.target));
-          const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(rule.target));
-          if (!(this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) &&
-              !(this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net)))))
-            )
-            continue;
-          break;
-        }
-        case "intranet":
-          if (!remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)))
-            continue;
-          break;
-        case "mac":
-        case "internet":
-          if (remoteIpsToCheck.filter(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)).length === remoteIpsToCheck.length)
-            continue;
-          break;
-        case "network":
-          const iface = rule.target && sysManager.getInterfaceViaUUID(rule.target);
-          if (!iface || !remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip, iface.name) || sysManager.inMySubnet6(ip, iface.name)))
-            continue;
-          break;
-        case "tag":
-        case "device":
-          // not supported yet
+        continue;
+      } else {
+        if (!await this._matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck))
           continue;
-        default:
       }
       // reach here if the rule matches the criteria
       return rule;
