@@ -402,7 +402,7 @@ class PolicyManager2 {
 
     await rclient.hmsetAsync(policyKey, existing.redisfy());
 
-    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto"];
+    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto", "parentRgId", "targetRgId"];
 
     for (const key of emptyStringCheckKeys) {
       if (policy[key] === '')
@@ -414,6 +414,9 @@ class PolicyManager2 {
     }
     if (policy.hasOwnProperty('tag') && _.isEmpty(policy.tag)) {
       await rclient.hdelAsync(policyKey, "tag");
+    }
+    if (policy.hasOwnProperty('vpnProfile') && _.isEmpty(policy.vpnProfile)) {
+      await rclient.hdelAsync(policyKey, "vpnProfile");
     }
   }
 
@@ -625,6 +628,22 @@ class PolicyManager2 {
           })
         });
       });
+  }
+
+  async deleteRuleGroupRelatedPolicies(uuid) {
+    if (!uuid)
+      return;
+    let rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
+    const pidsToDelete = [];
+    for (const rule of rules) {
+      if (!rule.pid)
+        continue;
+      if (rule.parentRgId === uuid || rule.targetRgId === uuid)
+        pidsToDelete.push(rule.pid);
+    }
+    for (const pid of pidsToDelete) {
+      await this.disableAndDeletePolicy(pid);
+    }
   }
 
   async deleteVpnClientRelatedPolicies(profileId) {
@@ -1083,9 +1102,9 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile, parentRgId, targetRgId } = policy;
 
-    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route") {
+    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
@@ -1143,7 +1162,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await ipset.create(remoteSet4, ruleSetTypeMap[type], true);
           await ipset.create(remoteSet6, ruleSetTypeMap[type], false);
           await Block.block(target, Block.getDstSet(pid));
@@ -1203,7 +1222,7 @@ class PolicyManager2 {
       case "dns":
         if (["allow", "block"].includes(action)) {
           if (direction !== "inbound") {
-            await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action }).catch(() => { });
+            await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
           if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
@@ -1211,7 +1230,7 @@ class PolicyManager2 {
         }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await ipset.create(remoteSet4, "hash:ip", true);
           await ipset.create(remoteSet6, "hash:ip", false);
           await domainBlock.blockDomain(target, {
@@ -1258,8 +1277,10 @@ class PolicyManager2 {
               scope: scope,
               category: target,
               intfs,
+              vpnProfile,
               action: action,
-              tags
+              tags,
+              parentRgId
             });
           }
           if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
@@ -1305,12 +1326,20 @@ class PolicyManager2 {
         remoteSet6 = Host.getDeviceSetName(target);
         break;
 
+      case "match_group":
+        action = "match_group";
+        break;
       default:
         throw new Error("Unsupported policy type");
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID]
-    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile)) {
+    if (action === "match_group") {
+      // add rule group link in dnsmasq config
+      await dnsmasq.linkRuleToRuleGroup({scope, intfs, tags, vpnProfile, pid}, targetRgId);
+    }
+
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId]
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);
       if (!_.isEmpty(intfs))
@@ -1318,7 +1347,9 @@ class PolicyManager2 {
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules(pid, scope, ... commonArgs);
       if (!_.isEmpty(vpnProfile))
-        await Block.setupGenericIdentitiesRules(pid, vpnProfile, ... commonArgs, Constants.NS_VPN_PROFILE);
+        await Block.setupGenericIdentitiesRules(pid, vpnProfile, Constants.NS_VPN_PROFILE, ... commonArgs);
+      if (!_.isEmpty(parentRgId))
+        await Block.setupRuleGroupRules(pid, parentRgId, ... commonArgs);
     } else {
       // apply to global
       await Block.setupGlobalRules(pid, ... commonArgs);
@@ -1354,9 +1385,9 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile, parentRgId, targetRgId } = policy;
 
-    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route") {
+    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
@@ -1410,7 +1441,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1465,13 +1496,13 @@ class PolicyManager2 {
       case "dns":
         if (["allow", "block"].includes(action)) {
           if (direction !== "inbound") {
-            await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action }).catch(() => { });
+            await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
         }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid)
@@ -1513,7 +1544,9 @@ class PolicyManager2 {
               scope: scope,
               category: target,
               intfs,
-              tags
+              tags,
+              vpnProfile,
+              parentRgId
             });
           }
         }
@@ -1555,12 +1588,20 @@ class PolicyManager2 {
         remoteSet6 = Host.getDeviceSetName(target);
         break;
 
+      case "match_group":
+        action = "match_group";
+        break;
       default:
         throw new Error("Unsupported policy");
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID]
-    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile)) {
+    if (action === "match_group") {
+      // remove rule group link in dnsmasq config
+      await dnsmasq.unlinkRuleFromRuleGroup({scope, intfs, tags, vpnProfile, pid}, targetRgId);
+    }
+
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId]
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);
       if (!_.isEmpty(intfs))
@@ -1568,7 +1609,9 @@ class PolicyManager2 {
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules(pid, scope, ... commonArgs);
       if (!_.isEmpty(vpnProfile))
-        await Block.setupGenericIdentitiesRules(pid, vpnProfile, ... commonArgs, Constants.NS_VPN_PROFILE);
+        await Block.setupGenericIdentitiesRules(pid, vpnProfile, Constants.NS_VPN_PROFILE, ... commonArgs);
+      if (!_.isEmpty(parentRgId))
+        await Block.setupRuleGroupRules(pid, parentRgId, ... commonArgs);
     } else {
       // apply to global
       await Block.setupGlobalRules(pid, ... commonArgs);
@@ -2260,6 +2303,40 @@ class PolicyManager2 {
       }
     }
     return results;
+  }
+
+  _getRuleGroupRedisKey(uuid) {
+    return `rule_group:${uuid}`;
+  }
+
+  async createOrUpdateRuleGroup(uuid, obj) {
+    if (!obj || !obj.name)
+      throw new Error("name is not defined");
+
+    if (!uuid) // generate random uuid
+      uuid = require('uuid').v4();
+
+    obj.uuid = uuid;
+    const key = this._getRuleGroupRedisKey(uuid);
+    await rclient.delAsync(key);
+    await rclient.hmsetAsync(key, obj);
+    return obj;
+  }
+
+  async removeRuleGroup(uuid) {
+    const key = this._getRuleGroupRedisKey(uuid);
+    await rclient.delAsync(key);
+  }
+
+  async getAllRuleGroupMetaData() {
+    const keys = await rclient.keysAsync("rule_group:*");
+    const objs = [];
+    for (key of keys) {
+      const obj = await rclient.hgetAllAsync(key);
+      if (obj)
+        objs.push(obj);
+    }
+    return objs;
   }
 }
 
