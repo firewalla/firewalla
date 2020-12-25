@@ -284,6 +284,7 @@ class DestIPFoundHook extends Hook {
           {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
+            this.shouldTriggerDetectionImmediately(flow, intel);
             return intel;
           }
         }
