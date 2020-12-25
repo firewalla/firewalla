@@ -63,10 +63,11 @@ class DestIPFoundHook extends Hook {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
-  appendNewFlow(ip, fd, retryCount) {
+  appendNewFlow(ip, fd, mac, retryCount) {
     let flow = {
        ip:ip,
        fd:fd,
+       mac,
        retryCount: retryCount || 0
     };
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
@@ -267,7 +268,7 @@ class DestIPFoundHook extends Hook {
     let domain = this.getDomain(sslInfo, dnsInfo);
     if (!domain && retryCount < 5) {
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(ip, fd, retryCount + 1);
+      this.appendNewFlow(ip, fd, flow.mac, retryCount + 1);
     }
 
     try {
@@ -420,7 +421,7 @@ class DestIPFoundHook extends Hook {
       if(this.paused)
         return;
 
-      this.appendNewFlow(ip, fd);
+      this.appendNewFlow(ip, fd, event.mac);
     });
 
     sem.on('DestIP', (event) => {
