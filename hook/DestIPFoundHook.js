@@ -56,6 +56,7 @@ class DestIPFoundHook extends Hook {
 
     this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
+    this.cacheTrigger = {};
   }
 
   appendNewIP(ip) {
@@ -364,7 +365,17 @@ class DestIPFoundHook extends Hook {
   }
 
   shouldTriggerDetectionImmediately(mac, aggrIntelInfo) {
+
     if(aggrIntelInfo.category === 'intel' && mac) {
+
+      const now = Math.floor(new Date() / 1000);
+      if(this.cacheTrigger[mac] && (now - this.cacheTrigger[mac]) < 300) {
+        // skip if duplicate in 5 minutes
+        return;
+      }
+  
+      this.cacheTrigger[mac] = now;
+      
       // trigger firemon detect immediately to detect the malware activity sooner
       sem.sendEventToFireMon({
         type: 'FW_DETECT_REQUEST',
