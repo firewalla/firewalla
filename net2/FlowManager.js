@@ -883,24 +883,12 @@ module.exports = class FlowManager {
     log.debug("flows:sorted Query dns manager returnes");
     const activities = await this.summarizeActivityFromConnections(sorted);
 
-    const _sorted = sorted.filter((f) => !this.shouldBeIgnored(f));
+    const _sorted = sorted.filter((flow) => !flowUtil.checkFlag(flow, 'x'));
 
     return {
       connections: _sorted,
       activities: activities
     };
-  }
-
-  shouldBeIgnored(flow) {
-    const flagged = flowUtil.checkFlag(flow, 'x');
-    const c = flow.category;
-
-    // only ignore if it's flagged with x and category is not security intel
-    if (flagged && c !== 'intel') {
-      return true;
-    }
-
-    return false;
   }
 
   async enrichHttpFlowsInfo(flows) {

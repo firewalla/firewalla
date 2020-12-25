@@ -145,12 +145,7 @@ module.exports = class DNSManager {
     if (list == null || list.length == 0) {
       return;
     }
-    // let resolve = 0;
-    // let enrichDstCount = 0;
-    // let enrichDeviceCount = 0;
-    // let start = Math.ceil(Date.now() / 1000);
-    // let tid = Math.ceil(start+Math.random()*100);
-    // log.debug("QUERY: Resoving list[",tid,"] ", list.length);
+
     return asyncNative.eachLimit(list, DNSQUERYBATCHSIZE, async(o) => {
       // filter out short connections
       let lhost = hostManager.getHostFast(o.lh);
@@ -160,35 +155,6 @@ module.exports = class DNSManager {
           flowUtil.addFlag(o, 'l'); //
           //flowUtil.addFlag(o,'x'); // need to revist on if need to ignore this flow ... most likely these flows are very short lived
           // return;
-        }
-      }
-
-      if (o.fd == "in") {
-        if (o.du && o.du < 0.0001) {
-          //log.info("### NOT LOOKUP 1:",o);
-          flowUtil.addFlag(o, 'x');
-          return;
-        }
-        if (o.ob && o.ob == 0 && o.rb && o.rb < 1000) {
-          //log.info("### NOT LOOKUP 2:",o);
-          flowUtil.addFlag(o, 'x');
-          return;
-        }
-        if (o.rb && o.rb < 1500) { // used to be 2500
-          //log.info("### NOT LOOKUP 3:",o);
-          flowUtil.addFlag(o, 'x');
-          return;
-        }
-        if (o.pr && o.pr == 'tcp' && (o.rb == 0 || o.ob == 0) && o.ct && o.ct <= 1) {
-          flowUtil.addFlag(o, 'x');
-          log.debug("### NOT LOOKUP 4:", o);
-          return;
-        }
-      } else {
-        if (o.pr && o.pr == 'tcp' && (o.rb == 0 || o.ob == 0)) {
-          flowUtil.addFlag(o, 'x');
-          log.debug("### NOT LOOKUP 5:", o);
-          return;
         }
       }
 
@@ -230,15 +196,41 @@ module.exports = class DNSManager {
       } catch(err) {
         log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
       }
-    })
-      // .catch((err) => {
-      //   log.debug("DNS:QUERY:RESOLVED:COUNT[",tid,"] (", resolve,"/",list.length,"):", enrichDeviceCount, enrichDstCount, Math.ceil(Date.now() / 1000) - start,start);
-      //   if(err) {
-      //     log.error("Failed to call dnsmanager.query:", err);
-      //   }
 
-      //   throw err
-      // });
+      if (o.category === 'intel') {
+        return;
+      }
+
+      // don't run this if the category is intel
+      if (o.fd == "in") {
+        if (o.du && o.du < 0.0001) {
+          //log.info("### NOT LOOKUP 1:",o);
+          flowUtil.addFlag(o, 'x');
+          return;
+        }
+        if (o.ob && o.ob == 0 && o.rb && o.rb < 1000) {
+          //log.info("### NOT LOOKUP 2:",o);
+          flowUtil.addFlag(o, 'x');
+          return;
+        }
+        if (o.rb && o.rb < 1500) { // used to be 2500
+          //log.info("### NOT LOOKUP 3:",o);
+          flowUtil.addFlag(o, 'x');
+          return;
+        }
+        if (o.pr && o.pr == 'tcp' && (o.rb == 0 || o.ob == 0) && o.ct && o.ct <= 1) {
+          flowUtil.addFlag(o, 'x');
+          log.debug("### NOT LOOKUP 4:", o);
+          return;
+        }
+      } else {
+        if (o.pr && o.pr == 'tcp' && (o.rb == 0 || o.ob == 0)) {
+          flowUtil.addFlag(o, 'x');
+          log.debug("### NOT LOOKUP 5:", o);
+          return;
+        }
+      }
+    })
   }
 
   enrichVPNProfileCN(cn, flowObject, srcOrDest) {
