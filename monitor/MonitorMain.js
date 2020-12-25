@@ -160,7 +160,7 @@ async function scheduleSingleDetectRequset(options) {
   }
 }
 
-function scheduleRunDetect() {
+function scheduleRunDetect(flowMonitor) {
   setInterval(() => {
     const type = 'detect';
     const _status = status[type];
@@ -201,7 +201,9 @@ function scheduleRunDetect() {
   });
 }
 
-function scheduleRunDLP() {
+function scheduleRunDLP(flowMonitor) {
+  const tick = 60 * 15; // waking up every 15 min
+
   setInterval(() => {
     const type = 'dlp';
     const _status = status[type];
@@ -249,9 +251,9 @@ function run() {
 
   flowMonitor.run();
 
-  scheduleRunDLP();
+  scheduleRunDLP(flowMonitor);
 
-  scheduleRunDetect();
+  scheduleRunDetect(flowMonitor);
 
   process.on('SIGUSR1', () => {
     log.info('Received SIGUSR1. Trigger DLP check.');
