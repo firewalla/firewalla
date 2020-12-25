@@ -133,10 +133,23 @@ function updateTouchFile() {
   })
 }
 
+let cachedSingleDetect = {};
+
 async function scheduleSingleDetectRequset(flowMonitor, options) {
   const type = 'detect';
   const _status = status[type];
   const mac = options.mac;
+
+  if(!mac) {
+    return;
+  }
+
+  // do not run twice per session
+  if(cachedSingleDetect[mac]) {
+    return;
+  }
+
+  cachedSingleDetect[mac] = 1;
 
   if(_status.running) {
     if(options.ttl > 0) {
@@ -183,6 +196,7 @@ function scheduleRunDetect(flowMonitor) {
 
     setStatus(_status, {running: true, runBy: 'scheduler'});
     flowMonitor.run(type, 60).then(() => {
+      cachedSingleDetect = {}; // clean cache
       log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
