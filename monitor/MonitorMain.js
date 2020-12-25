@@ -133,7 +133,7 @@ function updateTouchFile() {
   })
 }
 
-async function scheduleSingleDetectRequset(options) {
+async function scheduleSingleDetectRequset(flowMonitor, options) {
   const type = 'detect';
   const _status = status[type];
   const mac = options.mac;
@@ -143,7 +143,7 @@ async function scheduleSingleDetectRequset(options) {
       options.ttl--;
       setTimeout(() => {
         log.info("firemon is busy, rescheduling detect request in 3 seconds:",mac);
-        scheduleSingleDetectRequset(options);
+        scheduleSingleDetectRequset(flowMonitor, options);
       }, 3 * 1000);
     } else {
       log.forceInfo("Schedule TTL timeout for single detect request on mac:", mac);
@@ -194,7 +194,7 @@ function scheduleRunDetect(flowMonitor) {
       return;
     }
 
-    scheduleSingleDetectRequset({
+    scheduleSingleDetectRequset(flowMonitor, {
       mac: event.mac,
       ttl: 10,
     });

@@ -237,6 +237,7 @@ class DestIPFoundHook extends Hook {
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
+    let mac = null;
     let retryCount = 0;
 
     if (flow) {
@@ -246,6 +247,7 @@ class DestIPFoundHook extends Hook {
         if (parsed.fd) {
           fd = parsed.fd;
           ip = parsed.ip;
+          mac = parsed.mac;
           retryCount = parsed.retryCount || 0;
         } else {
           ip = flow;
@@ -268,7 +270,7 @@ class DestIPFoundHook extends Hook {
     let domain = this.getDomain(sslInfo, dnsInfo);
     if (!domain && retryCount < 5) {
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(ip, fd, flow.mac, retryCount + 1);
+      this.appendNewFlow(ip, fd, mac, retryCount + 1);
     }
 
     try {
@@ -285,7 +287,7 @@ class DestIPFoundHook extends Hook {
           {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
-            this.shouldTriggerDetectionImmediately(flow, intel);
+            this.shouldTriggerDetectionImmediately(mac, intel);
             return intel;
           }
         }
@@ -351,7 +353,7 @@ class DestIPFoundHook extends Hook {
       }
     
       // check if detection should be triggered on this flow/mac immediately to speed up detection
-      this.shouldTriggerDetectionImmediately(flow, aggrIntelInfo);
+      this.shouldTriggerDetectionImmediately(mac, aggrIntelInfo);
 
       return aggrIntelInfo;
 
@@ -361,12 +363,12 @@ class DestIPFoundHook extends Hook {
     }
   }
 
-  shouldTriggerDetectionImmediately(flow, aggrIntelInfo) {
-    if(aggrIntelInfo.category === 'intel' && flow && flow.mac) {
+  shouldTriggerDetectionImmediately(mac, aggrIntelInfo) {
+    if(aggrIntelInfo.category === 'intel' && mac) {
       // trigger firemon detect immediately to detect the malware activity sooner
       sem.sendEventToFireMon({
         type: 'FW_DETECT_REQUEST',
-        mac: flow.mac
+        mac
       });
     }
   }
