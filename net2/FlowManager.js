@@ -882,19 +882,25 @@ module.exports = class FlowManager {
       .catch(err => log.error("flow:conn unable to map dns", err))
     log.debug("flows:sorted Query dns manager returnes");
     const activities = await this.summarizeActivityFromConnections(sorted);
-    //log.info("Activities",activities);
-    let _sorted = [];
-    for (let i in sorted) {
-      if (flowUtil.checkFlag(sorted[i], 'x')) {
-        //log.info("DroppingFlow",sorted[i]);
-      } else {
-        _sorted.push(sorted[i]);
-      }
-    }
+
+    const _sorted = sorted.filter((f) => !this.shouldBeIgnored(f));
+
     return {
       connections: _sorted,
       activities: activities
     };
+  }
+
+  shouldBeIgnored(flow) {
+    const flagged = flowUtil.checkFlag(flow, 'x');
+    const c = flow.category;
+
+    // only ignore if it's flagged with x and category is not security intel
+    if (flagged && c !== 'intel') {
+      return true;
+    }
+
+    return false;
   }
 
   async enrichHttpFlowsInfo(flows) {
