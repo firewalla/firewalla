@@ -26,7 +26,7 @@ const hostTool = new HostTool();
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 
-const flowTool = require('./FlowTool.js')();
+const flowTool = require('./FlowTool.js');
 
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
@@ -45,11 +45,11 @@ class NetBotTool {
   }
 
   prepareTopDownloadFlows(json, options) {
-    return this._prepareTopFlows(json, "download", options);
+    return this.prepareTopFlows(json, "download", options);
   }
 
   prepareTopUploadFlows(json, options) {
-    return this._prepareTopFlows(json, "upload", options);
+    return this.prepareTopFlows(json, "upload", options);
   }
 
   async prepareCategoryActivitiesFlows(json, options) {
@@ -217,7 +217,7 @@ class NetBotTool {
 
 
   // Top Download/Upload in the entire network
-  async _prepareTopFlows(json, trafficDirection, options) {
+  async prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -257,7 +257,7 @@ class NetBotTool {
     json.flows[trafficDirection] = enriched.sort((a, b) => {
       return b.count - a.count;
     });
-    return traffic
+    return json.flows[trafficDirection]
   }
 
   // "sumflow:8C:29:37:BF:4A:86:upload:1505073000:1505159400"

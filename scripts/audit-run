@@ -1,0 +1,31 @@
+#!/bin/bash
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+logger 'FIREWALLA.ACLAUDIT Start'
+
+sudo mkdir -p /alog/
+sudo rm -r -f /alog/*
+sudo umount -l /alog
+sudo mount -t tmpfs -o size=10m tmpfs /alog
+
+sleep 3
+
+sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
+sudo cp ${FIREWALLA_HOME}/etc/logrotate.d/acl-audit /etc/logrotate.d/
+sudo systemctl restart rsyslog
+sudo iptables -I FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]"
+sudo ip6tables -I FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]"
+
+# ensure log file is readable
+sudo touch /alog/acl-audit.log
+sudo chgrp adm /alog/acl-audit.log
+sudo chown syslog /alog/acl-audit.log
+sudo chmod 644 /alog/acl-audit.log
+
+# sudo ln -s /alog/acl-audit.log /var/log/acl-audit.log
+sudo mkdir -p /log/alog
+sudo ln -s /alog/acl-audit.log /log/alog/acl-audit.log
+
+logger 'FIREWALLA.ACLAUDIT Finished'
