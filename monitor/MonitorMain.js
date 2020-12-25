@@ -146,6 +146,7 @@ async function scheduleSingleDetectRequset(flowMonitor, options) {
 
   // do not run twice per session
   if(cachedSingleDetect[mac]) {
+    log.info("Skipped since just triggered on this mac recently:",mac);
     return;
   }
 
