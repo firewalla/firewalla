@@ -873,15 +873,9 @@ module.exports = class FlowManager {
       .catch(err => log.error("flow:conn unable to map dns", err))
     log.debug("flows:sorted Query dns manager returnes");
     const activities = await this.summarizeActivityFromConnections(sorted);
-    //log.info("Activities",activities);
-    let _sorted = [];
-    for (let i in sorted) {
-      if (flowUtil.checkFlag(sorted[i], 'x')) {
-        //log.info("DroppingFlow",sorted[i]);
-      } else {
-        _sorted.push(sorted[i]);
-      }
-    }
+
+    const _sorted = sorted.filter((flow) => !flowUtil.checkFlag(flow, 'x'));
+
     return {
       connections: _sorted,
       activities: activities
