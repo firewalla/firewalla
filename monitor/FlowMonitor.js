@@ -686,7 +686,9 @@ module.exports = class FlowMonitor {
     rxRanked:
   */
 
-  async run(service, period) {
+  async run(service, period, options) {
+    options = options || {};
+
     let runid = new Date() / 1000
     log.info("Starting:", service, service == 'dlp' ? this.monitorTime : period, runid);
     const startTime = new Date() / 1000
@@ -698,6 +700,12 @@ module.exports = class FlowMonitor {
       hosts = hosts.filter(x => x) // workaround if host is undefined or null
       for (const host of hosts) {
         const mac = host.o.mac;
+
+        // if mac is pre-specified and mac does not equal to 
+        if(options.mac && options.mac !== mac) {
+          continue;
+        }
+
         if (!service || service === "dlp") {
           log.info("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation

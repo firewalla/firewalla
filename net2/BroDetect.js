@@ -1229,7 +1229,8 @@ module.exports = class {
               fd: tmpspec.fd,
               ob: tmpspec.ob,
               rb: tmpspec.rb,
-              suppressEventLogging: true
+              suppressEventLogging: true,
+              mac: localMac
             });
           }, 1 * 1000); // make it a little slower so that dns record will be handled first
 

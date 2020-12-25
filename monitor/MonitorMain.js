@@ -133,52 +133,34 @@ function updateTouchFile() {
   })
 }
 
-function run() {
-  // listen on request to dump heap for this process, used for memory optmiziation
-  // let HeapSensor = require('../sensor/HeapSensor');
-  // heapSensor = new HeapSensor();
-  // heapSensor.run();
+async function scheduleSingleDetectRequset(options) {
+  const type = 'detect';
+  const _status = status[type];
+  const mac = options.mac;
 
-  const tick = 60 * 15; // waking up every 15 min
-  const monitorWindow = 60 * 60 * 4; // eight hours window
-
-  const FlowMonitor = require('./FlowMonitor.js');
-  const flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
-
-  log.info("================================================================================");
-  log.info("Monitor Running ");
-  log.info("================================================================================");
-
-  flowMonitor.run();
-
-  setInterval(() => {
-    const type = 'dlp';
-    const _status = status[type];
-
-    updateTouchFile();
-
-    setTimeout(() => {
-      if (_status.running && _status.runBy !== 'signal') {
-        log.error("DLP Timeout", status);
-        throw new Error("Monitor DLP Timeout");
-      } else {
-        log.info("Last DLP Ran Successful");
-      }
-    }, tick / 2 * 1000);
-
-    if (_status.running) {
-      log.warn('Already a dlp session running by signal trigger, skip this time', status);
-      return;
+  if(_status.running) {
+    if(options.ttl > 0) {
+      options.ttl--;
+      setTimeout(() => {
+        log.info("firemon is busy, rescheduling detect request in 3 seconds:",mac);
+        scheduleSingleDetectRequset(options);
+      }, 3 * 1000);
+    } else {
+      log.forceInfo("Schedule TTL timeout for single detect request on mac:", mac);
     }
-
+  } else {
+    log.info("Got a single request to check mac address:", mac);
     setStatus(_status, {running: true, runBy: 'scheduler'});
-    flowMonitor.run(type, tick).then(() => {
-      log.info('Clean up after', type, 'run');
-      setStatus(_status, {running: false, runBy: ''});
-      gc();
-    })
-  }, tick * 1000);
+    await flowMonitor.run(type, 60, {mac}).catch((err) => {
+      log.error("Got error when run flow monitor on mac:",mac, "error:", err);
+    });
+    log.info("Completed a single request to check mac address:", mac);
+    setStatus(_status, {running: false, runBy: ''});
+    gc();
+  }
+}
 
+function scheduleRunDetect() {
   setInterval(() => {
     const type = 'detect';
     const _status = status[type];
@@ -206,6 +188,70 @@ function run() {
       gc();
     });
   }, 60 * 1000);
+
+  sem.on("FW_DETECT_REQUEST", (event) => {
+    if(!event.mac) {
+      return;
+    }
+
+    scheduleSingleDetectRequset({
+      mac: event.mac,
+      ttl: 10,
+    });
+  });
+}
+
+function scheduleRunDLP() {
+  setInterval(() => {
+    const type = 'dlp';
+    const _status = status[type];
+
+    updateTouchFile();
+
+    setTimeout(() => {
+      if (_status.running && _status.runBy !== 'signal') {
+        log.error("DLP Timeout", status);
+        throw new Error("Monitor DLP Timeout");
+      } else {
+        log.info("Last DLP Ran Successful");
+      }
+    }, tick / 2 * 1000);
+
+    if (_status.running) {
+      log.warn('Already a dlp session running by signal trigger, skip this time', status);
+      return;
+    }
+
+    setStatus(_status, {running: true, runBy: 'scheduler'});
+    flowMonitor.run(type, tick).then(() => {
+      log.info('Clean up after', type, 'run');
+      setStatus(_status, {running: false, runBy: ''});
+      gc();
+    })
+  }, tick * 1000);
+}
+
+function run() {
+  // listen on request to dump heap for this process, used for memory optmiziation
+  // let HeapSensor = require('../sensor/HeapSensor');
+  // heapSensor = new HeapSensor();
+  // heapSensor.run();
+
+  const tick = 60 * 15; // waking up every 15 min
+  const monitorWindow = 60 * 60 * 4; // eight hours window
+
+  const FlowMonitor = require('./FlowMonitor.js');
+  const flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
+
+  log.info("================================================================================");
+  log.info("Monitor Running ");
+  log.info("================================================================================");
+
+  flowMonitor.run();
+
+  scheduleRunDLP();
+
+  scheduleRunDetect();
 
   process.on('SIGUSR1', () => {
     log.info('Received SIGUSR1. Trigger DLP check.');

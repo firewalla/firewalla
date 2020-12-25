@@ -347,12 +347,25 @@ class DestIPFoundHook extends Hook {
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
       }
+    
+      // check if detection should be triggered on this flow/mac immediately to speed up detection
+      this.shouldTriggerDetectionImmediately(flow, aggrIntelInfo);
 
       return aggrIntelInfo;
 
     } catch(err) {
       log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
+    }
+  }
+
+  shouldTriggerDetectionImmediately(flow, aggrIntelInfo) {
+    if(aggrIntelInfo.category === 'intel' && flow && flow.mac) {
+      // trigger firemon detect immediately to detect the malware activity sooner
+      sem.sendEventToFireMon({
+        type: 'FW_DETECT_REQUEST',
+        mac: flow.mac
+      });
     }
   }
 
