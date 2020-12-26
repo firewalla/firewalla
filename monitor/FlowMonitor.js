@@ -739,6 +739,12 @@ module.exports = class FlowMonitor {
         const vpnProfile = vpnProfiles[cn];
         if (service === "detect") {
           const uid = `${Constants.NS_VPN_PROFILE}:${cn}`;
+          
+          // if mac is pre-specified and mac does not equal to the vpn profile, continue
+          if(options.mac && options.mac !== uid) {
+            continue;
+          }
+
           log.info("Running Detect:", uid);
           await this.detect(uid, period);
         }
