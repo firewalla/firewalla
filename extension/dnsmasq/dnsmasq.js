@@ -120,6 +120,11 @@ module.exports = class DNSMASQ {
       this.throttleTimer = {};
       this.networkFailCountMap = {};
 
+      this.categoryAllowUUIDsMap = {};
+      this.categoryBlockUUIDsMap = {};
+      this.categoryConfigFilePathsMap = {};
+      this.categoryDomainsMap = {};
+
       this.hashTypes = {
         adblock: 'ads',
         family: 'family'
@@ -431,6 +436,14 @@ module.exports = class DNSMASQ {
     }
   }
 
+  _getRuleGroupConfigPath(pid, uuid) {
+    return `${FILTER_DIR}/rg_${uuid}_policy_${pid}.conf`;
+  }
+
+  _getRuleGroupPolicyTag(uuid) {
+    return `rg_${uuid}`;
+  }
+
   controlFilter(type, state) {
     this.nextState[type] = state;
     log.info(`${type} nextState is: ${this.nextState[type]}`);
@@ -471,7 +484,7 @@ module.exports = class DNSMASQ {
     try {
       domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
       for (const domain of domains) {
-        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile)) {
+        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
           if (!_.isEmpty(options.scope)) {
             // use single config file for all devices configuration
             const entries = [];
@@ -524,6 +537,17 @@ module.exports = class DNSMASQ {
               await fs.writeFileAsync(filePath, entries.join('\n'));
             }
           }
+
+          if (!_.isEmpty(options.parentRgId)) {
+            const uuid = options.parentRgId;
+            const entries = [];
+            if (options.action === "block")
+              entries.push(`address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
+            else
+              entries.push(`server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+            const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
+            await fs.writeFileAsync(filePath, entries.join('\n'));
+          }
         } else {
           // global effective policy
           const entries = [];
@@ -551,7 +575,7 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     try {
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
         if (options.scope && options.scope.length > 0) {
           // use single config for all devices configuration
           const entries = [];
@@ -591,6 +615,44 @@ module.exports = class DNSMASQ {
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         }
+
+        if (!_.isEmpty(options.vpnProfile)) {
+          for (const cn of options.vpnProfile) {
+            const entries = [];
+            if (options.action === "block")
+              entries.push(`group-tag=@${cn}$${category}_block`);
+            else
+              entries.push(`group-tag=@${cn}$${category}_allow`);
+            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
+          }
+        }        
+
+        if (!_.isEmpty(options.parentRgId)) {
+          const uuid = options.parentRgId;
+          let path = this._getRuleGroupConfigPath(options.pid, uuid);
+          let domains = this.categoryDomainsMap[category] || [];
+          domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+          let entries = [];
+          if (options.action === "block") {
+            entries = domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
+            if (_.isArray(this.categoryBlockUUIDsMap[category])) {
+              if (!this.categoryBlockUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
+                this.categoryBlockUUIDsMap[category].push({ uuid: uuid, pid: options.pid })
+            } else
+              this.categoryBlockUUIDsMap[category] = [{ uuid: uuid, pid: options.pid }];
+          } else {
+            entries = domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+            if (_.isArray(this.categoryAllowUUIDsMap[category])) {
+              if (!this.categoryAllowUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
+                this.categoryAllowUUIDsMap[category].push({ uuid: uuid, pid: options.pid });
+            } else
+              this.categoryAllowUUIDsMap[category] = [{ uuid: uuid, pid: options.pid }];
+          }
+          if (entries.length !== 0) {
+            await fs.writeFileAsync(path, entries.join('\n'));
+          }
+        }
       } else {
         // global effective policy
         const entries = [];
@@ -616,8 +678,8 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     try {
       options = options || {};
-
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags)) {
+      const category = options.category;
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
         if (options.scope && options.scope.length > 0) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
@@ -643,6 +705,36 @@ module.exports = class DNSMASQ {
             });
           }
         }
+
+        if (!_.isEmpty(options.vpnProfile)) {
+          for (const cn of options.vpnProfile) {
+            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {
+              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+            });
+          }
+        }
+
+        if (!_.isEmpty(options.parentRgId)) {
+          const uuid = options.parentRgId;
+          let path = this._getRuleGroupConfigPath(options.pid, uuid);
+          if (options.action === "block") {
+            let idx = (_.isArray(this.categoryBlockUUIDsMap[category]) && this.categoryBlockUUIDsMap[category].findIndex(o => o.uuid === uuid && o.pid === options.pid)) || -1;
+            while (idx !== -1) {
+              this.categoryBlockUUIDsMap[category].splice(idx, 1);
+              idx = this.categoryBlockUUIDsMap[category].findIndex(o => o.uuid === uuid && o.pid === options.pid);
+            }
+          } else {
+            let idx = (_.isArray(this.categoryAllowUUIDsMap[category]) && this.categoryAllowUUIDsMap[category].findIndex(o => o.uuid === uuid && o.pid === options.pid)) || -1;
+            while (idx !== -1) {
+              this.categoryAllowUUIDsMap[category].splice(idx, 1);
+              idx = this.categoryAllowUUIDsMap[category].findIndex(o => o.uuid === uuid && o.pid === options.pid);
+            }
+          }
+          await fs.unlinkAsync(path).catch((err) => {
+            log.error(`Failed to remove policy config file for ${options.pid} and gid ${uuid}`, err.message);
+          });
+        }
       } else {
         const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
         await fs.unlinkAsync(filePath).catch((err) => {
@@ -660,6 +752,7 @@ module.exports = class DNSMASQ {
     log.debug("updatePolicyCategoryFilterEntry", domains, options);
     options = options || {};
     const category = options.category;
+    this.categoryDomainsMap[category] = domains;
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
     const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
     const blockEntries = [];
@@ -675,8 +768,24 @@ module.exports = class DNSMASQ {
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
     }
     try {
-      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
-      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
+      await fs.writeFileAsync(categoryBlockDomainsFile, domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${category}_block`).join('\n'));
+      await fs.writeFileAsync(categoryAllowDomainsFile, domains.map(domain => `server=/${domain}/#$${category}_allow`).join('\n'));
+      if (_.isArray(this.categoryAllowUUIDsMap[category])) {
+        for (const o of this.categoryAllowUUIDsMap[category]) {
+          const uuid = o.uuid;
+          const pid = o.pid;
+          const path = this._getRuleGroupConfigPath(pid, uuid);
+          await fs.writeFileAsync(path, domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
+        }
+      }
+      if (_.isArray(this.categoryBlockUUIDsMap[category])) {
+        for (const o of this.categoryBlockUUIDsMap[category]) {
+          const uuid = o.uuid;
+          const pid = o.pid;
+          const path = this._getRuleGroupConfigPath(pid, uuid);
+          await fs.writeFileAsync(path, domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
+        }
+      }
     } catch (err) {
       log.error("Failed to update category entry into file:", err);
     } finally {
@@ -693,7 +802,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile)) {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
         if (!_.isEmpty(options.scope)) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
@@ -728,6 +837,14 @@ module.exports = class DNSMASQ {
             });
           }
         }
+
+        if (!_.isEmpty(options.parentRgId)) {
+          const uuid = options.parentRgId;
+          const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
+          await fs.unlinkAsync(filePath).catch((err) => {
+            log.error(`Failed to remove policy config file for ${options.pid} gid ${uuid}`, err.message);
+          });
+        }
       } else {
         const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
         await fs.unlinkAsync(filePath).catch((err) => {
@@ -742,6 +859,101 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async linkRuleToRuleGroup(options, uuid) {
+    options = options || {}
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress");
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+    try {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile)) {
+        if (!_.isEmpty(options.scope)) {
+          const entries = [];
+          for (const mac of options.scope) {
+            entries.push(`mac-address-tag=%${mac}$${this._getRuleGroupPolicyTag(uuid)}`);
+          }
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.writeFileAsync(filePath, entries.join('\n'));
+        }
+        if (!_.isEmpty(options.intfs)) {
+          const NetworkProfile = require('../../net2/NetworkProfile.js');
+          for (const intf of options.intfs) {
+            const entries = [`mac-address-tag=%00:00:00:00:00:00$${this._getRuleGroupPolicyTag(uuid)}`];
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
+          }
+        }
+        if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            const entries = [`group-tag=@${tag}$${this._getRuleGroupPolicyTag(uuid)}`];
+            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
+          }
+        }
+        if (!_.isEmpty(options.vpnProfile)) {
+          for (const cn of options.vpnProfile) {
+            const entries = [`group-tag=@${cn}$${this._getRuleGroupPolicyTag(uuid)}`];
+            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
+          }
+        }
+      } else {
+        const entries = [`mac-address-tag=%${systemLevelMac}$${this._getRuleGroupPolicyTag(uuid)}`];
+        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        await fs.writeFileAsync(filePath, entries.join('\n'));
+      }
+    } catch (err) {
+      log.error(`Failed to add rule group membership to ${uuid}`, options, err.message);
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+
+  async unlinkRuleFromRuleGroup(options, uuid) {
+    options = options || {}
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress");
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
+    try {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile)) {
+        if (!_.isEmpty(options.scope)) {
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.unlinkAsync(filePath).catch((err) => {});          
+        }
+        if (!_.isEmpty(options.intfs)) {
+          const NetworkProfile = require('../../net2/NetworkProfile.js');
+          for (const intf of options.intfs) {
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {}); 
+          }
+        }
+        if (!_.isEmpty(options.tags)) {
+          for (const tag of options.tags) {
+            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {}); 
+          }
+        }
+        if (!_.isEmpty(options.vpnProfile)) {
+          for (const cn of options.vpnProfile) {
+            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
+            await fs.unlinkAsync(filePath).catch((err) => {}); 
+          }
+        }
+      } else {
+        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        await fs.unlinkAsync(filePath).catch((err) => {}); 
+      }
+    } catch (err) {
+      log.error(`Failed to remove rule group membership from ${uuid}`, options, err.message);
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+
+  // deprecated, this is only used in test cases
   async addPolicyFilterEntries(domains) {
     let entries = domains.map(domain => util.format("address=/%s/%s", domain, BLACK_HOLE_IP));
     let data = entries.join("\n");
@@ -1545,11 +1757,11 @@ module.exports = class DNSMASQ {
     try {
       let md5sumNow = '';
       for (const confs of paths) {
-        const stdout = await execAsync(`find ${confs} -type f | xargs cat | sort | md5sum | awk '{print $1}'`).then(r => r.stdout).catch((err) => null);
+        const stdout = await execAsync(`find ${confs} -type f | (while read FILE; do (cat "\${FILE}"; echo); done;) | sort | md5sum | awk '{print $1}'`).then(r => r.stdout).catch((err) => null);
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);
-      log.info(`dnsmasq confs md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
+      log.info(`dnsmasq confs ${dnsmasqConfKey} md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
       if (md5sumNow != md5sumBefore) {
         await rclient.setAsync(dnsmasqConfKey, md5sumNow);
         return true;

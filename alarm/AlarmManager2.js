@@ -1323,6 +1323,8 @@ module.exports = class {
   }
 
   async enrichDeviceInfo(alarm) {
+    const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN'];
+    if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
       throw new Error("requiring p.device.ip");

@@ -245,6 +245,12 @@ class SysManager {
 
       ssh.getPassword((err, password) => {
         this.setSSHPassword(password);
+        if (f.isMain() && password && password.length > 0) {
+          // set back password during initialization, some platform may flush the old ssh password due to ramfs, e.g., gold
+          ssh.resetPasswordAsync(password).catch((err) => {
+            log.error("Failed to set back SSH password during initialization", err.message);
+          })
+        }
       });
     }, 2000);
   }
@@ -611,7 +617,7 @@ class SysManager {
   isMyIP(ip) {
     if (!ip) return false
     let interfaces = this.getMonitoringInterfaces();
-    return interfaces.map(i => i.ip_address === ip).some(Boolean);
+    return interfaces.some(i => i.ip_address === ip);
   }
 
   isIPv6GloballyConnected() {
@@ -647,7 +653,7 @@ class SysManager {
 
   isMyIP6(ip6) {
     let interfaces = this.getMonitoringInterfaces();
-    return interfaces.map(i => i.ip6_addresses && i.ip6_addresses.includes(ip6)).some(Boolean);
+    return interfaces.some(i => i.ip6_addresses && i.ip6_addresses.includes(ip6));
   }
 
   myIpMask(intf = this.config.monitoringInterface) {

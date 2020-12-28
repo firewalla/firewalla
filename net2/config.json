@@ -32,6 +32,7 @@
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
     "alarm.dual_wan.cooldown": 60,
+    "alarm.alarm_screen_time.cooldown": 86400,
     "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
@@ -98,7 +99,8 @@
     "TransferContextIntel",
     "MonkeyIntel",
     "IntfInfoIntel",
-    "TagsInfoIntel"
+    "TagsInfoIntel",
+    "ScreenTimeScope"
   ],
   "sensors": {
     "DHCPSensor": {},
@@ -461,6 +463,10 @@
         "expires": 86400,
         "count": 10000
       },
+      "audit": {
+        "expires": 86400,
+        "count": 10000
+      },
       "ssh": {
         "expires": 86400,
         "count": 10000
@@ -549,7 +555,10 @@
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
-    "ACLAuditLogPlugin": {},
+    "ACLAuditLogPlugin": {
+      "interval": 300,
+      "expires": 86400
+    },
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
     "DockerSensor": {},

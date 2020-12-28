@@ -24,7 +24,7 @@ const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool()
-const flowTool = require('../net2/FlowTool')()
+const flowTool = require('../net2/FlowTool')
 const flowUtil = require('../net2/FlowUtil')
 const Bone = require('../lib/Bone.js')
 
@@ -189,9 +189,9 @@ class FlowUploadSensor extends Sensor {
         let flows = [];
         for (const ip of ips) {
             let outgoingFlows = await flowTool.queryFlows(ip, "in", start, end); // in => outgoing
-            flows.push.apply(flows, outgoingFlows);
+            flows = flows.concat(outgoingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
             let incomingFlows = await flowTool.queryFlows(ip, "out", start, end); // out => incoming
-            flows.push.apply(flows, incomingFlows);
+            flows = flows.concat(incomingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
         }
         return flows
     }

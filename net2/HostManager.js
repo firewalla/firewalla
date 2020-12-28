@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla INC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -79,8 +79,7 @@ const hostTool = new HostTool()
 
 const tokenManager = require('../util/FWTokenManager.js');
 
-const FlowTool = require('./FlowTool.js');
-const flowTool = new FlowTool();
+const flowTool = require('./FlowTool.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
@@ -283,8 +282,8 @@ module.exports = class HostManager {
     }
 
     json.updateTime = Date.now();
-    if (sysManager.sshPassword && f.isApi()) {
-      json.ssh = sysManager.sshPassword;
+    if (sysManager.mySSHPassword() && f.isApi()) {
+      json.ssh = sysManager.mySSHPassword();
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
       json.lastscan = sysManager.sysinfo.oper.LastScan;
@@ -578,6 +577,11 @@ module.exports = class HostManager {
       });
   }
 
+  async ruleGroupsForInit(json) {
+    const rgs = policyManager2.getAllRuleGroupMetaData();
+    json.ruleGroups = rgs;
+  }
+
   // what is blocked
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
@@ -588,9 +592,11 @@ module.exports = class HostManager {
           return;
         } else {
           // filters out rules with inactive devices
-          rules = rules.filter(rule => {
-            if (_.isEmpty(rule.scope)) return true;
+          const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
 
+          rules = rules.filter(rule => {
+            if (rule.action == 'screentime') return false;
+            if (_.isEmpty(rule.scope)) return true;
             return rule.scope.some(mac =>
               this.hosts.all.some(host => host.o.mac == mac)
             )
@@ -621,7 +627,7 @@ module.exports = class HostManager {
             })
 
             json.policyRules = rules;
-
+            json.screentimeRules = screentimeRules;
             resolve();
           });
         }
@@ -731,6 +737,7 @@ module.exports = class HostManager {
       this.networkConfig(json, true),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
+      this.getCpuUsage(json),
     ]
 
     await this.basicDataForInit(json, {});
@@ -952,21 +959,49 @@ module.exports = class HostManager {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
+  async getVPNInterfaces() {
+      let intfs;
+      try {
+          const result = await exec("ls -l /sys/class/net | awk '/vpn_|tun_/ {print $9}'")
+          intfs = result.stdout.split("\n").filter(line => line.length > 0);
+      } catch (err) {
+          log.error("failed to get VPN interfaces: ",err);
+          intfs = [];
+      }
+      return intfs;
+  }
+
   async networkMetrics(json) {
     try {
       const config = FireRouter.getConfig();
       const ethxs =  Object.keys(config.interface.phy);
+      const vpns = await this.getVPNInterfaces();
+      const ifs = [ ...ethxs, ...vpns ];
       let nm = {};
-      await Promise.all(ethxs.map( async (ethx) => {
-          nm[ethx] = nm[ethx] || {};
-          nm[ethx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:rx`);
-          nm[ethx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ethx}:tx`);
+      await Promise.all(ifs.map( async (ifx) => {
+          nm[ifx] = nm[ifx] || {};
+          nm[ifx]['rx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ifx}:rx`);
+          nm[ifx]['tx'] = await rclient.hgetallAsync(`${NETWORK_METRIC_PREFIX}:${ifx}:tx`);
       }));
       json.networkMetrics = nm;
     } catch (err) {
       log.error("failed to get network metrics from redis: ", err);
       json.networkMetrics = {};
     }
+  }
+
+  async getCpuUsage(json) {
+    let result = {};
+    try{
+      const psOutput = await exec("ps -e -o %cpu=,cmd= | awk '$2~/Fire[AM]/ {print $0}'");
+      psOutput.stdout.match(/[^\n]+/g).forEach( line => {
+        const columns = line.match(/[^ ]+/g);
+        result[columns[1]] = columns[0];
+      })
+    } catch(err) {
+      log.error("failed to get CPU usage with ps: ", err);
+    }
+    json.cpuUsage = result;
   }
 
   async vpnProfilesForInit(json) {
@@ -1019,7 +1054,8 @@ module.exports = class HostManager {
           this.tagsForInit(json),
           this.btMacForInit(json),
           this.loadStats(json),
-          this.ovpnClientProfilesForInit(json)
+          this.ovpnClientProfilesForInit(json),
+          this.ruleGroupsForInit(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};
@@ -1265,7 +1301,7 @@ module.exports = class HostManager {
         o.ipv4Addr = o.ipv4;
       }
       if (o.ipv4Addr == null) {
-        log.warn("getHosts: no ipv4", o.uid, o.mac);
+        log.debug("getHosts: no ipv4", o.uid, o.mac); // probably just offline/inactive
         return;
       }
       if (!sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline) {
@@ -1913,7 +1949,7 @@ module.exports = class HostManager {
     target = target == '0.0.0.0' ? '' : target;
     const systemFlows = {};
 
-    const keys = ['upload', 'download'];
+    const keys = ['upload', 'download', 'block'];
 
     for (const key of keys) {
       const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;

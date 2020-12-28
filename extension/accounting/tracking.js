@@ -20,14 +20,12 @@ let instance = null;
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const log = require('../../net2/logger.js')(__filename);
 
-const flowTool = require('../../net2/FlowTool.js')();
+const flowTool = require('../../net2/FlowTool.js');
 
 const IntelTool = require('../../net2/IntelTool');
 const intelTool = new IntelTool();
-
+const { generateStrictDateTs } = require('../../util/util.js');
 const f = require('../../net2/Firewalla.js');
-
-const _ = require('lodash');
 
 class Tracking {
   constructor() {
@@ -77,7 +75,7 @@ class Tracking {
     let beginBucket = Math.floor(begin / this.bucketInterval);
     let endBucket = Math.floor(end / this.bucketInterval);
     if(endBucket - beginBucket > this.maxBuckets || endBucket < beginBucket) {
-      log.info("Invalid bucket setup, skipped:", beginBucket, endBucket);
+      log.debug("Invalid bucket setup, skipped:", beginBucket, endBucket);
       return [];
     }
     return [beginBucket, endBucket];
@@ -211,7 +209,7 @@ class Tracking {
         await rclient.hdelAsync(hashKey, key);
       }
     }
-    log.info("Cleaned up", count, "old aggr data for key", key);
+    log.info("Cleaned up", count, "old aggr data for key", keys);
   }
   
   async cleanup(mac) {
@@ -247,16 +245,14 @@ class Tracking {
     return distribution;
   }
   
-  async getUsedTime(mac, time) {
-    time = time || Math.floor(new Date() / 1);
-    const d = new Date();
-    const offset = d.getTimezoneOffset(); // in mins
-    
-    const timeWithTimezoneOffset = time - offset * 60 * 1000;
-    const beginOfDate = Math.floor(timeWithTimezoneOffset / 1000 / 3600 / 24) * 3600 * 24 * 1000;
-    const beginOfDateWithTimezoneOffset = beginOfDate + offset * 60 * 1000;    
-    const beginBucket = Math.floor(beginOfDateWithTimezoneOffset / this.bucketInterval);
-    const endBucket = beginBucket + this.maxBuckets;
+  async getUsedTime(mac, begin, end) {
+    if (!begin) {
+      const { beginTs, endTs } = generateStrictDateTs();
+      begin = beginTs;
+      end = endTs;
+    }
+    const beginBucket = Math.floor(begin / this.bucketInterval);
+    const endBucket = Math.floor(end / this.bucketInterval);
     
     const key = this.getAggregateResultKey(mac);
     const results = await rclient.hgetallAsync(key);

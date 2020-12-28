@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,7 +16,6 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const extensionManager = require('./ExtensionManager.js')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -72,28 +71,64 @@ let Sensor = class {
   }
 
   hookFeature(featureName) {
-    
+
     sem.once('IPTABLES_READY', async () => {
       if (fc.isFeatureOn(featureName)) {
-        await this.globalOn({booting: true});
+        try {
+          await this.globalOn({booting: true});
+        } catch(err) {
+          log.error(`Failed to enable ${featureName}, reverting...`, err)
+          try {
+            await this.globalOff();
+            fc.setFeatureStats(featureName)
+          } catch(err) {
+            log.error(`Failed to revert ${featureName}`, err)
+          }
+        }
       } else {
-        await this.globalOff();
+        try {
+          await this.globalOff();
+        } catch(err) {
+          log.error(`Failed to disable ${featureName}`, err)
+        }
       }
       fc.onFeature(featureName, async (feature, status) => {
         if (feature !== featureName) {
           return;
         }
         if (status) {
-          await this.globalOn();
+          try {
+            await this.globalOn();
+          } catch(err) {
+            log.error(`Failed to enable ${featureName}, reverting...`, err)
+            try {
+              await this.globalOff();
+            } catch(err) {
+              log.error(`Failed to revert ${featureName}`, err)
+            }
+          }
         } else {
-          await this.globalOff();
+          try {
+            await this.globalOff();
+          } catch(err) {
+            log.error(`Failed to disable ${featureName}`, err)
+          }
         }
       })
 
-      await this.job();
+      try {
+        await this.job();
+      } catch(err) {
+        log.error(`Failed to run job of ${featureName}`, err)
+      }
       if (this.refreshInterval) {
+        if (this.timer) clearInterval(this.timer);
         this.timer = setInterval(async () => {
-          return this.job();
+          try {
+            await this.job();
+          } catch(err) {
+            log.error(`Failed to run job of ${featureName}`, err)
+          }
         }, this.refreshInterval);
       }
 

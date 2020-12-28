@@ -20,31 +20,17 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const util = require('util');
 
+const LogQuery = require('./LogQuery.js')
+
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
-
-const DestIPFoundHook = require('../hook/DestIPFoundHook');
-const destIPFoundHook = new DestIPFoundHook();
-
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
 
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
 
-const Promise = require('bluebird');
-
 const _ = require('lodash');
 
-let instance = null;
-class FlowTool {
-  constructor() {
-    if(!instance) {
-      instance = this;
-    }
-    return instance;
-  }
-
+class FlowTool extends LogQuery {
   trimFlow(flow) {
     if(!flow)
       return;
@@ -68,7 +54,7 @@ class FlowTool {
     }
   }
 
-  _mergeFlow(targetFlow, flow) {
+  mergeLog(targetFlow, flow) {
     targetFlow.download += flow.download;
     targetFlow.upload += flow.upload;
     targetFlow.duration += flow.duration;
@@ -76,26 +62,17 @@ class FlowTool {
       targetFlow.ts = flow.ts;
     }
   }
-  _shouldMerge(targetFlow, flow) {
+
+  shouldMerge(targetFlow, flow) {
     const compareKeys = ['device', 'ip', 'fd', 'port', 'protocol'];
     return _.isEqual(_.pick(targetFlow, compareKeys), _.pick(flow, compareKeys));
   }
 
-  _flowStringToJSON(flow) {
-    try {
-      return JSON.parse(flow);
-    } catch(err) {
-      return null;
-    }
-  }
+  isLogValid(flow) {
+    if (!super.isLogValid(flow)) return false
 
-  _isFlowValid(flow) {
     let o = flow;
 
-    if (!o) {
-      log.error("Host:Flows:Sorting:Parsing", flow);
-      return false;
-    }
     if ( !('rb' in o) || !('ob' in o) ) {
       return false
     }
@@ -110,7 +87,6 @@ class FlowTool {
 
     return true;
   }
-
 
   _enrichCountryInfo(flow) {
     let sh = flow.sh;
@@ -132,56 +108,29 @@ class FlowTool {
     if (!("flows" in json)) {
       json.flows = {};
     }
+
+    // TODO: should handle imbalanced in/out flow count here
     let recentFlows = [];
     if (options.direction) {
-      recentFlows = options.direction == 'in' ?
-        (options.mac ? await this.getRecentIncomingConnections(options.mac, options) : await this.getAllRecentIncomingConnections(options))
-        : (options.mac ? await this.getRecentOutgoingConnections(options.mac, options) : await this.getAllRecentOutgoingConnections(options))
+      recentFlows = await this.getAllLogs(options)
     } else {
-      let outgoing, incoming;
-      if (options.mac) {
-        outgoing = await this.getRecentOutgoingConnections(options.mac, options);
-        incoming = await this.getRecentIncomingConnections(options.mac, options);
-      } else { // intf, tag, and default
-        outgoing = await this.getAllRecentOutgoingConnections(options)
-        incoming = await this.getAllRecentIncomingConnections(options)
-      }
-      recentFlows = [].concat(outgoing,incoming);
+      const outgoing = await this.getAllLogs(Object.assign({direction: 'in'}, options))
+      while (outgoing.length) recentFlows.push(outgoing.shift());
+      const incoming = await this.getAllLogs(Object.assign({direction: 'out'}, options))
+      while (incoming.length) recentFlows.push(incoming.shift());
     }
+
+    // actually ordering by ets here
     recentFlows = _.orderBy(recentFlows, 'ts', options.asc ? 'asc' : 'desc');
-    if(!options.no_merge) {
-      recentFlows = this._mergeFlows(recentFlows);
-    }
+    recentFlows = this.mergeLogs(recentFlows, options);
+    recentFlows = recentFlows.slice(0, options.count);
 
-    json.flows.recent = recentFlows.slice(0, options.count);
-
+    json.flows.recent = recentFlows;
     return recentFlows
   }
 
-  _mergeFlows(flowObjects) {
-    let mergedFlowObjects = [];
-    let lastFlowObject = null;
-
-    flowObjects.forEach((flowObject) => {
-      if(!lastFlowObject) {
-        mergedFlowObjects.push(flowObject);
-        lastFlowObject = flowObject;
-        return;
-      }
-
-      if (this._shouldMerge(lastFlowObject, flowObject)) {
-        this._mergeFlow(lastFlowObject, flowObject);
-      } else {
-        mergedFlowObjects.push(flowObject);
-        lastFlowObject = flowObject;
-      }
-    });
-
-    return mergedFlowObjects;
-  }
-
   // convert flow json to a simplified json format that's more readable by app
-  toSimpleFlow(flow) {
+  toSimpleFormat(flow) {
     let f = {};
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
@@ -219,64 +168,6 @@ class FlowTool {
     }
 
     return f;
-  }
-
-  getRecentOutgoingConnections(target, options) {
-    return this.getRecentConnections(target, "in", options)
-  }
-
-  getRecentIncomingConnections(target, options) {
-    return this.getRecentConnections(target, "out", options);
-  }
-
-
-  getAllRecentOutgoingConnections(options) {
-    return this.getAllRecentConnections("in", options)
-  }
-
-  getAllRecentIncomingConnections(options) {
-    return this.getAllRecentConnections("out", options);
-  }
-
-  // this is to get all recent connections in the network
-  // regardless which device it belongs to
-  async getAllRecentConnections(direction, options) {
-    options = options || {}
-
-    let allMacs = [];
-    if (options.intf) {
-      if (!_.isArray(options.macs) || options.macs.length === 0) {
-        const HostManager = require("../net2/HostManager.js");
-        const hostManager = new HostManager();
-        allMacs = hostManager.getIntfMacs(options.intf);
-      } else {
-        allMacs = options.macs;
-      }
-    } else if (options.tag) {
-      const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager();
-      allMacs = hostManager.getTagMacs(options.tag);
-    } else {
-      allMacs = await hostTool.getAllMACs();
-      if (_.isArray(options.macs))
-        allMacs = allMacs.concat(options.macs);
-    }
-
-    const allFlows = [];
-
-    await Promise.all(allMacs.map(async mac => {
-      const optionsCopy = JSON.parse(JSON.stringify(options)) // get a clone to avoid side impact to other functions
-
-      const flows = await this.getRecentConnections(mac, direction, optionsCopy);
-
-      flows.forEach(flow => {
-        flow.device = mac
-      });
-
-      allFlows.push.apply(allFlows, flows);
-    }));
-
-    return allFlows;
   }
 
   _aggregateTransferBy10Min(results) {
@@ -325,23 +216,23 @@ class FlowTool {
     }
 
     const list = results
-    .map((jsonString) => {
-      try {
-        return JSON.parse(jsonString);
-      } catch(err) {
-        log.error(`Failed to parse json string: ${jsonString}, err: ${err}`);
-        return null;
-      }
-    })
-    .filter((x) => x !== null)
-    .filter((x) => x.sh === destinationIP || x.dh === destinationIP)
-    .map((x) => {
-      return {
-        ts: x.ts,
-        ob: x.sh === destinationIP ? x.rb : x.ob, // ob stands for number of bytes transferred from local to remote, regardless of flow direction
-        rb: x.sh === destinationIP ? x.ob : x.rb  // rb strands for number of bytes transferred from remote to local, regardless of flow direction
-      }
-    })
+      .map((jsonString) => {
+        try {
+          return JSON.parse(jsonString);
+        } catch(err) {
+          log.error(`Failed to parse json string: ${jsonString}, err: ${err}`);
+          return null;
+        }
+      })
+      .filter((x) => x !== null)
+      .filter((x) => x.sh === destinationIP || x.dh === destinationIP)
+      .map((x) => {
+        return {
+          ts: x.ts,
+          ob: x.sh === destinationIP ? x.rb : x.ob, // ob stands for number of bytes transferred from local to remote, regardless of flow direction
+          rb: x.sh === destinationIP ? x.ob : x.rb  // rb strands for number of bytes transferred from remote to local, regardless of flow direction
+        }
+      })
 
     return list;
   }
@@ -367,79 +258,12 @@ class FlowTool {
     return this._aggregateTransferBy10Min(transfers);
   }
 
-  async enrichWithIntel(flows) {
-    return await Promise.map(flows, async f => {
-      // get intel from redis. if failed, create a new one
-      const intel = await intelTool.getIntel(f.ip);
-
-      if (intel) {
-        f.country = intel.country;
-        f.host = intel.host;
-        if(intel.category) {
-          f.category = intel.category
-        }
-        if(intel.app) {
-          f.app = intel.app
-        }
-      }
-
-      // failed on previous cloud request, try again
-      if (intel && intel.cloudFailed || !intel) {
-        // not waiting as that will be too slow for API call
-        destIPFoundHook.processIP(f.ip);
-      }
-
-      return f;
-    }, {concurrency: 10}); // limit to 10
-  }
-
-  async getRecentConnections(target, direction, options) {
-    options = options || {};
-    if (!options.count || options.count > MAX_RECENT_FLOW) options.count = MAX_RECENT_FLOW
-
-    const key = util.format("flow:conn:%s:%s", direction, target);
-    let ts, ets;
-
-    if (!options.ts) {
-      ts = (options.asc ? options.begin : options.end) || new Date() / 1000;
-      ets = options.asc ? (options.end || ts + MAX_RECENT_INTERVAL) : (options.begin || ts - MAX_RECENT_INTERVAL)
-    } else {
-      ts = options.ts
-      ets = options.asc ? ts + MAX_RECENT_INTERVAL : ts - MAX_RECENT_INTERVAL
-    }
-
-    const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
-    let results = await zrange(key, '(' + ts, ets, "LIMIT", 0 , options.count);
-
-    if(results === null || results.length === 0)
-      return [];
-
-    let flowObjects = results
-      .map((x) => this._flowStringToJSON(x))
-      .filter((x) => this._isFlowValid(x));
-
-    flowObjects.forEach((x) => {
-      this.trimFlow(x)
-    });
-
-    let simpleFlows = flowObjects
-      .map((f) => {
-        let s = this.toSimpleFlow(f)
-        s.device = target; // record the mac address here
-        return s;
-      });
-
-    let enrichedFlows = await this.enrichWithIntel(simpleFlows);
-
-    return enrichedFlows
-  }
-
-  getFlowKey(mac, type) {
-    return util.format("flow:conn:%s:%s", type, mac);
+  getLogKey(mac, options) {
+    return util.format("flow:conn:%s:%s", options.direction, mac.toUpperCase());
   }
 
   addFlow(mac, type, flow) {
-    let key = this.getFlowKey(mac, type);
+    let key = this.getLogKey(mac, type);
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -449,7 +273,7 @@ class FlowTool {
   }
 
   removeFlow(mac, type, flow) {
-    let key = this.getFlowKey(mac, type);
+    let key = this.getLogKey(mac, type);
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -458,28 +282,12 @@ class FlowTool {
     return rclient.zremAsync(key, JSON.stringify(flow))
   }
 
-  async flowExists(mac, type, flow) {
-    let key = this.getFlowKey(mac, type);
-
-    if (typeof flow !== 'object') {
-      throw new Error("Invalid flow type: " + typeof flow);
-    }
-
-    let result = await rclient.zscoreAsync(key, JSON.stringify(flow));
-
-    if (result == null) {
-      return false;
-    } else {
-      return true;
-    }
-  }
-
   queryFlows(mac, type, begin, end) {
-    let key = this.getFlowKey(mac, type);
+    let key = this.getLogKey(mac, {direction: type});
 
     return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
       .then((flowStrings) => {
-        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this._isFlowValid(x));
+        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this.isLogValid(x));
       })
   }
 
@@ -510,21 +318,6 @@ class FlowTool {
       return flow.rb;
     }
   }
-  getTrafficPort(flow) {
-    let port;
-    if(flow.fd == "out"){
-      port = flow.sp
-    }else{
-      port = flow.dp
-    }
-    if(Array.isArray(port)){
-      return port
-    }else{
-      return [port]
-    }
-  }
 }
 
-module.exports = function() {
-  return new FlowTool();
-};
+module.exports = new FlowTool();

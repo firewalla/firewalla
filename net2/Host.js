@@ -62,6 +62,7 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
+const LRU = require('lru-cache');
 
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
@@ -78,6 +79,7 @@ class Host {
         this.o.ipv4Addr = this.o.ipv4;
       }
 
+      this.ipCache = new LRU({max: 50, maxAge: 150 * 1000}); // IP timeout in lru cache is 150 seconds
       this._mark = false;
       this.parse();
 
@@ -381,10 +383,10 @@ class Host {
     });
   }
 
-  setScreenTime(count) {
-    this.o.screenTime = count || 0;
+  setScreenTime(screenTime) {
+    this.o.screenTime = screenTime || {};
     rclient.hmset("host:mac:" + this.o.mac, {
-      'screenTime': this.o.screenTime
+      'screenTime': JSON.stringify(screenTime)
     });
   }
 
@@ -758,6 +760,7 @@ class Host {
           await rclient.delAsync(`host:mac:${mac}`)
         }
 
+        this.ipCache.reset();
         delete instances[this.o.mac]
       }
     });
@@ -771,9 +774,13 @@ class Host {
       const macEntry = await hostTool.getMACEntry(this.o.mac);
       const ipv4Addr = macEntry && macEntry.ipv4Addr;
       if (ipv4Addr) {
-        await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
-          log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
-        });
+        const recentlyAdded = this.ipCache.get(ipv4Addr);
+        if (!recentlyAdded) {
+          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
+            log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
+          });
+          this.ipCache.set(ipv4Addr, 1);
+        }
       }
       let ipv6Addr = null;
       try {
@@ -781,9 +788,13 @@ class Host {
       } catch (err) {}
       if (Array.isArray(ipv6Addr)) {
         for (const addr of ipv6Addr) {
-          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
-            log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
-          });
+          const recentlyAdded = this.ipCache.get(addr);
+          if (!recentlyAdded) {
+            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
+              log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
+            });
+            this.ipCache.set(addr, 1);
+          }
         }
       }
       await this.updateHostsFile();
@@ -1150,7 +1161,6 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
-      screenTime: this.o.screenTime ? Number(this.o.screenTime) : 0,
       intf: this.o.intf ? this.o.intf : 'Unknown'
     }
 
@@ -1217,6 +1227,13 @@ class Host {
         json.openports = JSON.parse(this.o.openports);
       } catch(err) {
         log.error("Failed to parse openports:", err);
+      }
+    }
+    if (this.o.screenTime) {
+      try {
+        json.screenTime = JSON.parse(this.o.screenTime);
+      } catch (err) {
+        log.error("Failed to parse screenTime:", err);
       }
     }
 

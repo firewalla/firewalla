@@ -209,23 +209,24 @@ class IntelTool {
       fd = 'in';
     }
 
-    const _ipList = flowUtil.hashHost(ip) || [];
+    const _ipList = flowUtil.hashHost(ip, { keepOriginal: true }) || [];
 
     const hashCache = {}
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
-    hds.forEach((hash) => {
+    _ipList.push.apply(_ipList, hds);
+    
+    _ipList.forEach((hash) => {
       this.updateHashMapping(hashCache, hash)
     })
 
-    const _hList = hds.map((x) => x.slice(1, 3)) // remove the origin domains
-
-    _ipList.push.apply(_ipList, _hList);
+    const _ips = _ipList.map((x) => x.slice(1, 3)); // remove the origin domains
+    const _hList = hds.map((x) => x.slice(1, 3));
 
     const _aList = flowUtil.hashApp(domain);
 
     const flowList = [{
-      _iplist: _ipList,
+      _iplist: _ips,
       _hlist: _hList,
       _alist: _aList,
       flow: { fd }
@@ -240,14 +241,13 @@ class IntelTool {
     }
 
     const data = { flowlist: flowList, hashed: 1 };
-
     log.debug(require('util').inspect(data, { depth: null }));
 
     try {
       const results = await bone.intelAsync('*', 'check', data)
       if (Array.isArray(results)) {
         results.forEach((result) => {
-          const ip = result.ip
+          const ip = result.hash
           if (hashCache[ip]) {
             result.originIP = hashCache[ip]
           }

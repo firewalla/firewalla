@@ -342,7 +342,7 @@ module.exports = class {
       if (host.ipv4Addr || host.ipv6Addr) {
         const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP4(host.ipv4Addr) : sysManager.getInterfaceViaIP6(host.ipv6Addr);
         if (!intfInfo || !intfInfo.uuid) {
-          log.error(`Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
+          log.error(`HeartBeat: Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
           continue;
         }
         sem.emitEvent({
@@ -552,19 +552,29 @@ module.exports = class {
       }
       if (fc.isFeatureOn("acl_audit")) {
         // detect DNS level block (NXDOMAIN) in dns log
-        if (obj["rcode_name"] === "NXDOMAIN" && (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") && obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["query"] != null && obj["query"].length > 0) {
-          if (!sysManager.isMyIP(obj["id.orig_h"]) && !sysManager.isMyIP6(obj["id.orig_h"])) {
-            const record = {
-              src: obj["id.orig_h"],
-              domain: obj["query"],
-              qtype: obj["qtype_name"]
-            };
-            sem.emitEvent({
-              type: Message.MSG_ACL_DNS_NXDOMAIN,
-              record: record,
-              suppressEventLogging: true
-            });
-          }
+        if (
+          obj["rcode_name"] === "NXDOMAIN" &&
+          (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") &&
+          obj["id.resp_p"] == 53 &&
+          obj["id.orig_h"] != null &&
+          _.isString(obj["query"]) &&
+          obj["query"].length > 0 &&
+          !sysManager.isMyIP(obj["id.orig_h"]) &&
+          !sysManager.isMyIP6(obj["id.orig_h"])
+        ) {
+          const record = {
+            ts: Math.round(obj.ts * 1000) / 1000,
+            // rtt (round trip time) is usually very short here, ignore it
+            sh: obj["id.orig_h"],   // source host
+            dh: obj["id.resp_h"],   // destination host
+            dn: obj["query"],       // domain name
+            qt: obj["qtype_name"]
+          };
+          sem.emitEvent({
+            type: Message.MSG_ACL_DNS_NXDOMAIN,
+            record: record,
+            suppressEventLogging: true
+          });
         }
       }
     } catch (e) {
@@ -944,13 +954,13 @@ module.exports = class {
       // fd: out, this flow initated from outside, it is more dangerous
 
       if (iptool.isPrivate(host) == true && iptool.isPrivate(dst) == true) {
-        flowdir = 'local';
+        flowdir = 'lo';
         lhost = host;
         localMac = origMac;
         log.debug("Local Traffic, both sides are in private network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
-        flowdir = 'local';
+        flowdir = 'lo';
         lhost = host;
         localMac = origMac;
         //log.debug("Dropping both ip address", host,dst);
@@ -976,7 +986,7 @@ module.exports = class {
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
       } else {
-        log.error(`Unable to find nif uuid, ${intfId}`);
+        log.error(`Conn: Unable to find nif uuid, ${intfId}`);
         intfId = '';
       }
 
@@ -1062,7 +1072,6 @@ module.exports = class {
         ts: obj.ts, // ts stands for start timestamp
         ets: Math.round((obj.ts + obj.duration) * 100) / 100 , // ets stands for end timestamp
         _ts: now, // _ts is the last time updated
-        __ts: obj.ts, // __ts is the first time found
         sh: host, // source
         dh: dst, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes
@@ -1229,7 +1238,8 @@ module.exports = class {
               fd: tmpspec.fd,
               ob: tmpspec.ob,
               rb: tmpspec.rb,
-              suppressEventLogging: true
+              suppressEventLogging: true,
+              mac: localMac
             });
           }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
@@ -1262,8 +1272,8 @@ module.exports = class {
 
           const key = "flow:conn:" + spec.fd + ":" + spec.mac;
           const strdata = JSON.stringify(spec);
-          const ts = spec._ts; // this is the last time when this flowspec is updated
-          const redisObj = [key, ts, strdata];
+          // _ts is the last time when this flowspec is updated
+          const redisObj = [key, spec._ts, strdata];
           if (stashed[key]) {
             stashed[key].push(redisObj);
           } else {
@@ -1366,7 +1376,7 @@ module.exports = class {
   /*
   {"ts":1506313273.469781,"uid":"CX5UTb3cZi0zJdeQqe","id.orig_h":"192.168.2.191","id.orig_p":57334,"id.resp_h":"45.57.26.133","id.resp_p":443,"version":"TLSv12","cipher":"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256","server_name":"ipv4_1-lagg0-c004.1.sjc005.ix.nflxvideo.net","resumed":true,"established":true}
   */
-  processSslData(data) {
+  async processSslData(data) {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
@@ -1391,10 +1401,11 @@ module.exports = class {
         log.debug("SSL:CERT_ID ", cert_id, subject, dst);
       }
 
-      if (subject != null && dst != null) {
-        let xobj = {
-          'subject': subject
-        };
+      if ((subject != null || dsthost != null) && dst != null) {
+        let xobj = {};
+        if (subject != null) {
+          xobj['subject'] = subject;
+        }
         if (dsthost != null) {
           xobj['server_name'] = dsthost;
         }
@@ -1459,7 +1470,8 @@ module.exports = class {
       this.addAppMap(appCacheObj.uid, appCacheObj);
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
-        dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
+        await dnsTool.addReverseDns(obj.server_name, [dst]);
+        await dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
       }
     } catch (e) {
       log.error("SSL:Error Unable to save", e, e.stack, data);
@@ -1518,7 +1530,7 @@ module.exports = class {
 
       const intfInfo = sysManager.getInterfaceViaIP4(ip);
       if (!intfInfo || !intfInfo.uuid) {
-        log.error(`Unable to find nif uuid, ${ip}`);
+        log.warn(`KnownHosts: Unable to find nif uuid, ${ip}`);
         return;
       }
 

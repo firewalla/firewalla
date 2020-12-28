@@ -56,6 +56,7 @@ class DestIPFoundHook extends Hook {
 
     this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
+    this.cacheTrigger = {};
   }
 
   appendNewIP(ip) {
@@ -63,10 +64,11 @@ class DestIPFoundHook extends Hook {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
-  appendNewFlow(ip, fd, retryCount) {
+  appendNewFlow(ip, fd, mac, retryCount) {
     let flow = {
        ip:ip,
        fd:fd,
+       mac,
        retryCount: retryCount || 0
     };
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
@@ -101,10 +103,13 @@ class DestIPFoundHook extends Hook {
       intel.dnsHost = dnsInfo;
     }
 
-    if(sslInfo && sslInfo.server_name) {
-      intel.host = sslInfo.server_name
-      intel.sslHost = sslInfo.server_name
-      intel.org = sslInfo.O
+    if(sslInfo) {
+      if (sslInfo.server_name) {
+        intel.host = sslInfo.server_name
+        intel.sslHost = sslInfo.server_name
+      }
+      if (sslInfo.org)
+        intel.org = sslInfo.O
     }
 
     // app
@@ -188,14 +193,26 @@ class DestIPFoundHook extends Hook {
       if(info.originIP) {
         intel.originIP = info.originIP
       }
+
+      if(info.msg) {
+        intel.msg = info.msg;        
+      }
+
+      if(info.reference) {
+        intel.reference = info.reference;
+      }
       //      }
     });
 
     const domain = this.getDomain(sslInfo, dnsInfo);
 
-    if(intel.originIP && domain != intel.originIP) {
+    if(intel.originIP && domain != intel.originIP && ip != intel.originIP ) {
       // it's a pattern
       intel.isOriginIPAPattern = true
+    }
+
+    if(intel.originIP && ip === intel.originIP) {
+      intel.isOriginIPIP = true
     }
 
     return intel;
@@ -225,6 +242,7 @@ class DestIPFoundHook extends Hook {
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
+    let mac = null;
     let retryCount = 0;
 
     if (flow) {
@@ -234,6 +252,7 @@ class DestIPFoundHook extends Hook {
         if (parsed.fd) {
           fd = parsed.fd;
           ip = parsed.ip;
+          mac = parsed.mac;
           retryCount = parsed.retryCount || 0;
         } else {
           ip = flow;
@@ -256,7 +275,7 @@ class DestIPFoundHook extends Hook {
     let domain = this.getDomain(sslInfo, dnsInfo);
     if (!domain && retryCount < 5) {
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(ip, fd, retryCount + 1);
+      this.appendNewFlow(ip, fd, mac, retryCount + 1);
     }
 
     try {
@@ -273,6 +292,7 @@ class DestIPFoundHook extends Hook {
           {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
+            this.shouldTriggerDetectionImmediately(mac, intel);
             return intel;
           }
         }
@@ -336,12 +356,35 @@ class DestIPFoundHook extends Hook {
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
       }
+    
+      // check if detection should be triggered on this flow/mac immediately to speed up detection
+      this.shouldTriggerDetectionImmediately(mac, aggrIntelInfo);
 
       return aggrIntelInfo;
 
     } catch(err) {
       log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
+    }
+  }
+
+  shouldTriggerDetectionImmediately(mac, aggrIntelInfo) {
+
+    if(aggrIntelInfo.category === 'intel' && mac) {
+
+      const now = Math.floor(new Date() / 1000);
+      if(this.cacheTrigger[mac] && (now - this.cacheTrigger[mac]) < 300) {
+        // skip if duplicate in 5 minutes
+        return;
+      }
+  
+      this.cacheTrigger[mac] = now;
+      
+      // trigger firemon detect immediately to detect the malware activity sooner
+      sem.sendEventToFireMon({
+        type: 'FW_DETECT_REQUEST',
+        mac
+      });
     }
   }
 
@@ -395,7 +438,7 @@ class DestIPFoundHook extends Hook {
       if(this.paused)
         return;
 
-      this.appendNewFlow(ip, fd);
+      this.appendNewFlow(ip, fd, event.mac);
     });
 
     sem.on('DestIP', (event) => {

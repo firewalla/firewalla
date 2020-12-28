@@ -15,18 +15,17 @@
 'use strict';
 const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename);
-
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const Sensor = require('./Sensor.js').Sensor;
 
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 
 const tracking = require('../extension/accounting/tracking.js');
-
+const accounting = require('../extension/accounting/accounting.js');
 const fc = require('../net2/config.js');
-
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-
+const { generateStrictDateTs } = require('../util/util.js');
 class AccountingPlugin extends Sensor {
   constructor() {
     super();
@@ -41,14 +40,27 @@ class AccountingPlugin extends Sensor {
     }
     
     log.info("Updating data usage for all devices...");
-
+    const activeCategories = await accounting.getAccountList('category');
+    const activeApps = await accounting.getAccountList('app');
     const macs = hostManager.getActiveMACs();
     for(const mac of macs) {
       await tracking.aggr(mac);
       const host = hostManager.getHostFastByMAC(mac);
       if(host) {
-        const count = await tracking.getUsedTime(mac);
-        host.setScreenTime(count);
+        const screenTime = {
+          total:0,
+          categories:{},
+          apps:{}
+        };
+        screenTime.total = await tracking.getUsedTime(mac);
+        const { beginTs, endTs } = generateStrictDateTs();
+        for (const category of activeCategories) {
+          screenTime.categories[category] = await accounting.count(mac, category, beginTs, endTs)
+        }
+        for (const app of activeApps) {
+          screenTime.apps[app] = await accounting.count(mac, app, beginTs, endTs)
+        }
+        host.setScreenTime(screenTime);
       }
     }
 
