@@ -109,19 +109,19 @@ class CategoryUpdaterBase {
   }
 
   getIPSetName(category) {
-    return Block.getDstSet(category);
+    return Block.getDstSet(category.substring(0, 13));
   }
 
   getIPSetNameForIPV6(category) {
-    return Block.getDstSet6(category);
+    return Block.getDstSet6(category.substring(0, 13));
   }
 
   getTempIPSetName(category) {
-    return Block.getDstSet(`tmp_${category}`);
+    return Block.getDstSet(`tmp_${category.substring(0, 13)}`);
   }
 
   getTempIPSetNameForIPV6(category) {
-    return Block.getDstSet6(`tmp_${category}`);
+    return Block.getDstSet6(`tmp_${category.substring(0, 13)}`);
   }
 
   // add entries from category:{category}:ip:domain to ipset
@@ -194,7 +194,7 @@ class CategoryUpdaterBase {
 
   async activateCategory(category, type = 'hash:ip') {
     // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
-    await Block.setupCategoryEnv(category, type, 4096);
+    await Block.setupCategoryEnv(category.substring(0, 13), type, 4096);
 
     this.activeCategories[category] = 1
   }
