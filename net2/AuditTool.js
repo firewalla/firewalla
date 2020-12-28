@@ -18,7 +18,7 @@ const log = require('./logger.js')(__filename);
 
 const LogQuery = require('./LogQuery.js')
 
-const MAX_RECENT_FLOW = 100;
+const MAX_RECENT_LOG = 100;
 
 const _ = require('lodash');
 
@@ -30,21 +30,19 @@ class AuditTool extends LogQuery {
   }
 
   shouldMerge(previous, incoming) {
-    const compareKeys = ['device', 'fd', 'protocol', 'port'];
+    const compareKeys = ['type', 'device', 'fd', 'protocol', 'port'];
+    if (!previous || !previous.type) return false
     previous.type == 'dns' ? compareKeys.push('domain') : compareKeys.push('ip')
     return _.isEqual(_.pick(previous, compareKeys), _.pick(incoming, compareKeys));
   }
 
   async getAuditLogs(options) {
     options = options || {}
-    if (!options.count || options.count > MAX_RECENT_FLOW) options.count = MAX_RECENT_FLOW
-    if (!options.asc) options.asc = false;
+    if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
 
-    const logs = await this.getAllLogs(options)
-    const sorted = _.orderBy(logs, 'ts', options.asc ? 'asc' : 'desc');
-    const merged = this.mergeLogs(sorted)
+    const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
 
-    return merged.slice(0, options.count);
+    return logs.slice(0, options.count)
   }
 
   toSimpleFormat(entry) {

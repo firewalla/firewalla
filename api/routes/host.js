@@ -137,7 +137,7 @@ router.get('/:host/recentFlow',
   (req, res, next) => {
     let host = req.params.host;
 
-    flowTool.getAllLogs({mac:host})
+    flowTool.prepareRecentFlows({mac:host})
       .then((conns) => {
         res.json(conns);
       }).catch((err) => {

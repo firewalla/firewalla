@@ -1414,7 +1414,7 @@ class netBot extends ControllerBot {
 
           const options = await this.checkLogQueryArgs(msg)
 
-          const logs = await auditTool.getAllLogs(options)
+          const logs = await auditTool.getAuditLogs(options)
           let data = {
             count: logs.length,
             logs,
@@ -2223,6 +2223,8 @@ class netBot extends ControllerBot {
     if (msg.data.hourblock != "1" && msg.data.hourblock != "0") {
       options.queryall = true
     }
+
+    if (msg.data.audit) options.audit = true
 
     log.info(type, "FlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
     log.info(type, "FlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
