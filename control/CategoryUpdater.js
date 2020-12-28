@@ -178,33 +178,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
     let c = null;
     if (!obj || !obj.name)
       throw new Error(`name is not specified`);
-    if (category) {
-      if (this.customizedCategories[category]) {
-        // update existing customized category;
-        c = category;
-        const key = this._getCustomizedCategoryKey(category);
-        const o = Object.assign({}, obj, { category: category });
-        await rclient.hmsetAsync(key, o);
-      } else {
-        throw new Error(`Customized category ${category} is not found`);
-      }
-    } else {
-      const nameExists = Object.keys(this.customizedCategories).some(c => this.customizedCategories[c].name === obj.name);
-      if (nameExists)
-        throw new Error(`Category name '${obj.name}' already exists`);
 
-      const newCategory = await this._getNextCustomizedCategory();
-      c = newCategory;
-      const key = this._getCustomizedCategoryKey(newCategory);
-      const o = Object.assign({}, obj, {category: newCategory});
-      await rclient.hmsetAsync(key, o);
-    }
+    if (!category)
+      category = require('uuid').v4();
+    obj.category = category;
+    const key = this._getCustomizedCategoryKey(category);
+    await rclient.delAsync(key);
+    await rclient.hmsetAsync(key, obj);
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
       toProcess: "FireMain"
     });
     await this.refreshCustomizedCategories();
-    return this.customizedCategories[c];
+    return this.customizedCategories[category];
   }
 
   async removeCustomizedCategory(category) {
