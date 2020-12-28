@@ -31,9 +31,13 @@ const Policy = require('../alarm/Policy.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
-const alreadyAppliedFlag = "default_c_init_done";
+// const alreadyAppliedFlag = "default_c_hash_init_done";
+// const policyTarget = "default_c_hash";
 
-const policyTarget = "default_c";
+const policyTargetObj = {
+  "default_c_init_done" : "default_c",
+  "default_c_hash_init_done" : "default_c_hash"
+}
 const policyType = "category";
 
 // enable default_c policy by default
@@ -50,46 +54,50 @@ class ActiveProtectSensor extends Sensor {
   }
 
   async job() {
-    const flag = await rclient.hgetAsync("sys:config", alreadyAppliedFlag);
     
-    if(flag === "1") {
-      // already init, quit now
-      log.info("Already Inited, skip");
-      return;
-    }
-    
-    const policies = await pm2.loadActivePoliciesAsync();
-
-    let alreadySet = false;
-
-    for (let index = 0; index < policies.length; index++) {
-      const policy = policies[index];
+    for(const alreadyAppliedFlag of Object.keys(policyTargetObj)) {
+      const flag = await rclient.hgetAsync("sys:config", alreadyAppliedFlag);
+      const policyTarget = policyTargetObj[alreadyAppliedFlag];
+      if(flag === "1") {
+        // already init, quit now
+        log.info("Already Inited, skip");
+        continue;
+      }
       
-      if(policy.type === policyType && policy.target === policyTarget) {
-        alreadySet = true;
-        break;
-      }
-
-    }
-
-    if(!alreadySet) {
-      const policyPayload = {
-        target: policyTarget,
-        type: policyType
-      }
-
-      try {
-        const { policy } = await pm2.checkAndSaveAsync(new Policy(policyPayload))  
+      const policies = await pm2.loadActivePoliciesAsync();
+  
+      let alreadySet = false;
+  
+      for (let index = 0; index < policies.length; index++) {
+        const policy = policies[index];
         
-        log.info("default_c policy is created successfully, pid:", policy.pid);
-
-      } catch(err) {
-        log.error("Failed to create default_c policy:", err)
+        if(policy.type === policyType  && policy.target === policyTarget) {
+          alreadySet = true;
+          break;
+        }
+  
       }
-      
+  
+      if(!alreadySet) {
+        const policyPayload = {
+          target: policyTarget,
+          type: policyType,
+          dnsmasq_only: true
+        }
+  
+        try {
+          const { policy } = await pm2.checkAndSaveAsync(new Policy(policyPayload))  
+          
+          log.info(`${policyTarget} policy is created successfully, pid:`, policy.pid);
+  
+        } catch(err) {
+          log.error(`Failed to create ${policyTarget} policy:`, err)
+        }
+        
+      }
+  
+      await rclient.hsetAsync("sys:config", alreadyAppliedFlag, "1");
     }
-
-    await rclient.hsetAsync("sys:config", alreadyAppliedFlag, "1");
 
   }
   

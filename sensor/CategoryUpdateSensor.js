@@ -45,7 +45,8 @@ const categoryHashsetMapping = {
 }
 
 const securityHashMapping = {
-  "default_c": "blockset:default:consumer"
+  "default_c": "blockset:default:consumer",
+  "default_c_hash": "blockset:default:consumer:dns"
 }
 
 class CategoryUpdateSensor extends Sensor {
@@ -115,29 +116,36 @@ class CategoryUpdateSensor extends Sensor {
     if (info == null) return
 
     const domains = info.domain
-    const ip4List = info["ip4"]
-    const ip6List = info["ip6"]
+    //const ip4List = info["ip4"]
+    //const ip6List = info["ip6"]
 
-    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
-      + ` ${(ip6List || []).length} ipv6, ${(domains || []).length} domains`)
+    // hash list
+    if (Array.isArray(info)) {
+      await categoryUpdater.flushDefaultDomains(category);
+      await categoryUpdater.addDefaultDomains(category,info);
+    }
 
-    // if (domains) {
-    //   await categoryUpdater.flushDefaultDomains(category);
-    //   await categoryUpdater.addDefaultDomains(category,domains);
+    // log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
+    // + ` ${(ip6List || []).length} ipv6, ${(domains || []).length} domains`)
+    
+    if (domains) {
+      await categoryUpdater.flushDefaultDomains(category);
+      await categoryUpdater.addDefaultDomains(category,domains);
+    }
+
+    // if (ip4List) {
+    //   await categoryUpdater.flushIPv4Addresses(category)
+    //   await categoryUpdater.addIPv4Addresses(category, ip4List)
     // }
 
-    if (ip4List) {
-      await categoryUpdater.flushIPv4Addresses(category)
-      await categoryUpdater.addIPv4Addresses(category, ip4List)
-    }
-
-    if (ip6List) {
-      await categoryUpdater.flushIPv6Addresses(category)
-      await categoryUpdater.addIPv6Addresses(category, ip6List)
-    }
+    // if (ip6List) {
+    //   await categoryUpdater.flushIPv6Addresses(category)
+    //   await categoryUpdater.addIPv6Addresses(category, ip6List)
+    // }
     sem.emitEvent({
       type: "UPDATE_CATEGORY_DOMAIN",
       category: category,
+      dnsmasq_only: true,
       toProcess: "FireMain"
     });
   }

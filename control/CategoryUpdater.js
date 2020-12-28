@@ -50,7 +50,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.effectiveCategoryDomains = {};
 
       this.activeCategories = {
-        "default_c": 1
+        "default_c": 1,
+        "default_c_hash": 1
         // categories below should be activated on demand
         /*
         "games": 1,
@@ -106,7 +107,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
                 if (!this.isActivated(event.category)) {
                   return;
                 }
-                this.recycleIPSet(event.category);
+                if (!event.dnsmasq_only) {
+                  this.recycleIPSet(event.category);
+                }
                 domainBlock.updateCategoryBlock(event.category);
               }
             }
