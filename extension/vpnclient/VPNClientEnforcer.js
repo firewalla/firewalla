@@ -26,6 +26,7 @@ const wrapIptables = iptables.wrapIptables;
 const ipset = require('../../net2/Ipset.js');
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const Mode = require('../../net2/Mode.js');
 
 const execAsync = util.promisify(cp.exec);
 
@@ -92,6 +93,10 @@ class VPNClientEnforcer {
       // on firerouter-managed platform, no need to copy main routing table to the vpn client routing table
       // but need to grant access to wan_routable table for packets from vpn interface
       await routing.createPolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
+      // vpn client interface needs to lookup WAN interface local network routes in DHCP mode
+      if (await Mode.isDHCPModeOn()) {
+        await routing.createPolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 4);
+      }
     } else {
       // copy all routes from main routing table on non-firerouter-managed platform
       let cmd = "ip route list";
@@ -136,6 +141,9 @@ class VPNClientEnforcer {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 4).catch((err) => {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     // remove inbound connmark rule for vpn client interface
