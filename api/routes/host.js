@@ -15,25 +15,24 @@
 
 'use strict'
 
-let log = require('../../net2/logger.js')(__filename);
+const log = require('../../net2/logger.js')(__filename);
 
-let express = require('express');
-let router = express.Router();
+const express = require('express');
+const router = express.Router();
 
-let HostManager = require('../../net2/HostManager.js');
-let hostManager = new HostManager();
+const HostManager = require('../../net2/HostManager.js');
+const hostManager = new HostManager();
 
-let FlowManager = require('../../net2/FlowManager.js');
-let flowManager = new FlowManager();
+const FlowManager = require('../../net2/FlowManager.js');
+const flowManager = new FlowManager();
 
-let FlowTool = require('../../net2/FlowTool');
-let flowTool = new FlowTool();
+const flowTool = require('../../net2/FlowTool');
 
-let HostTool = require('../../net2/HostTool');
-let hostTool = new HostTool();
+const HostTool = require('../../net2/HostTool');
+const hostTool = new HostTool();
 
-let NetBotTool = require('../../net2/NetBotTool');
-let netBotTool = new NetBotTool();
+const NetBotTool = require('../../net2/NetBotTool');
+const netBotTool = new NetBotTool();
 
 router.get('/all',
            (req, res, next) => {
@@ -138,7 +137,7 @@ router.get('/:host/recentFlow',
   (req, res, next) => {
     let host = req.params.host;
 
-    flowTool.getRecentOutgoingConnections(host)
+    flowTool.getAllLogs({mac:host})
       .then((conns) => {
         res.json(conns);
       }).catch((err) => {

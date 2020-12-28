@@ -50,6 +50,7 @@ const sysManager = require('../net2/SysManager.js');
 const fConfig = require('../net2/config.js').getConfig();
 
 const flowUtil = require('../net2/FlowUtil.js');
+const f = require('../net2/Firewalla.js');
 
 const validator = require('validator');
 
@@ -686,7 +687,9 @@ module.exports = class FlowMonitor {
     rxRanked:
   */
 
-  async run(service, period) {
+  async run(service, period, options) {
+    options = options || {};
+
     let runid = new Date() / 1000
     log.info("Starting:", service, service == 'dlp' ? this.monitorTime : period, runid);
     const startTime = new Date() / 1000
@@ -698,6 +701,12 @@ module.exports = class FlowMonitor {
       hosts = hosts.filter(x => x) // workaround if host is undefined or null
       for (const host of hosts) {
         const mac = host.o.mac;
+
+        // if mac is pre-specified and mac does not equal to 
+        if(options.mac && options.mac !== mac) {
+          continue;
+        }
+
         if (!service || service === "dlp") {
           log.info("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
@@ -729,8 +738,14 @@ module.exports = class FlowMonitor {
       const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
       for (const cn of Object.keys(vpnProfiles)) {
         const vpnProfile = vpnProfiles[cn];
-        if (service === "detect") {
+        if (service === "detect" && f.isDevelopmentVersion()) { // TODO: remove this restriction in future version
           const uid = `${Constants.NS_VPN_PROFILE}:${cn}`;
+          
+          // if mac is pre-specified and mac does not equal to the vpn profile, continue
+          if(options.mac && options.mac !== uid) {
+            continue;
+          }
+
           log.info("Running Detect:", uid);
           await this.detect(uid, period);
         }
@@ -1028,8 +1043,7 @@ module.exports = class FlowMonitor {
     this.updateURLPart(alarmPayload, flowObj);
 
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
-
-
+    alarm['p.alarm.becauseof'] = intelObj.originIP;
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true;

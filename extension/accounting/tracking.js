@@ -20,7 +20,7 @@ let instance = null;
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const log = require('../../net2/logger.js')(__filename);
 
-const flowTool = require('../../net2/FlowTool.js')();
+const flowTool = require('../../net2/FlowTool.js');
 
 const IntelTool = require('../../net2/IntelTool');
 const intelTool = new IntelTool();
@@ -75,7 +75,7 @@ class Tracking {
     let beginBucket = Math.floor(begin / this.bucketInterval);
     let endBucket = Math.floor(end / this.bucketInterval);
     if(endBucket - beginBucket > this.maxBuckets || endBucket < beginBucket) {
-      log.info("Invalid bucket setup, skipped:", beginBucket, endBucket);
+      log.debug("Invalid bucket setup, skipped:", beginBucket, endBucket);
       return [];
     }
     return [beginBucket, endBucket];

@@ -46,6 +46,14 @@ class Accounting {
     return `accounting:${mac}:${tag}:${bucket}`
   }
 
+  getAccountListKey(type) {
+    return `accounting:${type}:list`; // type: category/app
+  }
+
+  async getAccountList(type) {
+    const list = await rclient.smembersAsync(this.getAccountListKey(type));
+    return list;
+  }
 
   async _record(mac, tag, bucket, beginBit, endBit) {
     const key = this.getKey(mac, tag, bucket);
@@ -60,7 +68,7 @@ class Accounting {
   }
 
   // begin, end - timestamps
-  async record(mac, tag, begin, end) {
+  async record(mac, type, tag, begin, end) {
     const beginBucket = Math.floor(begin / this.bucketRange);
     const beginBit = Math.floor((begin - beginBucket * this.bucketRange) / this.step);
     const endBucket = Math.floor(end / this.bucketRange);
@@ -79,6 +87,7 @@ class Accounting {
         await this._record(mac, tag, i, 0, this.bits);
       }
     }
+    await rclient.saddAsync(this.getAccountListKey(type), tag);
   }
 
   async count(mac, tag, begin, end) {
@@ -87,7 +96,7 @@ class Accounting {
     const endBucket = Math.floor(end / this.bucketRange);
     const endBit = Math.floor((end - endBucket * this.bucketRange) / this.step);
 
-//    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
+    //    log.info(mac, tag, beginBucket, beginBit, endBucket, endBit);
 
     let count = 0;
 
@@ -127,7 +136,7 @@ class Accounting {
           array.push(Number(cc));
         }
       } else { // if the string stored in redis is a sub string
-        array.push(...[0,0,0,0,0,0,0,0]);
+        array.push(...[0, 0, 0, 0, 0, 0, 0, 0]);
       }
     }
     return array;

@@ -29,7 +29,6 @@ const MAX_FLOW_PER_SUM = 30000
 const MAX_FLOW_PER_HOUR = 7000
 
 const MIN_AGGR_TRAFFIC = 256
-const MIN_SUM_TRAFFIC = 1024
 
 function toInt(n){ return Math.floor(Number(n)) }
 
@@ -72,21 +71,21 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
-  addAppActivityFlows(mac, interval, ts, traffics, expire) {
-    return this.addXActivityFlows(mac, "app", interval, ts, traffics, expire)
+  addAppActivityFlows(mac, interval, ts, traffic, expire) {
+    return this.addXActivityFlows(mac, "app", interval, ts, traffic, expire)
   }
 
-  addCategoryActivityFlows(mac, interval, ts, traffics, expire) {
-    return this.addXActivityFlows(mac, "category", interval, ts, traffics, expire)
+  addCategoryActivityFlows(mac, interval, ts, traffic, expire) {
+    return this.addXActivityFlows(mac, "category", interval, ts, traffic, expire)
   }
 
-  async addXActivityFlows(mac, x, interval, ts, traffics, expire) {
+  async addXActivityFlows(mac, x, interval, ts, traffic, expire) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
     let key = this.getFlowKey(mac, x, interval, ts);
     let args = [key];
-    for(let t in traffics) {
-      let duration = (traffics[t] && traffics[t]['duration']) || 0;
+    for(let t in traffic) {
+      let duration = (traffic[t] && traffic[t]['duration']) || 0;
       args.push(duration)
 
       let payload = {}
@@ -106,16 +105,16 @@ class FlowAggrTool {
   async trimFlow(mac, trafficDirection, interval, ts) {
     const key = this.getFlowKey(mac, trafficDirection, interval, ts);
 
-    let count = await rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR) // only keep the MAX_FLOW_PER_SUM highest flows
+    let count = await rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR) // only keep the MAX_FLOW_PER_AGGR highest flows
     if(count > 0) {
       log.warn(`${count} flows are trimmed from ${key}`)
     }
   }
 
-  async addFlows(mac, trafficDirection, interval, ts, traffics, expire) {
+  async addFlows(mac, trafficDirection, interval, ts, traffic, expire) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
-    const length = Object.keys(traffics).length // number of dest ips in this aggr flow
+    const length = Object.keys(traffic).length // number of dest ips in this aggr flow
     const key = this.getFlowKey(mac, trafficDirection, interval, ts);
 
     let args = [key];
@@ -128,20 +127,31 @@ class FlowAggrTool {
       }))
     }
 
-    for(let destIP in traffics) {
-      let traffic = (traffics[destIP] && traffics[destIP][trafficDirection]) || 0;
-      let port = (traffics[destIP] && traffics[destIP].port) || [];
+    for (const target in traffic) {
+      const entry = traffic[target]
+      if (!entry) continue
 
-      if(traffic < MIN_AGGR_TRAFFIC) {
+      let t = entry && (entry[trafficDirection] || entry.count) || 0;
+
+      if (['upload', 'download'].includes(trafficDirection) && t < MIN_AGGR_TRAFFIC) {
         continue                // skip very small traffic
       }
 
-      args.push(traffic)
-      args.push(JSON.stringify({
-        device: mac,
-        destIP: destIP,
-        port: port
-      }))
+      args.push(t)  // score
+
+      // TODO: mac is already in zset key, remove to save memory
+      const result = {
+        device: mac
+      }
+      if (entry.type == 'dns')
+        result.domain = target
+      else
+        result.destIP = target
+
+      if (entry.port) result.port = entry.port
+      if (entry.type) result.type = entry.type
+
+      args.push(JSON.stringify(result))
     }
 
     args.push(0);
@@ -330,7 +340,6 @@ class FlowAggrTool {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     const destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
     const results = {};
-    const totalPorts = {};
 
     for(let i = 0; i < destAndScores.length; i++) {
       if(i % 2 === 1) {
@@ -339,22 +348,23 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const dest = json.destIP;
+            const dest = json.destIP || json.domain;
             const ports = json.port;
             if(!dest) {
               continue;
             }
             if(results[dest]) {
-              results[dest] += count
+              results[dest].count += count
             } else {
-              results[dest] = count
+              results[dest] = { count }
+              if (json.type) results[dest].type = json.type
             }
 
             if(ports) {
-              if(totalPorts[dest]) {
-                totalPorts[dest].push.apply(totalPorts[dest], ports)
+              if(results[dest].ports) {
+                Array.prototype.push.apply(results[dest].ports, ports)
               } else {
-                totalPorts[dest] = ports
+                results[dest].ports = ports
               }
             }
           } catch(err) {
@@ -365,12 +375,16 @@ class FlowAggrTool {
     }
 
     const array = [];
-    for(const destIP in results) {
-      let ports = totalPorts[destIP] || [];
-      ports = ports.filter((v, i) => {
-        return ports.indexOf(v) === i;
-      })
-      array.push({ip: destIP, count: results[destIP], ports: ports});
+    for(const dest in results) {
+      const result = _.pick(results[dest], 'count', 'type', 'ports')
+      if (result.ports) result.ports = _.uniq(result.ports)
+      if (result.type == 'dns') {
+        result.domain = dest
+      }
+      else {
+        result.ip = dest
+      }
+      array.push(result);
     }
 
     array.sort(function(a, b) {
@@ -390,8 +404,11 @@ class FlowAggrTool {
         let count = destAndScores[i];
         if(payload !== '_' && count !== 0) {
           try {
-            let json = JSON.parse(payload);
-            results.push({ip: json.destIP, device: json.device, count: count,port:json.port});
+            const json = JSON.parse(payload);
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port');
+            flow.count = count
+            if (json.destIP) flow.ip = json.destIP
+            results.push(flow);
           } catch(err) {
             log.error("Failed to parse payload: ", payload);
           }
