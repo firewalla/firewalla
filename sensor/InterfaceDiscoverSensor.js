@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,14 +14,10 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
-
-let NetworkTool = require('../net2/NetworkTool');
-let networkTool = new NetworkTool();
 const Discovery = require('../net2/Discovery.js');
 const d = new Discovery(process.title);
 
@@ -40,7 +36,11 @@ class InterfaceDiscoverSensor extends Sensor {
   }
 
   async checkAndRunOnce() {
-    await d.discoverInterfacesAsync(false);
+    try {
+      await d.discoverInterfacesAsync(false);
+    } catch(err) {
+      log.error('Failed to check interfaces', err)
+    }
   }
 
 }

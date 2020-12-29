@@ -188,7 +188,7 @@ async function list(name) {
   }
 }
 
-function batchOp(operations) {
+async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
   const cmd = `echo "${operations.join('\n')}" | sudo ipset restore -!`;

@@ -217,6 +217,7 @@ module.exports = class {
         if (!uuidAssigned) {
           uuidAssigned = uuid.v4()
           intf.uuid = uuidAssigned
+          log.warn(`Interface uuid not assigned! Assigning ${uuidAssigned} to ${intf.name}`)
           await rclient.hsetAsync('sys:network:uuid', uuidAssigned, JSON.stringify(intf))
         } else {
           intf.uuid = uuidAssigned

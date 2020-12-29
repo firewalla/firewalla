@@ -58,6 +58,8 @@ const Promise = require('bluebird');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
 
+const Constants = require('../net2/Constants.js');
+
 const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip');
@@ -262,19 +264,35 @@ class netBot extends ControllerBot {
           callback(new Error(`Network ${uuid} is not found`));
         }
       } else {
-        this.hostManager.getHost(target, (err, host) => {
-          if (host != null) {
-            host.loadPolicy((err, data) => {
-              if (err == null) {
-                host.setPolicy('dnsmasq', value, callback);
-              } else {
-                callback(new Error("Unable to change dnsmasq config of " + target));
-              }
+        if (target.startsWith("vpn_profile:")) {
+          const cn = target.substring(12);
+          const profile = this.vpnProfileManager.getVPNProfile(cn);
+          if (profile) {
+            profile.loadPolicy().then(() => {
+              profile.setPolicy("dnsmasq", value).then(() => {
+                callback(null);
+              });
+            }).catch((err) => {
+              callback(err);
             });
           } else {
-            callback(new Error("Host not found"));
+            callback(new Error(`VPN profile ${cn} is not found`));
           }
-        });
+        } else {
+          this.hostManager.getHost(target, (err, host) => {
+            if (host != null) {
+              host.loadPolicy((err, data) => {
+                if (err == null) {
+                  host.setPolicy('dnsmasq', value, callback);
+                } else {
+                  callback(new Error("Unable to change dnsmasq config of " + target));
+                }
+              });
+            } else {
+              callback(new Error("Host not found"));
+            }
+          });
+        }
       }
     }
   }
@@ -394,6 +412,7 @@ class netBot extends ControllerBot {
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
+    this.vpnProfileManager = require('../net2/VPNProfileManager.js');
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
@@ -892,6 +911,13 @@ class netBot extends ControllerBot {
                 await tag.loadPolicy();
                 await tag.setPolicy(o, policyData)
               }
+            } else if (target.startsWith("vpn_profile:")) {
+              const cn = target.substring(12);
+              const profile = this.vpnProfileManager.getVPNProfile(cn);
+              if (profile) {
+                await profile.loadPolicy();
+                await profile.setPolicy(o, policyData);
+              }
             } else {
               let host = await this.hostManager.getHostAsync(target)
               if (host) {
@@ -1354,7 +1380,7 @@ class netBot extends ControllerBot {
           let data = {
             count: flows.length,
             flows,
-            nextTs: flows.length ? flows[flows.length - 1].score : null
+            nextTs: flows.length ? flows[flows.length - 1].ts : null
           }
           this.simpleTxData(msg, data, null, callback);
         })().catch((err) => {
@@ -1883,7 +1909,7 @@ class netBot extends ControllerBot {
           let profiles = [];
           for (let type of types) {
             switch (type) {
-              case "openvpn":
+              case "openvpn": {
                 const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
                 const cmd = "mkdir -p " + dirPath;
                 await execAsync(cmd);
@@ -1923,6 +1949,7 @@ class netBot extends ControllerBot {
                   return profile;
                 })));
                 break;
+              }
               default:
                 this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
                 return;
@@ -2229,21 +2256,43 @@ class netBot extends ControllerBot {
         const intf = this.networkProfileManager.getNetworkProfile(target);
         if (!intf) throw new Error("Invalid Network ID")
         options.intf = target;
+        if (intf.o && intf.o.intf === "tun_fwvpn") {
+          // add additional macs into options for VPN server network
+          const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
+          options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+        }
         target = `${type}:${target}`
         jsonobj = intf.toJson();
         break
       }
       case 'host': {
-        if (target == '0.0.0.0') break;
-
-        const host = await this.hostManager.getHostAsync(target);
-        if (!host || !host.o.mac) {
-          let error = new Error("Invalid Host");
-          error.code = 404;
-          throw error;
+        if (target == '0.0.0.0') {
+          // add additional macs into options for VPN profiles
+          const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
+          options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+          break;
         }
-        options.mac = host.o.mac;
-        jsonobj = host.toJson();
+
+        if (target.startsWith(`${Constants.NS_VPN_PROFILE}:`)) {
+          // the target is a vpn profile cn
+          const vpnProfile = this.vpnProfileManager.getVPNProfile(target.substring(`${Constants.NS_VPN_PROFILE}:`.length));
+          if (!vpnProfile || !vpnProfile.o.cn) {
+            let error = new Error("Invalid VPN profile");
+            error.code = 404;
+            throw error;
+          }
+          options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
+          jsonobj = vpnProfile.toJson();
+        } else {
+          const host = await this.hostManager.getHostAsync(target);
+          if (!host || !host.o.mac) {
+            let error = new Error("Invalid Host");
+            error.code = 404;
+            throw error;
+          }
+          options.mac = host.o.mac;
+          jsonobj = host.toJson();
+        }
         break
       }
       default:
@@ -2264,13 +2313,19 @@ class netBot extends ControllerBot {
     ])
 
     if (target != '0.0.0.0') {
-      await Promise.all([
+      const requiredPromises = [
         this.hostManager.yesterdayStatsForInit(jsonobj, target),
         this.hostManager.last60MinStatsForInit(jsonobj, target),
         this.hostManager.last30daysStatsForInit(jsonobj, target),
         this.hostManager.newLast24StatsForInit(jsonobj, target),
         this.hostManager.last12MonthsStatsForInit(jsonobj, target)
-      ])
+      ];
+      const platformSpecificStats = platform.getStatsSpecs();
+      jsonobj.stats = {};
+      for (const statSetting of platformSpecificStats) {
+        requiredPromises.push(this.hostManager.getStat(jsonobj, statSetting, target));
+      }
+      await Promise.all(requiredPromises)
     }
 
     if (!jsonobj.flows['appDetails']) { // fallback to old way
@@ -3173,13 +3228,14 @@ class netBot extends ControllerBot {
       case "addIncludeDomain": {
         (async () => {
           const category = value.category
-          const domain = value.domain
+          let domain = value.domain
           const regex = /^[-a-zA-Z0-9\.\*]+?/;
           if (!regex.test(domain)) {
             this.simpleTxData(msg, {}, { code: 400, msg: "Invalid domain." }, callback);
             return;
           }
 
+          domain = domain.toLowerCase();
           await categoryUpdater.addIncludedDomain(category, domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DOMAIN",
@@ -3215,7 +3271,8 @@ class netBot extends ControllerBot {
       case "addExcludeDomain": {
         (async () => {
           const category = value.category
-          const domain = value.domain
+          let domain = value.domain
+          domain = domain.toLowerCase();
           await categoryUpdater.addExcludedDomain(category, domain)
           sem.emitEvent({
             type: "UPDATE_CATEGORY_DOMAIN",
@@ -3583,9 +3640,11 @@ class netBot extends ControllerBot {
                 if (status) {
                   this.simpleTxData(msg, {}, { code: 400, msg: "OpenVPN client " + profileId + " is still running" }, callback);
                 } else {
+                  await ovpnClient.destroy();
                   const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
                   const files = await readdirAsync(dirPath);
                   const filesToDelete = files.filter(filename => filename.startsWith(`${profileId}.`));
+                  await pm2.deleteVpnClientRelatedPolicies(profileId);
                   if (filesToDelete.length > 0) {
                     for (let file of filesToDelete) {
                       await unlinkAsync(`${dirPath}/${file}`).catch((err) => {
@@ -3991,6 +4050,10 @@ class netBot extends ControllerBot {
   }
 
   async switchBranch(target) {
+    if (this.switchingBranch) {
+      throw new Error("Can not switch branch at the same time");
+    }
+    this.switchingBranch = true;
     let targetBranch = null
     let prodBranch = await f.getProdBranch()
 
@@ -4013,13 +4076,16 @@ class netBot extends ControllerBot {
     }
 
     log.info("Going to switch to branch", targetBranch);
-
-    await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
-    if (platform.isFireRouterManaged()) {
-      // firerouter switch branch will trigger fireboot and restart firewalla services
-      await FireRouter.switchBranch(target);
-    } else {
-      sysTool.upgradeToLatest()
+    try {
+      await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
+      if (platform.isFireRouterManaged()) {
+        // firerouter switch branch will trigger fireboot and restart firewalla services
+        await FireRouter.switchBranch(target);
+      } else {
+        sysTool.upgradeToLatest()
+      }
+    } catch (e) { } finally {
+      this.switchingBranch = false;
     }
   }
 

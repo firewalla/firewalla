@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,6 +21,7 @@ const sysManager = require('./SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const iptool = require('ip')
+const { Address4, Address6 } = require('ip-address')
 
 const util = require('util');
 
@@ -66,27 +67,8 @@ class DNSTool {
       })
   }
 
-  async _convertHashToSortedSet(key) {
-    const now = Math.ceil(Date.now() / 1000);
-    const keyType = await rclient.typeAsync(key);
-    try {
-      // convert hash to zset
-      // although there is a migration task in DataMigrationSensor, it may be not finished when this function is invoked
-      if (keyType === "hash") {
-        const oldDns = await rclient.hgetallAsync(key);
-        await rclient.delAsync(key);
-        if (oldDns.host)
-          rclient.zaddAsync(key, oldDns.lastActive || now, oldDns.host);
-      }
-    } catch (err) {
-      log.warn("Failed to convert " + key + " to zset.");
-    }
-  }
-
   async getDns(ip) {
     let key = this.getDNSKey(ip);
-    // FIXME: remove this type conversion code after it is released for several months
-    await this._convertHashToSortedSet(key);
     const domain = await rclient.zrevrangeAsync(key, 0, 1); // get domain with latest timestamp
     if (domain && domain.length != 0)
       return domain[0];
@@ -96,25 +78,30 @@ class DNSTool {
 
   async getAllDns(ip) {
     const key = this.getDNSKey(ip);
-    // FIXME: remove this type conversion code after it is released for several months
-    await this._convertHashToSortedSet(key);
     const domains = await rclient.zrangeAsync(key, 0, -1);
     return domains || [];
   }
 
+  isValidIP(ip) {
+    const ip4 = new Address4(ip)
+    const ip6 = new Address6(ip)
+    if (ip4.isValid() && ip4.correctForm() != '0.0.0.0' || ip6.isValid() && ip6.correctForm() != '::')
+      return true
+    else
+      return false
+  }
+
   async addDns(ip, domain, expire) {
     expire = expire || 24 * 3600; // one day by default
-    if (!iptool.isV4Format(ip) && !iptool.isV6Format(ip))
+    if (!this.isValidIP(ip))
       return;
     if (firewalla.isReservedBlockingIP(ip))
       return;
     if (!domain)
       return;
-    
+
     domain = domain.toLowerCase();
     let key = this.getDNSKey(ip);
-    // FIXME: remove this type conversion code after it is released for several months
-    await this._convertHashToSortedSet(key);
     const now = Math.ceil(Date.now() / 1000);
     await rclient.zaddAsync(key, now, domain);
     await rclient.expireAsync(key, expire);
@@ -144,7 +131,7 @@ class DNSTool {
     for (let i = 0; i < addresses.length; i++) {
       const addr = addresses[i];
 
-      if (iptool.isV4Format(addr) || iptool.isV6Format(addr)) {
+      if (this.isValidIP(addr)) {
         await rclient.zaddAsync(key, new Date() / 1000, addr)
         validAddresses.push(addr);
         updated = true
@@ -191,7 +178,7 @@ class DNSTool {
     // target can be either ip or domain
     if (!target)
       return [];
-    if (iptool.isV4Format(target) || iptool.isV6Format(target)) {
+    if (this.isValidIP(target)) {
       // target is ip
       const domains = await this.getAllDns(target);
       return domains || [];

@@ -146,10 +146,16 @@ class BlockManager {
                     return this.domainCovered(b, a);
                 });
                 if (sharedDomains.length == 0 && blockLevel == 'domain') {
-                    await Block.block(ip, blockSet)
+                    await Block.block(ip, blockSet).catch((err) => {
+                      // this usually happens if category is not activated and ipset is not created
+                      log.error(`Failed to add ${ip} to ipset ${blockSet}`, err.message);
+                    })
                 }
                 if (sharedDomains.length > 0 && blockLevel == 'ip') {
-                    await Block.unblock(ip, blockSet);
+                    await Block.unblock(ip, blockSet).catch((err) => {
+                      // this usually happens if category is not activated and ipset is not created
+                      log.error(`Failed to remove ${ip} from ipset ${blockSet}`, err.message);
+                    });
                 }
                 ipBlockInfo.ts = new Date() / 1000;
                 ipBlockInfo.sharedDomains = sharedDomains;
@@ -226,7 +232,10 @@ class BlockManager {
                             if (ipBlockInfo.blockLevel == 'ip') {
                                 log.info('ip block level change when new doamin comming', ip, domain)
                                 ipBlockInfo.blockLevel = 'domain';
-                                await Block.unblock(ip, blockSet);
+                                await Block.unblock(ip, blockSet).catch((err) => {
+                                  // this usually happens if category is not activated and ipset is not created
+                                  log.error(`Failed to remove ${ip} from ipset ${blockSet}`, err.message);
+                                });
                             }
                             ipBlockInfo.sharedDomains.push(domain);
                             ipBlockInfo.allDomains = await dnsTool.getAllDns(ip);

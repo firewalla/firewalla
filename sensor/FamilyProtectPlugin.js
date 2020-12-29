@@ -22,6 +22,7 @@ const extensionManager = require('./ExtensionManager.js')
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
+const VPNProfileManager = require('../net2/VPNProfileManager.js');
 
 const f = require('../net2/Firewalla.js');
 
@@ -50,6 +51,7 @@ class FamilyProtectPlugin extends Sensor {
         this.macAddressSettings = {};
         this.networkSettings = {};
         this.tagSettings = {};
+        this.vpnProfileSettings = {};
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
@@ -125,6 +127,21 @@ class FamilyProtectPlugin extends Sensor {
                     }
                     break;
                   }
+                  case "VPNProfile": {
+                    const cn = host.o && host.o.cn;
+                    if (cn) {
+                      if (policy === true)
+                        this.vpnProfileSettings[cn] = 1;
+                      // false means unset, this is for backward compatibility
+                      if (policy === false)
+                        this.vpnProfileSettings[cn] = 0;
+                      // null means disabled, this is for backward compatibility
+                      if (policy === null)
+                        this.vpnProfileSettings[cn] = -1;
+                      await this.applyVPNProfileFamilyProtect(cn);
+                    }
+                    break;
+                  }
                   default: 
                 }
                 
@@ -164,6 +181,13 @@ class FamilyProtectPlugin extends Sensor {
         else
           await this.applyNetworkFamilyProtect(uuid);
       }
+      for (const cn in this.vpnProfileSettings) {
+        const vpnProfile = VPNProfileManager.getVPNProfile(cn);
+        if (!vpnProfile)
+          delete this.vpnProfileSettings[cn];
+        else
+          await this.applyVPNProfileFamilyProtect(cn);
+      }
     }
 
     async applySystemFamilyProtect() {
@@ -196,6 +220,14 @@ class FamilyProtectPlugin extends Sensor {
       if (this.macAddressSettings[macAddress] == -1)
         return this.perDeviceStop(macAddress);
       return this.perDeviceReset(macAddress);
+    }
+
+    async applyVPNProfileFamilyProtect(cn) {
+      if (this.vpnProfileSettings[cn] == 1)
+        return this.perVPNProfileStart(cn);
+      if (this.vpnProfileSettings[cn] == -1)
+        return this.perVPNProfileStop(cn);
+      return this.perVPNProfileReset(cn);
     }
 
     async systemStart() {
@@ -289,6 +321,26 @@ class FamilyProtectPlugin extends Sensor {
     async perDeviceReset(macAddress) {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       // remove config file
+      await fs.unlinkAsync(configFile).catch((err) => {});
+      dnsmasq.scheduleRestartDNSService();
+    }
+
+    async perVPNProfileStart(cn) {
+      const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${cn}$${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.scheduleRestartDNSService();
+    }
+  
+    async perVPNProfileStop(cn) {
+      const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${cn}$!${featureName}\n`; // match negative tag
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.scheduleRestartDNSService();
+    }
+  
+    async perVPNProfileReset(cn) {
+      const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();
     }
