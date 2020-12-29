@@ -155,7 +155,7 @@ class LogQuery {
 
     options = this.checkArguments(options)
 
-    log.info(this.constructor.name, 'getAllLogs', options)
+    log.debug(this.constructor.name, 'getAllLogs', options)
 
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
