@@ -599,8 +599,8 @@ class FlowAggregationSensor extends Sensor {
     log.debug(msg);
 
     // in => outgoing, out => incoming
-    const outgoingFlows = await flowTool.getDeviceLogs(macAddress, {direction: "in", begin, end});
-    const incomingFlows = await flowTool.getDeviceLogs(macAddress, {direction: "out", begin, end});
+    const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end});
+    const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end});
     // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
     const flows = outgoingFlows.concat(incomingFlows)
 
@@ -608,7 +608,7 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
 
-    const auditLogs = await auditTool.getDeviceLogs(macAddress, {begin, end});
+    const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end});
     const groupedLogs = this.trafficGroupByDestIP(auditLogs);
     await flowAggrTool.addFlows(macAddress, "block", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
   }

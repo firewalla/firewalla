@@ -87,8 +87,9 @@ class LogQuery {
     return entry
   }
 
-  validResultCount(options, results, feed) {
-    const safeIndex = results.findIndex(l => options.asc ? l.ts > feed.ts : l.ts < feed.ts)
+  // results with ts behind feed.ts, results should have been sorted here
+  validResultCount(options, results) {
+    const safeIndex = results.findIndex(l => options.asc ? l.ts > options.ts : l.ts < options.ts)
 
     return safeIndex == -1 ? results.length : safeIndex
   }
@@ -102,15 +103,16 @@ class LogQuery {
   async logFeeder(options, feeds) {
     options = this.checkArguments(options)
     feeds.forEach(f => {
-      f.options = f.options || {}
+      f.options = f.options || {};
       Object.assign(f.options, options)
     })
+    // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
 
-    while (this.validResultCount(options, results, feed) < options.count && feeds.length) {
+    while (feed && this.validResultCount(feed.options, results) < options.count) {
 
       const logs = await feed.query(feed.options)
       if (logs.length) {
@@ -118,6 +120,7 @@ class LogQuery {
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
+        log.debug('Removing feed', feed.mac || feed.intf || feed.tag || feed.macs )
       }
 
       while (logs.length) results.push(logs.shift());
@@ -152,6 +155,8 @@ class LogQuery {
 
     options = this.checkArguments(options)
 
+    log.debug(this.constructor.name, 'getAllLogs', options)
+
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
 
@@ -169,27 +174,17 @@ class LogQuery {
     } else if (options.tag) {
       allMacs = hostManager.getTagMacs(options.tag);
     } else {
-      allMacs = await hostTool.getAllMACs();
+      allMacs = hostManager.getActiveMACs();
       if (_.isArray(options.macs))
         allMacs = _.uniq(allMacs.concat(options.macs));
     }
 
-    let allLogs = [];
+    const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
+    const allLogs = await this.logFeeder(options, feeds)
 
-    await Promise.all(allMacs.map(async mac => {
-      const optionsCopy = JSON.parse(JSON.stringify(options)) // get a clone to avoid side impact to other functions
+    const enriched = await this.enrichWithIntel(allLogs);
 
-      const logs = await this.getDeviceLogs(mac, optionsCopy);
-
-      while (logs.length) allLogs.push(logs.shift());
-    }));
-
-    allLogs = _.orderBy(allLogs, 'ts', options.asc ? 'asc' : 'desc');
-    allLogs = this.mergeLogs(allLogs, options);
-
-    allLogs = await this.enrichWithIntel(allLogs);
-
-    return allLogs;
+    return enriched;
   }
 
 
@@ -224,8 +219,12 @@ class LogQuery {
     throw new Error('not implemented')
   }
 
-  async getDeviceLogs(target, options) {
+  async getDeviceLogs(options) {
     options = this.checkArguments(options)
+    const target = options.mac
+    if (!target) throw new Error('Invalid device')
+
+    log.debug(this.constructor.name, 'getDeviceLogs', options)
 
     const key = this.getLogKey(target, options);
 
