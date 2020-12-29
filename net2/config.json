@@ -402,6 +402,27 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "NetworkMonitorSensor": {
+      "MY_GATEWAYS": {
+        "ping": {
+            "sampleCount": 20,
+            "sampleInterval": 30
+        }
+      },
+      "MY_DNSES": {
+        "dns": {
+            "lookupName": "check.firewalla.com",
+            "sampleCount": 5,
+            "sampleInterval": 18
+        }
+      },
+      "https://check.firewalla.com" : {
+        "http": {
+            "sampleCount": 5,
+            "sampleInterval": 18
+        }
+      }
+    },
     "NetworkStatsSensor": {
       "internetTestHosts": [
         "google.com",
@@ -723,7 +744,8 @@
     "single_wan_conn_check": false,
     "accounting": true,
     "event_schedule": true,
-    "network_metrics": true
+    "network_metrics": true,
+    "network_monitor": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

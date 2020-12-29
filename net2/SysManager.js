@@ -73,6 +73,7 @@ const f = require('../net2/Firewalla.js');
 const i18n = require('../util/i18n.js');
 
 const dns = require('dns');
+const { reduce } = require('bluebird');
 // dnscache will override functions in dns
 const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
   enable: true,
@@ -596,11 +597,27 @@ class SysManager {
     return this.myWanIps().filter(ip => iptool.isPublic(ip) && !iptool.subnet("100.64.0.0", "255.192.0.0").contains(ip)); // filter Carrier-Grade NAT address pool accordinig to rfc6598
   }
 
+  myGatways() {
+    const wanIntfs = fireRouter.getWanIntfNames();
+    return wanIntfs.reduce((acc,wanIntf) => {
+      acc.push(this.myGateway(wanIntf));
+      return acc;
+    },[]);
+  }
+
   myDefaultGateway() {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     if (wanIntf)
       return this.myGateway(wanIntf);
     return null;
+  }
+
+  myDnses() {
+    const wanIntfs = fireRouter.getWanIntfNames();
+    return wanIntfs.reduce((acc,wanIntf) => {
+      acc.push( this.myDNS(wanIntf) );
+      return acc;
+    },[]);
   }
 
   myDefaultDns() {
