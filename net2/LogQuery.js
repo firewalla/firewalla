@@ -75,7 +75,7 @@ class LogQuery {
   }
 
   // override this
-  isLogValid() {
+  isLogValid(log) {
     if (!log) return false
 
     return true
@@ -85,6 +85,50 @@ class LogQuery {
   // convert to a simplified json format that's more readable by app
   toSimpleFormat(entry) {
     return entry
+  }
+
+  validResultCount(options, results, feed) {
+    const safeIndex = results.findIndex(l => options.asc ? l.ts > feed.ts : l.ts < feed.ts)
+
+    return safeIndex == -1 ? results.length : safeIndex
+  }
+
+  /**
+   * @param {Object} options - common options for all feeds
+   * @param {Object[]} feeds - feeds of logs
+   * @param {function} feeds[].query - function that gets log
+   * @param {Object} feeds[].options - unique options for the query
+   */
+  async logFeeder(options, feeds) {
+    options = this.checkArguments(options)
+    feeds.forEach(f => {
+      f.options = f.options || {}
+      Object.assign(f.options, options)
+    })
+    let results = []
+
+    // always query the feed moves slowest
+    let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+
+    while (this.validResultCount(options, results, feed) < options.count && feeds.length) {
+
+      const logs = await feed.query(feed.options)
+      if (logs.length) {
+        feed.options.ts = logs[logs.length - 1].ts
+      } else {
+        // no more elements, remove feed from feeds
+        feeds = feeds.filter(f => f != feed)
+      }
+
+      while (logs.length) results.push(logs.shift());
+
+      results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
+      results = this.mergeLogs(results, options);
+
+      feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+    }
+
+    return results
   }
 
   checkArguments(options) {
@@ -147,6 +191,7 @@ class LogQuery {
 
     return allLogs;
   }
+
 
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {

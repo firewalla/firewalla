@@ -25,6 +25,8 @@ const LogQuery = require('./LogQuery.js')
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const auditTool = require('./AuditTool')
+
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
 
@@ -64,6 +66,7 @@ class FlowTool extends LogQuery {
   }
 
   shouldMerge(targetFlow, flow) {
+    if (targetFlow.type || flow.type) return auditTool.shouldMerge()
     const compareKeys = ['device', 'ip', 'fd', 'port', 'protocol'];
     return _.isEqual(_.pick(targetFlow, compareKeys), _.pick(flow, compareKeys));
   }
@@ -109,20 +112,18 @@ class FlowTool extends LogQuery {
       json.flows = {};
     }
 
-    // TODO: should handle imbalanced in/out flow count here
-    let recentFlows = [];
+    const feeds = []
     if (options.direction) {
-      recentFlows = await this.getAllLogs(options)
+      feeds.push({ query: this.getAllLogs })
     } else {
-      const outgoing = await this.getAllLogs(Object.assign({direction: 'in'}, options))
-      while (outgoing.length) recentFlows.push(outgoing.shift());
-      const incoming = await this.getAllLogs(Object.assign({direction: 'out'}, options))
-      while (incoming.length) recentFlows.push(incoming.shift());
+      feeds.push({ query: this.getAllLogs.bind(this), options: {direction: 'in'} })
+      feeds.push({ query: this.getAllLogs.bind(this), options: {direction: 'out'} })
     }
+    if (options.audit) {
+      feeds.push({ query: auditTool.getAllLogs.bind(auditTool) })
+    }
+    let recentFlows = await this.logFeeder(options, feeds)
 
-    // actually ordering by ets here
-    recentFlows = _.orderBy(recentFlows, 'ts', options.asc ? 'asc' : 'desc');
-    recentFlows = this.mergeLogs(recentFlows, options);
     recentFlows = recentFlows.slice(0, options.count);
 
     json.flows.recent = recentFlows;
@@ -259,7 +260,7 @@ class FlowTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    return util.format("flow:conn:%s:%s", options.direction, mac.toUpperCase());
+    return util.format("flow:conn:%s:%s", options.direction, mac);
   }
 
   addFlow(mac, type, flow) {
