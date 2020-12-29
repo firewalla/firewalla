@@ -51,6 +51,14 @@ class CategoryUpdaterBase {
     return `category:${category}:default:domain`
   }
 
+  getDefaultCategoryKeyOnly(category){
+    return `category:${category}:default:domainonly`
+  }
+
+  getDefaultCategoryKeyHashed(category){
+    return `category:${category}:default:domainhashed`
+  }
+
   // this key could be used to store domain, ip, or subnet
   getIPv4CategoryKey(category) {
     return `category:${category}:ip4:domain`
