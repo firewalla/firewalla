@@ -816,7 +816,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       break;
     }
     case "allow": {
-      parameter.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW", target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW", target: "FW_ACCEPT"});
       break;
     }
     case "block":
