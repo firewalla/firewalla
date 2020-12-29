@@ -403,23 +403,31 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
-      "MY_GATEWAYS": {
-        "ping": {
-            "sampleCount": 20,
-            "sampleInterval": 30
-        }
+      "stat": {
+        "calculateInterval":  300
       },
-      "MY_DNSES": {
-        "dns": {
-            "lookupName": "check.firewalla.com",
-            "sampleCount": 5,
-            "sampleInterval": 18
-        }
+      "cleanup": {
+        "expirePeriod": 86400
       },
-      "https://check.firewalla.com" : {
-        "http": {
-            "sampleCount": 5,
-            "sampleInterval": 18
+      "targets": {
+        "MY_GATEWAYS": {
+          "ping": {
+              "sampleCount": 20,
+              "sampleInterval": 30
+          }
+        },
+        "MY_DNSES": {
+          "dns": {
+              "lookupName": "check.firewalla.com",
+              "sampleCount": 5,
+              "sampleInterval": 18
+          }
+        },
+        "https://check.firewalla.com" : {
+          "http": {
+              "sampleCount": 5,
+              "sampleInterval": 18
+          }
         }
       }
     },

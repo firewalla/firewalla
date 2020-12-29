@@ -48,28 +48,45 @@ class NetworkMonitorSensor extends Sensor {
   /*
   Default config in config.json might have following supported PLACEHOLDERS
   ---------------------------------------------------------------------------
+    "NetworkMonitorSensor": {
+      "stat": {
+        "calculateInterval":  300
+      },
+      "cleanup": {
+        "expirePeriod": 86400
+      },
+      "targets": {
+        "MY_GATEWAYS": {
+          "ping": {
+              "sampleCount": 20,
+              "sampleInterval": 30
+          }
+        },
+        ...
+      }
+    }
   ----------------------------------------------------------------------------
-     
    */
   loadDefaultConfig() {
     let defaultConfig = {};
     if (this.config) {
       try {
+        const cfg = this.config.targets
         log.info("Loading default network monitor config ...");
-        Object.keys(this.config).forEach ( key => {
+        Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
               for (const gw  of sysManager.myGatways() ) {
-                defaultConfig[gw] = {...defaultConfig[gw], ...this.config[key]};
+                defaultConfig[gw] = {...defaultConfig[gw], ...cfg[key]};
               }
               break;
             case "MY_DNSES":
               for (const dns of sysManager.myDnses() ) {
-                defaultConfig[dns] = {...defaultConfig[dns], ...this.config[key]};
+                defaultConfig[dns] = {...defaultConfig[dns], ...cfg[key]};
               }
               break;
             default:
-              defaultConfig[key] = {...defaultConfig[key], ...this.config[key]};
+              defaultConfig[key] = {...defaultConfig[key], ...cfg[key]};
               break;
           }
         });
@@ -278,7 +295,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async applyPolicy(host, ip, policy) {
-    log.info(`Apply network monitor policy with host(${JSON.stringify(host,null,4)}), ip(${ip}), policy(${policy})`);
+    log.info(`Apply network monitor policy with host(${host}), ip(${ip}), policy(${policy})`);
     try {
         if (ip === '0.0.0.0') {
             if (policy.state === true) {
@@ -304,7 +321,9 @@ class NetworkMonitorSensor extends Sensor {
     try {
       log.info("Feature is turned on.");
       // system level : load from policy or start by default policy
-      const policyConfig = await rclient.hgetAsync('policy:system', POLICY_KEYNAME ) || { "state":true, "config": null};
+      const policyConfigJSON = await rclient.hgetAsync('policy:system', POLICY_KEYNAME )
+      const policyConfig = policyConfigJSON ? JSON.parse(policyConfigJSON) : { "state":true, "config": null};
+      log.info("policyConfig:",policyConfig);
       this.applyPolicySystem(policyConfig.state,policyConfig.config);
       // device level
       for (const mac in Object.keys(this.savedDevices)) {
