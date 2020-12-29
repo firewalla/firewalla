@@ -114,7 +114,7 @@ class FlowTool extends LogQuery {
 
     const feeds = []
     if (options.direction) {
-      feeds.push({ query: this.getAllLogs })
+      feeds.push({ query: this.getAllLogs.bind(this) })
     } else {
       feeds.push({ query: this.getAllLogs.bind(this), options: {direction: 'in'} })
       feeds.push({ query: this.getAllLogs.bind(this), options: {direction: 'out'} })

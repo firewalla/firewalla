@@ -83,7 +83,7 @@ class AuditTool extends LogQuery {
   }
 
   getLogKey(mac) {
-    return `audit:drop:${mac.toUpperCase()}`
+    return `audit:drop:${mac}`
   }
 }
 
