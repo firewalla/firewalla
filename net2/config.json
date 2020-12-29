@@ -403,31 +403,29 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
-      "stat": {
-        "calculateInterval":  300
+      "MY_GATEWAYS": {
+        "ping": {
+            "sampleCount": 5,
+            "sampleInterval": 5,
+            "statInterval": 5,
+            "expirePeriod": 60
+        }
       },
-      "cleanup": {
-        "expirePeriod": 86400
+      "MY_DNSES": {
+        "dns": {
+            "lookupName": "check.firewalla.com",
+            "sampleCount": 5,
+            "sampleInterval": 180,
+            "statInterval": 3600,
+            "expirePeriod": 180
+        }
       },
-      "targets": {
-        "MY_GATEWAYS": {
-          "ping": {
-              "sampleCount": 20,
-              "sampleInterval": 30
-          }
-        },
-        "MY_DNSES": {
-          "dns": {
-              "lookupName": "check.firewalla.com",
-              "sampleCount": 5,
-              "sampleInterval": 18
-          }
-        },
-        "https://check.firewalla.com" : {
-          "http": {
-              "sampleCount": 5,
-              "sampleInterval": 18
-          }
+      "https://check.firewalla.com" : {
+        "http": {
+            "sampleCount": 5,
+            "sampleInterval": 180,
+            "statInterval": 3600,
+            "expirePeriod": 180
         }
       }
     },
