@@ -73,7 +73,6 @@ const f = require('../net2/Firewalla.js');
 const i18n = require('../util/i18n.js');
 
 const dns = require('dns');
-const { reduce } = require('bluebird');
 // dnscache will override functions in dns
 const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
   enable: true,

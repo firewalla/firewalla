@@ -43,6 +43,7 @@ class NetworkMonitorSensor extends Sensor {
     super()
     this.sampleJobs = {};
     this.processJobs = {};
+    this.cachedPolicy = { system : {}, devices: [] };
   }
 
   /*
@@ -91,9 +92,38 @@ class NetworkMonitorSensor extends Sensor {
     return defaultConfig;
   }
 
+  async applyCachedPolicy() {
+    log.info("Apply cached policy ...");
+    try {
+      const systemPolicy = this.cachedPolicy.system;
+      if ( systemPolicy ) {
+        await this.applyPolicySystem(systemPolicy.state,systemPolicy.config);
+      }
+      for (const dev of this.cachedPolicy.devices) {
+        if ( dev.policy ) {
+          await this.applyPolicyDevice(dev.host, dev.policy.state, dev.policy.config);
+        }
+      }
+    } catch (err) {
+      log.error( "failed to run global on");
+    }
+  }
+
+  async globalOn() {
+    this.adminSwitch = true;
+    this.applyCachedPolicy();
+  }
+
+  async globalOff() {
+    this.adminSwitch = false;
+    this.applyCachedPolicy();
+  }
+
   async run() {
     
     log.info("run NetworkMonitorSensor ...");
+
+    this.hookFeature(FEATURE_NETWORK_MONITOR);
 
     /*
      * apply policy upon policy change or startup
@@ -110,24 +140,16 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig(${systemConfig})`);
 
     try {
-      switch ( systemState ) {
-        case true: {
-          const runtimeConfig = systemConfig || this.loadDefaultConfig();
-          log.debug("runtimeConfig: ",runtimeConfig);
-          Object.keys(runtimeConfig).forEach( async targetIP => {
-            // always restart to run with latest config
-            this.stopMonitorDevice(targetIP);
-            await this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP]);
-          });
-          break;
-        }
-        case false: {
-          this.stopMonitorDeviceAll();
-          break;
-        }
-        default: {
-          log.error("unsupported state: ",systemState);
-        }
+      if ( systemState && this.adminSwitch ) {
+        const runtimeConfig = systemConfig || this.loadDefaultConfig();
+        log.debug("runtimeConfig: ",runtimeConfig);
+        Object.keys(runtimeConfig).forEach( async targetIP => {
+          // always restart to run with latest config
+          this.stopMonitorDevice(targetIP);
+          await this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP]);
+        });
+      } else {
+        this.stopMonitorDeviceAll();
       }
     } catch (err) {
       log.error("failed to apply monitoring policy change: ", err);
@@ -208,10 +230,6 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async startMonitorDevice(key,ip,cfg) {
-    if ( ! fc.isFeatureOn(FEATURE_NETWORK_MONITOR) ) {
-      log.warn(`start monitor device ${key} with ${ip} ABORT due to feature OFF`);
-      return;
-    }
     log.info(`start monitoring ${key} with ip(${ip}) and cfg(${JSON.stringify(cfg,null,4)}) ...`)
     for ( const monitorType of Object.keys(cfg) ) {
       const scheduledKey = `${key}-${monitorType}`;
@@ -265,40 +283,28 @@ class NetworkMonitorSensor extends Sensor {
     try {
       log.info(`Apply policy on device ${host} with state(${state}) and config(${cfg}) ...`);
       const key = host.o.mac;
-      switch ( state ) {
-        case true: {
+      if ( state && this.adminSwitch ) {
           // always restart to run with latest config
           this.stopMonitorDevice(key);
           this.startMonitorDevice(key, host.o.ipv4Addr, cfg);
-          break;
-        }
-        case false: {
+      } else {
           this.stopMonitorDevice(key);
-          break;
-        }
-        default: {
-          log.error("unsupported state: ",state);
-        }
       }
     } catch (err) {
       log.error(`failed to apply policy on device ${host}: `,err);
     }
-    return;
   }
 
   async applyPolicy(host, ip, policy) {
     log.info(`Apply network monitor policy with host(${host}), ip(${ip}), policy(${policy})`);
     try {
         if (ip === '0.0.0.0') {
-            if (policy.state === true) {
-                if (fc.isFeatureOn(FEATURE_NETWORK_MONITOR, false)) {//compatibility: new firewlla, old app
-                    await fc.enableDynamicFeature(FEATURE_NETWORK_MONITOR);
-                }
-            }
-            return this.applyPolicySystem(policy.state,policy.config);
+            this.cachedPolicy.system = policy;
+            await this.applyPolicySystem(policy.state,policy.config);
         } else {
             if (!host) return;
             if (host.constructor.name === "Host" && policy) {
+              this.cachedPolicy.devices.push({"host":host, "policy": policy});
               await this.applyPolicyDevice(host, policy.state, policy.config);
             }
             
@@ -361,8 +367,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async processJob(monitorType,target,cfg) {
-    log.info(`start process ${monitorType} data for ${target} with cfg(${cfg})`);
-    //log.info(`start process ${monitorType} data for ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+    log.info(`start process ${monitorType} data for ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
     try {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
       const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
