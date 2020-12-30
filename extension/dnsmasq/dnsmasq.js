@@ -748,6 +748,10 @@ module.exports = class DNSMASQ {
     }
   }
 
+  isHashDomain(domain) {
+    return domain.length == 44;
+  }
+
   async updatePolicyCategoryFilterEntry(domains, options) {
     log.debug("updatePolicyCategoryFilterEntry", domains, options);
     options = options || {};
@@ -762,14 +766,18 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+    const hashDomains = domains.filter(d=>this.isHashDomain(d));
+    domains = domains.filter(d=>!this.isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
     for (const domain of domains) {
       blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
     }
+    for (const domain of hashDomains) {
+      blockEntries.push(`hash-address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
+    }
     try {
-      await fs.writeFileAsync(categoryBlockDomainsFile, domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${category}_block`).join('\n'));
-      await fs.writeFileAsync(categoryAllowDomainsFile, domains.map(domain => `server=/${domain}/#$${category}_allow`).join('\n'));
+      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
+      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
       if (_.isArray(this.categoryAllowUUIDsMap[category])) {
         for (const o of this.categoryAllowUUIDsMap[category]) {
           const uuid = o.uuid;
