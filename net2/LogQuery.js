@@ -24,9 +24,6 @@ const intelTool = new IntelTool();
 const DestIPFoundHook = require('../hook/DestIPFoundHook');
 const destIPFoundHook = new DestIPFoundHook();
 
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
-
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_LOG = 100;
 
@@ -123,10 +120,25 @@ class LogQuery {
         log.debug('Removing feed', feed.mac || feed.intf || feed.tag || feed.macs )
       }
 
+      // // merge logs and results with order
+      // const merged = []
+      // let i = 0, j = 0;
+      // while (i < logs.length && j < results.length) {
+      //   if (options.asc ^ (logs[i] > results[j])) {
+      //     merged.push(logs[i ++])
+      //   } else {
+      //     merged.push(results[j ++])
+      //   }
+      // }
+      // while (i < logs.length) merged.push(logs[i ++])
+      // while (j < results.length) merged.push(results[j ++])
+
+      // results = merged
+
       while (logs.length) results.push(logs.shift());
 
       results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
-      results = this.mergeLogs(results, options);
+      // results = this.mergeLogs(results, options);
 
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
     }
@@ -179,7 +191,13 @@ class LogQuery {
         allMacs = _.uniq(allMacs.concat(options.macs));
     }
 
+    if (!allMacs || !allMacs.length) return []
+
     const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
+
+    // query less each time to improve perf
+    // options = Object.assign({count: Math.round(options.count * 2 / feeds.length)}, options)
+
     const allLogs = await this.logFeeder(options, feeds)
 
     const enriched = await this.enrichWithIntel(allLogs);
