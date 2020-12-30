@@ -86,7 +86,8 @@
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
     "WireGuardPlugin": {},
-    "EventSensor":{}
+    "EventSensor":{},
+    "NetworkMonitorSensor":{}
   },
   "intels": [
     "DedupAlarm",
@@ -407,7 +408,7 @@
         "ping": {
             "sampleCount": 5,
             "sampleInterval": 5,
-            "statInterval": 5,
+            "processInterval": 5,
             "expirePeriod": 60
         }
       },
@@ -416,7 +417,7 @@
             "lookupName": "check.firewalla.com",
             "sampleCount": 5,
             "sampleInterval": 180,
-            "statInterval": 3600,
+            "processInterval": 3600,
             "expirePeriod": 180
         }
       },
@@ -424,7 +425,7 @@
         "http": {
             "sampleCount": 5,
             "sampleInterval": 180,
-            "statInterval": 3600,
+            "processInterval": 3600,
             "expirePeriod": 180
         }
       }

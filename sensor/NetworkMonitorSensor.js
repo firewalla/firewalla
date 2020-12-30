@@ -42,8 +42,7 @@ class NetworkMonitorSensor extends Sensor {
   constructor() {
     super()
     this.sampleJobs = {};
-    this.statJobs = {};
-    this.savedDevices = {};
+    this.processJobs = {};
   }
 
   /*
@@ -114,7 +113,7 @@ class NetworkMonitorSensor extends Sensor {
       switch ( systemState ) {
         case true: {
           const runtimeConfig = systemConfig || this.loadDefaultConfig();
-          log.info("runtimeConfig: ",runtimeConfig);
+          log.debug("runtimeConfig: ",runtimeConfig);
           Object.keys(runtimeConfig).forEach( async targetIP => {
             // always restart to run with latest config
             this.stopMonitorDevice(targetIP);
@@ -137,7 +136,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async samplePing(target, cfg) {
-    log.info(`sample PING to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+    log.debug(`sample PING to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
@@ -150,7 +149,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async sampleDNS(target, cfg) {
-    //log.info(`sample DNS to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+    log.debug(`sample DNS to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
@@ -167,7 +166,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async sampleHTTP(target, cfg) {
-    //log.info(`sample HTTP to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+    log.debug(`sample HTTP to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
@@ -183,7 +182,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async scheduleSampleJob(monitorType, ip ,cfg) {
-    //log.info(`schedule a sample job ${monitorType} with ip(${ip}) and config(${JSON.stringify(cfg,null,4)})`);
+    log.debug(`schedule a sample job ${monitorType} with ip(${ip}) and config(${JSON.stringify(cfg,null,4)})`);
     let scheduledJob = null;
     switch (monitorType) {
       case MONITOR_PING: {
@@ -221,8 +220,8 @@ class NetworkMonitorSensor extends Sensor {
       } else {
         log.debug(`scheduling sample job ${monitorType} on ${key} ...`);
         this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType,ip,cfg[monitorType]);
-        log.debug(`scheduling stat job ${monitorType} on ${key} ...`);
-        this.statJobs[scheduledKey] = this.scheduleStatJob(monitorType,ip,cfg[monitorType]);
+        log.debug(`scheduling process job ${monitorType} on ${key} ...`);
+        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType,ip,cfg[monitorType]);
       }
     }
   }
@@ -238,10 +237,10 @@ class NetworkMonitorSensor extends Sensor {
       } else {
         log.warn(`${monitorType} on ${key} NOT scheduled`);
       }
-      if ( scheduledKey in this.statJobs ) {
+      if ( scheduledKey in this.processJobs ) {
         log.debug(`UNscheduling ${monitorType} on ${key} ...`);
-        clearInterval(this.statJobs[scheduledKey]);
-        delete(this.statJobs[scheduledKey])
+        clearInterval(this.processJobs[scheduledKey]);
+        delete(this.processJobs[scheduledKey])
       } else {
         log.warn(`${monitorType} on ${key} NOT scheduled`);
       }
@@ -254,10 +253,10 @@ class NetworkMonitorSensor extends Sensor {
       clearInterval(this.sampleJobs[scheduledKey]);
       delete(this.sampleJobs[scheduledKey]);
     })
-    Object.keys(this.statJobs).forEach( scheduledKey => {
+    Object.keys(this.processJobs).forEach( scheduledKey => {
       log.debug(`UNscheduling ${scheudledKey} in stat jobs ...`);
-      clearInterval(this.statJobs[scheduledKey]);
-      delete(this.statJobs[scheduledKey]);
+      clearInterval(this.processJobs[scheduledKey]);
+      delete(this.processJobs[scheduledKey]);
     })
     log.info("after stop all: ", JSON.stringify(this.sampleJobs,null,4));
   }
@@ -300,7 +299,6 @@ class NetworkMonitorSensor extends Sensor {
         } else {
             if (!host) return;
             if (host.constructor.name === "Host" && policy) {
-              this.savedDevices[host.o.mac] = host;
               await this.applyPolicyDevice(host, policy.state, policy.config);
             }
             
@@ -311,11 +309,18 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async getNetworkMonitorData() {
+    log.info("Trying to get network monitor data...")
     try {
-      for (const monitorType of MONITOR_TYPES) {
-        const redisKey = `${KEY_PREFIX_RAW}:${monitorType}`
-        const config_json = rclient.hgetall(redisKey);
-        result[$monitorType] = JSON.parse(config_json);
+      let result = {};
+      let scanCursor = 0;
+      while (true) {
+        const scanResult = await rclient.scanAsync(scanCursor,"MATCH", `${KEY_PREFIX_RAW}:*`, "COUNT", "10000");
+        log.debug("scanResult=",scanResult);
+        scanCursor = parseInt(scanResult[0]);
+        for ( const key of scanResult[1]) {
+          result[key] = await rclient.hgetallAsync(key);
+        }
+        if ( scanCursor === 0) break;
       }
       return result;
     } catch (err) {
@@ -325,7 +330,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async apiRun(){
-    extensionManager.onGet("networkMonitorData", async (msg, data) => {
+    extensionManager.onGet("networkMonitorData", async (msg) => {
       return this.getNetworkMonitorData();
     });
   }
@@ -355,57 +360,67 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async statCalulate(monitorType,target,cfg) {
-    log.info(`calculate stat of ${monitorType} for ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+  async processJob(monitorType,target,cfg) {
+    log.info(`start process ${monitorType} data for ${target} with cfg(${cfg})`);
+    //log.info(`start process ${monitorType} data for ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
     try {
-      // calculate between [timeSinceSlot , timeTillSlot]
-      const timeTill = Date.now()-cfg.sampleInterval*1000; // caculate with one sampleInterval delay
-      const timeTillSlot = (timeTill - timeTill % (cfg.sampleInterval*1000))/1000;
-      const timeSince = timeTill - 1000*cfg.expirePeriod;
-      const timeSinceSlot = (timeSince - timeSince%(cfg.sampleInterval*1000))/1000;
-
-      const rawKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
-      log.debug("timeSinceSlot=",timeSinceSlot);
-      log.debug("timeTillSlot=",timeTillSlot);
+      const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
+      const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
       let allData = [];
-      for (let ts=timeTillSlot; ts>=timeSinceSlot; ts-=cfg.sampleInterval) {
-        const result_json = await rclient.hgetAsync(rawKey,ts);
-        if (result_json) {
-          log.debug(`rawKey=${rawKey}, ts=${ts}, result_json=${result_json}`);
-          const result = JSON.parse(result_json);
-          if (result && result.stat && result.stat.median) {
-            log.debug(`collect data into ${ts} at ${rawKey}`);
-            allData.push(result.stat.median);
-            log.debug("allData.length:",allData.length);
-          }
-        } else {
-          log.warn(`Data ${rawKey} misssing`);
+      let scanCursor = 0;
+      log.debug("expireTS=",expireTS);
+      log.debug("scanKey=",scanKey);
+      while ( true ) {
+        const scanResult = await rclient.hscanAsync(scanKey,scanCursor);
+        log.debug("scanResult:",scanResult);
+        if ( !scanResult ) {
+          log.error(`hscan on key(${scanKey}) failed at cursor(${scanCursor}) with invalid result`);
           break;
         }
+        for ( let i=0; i<scanResult[1].length; i+=2) {
+          const ts = scanResult[1][i];
+          if ( ts < expireTS ) { // clean expired data
+            log.debug(`deleting expired(${ts}>${expireTS}) data`);
+            await rclient.hdelAsync(scanKey, ts);
+          } else { // collect effective data to calculate stats
+            const result_json = scanResult[1][i+1];
+            log.debug(`scanKey=${scanKey}, ts=${ts}, result_json=${result_json}`);
+            const result = JSON.parse(result_json);
+            if (result && result.stat && result.stat.median) {
+              log.debug(`collect data of ${scanKey} at ${ts}`);
+              allData.push(result.stat.median); // choose median as sample data for overall stats
+              log.debug("allData.length:",allData.length);
+            }
+          }
+        }
+        scanCursor = parseInt(scanResult[0]);
+        if ( scanCursor === 0 ) break; // scan finishes when cursor back to 0
       }
+
+      // calcualte and record stats
       allData.sort((a,b) => a-b );
       log.debug("sorted allData:",allData);
       const l = allData.length;
       if (l > 0) {
         const statKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
-        log.info("record stat data at ",statKey);
+        log.debug("record stat data at ",statKey);
         await rclient.hsetAsync(statKey, "min", allData[0]);
         await rclient.hsetAsync(statKey, "max", allData[l-1]);
         await rclient.hsetAsync(statKey, "median", (l%2 === 0) ? (allData[l/2-1]+allData[l/2])/2 : allData[(l-1)/2]);
       }
-
     } catch (err) {
-      log.error("failed to calculate stats: ", err);
+      log.error(`failed to process data of ${monitorType} for target(${target}): `,err);
     }
   }
 
-  async scheduleStatJob(monitorType,ip,cfg) {
-    log.info(`scheduling stat job for ${monitorType} with ip(${ip}) and cfg(${JSON.stringify(cfg,null,4)})`);
+  async scheduleProcessJob(monitorType,ip,cfg) {
+    log.info(`scheduling process job for ${monitorType} with ip(${ip}) and cfg(${JSON.stringify(cfg,null,4)})`);
     const scheduledJob = setInterval(() => {
-      this.statCalulate(monitorType,ip,cfg);
-    }, 1000*cfg.statInterval);
+      this.processJob(monitorType,ip,cfg);
+    }, 1000*cfg.processInterval);
     return scheduledJob;
   }
+
 }
 
 module.exports = NetworkMonitorSensor;
