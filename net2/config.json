@@ -406,10 +406,10 @@
     "NetworkMonitorSensor": {
       "MY_GATEWAYS": {
         "ping": {
-            "sampleCount": 5,
-            "sampleInterval": 5,
-            "processInterval": 5,
-            "expirePeriod": 60
+            "sampleCount": 20,
+            "sampleInterval": 300,
+            "processInterval": 3600,
+            "expirePeriod": 86400
         }
       },
       "MY_DNSES": {
@@ -418,7 +418,7 @@
             "sampleCount": 5,
             "sampleInterval": 180,
             "processInterval": 3600,
-            "expirePeriod": 180
+            "expirePeriod": 86400
         }
       },
       "https://check.firewalla.com" : {
@@ -426,7 +426,7 @@
             "sampleCount": 5,
             "sampleInterval": 180,
             "processInterval": 3600,
-            "expirePeriod": 180
+            "expirePeriod": 86400
         }
       }
     },
