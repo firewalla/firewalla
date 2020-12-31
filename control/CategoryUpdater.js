@@ -277,6 +277,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.smembersAsync(this.getDefaultCategoryKey(category))
   }
 
+  async getDefaultDomainsOnly(category) {
+    return rclient.smembersAsync(this.getDefaultCategoryKeyOnly(category))
+  }
+
+  async getDefaultHashedDomains(category) {
+    return rclient.smembersAsync(this.getDefaultCategoryKeyHashed(category))
+  }
+
+
   async addDefaultDomains(category, domains) {
     if (domains.length === 0) {
       return []
@@ -288,8 +297,34 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.saddAsync(commands)
   }
 
+  async addDefaultDomainsOnly(category, domains) {
+    if (domains.length === 0) {
+      return []
+    }
+    let commands = [this.getDefaultCategoryKeyOnly(category)]
+    commands.push.apply(commands, domains)
+    return rclient.saddAsync(commands)
+  }
+
+  async addDefaultHashedDomains(category, domains) {
+    if (domains.length === 0) {
+      return []
+    }
+    let commands = [this.getDefaultCategoryKeyHashed(category)]
+    commands.push.apply(commands, domains)
+    return rclient.saddAsync(commands)
+  }
+
   async flushDefaultDomains(category) {
     return rclient.delAsync(this.getDefaultCategoryKey(category));
+  }
+
+  async flushDefaultDomainsOnly(category) {
+    return rclient.delAsync(this.getDefaultCategoryKeyOnly(category));
+  }
+
+  async flushDefaultHashedDomains(category) {
+    return rclient.delAsync(this.getDefaultCategoryKeyHashed(category));
   }
 
   async getIncludedDomains(category) {

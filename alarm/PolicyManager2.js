@@ -1221,7 +1221,7 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound") {
+          if (direction !== "inbound" && !localPort && !remotePort) {
             await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
@@ -1271,7 +1271,7 @@ class PolicyManager2 {
 
       case "category":
         if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound") {
+          if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.blockCategory(target, {
               pid,
               scope: scope,
@@ -1495,7 +1495,7 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound") {
+          if (direction !== "inbound" && !localPort && !remotePort) {
             await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
@@ -1538,7 +1538,7 @@ class PolicyManager2 {
 
       case "category":
         if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound") {
+          if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.unblockCategory(target, {
               pid,
               scope: scope,
