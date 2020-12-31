@@ -41,9 +41,10 @@ class NetworkMonitorSensor extends Sensor {
 
   constructor() {
     super()
+    this.adminSwitch = false;
     this.sampleJobs = {};
     this.processJobs = {};
-    this.cachedPolicy = { system : {}, devices: [] };
+    this.cachedPolicy = { "system": {}, "devices": {} };
   }
 
   /*
@@ -93,28 +94,30 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async applyCachedPolicy() {
-    log.info("Apply cached policy ...");
+    log.info("Apply cached policy ... ");
+    log.debug("cachedPolicy: ", this.cachedPolicy);
     try {
       const systemPolicy = this.cachedPolicy.system;
       if ( systemPolicy ) {
-        await this.applyPolicySystem(systemPolicy.state,systemPolicy.config);
+        this.applyPolicySystem(systemPolicy.state,systemPolicy.config);
       }
-      for (const dev of this.cachedPolicy.devices) {
-        if ( dev.policy ) {
-          await this.applyPolicyDevice(dev.host, dev.policy.state, dev.policy.config);
-        }
+      for (const mac in this.cachedPolicy.devices) {
+        const deviceConfig = this.cachedPolicy.devices[mac]
+        this.applyPolicyDevice(deviceConfig.host, deviceConfig.policy.state, deviceConfig.policy.config);
       }
     } catch (err) {
-      log.error( "failed to run global on");
+      log.error( "failed to apply cached policy: ", err);
     }
   }
 
   async globalOn() {
+    log.info("run globalOn ...");
     this.adminSwitch = true;
     this.applyCachedPolicy();
   }
 
   async globalOff() {
+    log.info("run globalOff ...");
     this.adminSwitch = false;
     this.applyCachedPolicy();
   }
@@ -136,21 +139,21 @@ class NetworkMonitorSensor extends Sensor {
 
   }
 
-  async applyPolicySystem(systemState,systemConfig) {
+  applyPolicySystem(systemState,systemConfig) {
     log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig(${systemConfig})`);
 
     try {
-      if ( systemState && this.adminSwitch ) {
-        const runtimeConfig = systemConfig || this.loadDefaultConfig();
-        log.debug("runtimeConfig: ",runtimeConfig);
-        Object.keys(runtimeConfig).forEach( async targetIP => {
-          // always restart to run with latest config
-          this.stopMonitorDevice(targetIP);
-          await this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP]);
-        });
-      } else {
-        this.stopMonitorDeviceAll();
-      }
+      const runtimeConfig = systemConfig || this.loadDefaultConfig();
+      log.debug("runtimeConfig: ",runtimeConfig);
+      Object.keys(runtimeConfig).forEach( async targetIP => {
+        // always restart to run with latest config
+        this.stopMonitorDevice(targetIP);
+        if ( systemState && this.adminSwitch ) {
+            this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP]);
+        } else {
+            this.stopMonitorDevice(targetIP);
+        }
+      });
     } catch (err) {
       log.error("failed to apply monitoring policy change: ", err);
     }
@@ -158,7 +161,8 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async samplePing(target, cfg) {
-    log.debug(`sample PING to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+    log.debug(`sample PING to ${target}`);
+    log.debug("config: ", cfg);
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
@@ -171,7 +175,8 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async sampleDNS(target, cfg) {
-    log.debug(`sample DNS to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+    log.debug(`sample DNS to ${target}`);
+    log.debug("config: ", cfg);
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
@@ -188,7 +193,8 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async sampleHTTP(target, cfg) {
-    log.debug(`sample HTTP to ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+    log.debug(`sample HTTP to ${target}`);
+    log.debug("config: ", cfg);
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
@@ -203,8 +209,9 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async scheduleSampleJob(monitorType, ip ,cfg) {
-    log.debug(`schedule a sample job ${monitorType} with ip(${ip}) and config(${JSON.stringify(cfg,null,4)})`);
+  scheduleSampleJob(monitorType, ip ,cfg) {
+    log.info(`schedule a sample job ${monitorType} with ip(${ip})`);
+    log.debug("config:",cfg);
     let scheduledJob = null;
     switch (monitorType) {
       case MONITOR_PING: {
@@ -229,8 +236,9 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
-  async startMonitorDevice(key,ip,cfg) {
-    log.info(`start monitoring ${key} with ip(${ip}) and cfg(${JSON.stringify(cfg,null,4)}) ...`)
+  startMonitorDevice(key,ip,cfg) {
+    log.info(`start monitoring ${key} with ip(${ip})`);
+    log.debug("config: ", cfg);
     for ( const monitorType of Object.keys(cfg) ) {
       const scheduledKey = `${key}-${monitorType}`;
       if ( scheduledKey in this.sampleJobs ) {
@@ -249,39 +257,38 @@ class NetworkMonitorSensor extends Sensor {
     for ( const monitorType of MONITOR_TYPES ) {
       const scheduledKey = `${key}-${monitorType}`;
       if ( scheduledKey in this.sampleJobs ) {
-        log.debug(`UNscheduling ${monitorType} on ${key} ...`);
+        log.debug(`UNscheduling sample ${monitorType} on ${key} ...`);
         clearInterval(this.sampleJobs[scheduledKey]);
         delete(this.sampleJobs[scheduledKey])
       } else {
-        log.warn(`${monitorType} on ${key} NOT scheduled`);
+        log.debug(`${monitorType} on ${key} NOT scheduled`);
       }
       if ( scheduledKey in this.processJobs ) {
-        log.debug(`UNscheduling ${monitorType} on ${key} ...`);
+        log.debug(`UNscheduling process ${monitorType} on ${key} ...`);
         clearInterval(this.processJobs[scheduledKey]);
         delete(this.processJobs[scheduledKey])
       } else {
-        log.warn(`${monitorType} on ${key} NOT scheduled`);
+        log.debug(`${monitorType} on ${key} NOT scheduled`);
       }
     }
   }
 
   stopMonitorDeviceAll() {
     Object.keys(this.sampleJobs).forEach( scheduledKey => {
-      log.debug(`UNscheduling ${scheudledKey} in sample jobs ...`);
+      log.debug(`UNscheduling ${scheduledKey} in sample jobs ...`);
       clearInterval(this.sampleJobs[scheduledKey]);
       delete(this.sampleJobs[scheduledKey]);
     })
     Object.keys(this.processJobs).forEach( scheduledKey => {
-      log.debug(`UNscheduling ${scheudledKey} in stat jobs ...`);
+      log.debug(`UNscheduling ${scheduledKey} in stat jobs ...`);
       clearInterval(this.processJobs[scheduledKey]);
       delete(this.processJobs[scheduledKey]);
     })
-    log.info("after stop all: ", JSON.stringify(this.sampleJobs,null,4));
   }
 
-  async applyPolicyDevice(host, state, cfg) {
+  applyPolicyDevice(host, state, cfg) {
     try {
-      log.info(`Apply policy on device ${host} with state(${state}) and config(${cfg}) ...`);
+      log.info(`Apply policy on device ${host.o.mac}/${host.o.ipv4Addr} with state(${state}) and config(${cfg}) ...`);
       const key = host.o.mac;
       if ( state && this.adminSwitch ) {
           // always restart to run with latest config
@@ -291,21 +298,22 @@ class NetworkMonitorSensor extends Sensor {
           this.stopMonitorDevice(key);
       }
     } catch (err) {
-      log.error(`failed to apply policy on device ${host}: `,err);
+      log.error(`failed to apply policy on device ${host.o.mac}/${host.o.ipv4Addr}: `,err);
     }
   }
 
-  async applyPolicy(host, ip, policy) {
-    log.info(`Apply network monitor policy with host(${host}), ip(${ip}), policy(${policy})`);
+  applyPolicy(host, ip, policy) {
+    log.info(`Apply network monitor policy with host(${host.o.mac}), ip(${ip})`);
+    log.debug("policy: ",policy);
     try {
         if (ip === '0.0.0.0') {
             this.cachedPolicy.system = policy;
-            await this.applyPolicySystem(policy.state,policy.config);
+            this.applyPolicySystem(policy.state,policy.config);
         } else {
             if (!host) return;
             if (host.constructor.name === "Host" && policy) {
-              this.cachedPolicy.devices.push({"host":host, "policy": policy});
-              await this.applyPolicyDevice(host, policy.state, policy.config);
+              this.cachedPolicy.devices[host.o.mac] = {"host":host, "policy": policy};
+              this.applyPolicyDevice(host, policy.state, policy.config);
             }
             
         }
@@ -367,7 +375,8 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async processJob(monitorType,target,cfg) {
-    log.info(`start process ${monitorType} data for ${target} with cfg(${JSON.stringify(cfg,null,4)})`);
+    log.info(`start process ${monitorType} data for ${target}`);
+    log.debug("config: ", cfg);
     try {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
       const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
@@ -418,8 +427,9 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async scheduleProcessJob(monitorType,ip,cfg) {
-    log.info(`scheduling process job for ${monitorType} with ip(${ip}) and cfg(${JSON.stringify(cfg,null,4)})`);
+  scheduleProcessJob(monitorType,ip,cfg) {
+    log.info(`scheduling process job for ${monitorType} with ip(${ip})`);
+    log.debug("config: ",cfg);
     const scheduledJob = setInterval(() => {
       this.processJob(monitorType,ip,cfg);
     }, 1000*cfg.processInterval);
