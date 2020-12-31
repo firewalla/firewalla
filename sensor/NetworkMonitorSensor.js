@@ -303,7 +303,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   applyPolicy(host, ip, policy) {
-    log.info(`Apply network monitor policy with host(${host.o.mac}), ip(${ip})`);
+    log.info(`Apply network monitor policy with host(${host && host.o && host.o.mac}), ip(${ip})`);
     log.debug("policy: ",policy);
     try {
         if (ip === '0.0.0.0') {
