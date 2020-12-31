@@ -614,7 +614,7 @@ class SysManager {
   myDnses() {
     const wanIntfs = fireRouter.getWanIntfNames();
     return wanIntfs.reduce((acc,wanIntf) => {
-      acc.push( this.myDNS(wanIntf) );
+      acc = [ ...new Set([...acc, ...this.myDNS(wanIntf)]) ];
       return acc;
     },[]);
   }
