@@ -361,9 +361,9 @@ class NetworkMonitorSensor extends Sensor {
         const result = {
           "data": data,
           "stat" : {
-            "median": (l%2 === 0) ? (dataSorted[l/2-1]+dataSorted[l/2])/2 : dataSorted[(l-1)/2],
-            "min"   : dataSorted[0],
-            "max"   : dataSorted[l-1]
+            "median": ((l%2 === 0) ? (dataSorted[l/2-1]+dataSorted[l/2])/2 : dataSorted[(l-1)/2]).toFixed(1),
+            "min"   : dataSorted[0].toFixed(1),
+            "max"   : dataSorted[l-1].toFixed(1)
           }
         }
         const resultJSON = JSON.stringify(result);
@@ -418,9 +418,9 @@ class NetworkMonitorSensor extends Sensor {
       if (l > 0) {
         const statKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
         log.debug("record stat data at ",statKey);
-        await rclient.hsetAsync(statKey, "min", allData[0]);
-        await rclient.hsetAsync(statKey, "max", allData[l-1]);
-        await rclient.hsetAsync(statKey, "median", (l%2 === 0) ? (allData[l/2-1]+allData[l/2])/2 : allData[(l-1)/2]);
+        await rclient.hsetAsync(statKey, "min", allData[0].toFixed(1));
+        await rclient.hsetAsync(statKey, "max", allData[l-1].toFixed(1));
+        await rclient.hsetAsync(statKey, "median", ((l%2 === 0) ? (allData[l/2-1]+allData[l/2])/2 : allData[(l-1)/2]).toFixed(1));
       }
     } catch (err) {
       log.error(`failed to process data of ${monitorType} for target(${target}): `,err);
