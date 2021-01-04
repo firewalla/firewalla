@@ -393,7 +393,7 @@ class NetworkProfile {
     let realIntf = this.o.intf;
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW,INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
     if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
       // add DROP rule on WAN interface in router mode
@@ -447,12 +447,6 @@ class NetworkProfile {
             });
           } else {
             await exec(rule.toCmd('-D')).catch((err) => {});
-          }
-          // add subnet to wan_routable table in case it is actually a WAN in DHCP mode, which should be considered as LAN
-          if (this.o.type === "lan" && this.o.gateway && await Mode.isDHCPModeOn()) {
-            const subnet4 = iptool.cidrSubnet(subnet);
-            const prefix = `${subnet4.networkAddress}/${subnet4.subnetMaskLength}`;
-            await routing.addRouteToTable(prefix, null, realIntf, "wan_routable", 100, 4).catch((err) => {});
           }
         }
       }
@@ -509,7 +503,7 @@ class NetworkProfile {
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
     // remove WAN INPUT protection rules
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW,INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
     await exec(inputRule.toCmd("-D")).catch((err) => {});
     await exec(inputRule6.toCmd("-D")).catch((err) => {});
@@ -537,10 +531,6 @@ class NetworkProfile {
         for (const subnet of this.o.ipv4Subnets) {
           const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${subnet}`, null, "src").jmp("MASQUERADE");
           await exec(rule.toCmd('-D')).catch((err) => {});
-          // remove subnet from wan_routable table as a counter-part of createEnv
-          const subnet4 = iptool.cidrSubnet(subnet);
-          const prefix = `${subnet4.networkAddress}/${subnet4.subnetMaskLength}`;
-          await routing.removeRouteFromTable(prefix, null, realIntf, "wan_routable", 100, 4).catch((err) => {});
         }
       }
       // still remove it from monitored net set anyway to keep consistency

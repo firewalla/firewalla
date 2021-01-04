@@ -90,6 +90,10 @@ class CategoryUpdateSensor extends Sensor {
     }
   }
 
+  isHashDomain(domain) {
+    return domain.length == 44;
+  }
+
   async updateCategory(category) {
     log.info(`Loading domains for ${category} from cloud`);
 
@@ -98,8 +102,16 @@ class CategoryUpdateSensor extends Sensor {
     if (domains == null) return
     log.info(`category ${category} has ${domains.length} domains`)
 
-    await categoryUpdater.flushDefaultDomains(category);
-    await categoryUpdater.addDefaultDomains(category,domains);
+    const hashDomains = domains.filter(d=>this.isHashDomain(d));
+    const leftDomains = domains.filter(d=>!this.isHashDomain(d));
+    if (leftDomains && leftDomains.length > 0) {
+      await categoryUpdater.flushDefaultDomains(category);
+      await categoryUpdater.addDefaultDomains(category, leftDomains);
+    } 
+    if (hashDomains && hashDomains.length > 0) {
+      await categoryUpdater.flushDefaultHashedDomains(category);
+      await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
+    } 
     sem.emitEvent({
       type: "UPDATE_CATEGORY_DOMAIN",
       category: category,
@@ -118,13 +130,27 @@ class CategoryUpdateSensor extends Sensor {
     const ip4List = info["ip4"]
     const ip6List = info["ip6"]
 
-    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
-      + ` ${(ip6List || []).length} ipv6, ${(domains || []).length} domains`)
+    const domainOnly = info["domainOnly"]
+    const hashedDomains = info["hashedDomains"]
 
-    // if (domains) {
-    //   await categoryUpdater.flushDefaultDomains(category);
-    //   await categoryUpdater.addDefaultDomains(category,domains);
-    // }
+    log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
+      + ` ${(ip6List || []).length} ipv6, ${(domains || []).length} domains,`
+      + ` ${(domainOnly || []).length} domainOnly, ${(hashedDomains || []).length} hashedDomains,`)
+
+    if (domainOnly) {
+      await categoryUpdater.flushDefaultDomainsOnly(category);
+      await categoryUpdater.addDefaultDomainsOnly(category,domainOnly);
+    }
+
+    if (hashedDomains) {
+      await categoryUpdater.flushDefaultHashedDomains(category);
+      await categoryUpdater.addDefaultHashedDomains(category,hashedDomains);
+    }
+
+    if (domains) {
+      await categoryUpdater.flushDefaultDomains(category);
+      await categoryUpdater.addDefaultDomains(category,domains);
+    }
 
     if (ip4List) {
       await categoryUpdater.flushIPv4Addresses(category)

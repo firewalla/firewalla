@@ -24,9 +24,6 @@ const intelTool = new IntelTool();
 const DestIPFoundHook = require('../hook/DestIPFoundHook');
 const destIPFoundHook = new DestIPFoundHook();
 
-const HostTool = require('../net2/HostTool.js');
-const hostTool = new HostTool();
-
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_LOG = 100;
 
@@ -75,7 +72,7 @@ class LogQuery {
   }
 
   // override this
-  isLogValid() {
+  isLogValid(log) {
     if (!log) return false
 
     return true
@@ -85,6 +82,68 @@ class LogQuery {
   // convert to a simplified json format that's more readable by app
   toSimpleFormat(entry) {
     return entry
+  }
+
+  // results with ts behind feed.ts, results should have been sorted here
+  validResultCount(options, results) {
+    const safeIndex = results.findIndex(l => options.asc ? l.ts > options.ts : l.ts < options.ts)
+
+    return safeIndex == -1 ? results.length : safeIndex
+  }
+
+  /**
+   * @param {Object} options - common options for all feeds
+   * @param {Object[]} feeds - feeds of logs
+   * @param {function} feeds[].query - function that gets log
+   * @param {Object} feeds[].options - unique options for the query
+   */
+  async logFeeder(options, feeds) {
+    options = this.checkArguments(options)
+    feeds.forEach(f => {
+      f.options = f.options || {};
+      Object.assign(f.options, options)
+    })
+    // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
+    let results = []
+
+    // always query the feed moves slowest
+    let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+
+    while (feed && this.validResultCount(feed.options, results) < options.count) {
+
+      const logs = await feed.query(feed.options)
+      if (logs.length) {
+        feed.options.ts = logs[logs.length - 1].ts
+      } else {
+        // no more elements, remove feed from feeds
+        feeds = feeds.filter(f => f != feed)
+        log.debug('Removing feed', feed.mac || feed.intf || feed.tag || feed.macs )
+      }
+
+      // // merge logs and results with order
+      // const merged = []
+      // let i = 0, j = 0;
+      // while (i < logs.length && j < results.length) {
+      //   if (options.asc ^ (logs[i] > results[j])) {
+      //     merged.push(logs[i ++])
+      //   } else {
+      //     merged.push(results[j ++])
+      //   }
+      // }
+      // while (i < logs.length) merged.push(logs[i ++])
+      // while (j < results.length) merged.push(results[j ++])
+
+      // results = merged
+
+      while (logs.length) results.push(logs.shift());
+
+      results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
+      // results = this.mergeLogs(results, options);
+
+      feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+    }
+
+    return results
   }
 
   checkArguments(options) {
@@ -108,6 +167,8 @@ class LogQuery {
 
     options = this.checkArguments(options)
 
+    log.debug(this.constructor.name, 'getAllLogs', options)
+
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
 
@@ -125,28 +186,25 @@ class LogQuery {
     } else if (options.tag) {
       allMacs = hostManager.getTagMacs(options.tag);
     } else {
-      allMacs = await hostTool.getAllMACs();
+      allMacs = hostManager.getActiveMACs();
       if (_.isArray(options.macs))
         allMacs = _.uniq(allMacs.concat(options.macs));
     }
 
-    let allLogs = [];
+    if (!allMacs || !allMacs.length) return []
 
-    await Promise.all(allMacs.map(async mac => {
-      const optionsCopy = JSON.parse(JSON.stringify(options)) // get a clone to avoid side impact to other functions
+    const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
 
-      const logs = await this.getDeviceLogs(mac, optionsCopy);
+    // query less each time to improve perf
+    // options = Object.assign({count: Math.round(options.count * 2 / feeds.length)}, options)
 
-      while (logs.length) allLogs.push(logs.shift());
-    }));
+    const allLogs = await this.logFeeder(options, feeds)
 
-    allLogs = _.orderBy(allLogs, 'ts', options.asc ? 'asc' : 'desc');
-    allLogs = this.mergeLogs(allLogs, options);
+    const enriched = await this.enrichWithIntel(allLogs);
 
-    allLogs = await this.enrichWithIntel(allLogs);
-
-    return allLogs;
+    return enriched;
   }
+
 
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {
@@ -179,8 +237,12 @@ class LogQuery {
     throw new Error('not implemented')
   }
 
-  async getDeviceLogs(target, options) {
+  async getDeviceLogs(options) {
     options = this.checkArguments(options)
+    const target = options.mac
+    if (!target) throw new Error('Invalid device')
+
+    log.debug(this.constructor.name, 'getDeviceLogs', options)
 
     const key = this.getLogKey(target, options);
 

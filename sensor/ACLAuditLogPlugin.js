@@ -54,8 +54,9 @@ class ACLAuditLogPlugin extends Sensor {
   async job() {
     this.auditLogReader = new Tail(auditLogFile, '\n');
     if (this.auditLogReader != null) {
-      this.auditLogReader.on('line', (line) => {
-        this._processIptablesLog(line);
+      this.auditLogReader.on('line', line => {
+        this._processIptablesLog(line)
+          .catch(err => log.error('Failed to process log', err, line))
       });
       this.auditLogReader.on('error', (err) => {
         log.error("Error while reading acl audit log", err.message);
@@ -64,7 +65,8 @@ class ACLAuditLogPlugin extends Sensor {
 
     sem.on(Message.MSG_ACL_DNS_NXDOMAIN, (message) => {
       if (message && message.record)
-        this._processDnsNxdomainRecord(message.record);
+        this._processDnsNxdomainRecord(message.record)
+          .catch(err => log.error('Failed to process record', err, message.record))
     });
   }
 
@@ -88,7 +90,7 @@ class ACLAuditLogPlugin extends Sensor {
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
-    const uptime = Number(line.match(/\[([\d.]+)\]/)[1])
+    const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
     const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
     const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length); // extract content after log prefix
     if (!content || content.length == 0)
