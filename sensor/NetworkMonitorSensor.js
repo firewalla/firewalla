@@ -326,16 +326,11 @@ class NetworkMonitorSensor extends Sensor {
     log.info("Trying to get network monitor data...")
     try {
       let result = {};
-      let scanCursor = 0;
-      while (true) {
-        const scanResult = await rclient.scanAsync(scanCursor,"MATCH", `${KEY_PREFIX_RAW}:*`, "COUNT", "10000");
-        log.debug("scanResult=",scanResult);
-        scanCursor = parseInt(scanResult[0]);
-        for ( const key of scanResult[1]) {
+      await rclient.scanAll(`${KEY_PREFIX_RAW}:*`, async (scanResults) => {
+        for ( const key of scanResults) {
           result[key] = await rclient.hgetallAsync(key);
         }
-        if ( scanCursor === 0) break;
-      }
+      },10000);
       return result;
     } catch (err) {
       log.error("failed to get network monitor config: ",err);
@@ -361,9 +356,9 @@ class NetworkMonitorSensor extends Sensor {
         const result = {
           "data": data,
           "stat" : {
-            "median": (l%2 === 0) ? (dataSorted[l/2-1]+dataSorted[l/2])/2 : dataSorted[(l-1)/2],
-            "min"   : dataSorted[0],
-            "max"   : dataSorted[l-1]
+            "median": parseFloat(((l%2 === 0) ? (dataSorted[l/2-1]+dataSorted[l/2])/2 : dataSorted[(l-1)/2]).toFixed(1)),
+            "min"   : parseFloat(dataSorted[0].toFixed(1)),
+            "max"   : parseFloat(dataSorted[l-1].toFixed(1))
           }
         }
         const resultJSON = JSON.stringify(result);
@@ -402,7 +397,7 @@ class NetworkMonitorSensor extends Sensor {
             const result = JSON.parse(result_json);
             if (result && result.stat && result.stat.median) {
               log.debug(`collect data of ${scanKey} at ${ts}`);
-              allData.push(result.stat.median); // choose median as sample data for overall stats
+              allData.push(parseFloat(result.stat.median)); // choose median as sample data for overall stats
               log.debug("allData.length:",allData.length);
             }
           }
@@ -418,9 +413,9 @@ class NetworkMonitorSensor extends Sensor {
       if (l > 0) {
         const statKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
         log.debug("record stat data at ",statKey);
-        await rclient.hsetAsync(statKey, "min", allData[0]);
-        await rclient.hsetAsync(statKey, "max", allData[l-1]);
-        await rclient.hsetAsync(statKey, "median", (l%2 === 0) ? (allData[l/2-1]+allData[l/2])/2 : allData[(l-1)/2]);
+        await rclient.hsetAsync(statKey, "min", parseFloat(allData[0].toFixed(1)));
+        await rclient.hsetAsync(statKey, "max", parseFloat(allData[l-1].toFixed(1)));
+        await rclient.hsetAsync(statKey, "median", parseFloat(((l%2 === 0) ? (allData[l/2-1]+allData[l/2])/2 : allData[(l-1)/2]).toFixed(1)));
       }
     } catch (err) {
       log.error(`failed to process data of ${monitorType} for target(${target}): `,err);
