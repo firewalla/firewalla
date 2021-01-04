@@ -402,7 +402,7 @@ class NetworkMonitorSensor extends Sensor {
             const result = JSON.parse(result_json);
             if (result && result.stat && result.stat.median) {
               log.debug(`collect data of ${scanKey} at ${ts}`);
-              allData.push(result.stat.median); // choose median as sample data for overall stats
+              allData.push(parseFloat(result.stat.median)); // choose median as sample data for overall stats
               log.debug("allData.length:",allData.length);
             }
           }
