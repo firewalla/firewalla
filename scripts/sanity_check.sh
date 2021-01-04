@@ -20,6 +20,16 @@ case "$UNAME" in
     ;;
 esac
 
+check_wan_conn_log() {
+  if [[ $PLATFORM != "gold" ]]; then
+    return 0
+  fi
+  echo "---------------------------- WAN Connectivity Check Failures ----------------------------"
+  cat ~/.forever/router*.log  | grep "WanConnCheckSensor" | grep -e "all ping test \| DNS" | sort | tail -n 50
+  echo ""
+  echo ""
+}
+
 check_cloud() {
     echo -n "  checking cloud access ... "
     curl_result=$(curl -w '%{http_code}' -Lks --connect-timeout 5 https://firewalla.encipher.io)
@@ -637,6 +647,7 @@ if [ "$FAST" == false ]; then
     check_rejection
     check_exception
     check_dmesg_ethernet
+    check_wan_conn_log
     check_reboot
     check_system_config
     check_network
