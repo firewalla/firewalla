@@ -178,33 +178,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
     let c = null;
     if (!obj || !obj.name)
       throw new Error(`name is not specified`);
-    if (category) {
-      if (this.customizedCategories[category]) {
-        // update existing customized category;
-        c = category;
-        const key = this._getCustomizedCategoryKey(category);
-        const o = Object.assign({}, obj, { category: category });
-        await rclient.hmsetAsync(key, o);
-      } else {
-        throw new Error(`Customized category ${category} is not found`);
-      }
-    } else {
-      const nameExists = Object.keys(this.customizedCategories).some(c => this.customizedCategories[c].name === obj.name);
-      if (nameExists)
-        throw new Error(`Category name '${obj.name}' already exists`);
 
-      const newCategory = await this._getNextCustomizedCategory();
-      c = newCategory;
-      const key = this._getCustomizedCategoryKey(newCategory);
-      const o = Object.assign({}, obj, {category: newCategory});
-      await rclient.hmsetAsync(key, o);
-    }
+    if (!category)
+      category = require('uuid').v4();
+    obj.category = category;
+    const key = this._getCustomizedCategoryKey(category);
+    await rclient.delAsync(key);
+    await rclient.hmsetAsync(key, obj);
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
       toProcess: "FireMain"
     });
     await this.refreshCustomizedCategories();
-    return this.customizedCategories[c];
+    return this.customizedCategories[category];
   }
 
   async removeCustomizedCategory(category) {
@@ -291,6 +277,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.smembersAsync(this.getDefaultCategoryKey(category))
   }
 
+  async getDefaultDomainsOnly(category) {
+    return rclient.smembersAsync(this.getDefaultCategoryKeyOnly(category))
+  }
+
+  async getDefaultHashedDomains(category) {
+    return rclient.smembersAsync(this.getDefaultCategoryKeyHashed(category))
+  }
+
+
   async addDefaultDomains(category, domains) {
     if (domains.length === 0) {
       return []
@@ -302,8 +297,34 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.saddAsync(commands)
   }
 
+  async addDefaultDomainsOnly(category, domains) {
+    if (domains.length === 0) {
+      return []
+    }
+    let commands = [this.getDefaultCategoryKeyOnly(category)]
+    commands.push.apply(commands, domains)
+    return rclient.saddAsync(commands)
+  }
+
+  async addDefaultHashedDomains(category, domains) {
+    if (domains.length === 0) {
+      return []
+    }
+    let commands = [this.getDefaultCategoryKeyHashed(category)]
+    commands.push.apply(commands, domains)
+    return rclient.saddAsync(commands)
+  }
+
   async flushDefaultDomains(category) {
     return rclient.delAsync(this.getDefaultCategoryKey(category));
+  }
+
+  async flushDefaultDomainsOnly(category) {
+    return rclient.delAsync(this.getDefaultCategoryKeyOnly(category));
+  }
+
+  async flushDefaultHashedDomains(category) {
+    return rclient.delAsync(this.getDefaultCategoryKeyHashed(category));
   }
 
   async getIncludedDomains(category) {

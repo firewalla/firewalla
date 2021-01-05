@@ -64,6 +64,7 @@ class OldDataCleanSensor extends Sensor {
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
       case "conn":
+      case "audit":
       case "categoryflow":
       case "appflow":
         platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
@@ -407,6 +408,7 @@ class OldDataCleanSensor extends Sensor {
       log.info("Start cleaning old data in redis")
 
       await this.regularClean("conn", "flow:conn:*");
+      await this.regularClean("audit", "audit:drop:*");
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
@@ -423,7 +425,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
-      await this.regularClean("acl_audit", "audit:drop:*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);

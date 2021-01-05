@@ -60,6 +60,8 @@ set_value() {
     ip)
       sudo /sbin/ip addr flush dev eth0 # flush legacy ips on eth0
       sudo /sbin/ip addr replace ${saved_value} dev eth0
+      # 'ip addr flush dev eth0' will flush overlay IP address
+      [[ -x /etc/network/if-pre-up.d/subintf ]] && sudo /etc/network/if-pre-up.d/subintf
       ;;
     gw)
       sudo /sbin/ip route replace default via ${saved_value} dev eth0 # upsert current default route
