@@ -32,15 +32,10 @@ const yaml = require('../../api/dist/lib/js-yaml.min.js');
 
 const CountryUpdater = require('../../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
-const ipset = require('../../net2/Ipset.js');
-
-const FireRouter = require('../../net2/FireRouter.js');
 
 const sysManager = require('../../net2/SysManager');
 
 const reservedInterfaceName = "clash0";
-
-const NetworkProfileManager = require('../../net2/NetworkProfileManager.js');
 
 const fs = require('fs');
 
@@ -126,10 +121,10 @@ class ClashTun {
         log.error("no uuid is found in clash interface");
         return;
       }
-
+      const NetworkProfile = require('../../net2/NetworkProfile.js');
+      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const uuidPrefix = uuid.substring(0, 13);
       log.info("clash network uuid prefix is", uuidPrefix);
-
       const ipsetName = `c_route_${uuidPrefix}_set`;
       log.info("clash routing ipset is", ipsetName);
 
