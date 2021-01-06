@@ -161,6 +161,9 @@ class Platform {
     return null;
   }
 
+  isBluetoothAvailable() {
+    return true
+  }
 
   isOverlayNetworkAvailable() {
     return true;
@@ -178,8 +181,12 @@ class Platform {
     return 1;
   }
 
-  async applyProfile() {
-    log.info("NO need to apply profile");
+  isIFBSupported() {
+    return false;
+  }
+
+  isDockerSupported() {
+    return false;
   }
 
   async onWanIPChanged(ip) {
@@ -188,6 +195,10 @@ class Platform {
 
   async onVPNPortProtocolChanged() {
     log.info("VPN Port Protocol is changed");
+  }
+
+  async applyProfile() {
+    log.info("NO need to apply profile");
   }
 }
 

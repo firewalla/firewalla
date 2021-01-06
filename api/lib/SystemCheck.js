@@ -62,7 +62,7 @@ function compressPayloadIfRequired(req, res, next) {
   if(compressed) { // compress payload to reduce traffic
     log.debug("encipher uncompressed message size: ", res.body.length);
     const before = res.body.length;
-    let input = new Buffer(res.body, 'utf8');
+    let input = Buffer.from(res.body, 'utf8');
     zlib.deflate(input, (err, output) => {
       if(err) {
         res.status(500).json({ error: err });

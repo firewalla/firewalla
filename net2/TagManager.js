@@ -44,7 +44,7 @@ class TagManager {
       log.info(`Tags are updated`);
       this.scheduleRefresh();
     });
-    
+
     return this;
   }
 
@@ -100,7 +100,7 @@ class TagManager {
     }
     // do not directly create tag in this.tags, only update redis tag entries
     // this.tags will be created from refreshTags() together with createEnv()
-    if (!obj) 
+    if (!obj)
       obj = {};
     const tag = Object.assign({}, obj, {uid: newUid, name: name});
     const key = `tag:uid:${newUid}`;
@@ -124,16 +124,16 @@ class TagManager {
     }
     log.warn(`Tag ${name} does not exist, no need to remove it`);
   }
-  
+
   async changeTagName(uid, name) {
     if (_.has(this.tags, uid) && this.getTag(name) == null) {
       this.tags[uid].setTagName(name);
       const key = `tag:uid:${uid}`;
-      await rclient.hmsetAsync(key, this.tags[uid].o); 
+      await rclient.hmsetAsync(key, this.tags[uid].o);
       this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
       return true;
     }
-    
+
     return false;
   }
 
