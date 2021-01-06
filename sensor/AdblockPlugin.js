@@ -98,9 +98,10 @@ class AdblockPlugin extends Sensor {
           const arr = JSON.parse(data);
           if (Array.isArray(arr)) {
             for (var i=0; i<arr.length; i++) {
-              result[arr[i]] = "off";
+              result[arr[i]] = "on";
             }
           }
+          await rclient.setAsync(configKey, JSON.stringify(result));
           return result;
         }
         return JSON.parse(json);
@@ -213,7 +214,7 @@ class AdblockPlugin extends Sensor {
 
     async _updateFilter(config) {
       for (const key in config) {
-        const configFilePath = `${dnsmasqConfigFolder}/${key}_block.conf`;
+        const configFilePath = `${dnsmasqConfigFolder}/${key}_adblock.conf`;
         const value = config[key];
         if (value === 'off') {
           try {
@@ -240,7 +241,9 @@ class AdblockPlugin extends Sensor {
           continue;
         }
         try {
-          await this.writeToFile(arr, configFilePath);
+          await this.writeToFile(arr, configFilePath + ".tmp");
+          await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
+          await fs.renameAsync(configFilePath + ".tmp", configFilePath);
         } catch (err) {
           log.error(`Error when write to file: '${configFilePath}'`, err);
         }
@@ -269,7 +272,7 @@ class AdblockPlugin extends Sensor {
     async cleanUpFilter() {
       const config = await this.getAdblockConfig();
       for (const key in config) {
-        const file = `${dnsmasqConfigFolder}/${key}_block.conf`;
+        const file = `${dnsmasqConfigFolder}/${key}_adblock.conf`;
         try {
           if (fs.existsSync(file)) {
             await fs.unlinkAsync(file);
