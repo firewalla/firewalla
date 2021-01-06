@@ -87,7 +87,8 @@
     "RemoteNotificationSensor": {},
     "WireGuardPlugin": {},
     "EventSensor":{},
-    "NetworkMonitorSensor":{}
+    "NetworkMonitorSensor":{},
+    "AdblockPlugin": {}
   },
   "intels": [
     "DedupAlarm",
