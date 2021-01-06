@@ -764,7 +764,6 @@ class VpnManager {
 
       let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync",
         fHome, vpnLockFile, commonName, password, ip, externalPort, protocol);
-      log.info("VPNManager:GEN", cmd);
       exec(cmd, (err, stdout, stderr) => {
         if (err) {
           log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
