@@ -86,6 +86,8 @@ class PortForward {
                 this._wanIPs = sysManager.myWanIps();
                 await this.updateExtIPChain(this._wanIPs);
               }
+              await this.loadConfig();
+              await this.restore();
               await this.refreshConfig();
             } catch(err) {
               log.error("Failed to refresh port forward rules", err);

@@ -307,6 +307,11 @@ sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 2
 sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j RETURN
 # add dmz host chain to the end of port forward chain
 sudo iptables -w -t nat -A FW_PREROUTING_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
+
+if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
+  sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD &> /dev/null || true
+fi
+
 # create vpn client dns redirect chain in FW_PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
