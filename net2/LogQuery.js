@@ -43,7 +43,6 @@ class LogQuery {
   }
 
   // logs should already be sorted
-  // adds a minimal merge time span so logs 
   mergeLogs(logs, options) {
     if (options.no_merge) return logs
 
@@ -114,31 +113,32 @@ class LogQuery {
       const logs = await feed.query(feed.options)
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
+
+        // a more complicated and faster ordered merging without accessing elements via index.
+        // result should be the same as
+        // Array.prototype.push.apply(results, logs)
+        // results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
+        const merged = []
+        let a = logs.shift();
+        let b = results.shift();
+        while (a || b) {
+          if (a && (!b || options.asc ^ a.ts > b.ts)) {
+            merged.push(a)
+            a = logs.shift()
+          } else {
+            merged.push(b)
+            b = results.shift()
+          }
+        }
+        results = merged
+
+        // leaving merging for front-end
+        // results = this.mergeLogs(results, options);
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
         log.debug('Removing feed', feed.mac || feed.intf || feed.tag || feed.macs )
       }
-
-      // // merge logs and results with order
-      // const merged = []
-      // let i = 0, j = 0;
-      // while (i < logs.length && j < results.length) {
-      //   if (options.asc ^ (logs[i] > results[j])) {
-      //     merged.push(logs[i ++])
-      //   } else {
-      //     merged.push(results[j ++])
-      //   }
-      // }
-      // while (i < logs.length) merged.push(logs[i ++])
-      // while (j < results.length) merged.push(results[j ++])
-
-      // results = merged
-
-      while (logs.length) results.push(logs.shift());
-
-      results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
-      // results = this.mergeLogs(results, options);
 
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
     }
@@ -151,7 +151,9 @@ class LogQuery {
     if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
     if (!options.asc) options.asc = false;
     if (!options.ts) {
-      options.ts = (options.asc ? options.begin : options.end) || new Date() / 1000;
+      options.ts = options.asc ?
+        options.begin || new Date() / 1000 - MAX_RECENT_INTERVAL :
+        options.end || new Date() / 1000
     }
     if (!options.ets) {
       options.ets = options.asc ?
@@ -196,7 +198,7 @@ class LogQuery {
     const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
 
     // query less each time to improve perf
-    // options = Object.assign({count: Math.round(options.count * 2 / feeds.length)}, options)
+    options = Object.assign({count: _.min(Math.round(options.count * 2 / feeds.length), options.count)}, options)
 
     const allLogs = await this.logFeeder(options, feeds)
 
