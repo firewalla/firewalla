@@ -73,6 +73,7 @@ let Sensor = class {
   hookFeature(featureName) {
 
     sem.once('IPTABLES_READY', async () => {
+      log.info("iptables is ready, start enabling feature", featureName);
       if (fc.isFeatureOn(featureName)) {
         try {
           await this.globalOn({booting: true});
