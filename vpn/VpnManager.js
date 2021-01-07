@@ -184,17 +184,13 @@ class VpnManager {
     }
     log.info("VpnManager:SetIptables", serverNetwork);
 
+    // clean up
+    await iptable.run(["sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
+    
     if (platform.isFireRouterManaged()) {
       const wanNames = this.getEffectiveWANNames();
-      for(const name of wanNames) {
-        const commands =[
-          // delete this rule if it exists, logical opertion ensures correct execution
-          wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -o ${name} -j MASQUERADE`),
-          // insert back as top rule in table
-          `sudo iptables -w -t nat -I FW_POSTROUTING 1 -s ${serverNetwork}/24 -o ${name} -j MASQUERADE`
-        ];
-        await iptable.run(commands);
-      }
+      const commands = wanNames.map((name) => `sudo iptables -w -t nat -I FW_POSTROUTING_OPENVPN -s ${serverNetwork}/24 -o ${name} -j MASQUERADE`);
+      await iptable.run(commands);
     } else {
       const commands =[
         // delete this rule if it exists, logical opertion ensures correct execution
@@ -217,22 +213,8 @@ class VpnManager {
     }
     log.info("VpnManager:UnsetIptables", serverNetwork);
 
-    if (platform.isFireRouterManaged()) {
-      const wanNames = this.getEffectiveWANNames();
-      for(const name of wanNames) {
-        const commands =[
-          // delete this rule if it exists, logical opertion ensures correct execution
-          wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -o ${name} -j MASQUERADE`)
-        ];
-        await iptable.run(commands);
-      }
-    } else {
-
-      const commands = [
-       wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -j MASQUERADE`),
-      ];
-      await iptable.run(commands);
-    }
+    // clean up
+    await iptable.run(["sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
     this._currentServerNetwork = null;
   }
 
