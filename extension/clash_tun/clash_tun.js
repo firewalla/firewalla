@@ -74,6 +74,10 @@ class ClashTun {
 
     doc.proxies = serversConfig;
 
+    if(config["external-controller"]) {
+      doc["external-controller"] = config["external-controller"];
+    }
+
     const serverNames = serversConfig.map((config) => config.name);
     const pgs = doc["proxy-groups"];
 
