@@ -329,16 +329,13 @@ class netBot extends ControllerBot {
   _sendLog(msg, callback = () => { }) {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid + ".tar.gz.gpg";
-    log.info("sendLog: ", filename, password);
     this.eptcloud.getStorage(this.primarygid, 18000000, 0, (e, url) => {
-      log.info("sendLog: Storage ", filename, password, url);
       if (url == null || url.url == null) {
         this.simpleTxData(msg, {}, "Unable to get storage", callback);
       } else {
         const path = URL.parse(url.url).pathname;
         const homePath = f.getFirewallaHome();
         let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
-        log.info("sendLog: cmdline", filename, password, cmdline);
         exec(cmdline, (err, out, code) => {
           if (err) {
             log.error("sendLog: unable to process encrypt-upload", err, out, code);
