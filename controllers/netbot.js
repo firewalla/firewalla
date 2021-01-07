@@ -1316,6 +1316,18 @@ class netBot extends ControllerBot {
       return options
     }
 
+    if (_.isString(msg.target) && msg.target.startsWith(`${Constants.NS_VPN_PROFILE}:`)) {
+      // the targetis a vpn profile cn
+      const vpnProfile = this.vpnProfileManager.getVPNProfile(msg.target.substring(`${Constants.NS_VPN_PROFILE}:`.length));
+      if (!vpnProfile || !vpnProfile.o.cn) {
+        let error = new Error("Invalid VPN profile");
+        error.code = 404;
+        throw error;
+      }
+      options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
+      return options;
+    }
+
     if (msg.data.type == 'tag') {
       const tag = this.tagManager.getTagByUid(msg.target);
       if (!tag) {
@@ -1333,6 +1345,15 @@ class netBot extends ControllerBot {
         throw err
       }
       options.intf = msg.target;
+      if (intf.o && intf.o.intf === "tun_fwvpn") {
+        // add additional macs into options for VPN server network
+        const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
+        options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+      }
+    } else {
+      // add additional macs in to options for VPN profiles
+      const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
+      options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
     }
 
     await this.hostManager.getHostsAsync();
