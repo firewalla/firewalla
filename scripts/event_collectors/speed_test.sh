@@ -45,7 +45,7 @@ EOS
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-branch=$(cd $FIREWALLA_HOME; git branch --show-current)
+branch=$(cd $FIREWALLA_HOME; git rev-parse --abbrev-ref HEAD)
 test $branch == 'master' || exit 0
 
 check_speed_python || exit 1
