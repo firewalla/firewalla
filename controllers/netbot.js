@@ -1730,13 +1730,9 @@ class netBot extends ControllerBot {
           const defaultDomains = await categoryUpdater.getDefaultDomains(category)
           const includedDomains = await categoryUpdater.getIncludedDomains(category)
 
-          const finalDomains = domains.filter((de) => {
-            return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
-          })
-
-          finalDomains.push.apply(finalDomains, defaultDomains.map((d) => {
+          const finalDomains = domains.filter(d => !defaultDomains.includes(d.domain)).concat(defaultDomains.map((d) => {
             return { domain: d, expire: 0 };
-          }))
+          })).filter(d => !excludedDomains.includes(d.domain));
 
           let compareFuction = (x, y) => {
             if (!x || !y) {
