@@ -169,7 +169,7 @@ class VpnManager {
       await iptable.run(commands);
   }
 
-  async getEffectiveWANNames() {
+  getEffectiveWANNames() {
     let wanNames = fireRouter.getWanIntfNames();
     if(!_.isEmpty(this.noSNATS)) {
       wanNames = wanNames.filter((n) => !this.noSNATS.includes(n));
