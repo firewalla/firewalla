@@ -264,6 +264,11 @@ sudo iptables -w -t nat -N FW_POSTROUTING &> /dev/null
 
 sudo iptables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null || sudo iptables -w -t nat -A POSTROUTING -j FW_POSTROUTING
 
+# create POSTROUTING VPN chain
+sudo iptables -w -t nat -N FW_POSTROUTING_OPENVPN &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN
+sudo iptables -w -t nat -C FW_POSTROUTING -j FW_POSTROUTING_OPENVPN &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -j FW_POSTROUTING_OPENVPN
+
 # nat POSTROUTING port forward hairpin chain
 sudo iptables -w -t nat -N FW_POSTROUTING_PORT_FORWARD &> /dev/null
 sudo iptables -w -t nat -F FW_POSTROUTING_PORT_FORWARD

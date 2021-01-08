@@ -74,6 +74,10 @@ class ClashTun {
 
     doc.proxies = serversConfig;
 
+    if(config["external-controller"]) {
+      doc["external-controller"] = config["external-controller"];
+    }
+
     const serverNames = serversConfig.map((config) => config.name);
     const pgs = doc["proxy-groups"];
 
@@ -133,13 +137,13 @@ class ClashTun {
       const servers = this.getServers();
 
       for(const server of servers) {
-        await exec(`sudo ipset add fw_clash_whitelist ${server}`);
+        await exec(`sudo ipset add -! fw_clash_whitelist ${server}`);
       }
 
       // add exclude lists
       if(_.isArray(this.config.excludes)) {
         for(const exclude of this.config.excludes) {
-          await exec(`sudo ipset add fw_clash_whitelist ${exclude}`);
+          await exec(`sudo ipset add -! fw_clash_whitelist ${exclude}`);
         }
       }
 
