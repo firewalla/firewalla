@@ -34,7 +34,10 @@ flock -x -n $lock_fd || {
 # Upgrade firerouter if any
 FIREROUTER_SCRIPT='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
 if [[ -e "$FIREROUTER_SCRIPT" ]]; then
-    $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log
+    $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
+      echo "ERROR: failed to upgrade firerouter" >&2
+      exit 1
+    }
 fi
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
