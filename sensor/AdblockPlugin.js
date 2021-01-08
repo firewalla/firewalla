@@ -89,28 +89,29 @@ class AdblockPlugin extends Sensor {
     }
 
     async getAdblockConfig() {
-      const json = await rclient.getAsync(configKey);
       try {
-        if (json == null) {
-          const result = {};
-          log.info(`Load config list from bone: ${configlistKey}`);
-          const data = await bone.hashsetAsync(configlistKey);
-          const arr = JSON.parse(data);
-          if (Array.isArray(arr)) {
-            for (var i=0; i<arr.length; i++) {
-              if (arr[i] == "ads") result[arr[i]] = "on";  
-              else result[arr[i]] = "off";
-            }
-          }
-          await rclient.setAsync(configKey, JSON.stringify(result));
-          return result;
+        const result = {};
+        log.info(`Load config list from bone: ${configlistKey}`);
+        const data = await bone.hashsetAsync(configlistKey);
+        const adlist = JSON.parse(data);
+        for (const key in adlist) {
+          const value = adlist[key];
+          if (value.default && value.default == "true") result[key] = "on"; 
+          else result[key] = "off";
         }
-        return JSON.parse(json);
+        // merge cloud and local configuration
+        // const additionStr = await rclient.getAsync(configKey);
+        // const additionObj = JSON.parse(additionStr);
+        // for (const key in additionObj) {
+        //   result[key] = additionObj[key]
+        // }
+        return result;
       } catch(err) {
         log.error(`Got error when loading config from ${configKey}`);
         return {};
       }
     }
+
     async applyPolicy(host, ip, policy) {
       log.info("Applying adblock policy:", ip, policy);
       try {
@@ -242,9 +243,11 @@ class AdblockPlugin extends Sensor {
           continue;
         }
         try {
-          await this.writeToFile(arr, configFilePath + ".tmp");
-          await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
-          await fs.renameAsync(configFilePath + ".tmp", configFilePath);
+          if (arr.length > 0) {
+            await this.writeToFile(arr, configFilePath + ".tmp");
+            await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
+            await fs.renameAsync(configFilePath + ".tmp", configFilePath);
+          }
         } catch (err) {
           log.error(`Error when write to file: '${configFilePath}'`, err);
         }
