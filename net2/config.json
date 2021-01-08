@@ -85,9 +85,9 @@
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
-    "WireGuardPlugin": {},
     "EventSensor":{},
-    "NetworkMonitorSensor":{}
+    "NetworkMonitorSensor":{},
+    "AdblockPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -577,7 +577,6 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "ClashPlugin": {},
-    "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "LogScanSensor": {
       "fireResetBluetooth": true,
