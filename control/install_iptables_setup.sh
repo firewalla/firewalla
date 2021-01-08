@@ -751,6 +751,14 @@ sudo ipset flush -! c_vpn_client_tag_m_set
 sudo ipset create -! c_vpn_client_m_set hash:mac skbinfo
 sudo ipset flush -! c_vpn_client_m_set
 
+sudo iptables -w -t mangle -N FW_OUTPUT &> /dev/null
+sudo iptables -w -t mangle -F FW_OUTPUT
+sudo iptables -w -t mangle -C OUTPUT -j FW_OUTPUT &>/dev/null && sudo iptables -w -t mangle -D OUTPUT -j FW_OUTPUT
+sudo iptables -w -t mangle -I OUTPUT -j FW_OUTPUT
+
+# restore fwmark for reply packets of inbound connections
+sudo iptables -w -t mangle -A FW_OUTPUT -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+
 # the sequence is important, higher priority rule is placed after lower priority rule
 sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
 sudo iptables -w -t mangle -F FW_PREROUTING
@@ -860,6 +868,14 @@ sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV_G
 sudo iptables -w -t mangle -N FW_QOS_DEV &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_DEV
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV
+
+sudo ip6tables -w -t mangle -N FW_OUTPUT &> /dev/null
+sudo ip6tables -w -t mangle -F FW_OUTPUT
+sudo ip6tables -w -t mangle -C OUTPUT -j FW_OUTPUT &>/dev/null && sudo iptables -w -t mangle -D OUTPUT -j FW_OUTPUT
+sudo ip6tables -w -t mangle -I OUTPUT -j FW_OUTPUT
+
+# restore fwmark for reply packets of inbound connections
+sudo ip6tables -w -t mangle -A FW_OUTPUT -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 
 sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
 sudo ip6tables -w -t mangle -F FW_PREROUTING
