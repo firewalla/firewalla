@@ -87,7 +87,8 @@
     "RemoteNotificationSensor": {},
     "EventSensor":{},
     "NetworkMonitorSensor":{},
-    "LiveStatsPlugin": {}
+    "LiveStatsPlugin": {},
+    "AdblockPlugin": {}
   },
   "intels": [
     "DedupAlarm",
