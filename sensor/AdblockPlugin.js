@@ -60,6 +60,8 @@ class AdblockPlugin extends Sensor {
         this.vpnProfileSettings = {};
         this.nextReloadFilter = [];
         this.reloadCount = 0;
+        this.lastOnList = [];
+        this.currentOnList = [];
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
@@ -91,12 +93,16 @@ class AdblockPlugin extends Sensor {
     async getAdblockConfig() {
       try {
         const result = {};
+        this.currentOnList.length = 0;
         log.info(`Load config list from bone: ${configlistKey}`);
         const data = await bone.hashsetAsync(configlistKey);
         const adlist = JSON.parse(data);
         for (const key in adlist) {
           const value = adlist[key];
-          if (value.default && value.default == "true") result[key] = "on"; 
+          if (value.default && value.default == "true") {
+            this.currentOnList.push(key);
+            result[key] = "on"; 
+          }
           else result[key] = "off";
         }
         // merge cloud and local configuration
@@ -211,6 +217,8 @@ class AdblockPlugin extends Sensor {
 
     async updateFilter() {
       const config = await this.getAdblockConfig();
+      const diffList = this.lastOnList.filter(x => !this.currentOnList.includes(x))
+      diffList.forEach(x => config[x]="off");
       await this._updateFilter(config);
     }
 
@@ -297,6 +305,7 @@ class AdblockPlugin extends Sensor {
         this.updateFilter()
         .then(()=> {
           log.info(`Update adblock filters successful.`);
+          this.lastOnList = this.currentOnList;
           dnsmasq.scheduleRestartDNSService();
           this._scheduleNextReload(nextState, this.nextState);
         })
