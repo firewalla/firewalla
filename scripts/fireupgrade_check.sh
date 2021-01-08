@@ -29,11 +29,11 @@ err() {
 CMD=$(basename $0)
 LOCK_FILE=/var/lock/${CMD/.sh/.lock}
 exec {lock_fd}> $LOCK_FILE
-echo $$ > $LOCK_FILE
 flock -x -n $lock_fd || {
     err "Another instance of $CMD is already running, abort"
     exit 1
 }
+echo $$ > $LOCK_FILE
 
 # Upgrade firerouter if any
 FIREROUTER_SCRIPT='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
