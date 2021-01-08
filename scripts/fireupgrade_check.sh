@@ -21,6 +21,10 @@
 # WARNING:  EXTRA CARE NEEDED FOR THIS SCRIPT!  ANYTHING BROKEN HERE
 # WILL PREVENT UPGRADES!
 
+err() {
+  echo "ERROR: $@" >&2
+}
+
 # Single running instance ONLY
 CMD=$(basename $0)
 LOCK_FILE=/var/lock/${CMD/.sh/.lock}
@@ -35,7 +39,7 @@ flock -x -n $lock_fd || {
 FIREROUTER_SCRIPT='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
 if [[ -e "$FIREROUTER_SCRIPT" ]]; then
     $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
-      echo "ERROR: failed to upgrade firerouter" >&2
+      err "ERROR: failed to upgrade firerouter"
       exit 1
     }
 fi
