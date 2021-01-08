@@ -23,6 +23,8 @@ let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
 
+const delay = require('../../util/util.js').delay;
+
 const jsonfile = require('jsonfile')
 
 router.post('/message/:gid',
@@ -96,6 +98,7 @@ router.post('/simple', (req, res, next) => {
   const item = req.query.item || ""
   const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
+  const streaming = req.query.streaming || false;
 
   let body = {
     "message": {
@@ -133,19 +136,46 @@ router.post('/simple', (req, res, next) => {
   body.message.obj.data.hourblock = parseInt(req.query.hourblock)
   body.message.obj.data.direction = req.query.direction
 
-
   try {
     const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
 
 //    const c = JSON.parse(content)
     body.message.obj.data.value = content;
 
-    (async() =>{
-      let controller = await cloudWrapper.getNetBotController(gid)
-      let response = await controller.msgHandlerAsync(gid, body)
-      res.body = JSON.stringify(response);
-      res.type('json');
-      res.send(res.body);
+    res.socket.on('close', () => {
+      log.info("connection is closed:", res.socket._peername);
+      res.is_closed = true;
+    });
+
+    (async() => {      
+
+      if(streaming) {
+        res.set({
+          'Cache-Control': 'no-cache',
+          'Content-Type': 'text/event-stream',
+          'Connection': 'keep-alive'
+        });
+        res.flushHeaders();
+
+        while(streaming && !res.is_closed) {
+          try {
+            let controller = await cloudWrapper.getNetBotController(gid);
+            let response = await controller.msgHandlerAsync(gid, body);    
+            res.write(JSON.stringify(response) + "\n");
+            await delay(200); // self protection
+          } catch(err) {
+            log.error("Got error when handling request, err:", err);
+            break;
+          }
+        }  
+      } else {
+        let controller = await cloudWrapper.getNetBotController(gid);
+        let response = await controller.msgHandlerAsync(gid, body);  
+        res.body = JSON.stringify(response);
+        res.type('json');
+        res.send(res.body);
+      }
+
     })()
       .catch((err) => {
         // netbot controller is not ready yet, waiting for init complete

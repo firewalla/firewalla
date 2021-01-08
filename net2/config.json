@@ -86,7 +86,8 @@
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
     "EventSensor":{},
-    "NetworkMonitorSensor":{}
+    "NetworkMonitorSensor":{},
+    "LiveStatsPlugin": {}
   },
   "intels": [
     "DedupAlarm",
