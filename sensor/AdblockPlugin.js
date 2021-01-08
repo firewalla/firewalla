@@ -98,7 +98,8 @@ class AdblockPlugin extends Sensor {
           const arr = JSON.parse(data);
           if (Array.isArray(arr)) {
             for (var i=0; i<arr.length; i++) {
-              result[arr[i]] = "on";
+              if (arr[i] == "ads") result[arr[i]] = "on";  
+              else result[arr[i]] = "off";
             }
           }
           await rclient.setAsync(configKey, JSON.stringify(result));
