@@ -21,6 +21,21 @@
 # WARNING:  EXTRA CARE NEEDED FOR THIS SCRIPT!  ANYTHING BROKEN HERE
 # WILL PREVENT UPGRADES!
 
+# Single running instance ONLY
+CMD=$(basename $0)
+LOCK_FILE=/var/lock/${CMD/.sh/.lock}
+exec {lock_fd} > $LOCK_FILE
+flock -x -n $lock_fd || {
+    err "Another instance of $CMD is already running, abort"
+    exit 1
+}
+
+# Upgrade firerouter if any
+FIREROUTER_SCRIPT='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
+if [[ -e "$FIREROUTER_SCRIPT" ]]; then
+    $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log
+fi
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 source ${FIREWALLA_HOME}/platform/platform.sh
