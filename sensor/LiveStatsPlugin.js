@@ -35,15 +35,15 @@ class LiveStatsPlugin extends Sensor {
   apiRun() {
     extensionManager.onGet("liveStats", async (msg, data) => {
       const intfs = fireRouter.getLogicIntfNames();
-      const results = {};
+      const intfStats = [];
       const promises = intfs.map( async (intf) => {
         const rate = await this.getRate(intf);
-        results[intf] = rate;
+        intfStats.push(rate);
       });
       promises.push(delay(1000)); // at least wait for 1 sec
       await Promise.all(promises);
-      return results;
-    });    
+      return {intfStats};
+    });
   }
 
   async getIntfStats(intf) {
@@ -57,6 +57,7 @@ class LiveStatsPlugin extends Sensor {
     await delay(1000);
     const s2 = await this.getIntfStats(intf);
     return {
+      name: intf,
       rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
       tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
     };

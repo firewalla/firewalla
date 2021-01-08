@@ -93,7 +93,7 @@ router.post('/message/:gid',
 //   "mtype": "msg"
 // }
 
-router.post('/simple', (req, res, next) => {
+const simple = (req, res, next) => {
   const command = req.query.command || "init"
   const item = req.query.item || ""
   const content = req.body || {}
@@ -160,8 +160,10 @@ router.post('/simple', (req, res, next) => {
         while(streaming && !res.is_closed) {
           try {
             let controller = await cloudWrapper.getNetBotController(gid);
-            let response = await controller.msgHandlerAsync(gid, body);    
-            res.write(JSON.stringify(response) + "\n");
+            let response = await controller.msgHandlerAsync(gid, body);
+            
+            const reply = `id: DA45C7BE-9029-4165-AD56-7860A9A3AE6B\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
+            res.write(reply);
             await delay(200); // self protection
           } catch(err) {
             log.error("Got error when handling request, err:", err);
@@ -190,8 +192,10 @@ router.post('/simple', (req, res, next) => {
       stack: err.stack
     })
   }
-})
+};
 
+router.post('/simple', simple);
+router.get('/simple', simple);
 
 router.post('/complex', (req, res, next) => {
   const command = req.query.command || "init"
