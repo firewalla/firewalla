@@ -29,10 +29,20 @@ const delay = require('../util/util.js').delay;
 const fs = require('fs');
 Promise.promisifyAll(fs);
 
+const exec = require('child-process-promise').exec;
+
+const sysManager = require('../net2/SysManager.js');
+
 
 class LiveStatsPlugin extends Sensor {
 
-  apiRun() {
+  async apiRun() {
+    this.activeConnCount = await this.getActiveConnections();
+
+    this.timer = setInterval(async () => {
+      this.activeConnCount = await this.getActiveConnections();      
+    }, 300 * 1000); // every 5 mins;
+
     extensionManager.onGet("liveStats", async (msg, data) => {
       const intfs = fireRouter.getLogicIntfNames();
       const intfStats = [];
@@ -42,7 +52,7 @@ class LiveStatsPlugin extends Sensor {
       });
       promises.push(delay(1000)); // at least wait for 1 sec
       await Promise.all(promises);
-      return {intfStats};
+      return {intfStats, activeConn: this.activeConnCount};
     });
   }
 
@@ -61,7 +71,37 @@ class LiveStatsPlugin extends Sensor {
       rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
       tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
     };
-  }  
+  }
+
+  buildActiveConnGrepString() {
+    const wanIPs = sysManager.myWanIps();
+    let str = "grep -v TIME_WAIT | fgrep -v '127.0.0.1' ";
+    for(const ip of wanIPs) {
+      str += `| egrep -v '=${ip}.*=${ip}'`;
+    }
+    return str;
+  }
+
+  async getActiveConnections() {
+    // TBD, to be improved on the data accuracy and data parsing
+    try {
+      const ipv4Cmd = `sudo conntrack -o extended -L | ${this.buildActiveConnGrepString()} | wc -l`;
+      log.debug(ipv4Cmd);
+      const ipv4Count = await exec(ipv4Cmd);
+      try {
+        await exec("sudo modinfo nf_conntrack_ipv6"); // check if ipv6 kernel module is loaded, if not loaded, do not use the ipv6 data, which is not correct
+        const ipv6Cmd = "sudo conntrack -L -f ipv6 2>/dev/null | fgrep -v =::1 | wc -l";
+        const ipv6Count = await exec(ipv6Cmd);
+        return Number(ipv4Count.stdout) + Number(ipv6Count.stdout);
+      } catch(err) {
+        log.error("IPv6 conntrack kernel module not available");
+        return Number(ipv4Count.stdout);
+      }
+    } catch(err) {
+      log.error("Failed to get active connections, err:", err);
+      return 0;
+    }
+  }
 }
 
 module.exports = LiveStatsPlugin;
