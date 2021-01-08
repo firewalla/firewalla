@@ -24,7 +24,8 @@
 # Single running instance ONLY
 CMD=$(basename $0)
 LOCK_FILE=/var/lock/${CMD/.sh/.lock}
-exec {lock_fd} > $LOCK_FILE
+exec {lock_fd}> $LOCK_FILE
+echo $$ > $LOCK_FILE
 flock -x -n $lock_fd || {
     err "Another instance of $CMD is already running, abort"
     exit 1
