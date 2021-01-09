@@ -41,6 +41,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const bone = require("../lib/Bone.js");
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 const fc = require('../net2/config.js');
 
@@ -60,8 +62,6 @@ class AdblockPlugin extends Sensor {
         this.vpnProfileSettings = {};
         this.nextReloadFilter = [];
         this.reloadCount = 0;
-        this.lastOnList = [];
-        this.currentOnList = [];
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
@@ -91,31 +91,44 @@ class AdblockPlugin extends Sensor {
     }
 
     async getAdblockConfig() {
+      const result = {};
       try {
-        const result = {};
-        this.currentOnList.length = 0;
         log.info(`Load config list from bone: ${configlistKey}`);
         const data = await bone.hashsetAsync(configlistKey);
+        //const data = "{\"ads\": {\"default\": \"true\"}, \"ads-adv\":{}}";
         const adlist = JSON.parse(data);
-        for (const key in adlist) {
-          const value = adlist[key];
-          if (value.default && value.default == "true") {
-            this.currentOnList.push(key);
-            result[key] = "on"; 
+        if (!platform.getName() == 'gold') {
+          for (const key in adlist) {
+            const value = adlist[key];
+            if (value.default && value.default == "true") {
+              result[key] = "on";
+            }
           }
-          else result[key] = "off";
+        } else {
+          // from redis
+          const configStr = await rclient.getAsync(configKey);
+          if (configStr == null || configStr == "{}") {
+            for (const key in adlist) {
+              const value = adlist[key];
+              if (value.default && value.default == "true") {
+                result[key] = "on";
+              }
+            }
+          } else {
+            const configObj = JSON.parse(configStr);
+            for (const key in configObj) {
+              if (!Object.keys(adlist).includes(key)) {
+                result[key] = "off";
+              } else {
+                result[key] = configObj[key]
+              }
+            }
+          }
         }
-        // merge cloud and local configuration
-        // const additionStr = await rclient.getAsync(configKey);
-        // const additionObj = JSON.parse(additionStr);
-        // for (const key in additionObj) {
-        //   result[key] = additionObj[key]
-        // }
-        return result;
       } catch(err) {
-        log.error(`Got error when loading config from ${configKey}`);
-        return {};
+        log.error(`Got error when loading config from ${configKey}`, err);
       }
+      return result;
     }
 
     async applyPolicy(host, ip, policy) {
@@ -217,12 +230,11 @@ class AdblockPlugin extends Sensor {
 
     async updateFilter() {
       const config = await this.getAdblockConfig();
-      const diffList = this.lastOnList.filter(x => !this.currentOnList.includes(x))
-      diffList.forEach(x => config[x]="off");
       await this._updateFilter(config);
     }
 
     async _updateFilter(config) {
+      this._cleanUpFilter();
       for (const key in config) {
         const configFilePath = `${dnsmasqConfigFolder}/${key}_adblock.conf`;
         const value = config[key];
@@ -281,17 +293,15 @@ class AdblockPlugin extends Sensor {
       });
     }
 
-    async cleanUpFilter() {
-      const config = await this.getAdblockConfig();
-      for (const key in config) {
-        const file = `${dnsmasqConfigFolder}/${key}_adblock.conf`;
-        try {
-          if (fs.existsSync(file)) {
-            await fs.unlinkAsync(file);
+    _cleanUpFilter() {
+      try {
+        fs.readdirSync(dnsmasqConfigFolder).forEach(file => {
+          if (file.endsWith('_adblock.conf')) {
+            fs.unlinkSync(`${dnsmasqConfigFolder}/${file}`);
           }
-        } catch (err) {
-          log.error(`Failed to delete file: '${file}'`, err);
-        }
+        })
+      } catch (err) {
+        log.err("Failed to delete file,", err)
       }
     }
 
@@ -305,7 +315,6 @@ class AdblockPlugin extends Sensor {
         this.updateFilter()
         .then(()=> {
           log.info(`Update adblock filters successful.`);
-          this.lastOnList = this.currentOnList;
           dnsmasq.scheduleRestartDNSService();
           this._scheduleNextReload(nextState, this.nextState);
         })
@@ -319,12 +328,9 @@ class AdblockPlugin extends Sensor {
           return;
         }
         log.info(`Start to clean up adblock filters.`);
-        this.cleanUpFilter()
-          .catch(err => log.error(`Error when clean up adblock filters`, err))
-          .then(() => {
-            dnsmasq.scheduleRestartDNSService();
-            this._scheduleNextReload(nextState, this.nextState);
-          });
+        this._cleanUpFilter();
+        dnsmasq.scheduleRestartDNSService();
+        this._scheduleNextReload(nextState, this.nextState);
       }
     }
     controlFilter(state) {
