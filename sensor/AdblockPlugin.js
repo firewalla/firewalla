@@ -48,7 +48,7 @@ const fc = require('../net2/config.js');
 
 const featureName = "adblock";
 const policyKeyName = "adblock";
-const configKey = "ext.adblock.config";
+const configKey = "ext.adblock.conf";
 const configlistKey = "ads.list"
 const RELOAD_INTERVAL = 3600 * 24 * 1000;
 
@@ -100,9 +100,7 @@ class AdblockPlugin extends Sensor {
         if (!platform.getName() == 'gold') {
           for (const key in adlist) {
             const value = adlist[key];
-            if (value.default && value.default == "true") {
-              result[key] = "on";
-            }
+            if (value.default && value.default == "true") result[key] = "on";
           }
         } else {
           // from redis
@@ -110,18 +108,14 @@ class AdblockPlugin extends Sensor {
           if (configStr == null || configStr == "{}") {
             for (const key in adlist) {
               const value = adlist[key];
-              if (value.default && value.default == "true") {
-                result[key] = "on";
-              }
+              if (value.default && value.default == "true") result[key] = "on";
+              else result[key] = "off";
             }
           } else {
             const configObj = JSON.parse(configStr);
             for (const key in configObj) {
-              if (!Object.keys(adlist).includes(key)) {
-                result[key] = "off";
-              } else {
-                result[key] = configObj[key]
-              }
+              if (!Object.keys(adlist).includes(key)) result[key] = "off";
+              else result[key] = configObj[key]
             }
           }
         }
@@ -234,7 +228,7 @@ class AdblockPlugin extends Sensor {
     }
 
     async _updateFilter(config) {
-      this._cleanUpFilter();
+      this._cleanUpFilter(config);
       for (const key in config) {
         const configFilePath = `${dnsmasqConfigFolder}/${key}_adblock.conf`;
         const value = config[key];
@@ -293,10 +287,16 @@ class AdblockPlugin extends Sensor {
       });
     }
 
-    _cleanUpFilter() {
+    _cleanUpFilter(config) {
       try {
+        const result = []
+        if (typeof config == 'object') {
+          for (const key in config) {
+            if(config[key] == "on") result.push(key+"_adblock.conf")
+          }
+        }
         fs.readdirSync(dnsmasqConfigFolder).forEach(file => {
-          if (file.endsWith('_adblock.conf')) {
+          if (file.endsWith('_adblock.conf') && !result.includes(file)) {
             fs.unlinkSync(`${dnsmasqConfigFolder}/${file}`);
           }
         })
