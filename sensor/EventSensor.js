@@ -31,9 +31,14 @@ const ea = require('../event/EventApi.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
-const FEATURE_EVENT = "event_schedule";
+const FEATURE_EVENT = "event_collect";
 
 class EventSensor extends Sensor {
+
+    constructor() {
+        super();
+        this.scheduledJobs = {};
+    }
 
     async apiRun() {
 
@@ -51,20 +56,57 @@ class EventSensor extends Sensor {
 
     async run() {
         log.info("Run EventSensor")
-        log.info(`Scheduling cleanOldEvents to run every ${this.cleanInterval} seconds`);
-        setInterval( async () => {
-            await this.cleanOldEvents(1000*this.config.expirePeriod);
-        }, 1000*this.config.cleanInterval);
-        await this.scheduleScriptCollectors();
+        if ( fc.isFeatureOn(FEATURE_EVENT) ) {
+            this.startCollectEvents();
+        } else {
+            this.stopCollectEvents();
+        }
+        fc.onFeature(FEATURE_EVENT, (feature, status) =>{
+            if (feature != FEATURE_EVENT) return
+            if (status) {
+                this.startCollectEvents();
+            } else {
+                this.stopCollectEvents();
+            }
+        })
+    }
+
+    async startCollectEvents() {
+        try {
+            log.info(`Scheduling cleanOldEvents to run every ${this.cleanInterval} seconds`);
+            this.cleanJob = setInterval( async () => {
+                await this.cleanOldEvents(1000*this.config.expirePeriod);
+            }, 1000*this.config.cleanInterval);
+            await this.scheduleScriptCollectors();
+        } catch (err) {
+            log.error("failed to start collect events:", err);
+        }
+    }
+
+    async stopCollectEvents() {
+        try {
+            log.info("Stop collecting events");
+            if (this.cleanJob) clearInterval(this.cleanJob);
+            for (const scheduledJob of this.scheduledJobs) {
+                clearInterval(scheduledJob);
+            }
+        } catch (err) {
+            log.error("failed to start collect events:", err);
+        }
     }
 
     scheduleScriptCollector(collector) {
-        const collectorInterval = (collector in this.config.collectorIntervals) ?
-            this.config.collectorIntervals[collector] : this.config.collectInetrvals.default;
-        log.info(`Scheduling ${collector} every ${collectorInterval} seconds`);
-        const scheduledJob = setInterval(() => {
-            this.collectEvent(collector);
-        }, 1000*collectorInterval);
+        let scheduledJob = null;
+        try {
+            log.info(`Scheduling ${collector}...`);
+            const collectorInterval = (collector in this.config.collectorIntervals) ? this.config.collectorIntervals[collector] : this.config.collectorIntervals.default;
+            log.info(`every ${collectorInterval} seconds`);
+            scheduledJob = setInterval(async () => {
+                await this.collectEvent(collector);
+            }, 1000*collectorInterval);
+        } catch (err) {
+            log.error(`failed to schedule ${collector}:`, err);
+        }
         return scheduledJob;
     }
 
@@ -73,7 +115,8 @@ class EventSensor extends Sensor {
         try {
             const collectors = await fs.readdirAsync(COLLECTOR_DIR);
             for (const collector of collectors) {
-                this.collectorJobs[collector] = this.scheduleScriptCollector(collector);
+                const scheduledJob = this.scheduleScriptCollector(collector);
+                if (scheduledJob) this.scheduledJobs[collector] = scheduledJob;
             }
         } catch (err) {
             log.error(`failed to schedule collectors under ${COLLECTOR_DIR}, ${err}`);
