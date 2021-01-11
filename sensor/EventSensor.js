@@ -59,12 +59,12 @@ class EventSensor extends Sensor {
     }
 
     scheduleScriptCollector(collector) {
-        const collectInterval = (collector in this.config.collectorIntervals) ?
-            this.config.collectorInterval[collector] : this.config.collectInetrval.default;
-        log.info(`Scheduling ${collector} every ${collectInterval} seconds`);
+        const collectorInterval = (collector in this.config.collectorIntervals) ?
+            this.config.collectorIntervals[collector] : this.config.collectInetrvals.default;
+        log.info(`Scheduling ${collector} every ${collectorInterval} seconds`);
         const scheduledJob = setInterval(() => {
             this.collectEvent(collector);
-        }, 1000*collectInterval);
+        }, 1000*collectorInterval);
         return scheduledJob;
     }
 
