@@ -87,6 +87,7 @@
     "RemoteNotificationSensor": {},
     "EventSensor":{},
     "NetworkMonitorSensor":{},
+    "LiveStatsPlugin": {},
     "AdblockPlugin": {}
   },
   "intels": [

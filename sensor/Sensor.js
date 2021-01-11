@@ -81,7 +81,7 @@ let Sensor = class {
           log.error(`Failed to enable ${featureName}, reverting...`, err)
           try {
             await this.globalOff();
-            fc.setFeatureStats(featureName)
+            this.setFeatureStats(featureName);
           } catch(err) {
             log.error(`Failed to revert ${featureName}`, err)
           }
