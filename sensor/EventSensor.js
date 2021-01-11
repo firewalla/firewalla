@@ -26,9 +26,8 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-let erh = null;
-let era = null;
-let ea = require('../event/EventApi.js');
+const era = require('../event/EventRequestApi.js');
+const ea = require('../event/EventApi.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
@@ -51,51 +50,42 @@ class EventSensor extends Sensor {
     }
 
     async run() {
-        log.info("run EventSensor")
-        erh = require('../event/EventRequestHandler.js')
-        era = require('../event/EventRequestApi.js');
-        setTimeout(() => {
-                this.scheduledJob();
-                setInterval(() => { this.scheduledJob(); }, 1000 * 3600 ); // run every hour
-            },
-            1000 * 60 * 5
-        ); // first time in 5 minutes
+        log.info("Run EventSensor")
+        log.info(`Scheduling cleanOldEvents to run every ${this.cleanInterval} seconds`);
+        setInterval( () => {
+            await this.cleanOldEvents(1000*this.config.expirePeriod);
+        }, 1000*this.config.cleanInterval);
+        await this.scheduleScriptCollectors();
     }
 
-    async scheduledJob() {
+    scheduleScriptCollector(collector) {
+        const collectInterval = (collector in this.config.collectorInterval) ?
+            this.config.collectorInterval[collector] : this.config.collectInetrval.default;
+        log.info(`Scheduling ${collector} every ${collectInterval} seconds`);
+        const scheduledJob = setInterval(() => {
+            this.collectEvent(collector);
+        }, 1000*collectInterval);
+        return scheduledJob;
+    }
+
+    async scheduleScriptCollectors() {
+        log.info("Scheduling all script collectors in ", COLLECTOR_DIR);
         try {
-            if (! fc.isFeatureOn(FEATURE_EVENT)) {
-                log.warn(`feature ${FEATURE_EVENT} disabled`);
-                return;
+            const collectors = await fs.readdirAsync(COLLECTOR_DIR);
+            for (const collector of collectors) {
+                this.collectorJobs[collector] = this.scheduleScriptCollector(collector);
             }
-            log.info("Start monitoring and generate events if needed")
-            await this.processCollectorOutputs();
-            await this.pingGateway();
-            await this.cleanOldEvents(1000*3600*24*7); // clean events more than 7 days old
-            //await this.cleanOldEvents(1000*60*3);
-            log.info("scheduledJob is executed successfully");
-        } catch(err) {
-            log.error("Failed to run scheduled job, err:", err);
+        } catch (err) {
+            log.error(`failed to schedule collectors under ${COLLECTOR_DIR}, ${err}`);
         }
     }
 
     async cleanOldEvents(cleanBefore) {
         try {
-            await log.info(`clean events before ${cleanBefore}`);
+            log.info(`clean events before ${cleanBefore} seconds`);
             era.cleanEvents(0, Date.now()-cleanBefore );
         } catch (err) {
             log.error(`failed to clean events before ${cleanBefore}, ${err}`);
-        }
-    }
-
-    async processCollectorOutputs() {
-        try {
-            const collectors = await fs.readdirAsync(COLLECTOR_DIR);
-            for (const collector of collectors) {
-                this.processCollectorOutput(`${COLLECTOR_DIR}/${collector}`);
-            }
-        } catch (err) {
-            log.error(`failed to process collectors under ${COLLECTOR_DIR}, ${err}`);
         }
     }
 
@@ -121,9 +111,9 @@ class EventSensor extends Sensor {
      *   ACTION:
      *     action <action_type> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
      */
-    async processCollectorOutput(collector) {
+    async collectEvent(collector) {
         try{
-            log.info(`Process output of ${collector}`);
+            log.info(`Collect event with ${collector}`);
             // get collector output
             const result = await exec(collector);
 
@@ -138,7 +128,7 @@ class EventSensor extends Sensor {
                 }
             }
         } catch (err) {
-            log.error(`failed to process collector output of ${collector},${err}`);
+            log.error(`failed to collect event with ${collector},${err}`);
         }
     }
 

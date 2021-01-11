@@ -589,7 +589,14 @@
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
     "DockerSensor": {},
-    "EventSensor": {}
+    "EventSensor": {
+      "expirePeriod" : 604800,
+      "cleanInterval" : 3600,
+      "collectInterval" : {
+        "ethernet_state.sh" : 60,
+        "default" : 3600
+      }
+    }
   },
   "hooks": {
     "NewDeviceHook": {},
