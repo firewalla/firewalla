@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc.
+/*    Copyright 2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,14 +32,18 @@ const yaml = require('../../api/dist/lib/js-yaml.min.js');
 
 const CountryUpdater = require('../../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
-const ipset = require('../../net2/Ipset.js');
+
+const sysManager = require('../../net2/SysManager');
+
+const reservedInterfaceName = "clash0";
 
 const fs = require('fs');
 
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-class Clash {
+// use tun interfaace for clash proxy
+class ClashTun {
   constructor() {
     if(instance === null) {
       instance = this;
@@ -69,6 +73,10 @@ class Clash {
     const serversConfig = config.servers || []  
 
     doc.proxies = serversConfig;
+
+    if(config["external-controller"]) {
+      doc["external-controller"] = config["external-controller"];
+    }
 
     const serverNames = serversConfig.map((config) => config.name);
     const pgs = doc["proxy-groups"];
@@ -107,7 +115,24 @@ class Clash {
       await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
 
       // setup iptables
-      await exec(`${__dirname}/setup_iptables.sh`);
+      const clashInterface = sysManager.getInterface(reservedInterfaceName);
+      if(!clashInterface) {
+        log.error("Clash interface not found");
+        return;
+      }
+      const uuid = clashInterface.uuid;
+      if(!uuid) {
+        log.error("no uuid is found in clash interface");
+        return;
+      }
+      const NetworkProfile = require('../../net2/NetworkProfile.js');
+      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+      const uuidPrefix = uuid.substring(0, 13);
+      log.info("clash network uuid prefix is", uuidPrefix);
+      const ipsetName = `c_route_${uuidPrefix}_set`;
+      log.info("clash routing ipset is", ipsetName);
+
+      await exec(`IPSET=${ipsetName} ${__dirname}/setup_iptables.sh`);
 
       const servers = this.getServers();
 
@@ -131,6 +156,11 @@ class Clash {
 
   async start() {
     log.info("Starting Clash...");
+    if(_.isEmpty(this.config)) {
+      log.error("Lacking clash config, exiting...");
+      return;
+    }
+    
     try {
       await this.preStart();
       await this.rawStart()
@@ -199,21 +229,21 @@ class Clash {
     (async() => {
       const code = "CN";
       await countryUpdater.activateCountry(code);
-      await exec(wrapIptables(`sudo iptables -w -t nat -I FW_CLASH_CHAIN -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
+      await exec(wrapIptables(`sudo iptables -w -t mangle -I FW_CLASH_CHAIN -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
     })()
   }
 
   async redirectTraffic() {
     await this.prepareCHNRoute();
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j FW_CLASH_CHAIN`));
+    await exec(wrapIptables(`sudo iptables -w -t mangle -A FW_RT_REG_GLOBAL -j FW_CLASH_CHAIN`));
     this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j FW_CLASH_CHAIN`));
+    await exec(wrapIptables(`sudo iptables -w -t mangle -D FW_RT_REG_GLOBAL -j FW_CLASH_CHAIN`));
     this.shouldRedirect = false;
   }
 
 }
 
-module.exports = new Clash();
+module.exports = new ClashTun();

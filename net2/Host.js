@@ -383,10 +383,10 @@ class Host {
     });
   }
 
-  setScreenTime(screenTime) {
-    this.o.screenTime = screenTime || {};
+  setScreenTime(screenTime = {}) {
+    this.o.screenTime = JSON.stringify(screenTime);
     rclient.hmset("host:mac:" + this.o.mac, {
-      'screenTime': JSON.stringify(screenTime)
+      'screenTime': this.o.screenTime
     });
   }
 

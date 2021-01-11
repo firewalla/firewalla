@@ -73,6 +73,7 @@ let Sensor = class {
   hookFeature(featureName) {
 
     sem.once('IPTABLES_READY', async () => {
+      log.info("iptables is ready, start enabling feature", featureName);
       if (fc.isFeatureOn(featureName)) {
         try {
           await this.globalOn({booting: true});
@@ -80,7 +81,7 @@ let Sensor = class {
           log.error(`Failed to enable ${featureName}, reverting...`, err)
           try {
             await this.globalOff();
-            fc.setFeatureStats(featureName)
+            this.setFeatureStats(featureName);
           } catch(err) {
             log.error(`Failed to revert ${featureName}`, err)
           }
