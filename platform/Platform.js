@@ -193,6 +193,10 @@ class Platform {
     return false;
   }  
 
+  isAdblockCustomizedSupported() {
+    return false;
+  }
+
   async onWanIPChanged(ip) {
     log.info("WanIP is changed to", ip);
   }

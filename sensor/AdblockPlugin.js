@@ -93,29 +93,25 @@ class AdblockPlugin extends Sensor {
     async getAdblockConfig() {
       const result = {};
       try {
-        log.info(`Load config list from bone: ${configlistKey}`);
-        const data = await bone.hashsetAsync(configlistKey);
-        //const data = "{\"ads\": {\"default\": \"true\"}, \"ads-adv\":{}}";
-        const adlist = JSON.parse(data);
-        if (!platform.getName() == 'gold') {
-          for (const key in adlist) {
-            const value = adlist[key];
-            if (value.default && value.default == "true") result[key] = "on";
-          }
+        if (!platform.isAdblockCustomizedSupported()) {
+          result["ads"] = "off"
         } else {
+          log.info(`Load config list from bone: ${configlistKey}`);
+          const data = await bone.hashsetAsync(configlistKey);
+          // const data = "{\"ads\": {\"default\": true}, \"ads-adv\":{}}";
+          const adlist = JSON.parse(data);
           // from redis
           const configStr = await rclient.getAsync(configKey);
-          if (configStr == null || configStr == "{}") {
+          if (configStr == null) {
             for (const key in adlist) {
               const value = adlist[key];
-              if (value.default && value.default == "true") result[key] = "on";
+              if (value.default && value.default == true) result[key] = "on";
               else result[key] = "off";
             }
           } else {
             const configObj = JSON.parse(configStr);
             for (const key in configObj) {
-              if (!Object.keys(adlist).includes(key)) result[key] = "off";
-              else result[key] = configObj[key]
+              if (Object.keys(adlist).includes(key)) result[key] = configObj[key]
             }
           }
         }
