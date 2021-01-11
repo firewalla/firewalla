@@ -88,8 +88,8 @@ class EventSensor extends Sensor {
         try {
             log.info("Stop collecting events");
             if (this.cleanJob) clearInterval(this.cleanJob);
-            for (const scheduledJob of this.scheduledJobs) {
-                clearInterval(scheduledJob);
+            for (const collector in this.scheduledJobs) {
+                clearInterval(scheduledJobs[collector]);
             }
         } catch (err) {
             log.error("failed to start collect events:", err);
