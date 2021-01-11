@@ -27,6 +27,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
 const era = require('../event/EventRequestApi.js');
+const erh = require('../event/EventRequestHandler');
 const ea = require('../event/EventApi.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
@@ -125,7 +126,7 @@ class EventSensor extends Sensor {
 
     async cleanOldEvents(cleanBefore) {
         try {
-            log.info(`clean events before ${cleanBefore} seconds`);
+            log.info(`clean events before ${cleanBefore} miliseconds`);
             era.cleanEvents(0, Date.now()-cleanBefore );
         } catch (err) {
             log.error(`failed to clean events before ${cleanBefore}, ${err}`);
