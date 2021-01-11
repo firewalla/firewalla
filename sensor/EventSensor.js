@@ -158,7 +158,7 @@ class EventSensor extends Sensor {
         try{
             log.info(`Collect event with ${collector}`);
             // get collector output
-            const result = await exec(collector);
+            const result = await exec(`${COLLECTOR_DIR}/${collector}`);
 
             // try to parse as JSON if possible
             let result_obj = null
