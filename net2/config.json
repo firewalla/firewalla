@@ -590,7 +590,14 @@
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
     "DockerSensor": {},
-    "EventSensor": {}
+    "EventSensor": {
+      "expirePeriod" : 604800,
+      "cleanInterval" : 3600,
+      "collectorIntervals" : {
+        "ethernet_state.sh" : 60,
+        "default" : 3600
+      }
+    }
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -750,7 +757,7 @@
     "clash": false,
     "single_wan_conn_check": false,
     "accounting": true,
-    "event_schedule": true,
+    "event_collect": true,
     "network_metrics": true,
     "network_monitor": true
   },

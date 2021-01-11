@@ -26,15 +26,20 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-let erh = null;
-let era = null;
-let ea = require('../event/EventApi.js');
+const era = require('../event/EventRequestApi.js');
+const erh = require('../event/EventRequestHandler');
+const ea = require('../event/EventApi.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
-const FEATURE_EVENT = "event_schedule";
+const FEATURE_EVENT = "event_collect";
 
 class EventSensor extends Sensor {
+
+    constructor() {
+        super();
+        this.scheduledJobs = {};
+    }
 
     async apiRun() {
 
@@ -51,51 +56,80 @@ class EventSensor extends Sensor {
     }
 
     async run() {
-        log.info("run EventSensor")
-        erh = require('../event/EventRequestHandler.js')
-        era = require('../event/EventRequestApi.js');
-        setTimeout(() => {
-                this.scheduledJob();
-                setInterval(() => { this.scheduledJob(); }, 1000 * 3600 ); // run every hour
-            },
-            1000 * 60 * 5
-        ); // first time in 5 minutes
+        log.info("Run EventSensor")
+        if ( fc.isFeatureOn(FEATURE_EVENT) ) {
+            this.startCollectEvents();
+        } else {
+            this.stopCollectEvents();
+        }
+        fc.onFeature(FEATURE_EVENT, (feature, status) =>{
+            if (feature != FEATURE_EVENT) return
+            if (status) {
+                this.startCollectEvents();
+            } else {
+                this.stopCollectEvents();
+            }
+        })
     }
 
-    async scheduledJob() {
+    async startCollectEvents() {
         try {
-            if (! fc.isFeatureOn(FEATURE_EVENT)) {
-                log.warn(`feature ${FEATURE_EVENT} disabled`);
-                return;
+            log.info(`Scheduling cleanOldEvents to run every ${this.cleanInterval} seconds`);
+            this.cleanJob = setInterval( async () => {
+                await this.cleanOldEvents(1000*this.config.expirePeriod);
+            }, 1000*this.config.cleanInterval);
+            await this.scheduleScriptCollectors();
+        } catch (err) {
+            log.error("failed to start collect events:", err);
+        }
+    }
+
+    async stopCollectEvents() {
+        try {
+            log.info("Stop collecting events");
+            if (this.cleanJob) clearInterval(this.cleanJob);
+            for (const scheduledJob of this.scheduledJobs) {
+                clearInterval(scheduledJob);
             }
-            log.info("Start monitoring and generate events if needed")
-            await this.processCollectorOutputs();
-            await this.pingGateway();
-            await this.cleanOldEvents(1000*3600*24*7); // clean events more than 7 days old
-            //await this.cleanOldEvents(1000*60*3);
-            log.info("scheduledJob is executed successfully");
-        } catch(err) {
-            log.error("Failed to run scheduled job, err:", err);
+        } catch (err) {
+            log.error("failed to start collect events:", err);
+        }
+    }
+
+    scheduleScriptCollector(collector) {
+        let scheduledJob = null;
+        try {
+            log.info(`Scheduling ${collector}...`);
+            const collectorInterval = (collector in this.config.collectorIntervals) ? this.config.collectorIntervals[collector] : this.config.collectorIntervals.default;
+            log.info(`every ${collectorInterval} seconds`);
+            scheduledJob = setInterval(async () => {
+                await this.collectEvent(collector);
+            }, 1000*collectorInterval);
+        } catch (err) {
+            log.error(`failed to schedule ${collector}:`, err);
+        }
+        return scheduledJob;
+    }
+
+    async scheduleScriptCollectors() {
+        log.info("Scheduling all script collectors in ", COLLECTOR_DIR);
+        try {
+            const collectors = await fs.readdirAsync(COLLECTOR_DIR);
+            for (const collector of collectors) {
+                const scheduledJob = this.scheduleScriptCollector(collector);
+                if (scheduledJob) this.scheduledJobs[collector] = scheduledJob;
+            }
+        } catch (err) {
+            log.error(`failed to schedule collectors under ${COLLECTOR_DIR}, ${err}`);
         }
     }
 
     async cleanOldEvents(cleanBefore) {
         try {
-            await log.info(`clean events before ${cleanBefore}`);
+            log.info(`clean events before ${cleanBefore} miliseconds`);
             era.cleanEvents(0, Date.now()-cleanBefore );
         } catch (err) {
             log.error(`failed to clean events before ${cleanBefore}, ${err}`);
-        }
-    }
-
-    async processCollectorOutputs() {
-        try {
-            const collectors = await fs.readdirAsync(COLLECTOR_DIR);
-            for (const collector of collectors) {
-                this.processCollectorOutput(`${COLLECTOR_DIR}/${collector}`);
-            }
-        } catch (err) {
-            log.error(`failed to process collectors under ${COLLECTOR_DIR}, ${err}`);
         }
     }
 
@@ -121,11 +155,11 @@ class EventSensor extends Sensor {
      *   ACTION:
      *     action <action_type> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
      */
-    async processCollectorOutput(collector) {
+    async collectEvent(collector) {
         try{
-            log.info(`Process output of ${collector}`);
+            log.info(`Collect event with ${collector}`);
             // get collector output
-            const result = await exec(collector);
+            const result = await exec(`${COLLECTOR_DIR}/${collector}`);
 
             // try to parse as JSON if possible
             let result_obj = null
@@ -138,7 +172,7 @@ class EventSensor extends Sensor {
                 }
             }
         } catch (err) {
-            log.error(`failed to process collector output of ${collector},${err}`);
+            log.error(`failed to collect event with ${collector},${err}`);
         }
     }
 
