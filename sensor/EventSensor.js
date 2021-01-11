@@ -52,14 +52,14 @@ class EventSensor extends Sensor {
     async run() {
         log.info("Run EventSensor")
         log.info(`Scheduling cleanOldEvents to run every ${this.cleanInterval} seconds`);
-        setInterval( () => {
+        setInterval( async () => {
             await this.cleanOldEvents(1000*this.config.expirePeriod);
         }, 1000*this.config.cleanInterval);
         await this.scheduleScriptCollectors();
     }
 
     scheduleScriptCollector(collector) {
-        const collectInterval = (collector in this.config.collectorInterval) ?
+        const collectInterval = (collector in this.config.collectorIntervals) ?
             this.config.collectorInterval[collector] : this.config.collectInetrval.default;
         log.info(`Scheduling ${collector} every ${collectInterval} seconds`);
         const scheduledJob = setInterval(() => {

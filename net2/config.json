@@ -592,7 +592,7 @@
     "EventSensor": {
       "expirePeriod" : 604800,
       "cleanInterval" : 3600,
-      "collectInterval" : {
+      "collectorIntervals" : {
         "ethernet_state.sh" : 60,
         "default" : 3600
       }
