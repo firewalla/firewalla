@@ -295,7 +295,7 @@ function iptables(rule, callback) {
             return;
         }
 
-        log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
+        log.debug("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
         cp.exec(cmdline.join(";"), (err, stdout, stderr) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:PORTFORWARD:Error unable to set", cmdline, err);

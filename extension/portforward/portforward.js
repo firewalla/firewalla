@@ -296,7 +296,6 @@ class PortForward {
       if (this.config && this.config.maps) {
         for (let i in this.config.maps) {
           let map = this.config.maps[i];
-          log.info("Restoring Map: ", map);
           await this.addPort(map, true)
         }
       }
