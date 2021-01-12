@@ -47,6 +47,7 @@ class ACLAuditLogPlugin extends Sensor {
     super()
 
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
+    this.buffer = { ip: {}, dns: {}, ts: Date.now() / 1000 }
   }
 
   async run() {
@@ -95,6 +96,21 @@ class ACLAuditLogPlugin extends Sensor {
       record.fd = 'out';
     } else {
       record.fd = 'lo';
+    }
+  }
+
+  writeBuffer(mac, target, record) {
+    const bucket = this.buffer[record.type]
+    if (!bucket[mac]) bucket[mac] = {}
+    if (bucket[mac][target]) {
+      const s = bucket[mac][target]
+      // _.min() and _.max() will ignore non-number values
+      s.ts = _.min([s.ts, record.ts])
+      s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+      s.ct += record.ct
+      if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+    } else {
+      bucket[mac][target] = record
     }
   }
 
@@ -160,8 +176,8 @@ class ACLAuditLogPlugin extends Sensor {
         if (domain)
           record.dn = domain;
       }
-      const key = this._getAuditDropKey(mac);
-      await rclient.zaddAsync(key, ts, JSON.stringify(record));
+
+      this.writeBuffer(mac, remoteIP, record)
     }
   }
 
@@ -179,13 +195,35 @@ class ACLAuditLogPlugin extends Sensor {
     if (mac) {
       record.type = "dns";
       record.ct = 1;
-      const key = this._getAuditDropKey(mac);
-      await rclient.zaddAsync(key, record.ts, JSON.stringify(record));
+
+      this.writeBuffer(mac, record.dn, record)
     }
   }
 
   _getAuditDropKey(mac) {
     return `audit:drop:${mac}`;
+  }
+
+  async writeLogs() {
+    try {
+      log.debug('Start writing logs', this.buffer.ts)
+      // log.debug(JSON.stringify(this.buffer))
+
+      const buffer = this.buffer
+      this.buffer = { ip: {}, dns: {}, ts: Date.now() / 1000 }
+
+      for (const type in buffer) {
+        for (const mac in buffer[type]) {
+          for (const target in buffer[type][mac]) {
+            const key = this._getAuditDropKey(mac);
+            const record = buffer[type][mac][target];
+            await rclient.zaddAsync(key, record.ts, JSON.stringify(record));
+          }
+        }
+      }
+    } catch(err) {
+      log.error("Failed to write audit logs", err)
+    }
   }
 
   // Works similar to flowStash in BroDetect, reduce memory is the main purpose here
@@ -255,14 +293,16 @@ class ACLAuditLogPlugin extends Sensor {
   async globalOn() {
     await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
 
+    this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
     this.aggregator = this.aggregator || setInterval(this.mergeLogs.bind(this), (this.config.interval || 300) * 1000)
   }
 
   async globalOff() {
     await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
 
+    clearInterval(this.bufferDumper)
     clearInterval(this.aggregator)
-    this.aggregator = undefined
+    this.bufferDumper = this.aggregator = undefined
   }
 
 }
