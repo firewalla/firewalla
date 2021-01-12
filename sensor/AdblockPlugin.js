@@ -48,7 +48,7 @@ const fc = require('../net2/config.js');
 
 const featureName = "adblock";
 const policyKeyName = "adblock";
-const configKey = "ext.adblock.conf";
+const configKey = "sys:features:config";
 const configlistKey = "ads.list"
 const RELOAD_INTERVAL = 3600 * 24 * 1000;
 
@@ -80,7 +80,16 @@ class AdblockPlugin extends Sensor {
 
     async apiRun() {
       extensionManager.onSet("adblockConfig", async (msg, data) => {
-        await rclient.setAsync(configKey, JSON.stringify(data));
+        const originConfig = await rclient.hgetAsync(configKey, "adblock");
+        if (originConfig != null) {
+          const originConfigObj = JSON.parse(originConfig);
+          for (const field in data) {
+            originConfigObj[field] = data[field] 
+          }
+          await rclient.hsetAsync(configKey, "adblock", JSON.stringify(originConfigObj));
+        } else {
+          await rclient.hsetAsync(configKey, "adblock", JSON.stringify(data));
+        }
         sem.sendEventToFireMain({
           type: 'ADBLOCK_CONFIG_REFRESH'
         });
@@ -94,14 +103,14 @@ class AdblockPlugin extends Sensor {
       const result = {};
       try {
         if (!platform.isAdblockCustomizedSupported()) {
-          result["ads"] = "off"
+          result["ads"] = "on"
         } else {
           log.info(`Load config list from bone: ${configlistKey}`);
           const data = await bone.hashsetAsync(configlistKey);
           // const data = "{\"ads\": {\"default\": true}, \"ads-adv\":{}}";
           const adlist = JSON.parse(data);
           // from redis
-          const configStr = await rclient.getAsync(configKey);
+          const configStr = await rclient.hgetAsync(configKey, "adblock");
           if (configStr == null) {
             for (const key in adlist) {
               const value = adlist[key];
