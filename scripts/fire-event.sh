@@ -71,7 +71,7 @@ add_state_event() {
 add_action_event() {
     test $# -ge 2 || { logerror "need action_type/action_value"; return 1; }
     ts=${3:-$(date +%s)000}
-    redis-cli publish 'event:request:action' "{\"action_type\":\"$1\",\"action_value\":$2, "ts":$ts}"
+    redis-cli publish 'event:request:action' "{\"action_type\":\"$1\",\"action_value\":$2, \"ts\":$ts}"
 }
 
 clean_event() {
