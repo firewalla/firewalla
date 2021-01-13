@@ -125,6 +125,7 @@ class EventSensor extends Sensor {
 
     async startCollectEvents() {
         try {
+            log.info("start collect events...");
             await this.checkReboot();
             await this.checkUpgrade();
             this.scheduledJSJobs();
