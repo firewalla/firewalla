@@ -115,7 +115,7 @@ class EventSensor extends Sensor {
     }
 
     scheduledJSJobs() {
-        const JS_JOBS = ['cleanEventsByTime', 'cleanEventsByCount', 'pingGateway'];
+        const JS_JOBS = ['cleanEventsByTime', 'cleanEventsByCount', 'pingGateway', 'digDNS'];
         for (const jsjob of JS_JOBS) {
             log.info(`Scheduling ${jsjob} every ${this.getConfiguredInterval(jsjob)} seconds`);
             this.scheduledJobs[jsjob] = setInterval( async() => {
@@ -270,16 +270,32 @@ class EventSensor extends Sensor {
     }
 
     async pingGateway() {
-        const gw = sysManager.myDefaultGateway();
-        try {
-            log.info(`try to ping ${gw}`);
-            const {stdout, stderr} = await exec(`ping -w 3 ${gw}`);
-            era.addStateEvent("ping",gw,0);
-        } catch (err) {
-            log.error(`failed to ping ${gw}, ${err}`)
-            era.addStateEvent("ping",gw,1);
+        log.info(`try to ping gateways...`);
+        const stateType = "ping";
+        for (const gw of sysManager.myGatways() ) {
+            try {
+                log.debug(`ping ${gw}`);
+                await exec(`ping -w 3 ${gw}`);
+                era.addStateEvent(stateType,gw,0);
+            } catch (err) {
+                log.error(`failed to ping ${gw}: ${err}`);
+                era.addStateEvent(stateType,gw,1);
+            }
         }
+    }
 
+    async digDNS() {
+        log.info(`try to dig DNS...`);
+        const stateType = "dns";
+        for (const dns of sysManager.myDnses() ) {
+            try {
+                await exec(`dig @${dns} google.com +short`);
+                era.addStateEvent(stateType,dns,0);
+            } catch (err) {
+                log.error(`failed to dig ${dns}: ${err}`);
+                era.addStateEvent(stateType,dns,1);
+            }
+        }
     }
 
 }

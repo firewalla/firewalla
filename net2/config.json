@@ -598,7 +598,9 @@
         "cleanEventsByTime" : 3600,
         "cleanEventsByCount" : 300,
         "pingGateway" : 300,
+        "digDNS" : 300,
         "ethernet_state.sh" : 60,
+        "service_status.sh" : 300,
         "speed_test.sh" : -1,
         "default" : 3600
       }
