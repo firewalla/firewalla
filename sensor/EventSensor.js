@@ -28,6 +28,7 @@ Promise.promisifyAll(fs);
 
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
 const FEATURE_EVENT = "event_collect";
 const era = require('../event/EventRequestApi.js');
@@ -42,6 +43,11 @@ class EventSensor extends Sensor {
 
     async apiRun() {
 
+        if ( ! platform.isEventsSupported() ) {
+            log.warn(`${FEATURE_EVENT} NOT supported in this platform`);
+            return;
+        }
+
         extensionManager.onGet("events", async (msg, data) => {
             try {
                 log.info(`processing onGet events with data(${JSON.stringify(data)})`);
@@ -55,6 +61,11 @@ class EventSensor extends Sensor {
     }
 
     async run() {
+        if ( ! platform.isEventsSupported() ) {
+            log.warn(`${FEATURE_EVENT} NOT supported in this platform`);
+            return;
+        }
+
         /*
          * IMPORTANT
          * Only initialize EventRequestHandler in run() for FireMain
