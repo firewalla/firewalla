@@ -163,7 +163,7 @@ class EventSensor extends Sensor {
                 log.info(`clean oldest ${cleanCount} events`);
                 await era.cleanEventsByCount(cleanCount);
             } else {
-                log.debug(`current_events_count(${currentCount}) < clean_limit(${this.config.eventsLimit}), NO need to clean`)
+                log.debug(`current_events_count(${currentCount}) <= clean_limit(${this.config.eventsLimit}), NO need to clean`)
             }
         } catch (err) {
             log.error(`failed to clean events over count of ${this.config.eventsLimit}: ${err}`);

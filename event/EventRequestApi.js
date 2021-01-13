@@ -16,15 +16,11 @@
 
 const log = require('../net2/logger.js')(__filename,"debug");
 
-const rclient = require('../util/redis_manager.js').getRedisClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
-const eapi = require('./EventApi.js');
 
 const KEY_EVENT_REQUEST_STATE = "event:request:state";
 const KEY_EVENT_REQUEST_ACTION = "event:request:action";
 const KEY_EVENT_REQUEST_CLEAN = "event:request:clean";
-const STATE_REQUIRED_FIELDS = [ "ts", "state_type", "state_key", "state_value"]
-const ACTION_REQUIRED_FIELDS = [ "ts", "action_type", "action_value"]
 
 /*
  * EventRequestApi send event requests onto redis channels for processing
