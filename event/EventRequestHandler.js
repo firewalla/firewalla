@@ -157,7 +157,11 @@ class EventRequestHandler {
         log.info("got clean event: ", message);
         try{
             const eventRequest = JSON.parse(message);
-            await eventApi.delEvents(eventRequest.begin,eventRequest.end);
+            if ( 'count' in eventRequest ) {
+                await eventApi.cleanEventsByCount(eventRequest.count);
+            } else {
+                await eventApi.cleanEventsByTime(eventRequest.begin,eventRequest.end);
+            }
         } catch (err) {
             log.error(`failed to process clean event ${message}, ${err}`);
         }

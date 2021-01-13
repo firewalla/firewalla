@@ -26,13 +26,12 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const era = require('../event/EventRequestApi.js');
-const erh = require('../event/EventRequestHandler');
-const ea = require('../event/EventApi.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
 const FEATURE_EVENT = "event_collect";
+const era = require('../event/EventRequestApi.js');
+const ea = require('../event/EventApi.js');
 
 class EventSensor extends Sensor {
 
@@ -56,6 +55,12 @@ class EventSensor extends Sensor {
     }
 
     async run() {
+        /*
+         * IMPORTANT
+         * Only initialize EventRequestHandler in run() for FireMain
+         * If done in class level, it will cause a duplicate handler of redis channel
+         */
+        const erh = require('../event/EventRequestHandler');
         log.info("Run EventSensor")
         if ( fc.isFeatureOn(FEATURE_EVENT) ) {
             this.startCollectEvents();
@@ -72,12 +77,14 @@ class EventSensor extends Sensor {
         })
     }
 
+    getConfiguredInterval(name) {
+        return (name in this.config.intervals) ?
+            this.config.intervals[name] : this.config.intervals.default;
+    }
+
     async startCollectEvents() {
         try {
-            log.info(`Scheduling cleanOldEvents to run every ${this.cleanInterval} seconds`);
-            this.cleanJob = setInterval( async () => {
-                await this.cleanOldEvents(1000*this.config.expirePeriod);
-            }, 1000*this.config.cleanInterval);
+            this.scheduledJSJobs();
             await this.scheduleScriptCollectors();
         } catch (err) {
             log.error("failed to start collect events:", err);
@@ -87,25 +94,37 @@ class EventSensor extends Sensor {
     async stopCollectEvents() {
         try {
             log.info("Stop collecting events...");
-            if (this.cleanJob) clearInterval(this.cleanJob);
-            for (const collector in this.scheduledJobs) {
-                log.info(`Stop collecting ${collector}`);
-                clearInterval(this.scheduledJobs[collector]);
+            for (const job in this.scheduledJobs) {
+                log.info(`Stop collecting ${job}`);
+                clearInterval(this.scheduledJobs[job]);
             }
         } catch (err) {
             log.error("failed to start collect events:", err);
         }
     }
 
+    scheduledJSJobs() {
+        const JS_JOBS = ['cleanEventsByTime', 'cleanEventsByCount', 'pingGateway'];
+        for (const jsjob of JS_JOBS) {
+            log.info(`Scheduling ${jsjob} every ${this.getConfiguredInterval(jsjob)} seconds`);
+            this.scheduledJobs[jsjob] = setInterval( async() => {
+                await this[jsjob]();
+            }, 1000*this.getConfiguredInterval(jsjob));
+        }
+    }
+
     scheduleScriptCollector(collector) {
         let scheduledJob = null;
         try {
-            log.info(`Scheduling ${collector}...`);
-            const collectorInterval = (collector in this.config.collectorIntervals) ? this.config.collectorIntervals[collector] : this.config.collectorIntervals.default;
-            log.info(`every ${collectorInterval} seconds`);
-            scheduledJob = setInterval(async () => {
-                await this.collectEvent(collector);
-            }, 1000*collectorInterval);
+            const collectorInterval = this.getConfiguredInterval(collector);
+            if ( collectorInterval < 1) {
+                log.warn(`${collector} is NOT scheduled with interval of ${collectorInterval}`);
+            } else {
+                log.info(`Scheduling ${collector} every ${collectorInterval} seconds`);
+                scheduledJob = setInterval(async () => {
+                    await this.collectEvent(collector);
+                }, 1000*collectorInterval);
+            }
         } catch (err) {
             log.error(`failed to schedule ${collector}:`, err);
         }
@@ -121,16 +140,33 @@ class EventSensor extends Sensor {
                 if (scheduledJob) this.scheduledJobs[collector] = scheduledJob;
             }
         } catch (err) {
-            log.error(`failed to schedule collectors under ${COLLECTOR_DIR}, ${err}`);
+            log.error(`failed to schedule collectors under ${COLLECTOR_DIR}: ${err}`);
         }
     }
 
-    async cleanOldEvents(cleanBefore) {
+    async cleanEventsByTime() {
         try {
-            log.info(`clean events before ${cleanBefore} miliseconds`);
-            era.cleanEvents(0, Date.now()-cleanBefore );
+            log.info(`clean events before ${this.config.eventsExpire} seconds`);
+            await era.cleanEventsByTime(0, Date.now()-1000*this.config.eventsExpire );
         } catch (err) {
-            log.error(`failed to clean events before ${cleanBefore}, ${err}`);
+            log.error(`failed to clean events before ${this.config.eventsExpire} seconds: ${err}`);
+        }
+    }
+
+    async cleanEventsByCount() {
+        try {
+            log.info("Start cleaning events by count...");
+            const currentCount = await ea.getEventsCount();
+            log.info("currentCount:", currentCount);
+            const cleanCount = currentCount - this.config.eventsLimit;
+            if ( cleanCount > 0 ) {
+                log.info(`clean oldest ${cleanCount} events`);
+                await era.cleanEventsByCount(cleanCount);
+            } else {
+                log.debug(`current_events_count(${currentCount}) < clean_limit(${this.config.eventsLimit}), NO need to clean`)
+            }
+        } catch (err) {
+            log.error(`failed to clean events over count of ${this.config.eventsLimit}: ${err}`);
         }
     }
 
@@ -227,12 +263,10 @@ class EventSensor extends Sensor {
         try {
             log.info(`try to ping ${gw}`);
             const {stdout, stderr} = await exec(`ping -w 3 ${gw}`);
-            log.debug("stdout:", stdout);
-            log.debug("stderr:", stderr);
-            era.addStateEvent("ping",gw,1);
+            era.addStateEvent("ping",gw,0);
         } catch (err) {
             log.error(`failed to ping ${gw}, ${err}`)
-            era.addStateEvent("ping",gw,0);
+            era.addStateEvent("ping",gw,1);
         }
 
     }
