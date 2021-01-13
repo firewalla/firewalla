@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,10 +17,8 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const exec = require('child-process-promise').exec;
-const { Rule } = require('../net2/Iptables.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
-const Tail = require('../vendor_lib/always-tail.js');
 const LOG_PREFIX = "[FW_ACL_AUDIT]";
 const {Address4, Address6} = require('ip-address');
 const sysManager = require('../net2/SysManager.js');
@@ -31,6 +29,11 @@ const dnsTool = new DNSTool();
 const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const os = require('os')
+const util = require('util')
+const fs = require('fs')
+const openAsync = util.promisify(fs.open)
+const net = require('net')
+const readline = require('readline')
 
 const _ = require('lodash')
 
@@ -43,6 +46,7 @@ class ACLAuditLogPlugin extends Sensor {
     super()
 
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
+    this.buffer = { ip: {}, dns: {}, ts: Date.now() / 1000 }
   }
 
   async run() {
@@ -52,15 +56,22 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async job() {
-    this.auditLogReader = new Tail(auditLogFile, '\n');
-    if (this.auditLogReader != null) {
-      this.auditLogReader.on('line', line => {
+    try {
+      const fd = await openAsync(auditLogFile, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK)
+      const pipe = new net.Socket({ fd });
+      pipe.on('ready', () => {
+        log.info("Pipe ready");
+      })
+      pipe.on('error', (err) => {
+        log.error("Error while reading acl audit log", err.message);
+      })
+      const reader = readline.createInterface({input: pipe})
+      reader.on('line', line => {
         this._processIptablesLog(line)
           .catch(err => log.error('Failed to process log', err, line))
       });
-      this.auditLogReader.on('error', (err) => {
-        log.error("Error while reading acl audit log", err.message);
-      })
+    } catch(err) {
+      log.error('Error reading pipe', err)
     }
 
     sem.on(Message.MSG_ACL_DNS_NXDOMAIN, (message) => {
@@ -87,9 +98,25 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
+  writeBuffer(mac, target, record) {
+    const bucket = this.buffer[record.type]
+    if (!bucket[mac]) bucket[mac] = {}
+    if (bucket[mac][target]) {
+      const s = bucket[mac][target]
+      // _.min() and _.max() will ignore non-number values
+      s.ts = _.min([s.ts, record.ts])
+      s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+      s.ct += record.ct
+      if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+    } else {
+      bucket[mac][target] = record
+    }
+  }
+
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
+    // log.debug(line)
     const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
     const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
     const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length); // extract content after log prefix
@@ -148,8 +175,8 @@ class ACLAuditLogPlugin extends Sensor {
         if (domain)
           record.dn = domain;
       }
-      const key = this._getAuditDropKey(mac);
-      await rclient.zaddAsync(key, ts, JSON.stringify(record));
+
+      this.writeBuffer(mac, remoteIP, record)
     }
   }
 
@@ -167,13 +194,35 @@ class ACLAuditLogPlugin extends Sensor {
     if (mac) {
       record.type = "dns";
       record.ct = 1;
-      const key = this._getAuditDropKey(mac);
-      await rclient.zaddAsync(key, record.ts, JSON.stringify(record));
+
+      this.writeBuffer(mac, record.dn, record)
     }
   }
 
   _getAuditDropKey(mac) {
     return `audit:drop:${mac}`;
+  }
+
+  async writeLogs() {
+    try {
+      log.debug('Start writing logs', this.buffer.ts)
+      // log.debug(JSON.stringify(this.buffer))
+
+      const buffer = this.buffer
+      this.buffer = { ip: {}, dns: {}, ts: Date.now() / 1000 }
+
+      for (const type in buffer) {
+        for (const mac in buffer[type]) {
+          for (const target in buffer[type][mac]) {
+            const key = this._getAuditDropKey(mac);
+            const record = buffer[type][mac][target];
+            await rclient.zaddAsync(key, record.ts, JSON.stringify(record));
+          }
+        }
+      }
+    } catch(err) {
+      log.error("Failed to write audit logs", err)
+    }
   }
 
   // Works similar to flowStash in BroDetect, reduce memory is the main purpose here
@@ -243,17 +292,16 @@ class ACLAuditLogPlugin extends Sensor {
   async globalOn() {
     await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
 
+    this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
     this.aggregator = this.aggregator || setInterval(this.mergeLogs.bind(this), (this.config.interval || 300) * 1000)
   }
 
   async globalOff() {
-    const rule = new Rule("filter").chn("FW_DROP").jmp(`LOG --log-prefix "${LOG_PREFIX}"`);
-    const rule6 = rule.clone().fam(6);
-    await exec(rule.toCmd('-D'))
-    await exec(rule6.toCmd('-D'))
+    await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
 
+    clearInterval(this.bufferDumper)
     clearInterval(this.aggregator)
-    this.aggregator = undefined
+    this.bufferDumper = this.aggregator = undefined
   }
 
 }

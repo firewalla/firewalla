@@ -761,6 +761,7 @@ class Host {
         }
 
         this.ipCache.reset();
+        delete envCreatedMap[this.o.mac];
         delete instances[this.o.mac]
       }
     });

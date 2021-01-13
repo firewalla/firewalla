@@ -584,6 +584,7 @@
       "bonelogInterval": 900
     },
     "ACLAuditLogPlugin": {
+      "buffer": 30,
       "interval": 300,
       "expires": 86400
     },
