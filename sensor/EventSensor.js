@@ -110,7 +110,7 @@ class EventSensor extends Sensor {
        }
     }
 
-    checkUpgrade() {
+    async checkUpgrade() {
         try {
             log.info("check firewalla upgrade ...");
             const upgradeInfo = await um.getUpgradeInfo();
@@ -126,7 +126,7 @@ class EventSensor extends Sensor {
     async startCollectEvents() {
         try {
             await this.checkReboot();
-            this.checkUpgrade();
+            await this.checkUpgrade();
             this.scheduledJSJobs();
             await this.scheduleScriptCollectors();
         } catch (err) {
