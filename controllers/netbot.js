@@ -147,7 +147,7 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
 const cpuProfile = require('../net2/CpuProfile.js');
-const era = require('../event/EventRequestApi');
+const ea = require('../event/EventApi.js');
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -610,8 +610,18 @@ class netBot extends ControllerBot {
           }
         });
 
-        log.info("send action event on firewalla upgrade");
-        await era.addActionEvent("firewalla_upgraded",1);
+        try {
+          log.info("add action event on firewalla_upgrade");
+          const eventRequest = {
+              "ts": Date.now(),
+              "event_type": "action",
+              "action_type": "firewalla_upgrade",
+              "action_value": 1
+          }
+          await ea.addEvent(eventRequest,eventRequest.ts);
+        } catch (err) {
+          log.error("failed to add action event on firewalla_upgrade:",err);
+        }
 
         upgradeManager.updateVersionTag();
       }

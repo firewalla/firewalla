@@ -110,24 +110,10 @@ class EventSensor extends Sensor {
        }
     }
 
-    async checkUpgrade() {
-        try {
-            log.info("check firewalla upgrade ...");
-            const upgradeInfo = await um.getUpgradeInfo();
-            log.debug("upgradeInfo:",upgradeInfo);
-            if ( upgradeInfo.upgraded) {
-                era.addActionEvent("firewalla_upgrade",1);
-            }
-        } catch (err) {
-            log.error("failed to check upgrade:", err);
-        }
-    }
-
     async startCollectEvents() {
         try {
             log.info("start collect events...");
             await this.checkReboot();
-            await this.checkUpgrade();
             this.scheduledJSJobs();
             await this.scheduleScriptCollectors();
         } catch (err) {
