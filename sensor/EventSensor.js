@@ -33,6 +33,7 @@ const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
 const FEATURE_EVENT = "event_collect";
 const era = require('../event/EventRequestApi.js');
 const ea = require('../event/EventApi.js');
+const um = require('../net2/UpgradeManager.js');
 
 class EventSensor extends Sensor {
 
@@ -93,8 +94,39 @@ class EventSensor extends Sensor {
             this.config.intervals[name] : this.config.intervals.default;
     }
 
+    async checkReboot() {
+       const REBOOT_FLAG_FILE = '/dev/shm/system_reboot.touch';
+       try {
+           log.info("check system reboot ...");
+           if (fs.existsSync(REBOOT_FLAG_FILE)) {
+               log.debug("system reboot processed before, NO more action event needed");
+           } else {
+               log.debug("system reboot not processed yet, sending action event");
+               era.addActionEvent("system_reboot",1);
+               await fs.writeFileAsync(REBOOT_FLAG_FILE,'');
+           }
+       } catch (err) {
+           log.error("failed to check reboot:",err);
+       }
+    }
+
+    checkUpgrade() {
+        try {
+            log.info("check firewalla upgrade ...");
+            const upgradeInfo = await um.getUpgradeInfo();
+            log.debug("upgradeInfo:",upgradeInfo);
+            if ( upgradeInfo.upgraded) {
+                era.addActionEvent("firewalla_upgrade",1);
+            }
+        } catch (err) {
+            log.error("failed to check upgrade:", err);
+        }
+    }
+
     async startCollectEvents() {
         try {
+            await this.checkReboot();
+            this.checkUpgrade();
             this.scheduledJSJobs();
             await this.scheduleScriptCollectors();
         } catch (err) {
