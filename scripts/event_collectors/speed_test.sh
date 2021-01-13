@@ -33,9 +33,9 @@ check_speed_python() {
       do
           labels="server=$server client=$client"
           cat <<EOS
-state speed_test download $download $labels
-state speed_test upload $upload $labels
-state speed_test ping $ping $labels
+action speed_test $download $labels type=download
+action speed_test $upload $labels type=upload
+action speed_test $ping $labels type=ping
 EOS
       done
 }
