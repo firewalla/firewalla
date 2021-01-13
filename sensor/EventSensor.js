@@ -239,7 +239,7 @@ class EventSensor extends Sensor {
     processSimpleOutput(output) {
         // trigger events API with parameters line by line
         output.split("\n").forEach( (line) => {
-            log.info("output line:", line);
+            log.debug("output line:", line);
             let eventLabels = null;
             const words = line.split(/\s+/);
             switch (words[0]) {

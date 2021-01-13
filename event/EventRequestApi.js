@@ -29,7 +29,7 @@ const KEY_EVENT_REQUEST_CLEAN = "event:request:clean";
  * - add event : STATE or ACTION
  * - clean event
  * - list events
- * 
+ *
  */
 class EventRequestApi {
     constructor() {
