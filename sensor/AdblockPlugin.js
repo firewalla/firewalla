@@ -79,7 +79,7 @@ class AdblockPlugin extends Sensor {
     }
 
     async apiRun() {
-      this.hookFeature(featureName);
+      this.featureName = featureName;
       extensionManager.onSet("adblockConfig", async (msg, data) => {
         await this.setFeatureConfig(data);
         sem.sendEventToFireMain({
