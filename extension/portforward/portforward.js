@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -296,7 +296,6 @@ class PortForward {
       if (this.config && this.config.maps) {
         for (let i in this.config.maps) {
           let map = this.config.maps[i];
-          log.info("Restoring Map: ", map);
           await this.addPort(map, true)
         }
       }
