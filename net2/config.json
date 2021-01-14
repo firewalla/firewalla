@@ -584,6 +584,7 @@
       "bonelogInterval": 900
     },
     "ACLAuditLogPlugin": {
+      "buffer": 30,
       "interval": 300,
       "expires": 86400
     },
@@ -591,10 +592,18 @@
     "AccountingPlugin": {},
     "DockerSensor": {},
     "EventSensor": {
-      "expirePeriod" : 604800,
-      "cleanInterval" : 3600,
-      "collectorIntervals" : {
+      "eventsLimit" : 10000,
+      "eventsExpire" : 604800,
+      "intervals" : {
+        "cleanEventsByTime" : 3600,
+        "cleanEventsByCount" : 300,
+        "pingGateway" : 300,
+        "digDNS" : 300,
+        "disk_space.sh" : 300,
         "ethernet_state.sh" : 60,
+        "service_status.sh" : 300,
+        "speed_test.sh" : -1,
+        "system_load.sh" : 300,
         "default" : 3600
       }
     }
