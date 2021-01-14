@@ -37,7 +37,7 @@ const readline = require('readline')
 
 const _ = require('lodash')
 
-const auditLogFile = "/log/alog/acl-audit.log";
+const auditLogFile = "/log/alog/acl-audit-pipe";
 
 const featureName = "acl_audit";
 

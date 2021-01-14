@@ -1,23 +1,20 @@
 #!/bin/bash
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-source ${FIREWALLA_HOME}/platform/platform.sh
 
 logger 'FIREWALLA.ACLAUDIT Starting'
 
-sudo mkdir -p /alog/
-sudo rm -r -f /alog/*
+# remove deprecated log file & tmpfs mount
+sudo rm /log/alog/acl-audit.log
+sudo umount -l /alog
+sudo rm -rf /alog
 
 # ensure log file is readable
-sudo mkfifo /alog/acl-audit.log
-sudo chgrp adm /alog/acl-audit.log
-sudo chown syslog /alog/acl-audit.log
-sudo chmod 644 /alog/acl-audit.log
-
-# sudo ln -s /alog/acl-audit.log /var/log/acl-audit.log
 sudo mkdir -p /log/alog
-sudo ln -sf /alog/acl-audit.log /log/alog/acl-audit.log
-
+sudo mkfifo /log/alog/acl-audit-pipe
+sudo chgrp adm /log/alog/acl-audit-pipe
+sudo chown syslog /log/alog/acl-audit-pipe
+sudo chmod 644 /log/alog/acl-audit-pipe
 
 sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
 sudo systemctl restart rsyslog
