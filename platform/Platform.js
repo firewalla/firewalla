@@ -193,6 +193,10 @@ class Platform {
     return false;
   }  
 
+  isEventsSupported() {
+    return true;
+  }
+
   async onWanIPChanged(ip) {
     log.info("WanIP is changed to", ip);
   }
