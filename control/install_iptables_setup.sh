@@ -138,8 +138,8 @@ sudo iptables -w -F FW_INPUT_ACCEPT
 sudo iptables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_ACCEPT
 
 # accept packet to DHCP client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
-sudo iptables -w -A FW_INPUT_ACCEPT -p udp --dport 68 -j ACCEPT
-sudo iptables -w -A FW_INPUT_ACCEPT -p tcp --dport 68 -j ACCEPT
+sudo iptables -w -A FW_INPUT_ACCEPT -p udp --dport 68 --sport 67:68 -j ACCEPT
+sudo iptables -w -A FW_INPUT_ACCEPT -p tcp --dport 68 --sport 67:68 -j ACCEPT
 
 sudo iptables -w -N FW_INPUT_DROP &> /dev/null
 sudo iptables -w -F FW_INPUT_DROP
@@ -307,6 +307,11 @@ sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 2
 sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j RETURN
 # add dmz host chain to the end of port forward chain
 sudo iptables -w -t nat -A FW_PREROUTING_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
+
+if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
+  sudo iptables -w -t nat -A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD &> /dev/null || true
+fi
+
 # create vpn client dns redirect chain in FW_PREROUTING
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN_CLIENT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN_CLIENT
@@ -483,8 +488,8 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -C INPUT -j FW_INPUT_ACCEPT &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_ACCEPT
 
   # accept traffic to DHCPv6 client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
-  sudo ip6tables -w -A FW_INPUT_ACCEPT -p udp --dport 546 -j ACCEPT
-  sudo ip6tables -w -A FW_INPUT_ACCEPT -p tcp --dport 546 -j ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p udp --dport 546 --sport 546:547 -j ACCEPT
+  sudo ip6tables -w -A FW_INPUT_ACCEPT -p tcp --dport 546 --sport 546:547 -j ACCEPT
   # accept neighbor discovery packets
   sudo ip6tables -w -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-solicitation -j ACCEPT
   sudo ip6tables -w -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT

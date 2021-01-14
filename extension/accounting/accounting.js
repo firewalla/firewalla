@@ -64,7 +64,7 @@ class Accounting {
 
   async _count(mac, tag, bucket, begin, end) {
     const key = this.getKey(mac, tag, bucket);
-    return rclient.bitcountAsync(key, begin, end); // begin and end should be between 0 - this.bits / 8 => 180
+    return rclient.bitcountAsync(key, Math.round(begin), Math.round(end)); // begin and end should be between 0 - this.bits / 8 => 180
   }
 
   // begin, end - timestamps

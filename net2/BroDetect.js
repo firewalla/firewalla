@@ -342,7 +342,7 @@ module.exports = class {
       if (host.ipv4Addr || host.ipv6Addr) {
         const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP4(host.ipv4Addr) : sysManager.getInterfaceViaIP6(host.ipv6Addr);
         if (!intfInfo || !intfInfo.uuid) {
-          log.error(`Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
+          log.error(`HeartBeat: Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
           continue;
         }
         sem.emitEvent({
@@ -552,19 +552,29 @@ module.exports = class {
       }
       if (fc.isFeatureOn("acl_audit")) {
         // detect DNS level block (NXDOMAIN) in dns log
-        if (obj["rcode_name"] === "NXDOMAIN" && (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") && obj["id.resp_p"] == 53 && obj["id.orig_h"] != null && obj["query"] != null && obj["query"].length > 0) {
-          if (!sysManager.isMyIP(obj["id.orig_h"]) && !sysManager.isMyIP6(obj["id.orig_h"])) {
-            const record = {
-              src: obj["id.orig_h"],
-              domain: obj["query"],
-              qtype: obj["qtype_name"]
-            };
-            sem.emitEvent({
-              type: Message.MSG_ACL_DNS_NXDOMAIN,
-              record: record,
-              suppressEventLogging: true
-            });
-          }
+        if (
+          obj["rcode_name"] === "NXDOMAIN" &&
+          (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") &&
+          obj["id.resp_p"] == 53 &&
+          obj["id.orig_h"] != null &&
+          _.isString(obj["query"]) &&
+          obj["query"].length > 0 &&
+          !sysManager.isMyIP(obj["id.orig_h"]) &&
+          !sysManager.isMyIP6(obj["id.orig_h"])
+        ) {
+          const record = {
+            ts: Math.round(obj.ts * 1000) / 1000,
+            // rtt (round trip time) is usually very short here, ignore it
+            sh: obj["id.orig_h"],   // source host
+            dh: obj["id.resp_h"],   // destination host
+            dn: obj["query"],       // domain name
+            qt: obj["qtype_name"]
+          };
+          sem.emitEvent({
+            type: Message.MSG_ACL_DNS_NXDOMAIN,
+            record: record,
+            suppressEventLogging: true
+          });
         }
       }
     } catch (e) {
@@ -944,13 +954,13 @@ module.exports = class {
       // fd: out, this flow initated from outside, it is more dangerous
 
       if (iptool.isPrivate(host) == true && iptool.isPrivate(dst) == true) {
-        flowdir = 'local';
+        flowdir = 'lo';
         lhost = host;
         localMac = origMac;
         log.debug("Local Traffic, both sides are in private network, ignored", obj);
         return;
       } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
-        flowdir = 'local';
+        flowdir = 'lo';
         lhost = host;
         localMac = origMac;
         //log.debug("Dropping both ip address", host,dst);
@@ -976,7 +986,7 @@ module.exports = class {
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
       } else {
-        log.error(`Unable to find nif uuid, ${intfId}`);
+        log.error(`Conn: Unable to find nif uuid, ${intfId}`);
         intfId = '';
       }
 
@@ -987,7 +997,7 @@ module.exports = class {
           localMac = null; // discard local mac from bro log since it is not correct
         }
       }
-      if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn") { // no need to query IP from unrecognized interface, otherwise it will spawn many 'cat' processes in Layer2.js
+      if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn" && !(intfInfo.name && intfInfo.name.startsWith("wg"))) { // no need to query MAC for IP from VPN interface, otherwise it will spawn many 'cat' processes in Layer2.js
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
           localMac = await l2.getMACAsync(lhost).catch((err) => {
@@ -1062,7 +1072,6 @@ module.exports = class {
         ts: obj.ts, // ts stands for start timestamp
         ets: Math.round((obj.ts + obj.duration) * 100) / 100 , // ets stands for end timestamp
         _ts: now, // _ts is the last time updated
-        __ts: obj.ts, // __ts is the first time found
         sh: host, // source
         dh: dst, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes
@@ -1229,7 +1238,8 @@ module.exports = class {
               fd: tmpspec.fd,
               ob: tmpspec.ob,
               rb: tmpspec.rb,
-              suppressEventLogging: true
+              suppressEventLogging: true,
+              mac: localMac
             });
           }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
@@ -1262,8 +1272,8 @@ module.exports = class {
 
           const key = "flow:conn:" + spec.fd + ":" + spec.mac;
           const strdata = JSON.stringify(spec);
-          const ts = spec._ts; // this is the last time when this flowspec is updated
-          const redisObj = [key, ts, strdata];
+          // _ts is the last time when this flowspec is updated
+          const redisObj = [key, spec._ts, strdata];
           if (stashed[key]) {
             stashed[key].push(redisObj);
           } else {
@@ -1520,7 +1530,7 @@ module.exports = class {
 
       const intfInfo = sysManager.getInterfaceViaIP4(ip);
       if (!intfInfo || !intfInfo.uuid) {
-        log.error(`Unable to find nif uuid, ${ip}`);
+        log.warn(`KnownHosts: Unable to find nif uuid, ${ip}`);
         return;
       }
 

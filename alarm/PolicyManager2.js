@@ -402,7 +402,7 @@ class PolicyManager2 {
 
     await rclient.hmsetAsync(policyKey, existing.redisfy());
 
-    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto"];
+    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto", "parentRgId", "targetRgId"];
 
     for (const key of emptyStringCheckKeys) {
       if (policy[key] === '')
@@ -414,6 +414,9 @@ class PolicyManager2 {
     }
     if (policy.hasOwnProperty('tag') && _.isEmpty(policy.tag)) {
       await rclient.hdelAsync(policyKey, "tag");
+    }
+    if (policy.hasOwnProperty('vpnProfile') && _.isEmpty(policy.vpnProfile)) {
+      await rclient.hdelAsync(policyKey, "vpnProfile");
     }
   }
 
@@ -625,6 +628,22 @@ class PolicyManager2 {
           })
         });
       });
+  }
+
+  async deleteRuleGroupRelatedPolicies(uuid) {
+    if (!uuid)
+      return;
+    let rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
+    const pidsToDelete = [];
+    for (const rule of rules) {
+      if (!rule.pid)
+        continue;
+      if (rule.parentRgId === uuid || rule.targetRgId === uuid)
+        pidsToDelete.push(rule.pid);
+    }
+    for (const pid of pidsToDelete) {
+      await this.disableAndDeletePolicy(pid);
+    }
   }
 
   async deleteVpnClientRelatedPolicies(profileId) {
@@ -1083,9 +1102,9 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile, parentRgId, targetRgId } = policy;
 
-    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route") {
+    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
@@ -1143,7 +1162,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await ipset.create(remoteSet4, ruleSetTypeMap[type], true);
           await ipset.create(remoteSet6, ruleSetTypeMap[type], false);
           await Block.block(target, Block.getDstSet(pid));
@@ -1202,8 +1221,8 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound") {
-            await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action }).catch(() => { });
+          if (direction !== "inbound" && !localPort && !remotePort) {
+            await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
           if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
@@ -1211,7 +1230,7 @@ class PolicyManager2 {
         }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await ipset.create(remoteSet4, "hash:ip", true);
           await ipset.create(remoteSet6, "hash:ip", false);
           await domainBlock.blockDomain(target, {
@@ -1252,14 +1271,16 @@ class PolicyManager2 {
 
       case "category":
         if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound") {
+          if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.blockCategory(target, {
               pid,
               scope: scope,
               category: target,
               intfs,
+              vpnProfile,
               action: action,
-              tags
+              tags,
+              parentRgId
             });
           }
           if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
@@ -1305,12 +1326,20 @@ class PolicyManager2 {
         remoteSet6 = Host.getDeviceSetName(target);
         break;
 
+      case "match_group":
+        action = "match_group";
+        break;
       default:
         throw new Error("Unsupported policy type");
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID]
-    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile)) {
+    if (action === "match_group") {
+      // add rule group link in dnsmasq config
+      await dnsmasq.linkRuleToRuleGroup({scope, intfs, tags, vpnProfile, pid}, targetRgId);
+    }
+
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId]
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);
       if (!_.isEmpty(intfs))
@@ -1318,7 +1347,9 @@ class PolicyManager2 {
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules(pid, scope, ... commonArgs);
       if (!_.isEmpty(vpnProfile))
-        await Block.setupGenericIdentitiesRules(pid, vpnProfile, ... commonArgs, Constants.NS_VPN_PROFILE);
+        await Block.setupGenericIdentitiesRules(pid, vpnProfile, Constants.NS_VPN_PROFILE, ... commonArgs);
+      if (!_.isEmpty(parentRgId))
+        await Block.setupRuleGroupRules(pid, parentRgId, ... commonArgs);
     } else {
       // apply to global
       await Block.setupGlobalRules(pid, ... commonArgs);
@@ -1354,9 +1385,9 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, vpnProfile, parentRgId, targetRgId } = policy;
 
-    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route") {
+    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
@@ -1410,7 +1441,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1464,14 +1495,14 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound") {
-            await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action }).catch(() => { });
+          if (direction !== "inbound" && !localPort && !remotePort) {
+            await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
         }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(vpnProfile) || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
           await domainBlock.unblockDomain(target, {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid)
@@ -1507,13 +1538,15 @@ class PolicyManager2 {
 
       case "category":
         if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound") {
+          if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.unblockCategory(target, {
               pid,
               scope: scope,
               category: target,
               intfs,
-              tags
+              tags,
+              vpnProfile,
+              parentRgId
             });
           }
         }
@@ -1555,12 +1588,20 @@ class PolicyManager2 {
         remoteSet6 = Host.getDeviceSetName(target);
         break;
 
+      case "match_group":
+        action = "match_group";
+        break;
       default:
         throw new Error("Unsupported policy");
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID]
-    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile)) {
+    if (action === "match_group") {
+      // remove rule group link in dnsmasq config
+      await dnsmasq.unlinkRuleFromRuleGroup({scope, intfs, tags, vpnProfile, pid}, targetRgId);
+    }
+
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId]
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);
       if (!_.isEmpty(intfs))
@@ -1568,7 +1609,9 @@ class PolicyManager2 {
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules(pid, scope, ... commonArgs);
       if (!_.isEmpty(vpnProfile))
-        await Block.setupGenericIdentitiesRules(pid, vpnProfile, ... commonArgs, Constants.NS_VPN_PROFILE);
+        await Block.setupGenericIdentitiesRules(pid, vpnProfile, Constants.NS_VPN_PROFILE, ... commonArgs);
+      if (!_.isEmpty(parentRgId))
+        await Block.setupRuleGroupRules(pid, parentRgId, ... commonArgs);
     } else {
       // apply to global
       await Block.setupGlobalRules(pid, ... commonArgs);
@@ -1953,6 +1996,132 @@ class PolicyManager2 {
     return false;
   }
 
+  async _matchLocal(rule, localMac) {
+    if (!localMac)
+      return false;
+    if (rule.scope && rule.scope.length > 0) {
+      if (!rule.scope.includes(localMac))
+        return false;
+    }
+    // matching local device group if applicable
+    if (rule.tags && rule.tags.length > 0) {
+      if (!rule.tags.some(uid => this.ipsetCache[Tag.getTagDeviceMacSetName(uid)] && this.ipsetCache[Tag.getTagDeviceMacSetName(uid)].includes(localMac)))
+        return false;
+    }
+    // matching local network if applicable
+    if (rule.intfs && rule.intfs.length > 0) {
+      const deviceIps = await ht.getIPsByMac(localMac);
+      const deviceIP4 = deviceIps.filter(i => new Address4(i).isValid());
+      const deviceIP6 = deviceIps.filter(i => new Address6(i).isValid());
+      if (!rule.intfs.some(uuid => {
+        const iface = sysManager.getInterfaceViaUUID(uuid);
+        if (deviceIP4.some(i => sysManager.inMySubnets4(i, iface.name)))
+          return true;
+        if (deviceIP6.some(i => sysManager.inMySubnet6(i, iface.name)))
+          return true;
+        return false;
+      }))
+        return false;
+    }
+    // matching vpn profile if applicable
+    if (rule.vpnProfile && rule.vpnProfile.length > 0) {
+      if (!rule.vpnProfile.some(cn => `${Constants.NS_VPN_PROFILE}:${cn}` === localMac))
+        return false;
+    }
+    return true;
+  }
+
+  async _matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck) {
+    // matching remote target
+    switch (rule.type) {
+      case "ip": {
+        if (!remoteIpsToCheck.includes(rule.target))
+          return false;
+        break;
+      }
+      case "net": {
+        const net4 = new Address4(rule.target);
+        const net6 = new Address6(rule.target);
+        if (net4.isValid()) {
+          if (!remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(net4)))
+            return false;
+        } else {
+          if (net6.isValid()) {
+            if (!remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(net6)))
+              return false;
+          }
+        }
+        break;
+      }
+      case "domain":
+      case "dns": {
+        if (remoteVal && (remoteVal === rule.target || remoteVal.endsWith(`.${rule.target}`)))
+          return true;
+        // matching ipset elements
+        if (!rule.dnsmasq_only) {
+          let remoteSet4 = null;
+          let remoteSet6 = null;
+          if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || !_.isEmpty(rule.vpnProfile) || rule.localPort || rule.remotePort || rule.parentRgId) {
+            remoteSet4 = Block.getDstSet(rule.pid);
+            remoteSet6 = Block.getDstSet6(rule.pid);
+            if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
+              return false;
+          } else {
+            remoteSet4 = (rule.action === "allow" ? 'allow_' : 'block_') + (rule.direction === "inbound" ? "ib_" : (rule.direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[rule.type];
+            remoteSet6 = remoteSet4 + "6";
+            const mappedAddresses = (await domainIPTool.getMappedIPAddresses(rule.target, {blockSet: remoteSet4})) || [];
+            if (!(_.intersection(mappedAddresses, remoteIpsToCheck).length > 0)
+              || !(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0)
+            )
+              return false;
+          }
+        } else return false;
+        break;
+      }
+      case "category": {
+        const domains = await domainBlock.getCategoryDomains(rule.target);
+        if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
+          return true;
+        if (!rule.dnsmasq_only) {
+          const remoteSet4 = categoryUpdater.getIPSetName(rule.target);
+          const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target);
+          if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
+            return false;
+        } else return false;
+        break;
+      }
+      case "country": {
+        const remoteSet4 = categoryUpdater.getIPSetName(countryUpdater.getCategory(rule.target));
+        const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(rule.target));
+        if (!(this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) &&
+            !(this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net)))))
+          )
+          return false;
+        break;
+      }
+      case "intranet":
+        if (!remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)))
+          return false;
+        break;
+      case "mac":
+      case "internet":
+        if (remoteIpsToCheck.filter(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)).length === remoteIpsToCheck.length)
+          return false;
+        break;
+      case "network":
+        const iface = rule.target && sysManager.getInterfaceViaUUID(rule.target);
+        if (!iface || !remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip, iface.name) || sysManager.inMySubnet6(ip, iface.name)))
+          return false;
+        break;
+      case "tag":
+      case "device":
+        // not supported yet
+        return false;
+      default:
+    }
+    return true;
+  }
+
   async checkACL(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
     if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
       this.ipsetCache = await ipset.readAllIpsets() || {};
@@ -1960,9 +2129,9 @@ class PolicyManager2 {
     }
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
-      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block"].includes(rule.action)).filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
       this.sortedActiveRulesCache = activeRules.map(rule => {
-        let {scope, target, action = "block", tag} = rule;
+        let {scope, target, action = "block", tag, vpnProfile} = rule;
         rule.type = rule["i.type"] || rule["type"];
         rule.direction = rule.direction || "bidirection";
         const intfs = [];
@@ -1991,8 +2160,12 @@ class PolicyManager2 {
           rule.rank = 0;
         if (tags && tags.length > 0)
           rule.rank = 2;
+        if (vpnProfile && vpnProfile.length > 0)
+          rule.rank = 2;
         if (intfs && intfs.length > 0)
           rule.rank = 4;
+        if (rule.parentRgId)
+          rule.rank = 8;
         switch (rule.type) {
           case "ip":
           case "net":
@@ -2037,6 +2210,9 @@ class PolicyManager2 {
         if (action === "block")
           // block has lower priority than allow
           rule.rank++;
+        if (action === "match_group" || rule.type === "match_group")
+          // a trick that makes match_group rule be checked after allow rule and before block rule
+          rule.rank += 0.5;
         return rule;
       }).filter(rule => rule.rank >= 0).sort((a, b) => {return a.rank - b.rank});
     }
@@ -2057,6 +2233,9 @@ class PolicyManager2 {
     }
 
     for (const rule of this.sortedActiveRulesCache) {
+      // rules in rule group will be checked in match_group rule
+      if (rule.parentRgId)
+        continue;
       // matching local port if applicable
       if (rule.localPort) {
         if (!localPort)
@@ -2090,123 +2269,25 @@ class PolicyManager2 {
         if (!protocol || rule.protocol !== protocol)
           continue;
       }
-      // matching local device if applicable
-      if (rule.scope && rule.scope.length > 0) {
-        if (!localMac)
+
+      if (!await this._matchLocal(rule, localMac))
+        continue;
+
+      if (rule.action === "match_group" || rule.type === "match_group") {
+        // check rules in the rule group against remote target
+        const targetRgId = rule.targetRgId;
+        if (!targetRgId)
           continue;
-        if (!rule.scope.includes(localMac))
-          continue;
-      }
-      // matching local device group if applicable
-      if (rule.tags && rule.tags.length > 0) {
-        if (!localMac)
-          continue;
-        if (!rule.tags.some(uid => this.ipsetCache[Tag.getTagDeviceMacSetName(uid)] && this.ipsetCache[Tag.getTagDeviceMacSetName(uid)].includes(localMac)))
-          continue;
-      }
-      // matching local network if applicable
-      if (rule.intfs && rule.intfs.length > 0) {
-        if (!localMac)
-          continue;
-        const deviceIps = await ht.getIPsByMac(localMac);
-        const deviceIP4 = deviceIps.filter(i => new Address4(i).isValid());
-        const deviceIP6 = deviceIps.filter(i => new Address6(i).isValid());
-        if (!rule.intfs.some(uuid => {
-          const iface = sysManager.getInterfaceViaUUID(uuid);
-          if (deviceIP4.some(i => sysManager.inMySubnets4(i, iface.name)))
-            return true;
-          if (deviceIP6.some(i => sysManager.inMySubnet6(i, iface.name)))
-            return true;
-          return false;
-        }))
-          continue;
-      }
-      // matching remote target
-      switch (rule.type) {
-        case "ip": {
-          if (!remoteIpsToCheck.includes(rule.target))
-            continue;
-          break;
-        }
-        case "net": {
-          const net4 = new Address4(rule.target);
-          const net6 = new Address6(rule.target);
-          if (net4.isValid()) {
-            if (!remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(net4)))
-              continue;
-          } else {
-            if (net6.isValid()) {
-              if (!remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(net6)))
-                continue;
-            }
+        const subRules = this.sortedActiveRulesCache.filter(r => r.parentRgId === targetRgId); // allow rules come first in the subRules list, the rank should be 8 and 9
+        for (const subRule of subRules) {
+          if (await this._matchRemote(subRule, remoteType, remoteVal, remoteIpsToCheck)) {
+            return subRule;
           }
-          break;
         }
-        case "domain":
-        case "dns": {
-          if (remoteVal && (remoteVal === rule.target || remoteVal.endsWith(`.${rule.target}`)))
-            return rule;
-          // matching ipset elements
-          if (!rule.dnsmasq_only) {
-            let remoteSet4 = null;
-            let remoteSet6 = null;
-            if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || rule.localPort || rule.remotePort) {
-              remoteSet4 = Block.getDstSet(rule.pid);
-              remoteSet6 = Block.getDstSet6(rule.pid);
-              if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
-                continue;
-            } else {
-              remoteSet4 = (rule.action === "allow" ? 'allow_' : 'block_') + (rule.direction === "inbound" ? "ib_" : (rule.direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[rule.type];
-              remoteSet6 = remoteSet4 + "6";
-              const mappedAddresses = (await domainIPTool.getMappedIPAddresses(rule.target, {blockSet: remoteSet4})) || [];
-              if (!(_.intersection(mappedAddresses, remoteIpsToCheck).length > 0)
-                || !(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0)
-              )
-                continue;
-            }
-          } else continue;
-          break;
-        }
-        case "category": {
-          const domains = await domainBlock.getCategoryDomains(rule.target);
-          if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
-            return rule;
-          if (!rule.dnsmasq_only) {
-            const remoteSet4 = categoryUpdater.getIPSetName(rule.target);
-            const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target);
-            if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
-              continue;
-          } else continue;
-          break;
-        }
-        case "country": {
-          const remoteSet4 = categoryUpdater.getIPSetName(countryUpdater.getCategory(rule.target));
-          const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(rule.target));
-          if (!(this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) &&
-              !(this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net)))))
-            )
-            continue;
-          break;
-        }
-        case "intranet":
-          if (!remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)))
-            continue;
-          break;
-        case "mac":
-        case "internet":
-          if (remoteIpsToCheck.filter(ip => sysManager.inMySubnets4(ip) || sysManager.inMySubnet6(ip)).length === remoteIpsToCheck.length)
-            continue;
-          break;
-        case "network":
-          const iface = rule.target && sysManager.getInterfaceViaUUID(rule.target);
-          if (!iface || !remoteIpsToCheck.some(ip => sysManager.inMySubnets4(ip, iface.name) || sysManager.inMySubnet6(ip, iface.name)))
-            continue;
-          break;
-        case "tag":
-        case "device":
-          // not supported yet
+        continue;
+      } else {
+        if (!await this._matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck))
           continue;
-        default:
       }
       // reach here if the rule matches the criteria
       return rule;
@@ -2260,6 +2341,40 @@ class PolicyManager2 {
       }
     }
     return results;
+  }
+
+  _getRuleGroupRedisKey(uuid) {
+    return `rule_group:${uuid}`;
+  }
+
+  async createOrUpdateRuleGroup(uuid, obj) {
+    if (!obj || !obj.name)
+      throw new Error("name is not defined");
+
+    if (!uuid) // generate random uuid
+      uuid = require('uuid').v4();
+
+    obj.uuid = uuid;
+    const key = this._getRuleGroupRedisKey(uuid);
+    await rclient.delAsync(key);
+    await rclient.hmsetAsync(key, obj);
+    return obj;
+  }
+
+  async removeRuleGroup(uuid) {
+    const key = this._getRuleGroupRedisKey(uuid);
+    await rclient.delAsync(key);
+  }
+
+  async getAllRuleGroupMetaData() {
+    const keys = await rclient.keysAsync("rule_group:*");
+    const objs = [];
+    for (key of keys) {
+      const obj = await rclient.hgetAllAsync(key);
+      if (obj)
+        objs.push(obj);
+    }
+    return objs;
   }
 }
 
