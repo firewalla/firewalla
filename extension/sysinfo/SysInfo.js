@@ -369,7 +369,6 @@ function getSysInfo() {
     sysinfo.rateLimitInfo = rateLimitInfo;
   }
 
-  log.info("sysinfo:",sysinfo);
   return sysinfo;
 }
 
