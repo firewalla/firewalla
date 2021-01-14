@@ -1,11 +1,8 @@
 #!/bin/bash
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-source ${FIREWALLA_HOME}/platform/platform.sh
 
 logger 'FIREWALLA.ACLAUDIT Stopping'
-
-sudo rm -r -f /alog/*
 
 sudo rm /etc/rsyslog.d/30-acl-audit.conf
 sudo systemctl restart rsyslog
