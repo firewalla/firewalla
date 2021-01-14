@@ -314,6 +314,17 @@ async function getMaxPid() {
   }
 }
 
+async function getActiveContainers() {
+  let activeContainers = 0;
+  try {
+    const cmd = await exec('sudo docker container ls -q | wc -l')
+    activeContainers = Number(cmd.stdout)
+    log.info(`active docker containers count = ${activeContainers}`);
+  } catch(err) {
+    log.error("failed to get number of active docker containers", err)
+  }
+  return activeContainers;
+}
 
 function getSysInfo() {
   let sysinfo = {
@@ -340,7 +351,8 @@ function getSysInfo() {
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,
-    maxPid
+    maxPid: maxPid,
+    activeContainers: getActiveContainers()
   }
 
   let newUptimeInfo = {};
