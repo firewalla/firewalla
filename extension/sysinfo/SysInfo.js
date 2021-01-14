@@ -72,6 +72,7 @@ let uptimeInfo = {};
 let updateTime = null;
 
 let maxPid = 0;
+let activeContainers = 0;
 
 getMultiProfileSupportFlag();
 
@@ -95,6 +96,7 @@ async function update() {
       .then(getAutoUpgrade)
       .then(getUptimeInfo)
       .then(getMaxPid)
+      .then(getActiveContainers)
   ])
 
   if(updateFlag) {
@@ -315,7 +317,6 @@ async function getMaxPid() {
 }
 
 async function getActiveContainers() {
-  let activeContainers = 0;
   try {
     const cmd = await exec('sudo docker container ls -q | wc -l')
     activeContainers = Number(cmd.stdout)
@@ -323,7 +324,6 @@ async function getActiveContainers() {
   } catch(err) {
     log.error("failed to get number of active docker containers", err)
   }
-  return activeContainers;
 }
 
 function getSysInfo() {
@@ -352,7 +352,7 @@ function getSysInfo() {
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,
     maxPid: maxPid,
-    activeContainers: getActiveContainers()
+    activeContainers: activeContainers
   }
 
   let newUptimeInfo = {};
@@ -369,6 +369,7 @@ function getSysInfo() {
     sysinfo.rateLimitInfo = rateLimitInfo;
   }
 
+  log.info("sysinfo:",sysinfo);
   return sysinfo;
 }
 
