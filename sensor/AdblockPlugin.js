@@ -41,14 +41,16 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const bone = require("../lib/Bone.js");
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 const fc = require('../net2/config.js');
 
 const featureName = "adblock";
 const policyKeyName = "adblock";
-const configKey = "ext.adblock.config";
 const configlistKey = "ads.list"
 const RELOAD_INTERVAL = 3600 * 24 * 1000;
+const adBlockConfigSuffix = "_adblock_filter.conf";
 
 class AdblockPlugin extends Sensor {
     async run() {
@@ -77,8 +79,9 @@ class AdblockPlugin extends Sensor {
     }
 
     async apiRun() {
+      this.featureName = featureName;
       extensionManager.onSet("adblockConfig", async (msg, data) => {
-        await rclient.setAsync(configKey, JSON.stringify(data));
+        await this.setFeatureConfig(data);
         sem.sendEventToFireMain({
           type: 'ADBLOCK_CONFIG_REFRESH'
         });
@@ -89,27 +92,35 @@ class AdblockPlugin extends Sensor {
     }
 
     async getAdblockConfig() {
-      const json = await rclient.getAsync(configKey);
+      const result = {};
       try {
-        if (json == null) {
-          const result = {};
+        if (!platform.isAdblockCustomizedSupported()) {
+          result["ads"] = "on"
+        } else {
           log.info(`Load config list from bone: ${configlistKey}`);
           const data = await bone.hashsetAsync(configlistKey);
-          const arr = JSON.parse(data);
-          if (Array.isArray(arr)) {
-            for (var i=0; i<arr.length; i++) {
-              result[arr[i]] = "on";
+          // const data = "{\"ads\": {\"default\": true}, \"ads-adv\":{}}";
+          const adlist = JSON.parse(data);
+          // from redis
+          const configObj = await this.getFeatureConfig();
+          if (JSON.stringify(configObj) == "{}") {
+            for (const key in adlist) {
+              const value = adlist[key];
+              if (value.default && value.default == true) result[key] = "on";
+              else result[key] = "off";
+            }
+          } else {
+            for (const key in configObj) {
+              if (Object.keys(adlist).includes(key)) result[key] = configObj[key]
             }
           }
-          await rclient.setAsync(configKey, JSON.stringify(result));
-          return result;
         }
-        return JSON.parse(json);
       } catch(err) {
-        log.error(`Got error when loading config from ${configKey}`);
-        return {};
+        log.error(`Got error when loading config from adblock`, err);
       }
+      return result;
     }
+
     async applyPolicy(host, ip, policy) {
       log.info("Applying adblock policy:", ip, policy);
       try {
@@ -213,8 +224,9 @@ class AdblockPlugin extends Sensor {
     }
 
     async _updateFilter(config) {
+      this._cleanUpFilter(config);
       for (const key in config) {
-        const configFilePath = `${dnsmasqConfigFolder}/${key}_adblock.conf`;
+        const configFilePath = `${dnsmasqConfigFolder}/${key}${adBlockConfigSuffix}`;
         const value = config[key];
         if (value === 'off') {
           try {
@@ -241,9 +253,11 @@ class AdblockPlugin extends Sensor {
           continue;
         }
         try {
-          await this.writeToFile(arr, configFilePath + ".tmp");
-          await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
-          await fs.renameAsync(configFilePath + ".tmp", configFilePath);
+          if (arr.length > 0) {
+            await this.writeToFile(arr, configFilePath + ".tmp");
+            await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
+            await fs.renameAsync(configFilePath + ".tmp", configFilePath);
+          }
         } catch (err) {
           log.error(`Error when write to file: '${configFilePath}'`, err);
         }
@@ -269,17 +283,21 @@ class AdblockPlugin extends Sensor {
       });
     }
 
-    async cleanUpFilter() {
-      const config = await this.getAdblockConfig();
-      for (const key in config) {
-        const file = `${dnsmasqConfigFolder}/${key}_adblock.conf`;
-        try {
-          if (fs.existsSync(file)) {
-            await fs.unlinkAsync(file);
+    _cleanUpFilter(config) {
+      try {
+        const result = []
+        if (typeof config == 'object') {
+          for (const key in config) {
+            if(config[key] == "on") result.push(key+adBlockConfigSuffix)
           }
-        } catch (err) {
-          log.error(`Failed to delete file: '${file}'`, err);
         }
+        fs.readdirSync(dnsmasqConfigFolder).forEach(file => {
+          if (file.endsWith(adBlockConfigSuffix) && !result.includes(file)) {
+            fs.unlinkSync(`${dnsmasqConfigFolder}/${file}`);
+          }
+        })
+      } catch (err) {
+        log.err("Failed to delete file,", err)
       }
     }
 
@@ -306,12 +324,9 @@ class AdblockPlugin extends Sensor {
           return;
         }
         log.info(`Start to clean up adblock filters.`);
-        this.cleanUpFilter()
-          .catch(err => log.error(`Error when clean up adblock filters`, err))
-          .then(() => {
-            dnsmasq.scheduleRestartDNSService();
-            this._scheduleNextReload(nextState, this.nextState);
-          });
+        this._cleanUpFilter();
+        dnsmasq.scheduleRestartDNSService();
+        this._scheduleNextReload(nextState, this.nextState);
       }
     }
     controlFilter(state) {

@@ -193,6 +193,10 @@ class Platform {
     return false;
   }  
 
+  isAdblockCustomizedSupported() {
+    return false;
+  }
+
   isEventsSupported() {
     return true;
   }

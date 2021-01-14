@@ -709,7 +709,7 @@ module.exports = class DNSMASQ {
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
     }
     for (const domain of hashDomains) {
-      blockEntries.push(`hash-address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
+      blockEntries.push(`hash-address=/${domain.replace(/\//g, '.')}/${BLACK_HOLE_IP}$${category}_block`);
     }
     try {
       await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
