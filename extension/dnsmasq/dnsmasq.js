@@ -386,76 +386,12 @@ module.exports = class DNSMASQ {
       log.error('Error when updating filter', err);
     }
   }
-
-  _scheduleNextReload(type, oldNextState, curNextState) {
-    if (oldNextState === curNextState) {
-      // no need immediate reload when next state not changed during reloading
-      this.nextReloadFilter[type].forEach(t => clearTimeout(t));
-      this.nextReloadFilter[type].length = 0;
-      log.info(`schedule next reload for ${type} in ${RELOAD_INTERVAL / 1000}s`);
-      this.nextReloadFilter[type].push(setTimeout(this._reloadFilter.bind(this), RELOAD_INTERVAL, type));
-    } else {
-      log.warn(`${type}'s next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
-      if (this.reloadFilterImmediate) {
-        clearImmediate(this.reloadFilterImmediate)
-      }
-      this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this), type);
-    }
-  }
-
-  _reloadFilter(type) {
-    let preState = this.state[type];
-    let nextState = this.nextState[type];
-    this.state[type] = nextState;
-    log.info(`in reloadFilter(${type}): preState: ${preState}, nextState: ${this.state[type]}, this.reloadCount: ${this.reloadCount[type]++}`);
-
-    if (nextState === true) {
-      log.info(`Start to update ${type} filters.`);
-      this.updateFilter(type, true)
-        .then(() => {
-          log.info(`Update ${type} filters successful.`);
-          this.scheduleRestartDNSService();
-          this._scheduleNextReload(type, nextState, this.nextState[type]);
-        }).catch(err => {
-          log.error(`Update ${type} filters Failed!`, err);
-        });
-    } else {
-      if (preState === false && nextState === false) {
-        // disabled, no need do anything
-        this._scheduleNextReload(type, nextState, this.nextState[type]);
-        return;
-      }
-
-      log.info(`Start to clean up ${type} filters.`);
-      this.cleanUpFilter(type)
-        .catch(err => log.error(`Error when clean up ${type} filters`, err))
-        .then(() => {
-          this.scheduleRestartDNSService();
-          this._scheduleNextReload(type, nextState, this.nextState[type]);
-        });
-    }
-  }
-
   _getRuleGroupConfigPath(pid, uuid) {
     return `${FILTER_DIR}/rg_${uuid}_policy_${pid}.conf`;
   }
 
   _getRuleGroupPolicyTag(uuid) {
     return `rg_${uuid}`;
-  }
-
-  controlFilter(type, state) {
-    this.nextState[type] = state;
-    log.info(`${type} nextState is: ${this.nextState[type]}`);
-    if (this.state[type] !== undefined) {
-      // already timer running, clear existing ones before trigger next round immediately
-      this.nextReloadFilter[type].forEach(t => clearTimeout(t));
-      this.nextReloadFilter[type].length = 0;
-    }
-    if (this.reloadFilterImmediate) {
-      clearImmediate(this.reloadFilterImmediate)
-    }
-    this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this), type);
   }
 
   async cleanUpFilter(type) {
@@ -773,7 +709,7 @@ module.exports = class DNSMASQ {
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
     }
     for (const domain of hashDomains) {
-      blockEntries.push(`hash-address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
+      blockEntries.push(`hash-address=/${domain.replace(/\//g, '.')}/${BLACK_HOLE_IP}$${category}_block`);
     }
     try {
       await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));

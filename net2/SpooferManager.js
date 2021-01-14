@@ -267,7 +267,7 @@ module.exports = class SpooferManager {
 
   async isSpoofRunning() {
     try {
-      await exec("pgrep -x bitbridge7")
+      await exec("pidof bitbridge7")
 
       // TODO: add ipv6 check in the future
     } catch(err) {
@@ -281,7 +281,7 @@ module.exports = class SpooferManager {
   // TODO support ipv6
   async isSpoof(ip) {
     try {
-      await exec("pgrep -x bitbridge7")
+      await exec("pidof bitbridge7")
 
       // TODO: add ipv6 check in the future
     } catch(err) {

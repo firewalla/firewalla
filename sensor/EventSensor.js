@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla LLC
+/*    Copyright 2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,17 +26,28 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-let erh = null;
-let era = null;
-let ea = require('../event/EventApi.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
-const FEATURE_EVENT = "event_schedule";
+const FEATURE_EVENT = "event_collect";
+const era = require('../event/EventRequestApi.js');
+const ea = require('../event/EventApi.js');
+const um = require('../net2/UpgradeManager.js');
 
 class EventSensor extends Sensor {
 
+    constructor() {
+        super();
+        this.scheduledJobs = {};
+    }
+
     async apiRun() {
+
+        if ( ! platform.isEventsSupported() ) {
+            log.warn(`${FEATURE_EVENT} NOT supported in this platform`);
+            return;
+        }
 
         extensionManager.onGet("events", async (msg, data) => {
             try {
@@ -51,51 +62,141 @@ class EventSensor extends Sensor {
     }
 
     async run() {
-        log.info("run EventSensor")
-        erh = require('../event/EventRequestHandler.js')
-        era = require('../event/EventRequestApi.js');
-        setTimeout(() => {
-                this.scheduledJob();
-                setInterval(() => { this.scheduledJob(); }, 1000 * 3600 ); // run every hour
-            },
-            1000 * 60 * 5
-        ); // first time in 5 minutes
-    }
+        if ( ! platform.isEventsSupported() ) {
+            log.warn(`${FEATURE_EVENT} NOT supported in this platform`);
+            return;
+        }
 
-    async scheduledJob() {
-        try {
-            if (! fc.isFeatureOn(FEATURE_EVENT)) {
-                log.warn(`feature ${FEATURE_EVENT} disabled`);
-                return;
+        /*
+         * IMPORTANT
+         * Only initialize EventRequestHandler in run() for FireMain
+         * If done in class level, it will cause a duplicate handler of redis channel
+         */
+        const erh = require('../event/EventRequestHandler');
+        log.info("Run EventSensor")
+        if ( fc.isFeatureOn(FEATURE_EVENT) ) {
+            this.startCollectEvents();
+        } else {
+            this.stopCollectEvents();
+        }
+        fc.onFeature(FEATURE_EVENT, (feature, status) =>{
+            if (feature != FEATURE_EVENT) return
+            if (status) {
+                this.startCollectEvents();
+            } else {
+                this.stopCollectEvents();
             }
-            log.info("Start monitoring and generate events if needed")
-            await this.processCollectorOutputs();
-            await this.pingGateway();
-            await this.cleanOldEvents(1000*3600*24*7); // clean events more than 7 days old
-            //await this.cleanOldEvents(1000*60*3);
-            log.info("scheduledJob is executed successfully");
-        } catch(err) {
-            log.error("Failed to run scheduled job, err:", err);
-        }
+        })
     }
 
-    async cleanOldEvents(cleanBefore) {
+    getConfiguredInterval(name) {
+        return (name in this.config.intervals) ?
+            this.config.intervals[name] : this.config.intervals.default;
+    }
+
+    async checkReboot() {
+       const REBOOT_FLAG_FILE = '/dev/shm/system_reboot.touch';
+       try {
+           log.info("check system reboot ...");
+           if (fs.existsSync(REBOOT_FLAG_FILE)) {
+               log.debug("system reboot processed before, NO more action event needed");
+           } else {
+               log.debug("system reboot not processed yet, sending action event");
+               era.addActionEvent("system_reboot",1);
+               await fs.writeFileAsync(REBOOT_FLAG_FILE,'');
+           }
+       } catch (err) {
+           log.error("failed to check reboot:",err);
+       }
+    }
+
+    async startCollectEvents() {
         try {
-            await log.info(`clean events before ${cleanBefore}`);
-            era.cleanEvents(0, Date.now()-cleanBefore );
+            log.info("start collect events...");
+            await this.checkReboot();
+            this.scheduledJSJobs();
+            await this.scheduleScriptCollectors();
         } catch (err) {
-            log.error(`failed to clean events before ${cleanBefore}, ${err}`);
+            log.error("failed to start collect events:", err);
         }
     }
 
-    async processCollectorOutputs() {
+    async stopCollectEvents() {
+        try {
+            log.info("Stop collecting events...");
+            for (const job in this.scheduledJobs) {
+                log.info(`Stop collecting ${job}`);
+                clearInterval(this.scheduledJobs[job]);
+            }
+        } catch (err) {
+            log.error("failed to start collect events:", err);
+        }
+    }
+
+    scheduledJSJobs() {
+        const JS_JOBS = ['cleanEventsByTime', 'cleanEventsByCount', 'pingGateway', 'digDNS'];
+        for (const jsjob of JS_JOBS) {
+            log.info(`Scheduling ${jsjob} every ${this.getConfiguredInterval(jsjob)} seconds`);
+            this.scheduledJobs[jsjob] = setInterval( async() => {
+                await this[jsjob]();
+            }, 1000*this.getConfiguredInterval(jsjob));
+        }
+    }
+
+    scheduleScriptCollector(collector) {
+        let scheduledJob = null;
+        try {
+            const collectorInterval = this.getConfiguredInterval(collector);
+            if ( collectorInterval < 1) {
+                log.warn(`${collector} is NOT scheduled with interval of ${collectorInterval}`);
+            } else {
+                log.info(`Scheduling ${collector} every ${collectorInterval} seconds`);
+                scheduledJob = setInterval(async () => {
+                    await this.collectEvent(collector);
+                }, 1000*collectorInterval);
+            }
+        } catch (err) {
+            log.error(`failed to schedule ${collector}:`, err);
+        }
+        return scheduledJob;
+    }
+
+    async scheduleScriptCollectors() {
+        log.info("Scheduling all script collectors in ", COLLECTOR_DIR);
         try {
             const collectors = await fs.readdirAsync(COLLECTOR_DIR);
             for (const collector of collectors) {
-                this.processCollectorOutput(`${COLLECTOR_DIR}/${collector}`);
+                const scheduledJob = this.scheduleScriptCollector(collector);
+                if (scheduledJob) this.scheduledJobs[collector] = scheduledJob;
             }
         } catch (err) {
-            log.error(`failed to process collectors under ${COLLECTOR_DIR}, ${err}`);
+            log.error(`failed to schedule collectors under ${COLLECTOR_DIR}: ${err}`);
+        }
+    }
+
+    async cleanEventsByTime() {
+        try {
+            log.info(`clean events before ${this.config.eventsExpire} seconds`);
+            await era.cleanEventsByTime(0, Date.now()-1000*this.config.eventsExpire );
+        } catch (err) {
+            log.error(`failed to clean events before ${this.config.eventsExpire} seconds: ${err}`);
+        }
+    }
+
+    async cleanEventsByCount() {
+        try {
+            log.info("Start cleaning events by count...");
+            const currentCount = await ea.getEventsCount();
+            log.info("currentCount:", currentCount);
+            const cleanCount = currentCount - this.config.eventsLimit;
+            if ( cleanCount > 0 ) {
+                log.info(`clean oldest ${cleanCount} events`);
+                await era.cleanEventsByCount(cleanCount);
+            } else {
+                log.debug(`current_events_count(${currentCount}) <= clean_limit(${this.config.eventsLimit}), NO need to clean`)
+            }
+        } catch (err) {
+            log.error(`failed to clean events over count of ${this.config.eventsLimit}: ${err}`);
         }
     }
 
@@ -121,11 +222,11 @@ class EventSensor extends Sensor {
      *   ACTION:
      *     action <action_type> <state_value> [<label1>=<label1_value> [<label2>=<label2_value> ...]]
      */
-    async processCollectorOutput(collector) {
+    async collectEvent(collector) {
         try{
-            log.info(`Process output of ${collector}`);
+            log.info(`Collect event with ${collector}`);
             // get collector output
-            const result = await exec(collector);
+            const result = await exec(`${COLLECTOR_DIR}/${collector}`);
 
             // try to parse as JSON if possible
             let result_obj = null
@@ -138,7 +239,7 @@ class EventSensor extends Sensor {
                 }
             }
         } catch (err) {
-            log.error(`failed to process collector output of ${collector},${err}`);
+            log.error(`failed to collect event with ${collector},${err}`);
         }
     }
 
@@ -157,7 +258,7 @@ class EventSensor extends Sensor {
     processSimpleOutput(output) {
         // trigger events API with parameters line by line
         output.split("\n").forEach( (line) => {
-            log.info("output line:", line);
+            log.debug("output line:", line);
             let eventLabels = null;
             const words = line.split(/\s+/);
             switch (words[0]) {
@@ -188,18 +289,32 @@ class EventSensor extends Sensor {
     }
 
     async pingGateway() {
-        const gw = sysManager.myDefaultGateway();
-        try {
-            log.info(`try to ping ${gw}`);
-            const {stdout, stderr} = await exec(`ping -w 3 ${gw}`);
-            log.debug("stdout:", stdout);
-            log.debug("stderr:", stderr);
-            era.addStateEvent("ping",gw,1);
-        } catch (err) {
-            log.error(`failed to ping ${gw}, ${err}`)
-            era.addStateEvent("ping",gw,0);
+        log.info(`try to ping gateways...`);
+        const stateType = "ping";
+        for (const gw of sysManager.myGatways() ) {
+            try {
+                log.debug(`ping ${gw}`);
+                await exec(`ping -w 3 ${gw}`);
+                era.addStateEvent(stateType,gw,0);
+            } catch (err) {
+                log.error(`failed to ping ${gw}: ${err}`);
+                era.addStateEvent(stateType,gw,1);
+            }
         }
+    }
 
+    async digDNS() {
+        log.info(`try to dig DNS...`);
+        const stateType = "dns";
+        for (const dns of sysManager.myDnses() ) {
+            try {
+                await exec(`dig @${dns} google.com +short`);
+                era.addStateEvent(stateType,dns,0);
+            } catch (err) {
+                log.error(`failed to dig ${dns}: ${err}`);
+                era.addStateEvent(stateType,dns,1);
+            }
+        }
     }
 
 }
