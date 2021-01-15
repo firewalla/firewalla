@@ -236,10 +236,33 @@ check_system_config() {
     echo ""
 }
 
+check_tc_classes() {
+    echo "------------------------- TC Classes -------------------------------"
+    local RULES=$(redis-cli hkeys policy_qos_handler_map | grep "^policy_" | sort -t_ -n -k 2)
+    for RULE in $RULES; do
+        local RULE_ID=${RULE/policy_/""}
+        local QOS_HANDLER=$(redis-cli hget policy_qos_handler_map $RULE)
+        local QOS_HANDLER_ID=$(printf '%x' ${QOS_HANDLER/qos_/""})
+        local TRAFFIC_DIRECTION=$(redis-cli hget policy:${RULE_ID} trafficDirection)
+        local RATE_LIMIT=$(redis-cli hget policy:${RULE_ID} rateLimit)
+        local PRIORITY=$(redis-cli hget policy:${RULE_ID} priority)
+        local DISABLED=$(redis-cli hget policy:${RULE_ID} disabled)
+        echo "PID: ${RULE_ID}, traffic direction: ${TRAFFIC_DIRECTION}, rate limit: ${RATE_LIMIT}, priority: ${PRIORITY}, disabled: ${DISABLED}"
+        if [[ $TRAFFIC_DIRECTION == "upload" ]]; then
+          tc class show dev ifb0 classid 1:0x${QOS_HANDLER_ID}
+        else
+          tc class show dev ifb1 classid 1:0x${QOS_HANDLER_ID}
+        fi
+        echo ""
+    done
+    echo ""
+    echo ""
+}
+
 check_policies() {
-    echo "----------------------- Blocking Rules ------------------------------"
+    echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
-    printf "%8s %38s %10s %25s %10s %25s %15s %10s %15s %10s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Direction" "Action" "Disabled"
+    printf "%8s %38s %10s %25s %10s %25s %15s %10s %15s %10s %15s %15s %22s %15s %10s %10s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Direction" "Action" "Protocol" "Local Port" "Remote Port" "Traffic Direction" "Rate Limit" "Priority" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
@@ -248,6 +271,12 @@ check_policies() {
         local ALARM_ID=$(redis-cli hget $RULE aid)
         local FLOW_DESCRIPTION=$(redis-cli hget $RULE flowDescription)
         local ACTION=$(redis-cli hget $RULE action)
+        local PROTOCOL=$(redis-cli hget $RULE protocol)
+        local LOCAL_PORT=$(redis-cli hget $RULE localPort)
+        local REMOTE_PORT=$(redis-cli hget $RULE remotePort)
+        local TRAFFIC_DIRECTION=$(redis-cli hget $RULE trafficDirection)
+        local RATE_LIMIT=$(redis-cli hget $RULE rateLimit)
+        local PRIORITY=$(redis-cli hget $RULE pirority)
         local DISABLED=$(redis-cli hget $RULE disabled)
 
         local COLOR=""
@@ -292,7 +321,7 @@ check_policies() {
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
         fi
-        printf "$COLOR%8s %38s %10s %25s %10s %25s %15s %10s %15s %10s $UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$DISABLED"
+        printf "$COLOR%8s %38s %10s %25s %10s %25s %15s %10s %15s %10s %15s %15s %22s %15s %10s %10s $UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT" "$TRAFFIC_DIRECTION" "$RATE_LIMIT" "$PRIORITY" "$DISABLED"
     done
 
     echo ""
@@ -609,6 +638,7 @@ while [ "$1" != "" ]; do
     -r | --rule)
         shift
         check_policies
+        check_tc_classes
         FAST=true
         ;;
     -i | --ipset)
@@ -654,6 +684,7 @@ if [ "$FAST" == false ]; then
     check_sys_features
     check_sys_config
     check_policies
+    check_tc_classes
     check_ipset
     check_conntrack
     check_dhcp
