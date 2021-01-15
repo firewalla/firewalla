@@ -351,8 +351,7 @@ function getSysInfo() {
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,
-    maxPid: maxPid,
-    activeContainers: activeContainers
+    maxPid: maxPid
   }
 
   let newUptimeInfo = {};
@@ -367,6 +366,10 @@ function getSysInfo() {
 
   if(rateLimitInfo) {
     sysinfo.rateLimitInfo = rateLimitInfo;
+  }
+
+  if (platform.isDockerSupported()) {
+    sysinfo.activeContainers = activeContainers;
   }
 
   return sysinfo;
