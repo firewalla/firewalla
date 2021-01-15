@@ -418,7 +418,8 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
+      // empty string matches all domains, usually being used by internet block/allow rule
+      domains = domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
           if (!_.isEmpty(options.scope)) {
