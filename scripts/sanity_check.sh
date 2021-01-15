@@ -276,7 +276,7 @@ check_policies() {
         local REMOTE_PORT=$(redis-cli hget $RULE remotePort)
         local TRAFFIC_DIRECTION=$(redis-cli hget $RULE trafficDirection)
         local RATE_LIMIT=$(redis-cli hget $RULE rateLimit)
-        local PRIORITY=$(redis-cli hget $RULE pirority)
+        local PRIORITY=$(redis-cli hget $RULE priority)
         local DISABLED=$(redis-cli hget $RULE disabled)
 
         local COLOR=""
