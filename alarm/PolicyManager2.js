@@ -1209,13 +1209,6 @@ class PolicyManager2 {
 
       case "mac":
       case "internet": // mac is the alias of internet
-        if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound" && !localPort && !remotePort) {
-            // empty string matches all domains
-            await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
-            dnsmasq.scheduleRestartDNSService();
-          }
-        }
         remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remotePositive = false;
@@ -1223,6 +1216,13 @@ class PolicyManager2 {
         // legacy data format
         if (target && ht.isMacAddress(target)) {
           scope = [target];
+        }
+        if (["allow", "block"].includes(action)) {
+          if (direction !== "inbound" && !localPort && !remotePort) {
+            // empty string matches all domains
+            await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
+            dnsmasq.scheduleRestartDNSService();
+          }
         }
         break;
       case "domain":
@@ -1497,6 +1497,13 @@ class PolicyManager2 {
         // legacy data format
         if (target && ht.isMacAddress(target)) {
           scope = [target];
+        }
+        if (["allow", "block"].includes(action)) {
+          if (direction !== "inbound" && !localPort && !remotePort) {
+            // empty string matches all domains
+            await dnsmasq.removePolicyFilterEntry([""], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
+            dnsmasq.scheduleRestartDNSService();
+          }
         }
         break;
       case "domain":
