@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc.
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -47,6 +47,7 @@ class AuditTool extends LogQuery {
 
   toSimpleFormat(entry) {
     const f = {
+      ltype: 'audit',
       type: entry.type,
       ts: entry.ets || entry.ts,
       // ets: entry.ets || entry.ts,

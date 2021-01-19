@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla LLC
+/*    Copyright 2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -58,16 +58,37 @@ class EventApi {
         log.debug(`redis_json=${redis_json}`);
         await rclient.zaddAsync([KEY_EVENT_LOG,ts,redis_json]);
       } catch (err) {
-        log.error(`failed to add event ${redis_json} at ${ts}, ${err}`);
+        log.error(`failed to add event ${redis_json} at ${ts}: ${err}`);
       }
     }
 
-    async delEvents(begin="0", end="0") {
+    async getEventsCount(begin="-inf", end="inf") {
+      let result = null;
+      try {
+        log.info(`get events count from ${begin} to ${end}`);
+        const result_str = await rclient.zcountAsync(KEY_EVENT_LOG,begin,end);
+        result = parseInt(result_str);
+      } catch (err) {
+        log.error(`failed to get events count from ${begin} to ${end}: ${err}`);
+      }
+      return result;
+    }
+
+    async cleanEventsByTime(begin="0", end="0") {
       try {
         log.info(`deleting events from ${begin} to ${end}`);
         await rclient.zremrangebyscoreAsync(KEY_EVENT_LOG,begin,end);
       } catch (err) {
-        log.error(`failed to delete events between ${begin} and ${end}, ${err}`);
+        log.error(`failed to delete events between ${begin} and ${end}: ${err}`);
+      }
+    }
+
+    async cleanEventsByCount(count=1) {
+      try {
+        log.info(`deleting oldest ${count} events`);
+        await rclient.zpopminAsync(KEY_EVENT_LOG,count);
+      } catch (err) {
+        log.error(`failed to delete oldest ${count} events: ${err}`);
       }
     }
 }
@@ -83,7 +104,7 @@ module.exports = new EventApi();
     x.addEvent({"key1":Date.now()});
     console.log( await x.listEvents() );
     // del events older than 10 seconds
-    x.delEvents(0,Math.round(Date.now())-10000);
+    x.cleanEvents(0,Math.round(Date.now())-10000);
     console.log( await x.listEvents() );
   } catch (e) {
     console.error(e);

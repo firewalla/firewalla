@@ -41,6 +41,7 @@ const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
+const {Address4} = require('ip-address');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
@@ -459,10 +460,13 @@ class VpnManager {
               for (let j in colNames) {
                 switch (colNames[j]) {
                   case "Virtual Address":
-                    if (!clientDesc.vAddr)
-                      clientDesc.vAddr = [values[j]];
-                    else
-                      clientDesc.vAddr.push(values[j]);
+                    if (new Address4(values[j]).isValid()) {
+                      if (!clientDesc.vAddr)
+                        clientDesc.vAddr = [values[j]];
+                      else
+                        clientDesc.vAddr.push(values[j]);
+                    }
+                    clientDesc.vAddr = clientDesc.vAddr || [];
                     break;
                   case "Common Name":
                     clientDesc.cn = values[j];
