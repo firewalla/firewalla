@@ -545,7 +545,8 @@ module.exports = class {
       return true;
     }
 
-    if (alarm["p.cloud.decision"] === "block" || alarm["p.action.block"] === true) {
+    if (alarm["p.cloud.decision"] === "block" ||
+      alarm["p.action.block"] === "true" || alarm["p.action.block"] === true) {
       return true
     }
 
