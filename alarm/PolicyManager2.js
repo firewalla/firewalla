@@ -68,6 +68,7 @@ const dnsmasq = new DNSMASQ();
 
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const Tag = require('../net2/Tag.js');
+const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
 const fc = require('../net2/config.js');
 const _ = require('lodash');
@@ -945,7 +946,7 @@ class PolicyManager2 {
           await this.enablePolicy(policy);
         }, idleTsFromNow * 1000)
         this.invalidateExpireTimer(policy); // remove old one if exists
-        this.enabledTimers[pid] = policyTimer;
+        this.enabledTimers[policy.pid] = policyTimer;
       }
       return // ignore disabled policy rules
     }
@@ -1091,6 +1092,26 @@ class PolicyManager2 {
     }
   }
 
+  parseTags(unsorted) {
+    let intfs = [];
+    let tags = [];
+    if (!_.isEmpty(unsorted)) {
+      for (const tagStr of unsorted) {
+        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
+          const intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
+          const iface = sysManager.getInterfaceViaUUID(intfUuid);
+          if (iface) intfs.push(intfUuid);
+        } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
+          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
+          const tag = tagManager.getTagByUid(tagUid)
+          if (tag) tags.push(tagUid);
+        }
+      }
+    }
+
+    return {intfs, tags}
+  }
+
   async _enforce(policy) {
     log.info(`Enforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
 
@@ -1109,30 +1130,14 @@ class PolicyManager2 {
       return;
     }
 
-    // tag = []
-    // scope !== []
-    let intfs = [];
-    let tags = [];
-    if (!_.isEmpty(tag)) {
-      let invalid = true;
-      for (const tagStr of tag) {
-        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-          invalid = false;
-          let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-          intfs.push(intfUuid);
-        } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          invalid = false;
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
-          tags.push(tagUid);
-        }
-      }
-
-      // invalid tag should not continue
-      if (invalid) {
-        log.error(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
-        return;
-      }
+    const { intfs, tags } = this.parseTags(tag)
+    // invalid tag should not continue
+    if (tag && tag.length && !tags.length && !intfs.length) {
+      log.error(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
+      return;
     }
+
+    const security = policy.method == 'auto' && action == 'block'
 
     let remoteSet4 = null;
     let remoteSet6 = null;
@@ -1179,7 +1184,7 @@ class PolicyManager2 {
       }
       case "remotePort":
       case "remoteIpPort":
-      case "remoteNetPort":
+      case "remoteNetPort": {
         const values = (target && target.split(',')) || [];
         if (values.length == 2) {
           // ip,port or net,port
@@ -1206,7 +1211,7 @@ class PolicyManager2 {
           await Block.batchBlock(remotePort.split(","), remotePortSet);
         }
         break;
-
+      }
       case "mac":
       case "internet": // mac is the alias of internet
         remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
@@ -1345,7 +1350,7 @@ class PolicyManager2 {
       await dnsmasq.linkRuleToRuleGroup({scope, intfs, tags, vpnProfile, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId]
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId]
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);
@@ -1399,28 +1404,14 @@ class PolicyManager2 {
       return;
     }
 
-    let intfs = [];
-    let tags = [];
-    if (!_.isEmpty(tag)) {
-      let invalid = true;
-      for (const tagStr of tag) {
-        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-          invalid = false;
-          let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-          intfs.push(intfUuid);
-        } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
-          invalid = false
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);;
-          tags.push(tagUid);
-        }
-      }
-
-      // invalid tag should not continue
-      if (invalid) {
-        log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);
-        return;
-      }
+    const { intfs, tags } = this.parseTags(tag)
+    // invalid tag should not continue
+    if (tag && tag.length && !tags.length && !intfs.length) {
+      log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);
+      return;
     }
+
+    const security = policy.method == 'auto' && action == 'block'
 
     let remoteSet4 = null;
     let remoteSet6 = null;
@@ -1461,7 +1452,7 @@ class PolicyManager2 {
       }
       case "remotePort":
       case "remoteIpPort":
-      case "remoteNetPort":
+      case "remoteNetPort": {
         const values = (target && target.split(',')) || [];
         if (values.length == 2) {
           // ip,port or net,port
@@ -1487,7 +1478,7 @@ class PolicyManager2 {
           await Block.batchUnblock(remotePort.split(","), remotePortSet);
         }
         break;
-
+      }
       case "mac":
       case "internet":
         remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
@@ -1614,7 +1605,7 @@ class PolicyManager2 {
       await dnsmasq.unlinkRuleFromRuleGroup({scope, intfs, tags, vpnProfile, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId]
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId]
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);

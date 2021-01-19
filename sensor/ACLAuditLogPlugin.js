@@ -20,6 +20,7 @@ const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
 const LOG_PREFIX = "[FW_ACL_AUDIT]";
+const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
 const {Address4, Address6} = require('ip-address');
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require('../net2/HostTool.js');
@@ -28,6 +29,12 @@ const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
+const Policy = require('../alarm/Policy.js');
+const PM2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PM2();
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
+
 const os = require('os')
 const util = require('util')
 const fs = require('fs')
@@ -119,11 +126,17 @@ class ACLAuditLogPlugin extends Sensor {
     // log.debug(line)
     const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
     const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
-    const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length); // extract content after log prefix
+    const secTagIndex = line.indexOf(SECLOG_PREFIX)
+    const security = secTagIndex > 0
+    // extract content after log prefix
+    const content = line.substring(security ?
+      secTagIndex + SECLOG_PREFIX.length : line.indexOf(LOG_PREFIX) + LOG_PREFIX.length
+    );
     if (!content || content.length == 0)
       return;
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
+    if (security) record.sec = 1
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2)
