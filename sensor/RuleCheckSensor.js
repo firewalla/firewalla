@@ -124,6 +124,8 @@ class RuleCheckSensor extends Sensor {
       if (policy.disabled == 1) {
         return false;
       }
+      if (Number.isInteger(policy.ipttl))
+        return false;
       // device level rule has separate rule in iptables
       if (policy.scope && policy.scope.length > 0) {
         return false;
