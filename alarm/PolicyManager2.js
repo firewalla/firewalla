@@ -1801,11 +1801,11 @@ class PolicyManager2 {
           if (rule) {
             matchedRules.push(rule);
           }
-        } else if (ipsetName == "block_ip_set" && iptool.isV4Format(currentTxt)) {
+        } else if (['block_ip_set', 'sec_block_ip_set'].includes(ipsetName) && iptool.isV4Format(currentTxt)) {
           matchedRules = rules.filter(rule => rule.type == "ip" && rule.target === currentTxt);
-        } else if (ipsetName == "block_net_set" && iptool.isV4Format(currentTxt)) {
+        } else if (['block_net_set', 'sec_block_net_set'].includes(ipsetName) && iptool.isV4Format(currentTxt)) {
           matchedRules = rules.filter(rule => rule.type == "net" && iptool.cidrSubnet(rule.target).contains(currentTxt));
-        } else if (ipsetName == "block_domain_set" && iptool.isV4Format(currentTxt)) {
+        } else if (['block_domain_set', 'sec_block_domain_set'].includes(ipsetName) && iptool.isV4Format(currentTxt)) {
           const filterRules = rules.filter(rule => ["dns", "domain"].includes(rule.type));
           if (isDomain) {
             const domains = await dnsTool.getAllDns(currentTxt); // 54.169.195.247 => ["api.github.com", "github.com"]
