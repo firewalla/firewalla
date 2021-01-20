@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -49,7 +49,7 @@ const _ = require('lodash');
 class DomainBlock {
 
   constructor() {
-    
+
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
@@ -169,7 +169,7 @@ class DomainBlock {
       if (!this.setUpServers) {
         try {
           resolver.setServers([server]);
-          this.setUpServers = true; 
+          this.setUpServers = true;
         } catch (err) {
           log.warn('set resolver servers error', err);
         }
@@ -213,7 +213,7 @@ class DomainBlock {
 
     if (list.length === 0)
       return;
-      
+
     return rclient.saddAsync(key, list)
   }
 
@@ -286,14 +286,14 @@ class DomainBlock {
   async updateCategoryBlock(category) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
-    const PM2 = require('../alarm/PolicyManager2.js');	
-    const pm2 = new PM2();	
-    const policies = await pm2.loadActivePoliciesAsync();	
-    for (const policy of policies) {	
-      if (policy.type == "category" && policy.target == category) {	
+    const PM2 = require('../alarm/PolicyManager2.js');
+    const pm2 = new PM2();
+    const policies = await pm2.loadActivePoliciesAsync();
+    for (const policy of policies) {
+      if (policy.type == "category" && policy.target == category) {
         dnsmasq.scheduleRestartDNSService();
         return;
-      }	
+      }
     }
   }
 
@@ -306,27 +306,28 @@ class DomainBlock {
     const defaultDomainsOnly = await categoryUpdater.getDefaultDomainsOnly(category);
     const hashedDomains = await categoryUpdater.getDefaultHashedDomains(category);
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
-    const finalDomains = domains.filter((de) => {
-      return !defaultDomains.includes(de.domain)
-    }).map((de) => { return de.domain }).concat(defaultDomains).filter((domain)=>{
-      return !excludedDomains.includes(domain)
-    }).concat(includedDomains).concat(defaultDomainsOnly).concat(hashedDomains);
+    const superSetDomains = domains.map(de => de.domain)
+      .concat(defaultDomains, includedDomains, defaultDomainsOnly)
 
-    function dedupAndPattern(arr) {
-      const pattern = arr.filter((domain) => {
-        return domain.startsWith("*.")
-      }).map((domain) => domain.substring(2))
-      return Array.from(new Set(arr.filter((domain) => {
-        if (!domain.startsWith("*.") && pattern.includes(domain)) {
-          return false;
-        } else if (domain.startsWith("*.")) {
-          return false;
-        } else {
-          return true;
-        }
-      }).concat(pattern)))
+    const splitedNames = superSetDomains.map(i => {
+      const splited = i._id.split('.')
+      if (splited[0] == '*') splited.shift()
+      return splited.reverse()
+    }).sort()
+
+    const resultDomains = []
+    let i = 0
+    while (i < splitedNames.length) {
+      const base = splitedNames[i]
+      let j = i + 1
+      while ( j < splitedNames.length && _.isEqual(splitedNames[j].slice(0, base.length), base) ) j++
+      const original = base.reverse().join('.')
+      if (excludedDomains.find(d => original.endsWith(d)))
+      resultDomains.push()
+      i = j
     }
-    return dedupAndPattern(finalDomains)
+
+    return resultDomains.concat(hashedDomains)
   }
 
   patternDomain(domain) {
