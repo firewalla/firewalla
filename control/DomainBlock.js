@@ -322,7 +322,7 @@ class DomainBlock {
       let j = i + 1
       while ( j < splitedNames.length && _.isEqual(splitedNames[j].slice(0, base.length), base) ) j++
       const original = base.reverse().join('.')
-      if (!excludedDomains.some(d => original.endsWith(d))) resultDomains.push()
+      if (!excludedDomains.some(d => original.endsWith(d))) resultDomains.push(original)
       i = j
     }
 
