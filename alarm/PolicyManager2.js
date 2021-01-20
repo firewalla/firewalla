@@ -1099,8 +1099,8 @@ class PolicyManager2 {
       for (const tagStr of unsorted) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           const intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-          const iface = sysManager.getInterfaceViaUUID(intfUuid);
-          if (iface) intfs.push(intfUuid);
+          // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+          intfs.push(intfUuid);
         } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
           let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
           const tag = tagManager.getTagByUid(tagUid)
@@ -1137,7 +1137,7 @@ class PolicyManager2 {
       return;
     }
 
-    const security = policy.method == 'auto' && action == 'block'
+    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
 
     let remoteSet4 = null;
     let remoteSet6 = null;
@@ -1174,7 +1174,10 @@ class PolicyManager2 {
         } else {
           if (["allow", "block"].includes(action)) {
             // apply to global without specified src/dst port, directly add to global ip or net allow/block set
-            const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
+            const set = (security ? 'sec_' : '' )
+              + (action === "allow" ? 'allow_' : 'block_')
+              + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
+              + simpleRuleSetMap[type];
             // Block.block will distribute IPv4/IPv6 to corresponding ipset, additional '6' will be added to set name for IPv6 ipset
             await Block.block(target, set);
             return;
@@ -1242,7 +1245,7 @@ class PolicyManager2 {
         }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route") {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || security) {
           await ipset.create(remoteSet4, "hash:ip", true);
           await ipset.create(remoteSet6, "hash:ip", false);
           await domainBlock.blockDomain(target, {
@@ -1251,7 +1254,10 @@ class PolicyManager2 {
           });
         } else {
           if (["allow", "block"].includes(action)) {
-            const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
+            const set = (security ? 'sec_' : '' )
+              + (action === "allow" ? 'allow_' : 'block_')
+              + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
+              + simpleRuleSetMap[type];
             await domainBlock.blockDomain(target, {
               exactMatch: policy.domainExactMatch,
               blockSet: set
@@ -1411,7 +1417,7 @@ class PolicyManager2 {
       return;
     }
 
-    const security = policy.method == 'auto' && action == 'block'
+    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
 
     let remoteSet4 = null;
     let remoteSet6 = null;
@@ -1443,7 +1449,10 @@ class PolicyManager2 {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
           if (["allow", "block"].includes(action)) {
-            const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
+            const set = (security ? 'sec_' : '' )
+              + (action === "allow" ? 'allow_' : 'block_')
+              + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
+              + simpleRuleSetMap[type];
             await Block.unblock(target, set);
             return;
           }
@@ -1514,7 +1523,10 @@ class PolicyManager2 {
           });
         } else {
           if (["allow", "block"].includes(action)) {
-            const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[type];
+            const set = (security ? 'sec_' : '' )
+              + (action === "allow" ? 'allow_' : 'block_')
+              + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
+              + simpleRuleSetMap[type];
             await domainBlock.unblockDomain(target, {
               exactMatch: policy.domainExactMatch,
               blockSet: set
@@ -1564,7 +1576,7 @@ class PolicyManager2 {
         remoteSet6 = countryUpdater.getIPSetNameForIPV6(countryUpdater.getCategory(target));
         break;
 
-        case "intranet":
+      case "intranet":
         remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remoteTupleCount = 2;
