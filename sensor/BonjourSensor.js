@@ -32,6 +32,7 @@ const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
 
 const ipMacCache = {};
+const lastProcessTimeMap = {};
 
 // BonjourSensor is used to two purposes:
 // 1. Discover new device
@@ -197,6 +198,11 @@ class BonjourSensor extends Sensor {
       return;
 
     mac = mac.toUpperCase();
+    // do not process bonjour messages from same MAC address in the last 30 seconds
+    if (lastProcessTimeMap[mac] && Date.now() / 1000 - lastProcessTimeMap[mac] < 30)
+      return;
+
+    lastProcessTimeMap[mac] = Date.now() / 1000;
     log.info("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let host = {

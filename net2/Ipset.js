@@ -141,7 +141,7 @@ async function flush(setName) {
     await exec(`sudo ipset flush ${setName}`);
 }
 
-async function create(name, type, v4 = true) {
+async function create(name, type, v4 = true, timeout = null) {
   let options
   switch(type) {
     case 'bitmap:port':
@@ -156,6 +156,8 @@ async function create(name, type, v4 = true) {
       options = family + ' hashsize 128 maxelem 65536'
     }
   }
+  if (Number.isInteger(timeout))
+    options = `${options} timeout ${timeout}`;
   const cmd = `sudo ipset create -! ${name} ${type} ${options}`
   return exec(cmd)
 }
