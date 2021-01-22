@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -197,7 +197,7 @@ class RuleCheckSensor extends Sensor {
       return;
     log.info(`Checking rule enforcement ${pid}`);
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.security && action == 'block'
 
     switch (type) {
       case "ip":

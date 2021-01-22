@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -78,14 +78,18 @@ class Alarm {
     if (info) {
       Object.assign(this, info);
     }
-    //    this.validate(type);
 
+    if (this.security) this.security = Number(this.security)
+
+    //    this.validate(type);
   }
+
   needPolicyMatch() {
     return false;
   }
+
   isSecurityAlarm() {
-    return false;
+    return this.security == 1;
   }
 
   getManagementType() {
@@ -306,6 +310,7 @@ class DeviceOfflineAlarm extends Alarm {
 class SpoofingDeviceAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_SPOOFING_DEVICE", timestamp, device, info);
+    this.security = 1
   }
 
   keysToCompareForDedup() {
@@ -314,9 +319,6 @@ class SpoofingDeviceAlarm extends Alarm {
 
   localizedNotificationContentArray() {
     return [this["p.device.name"], this["p.device.ip"]];
-  }
-  isSecurityAlarm(){
-    return true;
   }
 }
 
@@ -450,12 +452,10 @@ class VulnerabilityAlarm extends Alarm {
   constructor(timestamp, device, vulnerabilityID, info) {
     super("ALARM_VULNERABILITY", timestamp, device, info);
     this["p.vid"] = vulnerabilityID;
+    this.security = 1
   }
 
   needPolicyMatch(){
-    return true;
-  }
-  isSecurityAlarm(){
     return true;
   }
 
@@ -488,12 +488,10 @@ class BroNoticeAlarm extends Alarm {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
     this["p.noticeType"] = notice;
     this["p.message"] = message;
+    this.security = 1
   }
 
   needPolicyMatch(){
-    return true;
-  }
-  isSecurityAlarm(){
     return true;
   }
 
@@ -583,11 +581,9 @@ class IntelAlarm extends Alarm {
     super("ALARM_INTEL", timestamp, device, info);
     this["p.severity"] = severity;
     this["p.dest.readableName"] = this.getReadableDestination();
+    this.security = 1
   }
   needPolicyMatch(){
-    return true;
-  }
-  isSecurityAlarm(){
     return true;
   }
 

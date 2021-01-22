@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -60,21 +60,11 @@ class Policy {
         delete this.vpnProfile;
     }
 
+    ['priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', 'security'].forEach(this.parseNumber.bind(this))
+
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
-
-    if (raw.priority)
-      this.priority = Number(raw.priority);
-
-    if (raw.transferredBytes)
-      this.transferredBytes = Number(raw.transferredBytes);
-
-    if (raw.transferredPackets)
-      this.transferredPackets = Number(raw.transferredPackets);
-
-    if (raw.avgPacketBytes)
-      this.avgPacketBytes = Number(raw.avgPacketBytes);
 
     if (!_.isEmpty(raw.ipttl))
       this.ipttl = Number(raw.ipttl);
@@ -129,6 +119,10 @@ class Policy {
     }
 
     this.timestamp = this.timestamp || new Date() / 1000;
+  }
+
+  parseNumber(key) {
+    if (this[key]) this[key] = Number(this[key])
   }
 
   isEqualToPolicy(policy) {

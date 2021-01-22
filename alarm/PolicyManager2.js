@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1137,7 +1137,7 @@ class PolicyManager2 {
       return;
     }
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.security && action == 'block'
 
     let remoteSet4 = null;
     let remoteSet6 = null;
@@ -1418,7 +1418,7 @@ class PolicyManager2 {
       return;
     }
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.security && action == 'block'
 
     let remoteSet4 = null;
     let remoteSet6 = null;

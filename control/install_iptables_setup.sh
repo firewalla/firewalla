@@ -24,14 +24,45 @@ sudo ipset create block_net_set hash:net family inet hashsize 4096 maxelem 65536
 sudo ipset create sec_block_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create sec_block_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create sec_block_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
+sudo ipset create global_block_set list:set &>/dev/null
+sudo ipset add -! global_block_set block_ip_set
+sudo ipset add -! global_block_set block_domain_set
+sudo ipset add -! global_block_set block_net_set
+sudo ipset create sec_global_block_set list:set &>/dev/null
+sudo ipset add -! sec_global_block_set sec_block_ip_set
+sudo ipset add -! sec_global_block_set sec_block_domain_set
+sudo ipset add -! sec_global_block_set sec_block_net_set
+
 # inbound
 sudo ipset create block_ib_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create block_ib_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create block_ib_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_ib_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_ib_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_ib_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
+sudo ipset create global_block_ib_set list:set &>/dev/null
+sudo ipset add -! global_block_ib_set block_ib_ip_set
+sudo ipset add -! global_block_ib_set block_ib_domain_set
+sudo ipset add -! global_block_ib_set block_ib_net_set
+sudo ipset create sec_global_block_ib_set list:set &>/dev/null
+sudo ipset add -! sec_global_block_ib_set sec_block_ib_ip_set
+sudo ipset add -! sec_global_block_ib_set sec_block_ib_domain_set
+sudo ipset add -! sec_global_block_ib_set sec_block_ib_net_set
 # outbound
 sudo ipset create block_ob_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create block_ob_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create block_ob_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_ob_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_ob_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_ob_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
+sudo ipset create global_block_ob_set list:set &>/dev/null
+sudo ipset add -! global_block_ob_set block_ob_ip_set
+sudo ipset add -! global_block_ob_set block_ob_domain_set
+sudo ipset add -! global_block_ob_set block_ob_net_set
+sudo ipset create sec_global_block_ob_set list:set &>/dev/null
+sudo ipset add -! sec_global_block_ob_set sec_block_ob_ip_set
+sudo ipset add -! sec_global_block_ob_set sec_block_ob_domain_set
+sudo ipset add -! sec_global_block_ob_set sec_block_ob_net_set
 
 # bidirection
 sudo ipset create allow_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &> /dev/null
@@ -70,6 +101,12 @@ sudo ipset flush block_ib_net_set
 sudo ipset flush block_ob_ip_set
 sudo ipset flush block_ob_domain_set
 sudo ipset flush block_ob_net_set
+sudo ipset flush sec_block_ib_ip_set
+sudo ipset flush sec_block_ib_domain_set
+sudo ipset flush sec_block_ib_net_set
+sudo ipset flush sec_block_ob_ip_set
+sudo ipset flush sec_block_ob_domain_set
+sudo ipset flush sec_block_ob_net_set
 sudo ipset flush allow_ip_set
 sudo ipset flush allow_domain_set
 sudo ipset flush allow_net_set
@@ -250,32 +287,20 @@ sudo iptables -w -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set
 sudo iptables -w -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
 
 # bidirection
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set src -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set dst -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set src -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_ip_set src -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_ip_set dst -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_domain_set src -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_domain_set dst -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_net_set src -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_net_set dst -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_set src -j FW_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_set dst -j FW_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_set src -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_set dst -j FW_SEC_DROP
 # inbound
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set dst -m conntrack --ctdir REPLY -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set dst -m conntrack --ctdir REPLY -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set dst -m conntrack --ctdir REPLY -j FW_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_ib_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_ib_set dst -m conntrack --ctdir REPLY -j FW_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_ib_set src -m conntrack --ctdir ORIGINAL -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_ib_set dst -m conntrack --ctdir REPLY -j FW_SEC_DROP
 # outbound
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set src -m conntrack --ctdir REPLY -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set src -m conntrack --ctdir REPLY -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set src -m conntrack --ctdir REPLY -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_ob_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_ob_set src -m conntrack --ctdir REPLY -j FW_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_ob_set dst -m conntrack --ctdir ORIGINAL -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_ob_set src -m conntrack --ctdir REPLY -j FW_SEC_DROP
 
 sudo iptables -w -t nat -N FW_PREROUTING &> /dev/null
 
@@ -379,14 +404,44 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset create sec_block_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create sec_block_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create sec_block_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
+  sudo ipset create global_block_set6 list:set &>/dev/null
+  sudo ipset add -! global_block_set6 block_ip_set6
+  sudo ipset add -! global_block_set6 block_domain_set6
+  sudo ipset add -! global_block_set6 block_net_set6
+  sudo ipset create sec_global_block_set6 list:set &>/dev/null
+  sudo ipset add -! sec_global_block_set6 sec_block_ip_set6
+  sudo ipset add -! sec_global_block_set6 sec_block_domain_set6
+  sudo ipset add -! sec_global_block_set6 sec_block_net_set6
   # inbound
   sudo ipset create block_ib_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create block_ib_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create block_ib_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_ib_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_ib_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_ib_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
+  sudo ipset create global_block_ib_set6 list:set &>/dev/null
+  sudo ipset add -! global_block_ib_set6 block_ib_ip_set6
+  sudo ipset add -! global_block_ib_set6 block_ib_domain_set6
+  sudo ipset add -! global_block_ib_set6 block_ib_net_set6
+  sudo ipset create sec_global_block_ib_set6 list:set &>/dev/null
+  sudo ipset add -! sec_global_block_ib_set6 sec_block_ib_ip_set6
+  sudo ipset add -! sec_global_block_ib_set6 sec_block_ib_domain_set6
+  sudo ipset add -! sec_global_block_ib_set6 sec_block_ib_net_set6
   # outbound
   sudo ipset create block_ob_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create block_ob_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create block_ob_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_ob_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_ob_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_ob_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
+  sudo ipset create global_block_ob_set6 list:set &>/dev/null
+  sudo ipset add -! global_block_ob_set6 block_ob_ip_set6
+  sudo ipset add -! global_block_ob_set6 block_ob_domain_set6
+  sudo ipset add -! global_block_ob_set6 block_ob_net_set6
+  sudo ipset create sec_global_block_ob_set6 list:set &>/dev/null
+  sudo ipset add -! sec_global_block_ob_set6 sec_block_ob_ip_set6
+  sudo ipset add -! sec_global_block_ob_set6 sec_block_ob_domain_set6
+  sudo ipset add -! sec_global_block_ob_set6 sec_block_ob_net_set6
 
   # bidirection
   sudo ipset create allow_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
@@ -415,6 +470,12 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset flush block_ob_ip_set6
   sudo ipset flush block_ob_domain_set6
   sudo ipset flush block_ob_net_set6
+  sudo ipset flush sec_block_ib_ip_set6
+  sudo ipset flush sec_block_ib_domain_set6
+  sudo ipset flush sec_block_ib_net_set6
+  sudo ipset flush sec_block_ob_ip_set6
+  sudo ipset flush sec_block_ob_domain_set6
+  sudo ipset flush sec_block_ob_net_set6
   sudo ipset flush allow_ip_set6
   sudo ipset flush allow_domain_set6
   sudo ipset flush allow_net_set6
@@ -538,32 +599,20 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set6 dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
 
   # bidirection
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set6 src -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set6 dst -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set6 src -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set6 dst -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set6 src -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set6 dst -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_ip_set6 src -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_ip_set6 dst -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_domain_set6 src -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_domain_set6 dst -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_net_set6 src -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_net_set6 dst -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_set6 src -j FW_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_set6 dst -j FW_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_set6 src -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_set6 dst -j FW_SEC_DROP
   # inbound
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set6 src -m conntrack --ctdir ORIGINAL -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set6 dst -m conntrack --ctdir REPLY -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set6 src -m conntrack --ctdir ORIGINAL -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set6 dst -m conntrack --ctdir REPLY -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set6 src -m conntrack --ctdir ORIGINAL -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set6 dst -m conntrack --ctdir REPLY -j FW_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_ib_set6 src -m conntrack --ctdir ORIGINAL -j FW_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_ib_set6 dst -m conntrack --ctdir REPLY -j FW_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_ib_set6 src -m conntrack --ctdir ORIGINAL -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_ib_set6 dst -m conntrack --ctdir REPLY -j FW_SEC_DROP
   # outbound
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set6 src -m conntrack --ctdir REPLY -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set6 dst -m conntrack --ctdir ORIGINAL -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set6 src -m conntrack --ctdir REPLY -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set6 dst -m conntrack --ctdir ORIGINAL -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set6 src -m conntrack --ctdir REPLY -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set6 dst -m conntrack --ctdir ORIGINAL -j FW_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_ob_set6 dst -m conntrack --ctdir ORIGINAL -j FW_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set global_block_ob_set6 src -m conntrack --ctdir REPLY -j FW_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_ob_set6 dst -m conntrack --ctdir ORIGINAL -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_global_block_ob_set6 src -m conntrack --ctdir REPLY -j FW_SEC_DROP
 
 
   sudo ip6tables -w -t nat -N FW_PREROUTING &> /dev/null
