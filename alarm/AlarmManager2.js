@@ -896,7 +896,7 @@ module.exports = class {
     })
   }
 
-  async blockAlarmByPolicy(alarm, policy, info, needArchive) {
+  async blockAlarmByPolicy(alarm, policy, info) {
     if (!alarm || !policy) {
       return
     }
@@ -912,11 +912,7 @@ module.exports = class {
 
     await this.updateAlarm(alarm);
 
-    if (needArchive) {
-      await this.archiveAlarm(alarm.aid);
-    } else {
-      await this.removeFromActiveQueueAsync(alarm.aid);
-    }
+    await this.archiveAlarm(alarm.aid);
 
     log.info(`Alarm ${alarm.aid} is blocked successfully`)
   }
