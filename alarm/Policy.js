@@ -157,6 +157,7 @@ class Policy {
       this.parentRgId === policy.parentRgId &&
       this.targetRgId === policy.targetRgId &&
       this.ipttl === policy.ipttl &&
+      this.wanUUID === policy.wanUUID &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
