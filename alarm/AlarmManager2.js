@@ -46,6 +46,9 @@ const Policy = require('./Policy.js');
 const PolicyManager2 = require('./PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
+
 let instance = null;
 
 const alarmActiveKey = "alarm_active";
@@ -502,10 +505,10 @@ module.exports = class {
 
     try {
       log.info("AlarmManager:Check:AutoBlock", alarm.aid);
+      const ret = await this.shouldAutoBlock(alarm);
       if (fConfig && fConfig.policy &&
         fConfig.policy.autoBlock &&
-        fc.isFeatureOn("cyber_security.autoBlock") &&
-        this.shouldAutoBlock(alarm)
+        fc.isFeatureOn("cyber_security.autoBlock") && ret
       ) {
 
         // auto block if num is greater than the threshold
@@ -534,11 +537,16 @@ module.exports = class {
     return alarmID
   }
 
-  shouldAutoBlock(alarm) {
+  async shouldAutoBlock(alarm) {
     if (!fConfig || !fConfig.policy ||
       !fConfig.policy.autoBlock ||
       !fc.isFeatureOn("cyber_security.autoBlock"))
       return false;
+
+    const ip = alarm["p.dest.ip"];
+    let ret;
+    if (ip) ret = await intelTool.unblockExists(ip);
+    if (ret) return false;
 
     if (alarm && alarm.type === 'ALARM_NEW_DEVICE' &&
       fc.isFeatureOn("new_device_block")) {
