@@ -64,7 +64,7 @@ class ClashTun {
 		await fs.mkdirAsync(clashDockerPath, { recursive: true });
 		const destConfigFilePath = `${clashDockerPath}/config.yml`;
     const customizedConfigFilePath = `${clashDockerPath}/config.customized.yml`;
-    if (await accessAsync(customizedConfigFilePath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
+    if (await fs.accessAsync(customizedConfigFilePath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const customizedContent = await fs.readFileAsync(customizedConfigFilePath);
       await fs.writeFileAsync(destConfigFilePath, customizedContent);
       return;
