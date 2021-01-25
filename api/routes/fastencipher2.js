@@ -30,39 +30,64 @@ const sc = require('../lib/SystemCheck.js');
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message
  * -- message is encrypted already
  */
-router.post('/message/:gid',
-    sc.isInitialized,
-    encryption.decrypt,
-    sc.debugInfo,
 
-    (req, res, next) => {
-      const gid = req.params.gid;
+const msgHandler = (req, res, next) => {
+  const gid = req.params.gid;
+  const streaming = req.body.streaming || false;
+  res.socket.on('close', () => {
+    log.info("connection is closed:", req.headers['x-forwarded-for'] || req.connection.remoteAddress);
+    res.is_closed = true;
+  });
+  (async () => {
+    if (streaming) {
+      res.set({
+        'Cache-Control': 'no-cache',
+        'Content-Type': 'text/event-stream',
+        'Connection': 'keep-alive'
+      });
+      res.flushHeaders();
+      while (streaming && !res.is_closed) {
+        try {
+          const controller = await cloudWrapper.getNetBotController(gid);
+          const response = await controller.msgHandlerAsync(gid, body);
+          res.body = JSON.stringify(response);
+          next();
+          await delay(200); // self protection
+        } catch (err) {
+          log.error("Got error when handling request, err:", err);
+          res.write('id:-1\nevent:message\ndata:\n\n'); // client listen for "end of event stream" and close sse
+          res.end();
+          break;
+        }
+      }
+    } else {
+      const time = process.hrtime();
+      const controller = await cloudWrapper.getNetBotController(gid);
+      const response = await controller.msgHandlerAsync(gid, req.body);
+      log.info('API Cost Time:', `${process.hrtime(time)[1] / 1e6} ms`);
+      res.body = JSON.stringify(response);
+    }
+  })()
+    .catch((err) => {
+      // netbot controller is not ready yet, waiting for init complete
+      log.error("Got error when handling api call from app", err, err.stack);
+      res.status(503);
+      res.json({ error: 'Initializing Firewalla Device, please try later' });
+    });
+}
+const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
+  msgHandler, sc.compressPayloadIfRequired];
 
-      (async() =>{
-        const time = process.hrtime();
-        const controller = await cloudWrapper.getNetBotController(gid);
-        const response = await controller.msgHandlerAsync(gid, req.body);
-        log.info('API Cost Time:', `${process.hrtime(time)[1]/1e6} ms`);
-        res.body = JSON.stringify(response);
-        next();
-      })()
-        .catch((err) => {
-          // netbot controller is not ready yet, waiting for init complete
-          log.error("Got error when handling api call from app", err, err.stack);
-          res.status(503);
-          res.json({error: 'Initializing Firewalla Device, please try later'});
-        });
-    },
-
-    sc.compressPayloadIfRequired,
-    encryption.encrypt
-);
+router.post('/message/:gid', handlers, encryption.encrypt);
+router.get('/message/:gid', handlers, (req, res, next) => {
+  encryption.encrypt(req, res, next, true);
+});
 
 log.info("==============================")
 log.info("FireAPI started successfully")
 log.info("==============================")
 
 module.exports = {
-  router:router,
-  cloudWrapper:cloudWrapper
+  router: router,
+  cloudWrapper: cloudWrapper
 };

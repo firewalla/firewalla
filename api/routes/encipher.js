@@ -143,7 +143,7 @@ const simple = (req, res, next) => {
     body.message.obj.data.value = content;
 
     res.socket.on('close', () => {
-      log.info("connection is closed:", res.socket._peername);
+      log.info("connection is closed:", req.headers['x-forwarded-for'] || req.connection.remoteAddress);
       res.is_closed = true;
     });
 

@@ -56,7 +56,7 @@ module.exports = class {
     });
   }
 
-  encrypt(req, res, next) {
+  encrypt(req, res, next, streaming = false) {
     let gid = req.params.gid;
     if(gid == null) {
       res.json({"error" : "Invalid group id"});
@@ -79,7 +79,12 @@ module.exports = class {
         res.json({error: err});
         return;
       } else {
-        res.json({ message : encryptedResponse });
+        if(streaming){
+          const reply = `event:message\ndata:${encryptedResponse}\n\n`; // use default event name: message
+          res.write(reply);
+        }else{
+          res.json({ message : encryptedResponse });
+        }
       }
     });
   }
