@@ -1680,21 +1680,7 @@ module.exports = class HostManager {
             log.error(`Failed to setup openvpn client for ${profileId}`, err);
           });
           ovpnClient.once('push_options_stop', async (content) => {
-            const dnsServers = [];
-            for (let line of content.split("\n")) {
-              if (line && line.length != 0) {
-                log.info(`Roll back push options from ${profileId}: ${line}`);
-                const options = line.split(/\s+/);
-                switch (options[0]) {
-                  case "dhcp-option":
-                    if (options[1] === "DNS") {
-                      dnsServers.push(options[2]);
-                    }
-                    break;
-                  default:
-                }
-              }
-            }
+            const dnsServers = ovpnClient.getPushedDNSSServers() || [];
             if (dnsServers.length > 0) {
               // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
               await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
