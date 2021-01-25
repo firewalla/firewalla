@@ -211,7 +211,7 @@ class EventSensor extends Sensor {
      *       "labels"      : {...}
      *     }
      *   ACTION:
-     *     { "event_type"  : "state",
+     *     { "event_type"  : "action",
      *       "action_type"  : <action_type>,
      *       "action_value" : <action_value>,
      *       "labels"      : {...}
