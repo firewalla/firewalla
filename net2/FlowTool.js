@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -132,7 +132,9 @@ class FlowTool extends LogQuery {
 
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFormat(flow) {
-    let f = {};
+    let f = {
+      ltype: 'flow'
+    };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
     f.duration = flow.du

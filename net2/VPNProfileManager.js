@@ -25,6 +25,7 @@ const VPNProfile = require('./VPNProfile.js');
 const VpnManager = require('../vpn/VpnManager.js');
 const vpnManager = new VpnManager();
 const _ = require('lodash');
+const {Address4} = require('ip-address');
 
 class VPNProfileManager {
   constructor() {
@@ -101,7 +102,8 @@ class VPNProfileManager {
       if (!client.vAddr || !client.cn)
         continue;
       for (const addr of client.vAddr) {
-        newIpProfileMap[addr] = client;
+        if (new Address4(addr).isValid())
+          newIpProfileMap[addr] = client;
       }
     }
     this.ipProfileMap = newIpProfileMap;

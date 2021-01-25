@@ -112,13 +112,13 @@ class Clash {
       const servers = this.getServers();
 
       for(const server of servers) {
-        await exec(`sudo ipset add fw_clash_whitelist ${server}`);
+        await exec(`sudo ipset add -! fw_clash_whitelist ${server}`);
       }
 
       // add exclude lists
       if(_.isArray(this.config.excludes)) {
         for(const exclude of this.config.excludes) {
-          await exec(`sudo ipset add fw_clash_whitelist ${exclude}`);
+          await exec(`sudo ipset add -! fw_clash_whitelist ${exclude}`);
         }
       }
 

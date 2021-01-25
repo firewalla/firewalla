@@ -147,6 +147,7 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
 const cpuProfile = require('../net2/CpuProfile.js');
+const ea = require('../event/EventApi.js');
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -329,16 +330,13 @@ class netBot extends ControllerBot {
   _sendLog(msg, callback = () => { }) {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid + ".tar.gz.gpg";
-    log.info("sendLog: ", filename, password);
     this.eptcloud.getStorage(this.primarygid, 18000000, 0, (e, url) => {
-      log.info("sendLog: Storage ", filename, password, url);
       if (url == null || url.url == null) {
         this.simpleTxData(msg, {}, "Unable to get storage", callback);
       } else {
         const path = URL.parse(url.url).pathname;
         const homePath = f.getFirewallaHome();
         let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
-        log.info("sendLog: cmdline", filename, password, cmdline);
         exec(cmdline, (err, out, code) => {
           if (err) {
             log.error("sendLog: unable to process encrypt-upload", err, out, code);
@@ -611,6 +609,19 @@ class netBot extends ControllerBot {
             version: fc.getSimpleVersion()
           }
         });
+
+        try {
+          log.info("add action event on firewalla_upgrade");
+          const eventRequest = {
+              "ts": Date.now(),
+              "event_type": "action",
+              "action_type": "firewalla_upgrade",
+              "action_value": 1
+          }
+          await ea.addEvent(eventRequest,eventRequest.ts);
+        } catch (err) {
+          log.error("failed to add action event on firewalla_upgrade:",err);
+        }
 
         upgradeManager.updateVersionTag();
       }
@@ -1319,6 +1330,18 @@ class netBot extends ControllerBot {
       return options
     }
 
+    if (_.isString(msg.target) && msg.target.startsWith(`${Constants.NS_VPN_PROFILE}:`)) {
+      // the targetis a vpn profile cn
+      const vpnProfile = this.vpnProfileManager.getVPNProfile(msg.target.substring(`${Constants.NS_VPN_PROFILE}:`.length));
+      if (!vpnProfile || !vpnProfile.o.cn) {
+        let error = new Error("Invalid VPN profile");
+        error.code = 404;
+        throw error;
+      }
+      options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
+      return options;
+    }
+
     if (msg.data.type == 'tag') {
       const tag = this.tagManager.getTagByUid(msg.target);
       if (!tag) {
@@ -1336,6 +1359,15 @@ class netBot extends ControllerBot {
         throw err
       }
       options.intf = msg.target;
+      if (intf.o && intf.o.intf === "tun_fwvpn") {
+        // add additional macs into options for VPN server network
+        const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
+        options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+      }
+    } else {
+      // add additional macs in to options for VPN profiles
+      const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
+      options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
     }
 
     await this.hostManager.getHostsAsync();
@@ -1730,13 +1762,9 @@ class netBot extends ControllerBot {
           const defaultDomains = await categoryUpdater.getDefaultDomains(category)
           const includedDomains = await categoryUpdater.getIncludedDomains(category)
 
-          const finalDomains = domains.filter((de) => {
-            return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
-          })
-
-          finalDomains.push.apply(finalDomains, defaultDomains.map((d) => {
+          const finalDomains = domains.filter(d => !defaultDomains.includes(d.domain)).concat(defaultDomains.map((d) => {
             return { domain: d, expire: 0 };
-          }))
+          })).filter(d => !excludedDomains.includes(d.domain));
 
           let compareFuction = (x, y) => {
             if (!x || !y) {

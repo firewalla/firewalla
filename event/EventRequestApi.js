@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla LLC
+/*    Copyright 2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,24 +16,20 @@
 
 const log = require('../net2/logger.js')(__filename,"debug");
 
-const rclient = require('../util/redis_manager.js').getRedisClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
-const eapi = require('./EventApi.js');
 
 const KEY_EVENT_REQUEST_STATE = "event:request:state";
 const KEY_EVENT_REQUEST_ACTION = "event:request:action";
 const KEY_EVENT_REQUEST_CLEAN = "event:request:clean";
-const STATE_REQUIRED_FIELDS = [ "ts", "state_type", "state_key", "state_value"]
-const ACTION_REQUIRED_FIELDS = [ "ts", "action_type", "action_value"]
 
 /*
  * EventRequestApi send event requests onto redis channels for processing
  * 
  * Supported APIs:
- * - add event : STATE of ACTION
+ * - add event : STATE or ACTION
  * - clean event
  * - list events
- * 
+ *
  */
 class EventRequestApi {
     constructor() {
@@ -63,9 +59,10 @@ class EventRequestApi {
                 throw new Error(`state_value(${state_value}) is NOT a number`);
             }
             const event_json = JSON.stringify(event_obj);
+            log.debug("event_json:",event_json);
             await pclient.publishAsync(KEY_EVENT_REQUEST_STATE,event_json);
         } catch (err) {
-            log.error(`failed to publish state event(${event_json}), ${err}`);
+            log.error(`failed to publish state event(${state_type} ${state_key} ${state_value}): ${err}`);
         }
     }
 
@@ -89,15 +86,15 @@ class EventRequestApi {
             const event_json = JSON.stringify(event_obj);
             await pclient.publishAsync(KEY_EVENT_REQUEST_ACTION,event_json);
         } catch (err) {
-            log.error(`failed to publish action event(${event_json}), ${err}`);
+            log.error(`failed to publish action event(${action_type} ${action_value}): ${err}`);
         }
     }
 
-    async cleanEvents(begin=0, end=0) {
-        log.info("clean events");
+    async cleanEventsByTime(begin=0, end=0) {
+        log.info(`clean events from ${begin} to ${end}`);
 
         try {
-            let clean_obj = {
+            const clean_obj = {
                 "begin": begin,
                 "end" : end
             }
@@ -107,18 +104,19 @@ class EventRequestApi {
             const clean_json = JSON.stringify(clean_obj);
             await pclient.publishAsync(KEY_EVENT_REQUEST_CLEAN,clean_json);
         } catch (err) {
-            log.error(`failed to clean events(${event_json}), ${err}`);
+            log.error(`failed to clean events from ${begin} to ${end}: ${err}`);
         }
     }
 
-    async listEvents(begin=0, end=0, limit_offset, limit_count) {
-        log.info("list events");
+    async cleanEventsByCount(count=1) {
+        log.info(`clean oldest ${count} events`);
 
         try {
-            let result = await eapi.listEvents(begin,end,limit_offset,limit_count);
-            return result;
+            const clean_obj = { "count": count }
+            const clean_json = JSON.stringify(clean_obj);
+            await pclient.publishAsync(KEY_EVENT_REQUEST_CLEAN,clean_json);
         } catch (err) {
-            log.error(`failed to list events(${begin},${end}), ${err}`);
+            log.error(`failed to clean oldest ${count} events: ${err}`);
         }
     }
 }

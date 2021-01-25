@@ -47,6 +47,10 @@ class IntelTool {
     return instance;
   }
 
+  getUnblockKey(ip) {
+    return util.format("auto:unblock:%s", ip);
+  }
+
   getIntelKey(ip) {
     return util.format("intel:ip:%s", ip);
   }
@@ -71,6 +75,12 @@ class IntelTool {
     let key = this.getIntelKey(ip);
     let result = await rclient.hgetAsync(key, "app");
     return result != null;
+  }
+
+  async unblockExists(ip) {
+    const key = this.getUnblockKey(ip);
+    const result = await rclient.existsAsync(key);
+    return result == 1;
   }
 
   getIntel(ip) {
@@ -149,6 +159,13 @@ class IntelTool {
     expire = expire || 7 * 24 * 3600; // one week by default
 
     const key = this.getIntelKey(ip);
+    return rclient.expireAsync(key, expire);
+  }
+
+  async setUnblockExpire(ip, expire) {
+    expire = expire || 6 * 3600;
+    const key = this.getUnblockKey(ip);
+    await rclient.setAsync(key, "default");
     return rclient.expireAsync(key, expire);
   }
 
