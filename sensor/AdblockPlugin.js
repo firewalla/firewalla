@@ -254,7 +254,7 @@ class AdblockPlugin extends Sensor {
         }
         try {
           if (arr.length > 0) {
-            await this.writeToFile(arr, configFilePath + ".tmp");
+            await this.writeToFile(key, arr, configFilePath + ".tmp", this.fastMode);
             await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
             await fs.renameAsync(configFilePath + ".tmp", configFilePath);
           }
@@ -264,8 +264,8 @@ class AdblockPlugin extends Sensor {
       }
     }
 
-    async writeToFile(hashes, file) {
-      return new Promise((resolve, reject) => {
+    async writeToFile(key, hashes, file, fastMode = true) {
+      return new Promise( (resolve, reject) =>  {
         log.info("Writing hash filter file:", file);
         let writer = fs.createWriteStream(file);
         writer.on('finish', () => {
@@ -275,12 +275,29 @@ class AdblockPlugin extends Sensor {
         writer.on('error', err => {
           reject(err);
         });
-        hashes.forEach((hash) => {
-          let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), "", "$adblock")
+        if (fastMode) {
+          this.preprocess(key, hashes);
+          let line = util.format("redis-hash-match=/%s/%s%s\n", key, "", "$adblock");
           writer.write(line);
-        });
+        } else {
+          hashes.forEach((hash) => {
+            let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), "", "$adblock")
+            writer.write(line);
+          });
+        }
         writer.end();
       });
+    }
+
+    preprocess(key, hashes) {
+      rclient.del(key);
+      const newHashes = [];
+      hashes.forEach((hash) => {
+        newHashes.push(hash.replace(/\//g, '.'));
+      });
+      const cmd = [key];
+      cmd.push.apply(cmd, newHashes);
+      rclient.sadd(cmd);
     }
 
     _cleanUpFilter(config) {
@@ -342,7 +359,20 @@ class AdblockPlugin extends Sensor {
       this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this));
     }
 
+    async getFastMode() {
+      let fastMode = true;
+      try {
+        const fastModeStr = await rclient.getAsync("adblock.fastmode");
+        if (fastModeStr) {
+          fastModeStr = JSON.parse(fastModeStr);
+        }
+      } catch (err) {
+        log.error("Got error when get fast mode", err);
+      }
+      return fastMode;
+    }
     async applyAdblock() {
+      this.fastMode = await this.getFastMode();
       this.controlFilter(this.adminSystemSwitch);
 
       await this.applySystemAdblock();
