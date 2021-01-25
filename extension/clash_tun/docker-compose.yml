@@ -10,8 +10,6 @@ services:
       - /dev/net/tun
     ports:
       - "9953:9953/udp"
-      - "9954:9954/tcp"
-      - "9955:9955/tcp"
     volumes:
       - /home/pi/.forever/clash.log:/clash/clash.log
       - /home/pi/.firewalla/run/docker/clash/config.yml:/clash/config.yml

@@ -4,7 +4,7 @@ tun:
   device-url: dev://clash0 # Linux
   #  device-url: fd://5 # Linux
   dns-listen: 0.0.0.0:9953  # additional dns server listen on TUN
-  
+  auto-reopen: true
 allow-lan: true
 bind-address: '*'
 
