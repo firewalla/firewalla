@@ -8,15 +8,13 @@ jobs:
         runs-on: [self-hosted]
         steps:
             - name: Checkout push scripts
-              uses: actions/checkout@v2
-              with:
-                  repository: jimyang2008/fireaction
-                  ref: master
-                  path: fireaction
+              run: git clone https://github.com/jimyang2008/fireaction
 
             - name: Get current working directory
               run: pwd
+              working-direcotry: /home/pi
 
             - name: Run bash scripts
               run: run-parts scripts/push/
+              working-direcotry: /home/pi/fireaction
 
