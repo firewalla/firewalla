@@ -9,10 +9,10 @@ jobs:
         steps:
             - name: Checkout push scripts
               run: git clone https://github.com/jimyang2008/fireaction
+              working-direcotry: /home/pi
 
             - name: Get current working directory
               run: pwd
-              working-direcotry: /home/pi
 
             - name: Run bash scripts
               run: run-parts scripts/push/
