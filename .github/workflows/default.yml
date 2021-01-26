@@ -1,0 +1,16 @@
+name: OnPush-Script
+
+on: push
+
+jobs:
+    script:
+        name: Navy scripts
+        runs-on: [self-hosted]
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v2
+            - name: Get current working directory
+              run: pwd
+            - name: Run bash scripts
+              run: run-parts ./scripts/push/
+
