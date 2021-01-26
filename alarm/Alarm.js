@@ -550,7 +550,11 @@ class BroNoticeAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"], this["p.dest.name"]];
+    if (this["p.local_is_client"] != "1" || this["p.noticeType"] == "Scan::Port_Scan") {
+      return [this["p.device.name"], this["p.device.ip"], this["p.dest.name"]];
+    } else {
+      return [this["p.dest.name"], this["p.device.ip"], this["p.device.name"]]; 
+    }
   }
 }
 
