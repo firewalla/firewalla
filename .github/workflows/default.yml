@@ -10,7 +10,7 @@ jobs:
             - name: Checkout push scripts
               uses: actions/checkout@v2
               with:
-                  repository: fireaction
+                  repository: jimyang2008/fireaction
 
             - name: Get current working directory
               run: pwd
