@@ -19,6 +19,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const exec = require('child-process-promise').exec
 
+const ipset = require('./Ipset.js');
 const _ = require('lodash');
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
@@ -1489,11 +1490,19 @@ module.exports = class HostManager {
 
   async acl(state) {
     if (state == false) {
-      await iptables.switchACLAsync(false);
-      await iptables.switchACLAsync(false, 6);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
     } else {
-      await iptables.switchACLAsync(true);
-      await iptables.switchACLAsync(true, 6);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
     }
   }
 
