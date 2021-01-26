@@ -5,3 +5,5 @@ WSROOT=$(git rev-parse --show-toplevel)
 
 # do sanity check
 $WSROOT/scripts/sanity_check.sh -f
+
+echo Done
