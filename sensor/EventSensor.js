@@ -52,7 +52,7 @@ class EventSensor extends Sensor {
         extensionManager.onGet("events", async (msg, data) => {
             try {
                 log.info(`processing onGet events with data(${JSON.stringify(data)})`);
-                let result = await ea.listEvents(data.min,data.max,data.limit_offset,data.limit_count,data.reverse);
+                let result = await ea.listEvents(data.min,data.max,data.withscores,data.limit_offset,data.limit_count,data.reverse);
                 return result;
             } catch (err) {
                 log.error(`failed to list events with ${JSON.stringify(data)}, ${err}`);
