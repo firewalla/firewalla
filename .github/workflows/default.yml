@@ -8,7 +8,7 @@ jobs:
         runs-on: [self-hosted]
         steps:
             - name: Checkout code
-              users: actions/checkout@v2
+              uses: actions/checkout@v2
             - name: Get current working directory
               run: pwd
             - name: Run bash scripts
