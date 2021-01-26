@@ -56,6 +56,7 @@ sudo ipset create monitored_net_set list:set &>/dev/null
 sudo ipset create qos_off_mac_set hash:mac &>/dev/null
 sudo ipset create qos_off_set list:set &>/dev/null
 
+sudo ipset create match_all_set4 hash:net maxelem 16 &> /dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush block_ip_set
@@ -94,6 +95,10 @@ sudo ipset flush monitored_net_set
 sudo ipset flush qos_off_mac_set
 sudo ipset flush qos_off_set
 sudo ipset add -! qos_off_set qos_off_mac_set
+
+sudo ipset flush match_all_set4
+sudo ipset add -! match_all_set4 0.0.0.0/1
+sudo ipset add -! match_all_set4 128.0.0.0/1
 
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
@@ -403,6 +408,8 @@ if [[ -e /sbin/ip6tables ]]; then
 
   sudo ipset create monitored_ip_set6 hash:ip family inet6 hashsize 1024 maxelem 65536 &>/dev/null
 
+  sudo ipset create match_all_set6 hash:net family inet6 maxelem 16 &> /dev/null
+
   sudo ipset flush block_ip_set6
   sudo ipset flush block_domain_set6
   sudo ipset flush block_net_set6
@@ -424,6 +431,10 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset flush allow_ob_ip_set6
   sudo ipset flush allow_ob_domain_set6
   sudo ipset flush allow_ob_net_set6
+
+  sudo ipset flush match_all_set6
+  sudo ipset add -! match_all_set6 ::/1
+  sudo ipset add -! match_all_set6 8000::/1
 
   sudo ipset flush monitored_ip_set6
 
