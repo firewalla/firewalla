@@ -130,15 +130,18 @@ check_systemctl_services() {
     check_each_system_service firemon "running"
     check_each_system_service firekick "dead"
     check_each_system_service redis-server "running"
-    check_each_system_service openvpn@server "running"
-    check_each_system_service watchdog "running"
     check_each_system_service brofish "running"
     check_each_system_service firewalla "dead"
     check_each_system_service fireupgrade "dead"
     check_each_system_service fireboot "dead"
 
+    vpn_state=$(redis-cli hget policy:system vpn | jq .state)
+    $vpn_state && vpn_run_state='running' || vpn_run_state='dead'
+    check_each_system_service openvpn@server $vpn_run_state
+
     if [[ $PLATFORM != 'gold' ]]; then # non gold
         check_each_system_service firemasq "running"
+        check_each_system_service watchdog "running"
     else # gold
         check_each_system_service firerouter "running"
         check_each_system_service firerouter_dns "running"
