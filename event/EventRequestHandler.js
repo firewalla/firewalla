@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla LLC
+/*    Copyright 2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -157,7 +157,11 @@ class EventRequestHandler {
         log.info("got clean event: ", message);
         try{
             const eventRequest = JSON.parse(message);
-            await eventApi.delEvents(eventRequest.begin,eventRequest.end);
+            if ( 'count' in eventRequest ) {
+                await eventApi.cleanEventsByCount(eventRequest.count);
+            } else {
+                await eventApi.cleanEventsByTime(eventRequest.begin,eventRequest.end);
+            }
         } catch (err) {
             log.error(`failed to process clean event ${message}, ${err}`);
         }

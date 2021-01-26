@@ -76,6 +76,9 @@ class Policy {
     if (raw.avgPacketBytes)
       this.avgPacketBytes = Number(raw.avgPacketBytes);
 
+    if (!_.isEmpty(raw.ipttl))
+      this.ipttl = Number(raw.ipttl);
+
     this.dnsmasq_only = false;
     if (raw.dnsmasq_only)
       this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
@@ -153,6 +156,8 @@ class Policy {
       this.avgPacketBytes === policy.avgPacketBytes &&
       this.parentRgId === policy.parentRgId &&
       this.targetRgId === policy.targetRgId &&
+      this.ipttl === policy.ipttl &&
+      this.wanUUID === policy.wanUUID &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&

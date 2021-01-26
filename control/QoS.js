@@ -59,7 +59,7 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc) {
   }
   qdisc = qdisc || "fq_codel";
   rateLimit = rateLimit || DEFAULT_RATE_LIMIT;
-  if (!Number.isNaN(rateLimit)) // default unit of rate limit is mbit
+  if (!isNaN(rateLimit)) // default unit of rate limit is mbit
     rateLimit = `${rateLimit}mbit`;
   priority = priority || DEFAULT_PRIO;
   log.info(`Creating QoS class for classid ${classId}, direction ${direction}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}`);

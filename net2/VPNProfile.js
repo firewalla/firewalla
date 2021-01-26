@@ -136,7 +136,7 @@ class VPNProfile {
     await VPNProfile.ensureCreateEnforcementEnv(this.o.cn);
   }
 
-  async destoryEnv() {
+  async destroyEnv() {
     await exec(`sudo ipset flush -! ${VPNProfile.getVPNProfileSetName(this.o.cn)}`).catch((err) => {
       log.error(`Failed to flush VPN profile ipset ${VPNProfile.getVPNProfileSetName(this.o.cn)}`, err.message);
     });

@@ -12,8 +12,8 @@ sudo iptables -w -t mangle -F FW_CLASH_CHAIN &>/dev/null
 sudo iptables -w -t mangle -X FW_CLASH_CHAIN &>/dev/null
 sudo iptables -w -t mangle -N FW_CLASH_CHAIN &>/dev/null
 
-# does not support UDP yet
-sudo iptables -w -t mangle -A FW_CLASH_CHAIN -p udp -j RETURN
+# only support TCP yet
+sudo iptables -w -t mangle -A FW_CLASH_CHAIN ! -p tcp -j RETURN
 
 # skip high port range for p2p or other traffic
 sudo iptables -w -t mangle -A FW_CLASH_CHAIN -p tcp -m tcp --dport 1024:65535 -j RETURN

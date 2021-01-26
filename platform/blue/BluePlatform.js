@@ -139,6 +139,11 @@ class BluePlatform extends Platform {
   isBluetoothAvailable() {
     return false
   }
+
+  isEventsSupported() {
+    return false;
+  }
+
 }
 
 module.exports = BluePlatform;
