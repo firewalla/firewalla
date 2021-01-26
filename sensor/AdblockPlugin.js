@@ -89,6 +89,20 @@ class AdblockPlugin extends Sensor {
       extensionManager.onGet("adblockConfig", async (msg, data) => {
         return this.getAdblockConfig();
       });
+      extensionManager.onSet("adblockFastMode", async (msg, data) => {
+        await rclient.hsetAsync("policy:system", "adblock_fastmode", JSON.stringify(data));
+        sem.sendEventToFireMain({
+          type: 'ADBLOCK_CONFIG_REFRESH'
+        });
+      });
+      extensionManager.onGet("adblockFastMode", async (msg, data) => {
+        const json = await rclient.hgetAsync("policy:system", "adblock_fastmode");
+        try {
+           return JSON.parse(json);
+        } catch(err) {
+         return {};
+        }
+      });
     }
 
     async getAdblockConfig() {
@@ -362,9 +376,9 @@ class AdblockPlugin extends Sensor {
     async getFastMode() {
       let fastMode = true;
       try {
-        const fastModeStr = await rclient.getAsync("adblock.fastmode");
+        const fastModeStr = await rclient.hgetAsync("policy:system", "adblock_fastmode");
         if (fastModeStr) {
-          fastModeStr = JSON.parse(fastModeStr);
+          fastMode = JSON.parse(fastModeStr).state;
         }
       } catch (err) {
         log.error("Got error when get fast mode", err);
