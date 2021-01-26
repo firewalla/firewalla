@@ -193,7 +193,6 @@ module.exports = class {
 
     generateEncodedURI(ssConfig, publicServerName) {
         let uri = util.format("%s:%s@%s:%d",ssConfig.method, ssConfig.password, publicServerName, ssConfig.server_port);
-        log.debug("uri is: " + uri);
         let encodedURI = Buffer.from(uri).toString('base64');
         log.debug("encoded uri is: " + encodedURI);
 

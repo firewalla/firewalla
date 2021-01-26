@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2020 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,6 +22,8 @@ var cloudWrapper = new CloudWrapper();
 let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
+
+const delay = require('../../util/util.js').delay;
 
 const jsonfile = require('jsonfile')
 
@@ -91,11 +93,12 @@ router.post('/message/:gid',
 //   "mtype": "msg"
 // }
 
-router.post('/simple', (req, res, next) => {
+const simple = (req, res, next) => {
   const command = req.query.command || "init"
   const item = req.query.item || ""
   const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
+  const streaming = req.query.streaming || false;
 
   let body = {
     "message": {
@@ -133,19 +136,48 @@ router.post('/simple', (req, res, next) => {
   body.message.obj.data.hourblock = parseInt(req.query.hourblock)
   body.message.obj.data.direction = req.query.direction
 
-
   try {
     const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
 
 //    const c = JSON.parse(content)
     body.message.obj.data.value = content;
 
-    (async() =>{
-      let controller = await cloudWrapper.getNetBotController(gid)
-      let response = await controller.msgHandlerAsync(gid, body)
-      res.body = JSON.stringify(response);
-      res.type('json');
-      res.send(res.body);
+    res.socket.on('close', () => {
+      log.info("connection is closed:", res.socket._peername);
+      res.is_closed = true;
+    });
+
+    (async() => {      
+
+      if(streaming) {
+        res.set({
+          'Cache-Control': 'no-cache',
+          'Content-Type': 'text/event-stream',
+          'Connection': 'keep-alive'
+        });
+        res.flushHeaders();
+
+        while(streaming && !res.is_closed) {
+          try {
+            let controller = await cloudWrapper.getNetBotController(gid);
+            let response = await controller.msgHandlerAsync(gid, body);
+            
+            const reply = `id: DA45C7BE-9029-4165-AD56-7860A9A3AE6B\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
+            res.write(reply);
+            await delay(200); // self protection
+          } catch(err) {
+            log.error("Got error when handling request, err:", err);
+            break;
+          }
+        }  
+      } else {
+        let controller = await cloudWrapper.getNetBotController(gid);
+        let response = await controller.msgHandlerAsync(gid, body);  
+        res.body = JSON.stringify(response);
+        res.type('json');
+        res.send(res.body);
+      }
+
     })()
       .catch((err) => {
         // netbot controller is not ready yet, waiting for init complete
@@ -160,8 +192,10 @@ router.post('/simple', (req, res, next) => {
       stack: err.stack
     })
   }
-})
+};
 
+router.post('/simple', simple);
+router.get('/simple', simple);
 
 router.post('/complex', (req, res, next) => {
   const command = req.query.command || "init"

@@ -43,6 +43,7 @@ const clientMgmt = require('../mgmt/ClientMgmt.js');
 const config = require('../net2/config.js').getConfig();
 
 const sysManager = require('../net2/SysManager.js');
+const era = require('../event/EventRequestApi.js');
 
 const FW_SERVICE = "Firewalla";
 const FW_SERVICE_TYPE = "fb";
@@ -317,6 +318,9 @@ class FWInvitation {
       } else {
         await clientMgmt.registerUser({eid});
       }
+
+      // fire an event on phone_paired with eid info
+      await era.addActionEvent("phone_paired",1,{"eid":eid});
 
       log.forceInfo(`Linked App ${eid} to this device successfully`);
 

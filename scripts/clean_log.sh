@@ -51,6 +51,7 @@ hard_clean() {
     loginfo "do HARD cleaning ..."
     : | sudo  tee /var/log/syslog
     sudo rm -rf /log/apt/cache/*
+    sudo rm -f /log/blog/*/*.gz
     sudo chown pi:pi /log/forever/*
     ls /log/forever/*.log | xargs -r -I FILE sh -c ': > FILE'
     ls /log/firewalla/*.log | xargs -r -I FILE sh -c ': > FILE'
