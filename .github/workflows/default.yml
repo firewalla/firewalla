@@ -3,7 +3,7 @@ name: OnPush-Script
 on: push
 
 jobs:
-    script:
+    onpush-scripts:
         name: Push scripts
         runs-on: [self-hosted]
         steps:
@@ -12,8 +12,8 @@ jobs:
               with:
                   repository: jimyang2008/fireaction
                   ref: master
+                  token: ${{ secrets.YJ_PAT }}
                   path: fireaction
-                  token: ${{secrets.YJ_PAT}}
 
             - name: Get current working directory
               run: pwd
