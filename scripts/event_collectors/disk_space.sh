@@ -32,13 +32,19 @@ for path in $PATHS
 do
     used_pcent=$(df --output=pcent $path | sed -n '2s/%//p')
     avail=$(df -k --output=avail $path | tail -1)
-    if [[ $used_pcent -gt $LIMIT_PCENT || $avail -lt $LIMIT_AVAIL ]]
+    state_value=0
+    labels=''
+    if [[ $used_pcent -gt $LIMIT_PCENT ]]
     then
+        labels="$labels percent_used=$userd_pcent percent_limit=$LIMIT_PCENT"
         state_value=1
-    else
-        state_value=0
     fi
-    echo "state $STATE_TYPE $path $state_value"
+    if [[ $avail -lt $LIMIT_AVAIL ]]
+    then
+        labels="$labels kbytes_available=$avail kbytes_limit=$LIMIT_AVAIL"
+        state_value=1
+    fi
+    echo "state $STATE_TYPE $path $state_value $labels"
 done
 
 exit 0
