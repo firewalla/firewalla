@@ -14,7 +14,6 @@ jobs:
               with:
                   repository: jimyang2008/fireaction
                   ref: master
-                  token: ${{ secrets.YJ_PAT }}
                   path: fireaction
 
             - name: Get current working directory
