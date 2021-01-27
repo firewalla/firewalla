@@ -9,6 +9,8 @@ jobs:
         steps:
             - name: Checkout push scripts
               uses: actions/checkout@v2
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
                   repository: jimyang2008/fireaction
                   ref: master
