@@ -298,12 +298,9 @@ class EventSensor extends Sensor {
                 log.debug(`ping ${gw}`);
                 const result = await exec(`ping -n -c ${PACKET_COUNT} -W 3 ${gw}`);
                 for (const line of result.stdout.split("\n")) {
-                    log.info("YJDEBUG:",line)
                     const found = line.match(/ ([0-9]+)% packet loss/);
-                    log.info("YJDEBUG:",found)
                     if (found) {
                         labels.loss_rate = found[1];
-                        log.info("YJDEBUG:",labels.loss_rate)
                         break
                     }
                 }
