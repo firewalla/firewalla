@@ -206,6 +206,8 @@ const CONSTANTS = {
   IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set",
   IPSET_QOS_OFF: "qos_off_set",
   IPSET_QOS_OFF_MAC: "qos_off_mac_set",
+  IPSET_MATCH_ALL_SET4: "match_all_set4",
+  IPSET_MATCH_ALL_SET6: "match_all_set6",
   IPSET_DOCKER_WAN_ROUTABLE: 'docker_wan_routable_net_set',
   IPSET_DOCKER_LAN_ROUTABLE: 'docker_lan_routable_net_set'
 }

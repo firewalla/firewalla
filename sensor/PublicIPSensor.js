@@ -66,9 +66,16 @@ class PublicIPSensor extends Sensor {
         }
       }
 
-      const publicWanIps = sysManager.myPublicWanIps().sort();
+      const publicWanIps = sysManager.myConnectedPublicWanIps().sort();
       const existingPublicWanIpsJSON = await rclient.hgetAsync(redisKey, publicWanIPsHashKey);
       const existingPublicWanIps = ((existingPublicWanIpsJSON && JSON.parse(existingPublicWanIpsJSON)) || []).sort();
+
+      // connected public WAN IP overrides public IP from http request, this is mainly used in load-balance mode
+      if (publicWanIps.length > 0) {
+        if (!publicIP  || !publicWanIps.includes(publicIP)) {
+          publicIP = publicWanIps[0];
+        }
+      }
 
       let existingPublicIPJSON = await rclient.hgetAsync(redisKey, redisHashKey);
       let existingPublicIP = JSON.parse(existingPublicIPJSON);
