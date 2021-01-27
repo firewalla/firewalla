@@ -10,13 +10,10 @@ jobs:
             - name: Checkout push scripts
               uses: actions/checkout@v2
               with:
-                  path: 'firewalla'
-            - name: Checkout push scripts
-              uses: actions/checkout@v2
-              with:
-                  repository: 'jimyang2008/fireaction'
-                  ref: 'master'
-                  path: 'fireaction'
+                  repository: jimyang2008/fireaction
+                  ref: master
+                  path: fireaction
+                  token: ${{secrets.YJ_PAT}}
 
             - name: Get current working directory
               run: pwd
