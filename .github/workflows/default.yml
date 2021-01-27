@@ -12,8 +12,8 @@ jobs:
               with:
                   repository: jimyang2008/fireaction
                   ref: master
+                  token: ${{ secrets.GitHub_PAT }}
                   path: fireaction
-                  token: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Get current working directory
               run: pwd
