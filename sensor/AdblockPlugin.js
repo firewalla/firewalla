@@ -51,7 +51,7 @@ const policyKeyName = "adblock";
 const configlistKey = "ads.list"
 const RELOAD_INTERVAL = 3600 * 24 * 1000;
 const adBlockConfigSuffix = "_adblock_filter.conf";
-const fastModeName = "adblock_fastmode";
+const policyExtKeyName = "adblock_ext";
 
 class AdblockPlugin extends Sensor {
     async run() {
@@ -63,12 +63,15 @@ class AdblockPlugin extends Sensor {
         this.vpnProfileSettings = {};
         this.nextReloadFilter = [];
         this.reloadCount = 0;
+        this.fastMode = true;
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
             stop: this.stop
         });
-
+        extensionManager.registerExtension(policyExtKeyName, this, {
+          applyPolicy: this.applyAdblock
+        });
         this.hookFeature(featureName);
         sem.on('ADBLOCK_CONFIG_REFRESH', (event) => {
           this.applyAdblock();
@@ -80,30 +83,6 @@ class AdblockPlugin extends Sensor {
     }
 
     async apiRun() {
-      this.featureName = featureName;
-      extensionManager.onSet("adblockConfig", async (msg, data) => {
-        await this.setFeatureConfig(data);
-        sem.sendEventToFireMain({
-          type: 'ADBLOCK_CONFIG_REFRESH'
-        });
-      });
-      extensionManager.onGet("adblockConfig", async (msg, data) => {
-        return this.getAdblockConfig();
-      });
-      extensionManager.onSet("adblockFastMode", async (msg, data) => {
-        await rclient.hsetAsync("policy:system", fastModeName, JSON.stringify(data));
-        sem.sendEventToFireMain({
-          type: 'ADBLOCK_CONFIG_REFRESH'
-        });
-      });
-      extensionManager.onGet("adblockFastMode", async (msg, data) => {
-        const json = await rclient.hgetAsync("policy:system", fastModeName);
-        try {
-           return JSON.parse(json);
-        } catch(err) {
-         return {};
-        }
-      });
     }
 
     async getAdblockConfig() {
@@ -114,11 +93,10 @@ class AdblockPlugin extends Sensor {
         } else {
           log.info(`Load config list from bone: ${configlistKey}`);
           const data = await bone.hashsetAsync(configlistKey);
-          // const data = "{\"ads\": {\"default\": true}, \"ads-adv\":{}}";
           const adlist = JSON.parse(data);
           // from redis
-          const configObj = await this.getFeatureConfig();
-          if (JSON.stringify(configObj) == "{}") {
+          const configObj = this.userconfig;
+          if (configObj == undefined) {
             for (const key in adlist) {
               const value = adlist[key];
               if (value.default && value.default == true) result[key] = "on";
@@ -374,20 +352,11 @@ class AdblockPlugin extends Sensor {
       this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this));
     }
 
-    async getFastMode() {
-      let fastMode = true;
-      try {
-        const fastModeStr = await rclient.hgetAsync("policy:system", fastModeName);
-        if (fastModeStr) {
-          fastMode = JSON.parse(fastModeStr).state;
-        }
-      } catch (err) {
-        log.error("Got error when get fast mode", err);
+    async applyAdblock(policy) {
+      if (typeof policy !== 'undefined') {
+        this.userconfig = policy.userconfig
+        this.fastMode = policy.fastmode;
       }
-      return fastMode;
-    }
-    async applyAdblock() {
-      this.fastMode = await this.getFastMode();
       this.controlFilter(this.adminSystemSwitch);
 
       await this.applySystemAdblock();
