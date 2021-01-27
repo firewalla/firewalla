@@ -134,7 +134,7 @@ class EventSensor extends Sensor {
     }
 
     scheduledJSJobs() {
-        const JS_JOBS = ['cleanEventsByTime', 'cleanEventsByCount', 'pingGateway', 'digDNS'];
+        const JS_JOBS = ['cleanEventsByTime', 'cleanEventsByCount'];
         for (const jsjob of JS_JOBS) {
             log.info(`Scheduling ${jsjob} every ${this.getConfiguredInterval(jsjob)} seconds`);
             this.scheduledJobs[jsjob] = setInterval( async() => {
