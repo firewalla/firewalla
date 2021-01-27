@@ -12,7 +12,7 @@ jobs:
               with:
                   repository: jimyang2008/fireaction
                   ref: master
-                  token: ${{ secrets.YJ_PAT }}
+                  token: ${{ secrets.ACCESS_TOKEN }}
                   path: fireaction
 
             - name: Get current working directory
