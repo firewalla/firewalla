@@ -51,6 +51,7 @@ const policyKeyName = "adblock";
 const configlistKey = "ads.list"
 const RELOAD_INTERVAL = 3600 * 24 * 1000;
 const adBlockConfigSuffix = "_adblock_filter.conf";
+const fastModeName = "adblock_fastmode";
 
 class AdblockPlugin extends Sensor {
     async run() {
@@ -90,13 +91,13 @@ class AdblockPlugin extends Sensor {
         return this.getAdblockConfig();
       });
       extensionManager.onSet("adblockFastMode", async (msg, data) => {
-        await rclient.hsetAsync("policy:system", "adblock_fastmode", JSON.stringify(data));
+        await rclient.hsetAsync("policy:system", fastModeName, JSON.stringify(data));
         sem.sendEventToFireMain({
           type: 'ADBLOCK_CONFIG_REFRESH'
         });
       });
       extensionManager.onGet("adblockFastMode", async (msg, data) => {
-        const json = await rclient.hgetAsync("policy:system", "adblock_fastmode");
+        const json = await rclient.hgetAsync("policy:system", fastModeName);
         try {
            return JSON.parse(json);
         } catch(err) {
@@ -310,8 +311,8 @@ class AdblockPlugin extends Sensor {
         newHashes.push(hash.replace(/\//g, '.'));
       });
       const cmd = [key];
-      cmd.push.apply(cmd, newHashes);
-      rclient.sadd(cmd);
+      const result = cmd.concat(newHashes);
+      rclient.sadd(result);
     }
 
     _cleanUpFilter(config) {
@@ -376,7 +377,7 @@ class AdblockPlugin extends Sensor {
     async getFastMode() {
       let fastMode = true;
       try {
-        const fastModeStr = await rclient.hgetAsync("policy:system", "adblock_fastmode");
+        const fastModeStr = await rclient.hgetAsync("policy:system", fastModeName);
         if (fastModeStr) {
           fastMode = JSON.parse(fastModeStr).state;
         }
