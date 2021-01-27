@@ -585,6 +585,18 @@ class SysManager {
     return wanIps.filter((v, i, a) => a.indexOf(v) === i);
   }
 
+  myConnectedWanIps() {
+    const wanIntfs = fireRouter.getWanIntfNames() || [];
+    const wanIps = [];
+    for (const wanIntf of wanIntfs) {
+      const intf = this.getInterface(wanIntf);
+      if (intf && intf.ip4_addresses && intf.ready === true) {
+        Array.prototype.push.apply(wanIps, intf.ip4_addresses);
+      }
+    }
+    return wanIps.filter((v, i, a) => a.indexOf(v) === i);
+  }
+
   myDefaultWanIp() {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     if (wanIntf)
@@ -594,6 +606,10 @@ class SysManager {
 
   myPublicWanIps() {
     return this.myWanIps().filter(ip => iptool.isPublic(ip) && !iptool.subnet("100.64.0.0", "255.192.0.0").contains(ip)); // filter Carrier-Grade NAT address pool accordinig to rfc6598
+  }
+
+  myConnectedPublicWanIps() {
+    return this.myConnectedWanIps().filter(ip => iptool.isPublic(ip) && !iptool.subnet("100.64.0.0", "255.192.0.0").contains(ip)); // filter Carrier-Grade NAT address pool accordinig to rfc6598
   }
 
   myGatways() {
@@ -905,7 +921,7 @@ class SysManager {
 
     let publicWanIps = null;
     if (await Mode.isRouterModeOn()) {
-      publicWanIps = this.myPublicWanIps();
+      publicWanIps = this.myConnectedPublicWanIps();
     }
 
 
