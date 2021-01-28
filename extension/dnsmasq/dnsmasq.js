@@ -46,6 +46,7 @@ const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const UPSTREAM_SERVER_FILE = FILTER_DIR + "/upstream_server.conf";
+const hashDomainRegex = /^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=)?$/;
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -686,7 +687,7 @@ module.exports = class DNSMASQ {
   }
 
   isHashDomain(domain) {
-    return domain.length == 44;
+    return hashDomainRegex.test(domain)
   }
 
   async updatePolicyCategoryFilterEntry(domains, options) {
