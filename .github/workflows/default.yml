@@ -1,0 +1,23 @@
+name: OnPush-Script
+
+on: push
+
+jobs:
+    onpush-scripts:
+        name: Push scripts
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout push scripts
+              uses: actions/checkout@v2
+              with:
+                  repository: jimyang2008/fireaction
+                  token: ${{ secrets.ACCESS_TOKEN }}
+                  path: fireaction
+
+            - name: Get current working directory
+              run: pwd
+
+            - name: Run bash scripts
+              run: run-parts scripts/push/
+              working-directory: fireaction
+
