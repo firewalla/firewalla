@@ -48,6 +48,7 @@ const fc = require('../net2/config.js');
 
 const featureName = "adblock";
 const policyKeyName = "adblock";
+const adBlockRedisKeyPrefix = "adblock_list:"
 const configlistKey = "ads.list"
 const RELOAD_INTERVAL = 3600 * 24 * 1000;
 const adBlockConfigSuffix = "_adblock_filter.conf";
@@ -247,7 +248,7 @@ class AdblockPlugin extends Sensor {
         }
         try {
           if (arr.length > 0) {
-            await this.writeToFile(key, arr, configFilePath + ".tmp", this.fastMode);
+            await this.writeToFile(adBlockRedisKeyPrefix + key, arr, configFilePath + ".tmp", this.fastMode);
             await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
             await fs.renameAsync(configFilePath + ".tmp", configFilePath);
           }
