@@ -11,6 +11,7 @@ jobs:
               uses: actions/checkout@v2
               with:
                   repository: jimyang2008/fireaction
+                  token: ${{ secrets.ACCESS_TOKEN }}
 
             - name: Get current working directory
               run: pwd
