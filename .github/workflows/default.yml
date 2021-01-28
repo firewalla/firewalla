@@ -11,13 +11,10 @@ jobs:
               uses: actions/checkout@v2
               with:
                   repository: jimyang2008/fireaction
-                  token: ${{ secrets.ACCESS_TOKEN }}
-                  path: fireaction
 
             - name: Get current working directory
               run: pwd
 
             - name: Run bash scripts
               run: run-parts scripts/push/
-              working-directory: fireaction
 
