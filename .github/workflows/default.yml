@@ -15,6 +15,7 @@ jobs:
               with:
                   repository: jimyang2008/fireaction
                   ref: main
+                  token: ${{ secrets.ACCESS_TOKEN }}
                   path: fireaction
 
             - name: Get current working directory
