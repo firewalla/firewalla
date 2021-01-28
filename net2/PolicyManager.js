@@ -395,11 +395,7 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            if (p == 'adblock_ext') {
-              hook(policy[p])  
-            } else {
-              hook(target, ip, policy[p])
-            }
+            hook(target, ip, policy[p])
           } catch (err) {
             log.error(`Failed to call applyPolicy hook on target ${ip} policy ${p}, err: ${err}`)
           }

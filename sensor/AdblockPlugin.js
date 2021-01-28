@@ -352,7 +352,7 @@ class AdblockPlugin extends Sensor {
       this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this));
     }
 
-    async applyAdblock(policy) {
+    async applyAdblock(host, ip, policy) {
       if (typeof policy !== 'undefined') {
         this.userconfig = policy.userconfig
         this.fastMode = policy.fastmode;
