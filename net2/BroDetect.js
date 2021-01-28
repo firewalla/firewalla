@@ -1394,6 +1394,9 @@ module.exports = class {
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
         return;
+      if (obj['server_name']) {
+        obj['server_name'] = obj['server_name'].toLocaleLowerCase();
+      }
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
       let key = "host:ext.x509:" + dst;
