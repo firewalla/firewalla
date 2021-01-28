@@ -20,17 +20,69 @@
 # Constants
 # ----------------------------------------------------------------------------
 STATE_TYPE='service'
-SERVICES='firemasq'
 
+check_each_system_service() {
+  service_name=$1
+  state_expected=$2
+  state_actual=$(sudo systemctl is-active $service_name)
+  test  "$state_actual" == "$state_expected"; _rc1=$?
+  echo "state $STATE_TYPE $service_name $_rc1 state_actual=$state_actual state_expected=$state_expected"
+  return $_rc1
+}
+
+check_services() {
+    _rc=0
+    check_each_system_service fireapi "active" || _rc=1
+    check_each_system_service firemain "active" || _rc=1
+    check_each_system_service firemon "active" || _rc=1
+    check_each_system_service firekick "inactive" || _rc=1
+    check_each_system_service redis-server "active" || _rc=1
+    check_each_system_service brofish "active" || _rc=1
+    check_each_system_service firewalla "inactive" || _rc=1
+    check_each_system_service fireupgrade "inactive" || _rc=1
+    check_each_system_service fireboot "inactive" || _rc=1
+
+    vpn_state=$(redis-cli hget policy:system vpn | jq .state)
+    $vpn_state && vpn_run_state='active' || vpn_run_state='inactive'
+    check_each_system_service openvpn@server $vpn_run_state || _rc=1
+
+    if [[ $PLATFORM != 'gold' ]]; then # non gold
+        check_each_system_service firemasq "active" || _rc=1
+        check_each_system_service watchdog "active" || _rc=1
+    else # gold
+        check_each_system_service firerouter "active" || _rc=1
+        check_each_system_service firerouter_dns "active" || _rc=1
+        check_each_system_service firerouter_dhcp "active" || _rc=1
+    fi
+    return $_rc
+}
 
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
-for svc in $SERVICES
-do
-    sudo systemctl status $svc
-    state_value=$?
-    echo "state $STATE_TYPE $svc $state_value"
-done
 
-exit 0
+rc=0
+case "$(uname -m)" in
+  "x86_64")
+    PLATFORM='gold'
+    ;;
+  "aarch64")
+    if [[ -e /etc/firewalla-release ]]; then
+      PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      PLATFORM='unknown'
+    fi
+    ;;
+  "armv7l")
+    PLATFORM='red'
+    ;;
+  *)
+    PLATFORM='unknown'
+    ;;
+esac
+
+
+check_services || rc=1
+
+
+exit $rc
