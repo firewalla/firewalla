@@ -1,9 +1,9 @@
-name: OnPush-Script
+name: OnPR-Script
 
 on: pull_request
 
 jobs:
-    onpush-scripts:
+    onpr-scripts:
         name: PR scripts
         runs-on: ${{ matrix.platform }}
         strategy:
@@ -13,7 +13,7 @@ jobs:
             - name: Checkout Firewalla
               uses: actions/checkout@v2
 
-            - name: Checkout push scripts
+            - name: Checkout PR scripts
               uses: actions/checkout@v2
               with:
                   repository: firewalla/fireaction
