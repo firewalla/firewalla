@@ -125,20 +125,38 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128) {
     return;
   }
 
-  const ipset = getDstSet(category);
-  const tempIpset = getDstSet(`tmp_${category}`);
-  const ipset6 = getDstSet6(category);
-  const tempIpset6 = getDstSet6(`tmp_${category}`);
+  const CategoryUpdater = require('./CategoryUpdater.js');
+  const categoryUpdater = new CategoryUpdater();
+
+  const ipset = categoryUpdater.getIPSetName(category);
+  const tempIpset = categoryUpdater.getTempIPSetName(category);
+  const ipset6 = categoryUpdater.getIPSetNameForIPV6(category);
+  const tempIpset6 = categoryUpdater.getTempIPSetNameForIPV6(`tmp_${category}`);
+
+  const staticIpset = categoryUpdater.getIPSetName(category, true);
+  const tempStaticIpset = categoryUpdater.getTempIPSetName(category, true);
+  const staticIpset6 = categoryUpdater.getIPSetNameForIPV6(category, true);
+  const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(`tmp_${category}`, true);
 
   const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
   const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
   const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
   const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
 
+  const cmdCreateStaticCategorySet = `sudo ipset create -! ${staticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
+  const cmdCreateStaticCategorySet6 = `sudo ipset create -! ${staticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
+  const cmdCreateTempStaticCategorySet = `sudo ipset create -! ${tempStaticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
+  const cmdCreateTempStaticCategorySet6 = `sudo ipset create -! ${tempStaticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
+
   await exec(cmdCreateCategorySet);
   await exec(cmdCreateCategorySet6);
   await exec(cmdCreateTempCategorySet);
   await exec(cmdCreateTempCategorySet6);
+
+  await exec(cmdCreateStaticCategorySet);
+  await exec(cmdCreateStaticCategorySet6);
+  await exec(cmdCreateTempStaticCategorySet);
+  await exec(cmdCreateTempStaticCategorySet6);
 }
 
 async function existsBlockingEnv(tag) {
