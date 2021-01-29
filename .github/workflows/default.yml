@@ -8,9 +8,9 @@ jobs:
         runs-on: ${{ matrix.platform }}
         strategy:
             matrix:
-                platform: [ Red, Blue, Navy, Gold]
+                platform: [ Red, Blue, Navy, Gold ]
         steps:
-            - name: Checkout push scripts
+            - name: Checkout Firewalla
               uses: actions/checkout@v2
 
             - name: Checkout push scripts
@@ -21,14 +21,10 @@ jobs:
                   token: ${{ secrets.ACCESS_TOKEN }}
                   path: fireaction
 
-            - name: Get system info
-              run: |
-                  hostname
-                  ip --br a
-                  uname -a
-                  scripts/sanity_check.sh
+            - name: Sanity check
+              run: scripts/sanity_check.sh
 
-            - name: Run bash scripts
+            - name: Run PR scripts
               run: run-parts scripts/pr/
               working-directory: fireaction
 
