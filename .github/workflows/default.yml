@@ -21,6 +21,9 @@ jobs:
             - name: Get current working directory
               run: pwd
 
+            - name: Show hostname
+              run: hostname
+
             - name: Run bash scripts
               run: run-parts scripts/push/
               working-directory: fireaction
