@@ -1,10 +1,10 @@
 name: OnPush-Script
 
-on: push
+on: pull_request
 
 jobs:
     onpush-scripts:
-        name: Push scripts
+        name: PR scripts
         runs-on: ${{ matrix.platform }}
         strategy:
             matrix:
@@ -16,7 +16,7 @@ jobs:
             - name: Checkout push scripts
               uses: actions/checkout@v2
               with:
-                  repository: jimyang2008/fireaction
+                  repository: firewalla/fireaction
                   ref: main
                   token: ${{ secrets.ACCESS_TOKEN }}
                   path: fireaction
@@ -29,6 +29,6 @@ jobs:
                   scripts/sanity_check.sh
 
             - name: Run bash scripts
-              run: run-parts scripts/push/
+              run: run-parts scripts/pr/
               working-directory: fireaction
 
