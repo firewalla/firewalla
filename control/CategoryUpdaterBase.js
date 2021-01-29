@@ -26,6 +26,9 @@ const exec = require('child-process-promise').exec
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
 const domainBlock = require('../control/DomainBlock.js');
 
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+
 const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;
 const blackHoleHttpPort = 8881;
@@ -203,7 +206,9 @@ class CategoryUpdaterBase {
   async activateCategory(category, type = 'hash:ip') {
     // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
     await Block.setupCategoryEnv(category.substring(0, 13), type, 4096);
-
+    
+    await dnsmasq.createCategoryMappingFile(category);
+    dnsmasq.scheduleRestartDNSService();
     this.activeCategories[category] = 1
   }
 
