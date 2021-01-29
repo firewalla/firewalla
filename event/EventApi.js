@@ -35,14 +35,17 @@ class EventApi {
     constructor() {
     }
 
-    async listEvents(min="-inf", max="inf", limit_offset=0, limit_count=-1, reverse=false) {
+    async listEvents(min="-inf", max="inf", withscores=false, limit_offset=0, limit_count=-1, reverse=false) {
       let result = null
       try {
         log.info(`getting events from ${min} to ${max}`);
+        const params = withscores ?
+          [KEY_EVENT_LOG, max, min, "withscores","limit",limit_offset,limit_count] :
+          [KEY_EVENT_LOG, max, min, "limit",limit_offset,limit_count];
         if (reverse) {
-          result = await rclient.zrevrangebyscoreAsync([KEY_EVENT_LOG, max, min, "withscores","limit",limit_offset,limit_count]);
+          result = await rclient.zrevrangebyscoreAsync(params);
         } else {
-          result = await rclient.zrangebyscoreAsync([KEY_EVENT_LOG, min, max, "withscores","limit",limit_offset,limit_count]);
+          result = await rclient.zrangebyscoreAsync(params);
         }
       } catch (err) {
         log.error(`failed to get events between ${min} and ${max}, with limit offset(${limit_offset})/count(${limit_count}) and reverse(${reverse}), ${err}`);

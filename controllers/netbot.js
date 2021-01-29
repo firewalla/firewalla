@@ -616,7 +616,8 @@ class netBot extends ControllerBot {
               "ts": Date.now(),
               "event_type": "action",
               "action_type": "firewalla_upgrade",
-              "action_value": 1
+              "action_value": 1,
+              "labels": { "version": fc.getSimpleVersion() }
           }
           await ea.addEvent(eventRequest,eventRequest.ts);
         } catch (err) {
