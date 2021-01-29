@@ -48,9 +48,11 @@ const fc = require('../net2/config.js');
 
 const featureName = "adblock";
 const policyKeyName = "adblock";
+const adBlockRedisKeyPrefix = "adblock_list:"
 const configlistKey = "ads.list"
 const RELOAD_INTERVAL = 3600 * 24 * 1000;
 const adBlockConfigSuffix = "_adblock_filter.conf";
+const policyExtKeyName = "adblock_ext";
 
 class AdblockPlugin extends Sensor {
     async run() {
@@ -62,12 +64,15 @@ class AdblockPlugin extends Sensor {
         this.vpnProfileSettings = {};
         this.nextReloadFilter = [];
         this.reloadCount = 0;
+        this.fastMode = true;
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
             stop: this.stop
         });
-
+        extensionManager.registerExtension(policyExtKeyName, this, {
+          applyPolicy: this.applyAdblock
+        });
         this.hookFeature(featureName);
         sem.on('ADBLOCK_CONFIG_REFRESH', (event) => {
           this.applyAdblock();
@@ -79,16 +84,6 @@ class AdblockPlugin extends Sensor {
     }
 
     async apiRun() {
-      this.featureName = featureName;
-      extensionManager.onSet("adblockConfig", async (msg, data) => {
-        await this.setFeatureConfig(data);
-        sem.sendEventToFireMain({
-          type: 'ADBLOCK_CONFIG_REFRESH'
-        });
-      });
-      extensionManager.onGet("adblockConfig", async (msg, data) => {
-        return this.getAdblockConfig();
-      });
     }
 
     async getAdblockConfig() {
@@ -99,11 +94,10 @@ class AdblockPlugin extends Sensor {
         } else {
           log.info(`Load config list from bone: ${configlistKey}`);
           const data = await bone.hashsetAsync(configlistKey);
-          // const data = "{\"ads\": {\"default\": true}, \"ads-adv\":{}}";
           const adlist = JSON.parse(data);
           // from redis
-          const configObj = await this.getFeatureConfig();
-          if (JSON.stringify(configObj) == "{}") {
+          const configObj = this.userconfig;
+          if (configObj == undefined) {
             for (const key in adlist) {
               const value = adlist[key];
               if (value.default && value.default == true) result[key] = "on";
@@ -254,7 +248,7 @@ class AdblockPlugin extends Sensor {
         }
         try {
           if (arr.length > 0) {
-            await this.writeToFile(arr, configFilePath + ".tmp");
+            await this.writeToFile(adBlockRedisKeyPrefix + key, arr, configFilePath + ".tmp", this.fastMode);
             await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
             await fs.renameAsync(configFilePath + ".tmp", configFilePath);
           }
@@ -264,8 +258,8 @@ class AdblockPlugin extends Sensor {
       }
     }
 
-    async writeToFile(hashes, file) {
-      return new Promise((resolve, reject) => {
+    async writeToFile(key, hashes, file, fastMode = true) {
+      return new Promise( (resolve, reject) =>  {
         log.info("Writing hash filter file:", file);
         let writer = fs.createWriteStream(file);
         writer.on('finish', () => {
@@ -275,12 +269,29 @@ class AdblockPlugin extends Sensor {
         writer.on('error', err => {
           reject(err);
         });
-        hashes.forEach((hash) => {
-          let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), "", "$adblock")
+        if (fastMode) {
+          this.preprocess(key, hashes);
+          let line = util.format("redis-hash-match=/%s/%s%s\n", key, "", "$adblock");
           writer.write(line);
-        });
+        } else {
+          hashes.forEach((hash) => {
+            let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), "", "$adblock")
+            writer.write(line);
+          });
+        }
         writer.end();
       });
+    }
+
+    preprocess(key, hashes) {
+      rclient.del(key);
+      const newHashes = [];
+      hashes.forEach((hash) => {
+        newHashes.push(hash.replace(/\//g, '.'));
+      });
+      const cmd = [key];
+      const result = cmd.concat(newHashes);
+      rclient.sadd(result);
     }
 
     _cleanUpFilter(config) {
@@ -342,7 +353,11 @@ class AdblockPlugin extends Sensor {
       this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this));
     }
 
-    async applyAdblock() {
+    async applyAdblock(host, ip, policy) {
+      if (typeof policy !== 'undefined') {
+        this.userconfig = policy.userconfig
+        this.fastMode = policy.fastmode;
+      }
       this.controlFilter(this.adminSystemSwitch);
 
       await this.applySystemAdblock();
