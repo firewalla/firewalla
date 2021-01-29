@@ -5,7 +5,10 @@ on: push
 jobs:
     onpush-scripts:
         name: Push scripts
-        runs-on: self-hosted
+        runs-on: ${{ matrix.platform }}
+        strategy:
+            matrix:
+                platform: [ Red, Blue, Navy, Gold]
         steps:
             - name: Checkout push scripts
               uses: actions/checkout@v2
