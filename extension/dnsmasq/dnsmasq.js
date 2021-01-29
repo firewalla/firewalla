@@ -46,7 +46,7 @@ const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const UPSTREAM_SERVER_FILE = FILTER_DIR + "/upstream_server.conf";
-const hashDomainRegex = /^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=)?$/;
+const { isHashDomain } = require('../../util/util.js');
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -686,10 +686,6 @@ module.exports = class DNSMASQ {
     }
   }
 
-  isHashDomain(domain) {
-    return hashDomainRegex.test(domain)
-  }
-
   async updatePolicyCategoryFilterEntry(domains, options) {
     log.debug("updatePolicyCategoryFilterEntry", domains, options);
     options = options || {};
@@ -704,8 +700,8 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    const hashDomains = domains.filter(d=>this.isHashDomain(d));
-    domains = domains.filter(d=>!this.isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+    const hashDomains = domains.filter(d=>isHashDomain(d));
+    domains = domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
     for (const domain of domains) {
       blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
