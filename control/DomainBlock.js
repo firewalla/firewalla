@@ -290,7 +290,8 @@ class DomainBlock {
     const policies = await pm2.loadActivePoliciesAsync();
     for (const policy of policies) {
       if (policy.type == "category" && policy.target == category) {
-        dnsmasq.scheduleRestartDNSService();
+        if (!dnsmasq.isRedisHashMatchUsed())
+          dnsmasq.scheduleRestartDNSService();
         return;
       }
     }

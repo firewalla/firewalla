@@ -106,6 +106,8 @@ const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 
 const flowUtil = require('../../net2/FlowUtil.js');
 
+const useRedisMatch = f.isDevelopmentVersion() ? true : false;
+
 module.exports = class DNSMASQ {
   constructor() {
     if (instance == null) {
@@ -503,6 +505,10 @@ module.exports = class DNSMASQ {
     }
   }
 
+  _getRedisMatchKey(uid, hash = false) {
+    return `redis_${hash ? "hash_" : ""}match:${uid}`;
+  }
+
   async addPolicyCategoryFilterEntry(options) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
@@ -569,10 +575,12 @@ module.exports = class DNSMASQ {
           const uuid = options.parentRgId;
           let path = this._getRuleGroupConfigPath(options.pid, uuid);
           let domains = this.categoryDomainsMap[category] || [];
-          domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+          const hashDomains = domains.filter(d => this.isHashDomain(d));
+          domains = domains.filter(d => !this.isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
           let entries = [];
           if (options.action === "block") {
             entries = domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
+            entries.concat(hashDomains.map(domain => `hash-address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`));
             if (_.isArray(this.categoryBlockUUIDsMap[category])) {
               if (!this.categoryBlockUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
                 this.categoryBlockUUIDsMap[category].push({ uuid: uuid, pid: options.pid })
@@ -580,14 +588,22 @@ module.exports = class DNSMASQ {
               this.categoryBlockUUIDsMap[category] = [{ uuid: uuid, pid: options.pid }];
           } else {
             entries = domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+            // TODO: allow does not support hash address file entry
             if (_.isArray(this.categoryAllowUUIDsMap[category])) {
               if (!this.categoryAllowUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
                 this.categoryAllowUUIDsMap[category].push({ uuid: uuid, pid: options.pid });
             } else
               this.categoryAllowUUIDsMap[category] = [{ uuid: uuid, pid: options.pid }];
           }
-          if (entries.length !== 0) {
-            await fs.writeFileAsync(path, entries.join('\n'));
+          if (this.isRedisHashMatchUsed()) {
+            await fs.writeFileAsync(path, [
+              `redis-match=/${this._getRedisMatchKey(category, false)}/${options.action === "block" ? "" : "#"}$${this._getRuleGroupPolicyTag(uuid)}`,
+              `redis-hash-match=/${this._getRedisMatchKey(category, true)}/${options.action === "block" ? "" : "#"}$${this._getRuleGroupPolicyTag(uuid)}`
+            ].join('\n'));
+          } else {
+            if (entries.length !== 0) {
+              await fs.writeFileAsync(path, entries.join('\n'));
+            }
           }
         }
       } else {
@@ -689,6 +705,28 @@ module.exports = class DNSMASQ {
     return domain.length == 44;
   }
 
+  isRedisHashMatchUsed() {
+    return useRedisMatch;
+  }
+
+  async createCategoryMappingFile(category) {
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
+    if (this.isRedisHashMatchUsed()) {
+      await fs.writeFileAsync(categoryBlockDomainsFile, [
+        `redis-match=/${this._getRedisMatchKey(category, false)}/$${category}_block`,
+        `redis-hash-match=/${this._getRedisMatchKey(category, true)}/$${category}_block`
+      ].join('\n'));
+      await fs.writeFileAsync(categoryAllowDomainsFile, [
+        `redis-match=/${this._getRedisMatchKey(category, false)}/#$${category}_allow`,
+        `redis-hash-match=/${this._getRedisMatchKey(category, true)}/#$${category}_allow`
+      ].join('\n'));
+    } else {
+      await execAsync(`touch ${categoryBlockDomainsFile}`).catch((err) => {});
+      await execAsync(`touch ${categoryAllowDomainsFile}`).catch((err) => {});
+    }
+  }
+
   async updatePolicyCategoryFilterEntry(domains, options) {
     log.debug("updatePolicyCategoryFilterEntry", domains, options);
     options = options || {};
@@ -713,22 +751,32 @@ module.exports = class DNSMASQ {
       blockEntries.push(`hash-address=/${domain.replace(/\//g, '.')}/${BLACK_HOLE_IP}$${category}_block`);
     }
     try {
-      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
-      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
-      if (_.isArray(this.categoryAllowUUIDsMap[category])) {
-        for (const o of this.categoryAllowUUIDsMap[category]) {
-          const uuid = o.uuid;
-          const pid = o.pid;
-          const path = this._getRuleGroupConfigPath(pid, uuid);
-          await fs.writeFileAsync(path, domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
-        }
+      if (this.isRedisHashMatchUsed()) {
+        if (domains.length > 0)
+          await rclient.saddAsync(this._getRedisMatchKey(category, false), domains);
+        if (hashDomains.length > 0)
+          await rclient.saddAsync(this._getRedisMatchKey(category, true), hashDomains);
+      } else {
+        await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
+        await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
       }
-      if (_.isArray(this.categoryBlockUUIDsMap[category])) {
-        for (const o of this.categoryBlockUUIDsMap[category]) {
-          const uuid = o.uuid;
-          const pid = o.pid;
-          const path = this._getRuleGroupConfigPath(pid, uuid);
-          await fs.writeFileAsync(path, domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
+      // update config files for category rules in rule groups, this is unnecessary if redis match set is used
+      if (!this.isRedisHashMatchUsed()) {
+        if (_.isArray(this.categoryAllowUUIDsMap[category])) {
+          for (const o of this.categoryAllowUUIDsMap[category]) {
+            const uuid = o.uuid;
+            const pid = o.pid;
+            const path = this._getRuleGroupConfigPath(pid, uuid);
+            await fs.writeFileAsync(path, domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
+          }
+        }
+        if (_.isArray(this.categoryBlockUUIDsMap[category])) {
+          for (const o of this.categoryBlockUUIDsMap[category]) {
+            const uuid = o.uuid;
+            const pid = o.pid;
+            const path = this._getRuleGroupConfigPath(pid, uuid);
+            await fs.writeFileAsync(path, domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
+          }
         }
       }
     } catch (err) {
