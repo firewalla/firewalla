@@ -135,8 +135,12 @@ check_systemctl_services() {
     check_each_system_service fireupgrade "dead"
     check_each_system_service fireboot "dead"
 
-    vpn_state=$(redis-cli hget policy:system vpn | jq .state)
-    $vpn_state && vpn_run_state='running' || vpn_run_state='dead'
+    if redis-cli hget policy:system vpn | fgrep -q '"state":true'
+    then
+      vpn_run_state='running'
+    else
+      vpn_run_state='dead'
+    fi
     check_each_system_service openvpn@server $vpn_run_state
 
     if [[ $PLATFORM != 'gold' ]]; then # non gold

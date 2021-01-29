@@ -20,6 +20,9 @@
 # Constants
 # ----------------------------------------------------------------------------
 STATE_TYPE='service'
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 check_each_system_service() {
   service_name=$1
@@ -42,17 +45,21 @@ check_services() {
     check_each_system_service fireupgrade "inactive" || _rc=1
     check_each_system_service fireboot "inactive" || _rc=1
 
-    vpn_state=$(redis-cli hget policy:system vpn | jq .state)
-    $vpn_state && vpn_run_state='active' || vpn_run_state='inactive'
+    if redis-cli hget policy:system vpn | fgrep -q '"state":true'
+    then
+      vpn_run_state='active'
+    else
+      vpn_run_state='inactive'
+    fi
     check_each_system_service openvpn@server $vpn_run_state || _rc=1
 
-    if [[ $PLATFORM != 'gold' ]]; then # non gold
-        check_each_system_service firemasq "active" || _rc=1
-        check_each_system_service watchdog "active" || _rc=1
-    else # gold
+    if [[ $MANAGED_BY_FIREROUTER == 'yes' ]]; then
         check_each_system_service firerouter "active" || _rc=1
         check_each_system_service firerouter_dns "active" || _rc=1
         check_each_system_service firerouter_dhcp "active" || _rc=1
+    else
+        check_each_system_service firemasq "active" || _rc=1
+        check_each_system_service watchdog "active" || _rc=1
     fi
     return $_rc
 }
@@ -62,25 +69,6 @@ check_services() {
 # ----------------------------------------------------------------------------
 
 rc=0
-case "$(uname -m)" in
-  "x86_64")
-    PLATFORM='gold'
-    ;;
-  "aarch64")
-    if [[ -e /etc/firewalla-release ]]; then
-      PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
-    else
-      PLATFORM='unknown'
-    fi
-    ;;
-  "armv7l")
-    PLATFORM='red'
-    ;;
-  *)
-    PLATFORM='unknown'
-    ;;
-esac
-
 
 check_services || rc=1
 
