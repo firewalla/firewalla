@@ -33,6 +33,7 @@ https://www.raspberrypi.org/documentation/installation/installing-images/
 ```
 We are focusing on delivering the official hardware, hence Raspberry Pi support is a bit lacking, we are hoping to pick it up soon.  We will be very likely selling a development version of Firewalla very soon.  It will be at cost with a small mark up to take care the labor involved. 
 
+
 ## Build By Yourself
 ### To Build On Raspberry Pi
 - Download Jessie Lite
