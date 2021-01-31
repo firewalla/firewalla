@@ -128,6 +128,11 @@ class ClashTun {
         log.error("Clash interface not found");
         return;
       }
+      const uuid = clashInterface.uuid;
+      if(!uuid) {
+        log.error("no uuid is found in clash interface", reservedInterfaceName);
+        return;
+      }
       const rtid = clashInterface.rtid;
       if(!rtid) {
         log.error("no rtid is found in clash interface", reservedInterfaceName);
