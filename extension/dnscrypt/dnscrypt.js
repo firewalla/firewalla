@@ -43,14 +43,14 @@ const _ = require('lodash');
 
 class DNSCrypt {
   constructor() {
-    if(instance === null) {
+    if (instance === null) {
       instance = this;
       this.config = {};
     }
 
     return instance;
   }
-  
+
   getLocalPort() {
     return this.config.localPort || 8854;
   }
@@ -61,27 +61,23 @@ class DNSCrypt {
 
   async prepareConfig(config = {}, reCheckConfig = false) {
     this.config = config;
-    let content = await fs.readFileAsync(templatePath, {encoding: 'utf8'});
+    let content = await fs.readFileAsync(templatePath, { encoding: 'utf8' });
     content = content.replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1");
     content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
     content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
-    const allServers = await this.getAllServersFromCloud(); // get servers from cloud
-    let serverList = await this.getServers();
+    const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizeServers()); // get servers from cloud and customize
     const allServerNames = allServers.map((x) => x.name).filter(Boolean);
-    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers, serverList));
-
-    serverList = serverList.map((server) => {
-      if (allServerNames.includes(server)) { return server }
-      if (allServerNames.includes(server.name)) { return `${server.name}_${server.id}` }
-    }).filter(Boolean)
+    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
+    let serverList = await this.getServers();
+    serverList = serverList.filter((n) => allServerNames.includes(n));
     content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
 
     if (reCheckConfig) {
       const fileExists = await existsAsync(runtimePath);
       if (fileExists) {
-        const oldContent = await fs.readFileAsync(runtimePath, {encoding: 'utf8'});
+        const oldContent = await fs.readFileAsync(runtimePath, { encoding: 'utf8' });
         if (oldContent == content)
           return false;
       }
@@ -90,47 +86,15 @@ class DNSCrypt {
     return true;
   }
 
-  allServersToToml(servers, selectedServers) {
+  allServersToToml(servers) {
     /*
-    servers from cloud: [
+    servers from cloud and customize: [
       {name: string, stamp: string},
-      {
-        name:'nextdns',
-        hostName:'dns.nextdns.io',
-        ip:'45.90.28.0'
-      }
-    ]
-    selectedServers: [
-      string | object{name:'nextdns',id:'xyz'}
     ]
     */
     return servers.map((s) => {
-      if (!s) return null;
-      let stamp = s.stamp;
-      let name = s.name;
-      if (!stamp) {
-        const server = _.find(selectedServers, (item) => {
-          return item && item.name == s.name;
-        });
-        if (!server) return null;
-        switch (s.name) {
-          case 'nextdns':
-            if (s.ip && s.hostName) {
-              stamp = new DNSStamp.DOH(s.ip, {
-                "hostName": s.hostName,
-                "path": `/${server.id}`,
-                "props": new DNSStamp.Properties({
-                  nofilter: server.nofilter === undefined ? false : server.nofilter,
-                  nolog: server.nolog === undefined ? false : server.nolog,
-                  dnssec: server.nolog === undefined ? true : server.nolog,
-                }),
-              }).toString();
-              name = `${name}_${server.id}`
-            }
-        }
-      }
-      if (!stamp) return null;
-      return `[static.'${name}']\n  stamp = '${stamp}'\n`;
+      if (!s || !s.name || !s.stamp) return null;
+      return `[static.'${s.name}']\n  stamp = '${s.stamp}'\n`;
     }).filter(Boolean).join("\n");
   }
 
@@ -152,21 +116,21 @@ class DNSCrypt {
 
   async getServers() {
     const serversString = await rclient.getAsync(serverKey);
-    if(!serversString) {
+    if (!serversString) {
       return this.getDefaultServers();
     }
 
     try {
       const servers = JSON.parse(serversString);
-      return servers;
-    } catch(err) {
+      return servers.map((s) => _.isObject(s) ? s.name : s).filter(Boolean);
+    } catch (err) {
       log.error("Failed to parse servers, err:", err);
       return this.getDefaultServers();
     }
   }
 
   async setServers(servers) {
-    if(servers === null) {
+    if (servers === null) {
       return rclient.delAsync(serverKey);
     }
 
@@ -189,10 +153,12 @@ class DNSCrypt {
           return servers;
         }
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to parse servers, err:", err);
     }
-    return this.getDefaultAllServers();
+    // if get servers from cloud failed, get servers from local
+    const servers = await this.getAllServers();
+    return servers;
   }
 
   async getAllServers() {
@@ -203,7 +169,7 @@ class DNSCrypt {
         servers = servers.filter((server) => (server && server.name && server.stamp));
         if (servers.length > 0)
           return servers;
-      } catch(err) {
+      } catch (err) {
         log.error("Failed to parse servers, err:", err);
       }
     }
@@ -216,11 +182,23 @@ class DNSCrypt {
   }
 
   async setAllServers(servers) {
-    if(servers === null) {
+    if (servers === null) {
       return rclient.delAsync(allServerKey);
     }
 
     return rclient.setAsync(allServerKey, JSON.stringify(servers));
+  }
+  async getCustomizeServers() {
+    // string | object {name:'nextdns',stamp:'xyz'}
+    // object means customized from user, string means from our cloud
+    let selectedServers = [];
+    const serversString = await rclient.getAsync(serverKey);
+    try {
+      selectedServers = JSON.parse(serversString);
+    } catch (err) {
+      log.error("Failed to parse servers, err:", err);
+    }
+    return _.isArray(selectedServers) ? selectedServers.filter((server) => _.isObject(server)) : [];
   }
 }
 
