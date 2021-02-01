@@ -34,13 +34,11 @@ const runtimePath = `${f.getRuntimeInfoFolder()}/dnscrypt.toml`;
 
 const exec = require('child-process-promise').exec;
 
-const serverKey = "ext.dnscrypt.servers";
+const serverKey = "ext.dnscrypt.servers"; // selected servers list
 const allServerKey = "ext.dnscrypt.allServers";
-const customizeServerkey = "ext.dnscrypt.customizeServers"
+const customizedServerkey = "ext.dnscrypt.customizedServers"
 
 const bone = require("../../lib/Bone");
-const { DNSStamp } = require("../../vendor_lib/DNSStamp.js");
-const _ = require('lodash');
 
 class DNSCrypt {
   constructor() {
@@ -68,8 +66,10 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
-    const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizeServers()); // get servers from cloud and customize
+    const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizedServers()); // get servers from cloud and customized
     const allServerNames = allServers.map((x) => x.name).filter(Boolean);
+
+    // all servers stamps will be added in the toml file
     content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
     let serverList = await this.getServers();
     serverList = serverList.filter((n) => allServerNames.includes(n));
@@ -130,8 +130,8 @@ class DNSCrypt {
     }
   }
 
-  async setServers(servers, customize) {
-    const key = customize ? customizeServerkey : serverKey;
+  async setServers(servers, customized) {
+    const key = customized ? customizedServerkey : serverKey;
     if (servers === null) {
       return rclient.delAsync(key);
     }
@@ -190,8 +190,8 @@ class DNSCrypt {
     return rclient.setAsync(allServerKey, JSON.stringify(servers));
   }
 
-  async getCustomizeServers() {
-    const serversString = await rclient.getAsync(customizeServerkey);
+  async getCustomizedServers() {
+    const serversString = await rclient.getAsync(customizedServerkey);
     try {
       const servers = JSON.parse(serversString) || [];
       return servers;

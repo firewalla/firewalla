@@ -84,7 +84,7 @@ class DNSCryptPlugin extends Sensor {
       }
     });
 
-    extensionManager.onSet("customizeDohServers", async (msg, data) => {
+    extensionManager.onSet("customizedDohServers", async (msg, data) => {
       if (data && data.servers) {
         await dc.setServers(data.servers, true);
       }
@@ -92,10 +92,10 @@ class DNSCryptPlugin extends Sensor {
 
     extensionManager.onGet("dohConfig", async (msg, data) => {
       const selectedServers = await dc.getServers();
-      const customizeServers = await dc.getCustomizeServers();
+      const customizedServers = await dc.getCustomizedServers();
       const allServers = await dc.getAllServerNames();
       return {
-        selectedServers, allServers, customizeServers
+        selectedServers, allServers, customizedServers
       }
     });
   }
