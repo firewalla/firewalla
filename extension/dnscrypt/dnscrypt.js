@@ -122,7 +122,13 @@ class DNSCrypt {
 
     try {
       const servers = JSON.parse(serversString);
-      return servers.map((s) => _.isObject(s) ? s.name : s).filter(Boolean);
+      return servers.map((s) => {
+        if (_.isObject(s) && s.enable) {
+          return s.name;
+        } else {
+          return s;
+        }
+      }).filter(Boolean);
     } catch (err) {
       log.error("Failed to parse servers, err:", err);
       return this.getDefaultServers();
@@ -189,7 +195,7 @@ class DNSCrypt {
     return rclient.setAsync(allServerKey, JSON.stringify(servers));
   }
   async getCustomizeServers() {
-    // string | object {name:'nextdns',stamp:'xyz'}
+    // string | object {name:'nextdns',stamp:'xyz',enable:true|false}
     // object means customized from user, string means from our cloud
     let selectedServers = [];
     const serversString = await rclient.getAsync(serverKey);
