@@ -8,7 +8,7 @@ jobs:
         runs-on: ${{ matrix.platform }}
         strategy:
             matrix:
-                platform: [ Red, Blue, Navy, Gold ]
+                platform: [ Red, Blue, Navy, Gold, Gold20 ]
         steps:
             - name: Checkout Firewalla
               uses: actions/checkout@v2
