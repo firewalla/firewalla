@@ -1302,12 +1302,16 @@ class PolicyManager2 {
               parentRgId
             });
           }
-          if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
-            return;
         }
         await categoryUpdater.activateCategory(target);
-        remoteSet4 = categoryUpdater.getIPSetName(target);
-        remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
+        if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block')) {
+          // only use static ipset if dnsmasq_only is set
+          remoteSet4 = categoryUpdater.getIPSetName(target, true);
+          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);
+        } else {
+          remoteSet4 = categoryUpdater.getIPSetName(target);
+          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
+        }
         break;
 
       case "country":
@@ -1568,8 +1572,14 @@ class PolicyManager2 {
             });
           }
         }
-        remoteSet4 = categoryUpdater.getIPSetName(target);
-        remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
+        if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block')) {
+          // only use static ipset if dnsmasq_only is set
+          remoteSet4 = categoryUpdater.getIPSetName(target, true);
+          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);
+        } else {
+          remoteSet4 = categoryUpdater.getIPSetName(target);
+          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
+        }
         break;
 
       case "country":
@@ -2100,12 +2110,10 @@ class PolicyManager2 {
         const domains = await domainBlock.getCategoryDomains(rule.target);
         if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
           return true;
-        if (!rule.dnsmasq_only) {
-          const remoteSet4 = categoryUpdater.getIPSetName(rule.target);
-          const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target);
-          if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
-            return false;
-        } else return false;
+        const remoteSet4 = categoryUpdater.getIPSetName(rule.target, rule.dnsmasq_only ? true : false);
+        const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target, rule.dnsmasq_only ? true : false);
+        if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
+          return false;
         break;
       }
       case "country": {
@@ -2335,11 +2343,17 @@ class PolicyManager2 {
         case 'update':
           for(const rawPolicy of rawData){
             const pid = rawPolicy.pid;
-            const oldPolicy = await this.getPolicy(pid);
-            await this.updatePolicyAsync(rawPolicy);
-            const newPolicy = await this.getPolicy(pid);
-            this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);
-            results.update.push(newPolicy);
+            const policyObj = new Policy(rawPolicy);
+            const samePolicies = await pm2.getSamePolicies(policyObj);
+            if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
+              results.update.push('duplicated');
+            } else {
+              const oldPolicy = await this.getPolicy(pid);
+              await this.updatePolicyAsync(rawPolicy);
+              const newPolicy = await this.getPolicy(pid);
+              this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);
+              results.update.push(newPolicy);
+            }
           }
           break;
         case 'delete':

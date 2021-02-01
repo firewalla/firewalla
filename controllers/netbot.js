@@ -616,7 +616,8 @@ class netBot extends ControllerBot {
               "ts": Date.now(),
               "event_type": "action",
               "action_type": "firewalla_upgrade",
-              "action_value": 1
+              "action_value": 1,
+              "labels": { "version": fc.getSimpleVersion() }
           }
           await ea.addEvent(eventRequest,eventRequest.ts);
         } catch (err) {
@@ -2784,11 +2785,17 @@ class netBot extends ControllerBot {
           const policy = value
 
           const pid = policy.pid
-          const oldPolicy = await pm2.getPolicy(pid)
-          await pm2.updatePolicyAsync(policy)
-          const newPolicy = await pm2.getPolicy(pid)
-          await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
-          this.simpleTxData(msg, newPolicy, null, callback)
+          const policyObj = new Policy(policy);
+          const samePolicies = await pm2.getSamePolicies(policyObj);
+          if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
+            this.simpleTxData(msg, samePolicies[0], {code: 409, msg: "policy already exists"}, callback);
+          } else {
+            const oldPolicy = await pm2.getPolicy(pid)
+            await pm2.updatePolicyAsync(policy)
+            const newPolicy = await pm2.getPolicy(pid)
+            await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
+            this.simpleTxData(msg, newPolicy, null, callback)
+          }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })

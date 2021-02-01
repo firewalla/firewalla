@@ -20,14 +20,14 @@
 # Constants
 # ----------------------------------------------------------------------------
 STATE_TYPE='load'
-LOAD_LIMIT=6
+: ${LOAD_LIMIT:=6}
 
 
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-load_5min=$(awk '{print $2}' /proc/loadavg)
+read load_1min load_5min load_15min rest < /proc/loadavg
 
 if [[ $(echo "$load_5min > $LOAD_LIMIT"|bc)  == '1' ]]
 then
@@ -35,6 +35,6 @@ then
 else
     state_value=0
 fi
-echo "state $STATE_TYPE 5min $state_value"
+echo "state $STATE_TYPE 5min $state_value load_1min=$load_1min load_5min=$load_5min load_15min=$load_15min"
 
 exit 0
