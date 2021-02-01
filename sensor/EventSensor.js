@@ -293,7 +293,7 @@ class EventSensor extends Sensor {
         const PACKET_COUNT = 8;
         const stateType = "ping";
         const labels = {"packet_count": PACKET_COUNT};
-        for (const gw of sysManager.myGatways() ) {
+        for (const gw of sysManager.myGateways() ) {
             try {
                 log.debug(`ping ${gw}`);
                 const result = await exec(`ping -n -c ${PACKET_COUNT} -W 3 ${gw}`);
