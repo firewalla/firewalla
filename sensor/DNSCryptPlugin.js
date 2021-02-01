@@ -87,8 +87,9 @@ class DNSCryptPlugin extends Sensor {
     extensionManager.onGet("dohConfig", async (msg, data) => {
       const selectedServers = await dc.getServers();
       const allServers = await dc.getAllServerNames();
+      const customizeServers = await dc.getCustomizeServers();
       return {
-        selectedServers, allServers
+        selectedServers, allServers, customizeServers
       }
     });
   }
