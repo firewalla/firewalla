@@ -89,7 +89,7 @@ class DNSCryptPlugin extends Sensor {
       const allServers = await dc.getAllServerNames();
       const customizeServers = await dc.getCustomizeServers();
       return {
-        selectedServers, allServers
+        selectedServers, allServers, customizeServers
       }
     });
   }
