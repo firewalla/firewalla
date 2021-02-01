@@ -13,18 +13,9 @@ jobs:
             - name: Checkout Firewalla
               uses: actions/checkout@v2
 
-            - name: Checkout PR scripts
-              uses: actions/checkout@v2
-              with:
-                  repository: firewalla/fireaction
-                  ref: main
-                  token: ${{ secrets.ACCESS_TOKEN }}
-                  path: fireaction
-
             - name: Sanity check
               run: scripts/sanity_check.sh
 
             - name: Run PR scripts
-              run: run-parts scripts/pr/
-              working-directory: fireaction
+              run: run-parts /home/pi/firewaction/scripts/pr/
 
