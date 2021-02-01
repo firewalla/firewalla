@@ -177,7 +177,7 @@ class DNSCrypt {
   }
 
   async getAllServerNames() {
-    const all = [].concat(await this.getAllServers(), await this.getCustomizeServers());
+    const all = await this.getAllServers();
     return all.map((x) => x.name).filter(Boolean);
   }
 
