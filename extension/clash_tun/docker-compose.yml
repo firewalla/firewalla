@@ -4,8 +4,7 @@ services:
   clash:
     network_mode: host
     image: 'docker.io/firewalla/clash:latest'
-    cap_add:
-      - NET_ADMIN
+    user: 1000:1000
     devices:
       - /dev/net/tun
     ports:

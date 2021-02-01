@@ -21,4 +21,6 @@ sudo iptables -w -t mangle -A FW_CLASH_CHAIN -p tcp -m tcp --dport 1024:65535 -j
 sudo iptables -w -t mangle -A FW_CLASH_CHAIN -m set --match-set fw_clash_whitelist dst -j RETURN
 sudo iptables -w -t mangle -A FW_CLASH_CHAIN -m set --match-set fw_clash_whitelist_net dst -j RETURN
 
-sudo iptables -w -t mangle -A FW_CLASH_CHAIN -j SET --map-set $IPSET dst --map-mark
+sudo iptables -w -t mangle -A FW_CLASH_CHAIN -m set --match-set monitored_net_set src,src -j MARK --set-mark $MARK
+
+#sudo iptables -w -t mangle -A FW_CLASH_CHAIN -j SET --map-set $IPSET dst --map-mark
