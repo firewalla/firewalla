@@ -40,7 +40,7 @@ class EventRequestApi {
     }
 
     async addStateEvent(state_type,state_key,state_value,labels=null, ts=Date.now()) {
-        log.info("add state event");
+        log.debug("add state event");
 
         try {
             let event_obj = {
@@ -67,7 +67,7 @@ class EventRequestApi {
     }
 
     async addActionEvent(action_type,action_value,labels=null, ts=Date.now()) {
-        log.info("add action event");
+        log.debug("add action event");
 
         try {
             let event_obj = {
