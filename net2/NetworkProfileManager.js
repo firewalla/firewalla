@@ -192,7 +192,7 @@ class NetworkProfileManager {
   }
 
   async refreshNetworkProfiles() {
-    const keys = await rclient.keysAsync("network:uuid:*");
+    const keys = await rclient.scanResults("network:uuid:*");
     for (let key of keys) {
       const redisProfile = await rclient.hgetallAsync(key);
       if (!redisProfile) // just in case

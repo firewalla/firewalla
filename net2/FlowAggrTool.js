@@ -177,7 +177,7 @@ class FlowAggrTool {
       !interval         ? util.format("aggrflow:%s:%s:*", mac, trafficDirection) :
                           util.format("aggrflow:%s:%s:%s:*", mac, trafficDirection, interval);
 
-    let keys = await rclient.keysAsync(keyPattern);
+    let keys = await rclient.scanResults(keyPattern);
 
     if (keys.length)
       return rclient.delAsync(keys);
@@ -270,7 +270,7 @@ class FlowAggrTool {
     } else {
       // only call keys once to improve performance
       const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
-      const matchedKeys = await rclient.keysAsync(keyPattern);
+      const matchedKeys = await rclient.scanResults(keyPattern);
 
       tickKeys = matchedKeys.filter((key) => {
         return ticks.some((tick) => key.endsWith(`:${tick}`))
@@ -294,7 +294,7 @@ class FlowAggrTool {
     log.debug("zunionstore args: ", args);
 
     if(options.skipIfExists) {
-      let exists = await rclient.keysAsync(sumFlowKey);
+      let exists = await rclient.scanResults(sumFlowKey);
       if(exists.length > 0) {
         return;
       }
@@ -508,7 +508,7 @@ class FlowAggrTool {
       ? util.format("sumflow:%s:%s:*", mac, trafficDirection)
       : util.format("sumflow:%s:*", mac);
 
-    let keys = await rclient.keysAsync(keyPattern);
+    let keys = await rclient.scanResults(keyPattern);
 
     if (keys.length)
       return rclient.delAsync(keys);
@@ -686,9 +686,9 @@ class FlowAggrTool {
     let keys = [];
 
     let search = await Promise.all([
-      rclient.keysAsync('lastsumflow:tag:' + tag + ':*'),
-      rclient.keysAsync('category:tag:' + tag + ':*'),
-      rclient.keysAsync('app:tag:' + tag + ':*'),
+      rclient.scanResults('lastsumflow:tag:' + tag + ':*'),
+      rclient.scanResults('category:tag:' + tag + ':*'),
+      rclient.scanResults('app:tag:' + tag + ':*'),
     ]);
 
     keys.push(
@@ -708,9 +708,9 @@ class FlowAggrTool {
     let keys = [];
 
     let search = await Promise.all([
-      rclient.keysAsync('lastsumflow:' + mac + ':*'),
-      rclient.keysAsync('category:host:' + mac + ':*'),
-      rclient.keysAsync('app:host:' + mac + ':*'),
+      rclient.scanResults('lastsumflow:' + mac + ':*'),
+      rclient.scanResults('category:host:' + mac + ':*'),
+      rclient.scanResults('app:host:' + mac + ':*'),
     ])
 
     keys.push(

@@ -22,7 +22,7 @@ class Intel {
   constructor(redis) {
     this.redis = redis;
     (async () => {
-      this.types = (await Promise.map(await this.redis.keysAsync('dns:hashset:*'), key => key.split(':')[2])).filter(x => x);
+      this.types = (await Promise.map(await this.redis.scanResults('dns:hashset:*'), key => key.split(':')[2])).filter(x => x);
     })();
   }
 

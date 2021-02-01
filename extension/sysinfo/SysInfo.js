@@ -255,7 +255,7 @@ function getTimestamp() {
 async function getConns() {
   // get conns in last 24 hours
   try {
-    const keys = await rclient.keysAsync('flow:conn:*');
+    const keys = await rclient.scanResults('flow:conn:*');
 
     let results = await Promise.all(
       keys.map(key => rclient.zcountAsync(key, '-inf', '+inf'))
@@ -399,7 +399,7 @@ function getTopStats() {
 }
 
 async function getTop5Flows() {
-  let flows = await rclient.keysAsync("flow:conn:*");
+  let flows = await rclient.scanResults("flow:conn:*");
 
   let stats = await Promise.all(flows.map(async (flow) => {
     let count = await rclient.zcountAsync(flow, "-inf", "+inf")

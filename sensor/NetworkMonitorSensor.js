@@ -376,34 +376,28 @@ class NetworkMonitorSensor extends Sensor {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
       const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
       let allData = [];
-      let scanCursor = 0;
       log.debug("expireTS=",expireTS);
       log.debug("scanKey=",scanKey);
-      while ( true ) {
-        const scanResult = await rclient.hscanAsync(scanKey,scanCursor);
-        log.debug("scanResult:",scanResult);
-        if ( !scanResult ) {
-          log.error(`hscan on key(${scanKey}) failed at cursor(${scanCursor}) with invalid result`);
-          break;
-        }
-        for ( let i=0; i<scanResult[1].length; i+=2) {
-          const ts = scanResult[1][i];
-          if ( ts < expireTS ) { // clean expired data
-            log.debug(`deleting expired(${ts}>${expireTS}) data`);
-            await rclient.hdelAsync(scanKey, ts);
-          } else { // collect effective data to calculate stats
-            const result_json = scanResult[1][i+1];
-            log.debug(`scanKey=${scanKey}, ts=${ts}, result_json=${result_json}`);
-            const result = JSON.parse(result_json);
-            if (result && result.stat && result.stat.median) {
-              log.debug(`collect data of ${scanKey} at ${ts}`);
-              allData.push(parseFloat(result.stat.median)); // choose median as sample data for overall stats
-              log.debug("allData.length:",allData.length);
-            }
+      const scanResults = await rclient.hscanResults(scanKey);
+      log.debug("scanResults:", scanResults);
+      if (!scanResults) {
+        log.error(`hscan on key(${scanKey}) failed with invalid result`);
+      }
+      for (let i = 0; i < scanResults[1].length; i += 2) {
+        const ts = scanResults[1][i];
+        if (ts < expireTS) { // clean expired data
+          log.debug(`deleting expired(${ts}>${expireTS}) data`);
+          await rclient.hdelAsync(scanKey, ts);
+        } else { // collect effective data to calculate stats
+          const result_json = scanResults[1][i + 1];
+          log.debug(`scanKey=${scanKey}, ts=${ts}, result_json=${result_json}`);
+          const result = JSON.parse(result_json);
+          if (result && result.stat && result.stat.median) {
+            log.debug(`collect data of ${scanKey} at ${ts}`);
+            allData.push(parseFloat(result.stat.median)); // choose median as sample data for overall stats
+            log.debug("allData.length:", allData.length);
           }
         }
-        scanCursor = parseInt(scanResult[0]);
-        if ( scanCursor === 0 ) break; // scan finishes when cursor back to 0
       }
 
       // calcualte and record stats

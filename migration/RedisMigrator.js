@@ -134,7 +134,7 @@ class RedisMigrator extends DataMigrator {
     if (keyPatterns !== null) {
       for (let i in keyPatterns) {
         const pattern = keyPatterns[i];
-        const keys = await bclient.keysAsync(pattern);
+        const keys = await bclient.scanResults(pattern);
         log.info("Pattern: " + pattern + ", number of keys to dump: " + keys.length);
         while (keys.length > 0) {
           // concurrency limit

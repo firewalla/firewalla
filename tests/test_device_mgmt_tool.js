@@ -133,7 +133,7 @@ describe('Test device management tool class', function() {
         assert.fail('log dir1 and dir2 should exist');
       }
       try {
-        let keys = await rclient.keysAsync("*")
+        let keys = await rclient.scanResults("*")
         if(keys.length > 0)
           console.log(keys);
         expect(keys.length).to.equal(0); // all keys should be gone

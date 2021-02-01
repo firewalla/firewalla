@@ -306,7 +306,7 @@ exports.removeSampleAggrFlows = () => {
 
 exports.removeAllSampleAggrFlows = () => {
   return (async() =>{
-    let keys = await rclient.keysAsync("aggrflow:F4:0F:24:00:00:01:*");
+    let keys = await rclient.scanResults("aggrflow:F4:0F:24:00:00:01:*");
     keys.forEach((key) => {
       await rclient.delAsync(key);
     })

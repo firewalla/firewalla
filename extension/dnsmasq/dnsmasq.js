@@ -1327,7 +1327,7 @@ module.exports = class DNSMASQ {
     const hostManager = new HostManager();
 
     // legacy ip reservation is set in host:mac:*
-    const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
+    const hosts = (await Promise.map(redis.scanResults("host:mac:*"), key => redis.hgetallAsync(key)))
       .filter((x) => (x && x.mac) != null)
       .filter((x) => hostManager.getHostFastByMAC(x.mac)) // do not apply host IP assignment for devices that are inactive
       .filter((x) => !sysManager.isMyMac(x.mac))
@@ -1345,7 +1345,7 @@ module.exports = class DNSMASQ {
       }
     })
 
-    // const policyKeys = await rclient.keysAsync("policy:mac:*")
+    // const policyKeys = await rclient.scanResults("policy:mac:*")
     // // generate a map of mac -> ipAllocation host policy
     // const policyMap = policyKeys.reduce(async (mapResult, key) => {
     //   const map = await mapResult

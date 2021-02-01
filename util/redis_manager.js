@@ -50,6 +50,18 @@ class RedisManager {
         }, count)
         return allResults
       }
+
+      this.rclient.hscanResults = async (pattern, count = 100) => {
+        const allResults = [];
+        let cursor = 0
+        do {
+          const result = await this.rclient.hscanAsync(cursor, 'MATCH', pattern, 'COUNT', count);
+          cursor = result[0];
+          if (result[1].length) {
+            allResults.push(...result[1]);
+          }
+        } while (cursor != 0)
+      }
     }
 
     return this.rclient

@@ -154,7 +154,7 @@ class TagManager {
       this.tags[uid].active = false;
     }
 
-    const keys = await rclient.keysAsync("tag:uid:*");
+    const keys = await rclient.scanResults("tag:uid:*");
     for (let key of keys) {
       const o = await rclient.hgetallAsync(key);
       const uid = key.substring(8);

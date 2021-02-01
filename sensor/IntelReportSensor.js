@@ -78,7 +78,7 @@ class IntelReportSensor extends Sensor {
   
   async blackHoleHistory() {
     const keyPattern = `${blackholePrefix}*`;
-    const hostKeys = await rclient.keysAsync(keyPattern);
+    const hostKeys = await rclient.scanResults(keyPattern);
     
     log.info(`Found ${hostKeys.length} hosts had attack`);
 

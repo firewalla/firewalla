@@ -1286,7 +1286,7 @@ module.exports = class HostManager {
         this.hostsdb[h]._mark = false;
       }
     }
-    const keys = await rclient.keysAsync("host:mac:*");
+    const keys = await rclient.scanResults("host:mac:*");
     let multiarray = [];
     for (let i in keys) {
       multiarray.push(['hgetall', keys[i]]);

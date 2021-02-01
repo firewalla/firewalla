@@ -510,7 +510,7 @@ class PolicyManager2 {
 
   policyExists(policyID) {
     return new Promise((resolve, reject) => {
-      rclient.keys(policyPrefix + policyID, (err, result) => {
+      rclient.scanAll(policyPrefix + policyID, (err, result) => {
         if (err) {
           reject(err);
           return;
@@ -2393,7 +2393,7 @@ class PolicyManager2 {
   }
 
   async getAllRuleGroupMetaData() {
-    const keys = await rclient.keysAsync("rule_group:*");
+    const keys = await rclient.scanResults("rule_group:*");
     const objs = [];
     for (key of keys) {
       const obj = await rclient.hgetAllAsync(key);

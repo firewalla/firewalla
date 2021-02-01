@@ -130,7 +130,7 @@ class BlockManager {
         await this.updateIpBlockInfo(ip, domain, 'newDomain')
     }
     async scheduleRefreshBlockLevel() {
-        const ipBlockKeys = await rclient.keysAsync("ip:block:info:*");
+        const ipBlockKeys = await rclient.scanResults("ip:block:info:*");
         log.info('schedule refresh block level for these ips:', ipBlockKeys);
         await asyncNative.eachLimit(ipBlockKeys, 10, async (key) => {
             const ipBlockInfoString = await rclient.getAsync(key);
