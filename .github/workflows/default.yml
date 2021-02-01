@@ -4,7 +4,7 @@ on: pull_request
 
 jobs:
     onpr-scripts:
-        name: PR scripts
+        name: pull request scripts
         runs-on: ${{ matrix.platform }}
         strategy:
             matrix:
