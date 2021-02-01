@@ -17,5 +17,5 @@ jobs:
               run: scripts/sanity_check.sh
 
             - name: Run PR scripts
-              run: run-parts /home/pi/firewaction/scripts/pr/
+              run: run-parts /home/pi/fireaction/scripts/pr/
 
