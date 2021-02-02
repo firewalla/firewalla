@@ -70,7 +70,7 @@ class NetworkMonitorSensor extends Sensor {
         Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
-              for (const gw  of sysManager.myGatways() ) {
+              for (const gw  of sysManager.myGateways() ) {
                 defaultConfig[gw] = {...defaultConfig[gw], ...cfg[key]};
               }
               break;
