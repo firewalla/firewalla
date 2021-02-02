@@ -17,7 +17,6 @@
 const _ = require('lodash')
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
-const hashDomainRegex = /^([A-Za-z0-9+/.]{4})*([A-Za-z0-9+/.]{3}=)?$/;
 
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
@@ -164,7 +163,7 @@ function generateStrictDateTs(ts) {
 function isHashDomain(domain) {
   if (!domain || !_.isString(domain))
     return false;
-  return hashDomainRegex.test(domain) && domain.length == 44
+  return domain.endsWith("=") && domain.length == 44
 }
 
 module.exports = {
