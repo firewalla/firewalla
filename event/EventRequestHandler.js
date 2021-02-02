@@ -104,7 +104,7 @@ class EventRequestHandler {
     }
 
     async processStateEvent(message) {
-        log.info("got state event: ", message);
+        log.debug("got state event: ", message);
         try{
             const eventRequest = JSON.parse(message);
             for (const field of STATE_REQUIRED_FIELDS) {
@@ -119,7 +119,7 @@ class EventRequestHandler {
             }
 
             if ( savedValue !== null && parseFloat(savedValue) === parseFloat(newValue) ) {
-                log.warn(`ignore repeated state ${newValue}`);
+                log.debug(`ignore repeated state ${newValue}`);
             } else {
                 log.debug(`update state value from ${savedValue} to ${newValue}`);
                 this.sendEvent(eventRequest,"state");

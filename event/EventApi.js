@@ -59,7 +59,7 @@ class EventApi {
       let redis_obj = ("ts" in event_obj) ? event_obj : Object.assign({},event_obj,{"ts":ts});
       let redis_json = JSON.stringify(redis_obj);
       try {
-        log.info(`adding event ${redis_json} at ${ts}`);
+        log.debug(`adding event ${redis_json} at ${ts}`);
         log.debug(`KEY_EVENT_LOG=${KEY_EVENT_LOG}`);
         log.debug(`ts=${ts}`);
         log.debug(`redis_json=${redis_json}`);
