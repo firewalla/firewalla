@@ -237,6 +237,7 @@ class Tracking {
     
     const key = this.getAggregateResultKey(mac);
     const results = await rclient.hgetallAsync(key);
+    if (!results) return [];
     let distribution = [];
     
     for(let i = beginBucket; i < endBucket; i++) {      
@@ -257,6 +258,7 @@ class Tracking {
     
     const key = this.getAggregateResultKey(mac);
     const results = await rclient.hgetallAsync(key);
+    if (!results) return 0;
     let count = 0;
     for(let i = beginBucket; i < endBucket; i++) {
       if(results[i] === '1') {
