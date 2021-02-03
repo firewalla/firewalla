@@ -11,7 +11,7 @@ jobs:
           GITHUB_TOKEN: secrets.GITHUB_TOKEN 
         strategy:
             matrix:
-                platform: [ Gold20 ]
+                platform: [ Red, Blue, Navy, Gold, Gold20 ]
         steps:              
             - name: Checkout Firewalla
               uses: actions/checkout@v2
