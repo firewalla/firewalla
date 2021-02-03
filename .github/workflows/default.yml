@@ -8,7 +8,6 @@ jobs:
         env:
           WS_FIREWALLA: /home/pi/firewalla
           WS_FIREACTION: /home/pi/fireaction
-          GITHUB_TOKEN: secrets.GITHUB_TOKEN 
         strategy:
             matrix:
                 platform: [ Red, Blue, Navy, Gold, Gold20 ]
