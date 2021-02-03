@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -304,7 +304,6 @@ module.exports = class {
       this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
 
       this.enableRecording = true
-      this.cc = 0
       this.activeMac = {};
 
       setInterval(() => {
@@ -1187,29 +1186,16 @@ module.exports = class {
           this.activeMac[localMac] = macIPEntry;
         }
 
-        if (tmpspec.fd == 'in') {
-          // use now instead of the start time of this flow
-          this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, localMac);
-          if (intfId) {
-            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'intf:' + intfId, true);
-          }
-          if (tags.length > 0) {
-            for (let index = 0; index < tags.length; index++) {
-              const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'tag:' + tag, true);
-            }
-          }
-        } else {
-          this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, localMac);
-          if (intfId) {
-            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'intf' + intfId, true);
-          }
-          if (tags.length > 0) {
-            for (let index = 0; index < tags.length; index++) {
-              const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'tag:' + tag, true);
-            }
-          }
+        const traffic = [ tmpspec.ob, tmpspec.rb ]
+        if (tmpspec.fd == 'in') traffic.reverse()
+
+        // use now instead of the start time of this flow
+        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+        if (intfId) {
+          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+        }
+        for (const tag of tags) {
+          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
         }
 
         if (localMac) {
@@ -1639,14 +1625,7 @@ module.exports = class {
     this.callbacks[something] = callback;
   }
 
-  enableRecordHitsTimer() {
-    setInterval(() => {
-      timeSeries.exec(() => { })
-      this.cc = 0
-    }, 1 * 60 * 1000) // every minute to record the left-over items if no new flows
-  }
-
-  recordTraffic(ts, inBytes, outBytes, mac, ignoreGlobal = false) {
+  recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
 
@@ -1658,35 +1637,39 @@ module.exports = class {
 
         this.lastNTS = normalizedTS
         this.fullLastNTS = Math.floor(ts)
-        this.timeSeriesCache = { global: { upload: 0, download: 0 } }
+        this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
 
         for (const key in toRecord) {
           const subKey = key == 'global' ? '' : ':' + key
-          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload)
+          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload, toRecord[key].conn)
           timeSeries
             .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
             .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
+            .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
         }
         timeSeries.exec()
       }
 
       // append current status
       if (!ignoreGlobal) {
-        // for traffic account
-        (async () => {
-          await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
-          await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
-        })()
+        // // for traffic account
+        // (async () => {
+        //   await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
+        //   await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+        //   await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+        // })()
 
         this.timeSeriesCache.global.download += Number(inBytes)
         this.timeSeriesCache.global.upload += Number(outBytes)
+        this.timeSeriesCache.global.conn += Number(conn)
       }
 
       if (!this.timeSeriesCache[mac]) {
-        this.timeSeriesCache[mac] = { upload: 0, download: 0 }
+        this.timeSeriesCache[mac] = { upload: 0, download: 0, conn: 0 }
       }
       this.timeSeriesCache[mac].download += Number(inBytes)
       this.timeSeriesCache[mac].upload += Number(outBytes)
+      this.timeSeriesCache[mac].conn += Number(conn)
     }
   }
 
