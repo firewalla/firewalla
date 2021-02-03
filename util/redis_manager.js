@@ -16,7 +16,7 @@
 
 const redis = require('redis')
 const log = require('../net2/logger.js')(__filename)
-
+const _ = require('lodash');
 const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -33,7 +33,7 @@ class RedisManager {
       })
 
       // helper functions for scan
-      this.rclient.scanAll = async (pattern, handler, count = 100) => {
+      this.rclient.scanAll = async (pattern, handler, count = 1000) => {
         let cursor = 0
         do {
           const result = await this.rclient.scanAsync(cursor, 'MATCH', pattern, 'COUNT', count);
@@ -43,15 +43,15 @@ class RedisManager {
         } while (cursor != 0)
       }
 
-      this.rclient.scanResults = async (pattern, count = 100) => {
+      this.rclient.scanResults = async (pattern, count = 1000) => {
         const allResults = []
         await this.rclient.scanAll(pattern, async (results) => {
           allResults.push(...results)
         }, count)
-        return allResults
+        return _.uniq(allResults)
       }
 
-      this.rclient.hscanResults = async (pattern, count = 100) => {
+      this.rclient.hscanResults = async (pattern, count = 1000) => {
         const allResults = [];
         let cursor = 0
         do {
@@ -61,6 +61,7 @@ class RedisManager {
             allResults.push(...result[1]);
           }
         } while (cursor != 0)
+        return _.uniq(allResults)
       }
     }
 
