@@ -15,5 +15,5 @@ jobs:
             - name: Checkout Firewalla
               uses: actions/checkout@v2
 
-            - name: Run PR scripts
+            - name: Run action PR scripts
               run: run-parts $WS_FIREACTION/scripts/pr/
