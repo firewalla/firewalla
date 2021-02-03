@@ -98,7 +98,7 @@ class CategoryUpdateSensor extends Sensor {
     log.info(`Loading domains for ${category} from cloud`);
 
     const hashset = this.getCategoryHashset(category)
-    const domains = await this.loadCategoryFromBone(hashset);
+    const domains = await categoryUpdater.loadCategoryFromBone(hashset);
     if (domains == null) return
     log.info(`category ${category} has ${domains.length} domains`)
 
@@ -123,7 +123,7 @@ class CategoryUpdateSensor extends Sensor {
     log.info(`Loading security info for ${category} from cloud`);
 
     const hashset = securityHashMapping[category]
-    const info = await this.loadCategoryFromBone(hashset);
+    const info = await categoryUpdater.loadCategoryFromBone(hashset);
     if (info == null) return
 
     const domains = info.domain
@@ -172,7 +172,7 @@ class CategoryUpdateSensor extends Sensor {
     const category = countryUpdater.getCategory(country);
     log.info(`Loading country ip allocation list for ${country} from cloud`);
 
-    const ip4List = await this.loadCategoryFromBone(category + ':ip4');
+    const ip4List = await categoryUpdater.loadCategoryFromBone(category + ':ip4');
 
     if (ip4List) {
       await countryUpdater.addAddresses(country, false, ip4List)
@@ -181,7 +181,7 @@ class CategoryUpdateSensor extends Sensor {
     log.info(`Country ${country} has ${(ip4List || []).length} ipv4 entries`);
 
     if (fc.isFeatureOn('ipv6')) {
-      const ip6List = await this.loadCategoryFromBone(category + ':ip6');
+      const ip6List = await categoryUpdater.loadCategoryFromBone(category + ':ip6');
 
       if (ip6List) {
         await countryUpdater.addAddresses(country, true, ip6List)
@@ -219,6 +219,11 @@ class CategoryUpdateSensor extends Sensor {
         });
       });
 
+      sem.on('Policy:CategoryListUpdated', async (event) => {
+        const category = event.category;
+        categoryHashsetMapping[category] = category;
+      });
+
       await this.regularJob()
       await this.securityJob()
       await this.renewCountryList()
@@ -231,28 +236,12 @@ class CategoryUpdateSensor extends Sensor {
     })
   }
 
-  async loadCategoryFromBone(hashset) {
-    if (hashset) {
-      let data
-      try {
-        data = await bone.hashsetAsync(hashset)
-        const list = JSON.parse(data)
-        return list
-      } catch(err) {
-        log.error("Failed to get hashset", hashset, data, err);
-        return null
-      }
-    } else {
-      return null
-    }
-  }
-
   getCategoryHashset(category) {
     return categoryHashsetMapping[category]
   }
 
   async renewCountryList() {
-    const countryList = await this.loadCategoryFromBone('country:list');
+    const countryList = await categoryUpdater.loadCategoryFromBone('country:list');
     if (countryList == null) return
 
     await rclient.delAsync('country:list');

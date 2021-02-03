@@ -39,6 +39,8 @@ let instance = null
 const EXPIRE_TIME = 60 * 60 * 48 // two days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
+const bone = require('../lib/Bone.js');
+
 class CategoryUpdater extends CategoryUpdaterBase {
 
   constructor() {
@@ -412,6 +414,22 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async dynamicCategoryDomainExists(category, domain) {
     const dynamicCategoryDomains = await this.getDomains(category) || [];
     return dynamicCategoryDomains.indexOf(domain) > -1
+  }
+
+  async loadCategoryFromBone(hashset) {
+    if (hashset) {
+      let data
+      try {
+        data = await bone.hashsetAsync(hashset)
+        const list = JSON.parse(data)
+        return list
+      } catch(err) {
+        log.error("Failed to get hashset", hashset, data, err);
+        return null
+      }
+    } else {
+      return null
+    }
   }
 
   async getDomainsWithExpireTime(category) {

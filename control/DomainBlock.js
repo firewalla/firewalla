@@ -45,6 +45,8 @@ const BlockManager = require('../control/BlockManager.js');
 const blockManager = new BlockManager();
 
 const _ = require('lodash');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 class DomainBlock {
 
   constructor() {
@@ -283,7 +285,20 @@ class DomainBlock {
 
   // this function updates category domain mappings in dnsmasq configurations
   async updateCategoryBlock(category) {
-    const domains = await this.getCategoryDomains(category);
+    const CategoryUpdater = require('./CategoryUpdater.js');
+    const categoryUpdater = new CategoryUpdater();
+    let domains = await this.getCategoryDomains(category);
+    if (domains && domains.length == 0) {
+      domains = await categoryUpdater.loadCategoryFromBone(category);
+      if (category.startsWith("app:")) {
+        sem.emitEvent({
+          type: "Policy:CategoryListUpdated",
+          toProcess: "FireMain",
+          message: "Category List updated: " + category,
+          category: category
+        });
+      }
+    }
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
     const PM2 = require('../alarm/PolicyManager2.js');
     const pm2 = new PM2();
