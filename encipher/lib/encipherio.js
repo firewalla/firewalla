@@ -880,7 +880,7 @@ let legoEptCloud = class {
           // send a box disconnect event if NOT reconnect after some time
           this.offlineEventJob = setTimeout(
             async ()=> {
-              await era.addActionEvent("box_state",0);
+              await era.addStateEvent("box_state","websocket_connect",0);
               this.offlineEventFired = true;
             },
             NOTIF_OFFLINE_THRESHOLD);
@@ -900,7 +900,7 @@ let legoEptCloud = class {
             boneCallback(null,data);
           }
         });
-        this.socket.on('reconnect', ()=>{
+        this.socket.on('reconnect', async ()=>{
           log.info('--== Cloud reconnected ==--')
           // if (this.lastDisconnection
           //   && Date.now() / 1000 - this.lastDisconnection > NOTIF_OFFLINE_THRESHOLD
@@ -923,7 +923,7 @@ let legoEptCloud = class {
           }
           // fire box re-connect event ONLY when previously fired an offline event
           if ( this.offlineEventFired ) {
-            era.addActionEvent("box_state",1);
+            await era.addStateEvent("box_state","websocket_connect",1);
             this.offlineEventFired = false;
           }
         })
