@@ -7,19 +7,13 @@ jobs:
         runs-on: ${{ matrix.platform }}
         env:
           WS_FIREWALLA: /home/pi/firewalla
-          WS_FIREACTION: /home/pi/fireaction 
+          WS_FIREACTION: /home/pi/fireaction
         strategy:
             matrix:
-                platform: [ Red, Blue, Navy, Gold ]
-        steps:
+                platform: [ Red, Blue, Navy, Gold, Gold20 ]
+        steps:              
             - name: Checkout Firewalla
               uses: actions/checkout@v2
-              path: env.WS_FIREWALLA
-
-            - name: Sanity check
-              run: scripts/sanity_check.sh
-              working-directory: env.WS_FIREWALLA
 
             - name: Run PR scripts
               run: run-parts $WS_FIREACTION/scripts/pr/
-
