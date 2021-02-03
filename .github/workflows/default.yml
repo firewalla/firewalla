@@ -12,10 +12,7 @@ jobs:
         strategy:
             matrix:
                 platform: [ Gold20 ]
-        steps:
-            - name: Link Firewalla
-              run: pwd
-              
+        steps:              
             - name: Checkout Firewalla
               uses: actions/checkout@v2
 
