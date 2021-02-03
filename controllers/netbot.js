@@ -3689,6 +3689,7 @@ class netBot extends ControllerBot {
                   this.simpleTxData(msg, {}, { code: 400, msg: "OpenVPN client " + profileId + " is still running" }, callback);
                 } else {
                   await ovpnClient.destroy();
+                  await ovpnClient.cleanupLogFiles();
                   const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
                   const files = await readdirAsync(dirPath);
                   const filesToDelete = files.filter(filename => filename.startsWith(`${profileId}.`));
