@@ -14,7 +14,8 @@ jobs:
         steps:
             - name: Checkout Firewalla
               uses: actions/checkout@v2
-              path: env.WS_FIREWALLA
+              with:
+                path: env.WS_FIREWALLA
 
             - name: Sanity check
               run: scripts/sanity_check.sh
