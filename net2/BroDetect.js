@@ -571,7 +571,17 @@ module.exports = class {
           };
           sem.emitEvent({
             type: Message.MSG_ACL_DNS_NXDOMAIN,
-            record: record,
+            record,
+            suppressEventLogging: true
+          });
+        } else {
+          const record = {
+            ts: Math.round(obj.ts * 1000) / 1000,
+            sh: obj['id.orig_h']
+          }
+          sem.emitEvent({
+            type: Message.MSG_ACL_DNS_UNCATEGORIZED,
+            record,
             suppressEventLogging: true
           });
         }
