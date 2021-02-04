@@ -131,7 +131,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return instance
   }
 
-  _isCustomizedCategory(category) {
+  isCustomizedCategory(category) {
     if (this.customizedCategories[category])
       return true;
     return false;
@@ -242,7 +242,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async activateCategory(category) {
     if (this.activeCategories[category]) return;
-    await super.activateCategory(category, this._isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:ip");
+    await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:ip");
     sem.emitEvent({
       type: "Policy:CategoryActivated",
       toProcess: "FireMain",

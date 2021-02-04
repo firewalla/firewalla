@@ -91,12 +91,12 @@ class CategoryUpdateSensor extends Sensor {
     }
   }
 
-  async updateCategoryBase(category) {
+  async updateCategory(category) {
     log.info(`Loading domains for ${category} from cloud`);
 
     const hashset = this.getCategoryHashset(category)
     const domains = await this.loadCategoryFromBone(hashset);
-    if (domains == null) return false;
+    if (domains == null) return
     log.info(`category ${category} has ${domains.length} domains`)
 
     const hashDomains = domains.filter(d=>isHashDomain(d));
@@ -109,18 +109,11 @@ class CategoryUpdateSensor extends Sensor {
       await categoryUpdater.flushDefaultHashedDomains(category);
       await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
     }
-    return true;
-  }
-
-  async updateCategory(category) {
-    const result = await this.updateCategoryBase(category)
-    if (result) {
-      sem.emitEvent({
-        type: "UPDATE_CATEGORY_DOMAIN",
-        category: category,
-        toProcess: "FireMain"
-      });
-    }
+    sem.emitEvent({
+      type: "UPDATE_CATEGORY_DOMAIN",
+      category: category,
+      toProcess: "FireMain"
+    });
   }
 
   async updateSecurityCategory(category) {
@@ -213,9 +206,8 @@ class CategoryUpdateSensor extends Sensor {
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
-        const domains = await categoryUpdater.getDefaultDomains(category);
-        if (domains && domains.length == 0) {
-          await this.updateCategoryBase(category)
+        if (!categoryUpdater.isCustomizedCategory(category)) {
+          await this.updateCategory(category)
         }
         const categories = Object.keys(categoryHashsetMapping);
         if (!categories.includes(category)) {
