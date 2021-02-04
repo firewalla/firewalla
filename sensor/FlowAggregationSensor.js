@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,7 @@ const flowTool = require('../net2/FlowTool');
 const auditTool = require('../net2/AuditTool');
 const FlowAggrTool = require('../net2/FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
+const ActivityAggrTool = require('../flow/ActivityAggrTool');
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 const appFlowTool = new TypeFlowTool('app')
@@ -523,16 +524,17 @@ class FlowAggregationSensor extends Sensor {
       await this.accountTrafficByX(macAddress, flows);
     }
 
-    let appTraffic = await this.trafficGroupByApp(flows);
-    await flowAggrTool.addAppActivityFlows(macAddress, this.config.interval, end, appTraffic, this.config.aggrFlowExpireTime);
+    for (const dimension of ['app', 'category']) {
+      const activityTraffic = await this.trafficGroupByX(flows, dimension);
+      const activityAggrTool = new ActivityAggrTool(dimension)
+      await activityAggrTool.addActivityFlows(macAddress, this.config.interval, end, activityTraffic, this.config.aggrFlowExpireTime);
 
-    let categoryTraffic = await this.trafficGroupByCategory(flows);
-    await flowAggrTool.addCategoryActivityFlows(macAddress, this.config.interval, end, categoryTraffic, this.config.aggrFlowExpireTime);
-
-    // record detail app/category flows by upload/download/ts/duration
-
-    await this.recordApp(macAddress, appTraffic);
-    await this.recordCategory(macAddress, categoryTraffic);
+      // record detail app/category flows by upload/download/ts/duration
+      if (dimension == 'app')
+        await this.recordApp(macAddress, activityTraffic);
+      else
+        await this.recordCategory(macAddress, activityTraffic);
+    }
 
     if(recentFlow) {
       let recentActivity = await this.getIntel(recentFlow);
@@ -655,18 +657,20 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     if (options.intf) {
-      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for intf`, options.intf);
+      log.debug(`Aggregating ${dimension} activities between ${beginString} and ${endString} for intf`, options.intf);
     } else if (options.tag) {
-      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for tag`, options.tag);
+      log.debug(`Aggregating ${dimension} activities between ${beginString} and ${endString} for tag`, options.tag);
     } if(options.mac) {
-      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for device ${options.mac}`);
+      log.debug(`Aggregating ${dimension} activities between ${beginString} and ${endString} for device ${options.mac}`);
     } else {
-      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString}`);
+      log.debug(`Aggregating ${dimension} activities between ${beginString} and ${endString}`);
     }
+
+    const activityAggrTool = new ActivityAggrTool(dimension)
 
     try {
       if(options.skipIfExists) {
-        let exists = await flowAggrTool.cleanedAppKeyExists(begin, end, options)
+        let exists = await activityAggrTool.keyExists(begin, end, options)
         if(exists) {
           return
         }
@@ -686,14 +690,14 @@ class FlowAggregationSensor extends Sensor {
       let hashCache = {}
 
       if(Object.keys(allFlows).length > 0) {
-        await flowAggrTool.setCleanedAppActivity(begin, end, allFlows, options)
+        await activityAggrTool.setActivity(begin, end, allFlows, options)
 
         // change after store
         flowUtil.hashIntelFlows(allFlows, hashCache)
 //        await bone.flowgraphAsync('summarizeApp', allFlows)
 //        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
       } else {
-        await flowAggrTool.setCleanedAppActivity(begin, end, {}, options) // if no data, set an empty {}
+        await activityAggrTool.setActivity(begin, end, {}, options) // if no data, set an empty {}
       }
     } catch(err) {
       log.error(`Failed to summarize ${dimension} activity: `, err);

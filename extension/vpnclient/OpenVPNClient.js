@@ -172,6 +172,11 @@ class OpenVPNClient extends VPNClient {
     return `/var/log/openvpn_client-status-${this.profileId}.log`;
   }
 
+  async cleanupLogFiles() {
+    await execAsync(`sudo rm /var/log/openvpn_client-status-${this.profileId}.log*`).catch((err) => {});
+    await execAsync(`sudo rm /var/log/openvpn_client-${this.profileId}.log*`).catch((err) => {});
+  }
+
   async _parseProfile(ovpnPath) {
     if (await accessAsync(ovpnPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const content = await readFileAsync(ovpnPath, 'utf8');
