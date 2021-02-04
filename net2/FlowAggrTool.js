@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -143,13 +143,12 @@ class FlowAggrTool {
       const result = {
         device: mac
       }
-      if (entry.type == 'dns')
+      if (trafficDirection == 'dnsB')
         result.domain = target
-      else
+      else if (trafficDirection == 'ipB')
         result.destIP = target
 
       if (entry.port) result.port = entry.port
-      if (entry.type) result.type = entry.type
 
       args.push(JSON.stringify(result))
     }
