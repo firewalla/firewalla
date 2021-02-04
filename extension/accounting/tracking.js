@@ -202,7 +202,7 @@ class Tracking {
   }
   
   async _cleanup(hashKey, expireBucketIndex) {
-    const keys = rclient.hkeysAsync(hashKey);
+    const keys = await rclient.hkeysAsync(hashKey);
     let count = 0;
     for(const key of keys) {
       if(key < expireBucketIndex) {
