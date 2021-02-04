@@ -91,12 +91,12 @@ class CategoryUpdateSensor extends Sensor {
     }
   }
 
-  async updateCategory(category) {
+  async updateCategoryBase(category) {
     log.info(`Loading domains for ${category} from cloud`);
 
     const hashset = this.getCategoryHashset(category)
     const domains = await this.loadCategoryFromBone(hashset);
-    if (domains == null) return
+    if (domains == null) return false;
     log.info(`category ${category} has ${domains.length} domains`)
 
     const hashDomains = domains.filter(d=>isHashDomain(d));
@@ -108,12 +108,19 @@ class CategoryUpdateSensor extends Sensor {
     if (hashDomains && hashDomains.length > 0) {
       await categoryUpdater.flushDefaultHashedDomains(category);
       await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
-    } 
-    sem.emitEvent({
-      type: "UPDATE_CATEGORY_DOMAIN",
-      category: category,
-      toProcess: "FireMain"
-    });
+    }
+    return true;
+  }
+
+  async updateCategory(category) {
+    const result = await this.updateCategoryBase(category)
+    if (result) {
+      sem.emitEvent({
+        type: "UPDATE_CATEGORY_DOMAIN",
+        category: category,
+        toProcess: "FireMain"
+      });
+    }
   }
 
   async updateSecurityCategory(category) {
@@ -206,6 +213,14 @@ class CategoryUpdateSensor extends Sensor {
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
+        const domains = await categoryUpdater.getDefaultDomains(category);
+        if (domains && domains.length == 0) {
+          await this.updateCategoryBase(category)
+        }
+        const categories = Object.keys(categoryHashsetMapping);
+        if (!categories.includes(category)) {
+          categoryHashsetMapping[category] = `app.${category}`;
+        }
         await domainBlock.updateCategoryBlock(category).catch((err) => {
           log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
         });
