@@ -320,7 +320,7 @@ module.exports = class {
     // record security alarm count on hostInfo
     if (alarm['p.device.mac'] && alarm.isSecurityAlarm()) {
       const mac = alarm['p.device.mac'].toUpperCase();
-      if (hostTool.isMacAddress()) {
+      if (hostTool.isMacAddress(mac)) {
         const macKey = hostTool.getMacKey(mac);
         try {
           await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
