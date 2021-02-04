@@ -228,12 +228,12 @@ class FlowAggregationSensor extends Sensor {
       let t = traffic[destIP];
 
       if (!t) {
-        t = flow.type ? { count: 0, type: flow.type } : { upload: 0, download: 0 };
+        t = flow.type ? { dns: 0, ip: 0 } : { upload: 0, download: 0 };
         traffic[destIP] = t;
       }
 
       if (flow.type) {
-        t.count += flow.count;
+        t[flow.type] += flow.count;
       } else {
         t.upload += flow.upload;
         t.download += flow.download;
@@ -340,7 +340,8 @@ class FlowAggregationSensor extends Sensor {
   async addFlowsForView(options, apps, categories) {
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
-    await flowAggrTool.addSumFlow("block", options);
+    await flowAggrTool.addSumFlow("dnsB", options);
+    await flowAggrTool.addSumFlow("ipB", options);
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
     await flowAggrTool.addSumFlow("category", options);
@@ -612,7 +613,8 @@ class FlowAggregationSensor extends Sensor {
 
     const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end});
     const groupedLogs = this.trafficGroupByDestIP(auditLogs);
-    await flowAggrTool.addFlows(macAddress, "block", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
+    await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
+    await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
   }
 
   async getFlow(dimension, type, options) {

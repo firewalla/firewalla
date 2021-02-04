@@ -1709,16 +1709,6 @@ class netBot extends ControllerBot {
         }
         break;
       }
-      case "last60mins":
-        this.hostManager.last60MinStats().then(stats => {
-          this.simpleTxData(msg, {
-            upload: stats.uploadStats,
-            download: stats.downloadStats
-          }, null, callback)
-        }).catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
       case "upstreamDns":
         (async () => {
           let response;
@@ -2324,27 +2314,27 @@ class netBot extends ControllerBot {
       flowTool.prepareRecentFlows(jsonobj, options),
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
-      netBotTool.prepareTopFlows(jsonobj, 'block', options),
+      netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
+      netBotTool.prepareTopFlows(jsonobj, 'ipB', options),
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
     ])
 
-    if (target != '0.0.0.0') {
-      const requiredPromises = [
-        this.hostManager.yesterdayStatsForInit(jsonobj, target),
-        this.hostManager.last60MinStatsForInit(jsonobj, target),
-        this.hostManager.last30daysStatsForInit(jsonobj, target),
-        this.hostManager.newLast24StatsForInit(jsonobj, target),
-        this.hostManager.last12MonthsStatsForInit(jsonobj, target)
-      ];
-      const platformSpecificStats = platform.getStatsSpecs();
-      jsonobj.stats = {};
-      for (const statSetting of platformSpecificStats) {
-        requiredPromises.push(this.hostManager.getStat(jsonobj, statSetting, target));
-      }
-      await Promise.all(requiredPromises)
+    const requiredPromises = [
+      this.hostManager.last60MinStatsForInit(jsonobj, target),
+      this.hostManager.last30daysStatsForInit(jsonobj, target),
+      this.hostManager.newLast24StatsForInit(jsonobj, target),
+      this.hostManager.last12MonthsStatsForInit(jsonobj, target)
+    ];
+    const platformSpecificStats = platform.getStatsSpecs();
+    jsonobj.stats = {};
+    for (const statSettings of platformSpecificStats) {
+      requiredPromises.push(this.hostManager.getStats(statSettings, target)
+        .then(s => jsonobj.stats[statSettings.stat] = s)
+      );
     }
+    await Promise.all(requiredPromises)
 
     if (!jsonobj.flows['appDetails']) { // fallback to old way
       await netBotTool.prepareDetailedFlows(jsonobj, 'app', options)

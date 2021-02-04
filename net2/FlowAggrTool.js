@@ -113,13 +113,12 @@ class FlowAggrTool {
       const result = {
         device: mac
       }
-      if (entry.type == 'dns')
+      if (trafficDirection == 'dnsB')
         result.domain = target
-      else
+      else if (trafficDirection == 'ipB')
         result.destIP = target
 
       if (entry.port) result.port = entry.port
-      if (entry.type) result.type = entry.type
 
       args.push(JSON.stringify(result))
     }
