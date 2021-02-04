@@ -883,7 +883,7 @@ let legoEptCloud = class {
               await era.addStateEvent("box_state","websocket_connect",0);
               this.offlineEventFired = true;
             },
-            NOTIF_OFFLINE_THRESHOLD);
+            NOTIF_OFFLINE_THRESHOLD*1000);
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
