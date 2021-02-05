@@ -141,7 +141,7 @@ async function flush(setName) {
     await exec(`sudo ipset flush ${setName}`);
 }
 
-async function create(name, type, v4 = true) {
+async function create(name, type, v4 = true, timeout = null) {
   let options
   switch(type) {
     case 'bitmap:port':
@@ -156,6 +156,8 @@ async function create(name, type, v4 = true) {
       options = family + ' hashsize 128 maxelem 65536'
     }
   }
+  if (Number.isInteger(timeout))
+    options = `${options} timeout ${timeout}`;
   const cmd = `sudo ipset create -! ${name} ${type} ${options}`
   return exec(cmd)
 }
@@ -204,6 +206,8 @@ const CONSTANTS = {
   IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set",
   IPSET_QOS_OFF: "qos_off_set",
   IPSET_QOS_OFF_MAC: "qos_off_mac_set",
+  IPSET_MATCH_ALL_SET4: "match_all_set4",
+  IPSET_MATCH_ALL_SET6: "match_all_set6",
   IPSET_DOCKER_WAN_ROUTABLE: 'docker_wan_routable_net_set',
   IPSET_DOCKER_LAN_ROUTABLE: 'docker_lan_routable_net_set'
 }

@@ -33,6 +33,7 @@ const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
 
 const domainBlock = require('../control/DomainBlock.js');
+const { isHashDomain } = require('../util/util.js');
 
 const categoryHashsetMapping = {
   "games": "app.gaming",
@@ -90,10 +91,6 @@ class CategoryUpdateSensor extends Sensor {
     }
   }
 
-  isHashDomain(domain) {
-    return domain.length == 44;
-  }
-
   async updateCategory(category) {
     log.info(`Loading domains for ${category} from cloud`);
 
@@ -102,8 +99,8 @@ class CategoryUpdateSensor extends Sensor {
     if (domains == null) return
     log.info(`category ${category} has ${domains.length} domains`)
 
-    const hashDomains = domains.filter(d=>this.isHashDomain(d));
-    const leftDomains = domains.filter(d=>!this.isHashDomain(d));
+    const hashDomains = domains.filter(d=>isHashDomain(d));
+    const leftDomains = domains.filter(d=>!isHashDomain(d));
     if (leftDomains && leftDomains.length > 0) {
       await categoryUpdater.flushDefaultDomains(category);
       await categoryUpdater.addDefaultDomains(category, leftDomains);
@@ -111,7 +108,7 @@ class CategoryUpdateSensor extends Sensor {
     if (hashDomains && hashDomains.length > 0) {
       await categoryUpdater.flushDefaultHashedDomains(category);
       await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
-    } 
+    }
     sem.emitEvent({
       type: "UPDATE_CATEGORY_DOMAIN",
       category: category,
@@ -209,6 +206,13 @@ class CategoryUpdateSensor extends Sensor {
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
+        if (!categoryUpdater.isCustomizedCategory(category)) {
+          await this.updateCategory(category)
+        }
+        const categories = Object.keys(categoryHashsetMapping);
+        if (!categories.includes(category)) {
+          categoryHashsetMapping[category] = `app.${category}`;
+        }
         await domainBlock.updateCategoryBlock(category).catch((err) => {
           log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
         });

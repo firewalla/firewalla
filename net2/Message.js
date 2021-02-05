@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc.
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,6 +29,7 @@ const MSG_FR_WAN_CONN_CHANGED = "firerouter.wan_conn_changed";
 const MSG_SYS_TIMEZONE_RELOADED = "System:timezone_reloaded";
 
 const MSG_ACL_DNS_NXDOMAIN = "ACL:DNS_NXDOMAIN";
+const MSG_ACL_DNS_UNCATEGORIZED = "ACL:DNS_UNCATEGORIZED";
 
 module.exports = {
   MSG_NETWORK_CHANGED,
@@ -42,5 +43,6 @@ module.exports = {
   MSG_OVPN_CLIENT_ROUTE_UP,
   MSG_SYS_TIMEZONE_RELOADED,
   MSG_ACL_DNS_NXDOMAIN,
+  MSG_ACL_DNS_UNCATEGORIZED,
   MSG_FR_WAN_CONN_CHANGED
 }

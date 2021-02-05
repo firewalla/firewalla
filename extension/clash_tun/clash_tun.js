@@ -37,6 +37,8 @@ const sysManager = require('../../net2/SysManager');
 
 const reservedInterfaceName = "clash0";
 
+const routing = require('../routing/routing.js');
+
 const fs = require('fs');
 
 const Promise = require('bluebird');
@@ -62,7 +64,13 @@ class ClashTun {
 		const dockerPath = `${f.getRuntimeInfoFolder()}/docker`;
 		const clashDockerPath = `${dockerPath}/clash`;
 		await fs.mkdirAsync(clashDockerPath, { recursive: true });
-		const destConfigFilePath = `${clashDockerPath}/config.yml`
+		const destConfigFilePath = `${clashDockerPath}/config.yml`;
+    const customizedConfigFilePath = `${clashDockerPath}/config.customized.yml`;
+    if (await fs.accessAsync(customizedConfigFilePath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
+      const customizedContent = await fs.readFileAsync(customizedConfigFilePath);
+      await fs.writeFileAsync(destConfigFilePath, customizedContent);
+      return;
+    }
 
 		log.info("Preparing config file for Clash:", destConfigFilePath);
 
@@ -122,17 +130,22 @@ class ClashTun {
       }
       const uuid = clashInterface.uuid;
       if(!uuid) {
-        log.error("no uuid is found in clash interface");
+        log.error("no uuid is found in clash interface", reservedInterfaceName);
+        return;
+      }
+      const rtid = clashInterface.rtid;
+      if(!rtid) {
+        log.error("no rtid is found in clash interface", reservedInterfaceName);
         return;
       }
       const NetworkProfile = require('../../net2/NetworkProfile.js');
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const uuidPrefix = uuid.substring(0, 13);
-      log.info("clash network uuid prefix is", uuidPrefix);
-      const ipsetName = `c_route_${uuidPrefix}_set`;
-      log.info("clash routing ipset is", ipsetName);
 
-      await exec(`IPSET=${ipsetName} ${__dirname}/setup_iptables.sh`);
+      const rtIdHex = Number(rtid).toString(16);
+      const mark = `0x${rtIdHex}/${routing.MASK_REG}`;
+      log.info("clash routing mark is", mark);
+
+      await exec(`MARK=${mark} ${__dirname}/setup_iptables.sh`);
 
       const servers = this.getServers();
 

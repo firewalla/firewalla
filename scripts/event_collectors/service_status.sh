@@ -20,17 +20,50 @@
 # Constants
 # ----------------------------------------------------------------------------
 STATE_TYPE='service'
-SERVICES='firemasq'
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+check_each_system_service() {
+  service_name=$1
+  state_expected=$2
+  state_actual=$(sudo systemctl is-active $service_name)
+  test  "$state_actual" == "$state_expected"
+  echo "state $STATE_TYPE $service_name $? state_actual=$state_actual state_expected=$state_expected"
+}
+
+check_services() {
+    check_each_system_service fireapi "active"
+    check_each_system_service firemain "active"
+    check_each_system_service firemon "active"
+    check_each_system_service firekick "inactive"
+    check_each_system_service redis-server "active"
+    check_each_system_service brofish "active"
+    check_each_system_service firewalla "inactive"
+    check_each_system_service fireupgrade "inactive"
+    check_each_system_service fireboot "inactive"
+
+    if redis-cli hget policy:system vpn | fgrep -q '"state":true'
+    then
+      vpn_run_state='active'
+    else
+      vpn_run_state='inactive'
+    fi
+    check_each_system_service openvpn@server $vpn_run_state
+
+    if [[ $MANAGED_BY_FIREROUTER == 'yes' ]]; then
+        check_each_system_service firerouter "active"
+        check_each_system_service firerouter_dns "active"
+        check_each_system_service firerouter_dhcp "active"
+    else
+        check_each_system_service firemasq "active"
+        check_each_system_service watchdog "active"
+    fi
+}
 
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
-for svc in $SERVICES
-do
-    sudo systemctl status $svc
-    state_value=$?
-    echo "state $STATE_TYPE $svc $state_value"
-done
 
-exit 0
+check_services
+

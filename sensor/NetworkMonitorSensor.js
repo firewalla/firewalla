@@ -70,7 +70,7 @@ class NetworkMonitorSensor extends Sensor {
         Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
-              for (const gw  of sysManager.myGatways() ) {
+              for (const gw  of sysManager.myGateways() ) {
                 defaultConfig[gw] = {...defaultConfig[gw], ...cfg[key]};
               }
               break;
@@ -167,8 +167,9 @@ class NetworkMonitorSensor extends Sensor {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
       const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
+      //const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}`);
       const data = result.stdout.trim().split(/\n/).map(e => parseFloat(e));
-      this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data);
+      this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg.sampleCount);
     } catch (err) {
       log.error("failed to sample PING:",err);
     }
@@ -183,10 +184,12 @@ class NetworkMonitorSensor extends Sensor {
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         const result = await exec(`dig @${target} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`);
-        data.push(parseInt(result.stdout.trim()));
+        if (result && result.stdout) {
+          data.push(parseInt(result.stdout.trim()));
+        }
       }
       //this.recordSampleDataInRedis(MONITOR_DNS, `${target}:${cfg.lookupName}`, timeSlot, data);
-      this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data);
+      this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg.sampleCount);
     } catch (err) {
       log.error("failed to sample DNS:",err);
     }
@@ -201,9 +204,11 @@ class NetworkMonitorSensor extends Sensor {
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         const result = await exec(`curl -m 10 -w '%{time_total}\n' '${target}'`);
-        data.push(parseFloat(result.stdout.trim()));
+        if (result && result.stdout) {
+          data.push(parseFloat(result.stdout.trim()));
+        }
       }
-      this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data);
+      this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg.sampleCount);
     } catch (err) {
       log.error("failed to sample HTTP:",err);
     }
@@ -344,7 +349,15 @@ class NetworkMonitorSensor extends Sensor {
     });
   }
 
-  async recordSampleDataInRedis(monitorType, target, timeSlot, data) {
+  getMeanStdev(flist) {
+    if (flist.length === 0 ) return 0;
+    const mean = flist.reduce((sum,x) => sum+x, 0)/flist.length;
+    const variance = flist.reduce( (variance,curr) => variance + (curr - mean)*(curr - mean),0 )/flist.length;
+    const stdev = Math.sqrt(variance);
+    return [ mean, stdev ];
+  }
+
+  async recordSampleDataInRedis(monitorType, target, timeSlot, data, count) {
     const redisKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
     log.debug(`record sample data(${JSON.stringify(data,null,4)}) in ${redisKey} at ${timeSlot}`);
     try {
@@ -353,15 +366,20 @@ class NetworkMonitorSensor extends Sensor {
       })
       const l = dataSorted.length;
       if (l>0) {
+        const [mean,stdev] = this.getMeanStdev(data);
         const result = {
           "data": data,
           "stat" : {
             "median": parseFloat(((l%2 === 0) ? (dataSorted[l/2-1]+dataSorted[l/2])/2 : dataSorted[(l-1)/2]).toFixed(1)),
             "min"   : parseFloat(dataSorted[0].toFixed(1)),
-            "max"   : parseFloat(dataSorted[l-1].toFixed(1))
+            "max"   : parseFloat(dataSorted[l-1].toFixed(1)),
+            "mean"  : parseFloat(mean.toFixed(1)),
+            "stdev" : parseFloat(stdev.toFixed(1)),
+            "lossrate"  : parseFloat(Number((count-data.length)/count).toFixed(2))
           }
         }
         const resultJSON = JSON.stringify(result);
+        log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
         await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
       }
     } catch (err) {

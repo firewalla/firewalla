@@ -116,26 +116,47 @@ function getDstSet6(tag) {
   return `c_bd_${tag}_set6`
 }
 
+function getDropChain(security) {
+  return security ? 'FW_SEC_DROP' : 'FW_DROP'
+}
 
 async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128) {
   if(!category) {
     return;
   }
 
-  const ipset = getDstSet(category);
-  const tempIpset = getDstSet(`tmp_${category}`);
-  const ipset6 = getDstSet6(category);
-  const tempIpset6 = getDstSet6(`tmp_${category}`);
+  const CategoryUpdater = require('./CategoryUpdater.js');
+  const categoryUpdater = new CategoryUpdater();
+
+  const ipset = categoryUpdater.getIPSetName(category);
+  const tempIpset = categoryUpdater.getTempIPSetName(category);
+  const ipset6 = categoryUpdater.getIPSetNameForIPV6(category);
+  const tempIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category);
+
+  const staticIpset = categoryUpdater.getIPSetName(category, true);
+  const tempStaticIpset = categoryUpdater.getTempIPSetName(category, true);
+  const staticIpset6 = categoryUpdater.getIPSetNameForIPV6(category, true);
+  const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category, true);
 
   const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
   const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
   const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
   const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
 
+  const cmdCreateStaticCategorySet = `sudo ipset create -! ${staticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
+  const cmdCreateStaticCategorySet6 = `sudo ipset create -! ${staticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
+  const cmdCreateTempStaticCategorySet = `sudo ipset create -! ${tempStaticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
+  const cmdCreateTempStaticCategorySet6 = `sudo ipset create -! ${tempStaticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
+
   await exec(cmdCreateCategorySet);
   await exec(cmdCreateCategorySet6);
   await exec(cmdCreateTempCategorySet);
   await exec(cmdCreateTempCategorySet6);
+
+  await exec(cmdCreateStaticCategorySet);
+  await exec(cmdCreateStaticCategorySet6);
+  await exec(cmdCreateTempStaticCategorySet);
+  await exec(cmdCreateTempStaticCategorySet6);
 }
 
 async function existsBlockingEnv(tag) {
@@ -240,7 +261,7 @@ function setupIpset(element, ipset, remove = false) {
   return action(ipset, element)
 }
 
-async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId) {
+async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
   log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
@@ -301,7 +322,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK", target: "FW_DROP"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK", target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
@@ -362,7 +383,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
   }
 }
 
-async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId) {
+async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
   log.info(`${createOrDestroy} generic identity rule, unique ids ${JSON.stringify(uids)}, identity type ${identityType}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
@@ -424,7 +445,7 @@ async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPo
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: "FW_DROP"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
@@ -500,7 +521,7 @@ async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPo
 }
 
 // device-wise rules
-async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId) {
+async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
   log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
@@ -561,7 +582,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK", target: "FW_DROP"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK", target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
@@ -623,7 +644,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
   }
 }
 
-async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId) {
+async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
   log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
@@ -698,8 +719,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
       }
       case "block":
       default: {
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: "FW_DROP", localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK", target: "FW_DROP", localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getDropChain(security), localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK", target: getDropChain(security), localSet: netSet, localFlagCount: 2});
       }
     }
   }
@@ -758,7 +779,7 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
   }
 }
 
-async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, targetRgId) {
+async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
   log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
   if (_.isEmpty(uuids))
     return;
@@ -821,7 +842,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK", target: "FW_DROP"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK", target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
@@ -884,7 +905,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
   }
 }
 
-async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
+async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security) {
   log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const filterPrio = 1;
@@ -937,7 +958,7 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block"), target: "FW_DROP"});
+      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block"), target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
@@ -1031,22 +1052,22 @@ async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPosit
 
 
 module.exports = {
-  setupBlockChain:setupBlockChain,
-  batchBlock: batchBlock,
-  batchUnblock: batchUnblock,
-  block: block,
-  unblock: unblock,
-  setupCategoryEnv: setupCategoryEnv,
-  setupGlobalRules: setupGlobalRules,
-  setupDevicesRules: setupDevicesRules,
-  setupGenericIdentitiesRules: setupGenericIdentitiesRules,
-  getDstSet: getDstSet,
-  getDstSet6: getDstSet6,
-  getMacSet: getMacSet,
-  existsBlockingEnv: existsBlockingEnv,
-  setupTagsRules: setupTagsRules,
-  setupIntfsRules: setupIntfsRules,
-  setupRuleGroupRules: setupRuleGroupRules,
-  manipulateFiveTupleRule: manipulateFiveTupleRule,
-  VPN_CLIENT_WAN_PREFIX: VPN_CLIENT_WAN_PREFIX
+  setupBlockChain,
+  batchBlock,
+  batchUnblock,
+  block,
+  unblock,
+  setupCategoryEnv,
+  setupGlobalRules,
+  setupDevicesRules,
+  setupGenericIdentitiesRules,
+  getDstSet,
+  getDstSet6,
+  getMacSet,
+  existsBlockingEnv,
+  setupTagsRules,
+  setupIntfsRules,
+  setupRuleGroupRules,
+  manipulateFiveTupleRule,
+  VPN_CLIENT_WAN_PREFIX
 }

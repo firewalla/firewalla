@@ -34,6 +34,7 @@ const { delay } = require('../../util/util.js')
 const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 // const sem = require('../../sensor/SensorEventManager.js').getInstance();
+const era = require('../../event/EventRequestApi.js')
 
 const exec = require('child-process-promise').exec;
 
@@ -41,7 +42,7 @@ const rp = require('request-promise');
 
 const NODE_VERSION_SUPPORTS_RSA = 12
 // const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
-// const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
+const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
 
 const util = require('util')
 
@@ -94,6 +95,9 @@ let legoEptCloud = class {
       if (!this.nodeRSASupport) {
         ursa = require('ursa');
       }
+
+      this.offlineEventJob = null;
+      this.offlineEventFired = false;
     }
     return instance[name];
     // NO LONGER create keypair in sync node during constructor
@@ -873,6 +877,13 @@ let legoEptCloud = class {
         this.socket.on('disconnect', ()=>{
           this.notifySocket = false;
           log.forceInfo('Cloud disconnected')
+          // send a box disconnect event if NOT reconnect after some time
+          this.offlineEventJob = setTimeout(
+            async ()=> {
+              await era.addStateEvent("box_state","websocket",1);
+              this.offlineEventFired = true;
+            },
+            NOTIF_OFFLINE_THRESHOLD*1000);
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -889,7 +900,7 @@ let legoEptCloud = class {
             boneCallback(null,data);
           }
         });
-        this.socket.on('reconnect', ()=>{
+        this.socket.on('reconnect', async ()=>{
           log.info('--== Cloud reconnected ==--')
           // if (this.lastDisconnection
           //   && Date.now() / 1000 - this.lastDisconnection > NOTIF_OFFLINE_THRESHOLD
@@ -905,6 +916,16 @@ let legoEptCloud = class {
           //     payload: {}
           //   });
           // }
+
+          // cancel box offline event
+          if ( this.offlineEventJob ) {
+            clearTimeout(this.offlineEventJob);
+          }
+          // fire box re-connect event ONLY when previously fired an offline event
+          if ( this.offlineEventFired ) {
+            await era.addStateEvent("box_state","websocket",0);
+            this.offlineEventFired = false;
+          }
         })
         this.socket.on('connect', ()=>{
           this.notifySocket = true;

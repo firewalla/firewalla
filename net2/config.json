@@ -36,7 +36,8 @@
     "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
-    "notification.box_online.cooldown": 900
+    "notification.box_online.cooldown": 900,
+    "notification.box_offline.threshold": 900
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -601,7 +602,6 @@
         "digDNS" : 300,
         "disk_space.sh" : 300,
         "ethernet_state.sh" : 60,
-        "service_status.sh" : 300,
         "speed_test.sh" : -1,
         "system_load.sh" : 300,
         "default" : 3600

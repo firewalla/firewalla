@@ -12,8 +12,8 @@ sudo iptables -w -t mangle -F FW_CLASH_CHAIN &>/dev/null
 sudo iptables -w -t mangle -X FW_CLASH_CHAIN &>/dev/null
 sudo iptables -w -t mangle -N FW_CLASH_CHAIN &>/dev/null
 
-# does not support UDP yet
-sudo iptables -w -t mangle -A FW_CLASH_CHAIN -p udp -j RETURN
+# only support TCP yet
+sudo iptables -w -t mangle -A FW_CLASH_CHAIN ! -p tcp -j RETURN
 
 # skip high port range for p2p or other traffic
 sudo iptables -w -t mangle -A FW_CLASH_CHAIN -p tcp -m tcp --dport 1024:65535 -j RETURN
@@ -21,4 +21,6 @@ sudo iptables -w -t mangle -A FW_CLASH_CHAIN -p tcp -m tcp --dport 1024:65535 -j
 sudo iptables -w -t mangle -A FW_CLASH_CHAIN -m set --match-set fw_clash_whitelist dst -j RETURN
 sudo iptables -w -t mangle -A FW_CLASH_CHAIN -m set --match-set fw_clash_whitelist_net dst -j RETURN
 
-sudo iptables -w -t mangle -A FW_CLASH_CHAIN -j SET --map-set $IPSET dst --map-mark
+sudo iptables -w -t mangle -A FW_CLASH_CHAIN -m set --match-set monitored_net_set src,src -j MARK --set-mark $MARK
+
+#sudo iptables -w -t mangle -A FW_CLASH_CHAIN -j SET --map-set $IPSET dst --map-mark

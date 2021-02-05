@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,6 +19,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const exec = require('child-process-promise').exec
 
+const ipset = require('./Ipset.js');
 const _ = require('lodash');
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
@@ -331,19 +332,6 @@ module.exports = class HostManager {
     json.hosts = _hosts;
   }
 
-  async yesterdayStatsForInit(json, target) {
-    const downloadKey = `download${target ? ':' + target : ''}`;
-    const uploadKey = `upload${target ? ':' + target : ''}`;
-    const todayHours = new Date().getHours();
-    const countHours = todayHours + 24;
-    const downloadStats = await getHitsAsync(downloadKey, "1hour", countHours);
-    const uploadStats = await getHitsAsync(uploadKey, "1hour", countHours);
-    downloadStats.splice(downloadStats.length - todayHours);
-    uploadStats.splice(uploadStats.length - todayHours);
-    json.yesterday = this.generateStats(downloadStats,uploadStats);
-    return json;
-  }
-
   async last24StatsForInit(json) {
     const download = flowManager.getLast24HoursDownloadsStats();
     const upload = flowManager.getLast24HoursUploadsStats();
@@ -354,32 +342,23 @@ module.exports = class HostManager {
     return json;
   }
 
-  async getStat(json, statSetting, target) {
-    const subKey = target ? ':' + target : '';
-    const { granularities, hits, stat } = statSetting;
-    let downloadStats = await getHitsAsync("download" + subKey, granularities, hits)
-    let uploadStats = await getHitsAsync("upload" + subKey, granularities, hits)
-    json.stats[stat] = this.generateStats(downloadStats, uploadStats);
+  async getStats(statSettings, target) {
+    const subKey = target && target != '0.0.0.0' ? ':' + target : '';
+    const { granularities, hits} = statSettings;
+    const stats = {}
+    const metrics = [ 'upload', 'download', 'ipB', 'dns', 'dnsB' ]
+    for (const metric of metrics) {
+      stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
+    }
+    return this.generateStats(stats);
   }
 
   async newLast24StatsForInit(json, target) {
-    const subKey = target ? ':' + target : ''
-    let downloadStats = await getHitsAsync("download" + subKey, "1hour", 24)
-    let uploadStats = await getHitsAsync("upload" + subKey, "1hour", 24)
-    json.newLast24 = this.generateStats(downloadStats, uploadStats);
+    json.newLast24 = await this.getStats({granularities: '1hour', hits: 24}, target);
   }
 
   async last12MonthsStatsForInit(json, target) {
-    const subKey = target ? ':' + target : ''
-    let downloadStats = await getHitsAsync("download" + subKey, "1month", 12)
-    let uploadStats = await getHitsAsync("upload" + subKey, "1month", 12)
-    json.last12Months = this.generateStats(downloadStats,uploadStats);
-  }
-
-  async last60MinStats() {
-    let downloadStats = await getHitsAsync("download", "1minute", 60)
-    let uploadStats = await getHitsAsync("upload", "1minute", 60)
-    return { downloadStats, uploadStats }
+    json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target);
   }
 
   async monthlyDataStats(mac, date) {
@@ -406,38 +385,33 @@ module.exports = class HostManager {
     }
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const downloadStats = await getHitsAsync(downloadKey, '1day', days) || [];
-    const uploadStats = await getHitsAsync(uploadKey, '1day', days) || [];
+    const download = await getHitsAsync(downloadKey, '1day', days) || [];
+    const upload = await getHitsAsync(uploadKey, '1day', days) || [];
     return Object.assign({
       monthlyBeginTs: monthlyBeginTs / 1000,
       monthlyEndTs: monthlyEndTs / 1000
-    }, this.generateStats(downloadStats, uploadStats))
+    }, this.generateStats({ download, upload }))
   }
 
   async last60MinStatsForInit(json, target) {
-    const subKey = target ? ':' + target : ''
+    const subKey = target && target != '0.0.0.0' ? ':' + target : ''
 
-    let downloadStats = await getHitsAsync("download" + subKey, "1minute", 61)
-    if(downloadStats[downloadStats.length - 1] && downloadStats[downloadStats.length - 1][1] == 0) {
-      downloadStats = downloadStats.slice(0, 60)
-    } else {
-      downloadStats = downloadStats.slice(1)
+    const stats = {}
+    const metrics = [ 'upload', 'download', 'ipB', 'dns', 'dnsB' ]
+    for (const metric of metrics) {
+      const s = await getHitsAsync(metric + subKey, "1minute", 61)
+      if (s[s.length - 1] && s[s.length - 1][1] == 0) {
+        s.pop()
+      } else {
+        s.shift()
+      }
+      stats[metric] = s
     }
-    let uploadStats = await getHitsAsync("upload" + subKey, "1minute", 61)
-    if(uploadStats[uploadStats.length - 1] &&  uploadStats[uploadStats.length - 1][1] == 0) {
-      uploadStats = uploadStats.slice(0, 60)
-    } else {
-      uploadStats = uploadStats.slice(1)
-    }
-    json.last60 = this.generateStats(downloadStats,uploadStats);
+    json.last60 = this.generateStats(stats)
   }
 
-
   async last30daysStatsForInit(json, target) {
-    const subKey = target ? ':' + target : ''
-    let downloadStats = await getHitsAsync("download" + subKey, "1day", 30)
-    let uploadStats = await getHitsAsync("upload" + subKey, "1day", 30)
-    json.last30 = this.generateStats(downloadStats,uploadStats);
+    json.last30 = await this.getStats({granularities: '1day', hits: 30}, target);
   }
 
   policyDataForInit(json) {
@@ -1024,7 +998,6 @@ module.exports = class HostManager {
       try {
 
         let requiredPromises = [
-          this.yesterdayStatsForInit(json),
           this.last24StatsForInit(json),
           this.newLast24StatsForInit(json),
           this.last60MinStatsForInit(json),
@@ -1059,8 +1032,10 @@ module.exports = class HostManager {
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};
-        for (const statSetting of platformSpecificStats) {
-          requiredPromises.push(this.getStat(json, statSetting));
+        for (const statSettings of platformSpecificStats) {
+          requiredPromises.push(this.getStats(statSettings)
+            .then(s => json.stats[statSettings.stat] = s)
+          )
         }
         await Promise.all(requiredPromises)
 
@@ -1489,11 +1464,19 @@ module.exports = class HostManager {
 
   async acl(state) {
     if (state == false) {
-      await iptables.switchACLAsync(false);
-      await iptables.switchACLAsync(false, 6);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
     } else {
-      await iptables.switchACLAsync(true);
-      await iptables.switchACLAsync(true, 6);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+      });
     }
   }
 
@@ -1680,21 +1663,7 @@ module.exports = class HostManager {
             log.error(`Failed to setup openvpn client for ${profileId}`, err);
           });
           ovpnClient.once('push_options_stop', async (content) => {
-            const dnsServers = [];
-            for (let line of content.split("\n")) {
-              if (line && line.length != 0) {
-                log.info(`Roll back push options from ${profileId}: ${line}`);
-                const options = line.split(/\s+/);
-                switch (options[0]) {
-                  case "dhcp-option":
-                    if (options[1] === "DNS") {
-                      dnsServers.push(options[2]);
-                    }
-                    break;
-                  default:
-                }
-              }
-            }
+            const dnsServers = ovpnClient.getPushedDNSSServers() || [];
             if (dnsServers.length > 0) {
               // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
               await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
@@ -1929,20 +1898,13 @@ module.exports = class HostManager {
     }
   }
 
-  generateStats(downloadStats = [], uploadStats = []) {
-    let totalDownload = 0, totalUpload = 0;
-    downloadStats.forEach((s) => {
-      totalDownload = totalDownload + s[1] * 1;
-    })
-    uploadStats.forEach((s) => {
-      totalUpload = totalUpload + s[1] * 1;
-    })
-    return {
-      upload: uploadStats,
-      download: downloadStats,
-      totalUpload: totalUpload,
-      totalDownload: totalDownload
+  generateStats(stats) {
+    const result = {}
+    for (const metric in stats) {
+      result[metric] = stats[metric]
+      result['total' + metric[0].toUpperCase() + metric.slice(1) ] = _.sumBy(stats[metric], 1)
     }
+    return result
   }
 
   async loadStats(json={}, target='', count=50) {

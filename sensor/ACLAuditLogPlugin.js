@@ -20,14 +20,22 @@ const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
 const LOG_PREFIX = "[FW_ACL_AUDIT]";
+const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
 const {Address4, Address6} = require('ip-address');
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const HostManager = require('../net2/HostManager')
+const hostManager = new HostManager();
+const networkProfileManager = require('../net2/NetworkProfileManager')
+const vpnProfileManager = require('../net2/VPNProfileManager.js');
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
+const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const Constants = require('../net2/Constants.js');
+
 const os = require('os')
 const util = require('util')
 const fs = require('fs')
@@ -46,7 +54,8 @@ class ACLAuditLogPlugin extends Sensor {
     super()
 
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
-    this.buffer = { ip: {}, dns: {}, ts: Date.now() / 1000 }
+    this.buffer = { ip: {}, dns: {}, dnsA: {} }
+    this.bufferTs = Date.now() / 1000
   }
 
   async run() {
@@ -74,15 +83,17 @@ class ACLAuditLogPlugin extends Sensor {
       log.error('Error reading pipe', err)
     }
 
-    sem.on(Message.MSG_ACL_DNS_NXDOMAIN, (message) => {
+    sem.on(Message.MSG_ACL_DNS_NXDOMAIN, message => {
       if (message && message.record)
-        this._processDnsNxdomainRecord(message.record)
+        this._processDnsRecord(message.record)
           .catch(err => log.error('Failed to process record', err, message.record))
     });
-  }
-
-  getIntfViaIP(ip) {
-    return new Address4(ip).isValid() ? sysManager.getInterfaceViaIP4(ip) : sysManager.getInterfaceViaIP6(ip)
+    sem.on(Message.MSG_ACL_DNS_UNCATEGORIZED, message => {
+      if (message && message.record) {
+        this._processDnsRecord(message.record, false)
+          .catch(err => log.error('Failed to process record', err, message.record))
+      }
+    });
   }
 
   // check direction, keep it same as flow.fd
@@ -113,17 +124,46 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
+  async getIntfMac(localIP, record) {
+    const intf = new Address4(localIP).isValid() ?
+      sysManager.getInterfaceViaIP4(localIP) :
+      sysManager.getInterfaceViaIP6(localIP)
+
+    if (!intf) throw new Error('Interface not found for', localIP);
+    record.intf = intf.uuid
+
+    let mac
+    if (intf.name === "tun_fwvpn") {
+      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
+      if (!vpnProfile) throw new Error('VPNProfile not found for', localIP);
+      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
+    } else {
+      mac = await hostTool.getMacByIPWithCache(localIP);
+    }
+
+    if (!mac) throw new Error('MAC not found for', localIP)
+
+    return mac
+  }
+
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
     // log.debug(line)
     const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
     const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
-    const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length); // extract content after log prefix
+    const secTagIndex = line.indexOf(SECLOG_PREFIX)
+    const security = secTagIndex > 0
+    // extract content after log prefix
+    const content = line.substring(security ?
+      secTagIndex + SECLOG_PREFIX.length : line.indexOf(LOG_PREFIX) + LOG_PREFIX.length
+    );
     if (!content || content.length == 0)
       return;
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
+    if (security) record.sec = 1
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2)
@@ -163,40 +203,30 @@ class ACLAuditLogPlugin extends Sensor {
     const localIP = record.fd == 'out' ? record.dh : record.sh
     const remoteIP = record.fd == 'out' ? record.sh : record.dh
 
-    const intf = this.getIntfViaIP(localIP)
-    // not able to map ip to unique identity from VPN yet
-    if (!intf || intf.name === "tun_fwvpn")
-      return;
-    const mac = await hostTool.getMacByIPWithCache(localIP);
-    if (mac) {
-      // TODO: is dns resolution necessary here?
-      if (!sysManager.isLocalIP(remoteIP)) {
-        const domain = await dnsTool.getDns(remoteIP);
-        if (domain)
-          record.dn = domain;
-      }
+    const mac = await this.getIntfMac(localIP, record)
 
-      this.writeBuffer(mac, remoteIP, record)
+    // TODO: is dns resolution necessary here?
+    if (!sysManager.isLocalIP(remoteIP)) {
+      const domain = await dnsTool.getDns(remoteIP);
+      if (domain)
+        record.dn = domain;
     }
+
+    this.writeBuffer(mac, remoteIP, record)
   }
 
-  async _processDnsNxdomainRecord(record) {
+  async _processDnsRecord(record, block = true) {
     this.setDirection(record)
     // unless we can get interface info from zeek, local traffic will cause duplication
     if (record.rd == 'lo') return
 
-    const localIP = record.fd == 'out' ? record.dh : record.sh
-    const intf = this.getIntfViaIP(localIP)
-    // not able to map ip to unique identity from VPN yet
-    if (!intf || intf.name === "tun_fwvpn")
-      return;
-    const mac = await hostTool.getMacByIPWithCache(localIP);
-    if (mac) {
-      record.type = "dns";
-      record.ct = 1;
+    const mac = await this.getIntfMac(record.sh, record)
 
-      this.writeBuffer(mac, record.dn, record)
-    }
+    record.type = block ? 'dns' : 'dnsA';
+    record.ct = 1;
+    if (!block) record.dn = 'all'
+
+    this.writeBuffer(mac, record.dn, record)
   }
 
   _getAuditDropKey(mac) {
@@ -205,21 +235,54 @@ class ACLAuditLogPlugin extends Sensor {
 
   async writeLogs() {
     try {
-      log.debug('Start writing logs', this.buffer.ts)
+      log.debug('Start writing logs', this.bufferTs)
       // log.debug(JSON.stringify(this.buffer))
 
       const buffer = this.buffer
-      this.buffer = { ip: {}, dns: {}, ts: Date.now() / 1000 }
+      this.buffer = { ip: {}, dns: {}, dnsA: {} }
 
       for (const type in buffer) {
         for (const mac in buffer[type]) {
           for (const target in buffer[type][mac]) {
-            const key = this._getAuditDropKey(mac);
             const record = buffer[type][mac][target];
-            await rclient.zaddAsync(key, record.ts, JSON.stringify(record));
+            const {ts, ct, intf} = record
+            const tags = []
+            if (!mac.startsWith(Constants.NS_VPN_PROFILE)) {
+              const host = hostManager.getHostFastByMAC(mac);
+              if (!host) continue
+              tags.push(...await host.getTags())
+            }
+            const networkProfile = networkProfileManager.getNetworkProfile(intf);
+            if (!networkProfile) continue
+            tags.push(...networkProfile.getTags());
+            record.tags = _.uniq(tags)
+
+            // records total dns hits
+            if (type.startsWith('dns')) {
+              timeSeries.recordHit(`dns`, ts, ct)
+              timeSeries.recordHit(`dns:${mac}`, ts, ct)
+              timeSeries.recordHit(`dns:intf:${intf}`, ts, ct)
+              for (const tag of record.tags) {
+                timeSeries.recordHit(`dns:tag:${tag}`, ts, ct)
+              }
+            }
+
+            // no detailed history and stats for uncategorized dns queries
+            if (type == 'dnsA') continue
+
+            const key = this._getAuditDropKey(mac);
+            await rclient.zaddAsync(key, ts, JSON.stringify(record));
+
+            timeSeries.recordHit(`${type}B`, ts, ct)
+            timeSeries.recordHit(`${type}B:${mac}`, ts, ct)
+            timeSeries.recordHit(`${type}B:intf:${intf}`, ts, ct)
+            for (const tag of record.tags) {
+              timeSeries.recordHit(`${type}B:tag:${tag}`, ts, ct)
+            }
           }
         }
       }
+      timeSeries.exec()
     } catch(err) {
       log.error("Failed to write audit logs", err)
     }
@@ -278,7 +341,7 @@ class ACLAuditLogPlugin extends Sensor {
         try {
           log.debug(transaction)
           await rclient.multi(transaction).execAsync();
-          log.info("Audit:Save:Removed", key);
+          log.debug("Audit:Save:Removed", key);
         } catch (err) {
           log.error("Audit:Save:Error", err);
         }

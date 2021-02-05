@@ -172,6 +172,11 @@ class OpenVPNClient extends VPNClient {
     return `/var/log/openvpn_client-status-${this.profileId}.log`;
   }
 
+  async cleanupLogFiles() {
+    await execAsync(`sudo rm /var/log/openvpn_client-status-${this.profileId}.log*`).catch((err) => {});
+    await execAsync(`sudo rm /var/log/openvpn_client-${this.profileId}.log*`).catch((err) => {});
+  }
+
   async _parseProfile(ovpnPath) {
     if (await accessAsync(ovpnPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       const content = await readFileAsync(ovpnPath, 'utf8');
@@ -343,6 +348,20 @@ class OpenVPNClient extends VPNClient {
             // loosen reverse path filter
             await execAsync(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => {});
             await this._processPushOptions("start");
+            if (settings.overrideDefaultRoute && settings.strictVPN) {
+              await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
+            } else {
+              await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
+            }
+            const dnsServers = this.getPushedDNSSServers() || [];
+            // redirect dns to vpn channel
+            if (dnsServers.length > 0) {
+              if (settings.routeDNS) {
+                await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this.getRemoteIP());
+              } else {
+                await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this.getRemoteIP());
+              }
+            }
             this._started = true;
             resolve(true);
           } else {
@@ -401,12 +420,18 @@ class OpenVPNClient extends VPNClient {
     await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     const settings = await this.loadSettings();
     await this._processPushOptions("stop");
+    const dnsServers = this.getPushedDNSSServers() || [];
+    if (dnsServers.length > 0) {
+      // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
+      await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this.getRemoteIP());
+    }
     let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to stop openvpn client ${this.profileId}`, err.message);
     });
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd).catch((err) => {});
+    await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
   }
 
   async status() {

@@ -19,7 +19,15 @@ sudo chmod 644 /log/alog/acl-audit-pipe
 sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
 sudo systemctl restart rsyslog
 
-sudo iptables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null || sudo iptables -I FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]"
-sudo ip6tables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null || sudo ip6tables -I FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]"
+if [[ $(redis-cli hget policy:system acl) == "true" ]]; then
+  RULE_POS=3
+else
+  RULE_POS=1
+fi
+
+sudo iptables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null || sudo iptables -I FW_DROP $RULE_POS -j LOG --log-prefix "[FW_ACL_AUDIT]"
+sudo ip6tables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null || sudo ip6tables -I FW_DROP $RULE_POS -j LOG --log-prefix "[FW_ACL_AUDIT]"
+sudo iptables -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null || sudo iptables -I FW_SEC_DROP $RULE_POS -j LOG --log-prefix "[FW_SEC_AUDIT]"
+sudo ip6tables -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null || sudo ip6tables -I FW_SEC_DROP $RULE_POS -j LOG --log-prefix "[FW_SEC_AUDIT]"
 
 logger 'FIREWALLA.ACLAUDIT Finished Starting'

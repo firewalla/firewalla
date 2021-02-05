@@ -616,7 +616,8 @@ class netBot extends ControllerBot {
               "ts": Date.now(),
               "event_type": "action",
               "action_type": "firewalla_upgrade",
-              "action_value": 1
+              "action_value": 1,
+              "labels": { "version": fc.getSimpleVersion() }
           }
           await ea.addEvent(eventRequest,eventRequest.ts);
         } catch (err) {
@@ -1708,16 +1709,6 @@ class netBot extends ControllerBot {
         }
         break;
       }
-      case "last60mins":
-        this.hostManager.last60MinStats().then(stats => {
-          this.simpleTxData(msg, {
-            upload: stats.uploadStats,
-            download: stats.downloadStats
-          }, null, callback)
-        }).catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
       case "upstreamDns":
         (async () => {
           let response;
@@ -2323,27 +2314,27 @@ class netBot extends ControllerBot {
       flowTool.prepareRecentFlows(jsonobj, options),
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
-      netBotTool.prepareTopFlows(jsonobj, 'block', options),
+      netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
+      netBotTool.prepareTopFlows(jsonobj, 'ipB', options),
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
     ])
 
-    if (target != '0.0.0.0') {
-      const requiredPromises = [
-        this.hostManager.yesterdayStatsForInit(jsonobj, target),
-        this.hostManager.last60MinStatsForInit(jsonobj, target),
-        this.hostManager.last30daysStatsForInit(jsonobj, target),
-        this.hostManager.newLast24StatsForInit(jsonobj, target),
-        this.hostManager.last12MonthsStatsForInit(jsonobj, target)
-      ];
-      const platformSpecificStats = platform.getStatsSpecs();
-      jsonobj.stats = {};
-      for (const statSetting of platformSpecificStats) {
-        requiredPromises.push(this.hostManager.getStat(jsonobj, statSetting, target));
-      }
-      await Promise.all(requiredPromises)
+    const requiredPromises = [
+      this.hostManager.last60MinStatsForInit(jsonobj, target),
+      this.hostManager.last30daysStatsForInit(jsonobj, target),
+      this.hostManager.newLast24StatsForInit(jsonobj, target),
+      this.hostManager.last12MonthsStatsForInit(jsonobj, target)
+    ];
+    const platformSpecificStats = platform.getStatsSpecs();
+    jsonobj.stats = {};
+    for (const statSettings of platformSpecificStats) {
+      requiredPromises.push(this.hostManager.getStats(statSettings, target)
+        .then(s => jsonobj.stats[statSettings.stat] = s)
+      );
     }
+    await Promise.all(requiredPromises)
 
     if (!jsonobj.flows['appDetails']) { // fallback to old way
       await netBotTool.prepareDetailedFlows(jsonobj, 'app', options)
@@ -2784,11 +2775,17 @@ class netBot extends ControllerBot {
           const policy = value
 
           const pid = policy.pid
-          const oldPolicy = await pm2.getPolicy(pid)
-          await pm2.updatePolicyAsync(policy)
-          const newPolicy = await pm2.getPolicy(pid)
-          await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
-          this.simpleTxData(msg, newPolicy, null, callback)
+          const policyObj = new Policy(policy);
+          const samePolicies = await pm2.getSamePolicies(policyObj);
+          if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
+            this.simpleTxData(msg, samePolicies[0], {code: 409, msg: "policy already exists"}, callback);
+          } else {
+            const oldPolicy = await pm2.getPolicy(pid)
+            await pm2.updatePolicyAsync(policy)
+            const newPolicy = await pm2.getPolicy(pid)
+            await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
+            this.simpleTxData(msg, newPolicy, null, callback)
+          }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
         })
@@ -3682,6 +3679,7 @@ class netBot extends ControllerBot {
                   this.simpleTxData(msg, {}, { code: 400, msg: "OpenVPN client " + profileId + " is still running" }, callback);
                 } else {
                   await ovpnClient.destroy();
+                  await ovpnClient.cleanupLogFiles();
                   const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
                   const files = await readdirAsync(dirPath);
                   const filesToDelete = files.filter(filename => filename.startsWith(`${profileId}.`));
