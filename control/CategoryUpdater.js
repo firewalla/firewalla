@@ -459,14 +459,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
     log.debug(`Found a ${category} domain: ${d}`)
     const dynamicCategoryDomainExists = await this.dynamicCategoryDomainExists(category, d)
     const defaultDomainExists = await this.defaultDomainExists(category, d);
+    const isDomainOnly = (await this.getDefaultDomainsOnly(category)).some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase());
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
 
     // skip ipset and dnsmasq config update if category is not activated
     if (!this.isActivated(category)) {
       return
     }
-    this.addUpdateIPSetByDomainTask(category, d);
-    this.addFilterIPSetByDomainTask(category);
+    if (!isDomainOnly) {
+      this.addUpdateIPSetByDomainTask(category, d);
+      this.addFilterIPSetByDomainTask(category);
+    }
     if (!dynamicCategoryDomainExists && !defaultDomainExists) {
       domainBlock.updateCategoryBlock(category);
     }
@@ -685,11 +688,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const includedDomains = await this.getIncludedDomains(category);
     const defaultDomains = await this.getDefaultDomains(category);
     const excludeDomains = await this.getExcludedDomains(category);
+    const domainOnlyDefaultDomains = await this.getDefaultDomainsOnly(category);
 
     let dd = _.union(domains, defaultDomains)
     dd = _.difference(dd, excludeDomains)
     dd = _.union(dd, includedDomains)
     dd = dd.map(d => d.toLowerCase());
+    // do not add domain only default domains to the ipset
+    dd = dd.filter(d => !domainOnlyDefaultDomains.some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase()));
 
     const previousEffectiveDomains = this.effectiveCategoryDomains[category] || [];
     const removedDomains = previousEffectiveDomains.filter(d => !dd.includes(d));
