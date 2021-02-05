@@ -347,7 +347,8 @@ module.exports = class {
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `Device network activity heartbeat ${host.ipv4Addr || host.ipv6Addr} ${host.mac}`,
-          host: host
+          host,
+          suppressEventLogging: true
         });
       }
     }
@@ -1300,7 +1301,7 @@ module.exports = class {
           log.info("Conn:Save:Summary", sstart, send, this.flowstashExpires);
           for (let key in stashed) {
             let stash = stashed[key];
-            log.info("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
+            log.debug("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
 
             let transaction = [];
             transaction.push(['zremrangebyscore', key, sstart, send]);
@@ -1311,7 +1312,7 @@ module.exports = class {
 
             try {
               await rclient.multi(transaction).execAsync();
-              log.info("Conn:Save:Removed", key);
+              log.debug("Conn:Save:Removed", key);
             } catch (err) {
               log.error("Conn:Save:Error", err);
             }
