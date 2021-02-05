@@ -187,13 +187,13 @@ class PortForward {
         return;
     }
     let string = JSON.stringify(this.config)
-    log.info("PortForwarder:Saving:",string);
+    log.debug("PortForwarder:Saving:",string);
     return rclient.setAsync(configKey, string)
   }
 
   async loadConfig() {
     let json = await rclient.getAsync(configKey)
-    log.info("PortForwarder:Config:", json);
+    log.debug("PortForwarder:Config:", json);
     if (json) {
       try {
         let config = JSON.parse(json)

@@ -183,7 +183,7 @@ class FlowAggrTool {
 
     let count = await rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow) // only keep the MAX_FLOW_PER_SUM highest flows
     if(count > 0) {
-      log.warn(`${count} flows are trimmed from ${sumFlowKey}`)
+      log.info(`${count} flows are trimmed from ${sumFlowKey}`)
     }
   }
 
