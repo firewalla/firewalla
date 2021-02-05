@@ -115,7 +115,7 @@ class FlowAggrTool {
       }
       if (trafficDirection == 'dnsB')
         result.domain = target
-      else if (trafficDirection == 'ipB')
+      else
         result.destIP = target
 
       if (entry.port) result.port = entry.port
