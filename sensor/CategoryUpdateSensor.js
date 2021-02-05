@@ -108,7 +108,7 @@ class CategoryUpdateSensor extends Sensor {
     if (hashDomains && hashDomains.length > 0) {
       await categoryUpdater.flushDefaultHashedDomains(category);
       await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
-    } 
+    }
     sem.emitEvent({
       type: "UPDATE_CATEGORY_DOMAIN",
       category: category,
@@ -206,6 +206,13 @@ class CategoryUpdateSensor extends Sensor {
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
+        if (!categoryUpdater.isCustomizedCategory(category)) {
+          await this.updateCategory(category)
+        }
+        const categories = Object.keys(categoryHashsetMapping);
+        if (!categories.includes(category)) {
+          categoryHashsetMapping[category] = `app.${category}`;
+        }
         await domainBlock.updateCategoryBlock(category).catch((err) => {
           log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
         });
