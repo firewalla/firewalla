@@ -346,7 +346,7 @@ module.exports = class HostManager {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
     const { granularities, hits} = statSettings;
     const stats = {}
-    const metrics = [ 'upload', 'download', 'ipB', 'dnsB' ]
+    const metrics = [ 'upload', 'download', 'ipB', 'dns', 'dnsB' ]
     for (const metric of metrics) {
       stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
     }
@@ -397,7 +397,7 @@ module.exports = class HostManager {
     const subKey = target && target != '0.0.0.0' ? ':' + target : ''
 
     const stats = {}
-    const metrics = [ 'upload', 'download', 'ipB', 'dnsB' ]
+    const metrics = [ 'upload', 'download', 'ipB', 'dns', 'dnsB' ]
     for (const metric of metrics) {
       const s = await getHitsAsync(metric + subKey, "1minute", 61)
       if (s[s.length - 1] && s[s.length - 1][1] == 0) {
