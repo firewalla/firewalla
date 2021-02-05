@@ -25,15 +25,14 @@ const {Address4, Address6} = require('ip-address');
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const HostManager = require('../net2/HostManager')
+const hostManager = new HostManager();
+const networkProfileManager = require('../net2/NetworkProfileManager')
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
-const Policy = require('../alarm/Policy.js');
-const PM2 = require('../alarm/PolicyManager2.js');
-const pm2 = new PM2();
-const CategoryUpdater = require('../control/CategoryUpdater.js');
-const categoryUpdater = new CategoryUpdater();
+const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const os = require('os')
 const util = require('util')
@@ -180,6 +179,8 @@ class ACLAuditLogPlugin extends Sensor {
     // not able to map ip to unique identity from VPN yet
     if (!intf || intf.name === "tun_fwvpn")
       return;
+    record.intf = intf.uuid
+
     const mac = await hostTool.getMacByIPWithCache(localIP);
     if (mac) {
       // TODO: is dns resolution necessary here?
@@ -203,6 +204,8 @@ class ACLAuditLogPlugin extends Sensor {
     // not able to map ip to unique identity from VPN yet
     if (!intf || intf.name === "tun_fwvpn")
       return;
+    record.intf = intf.uuid
+
     const mac = await hostTool.getMacByIPWithCache(localIP);
     if (mac) {
       record.type = "dns";
@@ -229,10 +232,28 @@ class ACLAuditLogPlugin extends Sensor {
           for (const target in buffer[type][mac]) {
             const key = this._getAuditDropKey(mac);
             const record = buffer[type][mac][target];
-            await rclient.zaddAsync(key, record.ts, JSON.stringify(record));
+            const {ts, ct, intf} = record
+            const tags = []
+            const host = hostManager.getHostFastByMAC(mac);
+            if (!host) continue
+            tags.push(...await host.getTags())
+            const networkProfile = networkProfileManager.getNetworkProfile(intf);
+            if (!networkProfile) continue
+            tags.push(...networkProfile.getTags());
+            record.tags = _.uniq(tags)
+
+            await rclient.zaddAsync(key, ts, JSON.stringify(record));
+
+            timeSeries.recordHit(`${type}B`, ts, ct)
+            timeSeries.recordHit(`${type}B:${mac}`, ts, ct)
+            timeSeries.recordHit(`${type}B:intf:${intf}`, ts, ct)
+            for (const tag of record.tags) {
+              timeSeries.recordHit(`${type}B:tag:${tag}`, ts, ct)
+            }
           }
         }
       }
+      timeSeries.exec()
     } catch(err) {
       log.error("Failed to write audit logs", err)
     }
@@ -291,7 +312,7 @@ class ACLAuditLogPlugin extends Sensor {
         try {
           log.debug(transaction)
           await rclient.multi(transaction).execAsync();
-          log.info("Audit:Save:Removed", key);
+          log.debug("Audit:Save:Removed", key);
         } catch (err) {
           log.error("Audit:Save:Error", err);
         }

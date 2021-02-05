@@ -32,17 +32,11 @@ for path in $PATHS
 do
     used_pcent=$(df --output=pcent $path | tail -1 | tr -d ' %')
     avail=$(df -k --output=avail $path | tail -1| tr -d ' ')
+    size=$(df -k --output=size $path | tail -1 | tr -d ' ')
+    labels="percent_used=$used_pcent percent_limit=$LIMIT_PCENT kbytes_size=$size kbytes_available=$avail kbytes_limit=$LIMIT_AVAIL"
     state_value=0
-    labels=''
-    if [[ $used_pcent -gt $LIMIT_PCENT ]]
+    if [[ $used_pcent -gt $LIMIT_PCENT || $avail -lt $LIMIT_AVAIL ]]
     then
-        labels="$labels percent_used=$used_pcent percent_limit=$LIMIT_PCENT"
-        state_value=1
-    fi
-    if [[ $avail -lt $LIMIT_AVAIL ]]
-    then
-        size=$(df -k --output=size $path | tail -1 | tr -d ' ')
-        labels="$labels kbytes_size=$size kbytes_available=$avail kbytes_limit=$LIMIT_AVAIL"
         state_value=1
     fi
     echo "state $STATE_TYPE $path $state_value $labels"

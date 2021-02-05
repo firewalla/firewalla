@@ -131,12 +131,12 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128) {
   const ipset = categoryUpdater.getIPSetName(category);
   const tempIpset = categoryUpdater.getTempIPSetName(category);
   const ipset6 = categoryUpdater.getIPSetNameForIPV6(category);
-  const tempIpset6 = categoryUpdater.getTempIPSetNameForIPV6(`tmp_${category}`);
+  const tempIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category);
 
   const staticIpset = categoryUpdater.getIPSetName(category, true);
   const tempStaticIpset = categoryUpdater.getTempIPSetName(category, true);
   const staticIpset6 = categoryUpdater.getIPSetNameForIPV6(category, true);
-  const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(`tmp_${category}`, true);
+  const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category, true);
 
   const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
   const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`

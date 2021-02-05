@@ -300,6 +300,9 @@ class HostTool {
       return Promise.resolve()
     }
 
+    if (!this.isMacAddress(mac))
+      return;
+
     let key = this.getMacKey(mac)
     let string = JSON.stringify(activity)
 

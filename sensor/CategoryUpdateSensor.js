@@ -33,6 +33,7 @@ const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
 
 const domainBlock = require('../control/DomainBlock.js');
+const { isHashDomain } = require('../util/util.js');
 
 const categoryHashsetMapping = {
   "games": "app.gaming",
@@ -90,10 +91,6 @@ class CategoryUpdateSensor extends Sensor {
     }
   }
 
-  isHashDomain(domain) {
-    return domain.length == 44;
-  }
-
   async updateCategory(category) {
     log.info(`Loading domains for ${category} from cloud`);
 
@@ -102,8 +99,8 @@ class CategoryUpdateSensor extends Sensor {
     if (domains == null) return
     log.info(`category ${category} has ${domains.length} domains`)
 
-    const hashDomains = domains.filter(d=>this.isHashDomain(d));
-    const leftDomains = domains.filter(d=>!this.isHashDomain(d));
+    const hashDomains = domains.filter(d=>isHashDomain(d));
+    const leftDomains = domains.filter(d=>!isHashDomain(d));
     if (leftDomains && leftDomains.length > 0) {
       await categoryUpdater.flushDefaultDomains(category);
       await categoryUpdater.addDefaultDomains(category, leftDomains);

@@ -1,30 +1,19 @@
-name: OnPush-Script
-
+name: OnPR-Script
 on: pull_request
 
 jobs:
-    onpush-scripts:
-        name: PR scripts
+    onpr-scripts:
+        name: pull request scripts
         runs-on: ${{ matrix.platform }}
+        env:
+          WS_FIREWALLA: /home/pi/firewalla
+          WS_FIREACTION: /home/pi/fireaction
         strategy:
             matrix:
-                platform: [ Red, Blue, Navy, Gold ]
-        steps:
+                platform: [ Red, Blue, Navy, Gold, Gold20 ]
+        steps:              
             - name: Checkout Firewalla
               uses: actions/checkout@v2
 
-            - name: Checkout push scripts
-              uses: actions/checkout@v2
-              with:
-                  repository: firewalla/fireaction
-                  ref: main
-                  token: ${{ secrets.ACCESS_TOKEN }}
-                  path: fireaction
-
-            - name: Sanity check
-              run: scripts/sanity_check.sh
-
-            - name: Run PR scripts
-              run: run-parts scripts/pr/
-              working-directory: fireaction
-
+            - name: Run action PR scripts
+              run: run-parts $WS_FIREACTION/scripts/pr/
