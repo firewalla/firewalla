@@ -219,38 +219,56 @@ class FlowAggregationSensor extends Sensor {
   // flows => { ip1 => 100KB, ip2 => 2MB }
   trafficGroupByDestIP(flows) {
 
-    let traffic = {};
+    const traffic = {};
 
     flows.forEach((flow) => {
 
-      let destIP = flow.type == 'dns' ? flow.domain : flow.ip;
-
-      let t = traffic[destIP];
+      let t = traffic[flow.ip];
 
       if (!t) {
-        t = flow.type ? { dns: 0, ip: 0 } : { upload: 0, download: 0 };
-        traffic[destIP] = t;
+        t = { upload: 0, download: 0 };
+        traffic[flow.ip] = t;
       }
 
-      if (flow.type) {
-        t[flow.type] += flow.count;
-      } else {
-        t.upload += flow.upload;
-        t.download += flow.download;
-      }
+      t.upload += flow.upload;
+      t.download += flow.download;
 
-      if (flow.port) {
-        if (!t.port) t.port = []
-
-        const port = String(flow.port); //make sure it is string
-        if (!t.port.includes(port)) {
-          t.port.push(port)
-          t.port.sort((a,b)=>{return a-b})
-        }
-      }
+      this.addPortToEntry(t, flow.port)
     });
 
     return traffic;
+  }
+
+  addPortToEntry(t, port) {
+    if (!port) return
+    if (!t.port) t.port = []
+
+    port = String(port); //make sure it is string
+    if (!t.port.includes(port)) {
+      t.port.push(port)
+      t.port.sort((a,b)=>{return a-b})
+    }
+  }
+
+  auditLogsGroupByDestIP(logs) {
+    const result = { dns: {}, ip: {} };
+
+    logs.forEach(log => {
+      const destIP = log.type == 'dns' ? log.domain : log.ip;
+
+      let t = result[log.type][destIP];
+
+      if (!t) {
+        t = { count: 0 };
+        result[log.type][destIP] = t;
+      }
+
+      t.count += log.count;
+
+      this.addPortToEntry(t, log.port)
+    });
+
+    return result;
   }
 
   async aggrAll(ts) {
@@ -612,9 +630,9 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
 
     const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end});
-    const groupedLogs = this.trafficGroupByDestIP(auditLogs);
-    await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
-    await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
+    const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
+    await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+    await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
   }
 
   async getFlow(dimension, type, options) {
