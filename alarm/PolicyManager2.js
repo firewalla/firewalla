@@ -2343,12 +2343,12 @@ class PolicyManager2 {
         case 'update':
           for(const rawPolicy of rawData){
             const pid = rawPolicy.pid;
-            const policyObj = new Policy(rawPolicy);
-            const samePolicies = await pm2.getSamePolicies(policyObj);
+            const oldPolicy = await this.getPolicy(pid)
+            const policyObj = new Policy(Object.assign({}, oldPolicy, rawPolicy));
+            const samePolicies = await this.getSamePolicies(policyObj);
             if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
               results.update.push('duplicated');
             } else {
-              const oldPolicy = await this.getPolicy(pid);
               await this.updatePolicyAsync(rawPolicy);
               const newPolicy = await this.getPolicy(pid);
               this.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy);

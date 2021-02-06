@@ -2775,12 +2775,12 @@ class netBot extends ControllerBot {
           const policy = value
 
           const pid = policy.pid
-          const policyObj = new Policy(policy);
+          const oldPolicy = await pm2.getPolicy(pid)
+          const policyObj = new Policy(Object.assign({}, oldPolicy, policy));
           const samePolicies = await pm2.getSamePolicies(policyObj);
           if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
             this.simpleTxData(msg, samePolicies[0], {code: 409, msg: "policy already exists"}, callback);
           } else {
-            const oldPolicy = await pm2.getPolicy(pid)
             await pm2.updatePolicyAsync(policy)
             const newPolicy = await pm2.getPolicy(pid)
             await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
