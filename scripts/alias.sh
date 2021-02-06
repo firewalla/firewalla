@@ -61,6 +61,7 @@ alias cbi='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scr
 alias sccf='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -s -- -f'
 alias remote_speed_test='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
 alias rst='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
+alias frset='curl -X POST http://localhost:8837/v1/config/set -H "Content-Type:application/json"'
 
 alias less='less -r'
 
