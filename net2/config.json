@@ -782,5 +782,6 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
-  }
+  },
+  "pairedDeviceMaxHistory": 100
 }
