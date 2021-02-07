@@ -1326,9 +1326,15 @@ module.exports = class DNSMASQ {
     // legacy ip reservation is set in host:mac:*
     const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
       .filter((x) => (x && x.mac) != null)
-      .filter((x) => hostManager.getHostFastByMAC(x.mac)) // do not apply host IP assignment for devices that are inactive
       .filter((x) => !sysManager.isMyMac(x.mac))
-      .sort((a, b) => a.mac.localeCompare(b.mac));
+      .sort((a, b) => {
+        // active device comes first in the hosts list
+        if (hostManager.getHostFastByMAC(a.mac) && hostManager.getHostFastByMAC(b.mac) || !hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
+          return a.mac.localeCompare(b.mac);
+        if (hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
+          return -1;
+        return 1; 
+      });
 
     hosts.forEach(h => {
       try {
@@ -1354,6 +1360,7 @@ module.exports = class DNSMASQ {
     // }, Promise.resolve({}))
 
     let hostsList = []
+    const assignedIPs = {};
 
     for (const h of hosts) {
       if (h.dhcpIgnore === true) {
@@ -1374,13 +1381,19 @@ module.exports = class DNSMASQ {
 
         reservedIp = reservedIp ? reservedIp + ',' : ''
         if (reservedIp !== "") {
-          hostsList.push(
-            `${h.mac},set:${monitor},${reservedIp}`
-          );
-          reserved = true;
+          if (hostManager.getHostFastByMAC(h.mac) || !assignedIPs[reservedIp]) {
+            hostsList.push(
+              `${h.mac},set:${monitor},${reservedIp}`
+            );
+            assignedIPs[reservedIp] = h.mac;
+            reserved = true;
+          } else {
+            // inactive device comes after active device in the hosts list
+            log.warn(`Device ${h.mac} is inactive and its reserved IP ${reservedIp} conflicts with another device ${assignedIPs[reservedIp]} and will not take effect`);
+          }
         }
       }
-      if (!reserved) {
+      if (!reserved && hostManager.getHostFastByMAC(h.mac)) { // do not add inactive device that does not have a reserved IP to the hosts file
         hostsList.push(`${h.mac},set:${monitor}`);
       }
     }
