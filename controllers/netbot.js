@@ -4113,7 +4113,9 @@ class netBot extends ControllerBot {
         targetBranch = prodBranch
         break
     }
-
+    if (!targetBranch) {
+      throw new Error("Can not switch to branch", targetBranch);
+    }
     log.info("Going to switch to branch", targetBranch);
     try {
       await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
