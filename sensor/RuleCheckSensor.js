@@ -195,7 +195,7 @@ class RuleCheckSensor extends Sensor {
       return;
     if (!target)
       return;
-    log.info(`Checking rule enforcement ${pid}`);
+    log.debug(`Checking rule enforcement ${pid}`);
 
     const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
 

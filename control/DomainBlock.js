@@ -55,7 +55,7 @@ class DomainBlock {
   async blockDomain(domain, options) {
     options = options || {}
     domain = domain && domain.toLowerCase();
-    log.info(`Implementing Block on ${domain}`);
+    log.debug(`Implementing Block on ${domain}`);
 
     await this.syncDomainIPMapping(domain, options)
     domainUpdater.registerUpdate(domain, options);
