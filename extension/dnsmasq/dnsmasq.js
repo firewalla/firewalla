@@ -1328,9 +1328,12 @@ module.exports = class DNSMASQ {
       .filter((x) => (x && x.mac) != null)
       .filter((x) => !sysManager.isMyMac(x.mac))
       .sort((a, b) => {
-        // active device comes first in the hosts list
-        if (hostManager.getHostFastByMAC(a.mac) && hostManager.getHostFastByMAC(b.mac) || !hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
+        if (hostManager.getHostFastByMAC(a.mac) && hostManager.getHostFastByMAC(b.mac))
           return a.mac.localeCompare(b.mac);
+        // inactive device sorts by last active time
+        if (!hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
+          return Number(b.lastActiveTimestamp || "0") - Number(a.lastActiveTimestamp || "0");
+        // active device comes first in the hosts list
         if (hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
           return -1;
         return 1; 
@@ -1388,7 +1391,7 @@ module.exports = class DNSMASQ {
             assignedIPs[reservedIp] = h.mac;
             reserved = true;
           } else {
-            // inactive device comes after active device in the hosts list
+            // inactive device comes after active device in the hosts list, and more recently-used inactive device comes before the lesser
             log.warn(`Device ${h.mac} is inactive and its reserved IP ${reservedIp} conflicts with another device ${assignedIPs[reservedIp]} and will not take effect`);
           }
         }
