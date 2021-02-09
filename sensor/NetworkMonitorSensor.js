@@ -371,7 +371,7 @@ class NetworkMonitorSensor extends Sensor {
       }
       // t-score: 1.960(95%) 2.576(99%)
       const meanLimit = overallStats.mean + cfg.tValue * overallStats.mdev
-      log.info(`Checking RTT with alertKey(${alertKey}) mean(${mean}) meanLimit(${meanLimit})`);
+      log.debug(`Checking RTT with alertKey(${alertKey}) mean(${mean}) meanLimit(${meanLimit})`);
       if ( mean > meanLimit ) {
         log.warn(`RTT value(${mean}) is over limit(${meanLimit}) in ${alertKey}`);
         if ( ! (this.alerts.hasOwnProperty(alertKey)) ) {
@@ -386,7 +386,7 @@ class NetworkMonitorSensor extends Sensor {
             alarmManager2.enqueueAlarm(alarm);
             era.addActionEvent(`${monitorType}_RTT`,1,{"target":target,"mean":mean,"meanLimit":meanLimit});
           }, cfg.alarmDelay*1000)
-          log.info(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
+          log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
         }
       } else {
         if (this.alerts.hasOwnProperty(alertKey)) {
@@ -402,7 +402,7 @@ class NetworkMonitorSensor extends Sensor {
   async checkLossrate(monitorType, target, cfg, lossrate) {
     const alertKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}:lossrate`;
     try {
-      log.info(`Checking lossrate(${lossrate}) against lossrateLimit(${cfg.lossrateLimit}) with alertKey(${alertKey})`);
+      log.debug(`Checking lossrate(${lossrate}) against lossrateLimit(${cfg.lossrateLimit}) with alertKey(${alertKey})`);
       if ( lossrate > cfg.lossrateLimit ) {
         log.warn(`Loss rate (${lossrate}) is over limit(${cfg.lossrateLimit}) in ${alertKey}`);
         if ( ! this.alerts.hasOwnProperty(alertKey) ) {
@@ -417,7 +417,7 @@ class NetworkMonitorSensor extends Sensor {
             alarmManager2.enqueueAlarm(alarm);
             era.addActionEvent(`${monitorType}_lossrate`,1,{"target":target,"lossrate":lossrate,"lossrateLimit":cfg.lossrateLimit});
           }, cfg.alarmDelay*1000)
-          log.info(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
+          log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
         }
       } else {
         if (this.alerts.hasOwnProperty(alertKey)) {
