@@ -24,7 +24,11 @@ const fc = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sysManager = require('../net2/SysManager.js');
-const sem = require('./SensorEventManager.js').getInstance();
+
+const era = require('../event/EventRequestApi.js');
+const Alarm = require('../alarm/Alarm.js');
+const AlarmManager2 = require('../alarm/AlarmManager2.js');
+const alarmManager2 = new AlarmManager2();
 
 const KEY_PREFIX = `metric:monitor`;
 const KEY_PREFIX_RAW = `${KEY_PREFIX}:raw`;
@@ -45,6 +49,7 @@ class NetworkMonitorSensor extends Sensor {
     this.sampleJobs = {};
     this.processJobs = {};
     this.cachedPolicy = { "system": {}, "devices": {} };
+    this.alerts = {};
   }
 
   /*
@@ -169,7 +174,7 @@ class NetworkMonitorSensor extends Sensor {
       const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
       //const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}`);
       const data = result.stdout.trim().split(/\n/).map(e => parseFloat(e));
-      this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg.sampleCount);
+      this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
     } catch (err) {
       log.error("failed to sample PING:",err);
     }
@@ -188,8 +193,7 @@ class NetworkMonitorSensor extends Sensor {
           data.push(parseInt(result.stdout.trim()));
         }
       }
-      //this.recordSampleDataInRedis(MONITOR_DNS, `${target}:${cfg.lookupName}`, timeSlot, data);
-      this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg.sampleCount);
+      this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg);
     } catch (err) {
       log.error("failed to sample DNS:",err);
     }
@@ -208,7 +212,7 @@ class NetworkMonitorSensor extends Sensor {
           data.push(parseFloat(result.stdout.trim()));
         }
       }
-      this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg.sampleCount);
+      this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg);
     } catch (err) {
       log.error("failed to sample HTTP:",err);
     }
@@ -349,15 +353,85 @@ class NetworkMonitorSensor extends Sensor {
     });
   }
 
-  getMeanStdev(flist) {
+  getMeanMdev(flist) {
     if (flist.length === 0 ) return 0;
     const mean = flist.reduce((sum,x) => sum+x, 0)/flist.length;
     const variance = flist.reduce( (variance,curr) => variance + (curr - mean)*(curr - mean),0 )/flist.length;
-    const stdev = Math.sqrt(variance);
-    return [ mean, stdev ];
+    const mdev = Math.sqrt(variance);
+    return [ mean, mdev ];
   }
 
-  async recordSampleDataInRedis(monitorType, target, timeSlot, data, count) {
+  async checkRTT(monitorType, target, cfg, mean) {
+    const statRediskey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
+    const alertKey = statRediskey+":rtt";
+    try {
+      const overallStats = {
+        "mean": Number(await rclient.hgetAsync(statRediskey,"mean")),
+        "mdev": Number(await rclient.hgetAsync(statRediskey,"mdev"))
+      }
+      // t-score: 1.960(95%) 2.576(99%)
+      const meanLimit = overallStats.mean + cfg.tValue * overallStats.mdev
+      log.info(`Checking RTT with alertKey(${alertKey}) mean(${mean}) meanLimit(${meanLimit})`);
+      if ( mean > meanLimit ) {
+        log.warn(`RTT value(${mean}) is over limit(${meanLimit}) in ${alertKey}`);
+        if ( ! (this.alerts.hasOwnProperty(alertKey)) ) {
+          this.alerts[alertKey] = setTimeout(() => {
+            log.info(`sending alarm on ${alertKey} for RTT mean(${mean}) over meanLimit(${meanLimit})`);
+            let alarm = new Alarm.NetworkMonitorRTTAlarm(new Date() / 1000, null, {
+                "p.monitorType": monitorType,
+                "p.target": target,
+                "p.meanLimit": meanLimit,
+                "p.mean": mean
+            });
+            alarmManager2.enqueueAlarm(alarm);
+            era.addActionEvent(`${monitorType}_RTT`,1,{"target":target,"mean":mean,"meanLimit":meanLimit});
+          }, cfg.alarmDelay*1000)
+          log.info(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
+        }
+      } else {
+        if (this.alerts.hasOwnProperty(alertKey)) {
+          clearTimeout(this.alerts[alertKey]);
+          delete this.alerts[alertKey];
+        }
+      }
+    } catch (err) {
+      log.error(`failed to check RTT of ${monitorType}:${target},`,err);
+    }
+  }
+
+  async checkLossrate(monitorType, target, cfg, lossrate) {
+    const alertKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}:lossrate`;
+    try {
+      log.info(`Checking lossrate(${lossrate}) against lossrateLimit(${cfg.lossrateLimit}) with alertKey(${alertKey})`);
+      if ( lossrate > cfg.lossrateLimit ) {
+        log.warn(`Loss rate (${lossrate}) is over limit(${cfg.lossrateLimit}) in ${alertKey}`);
+        if ( ! this.alerts.hasOwnProperty(alertKey) ) {
+          this.alerts[alertKey] = setTimeout(() => {
+            log.info(`sending alarm on ${alertKey} for lossrate(${lossrate}) over lossrateLimit(${cfg.lossrateLimit})`);
+            let alarm = new Alarm.NetworkMonitorLossrateAlarm(new Date() / 1000, null, {
+                "p.monitorType": monitorType,
+                "p.target": target,
+                "p.lossrateLimit": cfg.lossrateLimit,
+                "p.lossrate": lossrate
+            });
+            alarmManager2.enqueueAlarm(alarm);
+            era.addActionEvent(`${monitorType}_lossrate`,1,{"target":target,"lossrate":lossrate,"lossrateLimit":cfg.lossrateLimit});
+          }, cfg.alarmDelay*1000)
+          log.info(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
+        }
+      } else {
+        if (this.alerts.hasOwnProperty(alertKey)) {
+          clearTimeout(this.alerts[alertKey]);
+          delete this.alerts[alertKey];
+        }
+      }
+    } catch (err) {
+      log.error(`failed to check loss rate of ${monitorType}:${target},`,err);
+    }
+  }
+
+  async recordSampleDataInRedis(monitorType, target, timeSlot, data, cfg) {
+    const count = cfg.sampleCount;
     const redisKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
     log.debug(`record sample data(${JSON.stringify(data,null,4)}) in ${redisKey} at ${timeSlot}`);
     try {
@@ -366,7 +440,10 @@ class NetworkMonitorSensor extends Sensor {
       })
       const l = dataSorted.length;
       if (l>0) {
-        const [mean,stdev] = this.getMeanStdev(data);
+        const [mean,mdev] = this.getMeanMdev(data);
+        this.checkRTT(monitorType,target,cfg,mean);
+        const lossrate = parseFloat(Number((count-data.length)/count).toFixed(2));
+        this.checkLossrate(monitorType,target,cfg,lossrate);
         const result = {
           "data": data,
           "stat" : {
@@ -374,8 +451,7 @@ class NetworkMonitorSensor extends Sensor {
             "min"   : parseFloat(dataSorted[0].toFixed(1)),
             "max"   : parseFloat(dataSorted[l-1].toFixed(1)),
             "mean"  : parseFloat(mean.toFixed(1)),
-            "stdev" : parseFloat(stdev.toFixed(1)),
-            "lossrate"  : parseFloat(Number((count-data.length)/count).toFixed(2))
+            "lossrate"  : lossrate
           }
         }
         const resultJSON = JSON.stringify(result);
@@ -393,7 +469,8 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
       const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
-      let allData = [];
+      let allMeans = [];
+      let allLossrates = [];
       let scanCursor = 0;
       log.debug("expireTS=",expireTS);
       log.debug("scanKey=",scanKey);
@@ -415,8 +492,10 @@ class NetworkMonitorSensor extends Sensor {
             const result = JSON.parse(result_json);
             if (result && result.stat && result.stat.median) {
               log.debug(`collect data of ${scanKey} at ${ts}`);
-              allData.push(parseFloat(result.stat.median)); // choose median as sample data for overall stats
-              log.debug("allData.length:",allData.length);
+              // choose mean for overall stats for estimation
+              allMeans.push(parseFloat(result.stat.mean));
+              allLossrates.push(parseFloat(result.stat.lossrate));
+              log.debug("allData.length:",allMeans.length);
             }
           }
         }
@@ -425,15 +504,20 @@ class NetworkMonitorSensor extends Sensor {
       }
 
       // calcualte and record stats
-      allData.sort((a,b) => a-b );
-      log.debug("sorted allData:",allData);
-      const l = allData.length;
+      allMeans.sort((a,b) => a-b );
+      const l = allMeans.length;
       if (l > 0) {
         const statKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
+        const [mean,mdev] = this.getMeanMdev(allMeans);
+        const [lrmean,lrmdev] = this.getMeanMdev(allLossrates);
         log.debug("record stat data at ",statKey);
-        await rclient.hsetAsync(statKey, "min", parseFloat(allData[0].toFixed(1)));
-        await rclient.hsetAsync(statKey, "max", parseFloat(allData[l-1].toFixed(1)));
-        await rclient.hsetAsync(statKey, "median", parseFloat(((l%2 === 0) ? (allData[l/2-1]+allData[l/2])/2 : allData[(l-1)/2]).toFixed(1)));
+        await rclient.hsetAsync(statKey, "min", parseFloat(allMeans[0].toFixed(1)));
+        await rclient.hsetAsync(statKey, "max", parseFloat(allMeans[l-1].toFixed(1)));
+        await rclient.hsetAsync(statKey, "median", parseFloat(((l%2 === 0) ? (allMeans[l/2-1]+allMeans[l/2])/2 : allMeans[(l-1)/2]).toFixed(1)));
+        await rclient.hsetAsync(statKey, "mean", parseFloat(mean.toFixed(1)));
+        await rclient.hsetAsync(statKey, "mdev", parseFloat(mdev.toFixed(1)));
+        await rclient.hsetAsync(statKey, "lrmean", parseFloat(lrmean.toFixed(1)));
+        await rclient.hsetAsync(statKey, "lrmdev", parseFloat(lrmdev.toFixed(1)));
       }
     } catch (err) {
       log.error(`failed to process data of ${monitorType} for target(${target}): `,err);
