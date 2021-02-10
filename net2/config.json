@@ -410,6 +410,7 @@
         "ping": {
             "sampleCount": 20,
             "sampleInterval": 300,
+            "minSampleRounds": 30,
             "alarmDelay": 600,
             "lossrateLimit": 0.1,
             "tValue": 2.576,
@@ -422,6 +423,7 @@
             "lookupName": "check.firewalla.com",
             "sampleCount": 5,
             "sampleInterval": 180,
+            "minSampleRounds": 30,
             "alarmDelay": 360,
             "lossrateLimit": 0.1,
             "tValue": 2.576,
@@ -433,6 +435,7 @@
         "http": {
             "sampleCount": 5,
             "sampleInterval": 180,
+            "minSampleRounds": 30,
             "alarmDelay": 360,
             "lossrateLimit": 0.1,
             "tValue": 2.576,

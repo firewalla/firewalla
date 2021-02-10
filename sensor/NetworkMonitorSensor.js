@@ -365,12 +365,14 @@ class NetworkMonitorSensor extends Sensor {
     const statRediskey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
     const alertKey = statRediskey+":rtt";
     try {
-      const overallStats = {
-        "mean": Number(await rclient.hgetAsync(statRediskey,"mean")),
-        "mdev": Number(await rclient.hgetAsync(statRediskey,"mdev"))
+      const overallMean = await rclient.hgetAsync(statRediskey,"mean");
+      const overallMdev = await rclient.hgetAsync(statRediskey,"mdev");
+      if (overallMean===null||overallMdev===null) {
+        log.warn("no stat data yet in ",statRediskey);
+        return;
       }
       // t-score: 1.960(95%) 2.576(99%)
-      const meanLimit = overallStats.mean + cfg.tValue * overallStats.mdev
+      const meanLimit = Number(overallMean) + cfg.tValue * Number(overallMdev);
       log.debug(`Checking RTT with alertKey(${alertKey}) mean(${mean}) meanLimit(${meanLimit})`);
       if ( mean > meanLimit ) {
         log.warn(`RTT value(${mean}) is over limit(${meanLimit}) in ${alertKey}`);
@@ -506,7 +508,7 @@ class NetworkMonitorSensor extends Sensor {
       // calcualte and record stats
       allMeans.sort((a,b) => a-b );
       const l = allMeans.length;
-      if (l > 0) {
+      if (l >= cfg.minSampleRounds) {
         const statKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
         const [mean,mdev] = this.getMeanMdev(allMeans);
         const [lrmean,lrmdev] = this.getMeanMdev(allLossrates);
@@ -518,6 +520,8 @@ class NetworkMonitorSensor extends Sensor {
         await rclient.hsetAsync(statKey, "mdev", parseFloat(mdev.toFixed(1)));
         await rclient.hsetAsync(statKey, "lrmean", parseFloat(lrmean.toFixed(1)));
         await rclient.hsetAsync(statKey, "lrmdev", parseFloat(lrmdev.toFixed(1)));
+      } else {
+        log.warn(`not enough rounds(${l} < ${cfg.minSampleRounds}) of sample data to calcualte stats`);
       }
     } catch (err) {
       log.error(`failed to process data of ${monitorType} for target(${target}): `,err);
