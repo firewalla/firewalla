@@ -119,6 +119,10 @@ class VPNProfile {
     return `c_vpn_prof_${cn.substring(0, 12)}_set` + (af === 4 ? "" : "6");
   }
 
+  static getRedisClientAddressSetName(cn) {
+    return `vpn_prof_addresses:${cn}`;
+  }
+
   static async ensureCreateEnforcementEnv(cn) {
     if (envCreatedMap[cn])
       return;
@@ -129,6 +133,9 @@ class VPNProfile {
     await exec(`sudo ipset create -! ${VPNProfile.getVPNProfileSetName(cn, 6)} hash:net family inet6`).catch((err) => {
       log.error(`Failed to create VPN profile ipset ${VPNProfile.getVPNProfileSetName(cn, 6)}`, err.message);
     });
+    const content = `redis-src-address-group=%${VPNProfile.getRedisClientAddressSetName(cn)}@${cn}`;
+    await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vpn_prof_${cn}.conf`, content, {encoding: 'utf8'});
+    dnsmasq.scheduleRestartDNSService();
     envCreatedMap[cn] = 1;
   }
 
@@ -174,12 +181,16 @@ class VPNProfile {
     await ipset.batchOp(cmds).catch((err) => {
       log.error(`Failed to populate client ipset of ${this.o.cn}`, err.message);
     });
-    // update dnsmasq config file
+    // update client IP addresses in redis set
     // TODO: only supports IPv4 address here
-    const entries = clientIPs.filter(ip => !ip.includes('/')).map(ip => `src-address-group=%${ip}@${this.o.cn}`);
-    await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vpn_prof_${this.o.cn}.conf`, entries.join('\n'), {encoding: 'utf8'});
+    const currentIPs = await rclient.smembersAsync(VPNProfile.getRedisClientAddressSetName(this.o.cn));
+    const removedIPs = currentIPs.filter(ip => !clientIPs.includes(ip)) || [];
+    const newIPs = clientIPs.filter(ip => !ip.includes('/') && !currentIPs.includes(ip));
+    if (removedIPs.length > 0)
+      await rclient.sremAsync(VPNProfile.getRedisClientAddressSetName(this.o.cn), removedIPs);
+    if (newIPs.length > 0)
+      await rclient.saddAsync(VPNProfile.getRedisClientAddressSetName(this.o.cn), newIPs);
     this._clientIPs = clientIPs;
-    dnsmasq.scheduleRestartDNSService();
   }
 
   async spoof(state) {
