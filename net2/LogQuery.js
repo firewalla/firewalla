@@ -194,7 +194,6 @@ class LogQuery {
       allMacs = hostManager.getActiveMACs();
       if (this.includeFirewallaInterfaces())
         allMacs.push(... sysManager.getLogicInterfaces().map(i => i.mac_address.toUpperCase()))
-      allMacs.push(this.extraHosts())
       if (_.isArray(options.macs))
         allMacs = _.uniq(allMacs.concat(options.macs));
     }
