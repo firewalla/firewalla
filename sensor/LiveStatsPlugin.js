@@ -74,7 +74,7 @@ class LiveStatsPlugin extends Sensor {
   }
 
   buildActiveConnGrepString() {
-    const wanIPs = sysManager.myWanIps();
+    const wanIPs = sysManager.myWanIps().v4;
     let str = "grep -v TIME_WAIT | fgrep -v '127.0.0.1' ";
     for(const ip of wanIPs) {
       str += `| egrep -v '=${ip}.*=${ip}'`;

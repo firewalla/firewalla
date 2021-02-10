@@ -131,7 +131,7 @@ class VpnManager {
     if (!platform.isFireRouterManaged())
       return;
     const primaryIp = sysManager.myDefaultWanIp();
-    const allWanIps = sysManager.myWanIps();
+    const allWanIps = sysManager.myWanIps().v4;
     if (!primaryIp || !allWanIps || allWanIps.length === 0)
       return;
     const localPort = this.localPort;

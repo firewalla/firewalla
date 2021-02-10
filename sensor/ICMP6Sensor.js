@@ -92,7 +92,7 @@ class ICMP6Sensor extends Sensor {
       const dstMac = infos[0].split(' ')[1];
       let dstIp = infos[2].trim().split(' ')[4];
       dstIp = dstIp.substring(0, dstIp.length - 1); // strip last :
-      if (sysManager.isMulticastIP(dstIp))
+      if (sysManager.isMulticastIP6(dstIp))
         // do not process ICMP6 packet sent to multicast IP, the source mac not be the real mac
         return;
       const tgtIp = infos[4].substring(8); // omit ' tgt is '

@@ -66,7 +66,8 @@ class PublicIPSensor extends Sensor {
         }
       }
 
-      const publicWanIps = sysManager.myConnectedPublicWanIps().sort();
+      // TODO: support v6
+      const publicWanIps = sysManager.filterPublicIp4(sysManager.myWanIps(true).v4).sort();
       const existingPublicWanIpsJSON = await rclient.hgetAsync(redisKey, publicWanIPsHashKey);
       const existingPublicWanIps = ((existingPublicWanIpsJSON && JSON.parse(existingPublicWanIpsJSON)) || []).sort();
 
