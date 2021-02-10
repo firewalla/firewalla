@@ -380,11 +380,11 @@ class NetworkMonitorSensor extends Sensor {
             let alarm = new Alarm.NetworkMonitorRTTAlarm(new Date() / 1000, null, {
                 "p.monitorType": monitorType,
                 "p.target": target,
-                "p.meanLimit": meanLimit,
-                "p.mean": mean
+                "p.rttLimit": meanLimit,
+                "p.rtt": mean
             });
             alarmManager2.enqueueAlarm(alarm);
-            era.addActionEvent(`${monitorType}_RTT`,1,{"target":target,"mean":mean,"meanLimit":meanLimit});
+            era.addActionEvent(`${monitorType}_RTT`,1,{"target":target,"rtt":mean,"rttLimit":meanLimit});
           }, cfg.alarmDelay*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
         }

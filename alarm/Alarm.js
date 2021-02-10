@@ -1161,8 +1161,8 @@ class NetworkMonitorRTTAlarm extends Alarm {
   localizedNotificationContentArray() {
     return [this["p.monitorType"],
     this["p.target"],
-    this["p.mean"],
-    this["p.meanLimit"]
+    this["p.rtt"],
+    this["p.rttLimit"]
     ];
   }
 }
