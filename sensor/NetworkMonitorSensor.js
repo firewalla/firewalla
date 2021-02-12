@@ -387,8 +387,8 @@ class NetworkMonitorSensor extends Sensor {
             });
             alarmManager2.enqueueAlarm(alarm);
             era.addActionEvent(`${monitorType}_RTT`,1,{"target":target,"rtt":mean,"rttLimit":meanLimit});
-          }, cfg.alarmDelay*1000)
-          log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
+          }, cfg.alarmDelayRTT*1000)
+          log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayRTT} seconds, alerts=`,this.alerts);
         }
       } else {
         if (this.alerts.hasOwnProperty(alertKey)) {
@@ -418,8 +418,8 @@ class NetworkMonitorSensor extends Sensor {
             });
             alarmManager2.enqueueAlarm(alarm);
             era.addActionEvent(`${monitorType}_lossrate`,1,{"target":target,"lossrate":lossrate,"lossrateLimit":cfg.lossrateLimit});
-          }, cfg.alarmDelay*1000)
-          log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelay} seconds, alerts=`,this.alerts);
+          }, cfg.alarmDelayLossrate*1000)
+          log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayLossrate} seconds, alerts=`,this.alerts);
         }
       } else {
         if (this.alerts.hasOwnProperty(alertKey)) {
