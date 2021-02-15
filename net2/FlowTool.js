@@ -71,6 +71,8 @@ class FlowTool extends LogQuery {
     return _.isEqual(_.pick(targetFlow, compareKeys), _.pick(flow, compareKeys));
   }
 
+  includeFirewallaInterfaces() { return false }
+
   isLogValid(flow) {
     if (!super.isLogValid(flow)) return false
 

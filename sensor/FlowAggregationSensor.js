@@ -281,7 +281,8 @@ class FlowAggregationSensor extends Sensor {
       throw new Error("aggregation too soon");
     }
 
-    let macs = hostManager.getActiveMACs();
+    const macs = hostManager.getActiveMACs()
+    macs.push(... sysManager.getLogicInterfaces().map(i => i.mac_address.toUpperCase()))
     await Promise.all(macs.map(async mac => {
       log.debug("FlowAggrSensor on mac", mac);
       await this.aggr(mac, ts);
@@ -415,6 +416,12 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
+    for (const selfMac of sysManager.getLogicInterfaces().map(i => i.mac_address.toUpperCase())) {
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+      optionsCopy.mac = selfMac
+      await flowAggrTool.addSumFlow('ipB', options)
+    }
+
     const vpnIntf = sysManager.getInterface("tun_fwvpn");
     if (vpnIntf && vpnIntf.uuid) {
       const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
@@ -493,6 +500,8 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async aggrActivity(macAddress, ts) {
+    if (sysManager.isMyMac(macAddress)) return
+
     let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
     let begin = end - this.config.interval;
 
@@ -610,28 +619,34 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async aggr(macAddress, ts) {
-    let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
-    let begin = end - this.config.interval;
+    const end = flowAggrTool.getIntervalTick(ts, this.config.interval);
+    const begin = end - this.config.interval;
 
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
+    const endString = new Date(end * 1000).toLocaleTimeString();
+    const beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    let msg = util.format("Aggregating %s flows between %s and %s", macAddress, beginString, endString)
+    const msg = util.format("Aggregating %s flows between %s and %s", macAddress, beginString, endString)
     log.debug(msg);
 
-    // in => outgoing, out => incoming
-    const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end});
-    const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end});
-    // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
-    const flows = outgoingFlows.concat(incomingFlows)
+    const isMyMac = sysManager.isMyMac(macAddress)
 
-    const traffic = this.trafficGroupByDestIP(flows);
-    await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
-    await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
+    if (!isMyMac) {
+      // in => outgoing, out => incoming
+      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end});
+      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end});
+      // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
+      const flows = outgoingFlows.concat(incomingFlows)
+
+      const traffic = this.trafficGroupByDestIP(flows);
+      await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
+      await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
+    }
 
     const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end});
     const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
-    await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+    if (!isMyMac) {
+      await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+    }
     await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
   }
 
