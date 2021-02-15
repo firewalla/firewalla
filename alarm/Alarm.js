@@ -1145,6 +1145,50 @@ class ScreenTimeAlarm extends Alarm {
   }
 }
 
+class NetworkMonitorRTTAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_NETWORK_MONITOR_RTT", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ['p.monitorType','p.target'];
+  }
+
+  requiredKeys(){
+    return this.keysToCompareForDedup()
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.monitorType"],
+    this["p.target"],
+    this["p.rtt"],
+    this["p.rttLimit"]
+    ];
+  }
+}
+
+class NetworkMonitorLossrateAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_NETWORK_MONITOR_LOSSRATE", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ['p.monitorType','p.target'];
+  }
+
+  requiredKeys(){
+    return this.keysToCompareForDedup()
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.monitorType"],
+    this["p.target"],
+    this["p.lossrateLimit"],
+    this["p.lossrate"]
+    ];
+  }
+}
+
 const classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
@@ -1169,7 +1213,9 @@ const classMapping = {
   ALARM_OPENPORT: OpenPortAlarm.prototype,
   ALARM_UPNP: UpnpAlarm.prototype,
   ALARM_DUAL_WAN: DualWanAlarm.prototype,
-  ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype
+  ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
+  ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
+  ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype
 }
 
 module.exports = {
@@ -1199,5 +1245,7 @@ module.exports = {
   UpnpAlarm,
   DualWanAlarm,
   ScreenTimeAlarm,
+  NetworkMonitorRTTAlarm,
+  NetworkMonitorLossrateAlarm,
   mapping: classMapping
 }

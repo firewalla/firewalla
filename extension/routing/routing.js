@@ -19,6 +19,8 @@
 const log = require("../../net2/logger.js")(__filename);
 
 const _ = require('lodash');
+const AsyncLock = require('../../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 const util = require('util');
 
@@ -29,6 +31,7 @@ const RT_TYPE_REG = "RT_TYPE_REG";
 const MASK_REG = "0x3ff";
 const MASK_VC = "0xfc00";
 
+const LOCK_RT_TABLES = "LOCK_RT_TABLES";
 const LOCK_FILE = "/tmp/rt_tables.lock";
 
 async function removeCustomizedRoutingTable(tableName) {
@@ -37,53 +40,65 @@ async function removeCustomizedRoutingTable(tableName) {
 }
 
 async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
-  // separate bits in fwmark for vpn client and regular WAN
-  const bitOffset = type === RT_TYPE_VC ? 10 : 0;
-  const maxTableId = type === RT_TYPE_VC ? 64 : 1024;
-  let cmd = "cat /etc/iproute2/rt_tables | grep -v '#' | awk '{print $1,\"\\011\",$2}'";
-  let result = await exec(cmd);
-  if (result.stderr !== "") {
-    log.error("Failed to read rt_tables.", result.stderr);
-  }
-  const entries = result.stdout.split('\n');
-  const usedTid = [];
-  for (var i in entries) {
-    const entry = entries[i];
-    const line = entry.split(/\s+/);
-    const tid = line[0];
-    const name = line[1];
-    usedTid.push(tid);
-    if (name === tableName) {
-      if (Number(tid) >>> bitOffset === 0 || Number(tid) >>> bitOffset >= maxTableId) {
-        log.info(`Previous table id of ${tableName} is out of range ${tid}, removing old entry for ${tableName} ...`);
-        await removeCustomizedRoutingTable(tableName);
-      } else {
-        log.info("Table with same name already exists: " + tid);
-        return Number(tid);
+  return new Promise((resolve, reject) => {
+    lock.acquire(LOCK_RT_TABLES, async function(done) {
+      // separate bits in fwmark for vpn client and regular WAN
+      const bitOffset = type === RT_TYPE_VC ? 10 : 0;
+      const maxTableId = type === RT_TYPE_VC ? 64 : 1024;
+      let cmd = "cat /etc/iproute2/rt_tables | grep -v '#' | awk '{print $1,\"\\011\",$2}'";
+      let result = await exec(cmd);
+      if (result.stderr !== "") {
+        log.error("Failed to read rt_tables.", result.stderr);
       }
-    }
-  }
-  // find unoccupied table id between 1 - maxTableId
-  let id = 1;
-  while (id < maxTableId) {
-    if (!usedTid.includes((id << bitOffset) + "")) // convert number to string
-      break;
-    id++;
-  }
-  if (id == maxTableId) {
-    throw `Insufficient space to create routing table for ${tableName}, type ${type}`;
-  }
-  cmd = `sudo bash -c 'flock ${LOCK_FILE} -c "echo -e ${id << bitOffset}\\\t${tableName} >> /etc/iproute2/rt_tables; \
-    cat /etc/iproute2/rt_tables | sort | uniq > /etc/iproute2/rt_tables.new; \
-    cp /etc/iproute2/rt_tables.new /etc/iproute2/rt_tables; \
-    rm /etc/iproute2/rt_tables.new"'`;
-  log.info("Append new routing table: ", cmd);
-  result = await exec(cmd);
-  if (result.stderr !== "") {
-    log.error("Failed to create customized routing table.", result.stderr);
-    throw result.stderr;
-  }
-  return id << bitOffset;
+      const entries = result.stdout.split('\n');
+      const usedTid = [];
+      for (var i in entries) {
+        const entry = entries[i];
+        const line = entry.split(/\s+/);
+        const tid = line[0];
+        const name = line[1];
+        usedTid.push(tid);
+        if (name === tableName) {
+          if (Number(tid) >>> bitOffset === 0 || Number(tid) >>> bitOffset >= maxTableId) {
+            log.info(`Previous table id of ${tableName} is out of range ${tid}, removing old entry for ${tableName} ...`);
+            await removeCustomizedRoutingTable(tableName);
+          } else {
+            log.info("Table with same name already exists: " + tid);
+            done(null, Number(tid));
+            return;
+          }
+        }
+      }
+      // find unoccupied table id between 1 - maxTableId
+      let id = 1;
+      while (id < maxTableId) {
+        if (!usedTid.includes((id << bitOffset) + "")) // convert number to string
+          break;
+        id++;
+      }
+      if (id == maxTableId) {
+        done(`Insufficient space to create routing table for ${tableName}, type ${type}`, null);
+        return;
+      }
+      cmd = `sudo bash -c 'flock ${LOCK_FILE} -c "echo -e ${id << bitOffset}\\\t${tableName} >> /etc/iproute2/rt_tables; \
+        cat /etc/iproute2/rt_tables | sort | uniq > /etc/iproute2/rt_tables.new; \
+        cp /etc/iproute2/rt_tables.new /etc/iproute2/rt_tables; \
+        rm /etc/iproute2/rt_tables.new"'`;
+      log.info("Append new routing table: ", cmd);
+      result = await exec(cmd);
+      if (result.stderr !== "") {
+        log.error("Failed to create customized routing table.", result.stderr);
+        done(result.stderr, null);
+        return;
+      }
+      done(null, id << bitOffset);
+    }, function(err, ret) {
+      if (err)
+        reject(err);
+      else
+        resolve(ret);
+    });
+  });
 }
 
 async function createPolicyRoutingRule(from, iif, tableName, priority, fwmark, af = 4) {

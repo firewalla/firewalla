@@ -28,6 +28,7 @@ const ControllerBot = require('../lib/ControllerBot.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
+const pairedMaxHistoryEntry = fc.getConfig().pairedDeviceMaxHistory || 100;
 const URL = require("url");
 const bone = require("../lib/Bone");
 
@@ -1309,6 +1310,25 @@ class netBot extends ControllerBot {
 
     if (appInfo.deviceName && appInfo.eid) {
       const keyName = "sys:ept:memberNames"
+      try {
+        const device = await rclient.hgetAsync(keyName, appInfo.eid)
+        if (!device) {
+          const len = await rclient.hlenAsync("sys:ept:members:history");
+          if (len < pairedMaxHistoryEntry) {
+            const historyStr = await rclient.hgetAsync("sys:ept:members:history", appInfo.eid);
+            let historyMsg;
+            if (historyStr) historyMsg = JSON.parse(historyStr)["msg"]
+            if (!historyMsg) historyMsg = "";
+            const result = {};
+            result["deviceName"] = appInfo.deviceName;
+            const date = Math.floor(new Date() / 1000)
+            result["msg"] = `${historyMsg}paired at ${date},`;
+            await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
+          }
+        }
+      } catch(err) {
+        log.info("error when record paired device history info", err)
+      }
       await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
 
       const keyName2 = "sys:ept:member:lastvisit"

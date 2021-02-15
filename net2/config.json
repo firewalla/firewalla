@@ -410,6 +410,9 @@
         "ping": {
             "sampleCount": 20,
             "sampleInterval": 300,
+            "alarmDelay": 600,
+            "lossrateLimit": 0.1,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -419,6 +422,9 @@
             "lookupName": "check.firewalla.com",
             "sampleCount": 5,
             "sampleInterval": 180,
+            "alarmDelay": 360,
+            "lossrateLimit": 0.1,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -427,6 +433,9 @@
         "http": {
             "sampleCount": 5,
             "sampleInterval": 180,
+            "alarmDelay": 360,
+            "lossrateLimit": 0.1,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -782,5 +791,6 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
-  }
+  },
+  "pairedDeviceMaxHistory": 100
 }

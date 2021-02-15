@@ -39,9 +39,10 @@ class EventApi {
       let result = null
       try {
         log.info(`getting events from ${min} to ${max}`);
+        const [begin,end] = reverse ? [max,min] : [min,max];
         const params = withscores ?
-          [KEY_EVENT_LOG, max, min, "withscores","limit",limit_offset,limit_count] :
-          [KEY_EVENT_LOG, max, min, "limit",limit_offset,limit_count];
+          [KEY_EVENT_LOG, begin, end, "withscores","limit",limit_offset,limit_count] :
+          [KEY_EVENT_LOG, begin, end, "limit",limit_offset,limit_count];
         if (reverse) {
           result = await rclient.zrevrangebyscoreAsync(params);
         } else {

@@ -615,7 +615,8 @@ class SysManager {
   myGateways() {
     const wanIntfs = fireRouter.getWanIntfNames();
     return wanIntfs.reduce((acc,wanIntf) => {
-      acc.push(this.myGateway(wanIntf));
+      const gw = this.myGateway(wanIntf);
+      if (gw) acc.push(gw);
       return acc;
     },[]);
   }
