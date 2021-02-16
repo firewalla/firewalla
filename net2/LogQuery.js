@@ -17,7 +17,6 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sysManager = require('./SysManager')
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
@@ -165,8 +164,6 @@ class LogQuery {
     return options
   }
 
-
-
   // get logs across different devices
   async getAllLogs(options) {
 
@@ -192,8 +189,6 @@ class LogQuery {
       allMacs = hostManager.getTagMacs(options.tag);
     } else {
       allMacs = hostManager.getActiveMACs();
-      if (this.includeFirewallaInterfaces())
-        allMacs.push(... sysManager.getLogicInterfaces().map(i => i.mac_address.toUpperCase()))
       if (_.isArray(options.macs))
         allMacs = _.uniq(allMacs.concat(options.macs));
     }

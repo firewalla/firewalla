@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -221,9 +221,9 @@ class HostTool {
     return ips;
   }
 
-  async getMacByIP(ip, monitoringOnly = true) {
+  async getMacByIP(ip) {
     let host = null
-    if (sysManager.isMyIP(ip, monitoringOnly) || sysManager.isMyIP6(ip, monitoringOnly)) {
+    if (sysManager.isMyIP(ip) || sysManager.isMyIP6(ip)) {
       // shortcut for Firewalla's self IP
       const myMac = sysManager.myMACViaIP4(ip) || sysManager.myMACViaIP6(ip);
       if (myMac)
@@ -241,11 +241,11 @@ class HostTool {
     return host && host.mac;
   }
 
-  async getMacByIPWithCache(ip, monitoringOnly = true) {
+  async getMacByIPWithCache(ip) {
     if (this.ipMacMapping[ip]) {
       return this.ipMacMapping[ip];
     } else {
-      const mac = await this.getMacByIP(ip, monitoringOnly);
+      const mac = await this.getMacByIP(ip);
       if (mac) {
         this.ipMacMapping[ip] = mac;
         return mac;

@@ -95,7 +95,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
           sem.on('UPDATE_CATEGORY_DOMAIN', (event) => {
             if (!this.inited) {
-              log.info("Category updater is not ready yet, will retry in 5 seconds", event.category);
+              log.info("Category updater is not ready yet, will retry in 5 seconds", event);
               // re-emit the same event in 5 seconds if init process is not complete yet
               setTimeout(() => {
                 sem.emitEvent(event);
