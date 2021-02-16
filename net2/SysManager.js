@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -519,10 +519,6 @@ class SysManager {
     return fireRouter.getMonitoringIntfNames().map(name => this.sysinfo[name]).filter(i => i); // filter null or undefined object in case this.sysinfo is reloaded halfway
   }
 
-  getInterfaces(monitoringOnly = true) {
-    return monitoringOnly ? this.getMonitoringInterfaces() : this.getLogicInterfaces()
-  }
-
   getInterface(intf) {
     return this.sysinfo && this.sysinfo[intf]
   }
@@ -536,20 +532,22 @@ class SysManager {
       })
   }
 
-  getInterfaceViaIP4(ip, monitoringOnly = true) {
+  getInterfaceViaIP4(ip) {
     if (!ip) return null;
-    return this.getInterfaces(monitoringOnly).find(i => i.name && this.inMySubnets4(ip, i.name, monitoringOnly));
+    return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnets4(ip, i.name));
   }
 
-  getInterfaceViaIP6(ip6, monitoringOnly = true) {
-    if (!_.isArray(ip6)) ip6 = [ ip6 ]
-
-    for (let index = 0; index < ip6.length; index++) {
-      const element = ip6[index];
-      const intf = this.getInterfaces(monitoringOnly).find(i => i.name && this.inMySubnet6(element, i.name, monitoringOnly))
-      if (intf) {
-        return intf;
+  getInterfaceViaIP6(ip6) {
+    if (_.isArray(ip6)) {
+      for (let index = 0; index < ip6.length; index++) {
+        const element = ip6[index];
+        const intf = this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(element, i.name));
+        if (intf) {
+          return intf;
+        }
       }
+    } else {
+      return this.getMonitoringInterfaces().find(i => i.name && this.inMySubnet6(ip6, i.name));
     }
   }
 
@@ -575,22 +573,28 @@ class SysManager {
     return wanIntf && this.getInterface(wanIntf);
   }
 
-  myWanIps(connected) {
+  myWanIps() {
     const wanIntfs = fireRouter.getWanIntfNames() || [];
-    const wanIp4 = new Set()
-    const wanIp6 = new Set()
+    const wanIps = [];
     for (const wanIntf of wanIntfs) {
       const intf = this.getInterface(wanIntf);
-      if (intf) {
-        if (connected !== undefined && connected !== null) {
-          if (intf.ready != connected) continue
-        }
-
-        !_.isEmpty(intf.ip4_addresses) && wanIp4.add(... intf.ip4_addresses);
-        !_.isEmpty(intf.ip6_addresses) && wanIp6.add(... intf.ip6_addresses);
+      if (intf && intf.ip4_addresses) {
+        Array.prototype.push.apply(wanIps, intf.ip4_addresses);
       }
     }
-    return { v4: Array.from(wanIp4), v6: Array.from(wanIp6) }
+    return wanIps.filter((v, i, a) => a.indexOf(v) === i);
+  }
+
+  myConnectedWanIps() {
+    const wanIntfs = fireRouter.getWanIntfNames() || [];
+    const wanIps = [];
+    for (const wanIntf of wanIntfs) {
+      const intf = this.getInterface(wanIntf);
+      if (intf && intf.ip4_addresses && intf.ready === true) {
+        Array.prototype.push.apply(wanIps, intf.ip4_addresses);
+      }
+    }
+    return wanIps.filter((v, i, a) => a.indexOf(v) === i);
   }
 
   myDefaultWanIp() {
@@ -600,10 +604,12 @@ class SysManager {
     return null;
   }
 
-  // filter Carrier-Grade NAT address pool accordinig to rfc6598
-  filterPublicIp4(ipArray) {
-    const rfc6598Net = iptool.subnet("100.64.0.0", "255.192.0.0")
-    return ipArray.filter(ip => iptool.isPublic(ip) && !rfc6598Net.contains(ip));
+  myPublicWanIps() {
+    return this.myWanIps().filter(ip => iptool.isPublic(ip) && !iptool.subnet("100.64.0.0", "255.192.0.0").contains(ip)); // filter Carrier-Grade NAT address pool accordinig to rfc6598
+  }
+
+  myConnectedPublicWanIps() {
+    return this.myConnectedWanIps().filter(ip => iptool.isPublic(ip) && !iptool.subnet("100.64.0.0", "255.192.0.0").contains(ip)); // filter Carrier-Grade NAT address pool accordinig to rfc6598
   }
 
   myGateways() {
@@ -641,9 +647,9 @@ class SysManager {
     return this.getInterface(intf) && this.getInterface(intf).ip_address;
   }
 
-  isMyIP(ip, monitoringOnly = true) {
+  isMyIP(ip) {
     if (!ip) return false
-    let interfaces = this.getInterfaces(monitoringOnly);
+    let interfaces = this.getMonitoringInterfaces();
     return interfaces.some(i => i.ip_address === ip);
   }
 
@@ -678,8 +684,8 @@ class SysManager {
     return this.getInterface(intf) && this.getInterface(intf).ip6_addresses;
   }
 
-  isMyIP6(ip6, monitoringOnly = true) {
-    let interfaces = this.getInterfaces(monitoringOnly);
+  isMyIP6(ip6) {
+    let interfaces = this.getMonitoringInterfaces();
     return interfaces.some(i => i.ip6_addresses && i.ip6_addresses.includes(ip6));
   }
 
@@ -708,7 +714,7 @@ class SysManager {
   isMyMac(mac) {
     if (!mac) return false
 
-    let interfaces = this.getLogicInterfaces();
+    let interfaces = this.getMonitoringInterfaces();
     return interfaces.map(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()).some(Boolean);
   }
 
@@ -719,12 +725,12 @@ class SysManager {
   }
 
   myMACViaIP4(ip) {
-    const intf = this.getLogicInterfaces().find(i => i.ip_address === ip);
+    const intf = this.getMonitoringInterfaces().find(i => i.ip_address === ip);
     return intf && intf.mac_address && intf.mac_address.toUpperCase();
   }
 
   myMACViaIP6(ip) {
-    const intf = this.getLogicInterfaces().find(i => Array.isArray(i.ip6_addresses) && i.ip6_addresses.includes(ip));
+    const intf = this.getMonitoringInterfaces().find(i => Array.isArray(i.ip6_addresses) && i.ip6_addresses.includes(ip));
     return intf && intf.mac_address && intf.mac_address.toUpperCase();
   }
 
@@ -813,11 +819,11 @@ class SysManager {
     return host === "firewalla.encipher.io";
   }
 
-  inMySubnets4(ip4, intf, monitoringOnly = true) {
+  inMySubnets4(ip4, intf) {
     ip4 = new Address4(ip4)
     if (!ip4.isValid()) return false;
 
-    let interfaces = this.getInterfaces(monitoringOnly);
+    let interfaces = this.getMonitoringInterfaces();
     if (intf) {
       interfaces = interfaces.filter(i => i.name === intf)
     }
@@ -828,13 +834,13 @@ class SysManager {
       ).some(Boolean)
   }
 
-  inMySubnet6(ip6, intf, monitoringOnly = true) {
+  inMySubnet6(ip6, intf) {
     ip6 = new Address6(ip6)
 
     if (!ip6.isValid())
       return false;
     else {
-      let interfaces = this.getInterfaces(monitoringOnly);
+      let interfaces = this.getMonitoringInterfaces();
       if (intf) {
         interfaces = interfaces.filter(i => i.name === intf)
       }
@@ -914,10 +920,9 @@ class SysManager {
     }
     // ======== end of statics =========
 
-    // TODO: support v6
     let publicWanIps = null;
     if (await Mode.isRouterModeOn()) {
-      publicWanIps = this.filterPublicIp4(this.myWanIps(true).v4);
+      publicWanIps = this.myConnectedPublicWanIps();
     }
 
 
@@ -948,19 +953,14 @@ class SysManager {
     return false;
   }
 
-  isMulticastIP4(ip, intf, monitoringOnly = true) {
+  isMulticastIP4(ip) {
     try {
-      if (!new Address4(ip).isValid()) return false
-
-      if (ip == "255.255.255.255") return true
-
-      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP4(ip, monitoringOnly)
-
-      if (intfObj && (
-        ip == new Address4(intfObj.subnet).startAddress().address ||
-        ip == new Address4(intfObj.subnet).endAddress().address
-      )) return true
-
+      if (!new Address4(ip).isValid()) {
+        return false;
+      }
+      if (ip == "255.255.255.255") {
+        return true;
+      }
       return (iptool.toLong(ip) >= this.multicastlow && iptool.toLong(ip) <= this.multicasthigh)
     } catch (e) {
       log.error("SysManager:isMulticastIP4", ip, e);
@@ -972,10 +972,10 @@ class SysManager {
     return ip.startsWith("ff");
   }
 
-  isMulticastIP(ip, intf, monitoringOnly = true) {
+  isMulticastIP(ip) {
     try {
       if (new Address4(ip).isValid()) {
-        return this.isMulticastIP4(ip, intf, monitoringOnly);
+        return this.isMulticastIP4(ip);
       } else {
         return this.isMulticastIP6(ip);
       }
@@ -1001,7 +1001,7 @@ class SysManager {
     }
 
     if (new Address4(ip).isValid()) {
-      if (this.isMulticastIP4(ip, intf) || ip == '127.0.0.1') {
+      if (this.isMulticastIP4(ip) || ip == '127.0.0.1') {
         return true;
       }
       return this.inMySubnets4(ip, intf)
