@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -96,6 +96,19 @@ class ACLAuditLogPlugin extends Sensor {
     });
   }
 
+  // check direction, keep it same as flow.fd
+  // in, initiated from inside
+  // out, initated from outside
+  setDirection(record) {
+    if (sysManager.isLocalIP(record.sh)) {
+      record.fd = 'in';
+    } else if (sysManager.isLocalIP(record.dh)) {
+      record.fd = 'out';
+    } else {
+      record.fd = 'lo';
+    }
+  }
+
   writeBuffer(mac, target, record) {
     const bucket = this.buffer[record.type]
     if (!bucket[mac]) bucket[mac] = {}
@@ -111,7 +124,30 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
-  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
+  async getIntfMac(localIP, record) {
+    const intf = new Address4(localIP).isValid() ?
+      sysManager.getInterfaceViaIP4(localIP) :
+      sysManager.getInterfaceViaIP6(localIP)
+
+    if (!intf) throw new Error('Interface not found for', localIP);
+    record.intf = intf.uuid
+
+    let mac
+    if (intf.name === "tun_fwvpn") {
+      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
+      if (!vpnProfile) throw new Error('VPNProfile not found for', localIP);
+      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
+    } else {
+      mac = await hostTool.getMacByIPWithCache(localIP);
+    }
+
+    if (!mac) throw new Error('MAC not found for', localIP)
+
+    return mac
+  }
+
+  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
     // log.debug(line)
@@ -128,7 +164,6 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
     if (security) record.sec = 1
-    let mac, srcMac, dstMac, intf, localIP, remoteIP
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2)
@@ -146,8 +181,6 @@ class ACLAuditLogPlugin extends Sensor {
         }
         case "PROTO": {
           record.pr = v.toLowerCase();
-          // ignore icmp packets
-          if (record.pr == 'icmp') return
           break;
         }
         case "SPT": {
@@ -158,96 +191,36 @@ class ACLAuditLogPlugin extends Sensor {
           record.dp = Number(v);
           break;
         }
-        case 'MAC': {
-          dstMac = v.substring(0, 17).toUpperCase()
-          srcMac = v.substring(18, 35).toUpperCase()
-          break;
-        }
-        case 'IN': {
-          // always use IN for interface
-          // when traffic coming from external network, it'll hit WAN interface and that's what we want
-          intf = sysManager.getInterface(v)
-          record.intf = intf.uuid
-          break;
-        }
         default:
       }
     }
 
-    if (sysManager.isMulticastIP(record.dh, intf.name, false)) return
+    this.setDirection(record)
+    // unless we can get interface info from zeek, local traffic will cause duplication
+    if (record.rd == 'lo') return
 
-    // check direction, keep it same as flow.fd
-    // in, initiated from inside
-    // out, initated from outside
-    const wanIPs = sysManager.myWanIps()
-    const srcIsLocal = sysManager.isLocalIP(record.sh) || wanIPs.v4.includes(record.sh) || wanIPs.v6.includes(record.sh)
-    const dstIsLocal = sysManager.isLocalIP(record.dh) || wanIPs.v4.includes(record.dh) || wanIPs.v6.includes(record.dh)
-    if (wanIPs.v4.includes(record.sh) || wanIPs.v4.includes(record.dh))
-      log.debug(line)
 
-    if (srcIsLocal) {
-      mac = srcMac;
-      localIP = record.sh
-      remoteIP = record.dh
+    const localIP = record.fd == 'out' ? record.dh : record.sh
+    const remoteIP = record.fd == 'out' ? record.sh : record.dh
 
-      if (dstIsLocal)
-        record.fd = 'lo';
-      else
-        record.fd = 'in';
-    } else if (dstIsLocal) {
-      record.fd = 'out';
-      mac = dstMac;
-      localIP = record.dh
-      remoteIP = record.sh
-    } else {
-      return
-    }
-
-    if (mac == 'FF:FF:FF:FF:FF:FF') return
-    if (intf.name === "tun_fwvpn") {
-      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
-      if (!vpnProfile) throw new Error('VPNProfile not found for', localIP);
-      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
-    }
+    const mac = await this.getIntfMac(localIP, record)
 
     // TODO: is dns resolution necessary here?
-    const domain = await dnsTool.getDns(remoteIP);
-    if (domain)
-      record.dn = domain;
+    if (!sysManager.isLocalIP(remoteIP)) {
+      const domain = await dnsTool.getDns(remoteIP);
+      if (domain)
+        record.dn = domain;
+    }
 
     this.writeBuffer(mac, remoteIP, record)
   }
 
   async _processDnsRecord(record, block = true) {
-    // assume that DNS requests will only come from local network
-    record.fd = 'in'
+    this.setDirection(record)
+    // unless we can get interface info from zeek, local traffic will cause duplication
+    if (record.rd == 'lo') return
 
-    const intf = new Address4(record.sh).isValid() ?
-      sysManager.getInterfaceViaIP4(record.sh, false) :
-      sysManager.getInterfaceViaIP6(record.sh, false)
-
-    if (!intf) {
-      log.debug('Interface not found for', record.sh);
-      return null
-    }
-
-    record.intf = intf.uuid
-
-    let mac
-    if (intf.name === "tun_fwvpn") {
-      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(record.sh);
-      if (!vpnProfile) throw new Error('VPNProfile not found for', record.sh);
-      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(record.sh);
-    } else {
-      mac = await hostTool.getMacByIPWithCache(record.sh, false);
-    }
-
-    if (!mac) {
-      log.debug('MAC address not found for', record.sh)
-      return
-    }
+    const mac = await this.getIntfMac(record.sh, record)
 
     record.type = block ? 'dns' : 'dnsA';
     record.ct = 1;
@@ -276,24 +249,35 @@ class ACLAuditLogPlugin extends Sensor {
             const tags = []
             if (!mac.startsWith(Constants.NS_VPN_PROFILE)) {
               const host = hostManager.getHostFastByMAC(mac);
-              if (host) tags.push(...await host.getTags())
+              if (!host) continue
+              tags.push(...await host.getTags())
             }
             const networkProfile = networkProfileManager.getNetworkProfile(intf);
-            if (networkProfile) tags.push(...networkProfile.getTags());
+            if (!networkProfile) continue
+            tags.push(...networkProfile.getTags());
             record.tags = _.uniq(tags)
 
-            // no detailed history and stats for uncategorized dns queries
-            if (type != 'dnsA') {
-              const key = this._getAuditDropKey(mac);
-              await rclient.zaddAsync(key, ts, JSON.stringify(record));
+            // records total dns hits
+            if (type.startsWith('dns')) {
+              timeSeries.recordHit(`dns`, ts, ct)
+              timeSeries.recordHit(`dns:${mac}`, ts, ct)
+              timeSeries.recordHit(`dns:intf:${intf}`, ts, ct)
+              for (const tag of record.tags) {
+                timeSeries.recordHit(`dns:tag:${tag}`, ts, ct)
+              }
             }
 
-            const hitType = type == 'dnsA' ? 'dns' : `${type}B`
-            timeSeries.recordHit(`${hitType}`, ts, ct)
-            timeSeries.recordHit(`${hitType}:${mac}`, ts, ct)
-            timeSeries.recordHit(`${hitType}:intf:${intf}`, ts, ct)
+            // no detailed history and stats for uncategorized dns queries
+            if (type == 'dnsA') continue
+
+            const key = this._getAuditDropKey(mac);
+            await rclient.zaddAsync(key, ts, JSON.stringify(record));
+
+            timeSeries.recordHit(`${type}B`, ts, ct)
+            timeSeries.recordHit(`${type}B:${mac}`, ts, ct)
+            timeSeries.recordHit(`${type}B:intf:${intf}`, ts, ct)
             for (const tag of record.tags) {
-              timeSeries.recordHit(`${hitType}:tag:${tag}`, ts, ct)
+              timeSeries.recordHit(`${type}B:tag:${tag}`, ts, ct)
             }
           }
         }
