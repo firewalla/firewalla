@@ -36,6 +36,8 @@ class AuditTool extends LogQuery {
     return _.isEqual(_.pick(previous, compareKeys), _.pick(incoming, compareKeys));
   }
 
+  includeFirewallaInterfaces() { return true }
+
   async getAuditLogs(options) {
     options = options || {}
     if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG

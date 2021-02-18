@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -131,7 +131,7 @@ class VpnManager {
     if (!platform.isFireRouterManaged())
       return;
     const primaryIp = sysManager.myDefaultWanIp();
-    const allWanIps = sysManager.myWanIps();
+    const allWanIps = sysManager.myWanIps().v4;
     if (!primaryIp || !allWanIps || allWanIps.length === 0)
       return;
     const localPort = this.localPort;
