@@ -4108,13 +4108,12 @@ class netBot extends ControllerBot {
         break;
       case "beta":
         targetBranch = prodBranch.replace("release_", "beta_")
-        break
+        break;
       case "prod":
         targetBranch = prodBranch
-        break
-    }
-    if (!targetBranch) {
-      throw new Error("Can not switch to branch", targetBranch);
+        break;
+      default:
+        throw new Error("Can not switch to branch", target);
     }
     log.info("Going to switch to branch", targetBranch);
     try {
