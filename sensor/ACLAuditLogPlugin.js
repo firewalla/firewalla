@@ -182,8 +182,6 @@ class ACLAuditLogPlugin extends Sensor {
     const wanIPs = sysManager.myWanIps()
     const srcIsLocal = sysManager.isLocalIP(record.sh) || wanIPs.v4.includes(record.sh) || wanIPs.v6.includes(record.sh)
     const dstIsLocal = sysManager.isLocalIP(record.dh) || wanIPs.v4.includes(record.dh) || wanIPs.v6.includes(record.dh)
-    if (wanIPs.v4.includes(record.sh) || wanIPs.v4.includes(record.dh))
-      log.debug(line)
 
     if (srcIsLocal) {
       mac = srcMac;
