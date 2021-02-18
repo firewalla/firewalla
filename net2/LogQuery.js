@@ -25,6 +25,7 @@ const intelTool = new IntelTool();
 const DestIPFoundHook = require('../hook/DestIPFoundHook');
 const destIPFoundHook = new DestIPFoundHook();
 
+const Constants = require('../net2/Constants.js');
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_LOG = 100;
 
@@ -193,7 +194,7 @@ class LogQuery {
     } else {
       allMacs = hostManager.getActiveMACs();
       if (this.includeFirewallaInterfaces())
-        allMacs.push(... sysManager.getLogicInterfaces().map(i => i.mac_address.toUpperCase()))
+        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
       if (_.isArray(options.macs))
         allMacs = _.uniq(allMacs.concat(options.macs));
     }

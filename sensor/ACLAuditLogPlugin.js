@@ -203,7 +203,15 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
+    // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
+
+    // local IP being Firewalla's own interface, use if:<uuid> as "mac"
+    if (new Address4(localIP).isValid() ? sysManager.isMyIP(localIP, false) : sysManager.isMyIP6(localIP, false)) {
+      log.debug(line)
+      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
+
     if (intf.name === "tun_fwvpn") {
       const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
       if (!vpnProfile) throw new Error('VPNProfile not found for', localIP);
@@ -274,7 +282,10 @@ class ACLAuditLogPlugin extends Sensor {
             const record = buffer[type][mac][target];
             const {ts, ct, intf} = record
             const tags = []
-            if (!mac.startsWith(Constants.NS_VPN_PROFILE)) {
+            if (
+              !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
+              !mac.startsWith(Constants.NS_INTERFACE + ':')
+            ) {
               const host = hostManager.getHostFastByMAC(mac);
               if (host) tags.push(...await host.getTags())
             }
