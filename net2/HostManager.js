@@ -111,6 +111,8 @@ let instance = null;
 
 const VpnManager = require('../vpn/VpnManager.js');
 
+const eventApi = require('../event/EventRequestApi.js');
+
 module.exports = class HostManager {
   constructor() {
     if (!instance) {
@@ -556,6 +558,26 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
+  async listLatestEventsAll(json) {
+    try {
+      log.debug("Listing latest all events");
+      const latestAllEvents = await eventApi.listLatestEventsAll();
+      if (latestAllEvents) json.latestAllEvents = latestAllEvents;
+    } catch (err) {
+      log.error("failed to get latest all events:",err);
+    }
+  }
+
+  async listLatestEventsError(json) {
+    try {
+      log.debug("Listing latest error events");
+      const latestEventsError = await eventApi.listLatestEventsError();
+      if (latestEventsError) json.latestEventsError = latestEventsError;
+    } catch (err) {
+      log.error("failed to get latest error events:",err);
+    }
+  }
+
   // what is blocked
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
@@ -712,6 +734,8 @@ module.exports = class HostManager {
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.getCpuUsage(json),
+      this.listLatestEventsAll(json),
+      this.listLatestEventsError(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1028,7 +1052,9 @@ module.exports = class HostManager {
           this.btMacForInit(json),
           this.loadStats(json),
           this.ovpnClientProfilesForInit(json),
-          this.ruleGroupsForInit(json)
+          this.ruleGroupsForInit(json),
+          this.listLatestEventsAll(json),
+          this.listLatestEventsError(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};

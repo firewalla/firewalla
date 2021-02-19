@@ -20,6 +20,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const KEY_EVENT_LOG = "event:log";
+const KEY_EVENT_STATE_CACHE = "event:state:cache";
+const KEY_EVENT_STATE_CACHE_ERROR = "event:state:cache:error";
 
 /*
  * EventApi provides API to event data access in Redis
@@ -33,6 +35,68 @@ const KEY_EVENT_LOG = "event:log";
  */
 class EventApi {
     constructor() {
+    }
+
+    async getSavedStateValue(eventRequest) {
+        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
+        let savedValue = null;
+        try {
+            const savedRequestJson = await rclient.hgetAsync(KEY_EVENT_STATE_CACHE, stateEventRequestKey);
+            if (savedRequestJson) {
+                const savedRequest = JSON.parse(savedRequestJson);
+                if (savedRequest && 'state_value' in savedRequest) {
+                    savedValue = savedRequest.state_value;
+                    log.debug(`got ${savedValue} for ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis`);
+                } else {
+                    log.error(`failed to get saved value of ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis`);
+                }
+            }
+        } catch (err) {
+            log.error(`failed to get saved value of ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis:`, err);
+        }
+        return savedValue;
+    }
+
+    async saveStateEventRequest(eventRequest) {
+        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
+        try {
+            const er_json = JSON.stringify(eventRequest);
+            log.debug(`save state event request(${JSON.stringify(eventRequest)}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE,stateEventRequestKey,JSON.stringify(eventRequest));
+        } catch (err) {
+            log.error(`failed to save value ${eventRequest.state_value} for ${stateEventRequestKey} in Redis`);
+        }
+    }
+
+    async listLatestEventsAll() {
+        let result = null;
+        try {
+            result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
+        } catch (err) {
+            log.error("failed to get all saved state event requests:",err);
+        }
+        return result;
+    }
+
+    async saveStateEventRequestError(eventRequest) {
+        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
+        try {
+            const er_json = JSON.stringify(eventRequest);
+            log.debug(`save state event request(${JSON.stringify(eventRequest)}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE_ERROR,stateEventRequestKey,JSON.stringify(eventRequest));
+        } catch (err) {
+            log.error(`failed to save value ${eventRequest.state_value} for ${stateEventRequestKey} in Redis`);
+        }
+    }
+
+    async listLatestEventsError() {
+        let result = null;
+        try {
+            result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
+        } catch (err) {
+            log.error("failed to get all error state event requests:",err);
+        }
+        return result;
     }
 
     async listEvents(min="-inf", max="inf", withscores=false, limit_offset=0, limit_count=-1, reverse=false) {
