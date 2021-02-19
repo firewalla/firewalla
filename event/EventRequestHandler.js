@@ -23,9 +23,11 @@ const eventApi = require('./EventApi.js');
 const KEY_EVENT_REQUEST_STATE = "event:request:state";
 const KEY_EVENT_REQUEST_ACTION = "event:request:action";
 const KEY_EVENT_REQUEST_CLEAN = "event:request:clean";
-const KEY_EVENT_STATE_PREFIX = "event:state";
-const STATE_REQUIRED_FIELDS = [ "ts", "state_type", "state_key", "state_value"]
-const ACTION_REQUIRED_FIELDS = [ "ts", "action_type", "action_value"]
+const STATE_REQUIRED_FIELDS = [ "ts", "state_type", "state_key", "state_value"];
+const ACTION_REQUIRED_FIELDS = [ "ts", "action_type", "action_value"];
+const DEFAULT_OK_VALUE = 0;
+const STATE_OK='ok_state';
+const STATE_ERROR='error_state';
 
 /*
  * EventRequestHandler accepts event requests from redis channels and processes them accordingly
@@ -68,34 +70,12 @@ class EventRequestHandler {
         sclient.subscribe(KEY_EVENT_REQUEST_CLEAN);
     }
 
-    async getStateEventSavedValue(eventRequest) {
-        const stateEventRequestKey = KEY_EVENT_STATE_PREFIX+":"+eventRequest.state_type+":"+eventRequest.state_key;
-        let savedValue = null;
-        try {
-            savedValue = await rclient.getAsync(stateEventRequestKey)
-            log.debug(`got ${savedValue} for ${stateEventRequestKey} from Redis`);
-        } catch (err) {
-            log.error(`failed to get saved value of ${stateEventRequestKey} in Redis, ${err}`);
-        }
-        return savedValue;
-    }
-
     sendEvent(eventRequest,event_type) {
         log.info(`sending eventRequest ${JSON.stringify(eventRequest)}`);
         try {
             eventApi.addEvent(Object.assign({}, eventRequest,{"event_type":event_type}),eventRequest.ts);
         } catch (err) {
-            log.error(`failed to add event with timestamp ${eventRequest.ts}`);
-        }
-    }
-
-    saveStateEventValue(eventRequest) {
-        log.info(`save state event value ${eventRequest.state_value}`);
-        const stateEventRequestKey = KEY_EVENT_STATE_PREFIX+":"+eventRequest.state_type+":"+eventRequest.state_key;
-        try {
-            rclient.set(stateEventRequestKey,eventRequest.state_value);
-        } catch (err) {
-            log.error(`failed to save value ${eventRequest.state_value} for ${stateEventRequestKey} in Redis`);
+            log.error(`failed to add ${event_type} event(${JSON.stringify(eventRequest)}):`,err);
         }
     }
 
@@ -112,7 +92,7 @@ class EventRequestHandler {
                     throw new Error(`missing required field ${field} in event request`);
                 }
             }
-            const savedValue = await this.getStateEventSavedValue(eventRequest);
+            const savedValue = await eventApi.getSavedStateValue(eventRequest);
             const newValue = eventRequest.state_value
             if ( !this.isNumber(newValue)) {
                 throw new Error(`state_value(${newValue}) of event request is NOT a number`);
@@ -123,11 +103,23 @@ class EventRequestHandler {
             } else {
                 log.debug(`update state value from ${savedValue} to ${newValue}`);
                 this.sendEvent(eventRequest,"state");
-                this.saveStateEventValue(eventRequest);
+            }
+            // always update state event request to keep it latest
+            await eventApi.saveStateEventRequest(eventRequest);
+            // save to error cache if got error
+            if ('labels' in eventRequest ) {
+                if ( (STATE_ERROR in eventRequest.labels && eventRequest.state_value === eventRequest.labels.error_state) ||
+                     (STATE_OK in eventRequest.labels && eventRequest.state_value !== eventRequest.labels.ok_state) ||
+                     (! STATE_OK in eventRequest.labels && ! STATE_ERROR in eventRequest.labels && eventRequest.state_value !== DEFAULT_OK_VALUE )
+                     ) {
+                    await eventApi.saveStateEventRequestError(eventRequest);
+                }
+            } else if (eventRequest.state_value !== DEFAULT_OK_VALUE ) {
+                await eventApi.saveStateEventRequestError(eventRequest);
             }
 
         } catch (err) {
-            log.error(`failed to process state event ${message}, ${err}`);
+            log.error(`failed to process state event ${message}:`, err);
         }
     }
 
