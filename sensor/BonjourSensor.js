@@ -222,7 +222,8 @@ class BonjourSensor extends Sensor {
     sem.emitEvent({
       type: "DeviceUpdate",
       message: `Found a device via bonjour ${ipv4Addr} ${mac}`,
-      host: host
+      host: host,
+      suppressEventLogging: true
     })
   }
 
