@@ -5,6 +5,7 @@ After=network.target
 [Service]
 User=pi
 Restart=always
+StartLimitIntervalSec=0
 WorkingDirectory=/home/pi/firewalla/extension/frp
 ExecStart=FRPC_COMMAND -c FRPC_CONF
 
