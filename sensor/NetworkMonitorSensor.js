@@ -148,12 +148,14 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig(${systemConfig})`);
 
     try {
+      const runtimeState = systemState || true;
       const runtimeConfig = systemConfig || this.loadDefaultConfig();
+      log.debug("runtimeState: ",runtimeState);
       log.debug("runtimeConfig: ",runtimeConfig);
       Object.keys(runtimeConfig).forEach( async targetIP => {
         // always restart to run with latest config
         this.stopMonitorDevice(targetIP);
-        if ( systemState && this.adminSwitch ) {
+        if ( runtimeState && this.adminSwitch ) {
             this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP]);
         } else {
             this.stopMonitorDevice(targetIP);
