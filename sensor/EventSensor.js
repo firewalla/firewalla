@@ -59,20 +59,20 @@ class EventSensor extends Sensor {
             }
         });
 
-        extensionManager.onGet("latestAllEvents", async (msg, data) => {
+        extensionManager.onGet("latestAllStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest events with data(${JSON.stringify(data)})`);
-                let result = await ea.listLatestEventsAll();
+                let result = await ea.listLatestStateEventsAll();
                 return result;
             } catch (err) {
                 log.error(`failed to list latest all events with ${JSON.stringify(data)}, ${err}`);
             }
         });
 
-        extensionManager.onGet("latestErrorEvents", async (msg, data) => {
+        extensionManager.onGet("latestErrorStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest error events with data(${JSON.stringify(data)})`);
-                let result = await ea.listLatestEventsError();
+                let result = await ea.listLatestStateEventsError();
                 return result;
             } catch (err) {
                 log.error(`failed to list latest error events with ${JSON.stringify(data)}, ${err}`);
