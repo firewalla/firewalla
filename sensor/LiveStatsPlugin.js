@@ -84,18 +84,22 @@ class LiveStatsPlugin extends Sensor {
       this.registerStreaming(streaming);
 
       let lastTS = this.lastStreamingTS(id);
+      const now = Math.floor(new Date() / 1000);
       let flows = [];
 
       if(!lastTS) {
         const prevFlows = (await this.getPreviousFlows()).reverse();
         flows.push.apply(flows, prevFlows);
-        lastTS = this.lastFlowTS(prevFlows);
+        lastTS = this.lastFlowTS(prevFlows) && now;
       }
 
       const newFlows = await this.getFlows(lastTS);
       flows.push.apply(flows, newFlows);
 
-      const newFlowTS = this.lastFlowTS(newFlows);
+      const newFlowTS = this.lastFlowTS(newFlows) || lastTS;
+      if (newFlowTS < now - 60) {
+        newFlowTS = now - 60;
+      }
       this.updateStreamingTS(id, newFlowTS);
 
       const intfs = fireRouter.getLogicIntfNames();
@@ -169,7 +173,7 @@ class LiveStatsPlugin extends Sensor {
         const ipv6Count = await exec(ipv6Cmd);
         return Number(ipv4Count.stdout) + Number(ipv6Count.stdout);
       } catch(err) {
-        log.error("IPv6 conntrack kernel module not available");
+        log.debug("IPv6 conntrack kernel module not available");
         return Number(ipv4Count.stdout);
       }
     } catch(err) {
