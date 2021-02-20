@@ -53,8 +53,8 @@ hard_clean() {
     sudo rm -rf /log/apt/cache/*
     sudo rm -f /log/blog/*/*.gz
     sudo chown pi:pi /log/forever/*
-    ls /log/forever/*.log | xargs -r -I FILE sh -c ': > FILE'
-    ls /log/firewalla/*.log | xargs -r -I FILE sh -c ': > FILE'
+    ls /log/forever/* | xargs -r -I FILE sudo sh -c ': > FILE'
+    ls /log/firewalla/* | xargs -r -I FILE sudo sh -c ': > FILE'
 }
 
 # ----------------------------------------------------------------------------
