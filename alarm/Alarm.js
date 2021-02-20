@@ -664,7 +664,7 @@ class IntelAlarm extends Alarm {
     // device url
     return [this["p.device.name"],
     this.getReadableDestination(),
-    this["p.security.primaryReason"],
+    this["p.security.primaryReason"] || "malicious",
     this["p.device.port"],
     this["p.device.url"]];
   }

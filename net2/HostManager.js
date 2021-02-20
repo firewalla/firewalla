@@ -1937,7 +1937,7 @@ module.exports = class HostManager {
     target = target == '0.0.0.0' ? '' : target;
     const systemFlows = {};
 
-    const keys = ['upload', 'download', 'block'];
+    const keys = ['upload', 'download', 'ipB', 'dnsB'];
 
     for (const key of keys) {
       const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;

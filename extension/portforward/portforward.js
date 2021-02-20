@@ -82,8 +82,9 @@ class PortForward {
             if (!this._started)
               return;
             try {
-              if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
-                this._wanIPs = sysManager.myWanIps();
+              const myWanIps = sysManager.myWanIps().v4
+              if (this._wanIPs && (myWanIps.length !== this._wanIPs.length || myWanIps.some(i => !this._wanIPs.includes(i)))) {
+                this._wanIPs = myWanIps;
                 await this.updateExtIPChain(this._wanIPs);
               }
               await this.loadConfig();
@@ -304,7 +305,7 @@ class PortForward {
 
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
-    this._wanIPs = sysManager.myWanIps();
+    this._wanIPs = sysManager.myWanIps().v4;
     await this.updateExtIPChain(this._wanIPs);
     await this.loadConfig()
     await this.restore()
