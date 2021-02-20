@@ -551,9 +551,20 @@ module.exports = class {
         }
       }
       if (fc.isFeatureOn("acl_audit")) {
+        const record = {
+          ts: Math.round(obj.ts * 1000) / 1000,
+          // rtt (round trip time) is usually very short here, ignore it
+          sh: obj["id.orig_h"],   // source host
+          dh: obj["id.resp_h"],   // destination host
+          dp: obj["id.resp_p"],   // destination port
+          dn: obj["query"],       // domain name
+          qc: obj["qclass"],      // resource record (RR) class
+          qt: obj["qtype"],       // resource record (RR) type
+          rc: obj["rcode"],       // RCODE
+        };
         // detect DNS level block (NXDOMAIN) in dns log
         if (
-          obj["rcode_name"] === "NXDOMAIN" &&
+          obj["rcode"] == 3 /*NXDOMAIN*/ &&
           (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") &&
           obj["id.resp_p"] == 53 &&
           obj["id.orig_h"] != null &&
@@ -562,24 +573,15 @@ module.exports = class {
           !sysManager.isMyIP(obj["id.orig_h"]) &&
           !sysManager.isMyIP6(obj["id.orig_h"])
         ) {
-          const record = {
-            ts: Math.round(obj.ts * 1000) / 1000,
-            // rtt (round trip time) is usually very short here, ignore it
-            sh: obj["id.orig_h"],   // source host
-            dh: obj["id.resp_h"],   // destination host
-            dn: obj["query"],       // domain name
-            qt: obj["qtype_name"]
-          };
           sem.emitEvent({
             type: Message.MSG_ACL_DNS_NXDOMAIN,
             record,
             suppressEventLogging: true
           });
         } else {
-          const record = {
-            ts: Math.round(obj.ts * 1000) / 1000,
-            sh: obj['id.orig_h']
-          }
+          Object.assign(record, {
+            ans: obj.answers
+          })
           sem.emitEvent({
             type: Message.MSG_ACL_DNS_UNCATEGORIZED,
             record,
