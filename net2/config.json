@@ -617,6 +617,7 @@
         "digDNS" : 300,
         "disk_space.sh" : 300,
         "ethernet_state.sh" : 60,
+        "service_status.sh" : -1,
         "speed_test.sh" : -1,
         "system_load.sh" : 300,
         "default" : 3600

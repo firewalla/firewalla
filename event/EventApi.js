@@ -61,14 +61,14 @@ class EventApi {
         const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
         try {
             const er_json = JSON.stringify(eventRequest);
-            log.debug(`save state event request(${JSON.stringify(eventRequest)}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}`);
-            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE,stateEventRequestKey,JSON.stringify(eventRequest));
+            log.debug(`save state event request(${er_json}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE,stateEventRequestKey,er_json);
         } catch (err) {
-            log.error(`failed to save value ${eventRequest.state_value} for ${stateEventRequestKey} in Redis`);
+            log.error(`failed to save event request for ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}:`,err);
         }
     }
 
-    async listLatestEventsAll() {
+    async listLatestStateEventsAll() {
         let result = null;
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
@@ -82,14 +82,14 @@ class EventApi {
         const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
         try {
             const er_json = JSON.stringify(eventRequest);
-            log.debug(`save state event request(${JSON.stringify(eventRequest)}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}`);
-            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE_ERROR,stateEventRequestKey,JSON.stringify(eventRequest));
+            log.debug(`save state event request(${er_json}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE_ERROR}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE_ERROR,stateEventRequestKey,er_json);
         } catch (err) {
-            log.error(`failed to save value ${eventRequest.state_value} for ${stateEventRequestKey} in Redis`);
+            log.error(`failed to save event request for ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE_ERROR}:`,err);
         }
     }
 
-    async listLatestEventsError() {
+    async listLatestStateEventsError() {
         let result = null;
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);

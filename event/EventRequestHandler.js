@@ -26,8 +26,8 @@ const KEY_EVENT_REQUEST_CLEAN = "event:request:clean";
 const STATE_REQUIRED_FIELDS = [ "ts", "state_type", "state_key", "state_value"];
 const ACTION_REQUIRED_FIELDS = [ "ts", "action_type", "action_value"];
 const DEFAULT_OK_VALUE = 0;
-const STATE_OK='ok_state';
-const STATE_ERROR='error_state';
+const STATE_OK_VALUE='ok_value';
+const STATE_ERROR_VALUE='error_value';
 
 /*
  * EventRequestHandler accepts event requests from redis channels and processes them accordingly
@@ -83,15 +83,40 @@ class EventRequestHandler {
         return ( typeof x === 'number' && ! isNaN(x));
     }
 
+    /*
+     * Either one of following attributes in "labels" can be provided, an event is considered as an error if
+     * - ok_value    : state_value != labels.ok_value
+     * - error_value : state_value == labels.error_value
+     * If none of above defined, {"ok_value": 0} will be added to "labels" as default.
+     */
+    checkStateEventForError(eventRequest) {
+        if ('labels' in eventRequest) {
+            if ( !(STATE_OK_VALUE in eventRequest.labels) && !(STATE_ERROR_VALUE in eventRequest.labels) ) {
+                eventRequest.labels.ok_value = 0
+            }
+        } else {
+            eventRequest.labels = { "ok_value":0};
+        }
+
+        if ( (STATE_ERROR_VALUE in eventRequest.labels && eventRequest.state_value === eventRequest.labels.error_value)
+          || (STATE_OK_VALUE in eventRequest.labels && eventRequest.state_value !== eventRequest.labels.ok_value) ) {
+            await eventApi.saveStateEventRequestError(eventRequest);
+        }
+    }
+
     async processStateEvent(message) {
         log.debug("got state event: ", message);
         try{
             const eventRequest = JSON.parse(message);
             for (const field of STATE_REQUIRED_FIELDS) {
-                if ( ! field in eventRequest ) {
+                if ( !(field in eventRequest) ) {
                     throw new Error(`missing required field ${field} in event request`);
                 }
             }
+
+            // check event for error
+            this.checkStateEventForError(eventRequest);
+
             const savedValue = await eventApi.getSavedStateValue(eventRequest);
             const newValue = eventRequest.state_value
             if ( !this.isNumber(newValue)) {
@@ -106,17 +131,6 @@ class EventRequestHandler {
             }
             // always update state event request to keep it latest
             await eventApi.saveStateEventRequest(eventRequest);
-            // save to error cache if got error
-            if ('labels' in eventRequest ) {
-                if ( (STATE_ERROR in eventRequest.labels && eventRequest.state_value === eventRequest.labels.error_state) ||
-                     (STATE_OK in eventRequest.labels && eventRequest.state_value !== eventRequest.labels.ok_state) ||
-                     (! STATE_OK in eventRequest.labels && ! STATE_ERROR in eventRequest.labels && eventRequest.state_value !== DEFAULT_OK_VALUE )
-                     ) {
-                    await eventApi.saveStateEventRequestError(eventRequest);
-                }
-            } else if (eventRequest.state_value !== DEFAULT_OK_VALUE ) {
-                await eventApi.saveStateEventRequestError(eventRequest);
-            }
 
         } catch (err) {
             log.error(`failed to process state event ${message}:`, err);
@@ -128,7 +142,7 @@ class EventRequestHandler {
         try{
             const eventRequest = JSON.parse(message);
             for (const field of ACTION_REQUIRED_FIELDS) {
-                if ( ! field in eventRequest ) {
+                if ( !(field in eventRequest) ) {
                     throw new Error(`missing required field ${field} in event request`);
                 }
             }
