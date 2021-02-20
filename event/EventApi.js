@@ -37,34 +37,29 @@ class EventApi {
     constructor() {
     }
 
-    async getSavedStateValue(eventRequest) {
-        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
-        let savedValue = null;
+    async getSavedStateEvent(eventRequest) {
+        const stateEventKey = eventRequest.state_type+":"+eventRequest.state_key;
+        let savedEvent = null;
         try {
-            const savedRequestJson = await rclient.hgetAsync(KEY_EVENT_STATE_CACHE, stateEventRequestKey);
+            const savedRequestJson = await rclient.hgetAsync(KEY_EVENT_STATE_CACHE, stateEventKey);
+            log.debug(`got ${savedRequestJson} for ${stateEventKey} in ${KEY_EVENT_STATE_CACHE} from Redis`);
             if (savedRequestJson) {
-                const savedRequest = JSON.parse(savedRequestJson);
-                if (savedRequest && 'state_value' in savedRequest) {
-                    savedValue = savedRequest.state_value;
-                    log.debug(`got ${savedValue} for ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis`);
-                } else {
-                    log.error(`failed to get saved value of ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis`);
-                }
+                savedEvent = JSON.parse(savedRequestJson);
             }
         } catch (err) {
-            log.error(`failed to get saved value of ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis:`, err);
+            log.error(`failed to get saved value of ${stateEventKey} in ${KEY_EVENT_STATE_CACHE} from Redis:`, err);
         }
-        return savedValue;
+        return savedEvent;
     }
 
     async saveStateEventRequest(eventRequest) {
-        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
+        const stateEventKey = eventRequest.state_type+":"+eventRequest.state_key;
         try {
             const er_json = JSON.stringify(eventRequest);
-            log.debug(`save state event request(${er_json}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}`);
-            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE,stateEventRequestKey,er_json);
+            log.debug(`save state event request(${er_json}) at ${stateEventKey} in ${KEY_EVENT_STATE_CACHE}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE,stateEventKey,er_json);
         } catch (err) {
-            log.error(`failed to save event request for ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}:`,err);
+            log.error(`failed to save event request for ${stateEventKey} in ${KEY_EVENT_STATE_CACHE}:`,err);
         }
     }
 
