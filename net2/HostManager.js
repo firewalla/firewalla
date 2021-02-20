@@ -111,7 +111,7 @@ let instance = null;
 
 const VpnManager = require('../vpn/VpnManager.js');
 
-const eventApi = require('../event/EventRequestApi.js');
+const eventApi = require('../event/EventApi.js');
 
 module.exports = class HostManager {
   constructor() {

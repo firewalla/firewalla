@@ -114,23 +114,31 @@ class EventRequestHandler {
                 }
             }
 
-            // check event for error
-            await this.checkStateEventForError(eventRequest);
-
-            const savedValue = await eventApi.getSavedStateValue(eventRequest);
-            const newValue = eventRequest.state_value
+            const savedEvent = await eventApi.getSavedStateEvent(eventRequest);
+            const savedValue = (savedEvent && 'state_value' in savedEvent) ? savedEvent.state_value : null;
+            const newValue = eventRequest.state_value;
             if ( !this.isNumber(newValue)) {
                 throw new Error(`state_value(${newValue}) of event request is NOT a number`);
             }
 
+            /*
+             * Track earliest time(ts0) of current state value
+             */
             if ( savedValue !== null && parseFloat(savedValue) === parseFloat(newValue) ) {
+                // state NO change, pass on ts0
+                eventRequest.ts0 = ("ts0" in savedEvent) ? savedEvent.ts0 : savedEvent.ts;
                 log.debug(`ignore repeated state ${newValue}`);
             } else {
+                // state changed, reset ts0
+                eventRequest.ts0 = eventRequest.ts;
                 log.debug(`update state value from ${savedValue} to ${newValue}`);
                 this.sendEvent(eventRequest,"state");
             }
             // always update state event request to keep it latest
             await eventApi.saveStateEventRequest(eventRequest);
+            // check event for error
+            await this.checkStateEventForError(eventRequest);
+
 
         } catch (err) {
             log.error(`failed to process state event ${message}:`, err);
