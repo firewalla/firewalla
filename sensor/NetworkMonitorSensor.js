@@ -39,6 +39,7 @@ const MONITOR_PING = "ping";
 const MONITOR_DNS = "dns";
 const MONITOR_HTTP = "http";
 const MONITOR_TYPES = [ MONITOR_PING, MONITOR_DNS, MONITOR_HTTP];
+const DEFAULT_SYSTEM_POLICY_STATE = true;
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -148,12 +149,14 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig(${systemConfig})`);
 
     try {
+      const runtimeState = (typeof systemState === 'undefined' || systemState === null) ? DEFAULT_SYSTEM_POLICY_STATE : systemState;
       const runtimeConfig = systemConfig || this.loadDefaultConfig();
+      log.debug("runtimeState: ",runtimeState);
       log.debug("runtimeConfig: ",runtimeConfig);
       Object.keys(runtimeConfig).forEach( async targetIP => {
         // always restart to run with latest config
         this.stopMonitorDevice(targetIP);
-        if ( systemState && this.adminSwitch ) {
+        if ( runtimeState && this.adminSwitch ) {
             this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP]);
         } else {
             this.stopMonitorDevice(targetIP);
