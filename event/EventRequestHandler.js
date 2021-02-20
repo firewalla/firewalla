@@ -89,7 +89,7 @@ class EventRequestHandler {
      * - error_value : state_value == labels.error_value
      * If none of above defined, {"ok_value": 0} will be added to "labels" as default.
      */
-    checkStateEventForError(eventRequest) {
+    async checkStateEventForError(eventRequest) {
         if ('labels' in eventRequest) {
             if ( !(STATE_OK_VALUE in eventRequest.labels) && !(STATE_ERROR_VALUE in eventRequest.labels) ) {
                 eventRequest.labels.ok_value = 0
@@ -115,7 +115,7 @@ class EventRequestHandler {
             }
 
             // check event for error
-            this.checkStateEventForError(eventRequest);
+            await this.checkStateEventForError(eventRequest);
 
             const savedValue = await eventApi.getSavedStateValue(eventRequest);
             const newValue = eventRequest.state_value
