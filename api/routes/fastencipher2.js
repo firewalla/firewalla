@@ -54,7 +54,7 @@ const msgHandler = (req, res, next) => {
           const response = await controller.msgHandlerAsync(gid, req.body);
           res.body = JSON.stringify(response);
           sc.compressPayloadIfRequired(req, res, () => { // override next, keep the res on msgHandler middleware
-            encryption.encrypt(req, res, () => {
+            encryption.encrypt(req, res, async () => {
               res.write(res.body);
               await delay(5000); // self protection
             }, true);
@@ -87,6 +87,7 @@ const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
 
 const convertMessageToBody = function (req, res, next) {
   try {
+    log.info('jack test', req.query.message);
     const encryptedMessage = req.query.message.replace(/\s/g, '+');
     req.body = JSON.parse(encryptedMessage);
     next();
