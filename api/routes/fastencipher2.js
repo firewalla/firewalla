@@ -53,7 +53,9 @@ const msgHandler = (req, res, next) => {
           const controller = await cloudWrapper.getNetBotController(gid);
           const response = await controller.msgHandlerAsync(gid, req.body);
           res.body = JSON.stringify(response);
-          next();
+          sc.compressPayloadIfRequired(req, res, next, true);
+          encryption.encrypt(req, res, next, true);
+          res.write(res.body);
           await delay(5000); // self protection
         } catch (err) {
           log.error("Got error when handling request, err:", err);
@@ -79,7 +81,7 @@ const msgHandler = (req, res, next) => {
     });
 }
 const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
-  msgHandler, sc.compressPayloadIfRequired];
+  msgHandler];
 
 const convertMessageToBody = function (req, res, next) {
   try {
@@ -94,11 +96,8 @@ const convertMessageToBody = function (req, res, next) {
   }
 }
 
-router.post('/message/:gid', handlers, encryption.encrypt);
-router.get('/message/:gid', convertMessageToBody, handlers, (req, res, next) => {
-  encryption.encrypt(req, res, next, true);
-  next();
-});
+router.post('/message/:gid', handlers, sc.compressPayloadIfRequired, encryption.encrypt);
+router.get('/message/:gid', convertMessageToBody, handlers);
 
 log.info("==============================")
 log.info("FireAPI started successfully")
