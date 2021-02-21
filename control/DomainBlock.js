@@ -55,7 +55,7 @@ class DomainBlock {
   async blockDomain(domain, options) {
     options = options || {}
     domain = domain && domain.toLowerCase();
-    log.info(`Implementing Block on ${domain}`);
+    log.debug(`Implementing Block on ${domain}`);
 
     await this.syncDomainIPMapping(domain, options)
     domainUpdater.registerUpdate(domain, options);
@@ -290,7 +290,8 @@ class DomainBlock {
     const policies = await pm2.loadActivePoliciesAsync();
     for (const policy of policies) {
       if (policy.type == "category" && policy.target == category) {
-        dnsmasq.scheduleRestartDNSService();
+        if (!dnsmasq.isRedisHashMatchUsed())
+          dnsmasq.scheduleRestartDNSService();
         return;
       }
     }

@@ -46,6 +46,7 @@ const LEGACY_FILTER_DIR = f.getUserConfigFolder() + "/dns";
 const systemLevelMac = "FF:FF:FF:FF:FF:FF";
 
 const UPSTREAM_SERVER_FILE = FILTER_DIR + "/upstream_server.conf";
+const { isHashDomain } = require('../../util/util.js');
 
 const FILTER_FILE = {
   adblock: FILTER_DIR + "/adblock_filter.conf",
@@ -105,6 +106,8 @@ const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 
 const flowUtil = require('../../net2/FlowUtil.js');
+
+const useRedisMatch = f.isDevelopmentVersion() ? true : false;
 
 module.exports = class DNSMASQ {
   constructor() {
@@ -503,6 +506,10 @@ module.exports = class DNSMASQ {
     }
   }
 
+  _getRedisMatchKey(uid, hash = false) {
+    return `redis_${hash ? "hash_" : ""}match:${uid}`;
+  }
+
   async addPolicyCategoryFilterEntry(options) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
@@ -569,10 +576,12 @@ module.exports = class DNSMASQ {
           const uuid = options.parentRgId;
           let path = this._getRuleGroupConfigPath(options.pid, uuid);
           let domains = this.categoryDomainsMap[category] || [];
-          domains = domains.map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+          const hashDomains = domains.filter(d => isHashDomain(d));
+          domains = domains.filter(d => !isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
           let entries = [];
           if (options.action === "block") {
             entries = domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
+            entries.concat(hashDomains.map(domain => `hash-address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`));
             if (_.isArray(this.categoryBlockUUIDsMap[category])) {
               if (!this.categoryBlockUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
                 this.categoryBlockUUIDsMap[category].push({ uuid: uuid, pid: options.pid })
@@ -580,14 +589,22 @@ module.exports = class DNSMASQ {
               this.categoryBlockUUIDsMap[category] = [{ uuid: uuid, pid: options.pid }];
           } else {
             entries = domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+            // TODO: allow does not support hash address file entry
             if (_.isArray(this.categoryAllowUUIDsMap[category])) {
               if (!this.categoryAllowUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
                 this.categoryAllowUUIDsMap[category].push({ uuid: uuid, pid: options.pid });
             } else
               this.categoryAllowUUIDsMap[category] = [{ uuid: uuid, pid: options.pid }];
           }
-          if (entries.length !== 0) {
-            await fs.writeFileAsync(path, entries.join('\n'));
+          if (this.isRedisHashMatchUsed()) {
+            await fs.writeFileAsync(path, [
+              `redis-match=/${this._getRedisMatchKey(category, false)}/${options.action === "block" ? "" : "#"}$${this._getRuleGroupPolicyTag(uuid)}`,
+              `redis-hash-match=/${this._getRedisMatchKey(category, true)}/${options.action === "block" ? "" : "#"}$${this._getRuleGroupPolicyTag(uuid)}`
+            ].join('\n'));
+          } else {
+            if (entries.length !== 0) {
+              await fs.writeFileAsync(path, entries.join('\n'));
+            }
           }
         }
       } else {
@@ -685,8 +702,26 @@ module.exports = class DNSMASQ {
     }
   }
 
-  isHashDomain(domain) {
-    return domain.length == 44;
+  isRedisHashMatchUsed() {
+    return useRedisMatch;
+  }
+
+  async createCategoryMappingFile(category) {
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
+    if (this.isRedisHashMatchUsed()) {
+      await fs.writeFileAsync(categoryBlockDomainsFile, [
+        `redis-match=/${this._getRedisMatchKey(category, false)}/$${category}_block`,
+        `redis-hash-match=/${this._getRedisMatchKey(category, true)}/$${category}_block`
+      ].join('\n'));
+      await fs.writeFileAsync(categoryAllowDomainsFile, [
+        `redis-match=/${this._getRedisMatchKey(category, false)}/#$${category}_allow`,
+        `redis-hash-match=/${this._getRedisMatchKey(category, true)}/#$${category}_allow`
+      ].join('\n'));
+    } else {
+      await execAsync(`touch ${categoryBlockDomainsFile}`).catch((err) => {});
+      await execAsync(`touch ${categoryAllowDomainsFile}`).catch((err) => {});
+    }
   }
 
   async updatePolicyCategoryFilterEntry(domains, options) {
@@ -703,8 +738,8 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     this.workingInProgress = true;
-    const hashDomains = domains.filter(d=>this.isHashDomain(d));
-    domains = domains.filter(d=>!this.isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+    const hashDomains = domains.filter(d=>isHashDomain(d));
+    domains = domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
     for (const domain of domains) {
       blockEntries.push(`address=/${domain}/${BLACK_HOLE_IP}$${category}_block`);
       allowEntries.push(`server=/${domain}/#$${category}_allow`);
@@ -713,22 +748,32 @@ module.exports = class DNSMASQ {
       blockEntries.push(`hash-address=/${domain.replace(/\//g, '.')}/${BLACK_HOLE_IP}$${category}_block`);
     }
     try {
-      await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
-      await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
-      if (_.isArray(this.categoryAllowUUIDsMap[category])) {
-        for (const o of this.categoryAllowUUIDsMap[category]) {
-          const uuid = o.uuid;
-          const pid = o.pid;
-          const path = this._getRuleGroupConfigPath(pid, uuid);
-          await fs.writeFileAsync(path, domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
-        }
+      if (this.isRedisHashMatchUsed()) {
+        if (domains.length > 0)
+          await rclient.saddAsync(this._getRedisMatchKey(category, false), domains);
+        if (hashDomains.length > 0)
+          await rclient.saddAsync(this._getRedisMatchKey(category, true), hashDomains);
+      } else {
+        await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join('\n'));
+        await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join('\n'));
       }
-      if (_.isArray(this.categoryBlockUUIDsMap[category])) {
-        for (const o of this.categoryBlockUUIDsMap[category]) {
-          const uuid = o.uuid;
-          const pid = o.pid;
-          const path = this._getRuleGroupConfigPath(pid, uuid);
-          await fs.writeFileAsync(path, domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
+      // update config files for category rules in rule groups, this is unnecessary if redis match set is used
+      if (!this.isRedisHashMatchUsed()) {
+        if (_.isArray(this.categoryAllowUUIDsMap[category])) {
+          for (const o of this.categoryAllowUUIDsMap[category]) {
+            const uuid = o.uuid;
+            const pid = o.pid;
+            const path = this._getRuleGroupConfigPath(pid, uuid);
+            await fs.writeFileAsync(path, domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
+          }
+        }
+        if (_.isArray(this.categoryBlockUUIDsMap[category])) {
+          for (const o of this.categoryBlockUUIDsMap[category]) {
+            const uuid = o.uuid;
+            const pid = o.pid;
+            const path = this._getRuleGroupConfigPath(pid, uuid);
+            await fs.writeFileAsync(path, domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`).join('\n'));
+          }
         }
       }
     } catch (err) {
@@ -1281,9 +1326,18 @@ module.exports = class DNSMASQ {
     // legacy ip reservation is set in host:mac:*
     const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
       .filter((x) => (x && x.mac) != null)
-      .filter((x) => hostManager.getHostFastByMAC(x.mac)) // do not apply host IP assignment for devices that are inactive
       .filter((x) => !sysManager.isMyMac(x.mac))
-      .sort((a, b) => a.mac.localeCompare(b.mac));
+      .sort((a, b) => {
+        if (hostManager.getHostFastByMAC(a.mac) && hostManager.getHostFastByMAC(b.mac))
+          return a.mac.localeCompare(b.mac);
+        // inactive device sorts by last active time
+        if (!hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
+          return Number(b.lastActiveTimestamp || "0") - Number(a.lastActiveTimestamp || "0");
+        // active device comes first in the hosts list
+        if (hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
+          return -1;
+        return 1; 
+      });
 
     hosts.forEach(h => {
       try {
@@ -1309,6 +1363,7 @@ module.exports = class DNSMASQ {
     // }, Promise.resolve({}))
 
     let hostsList = []
+    const assignedIPs = {};
 
     for (const h of hosts) {
       if (h.dhcpIgnore === true) {
@@ -1329,13 +1384,19 @@ module.exports = class DNSMASQ {
 
         reservedIp = reservedIp ? reservedIp + ',' : ''
         if (reservedIp !== "") {
-          hostsList.push(
-            `${h.mac},set:${monitor},${reservedIp}`
-          );
-          reserved = true;
+          if (hostManager.getHostFastByMAC(h.mac) || !assignedIPs[reservedIp]) {
+            hostsList.push(
+              `${h.mac},set:${monitor},${reservedIp}`
+            );
+            assignedIPs[reservedIp] = h.mac;
+            reserved = true;
+          } else {
+            // inactive device comes after active device in the hosts list, and more recently-used inactive device comes before the lesser
+            log.warn(`Device ${h.mac} is inactive and its reserved IP ${reservedIp} conflicts with another device ${assignedIPs[reservedIp]} and will not take effect`);
+          }
         }
       }
-      if (!reserved) {
+      if (!reserved && hostManager.getHostFastByMAC(h.mac)) { // do not add inactive device that does not have a reserved IP to the hosts file
         hostsList.push(`${h.mac},set:${monitor}`);
       }
     }

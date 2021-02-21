@@ -53,7 +53,7 @@ fi
 sudo chmod 777 syslog*
 cp -rfp /home/pi/.forever/* .
 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
-curl -s "http://localhost:8837/v1/config/active" &> frcc.log
+(curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password)' | cat) &> frcc.log
 cd ..
 tar -zcvf support.tar.gz techsupport
 rm -r -f techsupport

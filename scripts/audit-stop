@@ -8,5 +8,7 @@ sudo rm /etc/rsyslog.d/30-acl-audit.conf
 sudo systemctl restart rsyslog
 sudo iptables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null && sudo iptables -D FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]; true"
 sudo ip6tables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null && sudo ip6tables -D FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]; true"
+sudo iptables -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo iptables -D FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]; true"
+sudo ip6tables -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo ip6tables -D FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]; true"
 
 logger 'FIREWALLA.ACLAUDIT Finished Stopping'

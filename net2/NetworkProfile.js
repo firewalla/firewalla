@@ -393,19 +393,29 @@ class NetworkProfile {
     let realIntf = this.o.intf;
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW,INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_SEC_DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
+    const inputRule6Sec = inputRuleSec.clone().fam(6);
     if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
       // add DROP rule on WAN interface in router mode
       await exec(inputRule.toCmd("-A")).catch((err) => {
         log.error(`Failed to add IPv4 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
       });
+      await exec(inputRuleSec.toCmd("-A")).catch((err) => {
+        log.error(`Failed to add IPv4 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
+      });
       await exec(inputRule6.toCmd("-A")).catch((err) => {
+        log.error(`Failed to add IPv6 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
+      });
+      await exec(inputRule6Sec.toCmd("-A")).catch((err) => {
         log.error(`Failed to add IPv6 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
       });
     } else {
       await exec(inputRule.toCmd("-D")).catch((err) => {});
+      await exec(inputRuleSec.toCmd("-D")).catch((err) => {});
       await exec(inputRule6.toCmd("-D")).catch((err) => {});
+      await exec(inputRule6Sec.toCmd("-D")).catch((err) => {});
     }
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
@@ -503,10 +513,14 @@ class NetworkProfile {
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
     // remove WAN INPUT protection rules
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW,INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_SEC_DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
+    const inputRule6Sec = inputRule.clone().fam(6);
     await exec(inputRule.toCmd("-D")).catch((err) => {});
+    await exec(inputRuleSec.toCmd("-D")).catch((err) => {});
     await exec(inputRule6.toCmd("-D")).catch((err) => {});
+    await exec(inputRule6Sec.toCmd("-D")).catch((err) => {});
 
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);

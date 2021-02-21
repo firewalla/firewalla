@@ -17,6 +17,7 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sysManager = require('./SysManager')
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
@@ -24,6 +25,7 @@ const intelTool = new IntelTool();
 const DestIPFoundHook = require('../hook/DestIPFoundHook');
 const destIPFoundHook = new DestIPFoundHook();
 
+const Constants = require('../net2/Constants.js');
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_LOG = 100;
 
@@ -164,6 +166,8 @@ class LogQuery {
     return options
   }
 
+
+
   // get logs across different devices
   async getAllLogs(options) {
 
@@ -189,6 +193,8 @@ class LogQuery {
       allMacs = hostManager.getTagMacs(options.tag);
     } else {
       allMacs = hostManager.getActiveMACs();
+      if (this.includeFirewallaInterfaces())
+        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
       if (_.isArray(options.macs))
         allMacs = _.uniq(allMacs.concat(options.macs));
     }

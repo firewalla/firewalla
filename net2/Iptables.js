@@ -476,19 +476,21 @@ async function switchQoSAsync(state, family = 4) {
 async function switchACLAsync(state, family = 4) {
   const op = state ? '-D' : '-I'
 
-  const byPassOut = new Rule().chn('FW_DROP')
+  const byPassOut = new Rule()
     .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
     .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
     .mdl("conntrack", "--ctdir ORIGINAL").jmp('RETURN').fam(family);
-  const byPassIn = new Rule().chn('FW_DROP')
+  const byPassIn = new Rule()
     .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
     .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
     .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
   const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS')
     .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`).jmp('FW_PREROUTING_DNS_FALLBACK').fam(family)
 
-  await execAsync(byPassIn.toCmd(op));
-  await execAsync(byPassOut.toCmd(op));
+  await execAsync(byPassOut.chn('FW_DROP').toCmd(op));
+  await execAsync(byPassIn.chn('FW_DROP').toCmd(op));
+  await execAsync(byPassOut.chn('FW_SEC_DROP').toCmd(op));
+  await execAsync(byPassIn.chn('FW_SEC_DROP').toCmd(op));
   await execAsync(byPassNat.toCmd(op))
 }
 

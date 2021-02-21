@@ -20,6 +20,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const KEY_EVENT_LOG = "event:log";
+const KEY_EVENT_STATE_CACHE = "event:state:cache";
+const KEY_EVENT_STATE_CACHE_ERROR = "event:state:cache:error";
 
 /*
  * EventApi provides API to event data access in Redis
@@ -35,13 +37,83 @@ class EventApi {
     constructor() {
     }
 
-    async listEvents(begin="-inf", end="inf", limit_offset=0, limit_count=-1) {
+    async getSavedStateValue(eventRequest) {
+        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
+        let savedValue = null;
+        try {
+            const savedRequestJson = await rclient.hgetAsync(KEY_EVENT_STATE_CACHE, stateEventRequestKey);
+            if (savedRequestJson) {
+                const savedRequest = JSON.parse(savedRequestJson);
+                if (savedRequest && 'state_value' in savedRequest) {
+                    savedValue = savedRequest.state_value;
+                    log.debug(`got ${savedValue} for ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis`);
+                } else {
+                    log.error(`failed to get saved value of ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis`);
+                }
+            }
+        } catch (err) {
+            log.error(`failed to get saved value of ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE} from Redis:`, err);
+        }
+        return savedValue;
+    }
+
+    async saveStateEventRequest(eventRequest) {
+        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
+        try {
+            const er_json = JSON.stringify(eventRequest);
+            log.debug(`save state event request(${JSON.stringify(eventRequest)}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE,stateEventRequestKey,JSON.stringify(eventRequest));
+        } catch (err) {
+            log.error(`failed to save value ${eventRequest.state_value} for ${stateEventRequestKey} in Redis`);
+        }
+    }
+
+    async listLatestEventsAll() {
+        let result = null;
+        try {
+            result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
+        } catch (err) {
+            log.error("failed to get all saved state event requests:",err);
+        }
+        return result;
+    }
+
+    async saveStateEventRequestError(eventRequest) {
+        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
+        try {
+            const er_json = JSON.stringify(eventRequest);
+            log.debug(`save state event request(${JSON.stringify(eventRequest)}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE_ERROR,stateEventRequestKey,JSON.stringify(eventRequest));
+        } catch (err) {
+            log.error(`failed to save value ${eventRequest.state_value} for ${stateEventRequestKey} in Redis`);
+        }
+    }
+
+    async listLatestEventsError() {
+        let result = null;
+        try {
+            result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
+        } catch (err) {
+            log.error("failed to get all error state event requests:",err);
+        }
+        return result;
+    }
+
+    async listEvents(min="-inf", max="inf", withscores=false, limit_offset=0, limit_count=-1, reverse=false) {
       let result = null
       try {
-        log.info(`getting events from ${begin} to ${end}`);
-        result = await rclient.zrangebyscoreAsync([KEY_EVENT_LOG, begin, end, "withscores","limit",limit_offset,limit_count]);
+        log.info(`getting events from ${min} to ${max}`);
+        const [begin,end] = reverse ? [max,min] : [min,max];
+        const params = withscores ?
+          [KEY_EVENT_LOG, begin, end, "withscores","limit",limit_offset,limit_count] :
+          [KEY_EVENT_LOG, begin, end, "limit",limit_offset,limit_count];
+        if (reverse) {
+          result = await rclient.zrevrangebyscoreAsync(params);
+        } else {
+          result = await rclient.zrangebyscoreAsync(params);
+        }
       } catch (err) {
-        log.error(`failed to get events between ${begin} and ${end}, with limit offset(${limit_offset}) and count(${limit_count}), ${err}`);
+        log.error(`failed to get events between ${min} and ${max}, with limit offset(${limit_offset})/count(${limit_count}) and reverse(${reverse}), ${err}`);
         result = null;
       }
       return result;
@@ -52,7 +124,7 @@ class EventApi {
       let redis_obj = ("ts" in event_obj) ? event_obj : Object.assign({},event_obj,{"ts":ts});
       let redis_json = JSON.stringify(redis_obj);
       try {
-        log.info(`adding event ${redis_json} at ${ts}`);
+        log.debug(`adding event ${redis_json} at ${ts}`);
         log.debug(`KEY_EVENT_LOG=${KEY_EVENT_LOG}`);
         log.debug(`ts=${ts}`);
         log.debug(`redis_json=${redis_json}`);

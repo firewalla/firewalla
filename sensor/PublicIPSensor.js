@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -66,9 +66,17 @@ class PublicIPSensor extends Sensor {
         }
       }
 
-      const publicWanIps = sysManager.myPublicWanIps().sort();
+      // TODO: support v6
+      const publicWanIps = sysManager.filterPublicIp4(sysManager.myWanIps(true).v4).sort();
       const existingPublicWanIpsJSON = await rclient.hgetAsync(redisKey, publicWanIPsHashKey);
       const existingPublicWanIps = ((existingPublicWanIpsJSON && JSON.parse(existingPublicWanIpsJSON)) || []).sort();
+
+      // connected public WAN IP overrides public IP from http request, this is mainly used in load-balance mode
+      if (publicWanIps.length > 0) {
+        if (!publicIP  || !publicWanIps.includes(publicIP)) {
+          publicIP = publicWanIps[0];
+        }
+      }
 
       let existingPublicIPJSON = await rclient.hgetAsync(redisKey, redisHashKey);
       let existingPublicIP = JSON.parse(existingPublicIPJSON);

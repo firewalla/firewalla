@@ -160,6 +160,12 @@ function generateStrictDateTs(ts) {
   }
 }
 
+function isHashDomain(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return domain.endsWith("=") && domain.length == 44
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -169,5 +175,6 @@ module.exports = {
   isSimilarHost,
   formulateHostname,
   isDomainValid,
-  generateStrictDateTs
+  generateStrictDateTs,
+  isHashDomain
 }

@@ -20,9 +20,9 @@
 # Constants
 # ----------------------------------------------------------------------------
 STATE_TYPE='diskspace'
-PATHS='/ /home /data /log'
-LIMIT_PCENT=90
-LIMIT_AVAIL=50000
+: ${PATHS:='/ /home /data /log'}
+: ${LIMIT_PCENT:=90}
+: ${LIMIT_AVAIL:=50000}
 
 
 # ----------------------------------------------------------------------------
@@ -30,15 +30,16 @@ LIMIT_AVAIL=50000
 # ----------------------------------------------------------------------------
 for path in $PATHS
 do
-    used_pcent=$(df --output=pcent $path | sed -n '2s/%//p')
-    avail=$(df -k --output=avail $path | tail -1)
+    used_pcent=$(df --output=pcent $path | tail -1 | tr -d ' %')
+    avail=$(df -k --output=avail $path | tail -1| tr -d ' ')
+    size=$(df -k --output=size $path | tail -1 | tr -d ' ')
+    labels="percent_used=$used_pcent percent_limit=$LIMIT_PCENT kbytes_size=$size kbytes_available=$avail kbytes_limit=$LIMIT_AVAIL"
+    state_value=0
     if [[ $used_pcent -gt $LIMIT_PCENT || $avail -lt $LIMIT_AVAIL ]]
     then
         state_value=1
-    else
-        state_value=0
     fi
-    echo "state $STATE_TYPE $path $state_value"
+    echo "state $STATE_TYPE $path $state_value $labels"
 done
 
 exit 0

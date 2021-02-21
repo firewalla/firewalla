@@ -142,8 +142,11 @@ const simple = (req, res, next) => {
 //    const c = JSON.parse(content)
     body.message.obj.data.value = content;
 
+    // make a reference to this object, because res.socket will be gone after close event on res.socket
+    const resSocket = res.socket; 
+
     res.socket.on('close', () => {
-      log.info("connection is closed:", req.headers['x-forwarded-for'] || req.connection.remoteAddress);
+      log.info("connection is closed:", resSocket._peername);
       res.is_closed = true;
     });
 

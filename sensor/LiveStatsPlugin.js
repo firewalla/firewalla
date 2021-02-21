@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla INC
+/*    Copyright 2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -74,7 +74,7 @@ class LiveStatsPlugin extends Sensor {
   }
 
   buildActiveConnGrepString() {
-    const wanIPs = sysManager.myWanIps();
+    const wanIPs = sysManager.myWanIps().v4;
     let str = "grep -v TIME_WAIT | fgrep -v '127.0.0.1' ";
     for(const ip of wanIPs) {
       str += `| egrep -v '=${ip}.*=${ip}'`;

@@ -31,10 +31,13 @@ class RuleCheckSensor extends Sensor {
     super();
     this.ipsetCache = {
       "block_ip_set": null,
+      "sec_block_ip_set": null,
       "allow_ip_set": null,
       "block_net_set": null,
+      "sec_block_net_set": null,
       "allow_net_set": null,
       "block_domain_set": null,
+      "sec_block_domain_set": null,
       "allow_domain_set": null,
       "block_ib_ip_set": null,
       "allow_ib_ip_set": null,
@@ -49,10 +52,13 @@ class RuleCheckSensor extends Sensor {
       "block_ob_domain_set": null,
       "allow_ob_domain_set": null,
       "block_ip_set6": null,
+      "sec_block_ip_set6": null,
       "allow_ip_set6": null,
       "block_net_set6": null,
+      "sec_block_net_set6": null,
       "allow_net_set6": null,
       "block_domain_set6": null,
+      "sec_block_domain_set6": null,
       "allow_domain_set6": null,
       "block_ib_ip_set6": null,
       "allow_ib_ip_set6": null,
@@ -189,14 +195,19 @@ class RuleCheckSensor extends Sensor {
       return;
     if (!target)
       return;
-    log.info(`Checking rule enforcement ${pid}`);
+    log.debug(`Checking rule enforcement ${pid}`);
+
+    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
 
     switch (type) {
       case "ip":
       case "net": {
         if (!new Address4(target).isValid() && !new Address6(target).isValid())
           return;
-        const set = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + type + "_set" + (new Address4(target).isValid() ? "" : "6");
+        const set = (security ? 'sec_' : '' )
+          + (action === "allow" ? 'allow_' : 'block_')
+          + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
+          + type + "_set" + (new Address4(target).isValid() ? "" : "6");
         const result = await this.checkIpSetHasEntry([target], set);
         if (!result)
           needEnforce = true;
@@ -208,7 +219,10 @@ class RuleCheckSensor extends Sensor {
         if (ips) {
           const ip4Addrs = ips && ips.filter((ip) => !f.isReservedBlockingIP(ip) && new Address4(ip).isValid());
           const ip6Addrs = ips && ips.filter((ip) => !f.isReservedBlockingIP(ip) && new Address6(ip).isValid());
-          const set4 = (action === "allow" ? 'allow_' : 'block_') + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : "")) + "domain_set";
+          const set4 = (security ? 'sec_' : '' )
+            + (action === "allow" ? 'allow_' : 'block_')
+            + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
+            + "domain_set";
           const set6 = `${set4}6`;
           const result = await this.checkIpSetHasEntry(ip4Addrs, set4) && await this.checkIpSetHasEntry(ip6Addrs, set6);
           if (!result)

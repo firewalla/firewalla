@@ -130,15 +130,22 @@ check_systemctl_services() {
     check_each_system_service firemon "running"
     check_each_system_service firekick "dead"
     check_each_system_service redis-server "running"
-    check_each_system_service openvpn@server "running"
-    check_each_system_service watchdog "running"
     check_each_system_service brofish "running"
     check_each_system_service firewalla "dead"
     check_each_system_service fireupgrade "dead"
     check_each_system_service fireboot "dead"
 
+    if redis-cli hget policy:system vpn | fgrep -q '"state":true'
+    then
+      vpn_run_state='running'
+    else
+      vpn_run_state='dead'
+    fi
+    check_each_system_service openvpn@server $vpn_run_state
+
     if [[ $PLATFORM != 'gold' ]]; then # non gold
         check_each_system_service firemasq "running"
+        check_each_system_service watchdog "running"
     else # gold
         check_each_system_service firerouter "running"
         check_each_system_service firerouter_dns "running"
@@ -262,7 +269,7 @@ check_tc_classes() {
 check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
-    printf "%8s %38s %10s %25s %10s %25s %15s %10s %15s %10s %15s %15s %22s %15s %10s %10s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Direction" "Action" "Protocol" "Local Port" "Remote Port" "Traffic Direction" "Rate Limit" "Priority" "Disabled"
+    printf "%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %7s %8s %4s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "TosDir" "RateLmt" "Pri" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
@@ -275,6 +282,7 @@ check_policies() {
         local LOCAL_PORT=$(redis-cli hget $RULE localPort)
         local REMOTE_PORT=$(redis-cli hget $RULE remotePort)
         local TRAFFIC_DIRECTION=$(redis-cli hget $RULE trafficDirection)
+        TRAFFIC_DIRECTION=${TRAFFIC_DIRECTION%load} # remove 'load' from end of string
         local RATE_LIMIT=$(redis-cli hget $RULE rateLimit)
         local PRIORITY=$(redis-cli hget $RULE priority)
         local DISABLED=$(redis-cli hget $RULE disabled)
@@ -298,6 +306,8 @@ check_policies() {
         local DIRECTION=$(redis-cli hget $RULE direction)
         if [[ "x$DIRECTION" == "x" || "x$DIRECTION" == "xbidirection" ]]; then
             DIRECTION="both"
+        else
+            DIRECTION=${DIRECTION%bound} # remove 'bound' from end of string
         fi
         local TAG=$(redis-cli hget $RULE tag)
         if [[ "x$TAG" != "x" ]]; then
@@ -321,7 +331,7 @@ check_policies() {
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
         fi
-        printf "$COLOR%8s %38s %10s %25s %10s %25s %15s %10s %15s %10s %15s %15s %22s %15s %10s %10s $UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT" "$TRAFFIC_DIRECTION" "$RATE_LIMIT" "$PRIORITY" "$DISABLED"
+        printf "$COLOR%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %7s %8s %4s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT" "$TRAFFIC_DIRECTION" "$RATE_LIMIT" "$PRIORITY" "$DISABLED"
     done
 
     echo ""

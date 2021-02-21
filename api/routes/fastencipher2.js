@@ -34,8 +34,10 @@ const sc = require('../lib/SystemCheck.js');
 const msgHandler = (req, res, next) => {
   const gid = req.params.gid;
   const streaming = (req.body.message && req.body.message.obj && req.body.message.obj.streaming) || false;
+
+  const resSocket = res.socket;
   res.socket.on('close', () => {
-    log.info("connection is closed:", req.headers['x-forwarded-for'] || req.connection.remoteAddress);
+    log.info("connection is closed:", resSocket._peername);
     res.is_closed = true;
   });
   (async () => {
@@ -95,6 +97,7 @@ const convertMessageToBody = function (req, res, next) {
 router.post('/message/:gid', handlers, encryption.encrypt);
 router.get('/message/:gid', convertMessageToBody, handlers, (req, res, next) => {
   encryption.encrypt(req, res, next, true);
+  next();
 });
 
 log.info("==============================")

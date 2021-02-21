@@ -36,7 +36,8 @@
     "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
-    "notification.box_online.cooldown": 900
+    "notification.box_online.cooldown": 900,
+    "notification.box_offline.threshold": 900
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -409,6 +410,11 @@
         "ping": {
             "sampleCount": 20,
             "sampleInterval": 300,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 600,
+            "alarmDelayLossrate": 60,
+            "lossrateLimit": 0.1,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -418,6 +424,11 @@
             "lookupName": "check.firewalla.com",
             "sampleCount": 5,
             "sampleInterval": 180,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 360,
+            "alarmDelayLossrate": 30,
+            "lossrateLimit": 0.1,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -426,6 +437,11 @@
         "http": {
             "sampleCount": 5,
             "sampleInterval": 180,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 360,
+            "alarmDelayLossrate": 30,
+            "lossrateLimit": 0.1,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -601,7 +617,6 @@
         "digDNS" : 300,
         "disk_space.sh" : 300,
         "ethernet_state.sh" : 60,
-        "service_status.sh" : 300,
         "speed_test.sh" : -1,
         "system_load.sh" : 300,
         "default" : 3600
@@ -782,5 +797,6 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
-  }
+  },
+  "pairedDeviceMaxHistory": 100
 }
