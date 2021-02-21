@@ -34,13 +34,13 @@ const sc = require('../lib/SystemCheck.js');
 const msgHandler = (req, res, next) => {
   const gid = req.params.gid;
   const streaming = (req.body.message && req.body.message.obj && req.body.message.obj.streaming) || false;
-  const resSocket = res.socket;
-  res.socket.on('close', () => {
-    log.info("connection is closed:", resSocket._peername);
-    res.is_closed = true;
-  });
   (async () => {
     if (streaming) {
+      const resSocket = res.socket;
+      res.socket.on('close', () => {
+        log.info("connection is closed:", resSocket._peername);
+        res.is_closed = true;
+      });
       const eventName = (req.body.message && req.body.message.obj &&
         req.body.message.obj.data && req.body.message.obj.data.item) || 'message'; // default event name: message
       res.set({
@@ -52,15 +52,16 @@ const msgHandler = (req, res, next) => {
       while (streaming && !res.is_closed) {
         try {
           const controller = await cloudWrapper.getNetBotController(gid);
+          req.body.message.suppressLog = true; // reduce sse message
           const response = await controller.msgHandlerAsync(gid, req.body);
           res.body = JSON.stringify(response);
           sc.compressPayloadIfRequired(req, res, () => { // override next, keep the res on msgHandler middleware
             encryption.encrypt(req, res, async () => {
               const reply = `event:${eventName}\ndata:${res.body}\n\n`;
               res.write(reply);
-              await delay(5000); // self protection
             }, true);
           }, true);
+          await delay(500); // self protection
         } catch (err) {
           log.error("Got error when handling request, err:", err);
           res.write(`id:-1\nevent:${eventName}\ndata:\n\n`); // client listen for "end of event stream" and close sse
