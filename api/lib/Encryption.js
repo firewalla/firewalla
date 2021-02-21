@@ -80,8 +80,7 @@ module.exports = class {
         return;
       } else {
         if(streaming){
-          const reply = `event:message\ndata:${encryptedResponse}\n\n`; // use default event name: message
-          res.body = reply;
+          res.body = encryptedResponse;
           next();
         }else{
           res.json({ message : encryptedResponse });

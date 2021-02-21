@@ -34,7 +34,6 @@ const sc = require('../lib/SystemCheck.js');
 const msgHandler = (req, res, next) => {
   const gid = req.params.gid;
   const streaming = (req.body.message && req.body.message.obj && req.body.message.obj.streaming) || false;
-
   const resSocket = res.socket;
   res.socket.on('close', () => {
     log.info("connection is closed:", resSocket._peername);
@@ -42,6 +41,8 @@ const msgHandler = (req, res, next) => {
   });
   (async () => {
     if (streaming) {
+      const eventName = (req.body.message && req.body.message.obj &&
+        req.body.message.obj.data && req.body.message.obj.data.item) || 'message'; // default event name: message
       res.set({
         'Cache-Control': 'no-cache',
         'Content-Type': 'text/event-stream',
@@ -55,13 +56,14 @@ const msgHandler = (req, res, next) => {
           res.body = JSON.stringify(response);
           sc.compressPayloadIfRequired(req, res, () => { // override next, keep the res on msgHandler middleware
             encryption.encrypt(req, res, async () => {
-              res.write(res.body);
+              const reply = `event:${eventName}\ndata:${res.body}\n\n`;
+              res.write(reply);
               await delay(5000); // self protection
             }, true);
           }, true);
         } catch (err) {
           log.error("Got error when handling request, err:", err);
-          res.write('id:-1\nevent:message\ndata:\n\n'); // client listen for "end of event stream" and close sse
+          res.write(`id:-1\nevent:${eventName}\ndata:\n\n`); // client listen for "end of event stream" and close sse
           res.end();
           break;
         }
@@ -87,8 +89,7 @@ const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
 
 const convertMessageToBody = function (req, res, next) {
   try {
-    log.info('jack test', req.query.message);
-    const encryptedMessage = req.query.message.replace(/\s/g, '+');
+    const encryptedMessage = req.query.message;
     req.body = JSON.parse(encryptedMessage);
     next();
   } catch (e) {
