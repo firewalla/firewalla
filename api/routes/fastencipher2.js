@@ -82,7 +82,9 @@ const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
 
 const convertMessageToBody = function (req, res, next) {
   try {
-    const encryptedMessage = req.query.message.replaceAll(' ', '+');
+    let encryptedMessage = req.query.message;
+    log.info('jack test encryptedMessage', encryptedMessage);
+    encryptedMessage = encryptedMessage.replaceAll(' ', '+')
     log.info('jack test encryptedMessage', encryptedMessage);
     req.body = JSON.parse(encryptedMessage);
     log.info('jack test req.body', req.body);
