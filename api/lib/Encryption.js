@@ -81,7 +81,8 @@ module.exports = class {
       } else {
         if(streaming){
           const reply = `event:message\ndata:${encryptedResponse}\n\n`; // use default event name: message
-          res.body = reply; // don't call next, keep the res on msgHandler middleware
+          res.body = reply;
+          next();
         }else{
           res.json({ message : encryptedResponse });
         }

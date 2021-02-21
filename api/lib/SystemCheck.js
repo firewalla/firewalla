@@ -56,7 +56,7 @@ function debugInfo(req, res, next) {
   next();
 }
 
-function compressPayloadIfRequired(req, res, next, streaming=false) { 
+function compressPayloadIfRequired(req, res, next) {
   let compressed = req.body.compressed || req.query.compressed;
 
   if(compressed) { // compress payload to reduce traffic
@@ -79,10 +79,10 @@ function compressPayloadIfRequired(req, res, next, streaming=false) {
         log.info(`Compression is enabled, size is reduced by ${ratio}%`);
       }
       log.debug("compressed message size: ", res.body.length);
-      !streaming && next(); // don't call next, keep the res on msgHandler middleware
+      next();
     });
   } else {
-    !streaming && next(); // don't call next, keep the res on msgHandler middleware
+    next();
   }
 }
 

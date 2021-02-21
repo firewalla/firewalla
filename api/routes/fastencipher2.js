@@ -53,10 +53,12 @@ const msgHandler = (req, res, next) => {
           const controller = await cloudWrapper.getNetBotController(gid);
           const response = await controller.msgHandlerAsync(gid, req.body);
           res.body = JSON.stringify(response);
-          sc.compressPayloadIfRequired(req, res, next, true);
-          encryption.encrypt(req, res, next, true);
-          res.write(res.body);
-          await delay(5000); // self protection
+          sc.compressPayloadIfRequired(req, res, () => { // override next, keep the res on msgHandler middleware
+            encryption.encrypt(req, res, () => {
+              res.write(res.body);
+              await delay(5000); // self protection
+            }, true);
+          }, true);
         } catch (err) {
           log.error("Got error when handling request, err:", err);
           res.write('id:-1\nevent:message\ndata:\n\n'); // client listen for "end of event stream" and close sse
