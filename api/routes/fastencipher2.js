@@ -79,8 +79,22 @@ const msgHandler = (req, res, next) => {
 const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
   msgHandler, sc.compressPayloadIfRequired];
 
+const convertMessageToBody = function (req, res, next) {
+  const encryptedMessage = req.params.encryptedMessage;
+  try {
+    req.body = JSON.parse(encryptedMessage);
+    log.info('jack test req.body', req.body);
+    next();
+  } catch (e) {
+    log.error('parse encryptedMessage in path error', e);
+    res.status(400);
+    res.json({ "error": "Invalid mesasge" });
+    return;
+  }
+}
+
 router.post('/message/:gid', handlers, encryption.encrypt);
-router.get('/message/:gid', handlers, (req, res, next) => {
+router.get('/message/:gid/:message', convertMessageToBody, handlers, (req, res, next) => {
   encryption.encrypt(req, res, next, true);
 });
 
