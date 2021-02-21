@@ -84,7 +84,7 @@ const convertMessageToBody = function (req, res, next) {
   try {
     let encryptedMessage = req.query.message;
     log.info('jack test encryptedMessage', encryptedMessage);
-    encryptedMessage = encryptedMessage.replaceAll(' ', '+')
+    encryptedMessage = encryptedMessage.replace(/\s/g, '+');
     log.info('jack test encryptedMessage', encryptedMessage);
     req.body = JSON.parse(encryptedMessage);
     log.info('jack test req.body', req.body);
