@@ -63,6 +63,9 @@ class LiveStatsPlugin extends Sensor {
   }
 
   lastFlowTS(flows) { // flows must be in asc order
+    if (flows.length == 0) {
+      return 0;
+    }
     return flows[flows.length-1].ts;
   }
 
