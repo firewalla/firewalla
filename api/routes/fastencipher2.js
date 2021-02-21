@@ -80,7 +80,7 @@ const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
   msgHandler, sc.compressPayloadIfRequired];
 
 const convertMessageToBody = function (req, res, next) {
-  const encryptedMessage = req.params.encryptedMessage;
+  const encryptedMessage = req.query.message;
   try {
     req.body = JSON.parse(encryptedMessage);
     log.info('jack test req.body', req.body);
@@ -94,7 +94,7 @@ const convertMessageToBody = function (req, res, next) {
 }
 
 router.post('/message/:gid', handlers, encryption.encrypt);
-router.get('/message/:gid/:message', convertMessageToBody, handlers, (req, res, next) => {
+router.get('/message/:gid', convertMessageToBody, handlers, (req, res, next) => {
   encryption.encrypt(req, res, next, true);
 });
 
