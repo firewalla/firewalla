@@ -34,7 +34,7 @@ const sc = require('../lib/SystemCheck.js');
 const msgHandler = (req, res, next) => {
   const gid = req.params.gid;
   log.info('jack test req.body in msgHandler', req.body);
-  const streaming = req.body.streaming || false;
+  const streaming = (req.body.message && req.body.message.obj && req.body.message.obj.streaming) || false;
   res.socket.on('close', () => {
     log.info("connection is closed:", req.headers['x-forwarded-for'] || req.connection.remoteAddress);
     res.is_closed = true;
@@ -81,6 +81,8 @@ const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
   msgHandler, sc.compressPayloadIfRequired];
 
 const convertMessageToBody = function (req, res, next) {
+  const messageInPath = req.params.message;
+  log.info('jack test messageInPath', messageInPath);
   const encryptedMessage = req.query.message;
   log.info('jack test encryptedMessage', encryptedMessage);
   try {
@@ -96,7 +98,7 @@ const convertMessageToBody = function (req, res, next) {
 }
 
 router.post('/message/:gid', handlers, encryption.encrypt);
-router.get('/message/:gid', convertMessageToBody, handlers, (req, res, next) => {
+router.get('/message/:gid/:message', convertMessageToBody, handlers, (req, res, next) => {
   encryption.encrypt(req, res, next, true);
 });
 
