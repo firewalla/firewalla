@@ -54,7 +54,7 @@ const msgHandler = (req, res, next) => {
           const response = await controller.msgHandlerAsync(gid, req.body);
           res.body = JSON.stringify(response);
           next();
-          await delay(200); // self protection
+          await delay(5000); // self protection
         } catch (err) {
           log.error("Got error when handling request, err:", err);
           res.write('id:-1\nevent:message\ndata:\n\n'); // client listen for "end of event stream" and close sse
