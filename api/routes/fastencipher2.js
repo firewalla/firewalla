@@ -50,7 +50,7 @@ const msgHandler = (req, res, next) => {
       while (streaming && !res.is_closed) {
         try {
           const controller = await cloudWrapper.getNetBotController(gid);
-          const response = await controller.msgHandlerAsync(gid, body);
+          const response = await controller.msgHandlerAsync(gid, req.body);
           res.body = JSON.stringify(response);
           next();
           await delay(200); // self protection
