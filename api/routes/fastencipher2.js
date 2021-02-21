@@ -21,7 +21,7 @@ const encryption = new Encryption();
 
 const CloudWrapper = require('../lib/CloudWrapper');
 const cloudWrapper = new CloudWrapper();
-
+const delay = require('../../util/util.js').delay;
 const log = require('../../net2/logger.js')(__filename, "info");
 
 const sc = require('../lib/SystemCheck.js');
