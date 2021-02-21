@@ -33,7 +33,6 @@ const sc = require('../lib/SystemCheck.js');
 
 const msgHandler = (req, res, next) => {
   const gid = req.params.gid;
-  log.info('jack test req.body in msgHandler', req.body);
   const streaming = (req.body.message && req.body.message.obj && req.body.message.obj.streaming) || false;
   res.socket.on('close', () => {
     log.info("connection is closed:", req.headers['x-forwarded-for'] || req.connection.remoteAddress);
@@ -82,12 +81,8 @@ const handlers = [sc.isInitialized, encryption.decrypt, sc.debugInfo,
 
 const convertMessageToBody = function (req, res, next) {
   try {
-    let encryptedMessage = req.query.message;
-    log.info('jack test encryptedMessage', encryptedMessage);
-    encryptedMessage = encryptedMessage.replace(/\s/g, '+');
-    log.info('jack test encryptedMessage', encryptedMessage);
+    const encryptedMessage = req.query.message.replace(/\s/g, '+');
     req.body = JSON.parse(encryptedMessage);
-    log.info('jack test req.body', req.body);
     next();
   } catch (e) {
     log.error('parse encryptedMessage in path error', e);
