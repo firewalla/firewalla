@@ -160,6 +160,8 @@ const simple = (req, res, next) => {
         });
         res.flushHeaders();
 
+        body.message.obj.data.value.streaming = {id: body.message.obj.id};
+
         while(streaming && !res.is_closed) {
           try {
             let controller = await cloudWrapper.getNetBotController(gid);
