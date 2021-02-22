@@ -91,12 +91,13 @@ class LiveStatsPlugin extends Sensor {
       let flows = [];
 
       if(!lastTS) {
-        if (lastTS < now - 60) {
-          lastTS = now - 60; // self protection, ignore very old ts
-        }
         const prevFlows = (await this.getPreviousFlows()).reverse();
         flows.push.apply(flows, prevFlows);
         lastTS = this.lastFlowTS(prevFlows) && now;
+      } else {
+        if (lastTS < now - 60) {
+          lastTS = now - 60; // self protection, ignore very old ts
+        }
       }
 
       const newFlows = await this.getFlows(lastTS);
