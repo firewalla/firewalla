@@ -91,6 +91,9 @@ class LiveStatsPlugin extends Sensor {
       let flows = [];
 
       if(!lastTS) {
+        if (lastTS < now - 60) {
+          lastTS = now - 60; // self protection, ignore very old ts
+        }
         const prevFlows = (await this.getPreviousFlows()).reverse();
         flows.push.apply(flows, prevFlows);
         lastTS = this.lastFlowTS(prevFlows) && now;
@@ -100,9 +103,6 @@ class LiveStatsPlugin extends Sensor {
       flows.push.apply(flows, newFlows);
 
       let newFlowTS = this.lastFlowTS(newFlows) || lastTS;
-      if (newFlowTS < now - 60) { // self protection, ignore very old ts
-        newFlowTS = now - 60;
-      }
       this.updateStreamingTS(id, newFlowTS);
 
       const intfs = fireRouter.getLogicIntfNames();
