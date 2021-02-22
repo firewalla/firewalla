@@ -550,8 +550,6 @@ class netBot extends ControllerBot {
       }
 
       const notifyMsg = {
-        title: i18n.__(titleKey, payload),
-        body: i18n.__(bodyKey, payload),
       };
 
       if (event.titleLocalKey) {
