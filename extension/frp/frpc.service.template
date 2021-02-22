@@ -1,6 +1,7 @@
 [Unit]
 Description=Firewalla FRP Service
 After=network.target
+StartLimitIntervalSec=0
 
 [Service]
 User=pi
