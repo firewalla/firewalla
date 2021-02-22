@@ -508,8 +508,12 @@
         "expires": 86400,
         "count": 10000
       },
-      "audit": {
+      "auditDrop": {
         "expires": 86400,
+        "count": 10000
+      },
+      "auditAccept": {
+        "expires": 3600,
         "count": 10000
       },
       "ssh": {
@@ -602,8 +606,7 @@
     "ACLAuditLogPlugin": {
       "buffer": 30,
       "interval": 300,
-      "expires": 86400,
-      "acceptExpires": 3600
+      "expires": 86400
     },
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
