@@ -67,6 +67,11 @@ const getMsgHandler = (req, res, next) => {
         'Connection': 'keep-alive'
       });
       res.flushHeaders();
+
+      // this streaming structure is for each api to determine if the requset is from the same streaming session
+      req.body.message.obj.data.value = req.body.message.obj.data.value || {};
+      req.body.message.obj.data.value.streaming = {id: req.body.message.obj.id};
+
       while (streaming && !res.is_closed) {
         try {
           const controller = await cloudWrapper.getNetBotController(gid);

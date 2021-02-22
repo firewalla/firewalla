@@ -99,8 +99,8 @@ class LiveStatsPlugin extends Sensor {
       const newFlows = await this.getFlows(lastTS);
       flows.push.apply(flows, newFlows);
 
-      const newFlowTS = this.lastFlowTS(newFlows) || lastTS;
-      if (newFlowTS < now - 60) {
+      let newFlowTS = this.lastFlowTS(newFlows) || lastTS;
+      if (newFlowTS < now - 60) { // self protection, ignore very old ts
         newFlowTS = now - 60;
       }
       this.updateStreamingTS(id, newFlowTS);
