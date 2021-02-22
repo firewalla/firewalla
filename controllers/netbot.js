@@ -4305,7 +4305,7 @@ class netBot extends ControllerBot {
         rawmsg.message.obj.data.item === 'ping') {
 
       } else {
-        log.info("Received jsondata from app", rawmsg.message);
+        rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
       }
 
       if (rawmsg.message.obj.type === "jsonmsg") {
