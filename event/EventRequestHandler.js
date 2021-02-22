@@ -23,9 +23,11 @@ const eventApi = require('./EventApi.js');
 const KEY_EVENT_REQUEST_STATE = "event:request:state";
 const KEY_EVENT_REQUEST_ACTION = "event:request:action";
 const KEY_EVENT_REQUEST_CLEAN = "event:request:clean";
-const KEY_EVENT_STATE_PREFIX = "event:state";
-const STATE_REQUIRED_FIELDS = [ "ts", "state_type", "state_key", "state_value"]
-const ACTION_REQUIRED_FIELDS = [ "ts", "action_type", "action_value"]
+const STATE_REQUIRED_FIELDS = [ "ts", "state_type", "state_key", "state_value"];
+const ACTION_REQUIRED_FIELDS = [ "ts", "action_type", "action_value"];
+const DEFAULT_OK_VALUE = 0;
+const STATE_OK_VALUE='ok_value';
+const STATE_ERROR_VALUE='error_value';
 
 /*
  * EventRequestHandler accepts event requests from redis channels and processes them accordingly
@@ -68,34 +70,12 @@ class EventRequestHandler {
         sclient.subscribe(KEY_EVENT_REQUEST_CLEAN);
     }
 
-    async getStateEventSavedValue(eventRequest) {
-        const stateEventRequestKey = KEY_EVENT_STATE_PREFIX+":"+eventRequest.state_type+":"+eventRequest.state_key;
-        let savedValue = null;
-        try {
-            savedValue = await rclient.getAsync(stateEventRequestKey)
-            log.debug(`got ${savedValue} for ${stateEventRequestKey} from Redis`);
-        } catch (err) {
-            log.error(`failed to get saved value of ${stateEventRequestKey} in Redis, ${err}`);
-        }
-        return savedValue;
-    }
-
     sendEvent(eventRequest,event_type) {
         log.info(`sending eventRequest ${JSON.stringify(eventRequest)}`);
         try {
             eventApi.addEvent(Object.assign({}, eventRequest,{"event_type":event_type}),eventRequest.ts);
         } catch (err) {
-            log.error(`failed to add event with timestamp ${eventRequest.ts}`);
-        }
-    }
-
-    saveStateEventValue(eventRequest) {
-        log.info(`save state event value ${eventRequest.state_value}`);
-        const stateEventRequestKey = KEY_EVENT_STATE_PREFIX+":"+eventRequest.state_type+":"+eventRequest.state_key;
-        try {
-            rclient.set(stateEventRequestKey,eventRequest.state_value);
-        } catch (err) {
-            log.error(`failed to save value ${eventRequest.state_value} for ${stateEventRequestKey} in Redis`);
+            log.error(`failed to add ${event_type} event(${JSON.stringify(eventRequest)}):`,err);
         }
     }
 
@@ -103,31 +83,65 @@ class EventRequestHandler {
         return ( typeof x === 'number' && ! isNaN(x));
     }
 
+    /*
+     * Either one of following attributes in "labels" can be provided, an event is considered as an error if
+     * - ok_value    : state_value != labels.ok_value
+     * - error_value : state_value == labels.error_value
+     * If none of above defined, {"ok_value": 0} will be added to "labels" as default.
+     */
+    async checkStateEventForError(eventRequest) {
+        if ('labels' in eventRequest) {
+            if ( !(STATE_OK_VALUE in eventRequest.labels) && !(STATE_ERROR_VALUE in eventRequest.labels) ) {
+                eventRequest.labels.ok_value = 0
+            }
+        } else {
+            eventRequest.labels = { "ok_value":0};
+        }
+
+        if ( (STATE_ERROR_VALUE in eventRequest.labels && eventRequest.state_value === eventRequest.labels.error_value)
+          || (STATE_OK_VALUE in eventRequest.labels && eventRequest.state_value !== eventRequest.labels.ok_value) ) {
+            await eventApi.saveStateEventRequestError(eventRequest);
+        }
+    }
+
     async processStateEvent(message) {
         log.debug("got state event: ", message);
         try{
             const eventRequest = JSON.parse(message);
             for (const field of STATE_REQUIRED_FIELDS) {
-                if ( ! field in eventRequest ) {
+                if ( !(field in eventRequest) ) {
                     throw new Error(`missing required field ${field} in event request`);
                 }
             }
-            const savedValue = await this.getStateEventSavedValue(eventRequest);
-            const newValue = eventRequest.state_value
+
+            const savedEvent = await eventApi.getSavedStateEvent(eventRequest);
+            const savedValue = (savedEvent && 'state_value' in savedEvent) ? savedEvent.state_value : null;
+            const newValue = eventRequest.state_value;
             if ( !this.isNumber(newValue)) {
                 throw new Error(`state_value(${newValue}) of event request is NOT a number`);
             }
 
+            /*
+             * Track earliest time(ts0) of current state value
+             */
             if ( savedValue !== null && parseFloat(savedValue) === parseFloat(newValue) ) {
+                // state NO change, pass on ts0
+                eventRequest.ts0 = ("ts0" in savedEvent) ? savedEvent.ts0 : savedEvent.ts;
                 log.debug(`ignore repeated state ${newValue}`);
             } else {
+                // state changed, reset ts0
+                eventRequest.ts0 = eventRequest.ts;
                 log.debug(`update state value from ${savedValue} to ${newValue}`);
                 this.sendEvent(eventRequest,"state");
-                this.saveStateEventValue(eventRequest);
             }
+            // always update state event request to keep it latest
+            await eventApi.saveStateEventRequest(eventRequest);
+            // check event for error
+            await this.checkStateEventForError(eventRequest);
+
 
         } catch (err) {
-            log.error(`failed to process state event ${message}, ${err}`);
+            log.error(`failed to process state event ${message}:`, err);
         }
     }
 
@@ -136,7 +150,7 @@ class EventRequestHandler {
         try{
             const eventRequest = JSON.parse(message);
             for (const field of ACTION_REQUIRED_FIELDS) {
-                if ( ! field in eventRequest ) {
+                if ( !(field in eventRequest) ) {
                     throw new Error(`missing required field ${field} in event request`);
                 }
             }

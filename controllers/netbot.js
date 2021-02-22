@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,6 +28,7 @@ const ControllerBot = require('../lib/ControllerBot.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
+const pairedMaxHistoryEntry = fc.getConfig().pairedDeviceMaxHistory || 100;
 const URL = require("url");
 const bone = require("../lib/Bone");
 
@@ -1309,6 +1310,25 @@ class netBot extends ControllerBot {
 
     if (appInfo.deviceName && appInfo.eid) {
       const keyName = "sys:ept:memberNames"
+      try {
+        const device = await rclient.hgetAsync(keyName, appInfo.eid)
+        if (!device) {
+          const len = await rclient.hlenAsync("sys:ept:members:history");
+          if (len < pairedMaxHistoryEntry) {
+            const historyStr = await rclient.hgetAsync("sys:ept:members:history", appInfo.eid);
+            let historyMsg;
+            if (historyStr) historyMsg = JSON.parse(historyStr)["msg"]
+            if (!historyMsg) historyMsg = "";
+            const result = {};
+            result["deviceName"] = appInfo.deviceName;
+            const date = Math.floor(new Date() / 1000)
+            result["msg"] = `${historyMsg}paired at ${date},`;
+            await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
+          }
+        }
+      } catch(err) {
+        log.info("error when record paired device history info", err)
+      }
       await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
 
       const keyName2 = "sys:ept:member:lastvisit"
@@ -4108,12 +4128,13 @@ class netBot extends ControllerBot {
         break;
       case "beta":
         targetBranch = prodBranch.replace("release_", "beta_")
-        break
+        break;
       case "prod":
         targetBranch = prodBranch
-        break
+        break;
+      default:
+        throw new Error("Can not switch to branch", target);
     }
-
     log.info("Going to switch to branch", targetBranch);
     try {
       await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)

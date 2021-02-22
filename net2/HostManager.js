@@ -111,6 +111,8 @@ let instance = null;
 
 const VpnManager = require('../vpn/VpnManager.js');
 
+const eventApi = require('../event/EventApi.js');
+
 module.exports = class HostManager {
   constructor() {
     if (!instance) {
@@ -556,6 +558,26 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
+  async listLatestAllStateEvents(json) {
+    try {
+      log.debug("Listing latest all state events");
+      const latestAllStateEvents = await eventApi.listLatestStateEventsAll();
+      if (latestAllStateEvents) json.latestAllStateEvents = latestAllStateEvents;
+    } catch (err) {
+      log.error("failed to get latest all state events:",err);
+    }
+  }
+
+  async listLatestErrorStateEvents(json) {
+    try {
+      log.debug("Listing latest error state events");
+      const latestErrorStateEvents = await eventApi.listLatestStateEventsError();
+      if (latestErrorStateEvents) json.latestStateEventsError = latestErrorStateEvents;
+    } catch (err) {
+      log.error("failed to get latest error state events:",err);
+    }
+  }
+
   // what is blocked
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
@@ -712,6 +734,8 @@ module.exports = class HostManager {
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.getCpuUsage(json),
+      this.listLatestAllStateEvents(json),
+      this.listLatestErrorStateEvents(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1028,7 +1052,9 @@ module.exports = class HostManager {
           this.btMacForInit(json),
           this.loadStats(json),
           this.ovpnClientProfilesForInit(json),
-          this.ruleGroupsForInit(json)
+          this.ruleGroupsForInit(json),
+          this.listLatestAllStateEvents(json),
+          this.listLatestErrorStateEvents(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};
@@ -1911,7 +1937,7 @@ module.exports = class HostManager {
     target = target == '0.0.0.0' ? '' : target;
     const systemFlows = {};
 
-    const keys = ['upload', 'download', 'block'];
+    const keys = ['upload', 'download', 'ipB', 'dnsB'];
 
     for (const key of keys) {
       const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;

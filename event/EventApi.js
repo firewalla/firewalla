@@ -20,6 +20,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const KEY_EVENT_LOG = "event:log";
+const KEY_EVENT_STATE_CACHE = "event:state:cache";
+const KEY_EVENT_STATE_CACHE_ERROR = "event:state:cache:error";
 
 /*
  * EventApi provides API to event data access in Redis
@@ -35,13 +37,71 @@ class EventApi {
     constructor() {
     }
 
+    async getSavedStateEvent(eventRequest) {
+        const stateEventKey = eventRequest.state_type+":"+eventRequest.state_key;
+        let savedEvent = null;
+        try {
+            const savedRequestJson = await rclient.hgetAsync(KEY_EVENT_STATE_CACHE, stateEventKey);
+            log.debug(`got ${savedRequestJson} for ${stateEventKey} in ${KEY_EVENT_STATE_CACHE} from Redis`);
+            if (savedRequestJson) {
+                savedEvent = JSON.parse(savedRequestJson);
+            }
+        } catch (err) {
+            log.error(`failed to get saved value of ${stateEventKey} in ${KEY_EVENT_STATE_CACHE} from Redis:`, err);
+        }
+        return savedEvent;
+    }
+
+    async saveStateEventRequest(eventRequest) {
+        const stateEventKey = eventRequest.state_type+":"+eventRequest.state_key;
+        try {
+            const er_json = JSON.stringify(eventRequest);
+            log.debug(`save state event request(${er_json}) at ${stateEventKey} in ${KEY_EVENT_STATE_CACHE}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE,stateEventKey,er_json);
+        } catch (err) {
+            log.error(`failed to save event request for ${stateEventKey} in ${KEY_EVENT_STATE_CACHE}:`,err);
+        }
+    }
+
+    async listLatestStateEventsAll() {
+        let result = null;
+        try {
+            result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
+        } catch (err) {
+            log.error("failed to get all saved state event requests:",err);
+        }
+        return result;
+    }
+
+    async saveStateEventRequestError(eventRequest) {
+        const stateEventRequestKey = eventRequest.state_type+":"+eventRequest.state_key;
+        try {
+            const er_json = JSON.stringify(eventRequest);
+            log.debug(`save state event request(${er_json}) at ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE_ERROR}`);
+            await rclient.hsetAsync(KEY_EVENT_STATE_CACHE_ERROR,stateEventRequestKey,er_json);
+        } catch (err) {
+            log.error(`failed to save event request for ${stateEventRequestKey} in ${KEY_EVENT_STATE_CACHE_ERROR}:`,err);
+        }
+    }
+
+    async listLatestStateEventsError() {
+        let result = null;
+        try {
+            result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
+        } catch (err) {
+            log.error("failed to get all error state event requests:",err);
+        }
+        return result;
+    }
+
     async listEvents(min="-inf", max="inf", withscores=false, limit_offset=0, limit_count=-1, reverse=false) {
       let result = null
       try {
         log.info(`getting events from ${min} to ${max}`);
+        const [begin,end] = reverse ? [max,min] : [min,max];
         const params = withscores ?
-          [KEY_EVENT_LOG, max, min, "withscores","limit",limit_offset,limit_count] :
-          [KEY_EVENT_LOG, max, min, "limit",limit_offset,limit_count];
+          [KEY_EVENT_LOG, begin, end, "withscores","limit",limit_offset,limit_count] :
+          [KEY_EVENT_LOG, begin, end, "limit",limit_offset,limit_count];
         if (reverse) {
           result = await rclient.zrevrangebyscoreAsync(params);
         } else {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -54,7 +54,7 @@ class ACLAuditLogPlugin extends Sensor {
     super()
 
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
-    this.buffer = { ip: {}, dns: {}, dnsA: {} }
+    this.buffer = { ip: { drop: {} }, dns: { drop: {}, accept: {} }}
     this.bufferTs = Date.now() / 1000
   }
 
@@ -96,21 +96,8 @@ class ACLAuditLogPlugin extends Sensor {
     });
   }
 
-  // check direction, keep it same as flow.fd
-  // in, initiated from inside
-  // out, initated from outside
-  setDirection(record) {
-    if (sysManager.isLocalIP(record.sh)) {
-      record.fd = 'in';
-    } else if (sysManager.isLocalIP(record.dh)) {
-      record.fd = 'out';
-    } else {
-      record.fd = 'lo';
-    }
-  }
-
-  writeBuffer(mac, target, record) {
-    const bucket = this.buffer[record.type]
+  writeBuffer(mac, target, record, block = true) {
+    const bucket = this.buffer[record.type][block ? 'drop' : 'accept']
     if (!bucket[mac]) bucket[mac] = {}
     if (bucket[mac][target]) {
       const s = bucket[mac][target]
@@ -124,30 +111,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
-  async getIntfMac(localIP, record) {
-    const intf = new Address4(localIP).isValid() ?
-      sysManager.getInterfaceViaIP4(localIP) :
-      sysManager.getInterfaceViaIP6(localIP)
-
-    if (!intf) throw new Error('Interface not found for', localIP);
-    record.intf = intf.uuid
-
-    let mac
-    if (intf.name === "tun_fwvpn") {
-      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
-      if (!vpnProfile) throw new Error('VPNProfile not found for', localIP);
-      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
-    } else {
-      mac = await hostTool.getMacByIPWithCache(localIP);
-    }
-
-    if (!mac) throw new Error('MAC not found for', localIP)
-
-    return mac
-  }
-
-  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
+  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
     // log.debug(line)
@@ -164,6 +128,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
     if (security) record.sec = 1
+    let mac, srcMac, dstMac, intf, localIP, remoteIP
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2)
@@ -181,6 +146,8 @@ class ACLAuditLogPlugin extends Sensor {
         }
         case "PROTO": {
           record.pr = v.toLowerCase();
+          // ignore icmp packets
+          if (record.pr == 'icmp') return
           break;
         }
         case "SPT": {
@@ -191,46 +158,109 @@ class ACLAuditLogPlugin extends Sensor {
           record.dp = Number(v);
           break;
         }
+        case 'MAC': {
+          dstMac = v.substring(0, 17).toUpperCase()
+          srcMac = v.substring(18, 35).toUpperCase()
+          break;
+        }
+        case 'IN': {
+          // always use IN for interface
+          // when traffic coming from external network, it'll hit WAN interface and that's what we want
+          intf = sysManager.getInterface(v)
+          record.intf = intf.uuid
+          break;
+        }
         default:
       }
     }
 
-    this.setDirection(record)
-    // unless we can get interface info from zeek, local traffic will cause duplication
-    if (record.rd == 'lo') return
+    if (sysManager.isMulticastIP(record.dh, intf.name, false)) return
 
+    // check direction, keep it same as flow.fd
+    // in, initiated from inside
+    // out, initated from outside
+    const wanIPs = sysManager.myWanIps()
+    const srcIsLocal = sysManager.isLocalIP(record.sh) || wanIPs.v4.includes(record.sh) || wanIPs.v6.includes(record.sh)
+    const dstIsLocal = sysManager.isLocalIP(record.dh) || wanIPs.v4.includes(record.dh) || wanIPs.v6.includes(record.dh)
 
-    const localIP = record.fd == 'out' ? record.dh : record.sh
-    const remoteIP = record.fd == 'out' ? record.sh : record.dh
+    if (srcIsLocal) {
+      mac = srcMac;
+      localIP = record.sh
+      remoteIP = record.dh
 
-    const mac = await this.getIntfMac(localIP, record)
+      if (dstIsLocal)
+        record.fd = 'lo';
+      else
+        record.fd = 'in';
+    } else if (dstIsLocal) {
+      record.fd = 'out';
+      mac = dstMac;
+      localIP = record.dh
+      remoteIP = record.sh
+    } else {
+      return
+    }
+
+    // broadcast mac address
+    if (mac == 'FF:FF:FF:FF:FF:FF') return
+
+    // local IP being Firewalla's own interface, use if:<uuid> as "mac"
+    if (new Address4(localIP).isValid() ? sysManager.isMyIP(localIP, false) : sysManager.isMyIP6(localIP, false)) {
+      log.debug(line)
+      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
+
+    if (intf.name === "tun_fwvpn") {
+      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
+      if (!vpnProfile) throw new Error('VPNProfile not found for', localIP);
+      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
+    }
 
     // TODO: is dns resolution necessary here?
-    if (!sysManager.isLocalIP(remoteIP)) {
-      const domain = await dnsTool.getDns(remoteIP);
-      if (domain)
-        record.dn = domain;
-    }
+    const domain = await dnsTool.getDns(remoteIP);
+    if (domain)
+      record.dn = domain;
 
     this.writeBuffer(mac, remoteIP, record)
   }
 
   async _processDnsRecord(record, block = true) {
-    this.setDirection(record)
-    // unless we can get interface info from zeek, local traffic will cause duplication
-    if (record.rd == 'lo') return
+    record.type = 'dns'
 
-    const mac = await this.getIntfMac(record.sh, record)
+    const intf = new Address4(record.sh).isValid() ?
+      sysManager.getInterfaceViaIP4(record.sh, false) :
+      sysManager.getInterfaceViaIP6(record.sh, false)
 
-    record.type = block ? 'dns' : 'dnsA';
+    if (!intf) {
+      log.debug('Interface not found for', record.sh);
+      return null
+    }
+
+    record.intf = intf.uuid
+
+    let mac
+    if (intf.name === "tun_fwvpn") {
+      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(record.sh);
+      if (!vpnProfile) throw new Error('VPNProfile not found for', record.sh);
+      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(record.sh);
+    } else {
+      mac = await hostTool.getMacByIPWithCache(record.sh, false);
+    }
+
+    if (!mac) {
+      log.debug('MAC address not found for', record.sh)
+      return
+    }
+
     record.ct = 1;
-    if (!block) record.dn = 'all'
 
-    this.writeBuffer(mac, record.dn, record)
+    this.writeBuffer(mac, record.dn, record, block)
   }
 
-  _getAuditDropKey(mac) {
-    return `audit:drop:${mac}`;
+  _getAuditKey(mac, block = true) {
+    return block ? `audit:drop:${mac}` : `audit:accept:${mac}`;
   }
 
   async writeLogs() {
@@ -239,45 +269,40 @@ class ACLAuditLogPlugin extends Sensor {
       // log.debug(JSON.stringify(this.buffer))
 
       const buffer = this.buffer
-      this.buffer = { ip: {}, dns: {}, dnsA: {} }
+      this.buffer = { ip: { drop: {} }, dns: { drop: {}, accept: {} }}
 
       for (const type in buffer) {
-        for (const mac in buffer[type]) {
-          for (const target in buffer[type][mac]) {
-            const record = buffer[type][mac][target];
-            const {ts, ct, intf} = record
-            const tags = []
-            if (!mac.startsWith(Constants.NS_VPN_PROFILE)) {
-              const host = hostManager.getHostFastByMAC(mac);
-              if (!host) continue
-              tags.push(...await host.getTags())
-            }
-            const networkProfile = networkProfileManager.getNetworkProfile(intf);
-            if (!networkProfile) continue
-            tags.push(...networkProfile.getTags());
-            record.tags = _.uniq(tags)
-
-            // records total dns hits
-            if (type.startsWith('dns')) {
-              timeSeries.recordHit(`dns`, ts, ct)
-              timeSeries.recordHit(`dns:${mac}`, ts, ct)
-              timeSeries.recordHit(`dns:intf:${intf}`, ts, ct)
-              for (const tag of record.tags) {
-                timeSeries.recordHit(`dns:tag:${tag}`, ts, ct)
+        for (const action in buffer[type]) {
+          const block = action == 'drop'
+          for (const mac in buffer[type][action]) {
+            for (const target in buffer[type][action][mac]) {
+              const record = buffer[type][action][mac][target];
+              const {ts, ct, intf} = record
+              const tags = []
+              if (
+                !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
+                !mac.startsWith(Constants.NS_INTERFACE + ':')
+              ) {
+                const host = hostManager.getHostFastByMAC(mac);
+                if (host) tags.push(...await host.getTags())
               }
-            }
+              const networkProfile = networkProfileManager.getNetworkProfile(intf);
+              if (networkProfile) tags.push(...networkProfile.getTags());
+              record.tags = _.uniq(tags)
 
-            // no detailed history and stats for uncategorized dns queries
-            if (type == 'dnsA') continue
+              const key = this._getAuditKey(mac, block)
+              await rclient.zaddAsync(key, ts, JSON.stringify(record));
 
-            const key = this._getAuditDropKey(mac);
-            await rclient.zaddAsync(key, ts, JSON.stringify(record));
+              const expires = block ? this.config.expires || 86400 : this.config.acceptExpires || 14400
+              await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
 
-            timeSeries.recordHit(`${type}B`, ts, ct)
-            timeSeries.recordHit(`${type}B:${mac}`, ts, ct)
-            timeSeries.recordHit(`${type}B:intf:${intf}`, ts, ct)
-            for (const tag of record.tags) {
-              timeSeries.recordHit(`${type}B:tag:${tag}`, ts, ct)
+              const hitType = type + block ? 'B' : ''
+              timeSeries.recordHit(`${hitType}`, ts, ct)
+              timeSeries.recordHit(`${hitType}:${mac}`, ts, ct)
+              timeSeries.recordHit(`${hitType}:intf:${intf}`, ts, ct)
+              for (const tag of record.tags) {
+                timeSeries.recordHit(`${hitType}:tag:${tag}`, ts, ct)
+              }
             }
           }
         }
@@ -293,57 +318,59 @@ class ACLAuditLogPlugin extends Sensor {
     try {
       const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval) * this.config.interval
       const start = startOpt || end - this.config.interval
-      log.info('Start merging', start, end)
-      const auditKeys = await rclient.scanResults(this._getAuditDropKey('*'), 1000)
-      log.info('Key(mac) count: ', auditKeys.length)
+      log.debug('Start merging', start, end)
 
-      for (const key of auditKeys) {
-        const records = await rclient.zrangebyscoreAsync(key, start, end)
-        // const mac = key.substring(11) // audit:drop:<mac>
+      for (const block of [true, false]) {
+        const auditKeys = await rclient.scanResults(this._getAuditKey('*', block), 1000)
+        log.debug('Key(mac) count: ', auditKeys.length)
+        for (const key of auditKeys) {
+          const records = await rclient.zrangebyscoreAsync(key, start, end)
+          // const mac = key.substring(11) // audit:drop:<mac>
 
-        const stash = {}
-        for (const recordString of records) {
-          try {
-            const record = JSON.parse(recordString)
-            const target = record.type == 'dns' ? record.dn :
-                           record.fd == 'in' ? record.dh : record.sh // type === 'ip'
-            if (!target)
-              log.error('MergeLogs: Invalid target', record)
+          const stash = {}
+          for (const recordString of records) {
+            try {
+              const record = JSON.parse(recordString)
+              const target = record.type == 'dns' ? record.dn :
+                record.fd == 'in' ? record.dh : record.sh // type === 'ip'
+              if (!target)
+                log.error('MergeLogs: Invalid target', record)
 
-            const descriptor = `${record.type}:${target}:${record.dp || ''}:${record.fd}`
+              const descriptor = `${record.type}:${target}:${record.dp || ''}:${record.fd}`
 
-            if (stash[descriptor]) {
-              const s = stash[descriptor]
-              // _.min() and _.max() will ignore non-number values
-              s.ts = _.min([s.ts, record.ts])
-              s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
-              s.ct += record.ct
-              if (s.sp) s.sp = _.uniq(s.sp, record.sp)
-            } else {
-              stash[descriptor] = record
+              if (stash[descriptor]) {
+                const s = stash[descriptor]
+                // _.min() and _.max() will ignore non-number values
+                s.ts = _.min([s.ts, record.ts])
+                s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+                s.ct += record.ct
+                if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+              } else {
+                stash[descriptor] = record
+              }
+            } catch(err) {
+              log.error('Failed to process record', err, recordString)
             }
-          } catch(err) {
-            log.error('Failed to process record', err, recordString)
           }
-        }
 
-        const transaction = [];
-        transaction.push(['zremrangebyscore', key, start, end]);
-        for (const descriptor in stash) {
-          const record = stash[descriptor]
-          transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
-        }
-        if (this.config.expires) {
+          const transaction = [];
+          transaction.push(['zremrangebyscore', key, start, end]);
+          for (const descriptor in stash) {
+            const record = stash[descriptor]
+            transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+          }
+          const expires = block ? this.config.expires || 86400 : this.config.acceptExpires || 3600
+          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
           transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
-        }
 
-        // catch this to proceed onto the next iteration
-        try {
-          log.debug(transaction)
-          await rclient.multi(transaction).execAsync();
-          log.debug("Audit:Save:Removed", key);
-        } catch (err) {
-          log.error("Audit:Save:Error", err);
+          // catch this to proceed onto the next iteration
+          try {
+            log.debug(transaction)
+            await rclient.multi(transaction).execAsync();
+            log.debug("Audit:Save:Removed", key);
+          } catch (err) {
+            log.error("Audit:Save:Error", err);
+          }
         }
       }
 
