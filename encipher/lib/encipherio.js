@@ -50,7 +50,9 @@ const _ = require('lodash')
 
 let instance = {};
 
-const notificationID = "notification:id";
+const notificationResendKey = "notification:resend";
+const notificationResendDuration = fConfig.timing['notification.resend.duration'] || 86400
+const notificationResendMaxCount = fConfig.timing['notification.resend.maxcount'] || 50
 
 function getUserHome() {
   return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
@@ -728,13 +730,8 @@ let legoEptCloud = class {
           mid: mid
         }
         const jsonStr = JSON.stringify(jsonObj);
-        const id = await this.getNextID();
-        rclient.set(`notification:resend:${id}`, jsonStr, (err) => {
-          log.error("save resend notification failed", err);
-        });
-        rclient.expire(`notification:resend:${id}`, 24 * 3600 * 1000, (err) => {
-          log.error("set ttl failed", err);
-        });
+        const now = Math.floor(new Date() / 1000)
+        await rclient.zaddAsync(notificationResendKey, now, jsonStr);
       }
       
     });
@@ -960,31 +957,31 @@ let legoEptCloud = class {
             this.offlineEventFired = false;
           }
           this.disconnectCloud = false;
-          const keys = await rclient.scanResults("notification:resend:*", 1000)
-          keys && keys.forEach(key => {
-            rclient.get(key, (err, result) => {
-              if (err) {
-                log.error(`get ${key} failed`, err)
-                return
-              } 
-              if (result) {
-                try {
-                  const jsonObj = JSON.parse(result)
-                  const gid = jsonObj.gid;
-                  const msgstr = jsonObj.msgstr;
-                  const _beep = jsonObj._beep;
-                  const mtype = jsonObj.mtype;
-                  const fid = jsonObj.fid;
-                  const mid = jsonObj.mid;
-                  const callback = function(e, r) {}
-                  this._send(gid, msgstr, _beep, mtype, fid, mid, 5, callback)
-                  rclient.del(key, (err)=>{log.error(`del ${key} failed`, err)});
-                } catch (error) {
-                  log.error("resend notification error", error)
-                }
-              } 
-            });  
-          })
+          const now = Math.floor(new Date() / 1000)
+          const ts = now - notificationResendDuration;
+          const results = rclient.zrangebyscoreAsync(notificationResendKey, '(' + ts, '+inf', 'limit', 0, notificationResendMaxCount);
+          for (const result of results) {
+            if (result) {
+              try {
+                const jsonObj = JSON.parse(result)
+                const gid = jsonObj.gid;
+                const msgstr = jsonObj.msgstr;
+                const _beep = jsonObj._beep;
+                const mtype = jsonObj.mtype;
+                const fid = jsonObj.fid;
+                const mid = jsonObj.mid;
+                const callback = function(e, r) {}
+                this._send(gid, msgstr, _beep, mtype, fid, mid, 5, callback)
+              } catch (error) {
+                log.error("resend notification error", error)
+              }
+              await rclient.zremAsync(notificationResendKey, result)
+            }
+          }
+          const remains = rclient.zrangebyscoreAsync(notificationResendKey, '-inf', ts);
+          for (const remain of remains) {
+            await rclient.zremAsync(notificationResendKey, remain)
+          }
         })
         this.socket.on('connect', ()=>{
           this.notifySocket = true;
