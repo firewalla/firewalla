@@ -94,15 +94,16 @@ class LiveStatsPlugin extends Sensor {
         const prevFlows = (await this.getPreviousFlows()).reverse();
         flows.push.apply(flows, prevFlows);
         lastTS = this.lastFlowTS(prevFlows) && now;
+      } else {
+        if (lastTS < now - 60) {
+          lastTS = now - 60; // self protection, ignore very old ts
+        }
       }
 
       const newFlows = await this.getFlows(lastTS);
       flows.push.apply(flows, newFlows);
 
-      const newFlowTS = this.lastFlowTS(newFlows) || lastTS;
-      if (newFlowTS < now - 60) {
-        newFlowTS = now - 60;
-      }
+      let newFlowTS = this.lastFlowTS(newFlows) || lastTS;
       this.updateStreamingTS(id, newFlowTS);
 
       const intfs = fireRouter.getLogicIntfNames();
