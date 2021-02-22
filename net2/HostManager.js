@@ -111,7 +111,7 @@ let instance = null;
 
 const VpnManager = require('../vpn/VpnManager.js');
 
-const eventApi = require('../event/EventRequestApi.js');
+const eventApi = require('../event/EventApi.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -558,23 +558,23 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
-  async listLatestEventsAll(json) {
+  async listLatestAllStateEvents(json) {
     try {
-      log.debug("Listing latest all events");
-      const latestAllEvents = await eventApi.listLatestEventsAll();
-      if (latestAllEvents) json.latestAllEvents = latestAllEvents;
+      log.debug("Listing latest all state events");
+      const latestAllStateEvents = await eventApi.listLatestStateEventsAll();
+      if (latestAllStateEvents) json.latestAllStateEvents = latestAllStateEvents;
     } catch (err) {
-      log.error("failed to get latest all events:",err);
+      log.error("failed to get latest all state events:",err);
     }
   }
 
-  async listLatestEventsError(json) {
+  async listLatestErrorStateEvents(json) {
     try {
-      log.debug("Listing latest error events");
-      const latestEventsError = await eventApi.listLatestEventsError();
-      if (latestEventsError) json.latestEventsError = latestEventsError;
+      log.debug("Listing latest error state events");
+      const latestErrorStateEvents = await eventApi.listLatestStateEventsError();
+      if (latestErrorStateEvents) json.latestStateEventsError = latestErrorStateEvents;
     } catch (err) {
-      log.error("failed to get latest error events:",err);
+      log.error("failed to get latest error state events:",err);
     }
   }
 
@@ -734,8 +734,8 @@ module.exports = class HostManager {
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.getCpuUsage(json),
-      this.listLatestEventsAll(json),
-      this.listLatestEventsError(json)
+      this.listLatestAllStateEvents(json),
+      this.listLatestErrorStateEvents(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1053,8 +1053,8 @@ module.exports = class HostManager {
           this.loadStats(json),
           this.ovpnClientProfilesForInit(json),
           this.ruleGroupsForInit(json),
-          this.listLatestEventsAll(json),
-          this.listLatestEventsError(json)
+          this.listLatestAllStateEvents(json),
+          this.listLatestErrorStateEvents(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};

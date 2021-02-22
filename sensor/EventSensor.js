@@ -53,26 +53,35 @@ class EventSensor extends Sensor {
             try {
                 log.info(`processing onGet events with data(${JSON.stringify(data)})`);
                 let result = await ea.listEvents(data.min,data.max,data.withscores,data.limit_offset,data.limit_count,data.reverse);
+                if (data.parse_json) {
+                    result = result.map( x=> JSON.parse(x) );
+                }
                 return result;
             } catch (err) {
                 log.error(`failed to list events with ${JSON.stringify(data)}, ${err}`);
             }
         });
 
-        extensionManager.onGet("latestAllEvents", async (msg, data) => {
+        extensionManager.onGet("latestAllStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest events with data(${JSON.stringify(data)})`);
-                let result = await ea.listLatestEventsAll();
+                let result = await ea.listLatestStateEventsAll();
+                if (data.parse_json) {
+                    Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
+                }
                 return result;
             } catch (err) {
                 log.error(`failed to list latest all events with ${JSON.stringify(data)}, ${err}`);
             }
         });
 
-        extensionManager.onGet("latestErrorEvents", async (msg, data) => {
+        extensionManager.onGet("latestErrorStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest error events with data(${JSON.stringify(data)})`);
-                let result = await ea.listLatestEventsError();
+                let result = await ea.listLatestStateEventsError();
+                if (data.parse_json) {
+                    Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
+                }
                 return result;
             } catch (err) {
                 log.error(`failed to list latest error events with ${JSON.stringify(data)}, ${err}`);

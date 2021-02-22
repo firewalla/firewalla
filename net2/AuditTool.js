@@ -52,32 +52,38 @@ class AuditTool extends LogQuery {
       ltype: 'audit',
       type: entry.type,
       ts: entry.ets || entry.ts,
-      // ets: entry.ets || entry.ts,
-      fd: entry.fd,
       count: entry.ct,
-      protocol: entry.pr
+      protocol: entry.pr,
+      intf: entry.intf,
+      rrClass: entry.qc,
+      rrType: entry.qt,
+      rcode: entry.rc
     };
 
-    // f.intf = entry.intf;
-    // f.tags = entry.tags;
-
-    if (entry.dn) { f.domain = entry.dn }
+    if (entry.fd) f.fd = entry.fd
+    if (entry.dn) f.domain = entry.dn
+    if (entry.ans) f.answers = entry.ans
 
     try {
-      if (entry.fd === 'in') {
-        f.port = Number(entry.dp);
-        f.devicePort = Number(entry.sp[0]);
+      if (entry.type == 'ip') {
+        if (entry.fd === 'in') {
+          f.port = Number(entry.dp);
+          f.devicePort = Number(entry.sp[0]);
+        } else {
+          f.port = Number(entry.sp[0]);
+          f.devicePort = Number(entry.dp);
+        }
       } else {
-        f.port = Number(entry.sp[0]);
-        f.devicePort = Number(entry.dp);
+        f.port = Number(entry.dp);
       }
     } catch(err) {
+      log.debug('Failed to parse port', err)
     }
 
-    if (entry.fd === 'in') {
+    if (entry.type == 'dns' || entry.fd === 'in') {
       f.ip = entry.dh;
       f.deviceIP = entry.sh;
-    } else {
+    } else { // ip.out
       f.ip = entry.sh;
       f.deviceIP = entry.dh;
     }
@@ -85,8 +91,8 @@ class AuditTool extends LogQuery {
     return f;
   }
 
-  getLogKey(mac) {
-    return `audit:drop:${mac}`
+  getLogKey(mac, options) {
+    return options.block ? `audit:drop:${mac}` : `audit:accept:${mac}`
   }
 }
 

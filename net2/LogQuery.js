@@ -139,7 +139,8 @@ class LogQuery {
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
-        log.debug('Removing feed', feed.mac || feed.intf || feed.tag || feed.macs )
+        const { mac, intf, tag, macs } = feed.options
+        log.debug('Removing feed', mac || tag || macs || intf)
       }
 
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
@@ -247,6 +248,8 @@ class LogQuery {
 
   async getDeviceLogs(options) {
     options = this.checkArguments(options)
+    delete options.macs // for a cleaner debug log
+
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 

@@ -54,7 +54,7 @@ class ACLAuditLogPlugin extends Sensor {
     super()
 
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
-    this.buffer = { ip: {}, dns: {}, dnsA: {} }
+    this.buffer = { ip: { drop: {} }, dns: { drop: {}, accept: {} }}
     this.bufferTs = Date.now() / 1000
   }
 
@@ -96,8 +96,8 @@ class ACLAuditLogPlugin extends Sensor {
     });
   }
 
-  writeBuffer(mac, target, record) {
-    const bucket = this.buffer[record.type]
+  writeBuffer(mac, target, record, block = true) {
+    const bucket = this.buffer[record.type][block ? 'drop' : 'accept']
     if (!bucket[mac]) bucket[mac] = {}
     if (bucket[mac][target]) {
       const s = bucket[mac][target]
@@ -226,8 +226,7 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async _processDnsRecord(record, block = true) {
-    // assume that DNS requests will only come from local network
-    record.fd = 'in'
+    record.type = 'dns'
 
     const intf = new Address4(record.sh).isValid() ?
       sysManager.getInterfaceViaIP4(record.sh, false) :
@@ -255,15 +254,13 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
-    record.type = block ? 'dns' : 'dnsA';
     record.ct = 1;
-    if (!block) record.dn = 'all'
 
-    this.writeBuffer(mac, record.dn, record)
+    this.writeBuffer(mac, record.dn, record, block)
   }
 
-  _getAuditDropKey(mac) {
-    return `audit:drop:${mac}`;
+  _getAuditKey(mac, block = true) {
+    return block ? `audit:drop:${mac}` : `audit:accept:${mac}`;
   }
 
   async writeLogs() {
@@ -272,37 +269,40 @@ class ACLAuditLogPlugin extends Sensor {
       // log.debug(JSON.stringify(this.buffer))
 
       const buffer = this.buffer
-      this.buffer = { ip: {}, dns: {}, dnsA: {} }
+      this.buffer = { ip: { drop: {} }, dns: { drop: {}, accept: {} }}
 
       for (const type in buffer) {
-        for (const mac in buffer[type]) {
-          for (const target in buffer[type][mac]) {
-            const record = buffer[type][mac][target];
-            const {ts, ct, intf} = record
-            const tags = []
-            if (
-              !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
-              !mac.startsWith(Constants.NS_INTERFACE + ':')
-            ) {
-              const host = hostManager.getHostFastByMAC(mac);
-              if (host) tags.push(...await host.getTags())
-            }
-            const networkProfile = networkProfileManager.getNetworkProfile(intf);
-            if (networkProfile) tags.push(...networkProfile.getTags());
-            record.tags = _.uniq(tags)
+        for (const action in buffer[type]) {
+          const block = action == 'drop'
+          for (const mac in buffer[type][action]) {
+            for (const target in buffer[type][action][mac]) {
+              const record = buffer[type][action][mac][target];
+              const {ts, ct, intf} = record
+              const tags = []
+              if (
+                !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
+                !mac.startsWith(Constants.NS_INTERFACE + ':')
+              ) {
+                const host = hostManager.getHostFastByMAC(mac);
+                if (host) tags.push(...await host.getTags())
+              }
+              const networkProfile = networkProfileManager.getNetworkProfile(intf);
+              if (networkProfile) tags.push(...networkProfile.getTags());
+              record.tags = _.uniq(tags)
 
-            // no detailed history and stats for uncategorized dns queries
-            if (type != 'dnsA') {
-              const key = this._getAuditDropKey(mac);
+              const key = this._getAuditKey(mac, block)
               await rclient.zaddAsync(key, ts, JSON.stringify(record));
-            }
 
-            const hitType = type == 'dnsA' ? 'dns' : `${type}B`
-            timeSeries.recordHit(`${hitType}`, ts, ct)
-            timeSeries.recordHit(`${hitType}:${mac}`, ts, ct)
-            timeSeries.recordHit(`${hitType}:intf:${intf}`, ts, ct)
-            for (const tag of record.tags) {
-              timeSeries.recordHit(`${hitType}:tag:${tag}`, ts, ct)
+              const expires = block ? this.config.expires || 86400 : this.config.acceptExpires || 14400
+              await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+
+              const hitType = type + block ? 'B' : ''
+              timeSeries.recordHit(`${hitType}`, ts, ct)
+              timeSeries.recordHit(`${hitType}:${mac}`, ts, ct)
+              timeSeries.recordHit(`${hitType}:intf:${intf}`, ts, ct)
+              for (const tag of record.tags) {
+                timeSeries.recordHit(`${hitType}:tag:${tag}`, ts, ct)
+              }
             }
           }
         }
@@ -318,57 +318,59 @@ class ACLAuditLogPlugin extends Sensor {
     try {
       const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval) * this.config.interval
       const start = startOpt || end - this.config.interval
-      log.info('Start merging', start, end)
-      const auditKeys = await rclient.scanResults(this._getAuditDropKey('*'), 1000)
-      log.info('Key(mac) count: ', auditKeys.length)
+      log.debug('Start merging', start, end)
 
-      for (const key of auditKeys) {
-        const records = await rclient.zrangebyscoreAsync(key, start, end)
-        // const mac = key.substring(11) // audit:drop:<mac>
+      for (const block of [true, false]) {
+        const auditKeys = await rclient.scanResults(this._getAuditKey('*', block), 1000)
+        log.debug('Key(mac) count: ', auditKeys.length)
+        for (const key of auditKeys) {
+          const records = await rclient.zrangebyscoreAsync(key, start, end)
+          // const mac = key.substring(11) // audit:drop:<mac>
 
-        const stash = {}
-        for (const recordString of records) {
-          try {
-            const record = JSON.parse(recordString)
-            const target = record.type == 'dns' ? record.dn :
-                           record.fd == 'in' ? record.dh : record.sh // type === 'ip'
-            if (!target)
-              log.error('MergeLogs: Invalid target', record)
+          const stash = {}
+          for (const recordString of records) {
+            try {
+              const record = JSON.parse(recordString)
+              const target = record.type == 'dns' ? record.dn :
+                record.fd == 'in' ? record.dh : record.sh // type === 'ip'
+              if (!target)
+                log.error('MergeLogs: Invalid target', record)
 
-            const descriptor = `${record.type}:${target}:${record.dp || ''}:${record.fd}`
+              const descriptor = `${record.type}:${target}:${record.dp || ''}:${record.fd}`
 
-            if (stash[descriptor]) {
-              const s = stash[descriptor]
-              // _.min() and _.max() will ignore non-number values
-              s.ts = _.min([s.ts, record.ts])
-              s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
-              s.ct += record.ct
-              if (s.sp) s.sp = _.uniq(s.sp, record.sp)
-            } else {
-              stash[descriptor] = record
+              if (stash[descriptor]) {
+                const s = stash[descriptor]
+                // _.min() and _.max() will ignore non-number values
+                s.ts = _.min([s.ts, record.ts])
+                s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+                s.ct += record.ct
+                if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+              } else {
+                stash[descriptor] = record
+              }
+            } catch(err) {
+              log.error('Failed to process record', err, recordString)
             }
-          } catch(err) {
-            log.error('Failed to process record', err, recordString)
           }
-        }
 
-        const transaction = [];
-        transaction.push(['zremrangebyscore', key, start, end]);
-        for (const descriptor in stash) {
-          const record = stash[descriptor]
-          transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
-        }
-        if (this.config.expires) {
+          const transaction = [];
+          transaction.push(['zremrangebyscore', key, start, end]);
+          for (const descriptor in stash) {
+            const record = stash[descriptor]
+            transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+          }
+          const expires = block ? this.config.expires || 86400 : this.config.acceptExpires || 3600
+          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
           transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
-        }
 
-        // catch this to proceed onto the next iteration
-        try {
-          log.debug(transaction)
-          await rclient.multi(transaction).execAsync();
-          log.debug("Audit:Save:Removed", key);
-        } catch (err) {
-          log.error("Audit:Save:Error", err);
+          // catch this to proceed onto the next iteration
+          try {
+            log.debug(transaction)
+            await rclient.multi(transaction).execAsync();
+            log.debug("Audit:Save:Removed", key);
+          } catch (err) {
+            log.error("Audit:Save:Error", err);
+          }
         }
       }
 
