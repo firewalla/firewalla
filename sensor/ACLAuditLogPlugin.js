@@ -293,7 +293,7 @@ class ACLAuditLogPlugin extends Sensor {
               const key = this._getAuditKey(mac, block)
               await rclient.zaddAsync(key, ts, JSON.stringify(record));
 
-              const expires = block ? this.config.expires || 86400 : this.config.acceptExpires || 14400
+              const expires = this.config.expires || 86400
               await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
 
               const hitType = type + block ? 'B' : ''
@@ -359,7 +359,7 @@ class ACLAuditLogPlugin extends Sensor {
             const record = stash[descriptor]
             transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
           }
-          const expires = block ? this.config.expires || 86400 : this.config.acceptExpires || 3600
+          const expires = this.config.expires || 86400
           await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
           transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
 
