@@ -151,7 +151,7 @@ class LiveStatsPlugin extends Sensor {
     const now = Math.floor(new Date() / 1000);
     const flows = await flowTool.prepareRecentFlows({}, {
       ts,
-      ets: now,
+      ets: now-2,
       count: 100,
       asc: true,
       auditDNSSuccess: true,
