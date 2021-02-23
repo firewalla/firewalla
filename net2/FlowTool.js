@@ -124,6 +124,9 @@ class FlowTool extends LogQuery {
     if (options.audit) {
       feeds.push({ query: auditTool.getAllLogs.bind(auditTool) })
     }
+    if (options.auditDNSSuccess) {
+      feeds.push({ query: auditTool.getAllLogs.bind(auditTool), options: {block: false} })
+    }
     let recentFlows = await this.logFeeder(options, feeds)
 
     recentFlows = recentFlows.slice(0, options.count);
