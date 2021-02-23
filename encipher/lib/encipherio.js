@@ -959,7 +959,7 @@ let legoEptCloud = class {
           this.disconnectCloud = false;
           const now = Math.floor(new Date() / 1000)
           const ts = now - notificationResendDuration;
-          const results = rclient.zrangebyscoreAsync(notificationResendKey, '(' + ts, '+inf', 'limit', 0, notificationResendMaxCount);
+          const results = await rclient.zrangebyscoreAsync(notificationResendKey, '(' + ts, '+inf', 'limit', 0, notificationResendMaxCount);
           for (const result of results) {
             if (result) {
               try {
