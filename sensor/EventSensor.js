@@ -65,10 +65,7 @@ class EventSensor extends Sensor {
         extensionManager.onGet("latestAllStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest events with data(${JSON.stringify(data)})`);
-                let result = await ea.listLatestStateEventsAll();
-                if (data.parse_json) {
-                    Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
-                }
+                let result = await ea.listLatestStateEventsAll(data.parse_json);
                 return result;
             } catch (err) {
                 log.error(`failed to list latest all events with ${JSON.stringify(data)}, ${err}`);
@@ -78,10 +75,7 @@ class EventSensor extends Sensor {
         extensionManager.onGet("latestErrorStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest error events with data(${JSON.stringify(data)})`);
-                let result = await ea.listLatestStateEventsError();
-                if (data.parse_json) {
-                    Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
-                }
+                let result = await ea.listLatestStateEventsError(data.parse_json);
                 return result;
             } catch (err) {
                 log.error(`failed to list latest error events with ${JSON.stringify(data)}, ${err}`);
@@ -145,9 +139,9 @@ class EventSensor extends Sensor {
             this.scheduledJSJobs();
             await this.scheduleScriptCollectors();
             // schedule cleanup latest state data
-            setInterval(() => {
-                this.cleanLatestStateEventsByTime(this.config.latestStateEventsExpire);
-            }, 1000*this.config.latestStateEventsExpire);
+            this.scheduledJobs["cleanLatestStateEventsByTime"] = setInterval(async () => {
+                await this.cleanLatestStateEventsByTime(this.config.latestStateEventsExpire);
+            }, 1000*this.config.intervals.cleanEventsByTime);
         } catch (err) {
             log.error("failed to start collect events:", err);
         }
