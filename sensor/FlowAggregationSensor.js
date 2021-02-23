@@ -429,7 +429,7 @@ class FlowAggregationSensor extends Sensor {
       // aggregate vpn server interface
       const optionsCopy = JSON.parse(JSON.stringify(options));
       optionsCopy.intf = vpnIntf.uuid;
-      optionsCopy.macs = cns;
+      optionsCopy.macs = cns.map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
 
       await this.addFlowsForView(optionsCopy, apps, categories)
 
