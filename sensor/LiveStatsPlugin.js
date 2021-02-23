@@ -26,6 +26,8 @@ const fireRouter = require('../net2/FireRouter.js')
 
 const delay = require('../util/util.js').delay;
 
+const flowTool = require('../net2/FlowTool');
+
 const fs = require('fs');
 Promise.promisifyAll(fs);
 
@@ -36,14 +38,74 @@ const sysManager = require('../net2/SysManager.js');
 
 class LiveStatsPlugin extends Sensor {
 
+  registerStreaming(streaming) {
+    const id = streaming.id;
+    if (! (id in this.streamingCache)) {
+      this.streamingCache[id] = {}
+    }
+  }
+
+  lastStreamingTS(id) {
+    return this.streamingCache[id] && this.streamingCache[id].ts;
+  }
+
+  updateStreamingTS(id, ts) {
+    this.streamingCache[id].ts = ts;
+  }
+
+  cleanupStreaming() {
+    for(const id in this.streamingCache) {
+      const cache = this.streamingCache[id];
+      if(cache.ts < Math.floor(new Date() / 1000) - 1800) {
+        delete this.streamingCache[id]
+      }
+    }
+  }
+
+  lastFlowTS(flows) { // flows must be in asc order
+    if (flows.length == 0) {
+      return 0;
+    }
+    return flows[flows.length-1].ts;
+  }
+
   async apiRun() {
     this.activeConnCount = await this.getActiveConnections();
+    this.streamingCache = {};
+
+    setInterval(() => {
+      this.cleanupStreaming()
+    }, 600 * 1000); // cleanup every 10 mins
 
     this.timer = setInterval(async () => {
       this.activeConnCount = await this.getActiveConnections();      
     }, 300 * 1000); // every 5 mins;
 
     extensionManager.onGet("liveStats", async (msg, data) => {
+      const streaming = data.streaming;
+      const id = streaming.id;
+      this.registerStreaming(streaming);
+
+      let lastTS = this.lastStreamingTS(id);
+      const now = Math.floor(new Date() / 1000);
+      let flows = [];
+
+      if(!lastTS) {
+        const prevFlows = (await this.getPreviousFlows()).reverse();
+        flows.push.apply(flows, prevFlows);
+        lastTS = this.lastFlowTS(prevFlows) && now;
+      } else {
+        if (lastTS < now - 60) {
+          lastTS = now - 60; // self protection, ignore very old ts
+        }
+      }
+
+      const newFlows = await this.getFlows(lastTS);
+      flows.push.apply(flows, newFlows);
+
+      let newFlowTS = this.lastFlowTS(newFlows) || lastTS;
+      this.updateStreamingTS(id, newFlowTS);
+
       const intfs = fireRouter.getLogicIntfNames();
       const intfStats = [];
       const promises = intfs.map( async (intf) => {
@@ -52,7 +114,7 @@ class LiveStatsPlugin extends Sensor {
       });
       promises.push(delay(1000)); // at least wait for 1 sec
       await Promise.all(promises);
-      return {intfStats, activeConn: this.activeConnCount};
+      return {flows, intfStats, activeConn: this.activeConnCount};
     });
   }
 
@@ -71,6 +133,27 @@ class LiveStatsPlugin extends Sensor {
       rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
       tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
     };
+  }
+
+  async getPreviousFlows() {
+    const now = Math.floor(new Date() / 1000);
+    const flows = await flowTool.prepareRecentFlows({}, {
+      ts: now,
+      ets: now-60, // one minute
+      count: 100
+    });
+    return flows;
+  }
+
+  async getFlows(ts) {
+    const now = Math.floor(new Date() / 1000);
+    const flows = await flowTool.prepareRecentFlows({}, {
+      ts,
+      ets: now,
+      count: 100,
+      asc: true
+    });
+    return flows;
   }
 
   buildActiveConnGrepString() {
@@ -94,7 +177,7 @@ class LiveStatsPlugin extends Sensor {
         const ipv6Count = await exec(ipv6Cmd);
         return Number(ipv4Count.stdout) + Number(ipv6Count.stdout);
       } catch(err) {
-        log.error("IPv6 conntrack kernel module not available");
+        log.debug("IPv6 conntrack kernel module not available");
         return Number(ipv4Count.stdout);
       }
     } catch(err) {
