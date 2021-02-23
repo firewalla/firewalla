@@ -295,6 +295,11 @@ sudo iptables -w -t nat -N FW_POSTROUTING_OPENVPN &> /dev/null
 sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN
 sudo iptables -w -t nat -C FW_POSTROUTING -j FW_POSTROUTING_OPENVPN &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -j FW_POSTROUTING_OPENVPN
 
+# create POSTROUTING WIREGUARD chain
+sudo iptables -w -t nat -N FW_POSTROUTING_WIREGUARD &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_WIREGUARD
+sudo iptables -w -t nat -C FW_POSTROUTING -j FW_POSTROUTING_WIREGUARD &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -j FW_POSTROUTING_WIREGUARD
+
 # nat POSTROUTING port forward hairpin chain
 sudo iptables -w -t nat -N FW_POSTROUTING_PORT_FORWARD &> /dev/null
 sudo iptables -w -t nat -F FW_POSTROUTING_PORT_FORWARD
@@ -365,6 +370,9 @@ sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set no_dns_caching_set s
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
+sudo iptables -w -t nat -N FW_PREROUTING_DNS_WG &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_DNS_WG
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_WG &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_WG
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
@@ -619,6 +627,9 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
+  sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_WG &> /dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_WG
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_WG &> /dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_WG
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT

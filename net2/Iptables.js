@@ -389,6 +389,9 @@ function _getDNSRedirectChain(type) {
     case "vpn":
       chain = "FW_PREROUTING_DNS_VPN";
       break;
+    case "wireguard":
+      chain = "FW_PREROUTING_DNS_WG";
+      break;
     case "vpnClient":
       chain = "FW_PREROUTING_DNS_VPN_CLIENT";
       break;

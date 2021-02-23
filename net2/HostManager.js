@@ -755,6 +755,7 @@ module.exports = class HostManager {
     if (json.ssh) delete json.ssh
     if (json.remoteSupportConnID) delete json.remoteSupportConnID;
     if (json.remoteSupportPassword) delete json.remoteSupportPassword;
+    if (json.policy && json.policy.wireguard && json.policy.wireguard.privateKey) delete json.policy.wireguard.privateKey;
 
     return json;
   }

@@ -89,7 +89,8 @@
     "EventSensor":{},
     "NetworkMonitorSensor":{},
     "LiveStatsPlugin": {},
-    "AdblockPlugin": {}
+    "AdblockPlugin": {},
+    "WireGuardPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -608,6 +609,7 @@
       "interval": 300,
       "expires": 86400
     },
+    "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
     "DockerSensor": {},
