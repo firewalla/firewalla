@@ -975,13 +975,9 @@ let legoEptCloud = class {
               } catch (error) {
                 log.error("resend notification error", error)
               }
-              await rclient.zremAsync(notificationResendKey, result)
             }
           }
-          const remains = rclient.zrangebyscoreAsync(notificationResendKey, '-inf', ts);
-          for (const remain of remains) {
-            await rclient.zremAsync(notificationResendKey, remain)
-          }
+          await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
         this.socket.on('connect', ()=>{
           this.notifySocket = true;
