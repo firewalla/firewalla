@@ -616,6 +616,7 @@
     "EventSensor": {
       "eventsLimit" : 10000,
       "eventsExpire" : 604800,
+      "latestStateEventsExpire" : 2592000,
       "intervals" : {
         "cleanEventsByTime" : 3600,
         "cleanEventsByCount" : 300,
