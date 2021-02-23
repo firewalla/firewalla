@@ -73,7 +73,7 @@ declare -A CONN
 
 zcat -f $FILES |
 grep -v "$GATEWAY\"\|$FIREWALLA\"\|$FIREWALLA2\"\|198.51.100.99\|0.0.0.0\|f\(f0\|e[89abcde]\).:.*\"" |
-jq -r ". | \"\(.proto) \(.[\"id.orig_h\"]) \(.[\"id.orig_p\"]) \(.[\"id.resp_h\"]) \(.[\"id.resp_p\"]) \(.conn_state) \(.local_orig) \(.local_resp)\"" |
+jq -r '. | "\(.proto) \(."id.orig_h") \(."id.orig_p") \(."id.resp_h") \(."id.resp_p") \(.conn_state) \(.local_orig) \(.local_resp)"' |
 while read proto orig oport resp rport state local_orig local_resp; do
     #host=""
     # if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
