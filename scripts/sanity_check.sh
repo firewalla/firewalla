@@ -628,6 +628,12 @@ check_network() {
     echo ""
 }
 
+check_portmapping() {
+  echo "------------------ Port Forwarding ------------------"
+
+  printf "%s\n" "active,Proto,ExtPort,toIP,toPort,toMac,fw,description" $(redis-cli get extension.portforward.config|jq -r '.maps[] | select(.state == true) | "\"\(.active)\",\"\(.protocol)\",\"\(.dport)\",\"\(.toIP)\",\"\(.toPort)\",\"\(.toMac)\",\"\(.autoFirewall)\",\"\(.description)\"\n"') | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+}
+
 check_dhcp() {
     echo "---------------------- DHCP ------------------"
     find /log/blog/ -mmin -120 -name "dhcp*log.gz" | sort | xargs zcat  | jq -r  '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' | sed 's="==g' | grep -v "INFORM|ACK" | awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' | column -s "," -t -n
@@ -714,6 +720,11 @@ while [ "$1" != "" ]; do
         shift
         FAST=true
         ;;
+    -p | --port)
+        check_portmapping
+        shift
+        FAST=true
+        ;;
     -h | --help)
         usage
         exit
@@ -742,6 +753,7 @@ if [ "$FAST" == false ]; then
     check_conntrack
     check_dhcp
     check_redis
+    check_portmapping
     test -z $SPEED || check_speed
     check_hosts
 fi
