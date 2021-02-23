@@ -140,7 +140,9 @@ class LiveStatsPlugin extends Sensor {
     const flows = await flowTool.prepareRecentFlows({}, {
       ts: now,
       ets: now-60, // one minute
-      count: 100
+      count: 100,
+      auditDNSSuccess: true,
+      audit: true
     });
     return flows;
   }
@@ -149,9 +151,11 @@ class LiveStatsPlugin extends Sensor {
     const now = Math.floor(new Date() / 1000);
     const flows = await flowTool.prepareRecentFlows({}, {
       ts,
-      ets: now,
+      ets: now-2,
       count: 100,
-      asc: true
+      asc: true,
+      auditDNSSuccess: true,
+      audit: true
     });
     return flows;
   }
