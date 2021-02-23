@@ -158,6 +158,47 @@ class EventApi {
         log.error(`failed to delete oldest ${count} events: ${err}`);
       }
     }
+
+    async cleanCachedEventsByTime(redisKey, expireTS) {
+      try {
+        log.info(`deleting events at ${redisKey} earlier than ${expireTS}`);
+
+        let scanCursor = 0;
+        while (true) {
+          const scanResult = await rclient.hscanAsync(redisKey,scanCursor);
+          if ( ! scanResult ) {
+            log.error(`hscan on key(${redisKey}) failed at cursor(${scanCursor}) with invalid result`);
+            break;
+          }
+          for (let i=0; i<scanResult[1].length; i+=2) {
+            const hkey = scanResult[1][i];
+            const json_obj = JSON.parse(scanResult[1][i+1]);
+            if ( json_obj && json_obj.ts < expireTS) {
+              log.debug(`deleting expired (${json_obj.ts}<${expireTS}) ${hkey} at ${redisKey}`);
+              await rclient.hdelAsync(redisKey, hkey);
+            }
+          }
+          scanCursor = parseInt(scanResult[0]);
+          if ( scanCursor === 0 ) break;
+        }
+
+      } catch (err) {
+        log.error(`failed to delete events at ${redisKey} eariler than ${expireTS}: ${err}`);
+      }
+
+    }
+
+    async cleanLatestStateEventsByTime(expireTime) {
+      try {
+        log.info(`deleting latest all events before ${expireTime}`);
+        await this.cleanCachedEventsByTime(KEY_EVENT_STATE_CACHE,expireTime);
+        log.info(`deleting latest error events before ${expireTime}`);
+        await this.cleanCachedEventsByTime(KEY_EVENT_STATE_CACHE_ERROR,expireTime);
+      } catch (err) {
+        log.error(`failed to delete latest events before ${expireTime}: ${err}`);
+      }
+    }
+
 }
 
 module.exports = new EventApi();

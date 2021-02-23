@@ -144,6 +144,10 @@ class EventSensor extends Sensor {
             await this.checkReboot();
             this.scheduledJSJobs();
             await this.scheduleScriptCollectors();
+            // schedule cleanup latest state data
+            setInterval(() => {
+                this.cleanLatestStateEventsByTime(this.config.latestStateEventsExpire);
+            }, 1000*this.config.latestStateEventsExpire);
         } catch (err) {
             log.error("failed to start collect events:", err);
         }
@@ -199,6 +203,15 @@ class EventSensor extends Sensor {
             }
         } catch (err) {
             log.error(`failed to schedule collectors under ${COLLECTOR_DIR}: ${err}`);
+        }
+    }
+
+    async cleanLatestStateEventsByTime(expirePeriod) {
+        try {
+            log.info(`clean latest state events older than ${expirePeriod} seconds`);
+            await ea.cleanLatestStateEventsByTime(Date.now()-1000*expirePeriod);
+        } catch (err) {
+            log.error(`failed to clean latest state events older than ${expirePeriod} seconds: ${err}`);
         }
     }
 
