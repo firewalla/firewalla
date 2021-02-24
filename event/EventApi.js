@@ -67,8 +67,8 @@ class EventApi {
         let result = null;
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
-            if ( parse_json ) {
-              Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
+            if (parse_json) {
+                Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
             }
         } catch (err) {
             log.error("failed to get all saved state event requests:",err);
@@ -91,8 +91,8 @@ class EventApi {
         let result = null;
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
-            if ( parse_json ) {
-              Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
+            if (parse_json) {
+                Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
             }
         } catch (err) {
             log.error("failed to get all error state event requests:",err);
