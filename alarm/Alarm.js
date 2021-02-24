@@ -527,22 +527,18 @@ class BroNoticeAlarm extends Alarm {
   localizedNotificationContentKey() {
     if (this["p.noticeType"]) {
       let key = `notif.content.${this.type}.${this["p.noticeType"]}`;
-      if (this["p.noticeType"] == "Scan::Port_Scan") {
-        if (this["p.dest.name"] != this["p.dest.ip"]) {
-          if (this["p.local_is_client"] != "1") {
-            key += ".inbound.internal";
-          } else {
-            key += ".outbound.internal";
-          }
+      if (this["p.local_is_client"] != undefined) {
+        if (this["p.local_is_client"] != "1") {
+          key += ".inbound";
         } else {
-          if (this["p.local_is_client"] != "1") {
-            key += ".inbound";
-          } else {
-            key += ".outbound";
-          }
+          key += ".outbound";
         }
       }
-
+      if (this["p.noticeType"] == "Scan::Port_Scan") {
+        if (this["p.dest.name"] != this["p.dest.ip"]) {
+          key += ".internal";
+        }
+      }
       return key;
     } else {
       return super.localizedNotificationContentKey();
