@@ -57,7 +57,9 @@ class DomainUpdater {
       const options = config.options;
       const ipCache = config.ipCache || null;
 
-      if (domain.toLowerCase() === d.toLowerCase() || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())) {
+      if (domain.toLowerCase() === d.toLowerCase()
+        || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())
+        || d.startsWith("*.") && domain.toLowerCase().endsWith(d.toLowerCase().substring(1))) {
         const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
         const existingSet = {};
         existingAddresses.forEach((addr) => {

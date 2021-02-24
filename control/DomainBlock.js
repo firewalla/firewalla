@@ -197,15 +197,17 @@ class DomainBlock {
 
     const key = domainIPTool.getDomainIPMappingKey(domain, options)
 
-    await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
-
     let list = []
 
-    // load other addresses from rdns, critical to apply instant blocking
-    const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
-    list.push.apply(list, addresses)  // concat arrays
+    // *. wildcard will exclude the suffix itself
+    if (!domain.startsWith("*.")) {
+      await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
+      // load other addresses from rdns, critical to apply instant blocking
+      const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
+      list.push.apply(list, addresses)  // concat arrays
+    }
 
-    if (!options.exactMatch) {
+    if (!options.exactMatch || domain.startsWith("*.")) {
       const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
       list.push.apply(list, patternAddresses)
     }
@@ -231,17 +233,18 @@ class DomainBlock {
       return
     }
 
-    await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
-
     let set = {}
 
-    // load other addresses from rdns, critical to apply instant blocking
-    const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
-    addresses.forEach((addr) => {
-      set[addr] = 1
-    })
+    if (!domain.startsWith("*.")) {
+      await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
+      // load other addresses from rdns, critical to apply instant blocking
+      const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
+      addresses.forEach((addr) => {
+        set[addr] = 1
+      })
+    }
 
-    if (!options.exactMatch) {
+    if (!options.exactMatch || domain.startsWith("*.")) {
       const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
       patternAddresses.forEach((addr) => {
         set[addr] = 1
