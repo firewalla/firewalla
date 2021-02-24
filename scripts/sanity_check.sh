@@ -374,7 +374,7 @@ check_hosts() {
     if [[ "$(redis-cli hget sys:features new_device_tag)" == "1" ]]; then
       NEW_DEVICE_TAGS=( $(redis-cli hget policy:system newDeviceTag | jq "select(.state == true) | .tag") )
       while read POLICY_KEY; do
-        NEW_DEVICE_TAGS+=( $(redis-cli hget $POLICY_KEY newDeviceTag | jq "select(.state == true) | .tag") )
+        test -n "$POLICY_KEY" && NEW_DEVICE_TAGS+=( $(redis-cli hget $POLICY_KEY newDeviceTag | jq "select(.state == true) | .tag") );
       done < <(redis-cli keys 'policy:network:*')
     else
       NEW_DEVICE_TAGS=( )
@@ -631,12 +631,26 @@ check_network() {
 check_portmapping() {
   echo "------------------ Port Forwarding ------------------"
 
-  printf "%s\n" "active,Proto,ExtPort,toIP,toPort,toMac,fw,description" $(redis-cli get extension.portforward.config|jq -r '.maps[] | select(.state == true) | "\"\(.active)\",\"\(.protocol)\",\"\(.dport)\",\"\(.toIP)\",\"\(.toPort)\",\"\(.toMac)\",\"\(.autoFirewall)\",\"\(.description)\"\n"') | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+  (
+    echo "type,active,Proto,ExtPort,toIP,toPort,toMac,fw,description"
+    redis-cli get extension.portforward.config |
+      jq -r '.maps[] | select(.state == true) | "\"\(._type // "Forward")\",\"\(.active)\",\"\(.protocol)\",\"\(.dport)\",\"\(.toIP)\",\"\(.toPort)\",\"\(.toMac)\",\"\(.autoFirewall)\",\"\(.description)\""'
+    redis-cli hget sys:scan:nat upnp |
+      jq -r '.[] | "\"UPnP\",\"\(.expire)\",\"\(.protocol)\",\"\(.public.port)\",\"\(.private.port)\",\"\(.private.host)\",\"N\/A\",\"N\/A\",\"\(.description)\""'
+  ) |
+  column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+  echo ""
+  echo ""
 }
 
 check_dhcp() {
     echo "---------------------- DHCP ------------------"
-    find /log/blog/ -mmin -120 -name "dhcp*log.gz" | sort | xargs zcat  | jq -r  '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' | sed 's="==g' | grep -v "INFORM|ACK" | awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' | column -s "," -t -n
+    find /log/blog/ -mmin -120 -name "dhcp*log.gz" |
+      sort | xargs zcat |
+      jq -r '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' |
+      sed 's="==g' | grep -v "INFORM|ACK" |
+      awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' |
+      column -s "," -t -n
     echo ""
     echo ""
 }
