@@ -20,7 +20,7 @@
 # Constants
 # ----------------------------------------------------------------------------
 STATE_TYPE='diskspace'
-: ${PATHS:='/ /home /data /log'}
+: ${PATHS:='/ /home /data /log /var/lib/docker'}
 : ${LIMIT_PCENT:=90}
 : ${LIMIT_AVAIL:=50000}
 

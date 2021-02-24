@@ -63,7 +63,7 @@ class EventApi {
         }
     }
 
-    async listLatestStateEventsAll(parse_json=false) {
+    async listLatestStateEventsAll(parse_json=true) {
         let result = null;
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
@@ -87,7 +87,7 @@ class EventApi {
         }
     }
 
-    async listLatestStateEventsError(parse_json=false) {
+    async listLatestStateEventsError(parse_json=true) {
         let result = null;
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
@@ -100,7 +100,7 @@ class EventApi {
         return result;
     }
 
-    async listEvents(min="-inf", max="inf", withscores=false, limit_offset=0, limit_count=-1, reverse=false) {
+    async listEvents(min="-inf", max="inf", withscores=false, limit_offset=0, limit_count=-1, reverse=false, parse_json=true) {
       let result = null
       try {
         log.info(`getting events from ${min} to ${max}`);
@@ -108,10 +108,10 @@ class EventApi {
         const params = withscores ?
           [KEY_EVENT_LOG, begin, end, "withscores","limit",limit_offset,limit_count] :
           [KEY_EVENT_LOG, begin, end, "limit",limit_offset,limit_count];
-        if (reverse) {
-          result = await rclient.zrevrangebyscoreAsync(params);
-        } else {
-          result = await rclient.zrangebyscoreAsync(params);
+        
+        result = reverse ? await rclient.zrevrangebyscoreAsync(params) : await rclient.zrangebyscoreAsync(params);
+        if ( result && parse_json ) {
+          result.forEach((x,idx)=>result[idx]=JSON.parse(x));
         }
       } catch (err) {
         log.error(`failed to get events between ${min} and ${max}, with limit offset(${limit_offset})/count(${limit_count}) and reverse(${reverse}), ${err}`);
