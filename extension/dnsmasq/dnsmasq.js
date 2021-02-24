@@ -107,7 +107,7 @@ const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 
 const flowUtil = require('../../net2/FlowUtil.js');
 
-const useRedisMatch = f.isDevelopmentVersion() ? true : false;
+const useRedisMatch = true;
 
 module.exports = class DNSMASQ {
   constructor() {

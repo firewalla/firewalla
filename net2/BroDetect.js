@@ -1203,7 +1203,9 @@ module.exports = class {
         if (tmpspec.fd == 'in') traffic.reverse()
 
         // use now instead of the start time of this flow
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+        if (localMac) {
+          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+        }
         if (intfId) {
           this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
         }
