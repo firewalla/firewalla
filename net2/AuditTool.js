@@ -92,7 +92,8 @@ class AuditTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    return options.block ? `audit:drop:${mac}` : `audit:accept:${mac}`
+    // options.block == null will also be counted here
+    return options.block == undefined || options.block ? `audit:drop:${mac}` : `audit:accept:${mac}`
   }
 }
 
