@@ -25,7 +25,7 @@ const sysManager = require('../net2/SysManager.js');
 
 const exec = require('child-process-promise').exec;
 
-const rp = require('request-promise');
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
 const command = "dig +short myip.opendns.com @resolver1.opendns.com";
 const redisKey = "sys:network:info";
@@ -51,12 +51,12 @@ class PublicIPSensor extends Sensor {
       if(publicIP === "") {
         if(this.publicIPAPI) {
           try {
-            const result = await rp({
+            const result = await rrWithErrHandling({
               uri: this.publicIPAPI,
               json: true
             });
-            if(result && result.ip) {
-              publicIP = result.ip;
+            if(result.body && result.body.ip) {
+              publicIP = result.body.ip;
               log.info(`Found public IP from ${this.publicIPAPI} is ${publicIP}`);
             }
           } catch(err) {
