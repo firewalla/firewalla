@@ -135,7 +135,7 @@ function isSimilarHost(h1, h2) {
 function formulateHostname(domain) {
   if (!domain || !_.isString(domain))
     return null;
-  if (domain.startsWith("*."));
+  if (domain.startsWith("*."))
     domain = domain.substring(2);
   domain = domain.substring(domain.indexOf(':') + 1);
   domain = domain.replace(/\/+/g, '/');

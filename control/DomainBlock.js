@@ -208,7 +208,8 @@ class DomainBlock {
     }
 
     if (!options.exactMatch || domain.startsWith("*.")) {
-      const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
+      const suffix = domain.startsWith("*.") ? domain.substring(2) : domain;
+      const patternAddresses = await dnsTool.getIPsByDomainPattern(suffix).catch((err) => []);
       list.push.apply(list, patternAddresses)
     }
 
@@ -245,7 +246,8 @@ class DomainBlock {
     }
 
     if (!options.exactMatch || domain.startsWith("*.")) {
-      const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
+      const suffix = domain.startsWith("*.") ? domain.substring(2) : domain;
+      const patternAddresses = await dnsTool.getIPsByDomainPattern(suffix).catch((err) => []);
       patternAddresses.forEach((addr) => {
         set[addr] = 1
       })
