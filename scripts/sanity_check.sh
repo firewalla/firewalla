@@ -369,11 +369,28 @@ is_simple_mode() {
 
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
+
+    # read all enabled newDeviceTag tags
+    if [[ "$(redis-cli hget sys:features new_device_tag)" == "1" ]]; then
+      NEW_DEVICE_TAGS=( $(redis-cli hget policy:system newDeviceTag | jq "select(.state == true) | .tag") )
+      while read POLICY_KEY; do
+        NEW_DEVICE_TAGS+=( $(redis-cli hget $POLICY_KEY newDeviceTag | jq "select(.state == true) | .tag") )
+      done < <(redis-cli keys 'policy:network:*')
+    else
+      NEW_DEVICE_TAGS=( )
+    fi
+
     local DEVICES=$(redis-cli keys 'host:mac:*')
     printf "%35s %15s %25s %25s %20s %7s %6s %6s %10s %7s %8s %20s %10s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitor" "B7" "Online" "vpnClient" "FlowIn" "FlowOut" "Group" "Emerg Acc"
     NOW=$(date +%s)
     FRCC=$(curl -s "http://localhost:8837/v1/config/active")
     for DEVICE in $DEVICES; do
+
+        local DEVICE_MAC=${DEVICE/host:mac:/""}
+        # hide vpn_profile:*
+        if [[ ${DEVICE_MAC,,} == "vpn_profile:"* ]]; then
+            continue
+        fi
 
         local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
         DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
@@ -397,6 +414,7 @@ check_hosts() {
         fi
         local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
         local DEVICE_MAC=${DEVICE/host:mac:/""}
+        local DEVICE_MAC_VENDOR=$(redis-cli hget $DEVICE macVendor)
         local POLICY_MAC="policy:mac:${DEVICE_MAC}"
         local DEVICE_MONITORING=$(redis-cli hget $POLICY_MAC monitor)
         local DEVICE_ACL=$(redis-cli hget $POLICY_MAC acl)
@@ -435,31 +453,43 @@ check_hosts() {
         local DEVICE_FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$DEVICE_MAC -inf +inf)
         local DEVICE_FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$DEVICE_MAC -inf +inf)
 
-        local COLOR="\e[39m"
-        local UNCOLOR="\e[0m"
-        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_MONITORING == 'true' && $DEVICE_B7_MONITORING == "false" ]] &&
-          ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
-            COLOR="\e[91m"
-        elif [ $DEVICE_FLOWINCOUNT -gt 2000 ] || [ $DEVICE_FLOWOUTCOUNT -gt 2000 ]; then
-            COLOR="\e[33m" #yellow
-        fi
-
-        local DEVICE_MAC_COLOR="$COLOR"
-        if [[ $DEVICE_MAC =~ ^.[26AEae].*$ ]]; then
-          DEVICE_MAC_COLOR="\e[95m"
-        fi
-
-        if [ $DEVICE_ONLINE = "no" ]; then
-            COLOR=$COLOR"\e[2m" #dim
-        fi
-
         local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=[][\" ]==g" | sed "s=,= =")
         TAGNAMES=""
         for tag in $TAGS; do
             TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
         done
         TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
-        printf "$COLOR%35s %15s %25s %25s $DEVICE_MAC_COLOR%20s$COLOR %7s %6s %6s %10s %7s %8s %20s %10s$UNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
+
+        # === COLOURING ===
+        local COLOR="\e[39m"
+        local UNCOLOR="\e[0m"
+        local BGCOLOR="\e[49m"
+        local BGUNCOLOR="\e[49m"
+        if [[ $DEVICE_ONLINE == "yes" && $DEVICE_MONITORING == 'true' && $DEVICE_B7_MONITORING == "false" ]] &&
+          ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP && is_simple_mode; then
+            COLOR="\e[91m"
+        elif [ $DEVICE_FLOWINCOUNT -gt 2000 ] || [ $DEVICE_FLOWOUTCOUNT -gt 2000 ]; then
+            COLOR="\e[33m" #yellow
+        fi
+        if [[ ${DEVICE_NAME,,} == "circle"* || ${DEVICE_MAC_VENDOR,,} == "circle"* ]]; then
+            BGCOLOR="\e[41m"
+        fi
+
+        local MAC_COLOR="$COLOR"
+        if [[ $DEVICE_MAC =~ ^.[26AEae].*$ ]] && ! is_firewalla $DEVICE_IP; then
+          MAC_COLOR="\e[35m"
+        fi
+
+        TAG_COLOR="$COLOR"
+        if [[ " ${NEW_DEVICE_TAGS[@]} " =~ " ${TAGS} " ]]; then
+          TAG_COLOR="\e[31m"
+        fi
+
+        if [ $DEVICE_ONLINE = "no" ]; then
+            COLOR=$COLOR"\e[2m" #dim
+        fi
+
+        printf "$BGCOLOR$COLOR%35s %15s %25s %25s $MAC_COLOR%20s$COLOR %7s %6s %6s %10s %7s %8s $TAG_COLOR%20s$COLOR %10s$UNCOLOR$BGUNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
     done
 
     echo ""
@@ -576,13 +606,32 @@ check_network() {
     curl localhost:8837/v1/config/interfaces -o /tmp/scc_interfaces &>/dev/null
     INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
 
-    echo "Interface,Name,UUID,Enabled,IPv4,IPv6,Gateway,Gateway6,DNS" >/tmp/scc_csv
+    echo "Interface,Name,UUID,Enabled,IPv4,Gateway,IPv6,Gateway6,DNS" >/tmp/scc_csv
     for INTF in $INTFS; do
-        cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | [\"$INTF\", .config.meta.name // \"\", .config.meta.uuid[0:8], .config.enabled, .state.ip4 // \"\", (.state.ip6 // [] | join(\",\")), .state.gateway // \"\", .state.gateway6 // \"\", (.state.dns // [] | join(\";\"))] | @csv" >>/tmp/scc_csv
+      cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | [\"$INTF\", .config.meta.name, .config.meta.uuid[0:8], .config.enabled, .state.ip4, .state.gateway, (.state.ip6 // [] | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @csv" >>/tmp/scc_csv
     done
-    cat /tmp/scc_csv | column -t -s, | sed 's=\"= =g'
+    cat /tmp/scc_csv | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+    echo ""
+
+    #check source NAT
+    WANS=( $(cat /tmp/scc_interfaces | jq -r ". | to_entries | .[] | select(.value.config.meta.type == \"wan\") | .key") )
+    SOURCE_NAT=( $(curl localhost:8837/v1/config/active 2>/dev/null | jq -r ".nat | keys | .[]" | cut -d - -f 2 | sort | uniq) )
+    echo "WAN Interfaces:"
+    for WAN in "${WANS[@]}"; do
+      if [[ " ${SOURCE_NAT[@]} " =~ " ${WAN} " ]]; then
+        printf "%10s: Source NAT ON\n" $WAN
+      else
+        printf "\e[31m%10s: Source NAT OFF\e[0m\n" $WAN
+      fi
+    done
     echo ""
     echo ""
+}
+
+check_portmapping() {
+  echo "------------------ Port Forwarding ------------------"
+
+  printf "%s\n" "active,Proto,ExtPort,toIP,toPort,toMac,fw,description" $(redis-cli get extension.portforward.config|jq -r '.maps[] | select(.state == true) | "\"\(.active)\",\"\(.protocol)\",\"\(.dport)\",\"\(.toIP)\",\"\(.toPort)\",\"\(.toMac)\",\"\(.autoFirewall)\",\"\(.description)\"\n"') | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
 }
 
 check_dhcp() {
@@ -671,6 +720,11 @@ while [ "$1" != "" ]; do
         shift
         FAST=true
         ;;
+    -p | --port)
+        check_portmapping
+        shift
+        FAST=true
+        ;;
     -h | --help)
         usage
         exit
@@ -699,6 +753,7 @@ if [ "$FAST" == false ]; then
     check_conntrack
     check_dhcp
     check_redis
+    check_portmapping
     test -z $SPEED || check_speed
     check_hosts
 fi

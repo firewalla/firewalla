@@ -89,7 +89,8 @@
     "EventSensor":{},
     "NetworkMonitorSensor":{},
     "LiveStatsPlugin": {},
-    "AdblockPlugin": {}
+    "AdblockPlugin": {},
+    "WireGuardPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -508,8 +509,12 @@
         "expires": 86400,
         "count": 10000
       },
-      "audit": {
+      "auditDrop": {
         "expires": 86400,
+        "count": 10000
+      },
+      "auditAccept": {
+        "expires": 3600,
         "count": 10000
       },
       "ssh": {
@@ -600,17 +605,18 @@
       "bonelogInterval": 900
     },
     "ACLAuditLogPlugin": {
-      "buffer": 30,
+      "buffer": 2,
       "interval": 300,
-      "expires": 86400,
-      "acceptExpires": 3600
+      "expires": 86400
     },
+    "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
     "DockerSensor": {},
     "EventSensor": {
       "eventsLimit" : 10000,
       "eventsExpire" : 604800,
+      "latestStateEventsExpire" : 2592000,
       "intervals" : {
         "cleanEventsByTime" : 3600,
         "cleanEventsByCount" : 300,

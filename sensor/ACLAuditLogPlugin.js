@@ -226,7 +226,12 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async _processDnsRecord(record, block = true) {
+    if (!record.query) {
+      log.debug('no query', record)
+    }
+
     record.type = 'dns'
+    record.pr = 'dns'
 
     const intf = new Address4(record.sh).isValid() ?
       sysManager.getInterfaceViaIP4(record.sh, false) :
@@ -293,7 +298,7 @@ class ACLAuditLogPlugin extends Sensor {
               const key = this._getAuditKey(mac, block)
               await rclient.zaddAsync(key, ts, JSON.stringify(record));
 
-              const expires = block ? this.config.expires || 86400 : this.config.acceptExpires || 14400
+              const expires = this.config.expires || 86400
               await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
 
               const hitType = type + block ? 'B' : ''
@@ -336,7 +341,9 @@ class ACLAuditLogPlugin extends Sensor {
               if (!target)
                 log.error('MergeLogs: Invalid target', record)
 
-              const descriptor = `${record.type}:${target}:${record.dp || ''}:${record.fd}`
+              const descriptor = record.type == 'dns' ?
+                `dns:${target}:${record.qc}:${record.qt}` :
+                `ip:${target}:${record.dp}:${record.fd}`
 
               if (stash[descriptor]) {
                 const s = stash[descriptor]
@@ -359,7 +366,7 @@ class ACLAuditLogPlugin extends Sensor {
             const record = stash[descriptor]
             transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
           }
-          const expires = block ? this.config.expires || 86400 : this.config.acceptExpires || 3600
+          const expires = this.config.expires || 86400
           await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
           transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
 

@@ -561,7 +561,7 @@ module.exports = class HostManager {
   async listLatestAllStateEvents(json) {
     try {
       log.debug("Listing latest all state events");
-      const latestAllStateEvents = await eventApi.listLatestStateEventsAll();
+      const latestAllStateEvents = await eventApi.listLatestStateEventsAll(true);
       if (latestAllStateEvents) json.latestAllStateEvents = latestAllStateEvents;
     } catch (err) {
       log.error("failed to get latest all state events:",err);
@@ -571,7 +571,7 @@ module.exports = class HostManager {
   async listLatestErrorStateEvents(json) {
     try {
       log.debug("Listing latest error state events");
-      const latestErrorStateEvents = await eventApi.listLatestStateEventsError();
+      const latestErrorStateEvents = await eventApi.listLatestStateEventsError(true);
       if (latestErrorStateEvents) json.latestStateEventsError = latestErrorStateEvents;
     } catch (err) {
       log.error("failed to get latest error state events:",err);
@@ -755,6 +755,7 @@ module.exports = class HostManager {
     if (json.ssh) delete json.ssh
     if (json.remoteSupportConnID) delete json.remoteSupportConnID;
     if (json.remoteSupportPassword) delete json.remoteSupportPassword;
+    if (json.policy && json.policy.wireguard && json.policy.wireguard.privateKey) delete json.policy.wireguard.privateKey;
 
     return json;
   }

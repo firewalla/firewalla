@@ -550,8 +550,6 @@ class netBot extends ControllerBot {
       }
 
       const notifyMsg = {
-        title: i18n.__(titleKey, payload),
-        body: i18n.__(bodyKey, payload),
       };
 
       if (event.titleLocalKey) {
@@ -4305,7 +4303,7 @@ class netBot extends ControllerBot {
         rawmsg.message.obj.data.item === 'ping') {
 
       } else {
-        log.info("Received jsondata from app", rawmsg.message);
+        rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
       }
 
       if (rawmsg.message.obj.type === "jsonmsg") {

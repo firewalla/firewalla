@@ -189,12 +189,19 @@ module.exports = class DNSMASQ {
                     await this.updateVpnIptablesRules(newVpnSubnet, true);
                 })();
                 break;
+              case Message.MSG_WG_SUBNET_CHANGED: {
+                const newSubnet = message;
+                if (newSubnet)
+                  this.updateWGIptablesRules(newSubnet, true);
+                break;
+              }
               default:
               //log.warn("Unknown message channel: ", channel, message);
             }
           });
 
           sclient.subscribe("System:VPNSubnetChanged");
+          sclient.subscribe(Message.MSG_WG_SUBNET_CHANGED);
         }
       })
     }
@@ -1078,6 +1085,22 @@ module.exports = class DNSMASQ {
     return JSON.parse(data);
   }
 
+  async updateWGIptablesRules(newSubnet, force) {
+    const oldSubnet = this.wgSubnet;
+    const dns = `127.0.0.1:${MASQ_PORT}`;
+    const started = await this.isDNSServiceActive();
+    if (!started)
+      return;
+    if (oldSubnet != newSubnet || force === true) {
+      await iptables.dnsFlushAsync('wireguard');
+    }
+    if (newSubnet) {
+      if (!platform.isFireRouterManaged())
+        await iptables.dnsChangeAsync(newSubnet, dns, 'wireguard', true);
+      this.wgSubnet = newSubnet;
+    }
+  }
+
   async updateVpnIptablesRules(newVpnSubnet, force) {
     const oldVpnSubnet = this.vpnSubnet;
     // TODO: to another dnsmasq instance
@@ -1152,6 +1175,9 @@ module.exports = class DNSMASQ {
     if (this.vpnSubnet) {
       await this.updateVpnIptablesRules(this.vpnSubnet, true);
     }
+    if (this.wgSubnet) {
+      await this.updateWGIptablesRules(this.wgSubnet, true);
+    }
     await this._add_iptables_rules();
     await this._add_ip6tables_rules();
   }
@@ -1224,6 +1250,9 @@ module.exports = class DNSMASQ {
   async _remove_all_iptables_rules() {
     if (this.vpnSubnet) {
       await this.updateVpnIptablesRules(null, true);
+    }
+    if (this.wgSubnet) {
+      await this.updateWGIptablesRules(null, true);
     }
     await this._remove_iptables_rules()
     await this._remove_ip6tables_rules();
