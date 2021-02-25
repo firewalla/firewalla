@@ -270,9 +270,12 @@ class AdblockPlugin extends Sensor {
           reject(err);
         });
         if (fastMode) {
-          await this.preprocess(key, hashes);
-          let line = util.format("redis-hash-match=/%s/%s%s\n", key, "", "$adblock");
-          writer.write(line);
+          this.preprocess(key, hashes).then(() => {
+            let line = util.format("redis-hash-match=/%s/%s%s\n", key, "", "$adblock");
+            writer.write(line);
+          }).catch((err) => {
+            log.error(`Failed to generate adblock config in fast mode`, err.message);
+          })
         } else {
           hashes.forEach((hash) => {
             let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), "", "$adblock")
