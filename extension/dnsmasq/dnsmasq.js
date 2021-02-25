@@ -756,6 +756,7 @@ module.exports = class DNSMASQ {
     }
     try {
       if (this.isRedisHashMatchUsed()) {
+        await rclient.delAsync(this._getRedisMatchKey(category, false));
         if (domains.length > 0)
           await rclient.saddAsync(this._getRedisMatchKey(category, false), domains);
         if (hashDomains.length > 0)
