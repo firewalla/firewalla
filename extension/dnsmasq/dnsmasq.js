@@ -107,7 +107,7 @@ const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 
 const flowUtil = require('../../net2/FlowUtil.js');
 
-const useRedisMatch = f.isDevelopmentVersion() ? true : false;
+const useRedisMatch = true;
 
 module.exports = class DNSMASQ {
   constructor() {
@@ -588,7 +588,7 @@ module.exports = class DNSMASQ {
           let entries = [];
           if (options.action === "block") {
             entries = domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
-            entries.concat(hashDomains.map(domain => `hash-address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`));
+            entries.concat(hashDomains.map(domain => `hash-address=/${domain.replace(/\//g, '.')}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`));
             if (_.isArray(this.categoryBlockUUIDsMap[category])) {
               if (!this.categoryBlockUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
                 this.categoryBlockUUIDsMap[category].push({ uuid: uuid, pid: options.pid })
@@ -756,6 +756,7 @@ module.exports = class DNSMASQ {
     }
     try {
       if (this.isRedisHashMatchUsed()) {
+        await rclient.delAsync(this._getRedisMatchKey(category, false));
         if (domains.length > 0)
           await rclient.saddAsync(this._getRedisMatchKey(category, false), domains);
         if (hashDomains.length > 0)

@@ -956,7 +956,7 @@ class SysManager {
 
       const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP4(ip, monitoringOnly)
 
-      if (intfObj) {
+      if (intfObj && intfObj.subnet) {
         const subnet = new Address4(intfObj.subnet)
         if (subnet.subnetMask < 32 &&
           (ip == subnet.startAddress().address || ip == subnet.endAddress().address)
@@ -965,7 +965,7 @@ class SysManager {
 
       return (iptool.toLong(ip) >= this.multicastlow && iptool.toLong(ip) <= this.multicasthigh)
     } catch (e) {
-      log.error("SysManager:isMulticastIP4", ip, e);
+      log.error("SysManager:isMulticastIP4", ip, intf, monitoringOnly, e);
       return false;
     }
   }
@@ -982,7 +982,7 @@ class SysManager {
         return this.isMulticastIP6(ip);
       }
     } catch (e) {
-      log.error("SysManager:isMulticastIP", ip, e);
+      log.error("SysManager:isMulticastIP", ip, intf, monitoringOnly, e);
       return false;
     }
   }

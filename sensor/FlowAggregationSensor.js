@@ -282,7 +282,7 @@ class FlowAggregationSensor extends Sensor {
     }
 
     const macs = hostManager.getActiveMACs()
-    macs.push(... sysManager.getLogicInterfaces().map(i => i.mac_address.toUpperCase()))
+    macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
     await Promise.all(macs.map(async mac => {
       log.debug("FlowAggrSensor on mac", mac);
       await this.aggr(mac, ts);
@@ -416,7 +416,7 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
-    for (const selfMac of sysManager.getLogicInterfaces().map(i => i.mac_address.toUpperCase())) {
+    for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
       const optionsCopy = JSON.parse(JSON.stringify(options));
       optionsCopy.mac = selfMac
       await flowAggrTool.addSumFlow('ipB', options)
@@ -628,9 +628,7 @@ class FlowAggregationSensor extends Sensor {
     const msg = util.format("Aggregating %s flows between %s and %s", macAddress, beginString, endString)
     log.debug(msg);
 
-    const isMyMac = sysManager.isMyMac(macAddress)
-
-    if (!isMyMac) {
+    if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
       // in => outgoing, out => incoming
       const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end});
       const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end});
@@ -644,7 +642,7 @@ class FlowAggregationSensor extends Sensor {
 
     const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end});
     const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
-    if (!isMyMac) {
+    if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
       await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
     }
     await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
