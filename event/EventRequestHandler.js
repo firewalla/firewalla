@@ -89,7 +89,7 @@ class EventRequestHandler {
      * - error_value : state_value == labels.error_value
      * If none of above defined, {"ok_value": 0} will be added to "labels" as default.
      */
-    async checkStateEventForError(eventRequest) {
+    isStateEventError(eventRequest) {
         if ('labels' in eventRequest) {
             if ( !(STATE_OK_VALUE in eventRequest.labels) && !(STATE_ERROR_VALUE in eventRequest.labels) ) {
                 eventRequest.labels.ok_value = 0
@@ -100,8 +100,9 @@ class EventRequestHandler {
 
         if ( (STATE_ERROR_VALUE in eventRequest.labels && eventRequest.state_value === eventRequest.labels.error_value)
           || (STATE_OK_VALUE in eventRequest.labels && eventRequest.state_value !== eventRequest.labels.ok_value) ) {
-            await eventApi.saveStateEventRequestError(eventRequest);
+            return true;
         }
+        return false;
     }
 
     async processStateEvent(message) {
@@ -121,6 +122,7 @@ class EventRequestHandler {
                 throw new Error(`state_value(${newValue}) of event request is NOT a number`);
             }
 
+            const isError = this.isStateEventError(eventRequest);
             // determine ts0 in event, and send event only if state value changed from last
             if ( savedValue !== null ) {
                 if (parseFloat(savedValue) === parseFloat(newValue)) {
@@ -134,14 +136,22 @@ class EventRequestHandler {
                     this.sendEvent(eventRequest,"state");
                 }
             } else {
-                // no saved state, record ts0 but do NOT send event
+                // no saved state, record ts0 and ONLY send event if it is ERROR
                 eventRequest.ts0 = eventRequest.ts;
-                log.debug(`ignore initial state ${newValue}`);
+                if (isError) {
+                    log.debug("send initial error state event:",eventRequest);
+                    this.sendEvent(eventRequest,"state");
+                } else {
+                    log.debug(`ignore initial state ${newValue}`);
+                }
             }
-            // always update state event request to keep it latest
+            // update state event request to keep it latest
             await eventApi.saveStateEventRequest(eventRequest);
-            // check event for error
-            await this.checkStateEventForError(eventRequest);
+            // update error state event request to keep it latest
+            if (isError) {
+                await eventApi.saveStateEventRequestError(eventRequest);
+            }
+
 
         } catch (err) {
             log.error(`failed to process state event ${message}:`, err);
