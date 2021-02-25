@@ -242,7 +242,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async activateCategory(category) {
     if (this.activeCategories[category]) return;
-    await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:ip");
+    await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:net");
     sem.emitEvent({
       type: "Policy:CategoryActivated",
       toProcess: "FireMain",
