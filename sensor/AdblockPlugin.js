@@ -275,14 +275,16 @@ class AdblockPlugin extends Sensor {
             writer.write(line);
           }).catch((err) => {
             log.error(`Failed to generate adblock config in fast mode`, err.message);
-          })
+          }).then(() => {
+            writer.end();
+          });
         } else {
           hashes.forEach((hash) => {
             let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), "", "$adblock")
             writer.write(line);
           });
+          writer.end();
         }
-        writer.end();
       });
     }
 
