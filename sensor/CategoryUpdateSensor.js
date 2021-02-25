@@ -207,11 +207,11 @@ class CategoryUpdateSensor extends Sensor {
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
         if (!categoryUpdater.isCustomizedCategory(category)) {
+          const categories = Object.keys(categoryHashsetMapping);
+          if (!categories.includes(category)) {
+            categoryHashsetMapping[category] = `app.${category}`;
+          }
           await this.updateCategory(category)
-        }
-        const categories = Object.keys(categoryHashsetMapping);
-        if (!categories.includes(category)) {
-          categoryHashsetMapping[category] = `app.${category}`;
         }
         await domainBlock.updateCategoryBlock(category).catch((err) => {
           log.error(`Failed to update category domain mapping in dnsmasq`, err.message);

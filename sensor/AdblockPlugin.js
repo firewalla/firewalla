@@ -270,7 +270,7 @@ class AdblockPlugin extends Sensor {
           reject(err);
         });
         if (fastMode) {
-          this.preprocess(key, hashes);
+          await this.preprocess(key, hashes);
           let line = util.format("redis-hash-match=/%s/%s%s\n", key, "", "$adblock");
           writer.write(line);
         } else {
@@ -283,15 +283,11 @@ class AdblockPlugin extends Sensor {
       });
     }
 
-    preprocess(key, hashes) {
-      rclient.del(key);
-      const newHashes = [];
-      hashes.forEach((hash) => {
-        newHashes.push(hash.replace(/\//g, '.'));
-      });
+    async preprocess(key, hashes) {
+      await rclient.delAsync(key);
       const cmd = [key];
-      const result = cmd.concat(newHashes);
-      rclient.sadd(result);
+      const result = cmd.concat(hashes);
+      await rclient.saddAsync(result);
     }
 
     _cleanUpFilter(config) {
