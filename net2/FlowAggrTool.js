@@ -113,7 +113,7 @@ class FlowAggrTool {
       const result = {
         device: mac
       }
-      if (trafficDirection == 'dnsB')
+      if (trafficDirection.startsWith('dns'))
         result.domain = target
       else
         result.destIP = target

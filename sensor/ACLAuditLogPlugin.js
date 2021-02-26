@@ -271,6 +271,7 @@ class ACLAuditLogPlugin extends Sensor {
 
       const buffer = this.buffer
       this.buffer = { }
+      log.debug(buffer)
 
       for (const mac in buffer) {
         for (const descriptor in buffer[mac]) {
@@ -301,7 +302,7 @@ class ACLAuditLogPlugin extends Sensor {
           const expires = this.config.expires || 86400
           await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
 
-          const hitType = type + block ? 'B' : ''
+          const hitType = type + (block ? 'B' : '')
           timeSeries.recordHit(`${hitType}`, _ts, ct)
           timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
           timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
