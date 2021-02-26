@@ -3257,6 +3257,31 @@ class netBot extends ControllerBot {
         })
         break
       }
+      case "reloadCategoryFromBone":{
+        const category = value.category
+        sem.emitEvent({
+          type: "Categorty:ReloadFromBone", // force re-activate category
+          category: category,
+          toProcess: "FireMain"
+        })
+        this.simpleTxData(msg, {}, null, callback)
+        break;
+      }
+      case "deleteCategory":{
+        const category = value.category;
+        if (category && category.includes('targetList:')) {// delete category(only for target list now)
+          sem.emitEvent({
+            type: "Category:Delete", 
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        } else {
+          this.simpleTxData(msg, {}, { code: 400, msg: `Invalid category: ${category}` }, callback);
+        }
+        
+        break;
+      }
       case "addIncludeDomain": {
         (async () => {
           const category = value.category

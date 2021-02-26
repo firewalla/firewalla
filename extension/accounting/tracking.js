@@ -210,7 +210,7 @@ class Tracking {
         await rclient.hdelAsync(hashKey, key);
       }
     }
-    log.info("Cleaned up", count, "old aggr data for key", keys);
+    log.debug("Cleaned up", count, "old aggr data for key", keys);
   }
   
   async cleanup(mac) {
