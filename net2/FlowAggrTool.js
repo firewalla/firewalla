@@ -305,7 +305,7 @@ class FlowAggrTool {
   }
 
   // return a list of destinations sorted by transfer size desc
-  async getTopSumFlowByKeyAndDestination(key, count) {
+  async getTopSumFlowByKeyAndDestination(key, type, count) {
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     const destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
     const results = {};
@@ -326,7 +326,6 @@ class FlowAggrTool {
               results[dest].count += count
             } else {
               results[dest] = { count }
-              if (json.type) results[dest].type = json.type
             }
 
             if(ports) {
@@ -345,12 +344,11 @@ class FlowAggrTool {
 
     const array = [];
     for(const dest in results) {
-      const result = _.pick(results[dest], 'count', 'type', 'ports')
+      const result = results[dest]
       if (result.ports) result.ports = _.uniq(result.ports)
-      if (result.type == 'dns') {
+      if (type == 'dnsB') {
         result.domain = dest
-      }
-      else {
+      } else {
         result.ip = dest
       }
       array.push(result);
