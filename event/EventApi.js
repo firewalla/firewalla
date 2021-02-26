@@ -67,7 +67,7 @@ class EventApi {
         let result = null;
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
-            if (parse_json) {
+            if (result && parse_json) {
                 Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
             }
         } catch (err) {
@@ -91,7 +91,7 @@ class EventApi {
         let result = null;
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
-            if (parse_json) {
+            if (result && parse_json) {
                 Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
             }
         } catch (err) {
