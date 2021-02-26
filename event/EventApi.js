@@ -64,7 +64,7 @@ class EventApi {
     }
 
     async listLatestStateEventsAll(parse_json=true) {
-        let result = null;
+        let result = {};
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
             if (result && parse_json) {
@@ -72,6 +72,7 @@ class EventApi {
             }
         } catch (err) {
             log.error("failed to get all saved state event requests:",err);
+            result = {};
         }
         return result;
     }
@@ -88,7 +89,7 @@ class EventApi {
     }
 
     async listLatestStateEventsError(parse_json=true) {
-        let result = null;
+        let result = {};
         try {
             result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
             if (result && parse_json) {
@@ -96,12 +97,13 @@ class EventApi {
             }
         } catch (err) {
             log.error("failed to get all error state event requests:",err);
+            result = {};
         }
         return result;
     }
 
     async listEvents(min="-inf", max="inf", withscores=false, limit_offset=0, limit_count=-1, reverse=false, parse_json=true) {
-      let result = null
+      let result = {};
       try {
         log.info(`getting events from ${min} to ${max}`);
         const [begin,end] = reverse ? [max,min] : [min,max];
@@ -115,7 +117,7 @@ class EventApi {
         }
       } catch (err) {
         log.error(`failed to get events between ${min} and ${max}, with limit offset(${limit_offset})/count(${limit_count}) and reverse(${reverse}), ${err}`);
-        result = null;
+        result = {};
       }
       return result;
     }
