@@ -72,12 +72,12 @@ alias powerup='source <(curl -s https://raw.githubusercontent.com/firewalla/fire
 
 function mycat () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
-  node /tmp/cat.js --device "$1"
+  $FIREWALLA_HOME/bin/node /tmp/cat.js --device "$1"
 }
 
 function mycatip () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
-  node /tmp/cat.js --ip "$1"
+  $FIREWALLA_HOME/bin/node /tmp/cat.js --ip "$1"
 }
 
 alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi/firewalla/scripts/main-run'
