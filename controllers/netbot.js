@@ -1337,6 +1337,7 @@ class netBot extends ControllerBot {
 
   async checkLogQueryArgs(msg) {
     const options = Object.assign({}, msg.data);
+    delete options.item
 
     if (hostTool.isMacAddress(msg.target)) {
       const host = await this.hostManager.getHostAsync(msg.target);
@@ -1481,7 +1482,7 @@ class netBot extends ControllerBot {
           //  count: tox x flows
           //  target: mac address || intf:uuid || tag:tagId
           const value = msg.data.value;
-          const count = value ? (value.count || 50) : 50;
+          const count = value && value.count || 50;
           const flows = await this.hostManager.loadStats({}, msg.target, count);
           this.simpleTxData(msg, { flows: flows }, null, callback);
         })().catch((err) => {
@@ -3256,6 +3257,31 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break
+      }
+      case "reloadCategoryFromBone":{
+        const category = value.category
+        sem.emitEvent({
+          type: "Categorty:ReloadFromBone", // force re-activate category
+          category: category,
+          toProcess: "FireMain"
+        })
+        this.simpleTxData(msg, {}, null, callback)
+        break;
+      }
+      case "deleteCategory":{
+        const category = value.category;
+        if (category && category.includes('targetList:')) {// delete category(only for target list now)
+          sem.emitEvent({
+            type: "Category:Delete", 
+            category: category,
+            toProcess: "FireMain"
+          })
+          this.simpleTxData(msg, {}, null, callback)
+        } else {
+          this.simpleTxData(msg, {}, { code: 400, msg: `Invalid category: ${category}` }, callback);
+        }
+        
+        break;
       }
       case "addIncludeDomain": {
         (async () => {

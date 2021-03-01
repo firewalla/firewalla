@@ -731,6 +731,23 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async deletePolicyCategoryFilterEntry(category) {
+    const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
+    const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
+    }
+    try {
+      await rclient.delAsync(this._getRedisMatchKey(category, false));
+      await rclient.delAsync(this._getRedisMatchKey(category, true));
+      await fs.unlinkSync(categoryBlockDomainsFile);
+      await fs.unlinkSync(categoryAllowDomainsFile);
+    } catch (e) {
+      log.warn('failed to delete category filter entry', category, e);
+    }
+  }
+
   async updatePolicyCategoryFilterEntry(domains, options) {
     log.debug("updatePolicyCategoryFilterEntry", domains, options);
     options = options || {};

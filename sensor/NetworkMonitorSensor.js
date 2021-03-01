@@ -179,7 +179,7 @@ class NetworkMonitorSensor extends Sensor {
       const data = result.stdout.trim().split(/\n/).map(e => parseFloat(e));
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
     } catch (err) {
-      log.error("failed to sample PING:",err);
+      log.error("failed to sample PING:",err.message);
     }
   }
 
@@ -198,7 +198,7 @@ class NetworkMonitorSensor extends Sensor {
       }
       this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg);
     } catch (err) {
-      log.error("failed to sample DNS:",err);
+      log.error("failed to sample DNS:",err.message);
     }
   }
 
@@ -217,7 +217,7 @@ class NetworkMonitorSensor extends Sensor {
       }
       this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg);
     } catch (err) {
-      log.error("failed to sample HTTP:",err);
+      log.error("failed to sample HTTP:",err.message);
     }
   }
 
@@ -334,25 +334,29 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async getNetworkMonitorData() {
+  async getNetworkMonitorData(parse_json=true) {
     log.info("Trying to get network monitor data...")
     try {
       let result = {};
       await rclient.scanAll(`${KEY_PREFIX_RAW}:*`, async (scanResults) => {
         for ( const key of scanResults) {
-          result[key] = await rclient.hgetallAsync(key);
+          const result_json = await rclient.hgetallAsync(key);
+          if ( result_json && parse_json ) {
+            Object.keys(result_json).forEach( (k)=>{result_json[k] = JSON.parse(result_json[k]) });
+          }
+          result[key] = result_json;
         }
       },10000);
       return result;
     } catch (err) {
-      log.error("failed to get network monitor config: ",err);
+      log.error("failed to get network monitor config: ",err.message);
       return {};
     }
   }
 
   async apiRun(){
-    extensionManager.onGet("networkMonitorData", async (msg) => {
-      return this.getNetworkMonitorData();
+    extensionManager.onGet("networkMonitorData", async (msg,data) => {
+      return this.getNetworkMonitorData(data.parse_json);
     });
   }
 

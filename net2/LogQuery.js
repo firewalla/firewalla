@@ -109,8 +109,12 @@ class LogQuery {
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+    let prevFeed, prevTS
 
     while (feed && this.validResultCount(feed.options, results) < options.count) {
+
+      prevFeed = feed
+      prevTS = feed.options.ts
 
       const logs = await feed.query(feed.options)
       if (logs.length) {
@@ -139,11 +143,14 @@ class LogQuery {
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
-        const { mac, intf, tag, macs } = feed.options
-        log.debug('Removing feed', mac || tag || macs || intf)
+        log.debug('Removing feed', feed.query.name, JSON.stringify(feed.options))
       }
 
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+      if (feed == prevFeed && feed.options.ts == prevTS) {
+        log.error("Looping!!", feed.query.name, feed.options)
+        break
+    }
     }
 
     return results
@@ -174,7 +181,7 @@ class LogQuery {
 
     options = this.checkArguments(options)
 
-    log.debug(this.constructor.name, 'getAllLogs', options)
+    log.debug('----====', this.constructor.name, 'getAllLogs', JSON.stringify(options))
 
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
@@ -207,6 +214,7 @@ class LogQuery {
     // query less each time to improve perf
     options = Object.assign({count: _.min(Math.round(options.count * 2 / feeds.length), options.count)}, options)
 
+    delete options.macs // for a cleaner debug log
     const allLogs = await this.logFeeder(options, feeds)
 
     const enriched = await this.enrichWithIntel(allLogs);
@@ -217,6 +225,7 @@ class LogQuery {
 
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {
+      if (!f.ip) return
       // get intel from redis. if failed, create a new one
       const intel = await intelTool.getIntel(f.ip);
 
@@ -248,12 +257,11 @@ class LogQuery {
 
   async getDeviceLogs(options) {
     options = this.checkArguments(options)
-    delete options.macs // for a cleaner debug log
 
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 
-    log.debug(this.constructor.name, 'getDeviceLogs', options)
+    log.debug(this.constructor.name, 'getDeviceLogs', JSON.stringify(options))
 
     const key = this.getLogKey(target, options);
 

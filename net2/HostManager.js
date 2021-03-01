@@ -1961,7 +1961,7 @@ module.exports = class HostManager {
       const begin = elements[2];
       const end = elements[3];
 
-      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, count);
+      const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, key, count);
 
       const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
         return b.count - a.count;
