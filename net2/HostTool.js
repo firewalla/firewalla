@@ -532,11 +532,11 @@ class HostTool {
   }
 
   filterOldDevices(hostList) {
-    const validHosts = hostList.filter(host => host.mac != null)
+    const validHosts = hostList.filter(host => host.o.mac != null)
     const activeHosts = {}
     for (const index in validHosts) {
       const host = validHosts[index]
-      const ip = host.ipv4Addr
+      const ip = host.o.ipv4Addr
       if(!ip) {
         continue
       }
@@ -547,7 +547,7 @@ class HostTool {
         const existingHost = activeHosts[ip]
 
         // new one is newer
-        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
+        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.o.lastActiveTimestamp)) {
           activeHosts[ip] = host
         }
       }

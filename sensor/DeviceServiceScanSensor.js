@@ -82,7 +82,7 @@ class DeviceServiceScanSensor extends Sensor {
           case "Tag": {
             const tagUid = host.o && host.o.uid;
             if (tagUid) {
-              const allMacs = hostManager.getTagMacs(tagUid);
+              const allMacs = await hostManager.getTagMacs(tagUid);
               allMacs.map((mac) => {
                 !this.scanSettings[mac] && (this.scanSettings[mac] = {})
                 this.scanSettings[mac].tagPolicy = policy;
