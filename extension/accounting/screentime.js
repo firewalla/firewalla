@@ -100,7 +100,7 @@ class ScreenTime {
             log.info(`screen time limted alredy reached recently`);
             return;
         }
-        const macs = this.getPolicyRelatedMacs(policy);
+        const macs = await this.getPolicyRelatedMacs(policy);
         const count = await this.getMacsUsedTime(macs, policy, timeFrame);
         log.info(`Policy ${policy.pid} screen time: ${count}, macs: ${macs.join(',')} begin: ${timeFrame.begin} end: ${timeFrame.end}`, policy);
         const { threshold } = policy;
@@ -195,7 +195,7 @@ class ScreenTime {
             begin, end, expire, now
         }
     }
-    getPolicyRelatedMacs(policy) {
+    async getPolicyRelatedMacs(policy) {
         const HostManager = require("../../net2/HostManager.js");
         const hostManager = new HostManager();
         const { scope } = policy;
@@ -209,7 +209,7 @@ class ScreenTime {
                 allMacs = allMacs.concat(hostManager.getIntfMacs(uuid));
             } else if (ele.includes(TAG_PREFIX)) {
                 const tagUid = ele.split(TAG_PREFIX)[1];
-                allMacs = allMacs.concat(hostManager.getTagMacs(tagUid));
+                allMacs = allMacs.concat(await hostManager.getTagMacs(tagUid));
             } else {
                 allMacs = hostManager.getActiveMACs();
             }
