@@ -31,10 +31,13 @@ const categoryUpdater = new CategoryUpdater();
 
 const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
-const {Address4, Address6} = require('ip-address');
+const { Address4, Address6 } = require('ip-address');
 
 const domainBlock = require('../control/DomainBlock.js');
 const { isHashDomain } = require('../util/util.js');
+
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
 const categoryHashsetMapping = {
   "games": "app.gaming",
@@ -59,7 +62,7 @@ class CategoryUpdateSensor extends Sensor {
       for (const category of categories) {
         await this.updateCategory(category);
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to update categories", err)
     }
   }
@@ -71,7 +74,7 @@ class CategoryUpdateSensor extends Sensor {
       for (const category of securityCategories) {
         await this.updateSecurityCategory(category)
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to update security categories", err)
     }
   }
@@ -87,7 +90,7 @@ class CategoryUpdateSensor extends Sensor {
         await countryUpdater.refreshCategoryRecord(category)
         await countryUpdater.recycleIPSet(category)
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to update conuntry sets", err)
     }
   }
@@ -102,7 +105,7 @@ class CategoryUpdateSensor extends Sensor {
     const ip6List = domains.filter(d => new Address6(d).isValid());
     const hashDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
     const leftDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
-    
+
     log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains`);
 
     await categoryUpdater.flushDefaultDomains(category);
@@ -111,7 +114,7 @@ class CategoryUpdateSensor extends Sensor {
     await categoryUpdater.flushIPv6Addresses(category);
     if (leftDomains && leftDomains.length > 0) {
       await categoryUpdater.addDefaultDomains(category, leftDomains);
-    } 
+    }
     if (hashDomains && hashDomains.length > 0) {
       await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
     }
@@ -146,22 +149,22 @@ class CategoryUpdateSensor extends Sensor {
     log.info(`category ${category} has ${(ip4List || []).length} ipv4,`
       + ` ${(ip6List || []).length} ipv6, ${(domains || []).length} domains,`
       + ` ${(domainOnly || []).length} domainOnly, ${(hashedDomains || []).length} hashedDomains,`)
-    
+
     await categoryUpdater.flushDefaultDomainsOnly(category);
     await categoryUpdater.flushDefaultHashedDomains(category);
     await categoryUpdater.flushDefaultDomains(category);
     await categoryUpdater.flushIPv4Addresses(category)
     await categoryUpdater.flushIPv6Addresses(category)
     if (domainOnly && domainOnly.length > 0) {
-      await categoryUpdater.addDefaultDomainsOnly(category,domainOnly);
+      await categoryUpdater.addDefaultDomainsOnly(category, domainOnly);
     }
 
     if (hashedDomains && hashedDomains.length > 0) {
-      await categoryUpdater.addDefaultHashedDomains(category,hashedDomains);
+      await categoryUpdater.addDefaultHashedDomains(category, hashedDomains);
     }
 
     if (domains && domains.length > 0) {
-      await categoryUpdater.addDefaultDomains(category,domains);
+      await categoryUpdater.addDefaultDomains(category, domains);
     }
 
     if (ip4List && ip4List.length > 0) {
@@ -202,7 +205,7 @@ class CategoryUpdateSensor extends Sensor {
   }
 
   run() {
-    sem.once('IPTABLES_READY', async() => {
+    sem.once('IPTABLES_READY', async () => {
       // initial round of country list update is triggered by this event
       // also triggers dynamic list and ipset update here
       // to make sure blocking takes effect immediately
@@ -212,7 +215,7 @@ class CategoryUpdateSensor extends Sensor {
           const category = countryUpdater.getCategory(event.country)
           await countryUpdater.refreshCategoryRecord(category)
           await countryUpdater.recycleIPSet(category, false)
-        } catch(err) {
+        } catch (err) {
           log.error("Failed to update conuntry set", event.country, err)
         }
       });
@@ -236,6 +239,34 @@ class CategoryUpdateSensor extends Sensor {
         });
       });
 
+      sem.on('Categorty:ReloadFromBone', async (event) => {
+        const category = event.category;
+        if (!categoryUpdater.isCustomizedCategory(category) &&
+          categoryUpdater.activeCategories[category]) {
+          sem.emitEvent({
+            type: "Policy:CategoryActivated",
+            toProcess: "FireMain",
+            message: "Category ReloadFromBone: " + category,
+            category: category
+          });
+        }
+      });
+
+      sem.on('Category:Delete', async (event) => {
+        const category = event.category;
+        if (!categoryUpdater.isCustomizedCategory(category) &&
+          categoryUpdater.activeCategories[category]) {
+          delete categoryUpdater.activeCategories[category];
+          delete categoryHashsetMapping[category];
+          await categoryUpdater.flushDefaultDomains(category);
+          await categoryUpdater.flushDefaultHashedDomains(category);
+          await categoryUpdater.flushIPv4Addresses(category);
+          await categoryUpdater.flushIPv6Addresses(category);
+          await dnsmasq.deletePolicyCategoryFilterEntry(category);
+          // handle related ipset?
+        }
+      })
+
       await this.regularJob()
       await this.securityJob()
       await this.renewCountryList()
@@ -255,7 +286,7 @@ class CategoryUpdateSensor extends Sensor {
         data = await bone.hashsetAsync(hashset)
         const list = JSON.parse(data)
         return list
-      } catch(err) {
+      } catch (err) {
         log.error("Failed to get hashset", hashset, data, err);
         return null
       }

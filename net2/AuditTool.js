@@ -30,9 +30,9 @@ class AuditTool extends LogQuery {
   }
 
   shouldMerge(previous, incoming) {
-    const compareKeys = ['type', 'device', 'fd', 'protocol', 'port'];
+    const compareKeys = ['type', 'device', 'protocol', 'port'];
     if (!previous || !previous.type) return false
-    previous.type == 'dns' ? compareKeys.push('domain') : compareKeys.push('ip')
+    previous.type == 'dns' ? compareKeys.push('domain', 'qc', 'qt', 'rc') : compareKeys.push('ip', 'fd')
     return _.isEqual(_.pick(previous, compareKeys), _.pick(incoming, compareKeys));
   }
 
@@ -55,14 +55,19 @@ class AuditTool extends LogQuery {
       count: entry.ct,
       protocol: entry.pr,
       intf: entry.intf,
-      rrClass: entry.qc,
-      rrType: entry.qt,
-      rcode: entry.rc
     };
 
-    if (entry.fd) f.fd = entry.fd
-    if (entry.dn) f.domain = entry.dn
-    if (entry.ans) f.answers = entry.ans
+    if (entry.type == 'dns') {
+      Object.assign(f, {
+        rrClass: entry.qc,
+        rrType: entry.qt,
+        rcode: entry.rc,
+        domain: entry.dn
+      })
+      if (entry.ans) f.answers = entry.ans
+    } else {
+      f.fd = entry.fd
+    }
 
     try {
       if (entry.type == 'ip') {
