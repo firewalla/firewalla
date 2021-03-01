@@ -29,6 +29,7 @@ const INTF_PREFIX = "intf:";
 const TAG_PREFIX = "tag:";
 const MAC_PREFIX = "mac:"
 const _ = require('lodash');
+const f = require('../../net2/Firewalla.js');
 
 /*
     policy:create
@@ -82,7 +83,7 @@ class ScreenTime {
         delete runningCheckJobs[pid]
     }
     dependFeatureEnabled() {
-        if (!platform.isAccountingSupported() || !fc.isFeatureOn("accounting")) {
+        if (!platform.isAccountingSupported() || !fc.isFeatureOn("accounting") || !f.isDevelopmentVersion()) {
             log.info("Accounting feature is not supported or disabled.");
             return false;
         }
