@@ -27,7 +27,6 @@ const intelTool = new IntelTool();
 
 const auditTool = require('./AuditTool')
 
-const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
 
 const _ = require('lodash');
@@ -127,6 +126,8 @@ class FlowTool extends LogQuery {
     if (options.auditDNSSuccess) {
       feeds.push({ query: auditTool.getAllLogs.bind(auditTool), options: {block: false} })
     }
+    delete options.audit
+    delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
 
     recentFlows = recentFlows.slice(0, options.count);

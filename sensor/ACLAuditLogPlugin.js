@@ -54,7 +54,7 @@ class ACLAuditLogPlugin extends Sensor {
     super()
 
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
-    this.buffer = { ip: { drop: {} }, dns: { drop: {}, accept: {} }}
+    this.buffer = { }
     this.bufferTs = Date.now() / 1000
   }
 
@@ -83,31 +83,31 @@ class ACLAuditLogPlugin extends Sensor {
       log.error('Error reading pipe', err)
     }
 
-    sem.on(Message.MSG_ACL_DNS_NXDOMAIN, message => {
+    sem.on(Message.MSG_ACL_DNS, message => {
       if (message && message.record)
         this._processDnsRecord(message.record)
           .catch(err => log.error('Failed to process record', err, message.record))
     });
-    sem.on(Message.MSG_ACL_DNS_UNCATEGORIZED, message => {
-      if (message && message.record) {
-        this._processDnsRecord(message.record, false)
-          .catch(err => log.error('Failed to process record', err, message.record))
-      }
-    });
   }
 
-  writeBuffer(mac, target, record, block = true) {
-    const bucket = this.buffer[record.type][block ? 'drop' : 'accept']
-    if (!bucket[mac]) bucket[mac] = {}
-    if (bucket[mac][target]) {
-      const s = bucket[mac][target]
+  getDescriptor(r) {
+    return r.type == 'dns' ?
+      `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}:${r.qt}` :
+      `ip:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+  }
+
+  writeBuffer(mac, record) {
+    if (!this.buffer[mac]) this.buffer[mac] = {}
+    const descriptor = this.getDescriptor(record)
+    if (this.buffer[mac][descriptor]) {
+      const s = this.buffer[mac][descriptor]
       // _.min() and _.max() will ignore non-number values
       s.ts = _.min([s.ts, record.ts])
       s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
       s.ct += record.ct
       if (s.sp) s.sp = _.uniq(s.sp, record.sp)
     } else {
-      bucket[mac][target] = record
+      this.buffer[mac][descriptor] = record
     }
   }
 
@@ -222,14 +222,10 @@ class ACLAuditLogPlugin extends Sensor {
     if (domain)
       record.dn = domain;
 
-    this.writeBuffer(mac, remoteIP, record)
+    this.writeBuffer(mac, record)
   }
 
-  async _processDnsRecord(record, block = true) {
-    if (!record.query) {
-      log.debug('no query', record)
-    }
-
+  async _processDnsRecord(record) {
     record.type = 'dns'
     record.pr = 'dns'
 
@@ -261,7 +257,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.ct = 1;
 
-    this.writeBuffer(mac, record.dn, record, block)
+    this.writeBuffer(mac, record)
   }
 
   _getAuditKey(mac, block = true) {
@@ -274,41 +270,44 @@ class ACLAuditLogPlugin extends Sensor {
       // log.debug(JSON.stringify(this.buffer))
 
       const buffer = this.buffer
-      this.buffer = { ip: { drop: {} }, dns: { drop: {}, accept: {} }}
+      this.buffer = { }
+      log.debug(buffer)
 
-      for (const type in buffer) {
-        for (const action in buffer[type]) {
-          const block = action == 'drop'
-          for (const mac in buffer[type][action]) {
-            for (const target in buffer[type][action][mac]) {
-              const record = buffer[type][action][mac][target];
-              const {ts, ct, intf} = record
-              const tags = []
-              if (
-                !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
-                !mac.startsWith(Constants.NS_INTERFACE + ':')
-              ) {
-                const host = hostManager.getHostFastByMAC(mac);
-                if (host) tags.push(...await host.getTags())
-              }
-              const networkProfile = networkProfileManager.getNetworkProfile(intf);
-              if (networkProfile) tags.push(...networkProfile.getTags());
-              record.tags = _.uniq(tags)
+      for (const mac in buffer) {
+        for (const descriptor in buffer[mac]) {
+          const record = buffer[mac][descriptor];
+          const {type, ts, ets, ct, intf} = record
+          const _ts = ets || ts
+          const block = type == 'dns' ?
+            record.rc == 3 /*NXDOMAIN*/ &&
+            (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/ ) &&
+            record.dp == 53
+            :
+            true
+          const tags = []
+          if (
+            !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
+            !mac.startsWith(Constants.NS_INTERFACE + ':')
+          ) {
+            const host = hostManager.getHostFastByMAC(mac);
+            if (host) tags.push(...await host.getTags())
+          }
+          const networkProfile = networkProfileManager.getNetworkProfile(intf);
+          if (networkProfile) tags.push(...networkProfile.getTags());
+          record.tags = _.uniq(tags)
 
-              const key = this._getAuditKey(mac, block)
-              await rclient.zaddAsync(key, ts, JSON.stringify(record));
+          const key = this._getAuditKey(mac, block)
+          await rclient.zaddAsync(key, _ts, JSON.stringify(record));
 
-              const expires = this.config.expires || 86400
-              await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+          const expires = this.config.expires || 86400
+          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
 
-              const hitType = type + block ? 'B' : ''
-              timeSeries.recordHit(`${hitType}`, ts, ct)
-              timeSeries.recordHit(`${hitType}:${mac}`, ts, ct)
-              timeSeries.recordHit(`${hitType}:intf:${intf}`, ts, ct)
-              for (const tag of record.tags) {
-                timeSeries.recordHit(`${hitType}:tag:${tag}`, ts, ct)
-              }
-            }
+          const hitType = type + (block ? 'B' : '')
+          timeSeries.recordHit(`${hitType}`, _ts, ct)
+          timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
+          timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
+          for (const tag of record.tags) {
+            timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
           }
         }
       }
@@ -336,14 +335,7 @@ class ACLAuditLogPlugin extends Sensor {
           for (const recordString of records) {
             try {
               const record = JSON.parse(recordString)
-              const target = record.type == 'dns' ? record.dn :
-                record.fd == 'in' ? record.dh : record.sh // type === 'ip'
-              if (!target)
-                log.error('MergeLogs: Invalid target', record)
-
-              const descriptor = record.type == 'dns' ?
-                `dns:${target}:${record.qc}:${record.qt}` :
-                `ip:${target}:${record.dp}:${record.fd}`
+              const descriptor = this.getDescriptor(record)
 
               if (stash[descriptor]) {
                 const s = stash[descriptor]
