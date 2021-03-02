@@ -3270,7 +3270,7 @@ class netBot extends ControllerBot {
       }
       case "deleteCategory":{
         const category = value.category;
-        if (category && category.includes('targetList:')) {// delete category(only for target list now)
+        if (category) {
           sem.emitEvent({
             type: "Category:Delete", 
             category: category,
