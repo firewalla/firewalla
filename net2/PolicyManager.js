@@ -101,6 +101,8 @@ module.exports = class {
 
     // Setup iptables so that it's ready for blocking
     await Block.setupBlockChain();
+    // setup active protect category mapping file
+    await dnsmasq.createCategoryMappingFile("default_c");
 
     iptablesReady = true
 
