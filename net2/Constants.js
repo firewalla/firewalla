@@ -18,5 +18,7 @@
 // NS: namespace
 module.exports = {
   NS_VPN_PROFILE : "vpn_profile",
-  NS_INTERFACE : "if"
+  NS_INTERFACE : "if",
+  RULE_SEQ_HI : 1,
+  RULE_SEQ_REG : 2
 };

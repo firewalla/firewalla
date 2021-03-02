@@ -64,6 +64,10 @@ class Policy {
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
 
+    if (raw.seq) {
+      this.seq = Number(raw.seq);
+    }
+
     if (raw.priority)
       this.priority = Number(raw.priority);
 
@@ -158,6 +162,7 @@ class Policy {
       this.targetRgId === policy.targetRgId &&
       this.ipttl === policy.ipttl &&
       this.wanUUID === policy.wanUUID &&
+      this.seq === policy.seq &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
