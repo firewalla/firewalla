@@ -373,7 +373,7 @@ class NaughtyMonkeySensor extends Sensor {
     const duration = options.duration || 10000;
     const length = options.length || 10000000;
 
-    const cmd = `node malware_simulator.js --src ${src}  --dst ${dst} --duration ${duration} --length ${length}`
+    const cmd = `${f.getFirewallaHome}/bin/node malware_simulator.js --src ${src}  --dst ${dst} --duration ${duration} --length ${length}`
     log.info(`Release a ${tag} monkey for ${src} and ${dst}: ${cmd}`);
     await exec(cmd, {
       cwd: f.getFirewallaHome() + "/testLegacy/"
