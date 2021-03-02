@@ -67,36 +67,35 @@ class NetworkMonitorSensor extends Sensor {
     }
   ----------------------------------------------------------------------------
    */
-  loadDefaultConfig() {
-    let defaultConfig = {};
-    if (this.config) {
+  loadRuntimeConfig(cfg) {
+    let runtimeConfig = {};
+    if (cfg) {
       try {
-        const cfg = this.config
         log.info("Loading default network monitor config ...");
         Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
               for (const gw  of sysManager.myGateways() ) {
-                defaultConfig[gw] = {...defaultConfig[gw], ...cfg[key]};
+                runtimeConfig[gw] = {...runtimeConfig[gw], ...cfg[key]};
               }
               break;
             case "MY_DNSES":
               for (const dns of sysManager.myDnses() ) {
-                defaultConfig[dns] = {...defaultConfig[dns], ...cfg[key]};
+                runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
               }
               break;
             default:
-              defaultConfig[key] = {...defaultConfig[key], ...cfg[key]};
+              runtimeConfig[key] = {...runtimeConfig[key], ...cfg[key]};
               break;
           }
         });
         log.debug("this.config: ", JSON.stringify(this.config,null,4));
-        log.debug("defaultConfig: ", JSON.stringify(defaultConfig,null,4));
+        log.debug("defaultConfig: ", JSON.stringify(runtimeConfig,null,4));
       } catch(err) {
         log.error("Failed to load default network monitor config: ", err);
       }
     }
-    return defaultConfig;
+    return runtimeConfig;
   }
 
   async applyCachedPolicy() {
@@ -150,7 +149,7 @@ class NetworkMonitorSensor extends Sensor {
 
     try {
       const runtimeState = (typeof systemState === 'undefined' || systemState === null) ? DEFAULT_SYSTEM_POLICY_STATE : systemState;
-      const runtimeConfig = systemConfig || this.loadDefaultConfig();
+      const runtimeConfig = this.loadRuntimeConfig(systemConfig) || this.loadRuntimeConfig(this.config);
       log.debug("runtimeState: ",runtimeState);
       log.debug("runtimeConfig: ",runtimeConfig);
       Object.keys(runtimeConfig).forEach( async targetIP => {
@@ -211,7 +210,7 @@ class NetworkMonitorSensor extends Sensor {
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         try {
-          const result = await exec(`curl -m 10 -w '%{time_total}\n' '${target}'`);
+          const result = await exec(`curl -sk -m 10 -w '%{time_total}\n' '${target}' | tail -1`);
           if (result && result.stdout) {
             data.push(parseFloat(result.stdout.trim()));
           }
