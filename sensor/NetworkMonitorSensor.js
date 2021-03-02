@@ -210,9 +210,13 @@ class NetworkMonitorSensor extends Sensor {
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`curl -m 10 -w '%{time_total}\n' '${target}'`);
-        if (result && result.stdout) {
-          data.push(parseFloat(result.stdout.trim()));
+        try {
+          const result = await exec(`curl -m 10 -w '%{time_total}\n' '${target}'`);
+          if (result && result.stdout) {
+            data.push(parseFloat(result.stdout.trim()));
+          }
+        } catch (err2) {
+          log.error("curl command failed:",err2);
         }
       }
       this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg);
@@ -448,12 +452,22 @@ class NetworkMonitorSensor extends Sensor {
         return a-b
       })
       const l = dataSorted.length;
-      if (l>0) {
+      let result = null;
+      if (l === 0) {
+        // no data, 100% loss
+        this.checkLossrate(monitorType,target,cfg,1);
+        result = {
+          "data": data,
+          "stat" : {
+            "lossrate"  : 1
+          }
+        }
+      } else {
         const [mean,mdev] = this.getMeanMdev(data);
         this.checkRTT(monitorType,target,cfg,mean);
         const lossrate = parseFloat(Number((count-data.length)/count).toFixed(2));
         this.checkLossrate(monitorType,target,cfg,lossrate);
-        const result = {
+        result = {
           "data": data,
           "stat" : {
             "median": parseFloat(((l%2 === 0) ? (dataSorted[l/2-1]+dataSorted[l/2])/2 : dataSorted[(l-1)/2]).toFixed(1)),
@@ -463,10 +477,10 @@ class NetworkMonitorSensor extends Sensor {
             "lossrate"  : lossrate
           }
         }
-        const resultJSON = JSON.stringify(result);
-        log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
-        await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
       }
+      const resultJSON = JSON.stringify(result);
+      log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
+      await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
     } catch (err) {
       log.error("failed to record sample data of ${moitorType} for ${target} :", err);
     }
@@ -499,12 +513,17 @@ class NetworkMonitorSensor extends Sensor {
             const result_json = scanResult[1][i+1];
             log.debug(`scanKey=${scanKey}, ts=${ts}, result_json=${result_json}`);
             const result = JSON.parse(result_json);
-            if (result && result.stat && result.stat.median) {
+            if (result && result.stat) {
               log.debug(`collect data of ${scanKey} at ${ts}`);
               // choose mean for overall stats for estimation
-              allMeans.push(parseFloat(result.stat.mean));
-              allLossrates.push(parseFloat(result.stat.lossrate));
-              log.debug("allData.length:",allMeans.length);
+              if ( result.stat.mean ) {
+                allMeans.push(parseFloat(result.stat.mean));
+              }
+              if ( result.stat.lossrate ) {
+                allLossrates.push(parseFloat(result.stat.lossrate));
+              }
+              log.debug("allMeans.length:",allMeans.length);
+              log.debug("allLossrates.length:",allLossrates.length);
             }
           }
         }

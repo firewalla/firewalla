@@ -19,7 +19,7 @@ let instance = null;
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const log = require('../../net2/logger.js')(__filename);
-
+const f = require('../../net2/Firewalla.js');
 const _ = require('lodash');
 
 /*
@@ -69,6 +69,7 @@ class Accounting {
 
   // begin, end - timestamps
   async record(mac, type, tag, begin, end) {
+    if (!f.isDevelopmentVersion()) return;
     const beginBucket = Math.floor(begin / this.bucketRange);
     const beginBit = Math.floor((begin - beginBucket * this.bucketRange) / this.step);
     const endBucket = Math.floor(end / this.bucketRange);

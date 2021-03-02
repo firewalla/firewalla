@@ -198,7 +198,7 @@ class LogQuery {
         allMacs = options.macs;
       }
     } else if (options.tag) {
-      allMacs = hostManager.getTagMacs(options.tag);
+      allMacs = await hostManager.getTagMacs(options.tag);
     } else {
       allMacs = hostManager.getActiveMACs();
       if (this.includeFirewallaInterfaces())

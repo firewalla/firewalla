@@ -12,10 +12,10 @@ mon() {
 
 mycat () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
-  node /tmp/cat.js --device "$1"
+  $FIREWALLA_HOME/bin/node /tmp/cat.js --device "$1"
 }
 
 mycatip () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
-  node /tmp/cat.js --ip "$1"
+  $FIREWALLA_HOME/bin/node /tmp/cat.js --ip "$1"
 }

@@ -387,7 +387,7 @@ class FlowAggregationSensor extends Sensor {
     }
 
     // aggregate tags
-    const tags = hostManager.getActiveTags();
+    const tags = await hostManager.getActiveTags();
     log.debug(`sumViews tags:`, tags);
 
     for (const tag of tags) {

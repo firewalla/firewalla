@@ -130,6 +130,7 @@ class Tracking {
   }
   
   async recordFlows(mac, flows) {
+    if (!f.isDevelopmentVersion()) return;
     for(const flow of flows) {
       const destIP = flowTool.getDestIP(flow);
       const intel = await intelTool.getIntel(destIP);
