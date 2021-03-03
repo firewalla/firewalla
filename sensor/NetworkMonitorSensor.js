@@ -396,7 +396,15 @@ class NetworkMonitorSensor extends Sensor {
                 "p.rtt": mean
             });
             alarmManager2.enqueueAlarm(alarm);
-            era.addActionEvent(`${monitorType}_RTT`,1,{"target":target,"rtt":mean,"rttLimit":meanLimit});
+            const labels = {
+              "target":target,
+              "rtt":mean,
+              "rttLimit":meanLimit
+            }
+            if ( monitorType === 'dns' ) {
+              labels.lookupName = cfg.lookupName
+            }
+            era.addActionEvent(`${monitorType}_RTT`,1,labels);
           }, cfg.alarmDelayRTT*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayRTT} seconds, alerts=`,this.alerts);
         }
