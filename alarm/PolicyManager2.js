@@ -2270,10 +2270,11 @@ class PolicyManager2 {
         if (action === "match_group" || rule.type === "match_group")
           // a trick that makes match_group rule be checked after allow rule and before block rule
           rule.rank += 0.5;
-        // high priority rule has a much higher base rank
+        // high priority rule has a smaller base rank
         if (rule.rank >= 0)
-          rule.rank += (rule.seq === Constants.RULE_SEQ_HI ? 10 : 0);
+          rule.rank += (rule.seq === Constants.RULE_SEQ_HI ? 0 : 10);
         return rule;
+        // sort rules by rank in ascending order
       }).filter(rule => rule.rank >= 0).sort((a, b) => {return a.rank - b.rank});
     }
 
