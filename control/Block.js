@@ -261,11 +261,20 @@ function setupIpset(element, ipset, remove = false) {
   return action(ipset, element)
 }
 
-async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
+async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG) {
+  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   switch (action) {
     case "qos": {
       qdisc = qdisc || "fq_codel";
@@ -309,20 +318,20 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW", target: getRuleGroupChainName(targetRgId, "allow")});
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK", target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block")});
       parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL", target: getRuleGroupChainName(targetRgId, "qos")});
       parameters.push({table: "mangle", chain: "FW_RT_VC_GLOBAL", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_GLOBAL", target: getRuleGroupChainName(targetRgId, "route")});
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW", target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: "FW_ACCEPT"});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK", target: getDropChain(security)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
@@ -383,12 +392,21 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
   }
 }
 
-async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
-  log.info(`${createOrDestroy} generic identity rule, unique ids ${JSON.stringify(uids)}, identity type ${identityType}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
+async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG) {
+  log.info(`${createOrDestroy} generic identity rule, unique ids ${JSON.stringify(uids)}, identity type ${identityType}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}`);
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   switch (action) {
     case "qos": {
       qdisc = qdisc || "fq_codel";
@@ -432,20 +450,20 @@ async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPo
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW", target: getRuleGroupChainName(targetRgId, "allow")});
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block")});
       parameters.push({table: "mangle", chain: "FW_QOS_DEV_G", target: getRuleGroupChainName(targetRgId, "qos")});
       parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW", target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: "FW_ACCEPT"});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getDropChain(security)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
@@ -521,11 +539,20 @@ async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPo
 }
 
 // device-wise rules
-async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
-  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
+async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG) {
+  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   switch (action) {
     case "qos": {
       qdisc = qdisc || "fq_codel";
@@ -569,20 +596,20 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW", target: getRuleGroupChainName(targetRgId, "allow")});
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK", target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block")});
       parameters.push({table: "mangle", chain: "FW_QOS_DEV", target: getRuleGroupChainName(targetRgId, "qos")});
       parameters.push({table: "mangle", chain: "FW_RT_VC_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW", target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: "FW_ACCEPT"});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK", target: getDropChain(security)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
@@ -644,11 +671,20 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
   }
 }
 
-async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
-  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
+async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG) {
+  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   const Tag = require('../net2/Tag.js');
   for (const uid of uids) {
     await Tag.ensureCreateEnforcementEnv(uid);
@@ -700,10 +736,10 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
       }
       case "match_group": {
         await ensureCreateRuleGroupChain(targetRgId);
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW", target: getRuleGroupChainName(targetRgId, "allow"), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getRuleGroupChainName(targetRgId, "block"), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW", target: getRuleGroupChainName(targetRgId, "allow"), localSet: netSet, localFlagCount: 2});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK", target: getRuleGroupChainName(targetRgId, "block"), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow"), localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block"), localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow"), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block"), localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_QOS_DEV_G", target: getRuleGroupChainName(targetRgId, "qos"), localSet: devSet, localFlagCount: 1});
         parameters.push({table: "mangle", chain: "FW_QOS_NET_G", target: getRuleGroupChainName(targetRgId, "qos"), localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route"), localSet: devSet, localFlagCount: 1});
@@ -713,14 +749,14 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         break;
       }
       case "allow": {
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW", target: "FW_ACCEPT", localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW", target: "FW_ACCEPT", localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: "FW_ACCEPT", localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: "FW_ACCEPT", localSet: netSet, localFlagCount: 2});
         break;
       }
       case "block":
       default: {
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getDropChain(security), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK", target: getDropChain(security), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getDropChain(security), localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: getDropChain(security), localSet: netSet, localFlagCount: 2});
       }
     }
   }
@@ -779,13 +815,22 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
   }
 }
 
-async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId) {
-  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}`);
+async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG) {
+  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}`);
   if (_.isEmpty(uuids))
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   switch (action) {
     case "qos": {
       qdisc = qdisc || "fq_codel";
@@ -829,20 +874,20 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW", target: getRuleGroupChainName(targetRgId, "allow")});
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK", target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block")});
       parameters.push({table: "mangle", chain: "FW_QOS_NET", target: getRuleGroupChainName(targetRgId, "qos")});
       parameters.push({table: "mangle", chain: "FW_RT_VC_NETWORK", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_NETWORK", target: getRuleGroupChainName(targetRgId, "route")});
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW", target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: "FW_ACCEPT"});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK", target: getDropChain(security)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];

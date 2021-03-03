@@ -414,7 +414,7 @@
             "minSampleRounds": 30,
             "alarmDelayRTT": 600,
             "alarmDelayLossrate": 60,
-            "lossrateLimit": 0.1,
+            "lossrateLimit": 0.5,
             "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
@@ -428,7 +428,7 @@
             "minSampleRounds": 30,
             "alarmDelayRTT": 360,
             "alarmDelayLossrate": 30,
-            "lossrateLimit": 0.1,
+            "lossrateLimit": 0.5,
             "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
@@ -441,7 +441,7 @@
             "minSampleRounds": 30,
             "alarmDelayRTT": 360,
             "alarmDelayLossrate": 30,
-            "lossrateLimit": 0.1,
+            "lossrateLimit": 0.5,
             "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
