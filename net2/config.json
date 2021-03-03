@@ -90,7 +90,8 @@
     "NetworkMonitorSensor":{},
     "LiveStatsPlugin": {},
     "AdblockPlugin": {},
-    "WireGuardPlugin": {}
+    "WireGuardPlugin": {},
+    "InternalScanSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -783,7 +784,7 @@
     "adblock": false,
     "family_protect": false,
     "smart_block": false,
-    "internal_scan": false,
+    "internal_scan": true,
     "acl_audit": false,
     "new_device_tag": false,
     "dual_wan": true,

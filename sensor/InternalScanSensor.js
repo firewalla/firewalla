@@ -40,22 +40,41 @@ const am2 = new AM2();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const featureName = "internal_scan";
 
+const extensionManager = require('./ExtensionManager.js')
+
 class InternalScanSensor extends Sensor {
   constructor() {
     super();
   }
 
-  async run() {
+  async apiRun() {
+
     this.running = false;
     this.supportPorts = ["tcp_23", "tcp_80", "tcp_21", "tcp_3306", "tcp_6379"]; // default support: telnet http ftp mysql redis
     if (platform.getName() === 'gold') {
       this.supportPorts.push("tcp_22"); // gold: ssh
     }
-    //this.supportPorts = ["tcp_23"];
-    sem.once("DeviceServiceScanComplete", async (event) => {
-      await this.checkAndRunOnce();
+
+    extensionManager.onGet("getScanStatus", async (msg, data) => {
+      return this.scanStatus;
     });
 
+    extensionManager.onCmd("killScanSession", async (msg, data) => {
+      return this.stop();
+    });
+
+    extensionManager.onCmd("startScanSession", (msg, data) => {
+      return this.runOnce();
+    });
+
+  }
+
+  async stop() {
+    let cmd = "sudo pkill -9 nmap";
+    await execAsync(cmd);
+  }
+
+  async run() {
     fc.onFeature(featureName, (feature, status) => {
       if (feature != featureName)
         return
@@ -84,6 +103,7 @@ class InternalScanSensor extends Sensor {
     }
 
     this.running = true;
+    this.scanStatus = {};
     try {
       log.info('Scan start...');
       await this.checkDictionary();
@@ -103,10 +123,13 @@ class InternalScanSensor extends Sensor {
         const hostName = host.name();
         const waitPorts = this.supportPorts.filter((portid) => mergePorts.includes(portid));
         log.info("Scanning device: ", host.o.ipv4Addr, waitPorts);
+        this.scanStatus[host.o.ipv4Addr] = {}
         for (const portid of waitPorts) {
           const nmapBrute = bruteConfig[portid];
           if (nmapBrute) {
+            this.scanStatus[host.o.ipv4Addr][portid] = "scanning"
             await this.nmapGuessPassword(host.o.ipv4Addr, hostName, nmapBrute);
+            this.scanStatus[host.o.ipv4Addr][portid] = "scanned"
           }
         }
       };
