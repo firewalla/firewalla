@@ -716,6 +716,11 @@ module.exports = class HostManager {
     }
   }
 
+  async systemdRestartMetrics(json) {
+    const result = await rclient.hgetallAsync("stats:systemd:restart");
+    json.serviceStartFrequency = result;
+  }
+
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -735,7 +740,8 @@ module.exports = class HostManager {
       this.networkMetrics(json),
       this.getCpuUsage(json),
       this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json)
+      this.listLatestErrorStateEvents(json),
+      this.systemdRestartMetrics(json)
     ]
 
     await this.basicDataForInit(json, {});
