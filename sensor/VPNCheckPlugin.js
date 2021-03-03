@@ -59,7 +59,7 @@ class VPNCheckPlugin extends Sensor {
     }
   }
 
-  async check(data = {}) {
+  async generateData(data) {
     let { type = 'openvpn', protocol, port } = data;
     const taKey = await this.getTLSAuthKey();
     if (!taKey) {
@@ -91,6 +91,13 @@ class VPNCheckPlugin extends Sensor {
         bearer: token
       }
     }
+    return { option, type, protocol, port }
+  }
+
+  async check(data = {}) {
+    const dataMap = await this.generateData(data);
+    if (!dataMap) return null;
+    const { option, type, port } = dataMap;
     let cloud_check_result = null, conntrack_check_result = null, conntrack_check_done = false;
     let conntrackCP;
     if (type == 'wireguard') {
