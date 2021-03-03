@@ -225,7 +225,7 @@ class LogQuery {
 
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {
-      if (!f.ip) return
+      if (!f.ip) return f
       // get intel from redis. if failed, create a new one
       const intel = await intelTool.getIntel(f.ip);
 

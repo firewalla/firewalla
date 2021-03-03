@@ -357,6 +357,19 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async addFlowsForView(options, apps, categories) {
+    let endString = new Date(options.end * 1000).toLocaleString();
+    let beginString = new Date(options.begin * 1000).toLocaleString();
+
+    if (options.intf) {
+      log.debug(`Aggregating between ${beginString} and ${endString} for intf`, options.intf);
+    } else if (options.tag) {
+      log.debug(`Aggregating between ${beginString} and ${endString} for tag`, options.tag);
+    } if(options.mac) {
+      log.debug(`Aggregating between ${beginString} and ${endString} for device ${options.mac}`);
+    } else {
+      log.debug(`Aggregating between ${beginString} and ${endString}`);
+    }
+
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
     await flowAggrTool.addSumFlow("dnsB", options);
@@ -368,11 +381,11 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async sumViews(options, apps, categories) {
+    log.debug('sumViews', JSON.stringify(options), '\n', JSON.stringify(apps), JSON.stringify(categories))
     await this.addFlowsForView(options, apps, categories)
 
     // aggregate intf
     const intfs = hostManager.getActiveIntfs();
-    log.debug(`sumViews intfs:`, intfs);
 
     for (const intf of intfs) {
       if(!intf || _.isEmpty(intf.macs)) {
@@ -388,7 +401,6 @@ class FlowAggregationSensor extends Sensor {
 
     // aggregate tags
     const tags = await hostManager.getActiveTags();
-    log.debug(`sumViews tags:`, tags);
 
     for (const tag of tags) {
       if(!tag || _.isEmpty(tag.macs)) {
@@ -688,19 +700,6 @@ class FlowAggregationSensor extends Sensor {
   async summarizeActivity(options, dimension, types) {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
-
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
-
-    if (options.intf) {
-      log.debug(`Aggregating ${dimension} activities between ${beginString} and ${endString} for intf`, options.intf);
-    } else if (options.tag) {
-      log.debug(`Aggregating ${dimension} activities between ${beginString} and ${endString} for tag`, options.tag);
-    } if(options.mac) {
-      log.debug(`Aggregating ${dimension} activities between ${beginString} and ${endString} for device ${options.mac}`);
-    } else {
-      log.debug(`Aggregating ${dimension} activities between ${beginString} and ${endString}`);
-    }
 
     const activityAggrTool = new ActivityAggrTool(dimension)
 
