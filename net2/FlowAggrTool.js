@@ -362,6 +362,8 @@ class FlowAggrTool {
   }
 
   async getTopSumFlowByKey(key, count) {
+    log.debug('getting top sumflow from key', key, ', count:', count)
+
     // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
     let destAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
     let results = [];
