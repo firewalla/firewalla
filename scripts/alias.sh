@@ -48,10 +48,18 @@ alias srr='/home/pi/firewalla/scripts/main-run'
 alias srrr='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias ct0='/home/pi/firewalla/scripts/estimate_compatibility.sh'
 alias rc='redis-cli'
-alias ll0='redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMain\", \"level\":\"info\"}"'
-alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireKick\", \"level\":\"info\"}"'
-alias ll2='redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMon\", \"level\":\"info\"}"'
-alias ll3='redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireApi\", \"level\":\"info\"}"'
+function ll0 {
+  redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"
+}
+function ll1 {
+  redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireKick\", \"level\":\"${2:-info}\"}"
+}
+function ll2 {
+  redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMon\", \"level\":\"${2:-info}\"}"
+}
+function ll3 {
+  redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireApi\", \"level\":\"${2:-info}\"}"
+}
 alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
 alias frcc='curl "http://localhost:8837/v1/config/active" 2>/dev/null | jq'
 
@@ -72,12 +80,12 @@ alias powerup='source <(curl -s https://raw.githubusercontent.com/firewalla/fire
 
 function mycat () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
-  node /tmp/cat.js --device "$1"
+  $FIREWALLA_HOME/bin/node /tmp/cat.js --device "$1"
 }
 
 function mycatip () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
-  node /tmp/cat.js --ip "$1"
+  $FIREWALLA_HOME/bin/node /tmp/cat.js --ip "$1"
 }
 
 alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi/firewalla/scripts/main-run'

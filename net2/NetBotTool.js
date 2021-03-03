@@ -182,7 +182,7 @@ class NetBotTool {
       allMacs = hostManager.getIntfMacs(options.intf);
       log.info(`prepareDetailedFlows ${dimension} intf: ${options.intf}, ${allMacs}`);
     } else if (options.tag) {
-      allMacs = hostManager.getTagMacs(options.tag);
+      allMacs = await hostManager.getTagMacs(options.tag);
       log.info(`prepareDetailedFlows ${dimension} tag: ${options.tag}, ${allMacs}`);
     } else if (options.mac) {
       allMacs = [ options.mac ]

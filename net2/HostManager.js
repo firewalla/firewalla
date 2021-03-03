@@ -1814,20 +1814,21 @@ module.exports = class HostManager {
 
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => host != null)).map(host => host.mac);
+    return hostTool.filterOldDevices(this.hosts.all.filter(Boolean)).map(host => host.o.mac);
   }
 
   // return: Array<{intf: string, macs: Array<string>}>
   getActiveIntfs() {
     let inftMap = {};
-    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => (host != null) && host.intf))
-    .map(host => {
-      if (inftMap[host.intf]) {
-        inftMap[host.intf].push(host.mac);
-      } else {
-        inftMap[host.intf] = [host.mac];
-      }
-    });
+    hostTool.filterOldDevices(this.hosts.all.filter(host => host && host.o.intf))
+      .forEach(host => {
+        host = host.o
+        if (inftMap[host.intf]) {
+          inftMap[host.intf].push(host.mac);
+        } else {
+          inftMap[host.intf] = [host.mac];
+        }
+      });
 
     return _.map(inftMap, (macs, intf) => {
       return {intf, macs: _.uniq(macs)};
@@ -1836,23 +1837,24 @@ module.exports = class HostManager {
 
   // need active host?
   getIntfMacs(intf) {
-    let macs = this.hosts.all.map(host => host.o).filter(host => host.intf && (host.intf == intf)).map(host => host.mac);
+    let macs = this.hosts.all.filter(host => host && host.o.intf && (host.o.intf == intf)).map(host => host.o.mac);
     return _.uniq(macs);
   }
 
   // return: Array<{tag: number, macs: Array<string>}>
-  getActiveTags() {
+  async getActiveTags() {
     let tagMap = {};
-    hostTool.filterOldDevices(this.hosts.all.map(host => host.o).filter(host => (host != null) && !_.isEmpty(host.tags)))
-    .map(host => {
-      for (const tag of JSON.parse(host.tags)) {
-        if (tagMap[tag]) {
-          tagMap[tag].push(host.mac);
-        } else {
-          tagMap[tag] = [host.mac];
+    await this.loadHostsPolicyRules()
+    hostTool.filterOldDevices(this.hosts.all.filter(host => host && host.policy && !_.isEmpty(host.policy.tags)))
+      .forEach(host => {
+        for (const tag of host.policy.tags) {
+          if (tagMap[tag]) {
+            tagMap[tag].push(host.o.mac);
+          } else {
+            tagMap[tag] = [host.o.mac];
+          }
         }
-      }
-    });
+      });
 
     return _.map(tagMap, (macs, tag) => {
       return {tag, macs: _.uniq(macs)};
@@ -1860,7 +1862,8 @@ module.exports = class HostManager {
   }
 
   // need active host?
-  getTagMacs(tag) {
+  async getTagMacs(tag) {
+    await this.loadHostsPolicyRules()
     tag = tag.toString();
     const macs = this.hosts.all.filter(host => {
       return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.includes(tag)

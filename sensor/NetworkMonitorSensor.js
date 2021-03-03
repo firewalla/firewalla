@@ -67,36 +67,35 @@ class NetworkMonitorSensor extends Sensor {
     }
   ----------------------------------------------------------------------------
    */
-  loadDefaultConfig() {
-    let defaultConfig = {};
-    if (this.config) {
+  loadRuntimeConfig(cfg) {
+    let runtimeConfig = {};
+    if (cfg) {
       try {
-        const cfg = this.config
         log.info("Loading default network monitor config ...");
         Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
               for (const gw  of sysManager.myGateways() ) {
-                defaultConfig[gw] = {...defaultConfig[gw], ...cfg[key]};
+                runtimeConfig[gw] = {...runtimeConfig[gw], ...cfg[key]};
               }
               break;
             case "MY_DNSES":
               for (const dns of sysManager.myDnses() ) {
-                defaultConfig[dns] = {...defaultConfig[dns], ...cfg[key]};
+                runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
               }
               break;
             default:
-              defaultConfig[key] = {...defaultConfig[key], ...cfg[key]};
+              runtimeConfig[key] = {...runtimeConfig[key], ...cfg[key]};
               break;
           }
         });
         log.debug("this.config: ", JSON.stringify(this.config,null,4));
-        log.debug("defaultConfig: ", JSON.stringify(defaultConfig,null,4));
+        log.debug("defaultConfig: ", JSON.stringify(runtimeConfig,null,4));
       } catch(err) {
         log.error("Failed to load default network monitor config: ", err);
       }
     }
-    return defaultConfig;
+    return runtimeConfig;
   }
 
   async applyCachedPolicy() {
@@ -150,7 +149,7 @@ class NetworkMonitorSensor extends Sensor {
 
     try {
       const runtimeState = (typeof systemState === 'undefined' || systemState === null) ? DEFAULT_SYSTEM_POLICY_STATE : systemState;
-      const runtimeConfig = systemConfig || this.loadDefaultConfig();
+      const runtimeConfig = this.loadRuntimeConfig(systemConfig) || this.loadRuntimeConfig(this.config);
       log.debug("runtimeState: ",runtimeState);
       log.debug("runtimeConfig: ",runtimeConfig);
       Object.keys(runtimeConfig).forEach( async targetIP => {
@@ -210,9 +209,13 @@ class NetworkMonitorSensor extends Sensor {
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`curl -m 10 -w '%{time_total}\n' '${target}'`);
-        if (result && result.stdout) {
-          data.push(parseFloat(result.stdout.trim()));
+        try {
+          const result = await exec(`curl -sk -m 10 -w '%{time_total}\n' '${target}' | tail -1`);
+          if (result && result.stdout) {
+            data.push(parseFloat(result.stdout.trim()));
+          }
+        } catch (err2) {
+          log.error("curl command failed:",err2);
         }
       }
       this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg);
@@ -393,7 +396,15 @@ class NetworkMonitorSensor extends Sensor {
                 "p.rtt": mean
             });
             alarmManager2.enqueueAlarm(alarm);
-            era.addActionEvent(`${monitorType}_RTT`,1,{"target":target,"rtt":mean,"rttLimit":meanLimit});
+            const labels = {
+              "target":target,
+              "rtt":mean,
+              "rttLimit":meanLimit
+            }
+            if ( monitorType === 'dns' ) {
+              labels.lookupName = cfg.lookupName
+            }
+            era.addActionEvent(`${monitorType}_RTT`,1,labels);
           }, cfg.alarmDelayRTT*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayRTT} seconds, alerts=`,this.alerts);
         }
@@ -448,12 +459,22 @@ class NetworkMonitorSensor extends Sensor {
         return a-b
       })
       const l = dataSorted.length;
-      if (l>0) {
+      let result = null;
+      if (l === 0) {
+        // no data, 100% loss
+        this.checkLossrate(monitorType,target,cfg,1);
+        result = {
+          "data": data,
+          "stat" : {
+            "lossrate"  : 1
+          }
+        }
+      } else {
         const [mean,mdev] = this.getMeanMdev(data);
         this.checkRTT(monitorType,target,cfg,mean);
         const lossrate = parseFloat(Number((count-data.length)/count).toFixed(2));
         this.checkLossrate(monitorType,target,cfg,lossrate);
-        const result = {
+        result = {
           "data": data,
           "stat" : {
             "median": parseFloat(((l%2 === 0) ? (dataSorted[l/2-1]+dataSorted[l/2])/2 : dataSorted[(l-1)/2]).toFixed(1)),
@@ -463,10 +484,10 @@ class NetworkMonitorSensor extends Sensor {
             "lossrate"  : lossrate
           }
         }
-        const resultJSON = JSON.stringify(result);
-        log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
-        await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
       }
+      const resultJSON = JSON.stringify(result);
+      log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
+      await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
     } catch (err) {
       log.error("failed to record sample data of ${moitorType} for ${target} :", err);
     }
@@ -499,12 +520,17 @@ class NetworkMonitorSensor extends Sensor {
             const result_json = scanResult[1][i+1];
             log.debug(`scanKey=${scanKey}, ts=${ts}, result_json=${result_json}`);
             const result = JSON.parse(result_json);
-            if (result && result.stat && result.stat.median) {
+            if (result && result.stat) {
               log.debug(`collect data of ${scanKey} at ${ts}`);
               // choose mean for overall stats for estimation
-              allMeans.push(parseFloat(result.stat.mean));
-              allLossrates.push(parseFloat(result.stat.lossrate));
-              log.debug("allData.length:",allMeans.length);
+              if ( result.stat.mean ) {
+                allMeans.push(parseFloat(result.stat.mean));
+              }
+              if ( result.stat.lossrate ) {
+                allLossrates.push(parseFloat(result.stat.lossrate));
+              }
+              log.debug("allMeans.length:",allMeans.length);
+              log.debug("allLossrates.length:",allLossrates.length);
             }
           }
         }
