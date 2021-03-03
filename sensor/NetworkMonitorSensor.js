@@ -364,7 +364,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   getMeanMdev(flist) {
-    if (flist.length === 0 ) return 0;
+    if (flist.length === 0 ) return [0,0];
     const mean = flist.reduce((sum,x) => sum+x, 0)/flist.length;
     const variance = flist.reduce( (variance,curr) => variance + (curr - mean)*(curr - mean),0 )/flist.length;
     const mdev = Math.sqrt(variance);
@@ -388,23 +388,33 @@ class NetworkMonitorSensor extends Sensor {
         log.warn(`RTT value(${mean}) is over limit(${meanLimit}) in ${alertKey}`);
         if ( ! (this.alerts.hasOwnProperty(alertKey)) ) {
           this.alerts[alertKey] = setTimeout(() => {
-            log.info(`sending alarm on ${alertKey} for RTT mean(${mean}) over meanLimit(${meanLimit})`);
-            let alarm = new Alarm.NetworkMonitorRTTAlarm(new Date() / 1000, null, {
-                "p.monitorType": monitorType,
-                "p.target": target,
-                "p.rttLimit": meanLimit,
-                "p.rtt": mean
-            });
-            alarmManager2.enqueueAlarm(alarm);
-            const labels = {
+            // ONLY sending alarm in Dev
+            if ( f.isDevelopmentVersion() ) {
+              log.info(`sending alarm on ${alertKey} for RTT mean(${mean}) over meanLimit(${meanLimit})`);
+              let alarmDetail = {
+                  "p.monitorType": monitorType,
+                  "p.target": target,
+                  "p.rttLimit": meanLimit,
+                  "p.rtt": mean
+              }
+              if ( monitorType === 'dns' ) {
+                alarmDetail["p.lookupName"] = cfg.lookupName;
+              }
+              const alarm = new Alarm.NetworkMonitorRTTAlarm(new Date() / 1000, null, alarmDetail);
+              alarmManager2.enqueueAlarm(alarm);
+            }
+
+            // ALWAYS sending event
+            let labels = {
               "target":target,
               "rtt":mean,
               "rttLimit":meanLimit
             }
             if ( monitorType === 'dns' ) {
-              labels.lookupName = cfg.lookupName
+              labels.lookupName = cfg.lookupName;
             }
             era.addActionEvent(`${monitorType}_RTT`,1,labels);
+
           }, cfg.alarmDelayRTT*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayRTT} seconds, alerts=`,this.alerts);
         }
@@ -427,15 +437,32 @@ class NetworkMonitorSensor extends Sensor {
         log.warn(`Loss rate (${lossrate}) is over limit(${cfg.lossrateLimit}) in ${alertKey}`);
         if ( ! this.alerts.hasOwnProperty(alertKey) ) {
           this.alerts[alertKey] = setTimeout(() => {
-            log.info(`sending alarm on ${alertKey} for lossrate(${lossrate}) over lossrateLimit(${cfg.lossrateLimit})`);
-            let alarm = new Alarm.NetworkMonitorLossrateAlarm(new Date() / 1000, null, {
+            // ONLY sending alarm in Dev
+            if ( f.isDevelopmentVersion() ) {
+              log.info(`sending alarm on ${alertKey} for lossrate(${lossrate}) over lossrateLimit(${cfg.lossrateLimit})`);
+              let alarmDetail = {
                 "p.monitorType": monitorType,
                 "p.target": target,
                 "p.lossrateLimit": cfg.lossrateLimit,
                 "p.lossrate": lossrate
-            });
-            alarmManager2.enqueueAlarm(alarm);
-            era.addActionEvent(`${monitorType}_lossrate`,1,{"target":target,"lossrate":lossrate,"lossrateLimit":cfg.lossrateLimit});
+              }
+              if ( type === 'dns' ) {
+                alarmDetail["p.lookupName"] = cfg.lookupName;
+              }
+              const alarm = new Alarm.NetworkMonitorLossrateAlarm(new Date() / 1000, null, alarmDetail);
+              alarmManager2.enqueueAlarm(alarm);
+            }
+
+            // ALWAYS sending event
+            let labels = {
+              "target":target,
+              "lossrate":lossrate,
+              "lossrateLimit":cfg.lossrateLimit
+            }
+            if ( monitorType === 'dns' ) {
+              labels.lookupName = cfg.lookupName;
+            }
+            era.addActionEvent(`${monitorType}_lossrate`,1,labels);
           }, cfg.alarmDelayLossrate*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayLossrate} seconds, alerts=`,this.alerts);
         }
