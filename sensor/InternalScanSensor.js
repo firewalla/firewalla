@@ -133,8 +133,13 @@ class InternalScanSensor extends Sensor {
           const nmapBrute = bruteConfig[portid];
           if (nmapBrute) {
             this.scanStatus[host.o.ipv4Addr][portid] = "scanning"
-            await this.nmapGuessPassword(host.o.ipv4Addr, hostName, nmapBrute);
-            this.scanStatus[host.o.ipv4Addr][portid] = "scanned"
+            const guessResult = await this.nmapGuessPassword(host.o.ipv4Addr, hostName, nmapBrute);
+            if (guessResult == 'killed') {
+              this.scanStatus[host.o.ipv4Addr][portid] = "scan break"
+              throw new Error("scan was interrupted")
+            } else {
+              this.scanStatus[host.o.ipv4Addr][portid] = "scanned"
+            }
           }
         }
       };
@@ -228,7 +233,7 @@ class InternalScanSensor extends Sensor {
       const startTime = Date.now() / 1000;
       try {
         const result = await execAsync(cmd);
-        if (result.stderr == 'Killed') return;
+        if (result.stderr == 'Killed\n') return "killed";
         let output = JSON.parse(result.stdout);
         let findings = null;
         if (bruteScript.scriptName == "redis-info") {
