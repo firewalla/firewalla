@@ -63,8 +63,13 @@ class InternalScanSensor extends Sensor {
       return this.stop();
     });
 
-    extensionManager.onCmd("startScanSession", (msg, data) => {
-      return this.runOnce();
+    extensionManager.onCmd("startScanSession", async (msg, data) => {
+      if (!this.running) {
+        await this.runOnce();
+        return {"msg":"start scan"} 
+      } else {
+        return {"msg":"previous scan is running"} 
+      }
     });
 
   }
@@ -223,6 +228,7 @@ class InternalScanSensor extends Sensor {
       const startTime = Date.now() / 1000;
       try {
         const result = await execAsync(cmd);
+        if (result.stderr == 'Killed') return;
         let output = JSON.parse(result.stdout);
         let findings = null;
         if (bruteScript.scriptName == "redis-info") {
