@@ -230,6 +230,13 @@ sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_ALLOW_HI
 sudo iptables -w -N FW_FIREWALL_GLOBAL_BLOCK_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_GLOBAL_BLOCK_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_BLOCK_HI
+# security block ipset in global high priority chain
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set src -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set dst -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set src -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set dst -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set src -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set dst -j FW_SEC_DROP
 
 # initialize firewall regular chain
 sudo iptables -w -N FW_FIREWALL &> /dev/null
@@ -303,12 +310,6 @@ sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -j FW_DROP
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -j FW_DROP
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -j FW_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_ip_set src -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_ip_set dst -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_domain_set src -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_domain_set dst -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_net_set src -j FW_SEC_DROP
-sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_net_set dst -j FW_SEC_DROP
 # inbound
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set dst -m conntrack --ctdir REPLY -j FW_DROP
@@ -575,6 +576,13 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_FIREWALL_GLOBAL_BLOCK_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_GLOBAL_BLOCK_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_BLOCK_HI
+  # security block ipset in global high priority chain
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set6 src -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set6 dst -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set6 src -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set6 dst -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set6 src -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set6 dst -j FW_SEC_DROP
 
   # initialize regular firewall chain
   sudo ip6tables -w -N FW_FIREWALL &> /dev/null
@@ -648,12 +656,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set6 dst -j FW_DROP
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set6 src -j FW_DROP
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set6 dst -j FW_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_ip_set6 src -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_ip_set6 dst -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_domain_set6 src -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_domain_set6 dst -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_net_set6 src -j FW_SEC_DROP
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set sec_block_net_set6 dst -j FW_SEC_DROP
   # inbound
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set6 src -m conntrack --ctdir ORIGINAL -j FW_DROP
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set6 dst -m conntrack --ctdir REPLY -j FW_DROP
