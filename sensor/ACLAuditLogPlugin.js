@@ -37,50 +37,39 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 
 const os = require('os')
-const util = require('util')
-const fs = require('fs')
-const openAsync = util.promisify(fs.open)
-const net = require('net')
-const readline = require('readline')
+const Tail = require('../vendor_lib/always-tail.js');
 
 const _ = require('lodash')
 
-const auditLogFile = "/log/alog/acl-audit-pipe";
-
-const featureName = "acl_audit";
+const auditLogFile = "/alog/acl-audit.log";
 
 class ACLAuditLogPlugin extends Sensor {
   constructor() {
     super()
 
+    this.featureName = "acl_audit";
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
     this.buffer = { }
     this.bufferTs = Date.now() / 1000
   }
 
   async run() {
-    this.hookFeature(featureName);
+    this.hookFeature();
     this.auditLogReader = null;
     this.aggregator = null
   }
 
   async job() {
-    try {
-      const fd = await openAsync(auditLogFile, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK)
-      const pipe = new net.Socket({ fd });
-      pipe.on('ready', () => {
-        log.info("Pipe ready");
-      })
-      pipe.on('error', (err) => {
-        log.error("Error while reading acl audit log", err.message);
-      })
-      const reader = readline.createInterface({input: pipe})
-      reader.on('line', line => {
+    super.job()
+    this.auditLogReader = new Tail(auditLogFile, '\n');
+    if (this.auditLogReader != null) {
+      this.auditLogReader.on('line', line => {
         this._processIptablesLog(line)
           .catch(err => log.error('Failed to process log', err, line))
       });
-    } catch(err) {
-      log.error('Error reading pipe', err)
+      this.auditLogReader.on('error', (err) => {
+        log.error("Error while reading acl audit log", err.message);
+      })
     }
 
     sem.on(Message.MSG_ACL_DNS, message => {
@@ -379,6 +368,8 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async globalOn() {
+    super.globalOn()
+
     await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
 
     this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
@@ -386,6 +377,8 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async globalOff() {
+    super.globalOn()
+
     await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
 
     clearInterval(this.bufferDumper)

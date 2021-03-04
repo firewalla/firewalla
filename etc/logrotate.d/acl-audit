@@ -1,0 +1,10 @@
+/alog/acl-audit.log {
+  create 0644 syslog adm
+  compress
+  rotate 10
+  size 256k
+  postrotate
+    /usr/lib/rsyslog/rsyslog-rotate
+  endscript
+  su syslog adm
+}
