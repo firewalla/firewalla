@@ -134,7 +134,7 @@ class RuleCheckSensor extends Sensor {
         return false;
       }
       const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block';
-      const seq = policy.seq;
+      let seq = policy.seq;
       if (!seq) {
         if (security || this._isActiveProtectRule(policy))
           seq = Constants.RULE_SEQ_HI;
