@@ -149,6 +149,16 @@ class RuleCheckSensor extends Sensor {
       if (policy.parentRgId && policy.parentRgId.length > 0) {
         return false;
       }
+      // non-regular rule has separate rule in iptables
+      let seq = policy.seq;
+      if (!seq) {
+        if (this._isActiveProtectRule(policy))
+          seq = Constants.RULE_SEQ_HI;
+        else
+          seq = Constants.RULE_SEQ_REG;
+      }
+      if (seq !== Constants.RULE_SEQ_REG)
+        return false;
       // do not check expired rules
       if (policy.expire) {
         if (policy.willExpireSoon() || policy.isExpired()) {
@@ -201,16 +211,6 @@ class RuleCheckSensor extends Sensor {
     if (localPort || remotePort)
       return;
     if (!target)
-      return;
-
-    if (!seq) {
-      if (this._isActiveProtectRule(policy))
-        seq = Constants.RULE_SEQ_HI;
-      else
-        seq = Constants.RULE_SEQ_REG;
-    }
-
-    if (seq !== Constants.RULE_SEQ_REG)
       return;
 
     log.debug(`Checking rule enforcement ${pid}`);
