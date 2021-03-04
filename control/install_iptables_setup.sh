@@ -975,6 +975,12 @@ sudo ip6tables -w -t mangle -N FW_QOS_DEV &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_DEV
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV
 
+# destroy rule group chains
+sudo iptables -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -t mangle -F $CHAIN; sudo iptables -t mangle -X $CHAIN; done;
+sudo iptables -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -F $CHAIN; sudo iptables -X $CHAIN; done;
+sudo ip6tables -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -t mangle -F $CHAIN; sudo ip6tables -t mangle -X $CHAIN; done;
+sudo ip6tables -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -F $CHAIN; sudo ip6tables -X $CHAIN; done;
+
 # This will remove all customized ip sets that are not referred in iptables after initialization
 for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset flush -! $set
