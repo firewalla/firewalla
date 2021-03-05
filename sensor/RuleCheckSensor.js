@@ -133,7 +133,7 @@ class RuleCheckSensor extends Sensor {
       if (policy.tag && policy.tag.length > 0) {
         return false;
       }
-      const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block';
+      const security = policy.method == 'auto' && policy.category == 'intel' && policy.action == 'block';
       let seq = policy.seq;
       if (!seq) {
         if (security || this._isActiveProtectRule(policy))
