@@ -852,8 +852,6 @@ module.exports = class HostManager {
       json.versionUpdate = versionUpdate;
     const customizedCategories = await categoryUpdater.getCustomizedCategories();
     json.customizedCategories = customizedCategories;
-    // add connected vpn client statistics
-    json.vpnCliStatistics = await new VpnManager().getStatistics();
   }
 
   async getGuessedRouters(json) {
