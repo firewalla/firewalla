@@ -35,6 +35,7 @@ const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
+const l2 = require('../util/Layer2.js');
 
 const os = require('os')
 const Tail = require('../vendor_lib/always-tail.js');
@@ -190,21 +191,35 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
+
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
-    // local IP being Firewalla's own interface, use if:<uuid> as "mac"
-    if (new Address4(localIP).isValid() ? sysManager.isMyIP(localIP, false) : sysManager.isMyIP6(localIP, false)) {
-      log.debug(line)
-      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-    }
-
     if (intf.name === "tun_fwvpn") {
       const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
-      if (!vpnProfile) throw new Error('VPNProfile not found for', localIP);
-      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
+      if (!vpnProfile) {
+        log.WARN('VPNProfile not found for', localIP);
+        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+      } else {
+        mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+        record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
+      }
     }
+    // local IP being Firewalla's own interface, use if:<uuid> as "mac"
+    else if (new Address4(localIP).isValid() ?
+      sysManager.isMyIP(localIP, false) :
+      sysManager.isMyIP6(localIP, false)
+    ) {
+      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
+    // try resolve ip to device mac
+    else if (!mac || mac == intf.mac_address.toUpperCase()) {
+      mac = await l2.getMACAsync(localIP).catch(err => {
+        log.warn("Failed to get MAC address from link layer for " + localIP, err);
+        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+      })
+    }
+    // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
     // TODO: is dns resolution necessary here?
     const domain = await dnsTool.getDns(remoteIP);
