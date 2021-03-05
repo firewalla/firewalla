@@ -2436,8 +2436,8 @@ class PolicyManager2 {
   async getAllRuleGroupMetaData() {
     const keys = await rclient.keysAsync("rule_group:*");
     const objs = [];
-    for (key of keys) {
-      const obj = await rclient.hgetAllAsync(key);
+    for (const key of keys) {
+      const obj = await rclient.hgetallAsync(key);
       if (obj)
         objs.push(obj);
     }
