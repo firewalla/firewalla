@@ -71,7 +71,7 @@ class NetworkMonitorSensor extends Sensor {
     let runtimeConfig = {};
     if (cfg) {
       try {
-        log.info("Loading default network monitor config ...");
+        log.info("Loading runtime network monitor config ...");
         Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
@@ -89,8 +89,8 @@ class NetworkMonitorSensor extends Sensor {
               break;
           }
         });
-        log.debug("this.config: ", JSON.stringify(this.config,null,4));
-        log.debug("defaultConfig: ", JSON.stringify(runtimeConfig,null,4));
+        log.debug("input config: ", JSON.stringify(cfg,null,4));
+        log.debug("runtime config: ", JSON.stringify(runtimeConfig,null,4));
       } catch(err) {
         log.error("Failed to load default network monitor config: ", err);
       }
@@ -149,7 +149,7 @@ class NetworkMonitorSensor extends Sensor {
 
     try {
       const runtimeState = (typeof systemState === 'undefined' || systemState === null) ? DEFAULT_SYSTEM_POLICY_STATE : systemState;
-      const runtimeConfig = this.loadRuntimeConfig(systemConfig) || this.loadRuntimeConfig(this.config);
+      const runtimeConfig = this.loadRuntimeConfig(systemConfig || this.config);
       log.debug("runtimeState: ",runtimeState);
       log.debug("runtimeConfig: ",runtimeConfig);
       Object.keys(runtimeConfig).forEach( async targetIP => {
@@ -254,6 +254,7 @@ class NetworkMonitorSensor extends Sensor {
   startMonitorDevice(key,ip,cfg) {
     log.info(`start monitoring ${key} with ip(${ip})`);
     log.debug("config: ", cfg);
+    if (!cfg) return;
     for ( const monitorType of Object.keys(cfg) ) {
       const scheduledKey = `${key}-${monitorType}`;
       if ( scheduledKey in this.sampleJobs ) {
