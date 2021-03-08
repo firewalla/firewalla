@@ -1497,6 +1497,7 @@ module.exports = class DNSMASQ {
 
     let content = [
       '#!/bin/bash',
+      'redis-cli HINCRBY "stats:systemd:restart" firemasq 1',
       cmd + " &",
       'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT',
       'for job in `jobs -p`; do wait $job; echo "$job exited"; done',

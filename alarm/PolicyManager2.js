@@ -1140,7 +1140,7 @@ class PolicyManager2 {
     const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
 
     if (!seq) {
-      if (security || this._isActiveProtectRule(policy))
+      if (this._isActiveProtectRule(policy))
         seq = Constants.RULE_SEQ_HI;
       else
         seq = Constants.RULE_SEQ_REG;
@@ -1432,7 +1432,7 @@ class PolicyManager2 {
     const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
 
     if (!seq) {
-      if (security || this._isActiveProtectRule(policy))
+      if (this._isActiveProtectRule(policy))
         seq = Constants.RULE_SEQ_HI;
       else
         seq = Constants.RULE_SEQ_REG;
@@ -2206,7 +2206,7 @@ class PolicyManager2 {
         const security = rule.method == 'auto' && rule.category == 'intel' && action == 'block'
 
         if (!rule.seq) {
-          if (security || this._isActiveProtectRule(rule))
+          if (this._isActiveProtectRule(rule))
             rule.seq = Constants.RULE_SEQ_HI;
           else
             rule.seq = Constants.RULE_SEQ_REG;
@@ -2436,8 +2436,8 @@ class PolicyManager2 {
   async getAllRuleGroupMetaData() {
     const keys = await rclient.keysAsync("rule_group:*");
     const objs = [];
-    for (key of keys) {
-      const obj = await rclient.hgetAllAsync(key);
+    for (const key of keys) {
+      const obj = await rclient.hgetallAsync(key);
       if (obj)
         objs.push(obj);
     }

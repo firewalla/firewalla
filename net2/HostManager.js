@@ -716,6 +716,11 @@ module.exports = class HostManager {
     }
   }
 
+  async systemdRestartMetrics(json) {
+    const result = await rclient.hgetallAsync("stats:systemd:restart");
+    json.serviceStartFrequency = result;
+  }
+
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -735,7 +740,8 @@ module.exports = class HostManager {
       this.networkMetrics(json),
       this.getCpuUsage(json),
       this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json)
+      this.listLatestErrorStateEvents(json),
+      this.systemdRestartMetrics(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -846,8 +852,6 @@ module.exports = class HostManager {
       json.versionUpdate = versionUpdate;
     const customizedCategories = await categoryUpdater.getCustomizedCategories();
     json.customizedCategories = customizedCategories;
-    // add connected vpn client statistics
-    json.vpnCliStatistics = await new VpnManager().getStatistics();
   }
 
   async getGuessedRouters(json) {
@@ -1005,7 +1009,15 @@ module.exports = class HostManager {
 
   async vpnProfilesForInit(json) {
     await VPNProfileManager.refreshVPNProfiles();
-    json.vpnProfiles = await VPNProfileManager.toJson();
+    const allSettings = await VPNProfileManager.toJson();
+    const statistics = await new VpnManager().getStatistics();
+    const vpnProfiles = [];
+    for (const cn in allSettings) {
+      // special handling for common name starting with fishboneVPN1
+      const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
+      vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp});
+    }
+    json.vpnProfiles = vpnProfiles;
   }
 
   toJson(includeHosts, options, callback) {

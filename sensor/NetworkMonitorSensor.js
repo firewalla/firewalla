@@ -71,7 +71,7 @@ class NetworkMonitorSensor extends Sensor {
     let runtimeConfig = {};
     if (cfg) {
       try {
-        log.info("Loading default network monitor config ...");
+        log.info("Loading runtime network monitor config ...");
         Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
@@ -89,8 +89,8 @@ class NetworkMonitorSensor extends Sensor {
               break;
           }
         });
-        log.debug("this.config: ", JSON.stringify(this.config,null,4));
-        log.debug("defaultConfig: ", JSON.stringify(runtimeConfig,null,4));
+        log.debug("input config: ", JSON.stringify(cfg,null,4));
+        log.debug("runtime config: ", JSON.stringify(runtimeConfig,null,4));
       } catch(err) {
         log.error("Failed to load default network monitor config: ", err);
       }
@@ -149,7 +149,7 @@ class NetworkMonitorSensor extends Sensor {
 
     try {
       const runtimeState = (typeof systemState === 'undefined' || systemState === null) ? DEFAULT_SYSTEM_POLICY_STATE : systemState;
-      const runtimeConfig = this.loadRuntimeConfig(systemConfig) || this.loadRuntimeConfig(this.config);
+      const runtimeConfig = this.loadRuntimeConfig(systemConfig || this.config);
       log.debug("runtimeState: ",runtimeState);
       log.debug("runtimeConfig: ",runtimeConfig);
       Object.keys(runtimeConfig).forEach( async targetIP => {
@@ -254,6 +254,7 @@ class NetworkMonitorSensor extends Sensor {
   startMonitorDevice(key,ip,cfg) {
     log.info(`start monitoring ${key} with ip(${ip})`);
     log.debug("config: ", cfg);
+    if (!cfg) return;
     for ( const monitorType of Object.keys(cfg) ) {
       const scheduledKey = `${key}-${monitorType}`;
       if ( scheduledKey in this.sampleJobs ) {
@@ -364,7 +365,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   getMeanMdev(flist) {
-    if (flist.length === 0 ) return 0;
+    if (flist.length === 0 ) return [0,0];
     const mean = flist.reduce((sum,x) => sum+x, 0)/flist.length;
     const variance = flist.reduce( (variance,curr) => variance + (curr - mean)*(curr - mean),0 )/flist.length;
     const mdev = Math.sqrt(variance);
@@ -388,15 +389,33 @@ class NetworkMonitorSensor extends Sensor {
         log.warn(`RTT value(${mean}) is over limit(${meanLimit}) in ${alertKey}`);
         if ( ! (this.alerts.hasOwnProperty(alertKey)) ) {
           this.alerts[alertKey] = setTimeout(() => {
-            log.info(`sending alarm on ${alertKey} for RTT mean(${mean}) over meanLimit(${meanLimit})`);
-            let alarm = new Alarm.NetworkMonitorRTTAlarm(new Date() / 1000, null, {
-                "p.monitorType": monitorType,
-                "p.target": target,
-                "p.rttLimit": meanLimit,
-                "p.rtt": mean
-            });
-            alarmManager2.enqueueAlarm(alarm);
-            era.addActionEvent(`${monitorType}_RTT`,1,{"target":target,"rtt":mean,"rttLimit":meanLimit});
+            // ONLY sending alarm in Dev
+            if ( f.isDevelopmentVersion() ) {
+              log.info(`sending alarm on ${alertKey} for RTT mean(${mean}) over meanLimit(${meanLimit})`);
+              let alarmDetail = {
+                  "p.monitorType": monitorType,
+                  "p.target": target,
+                  "p.rttLimit": meanLimit,
+                  "p.rtt": mean
+              }
+              if ( monitorType === 'dns' ) {
+                alarmDetail["p.lookupName"] = cfg.lookupName;
+              }
+              const alarm = new Alarm.NetworkMonitorRTTAlarm(new Date() / 1000, null, alarmDetail);
+              alarmManager2.enqueueAlarm(alarm);
+            }
+
+            // ALWAYS sending event
+            let labels = {
+              "target":target,
+              "rtt":mean,
+              "rttLimit":meanLimit
+            }
+            if ( monitorType === 'dns' ) {
+              labels.lookupName = cfg.lookupName;
+            }
+            era.addActionEvent(`${monitorType}_RTT`,1,labels);
+
           }, cfg.alarmDelayRTT*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayRTT} seconds, alerts=`,this.alerts);
         }
@@ -419,15 +438,32 @@ class NetworkMonitorSensor extends Sensor {
         log.warn(`Loss rate (${lossrate}) is over limit(${cfg.lossrateLimit}) in ${alertKey}`);
         if ( ! this.alerts.hasOwnProperty(alertKey) ) {
           this.alerts[alertKey] = setTimeout(() => {
-            log.info(`sending alarm on ${alertKey} for lossrate(${lossrate}) over lossrateLimit(${cfg.lossrateLimit})`);
-            let alarm = new Alarm.NetworkMonitorLossrateAlarm(new Date() / 1000, null, {
+            // ONLY sending alarm in Dev
+            if ( f.isDevelopmentVersion() ) {
+              log.info(`sending alarm on ${alertKey} for lossrate(${lossrate}) over lossrateLimit(${cfg.lossrateLimit})`);
+              let alarmDetail = {
                 "p.monitorType": monitorType,
                 "p.target": target,
                 "p.lossrateLimit": cfg.lossrateLimit,
                 "p.lossrate": lossrate
-            });
-            alarmManager2.enqueueAlarm(alarm);
-            era.addActionEvent(`${monitorType}_lossrate`,1,{"target":target,"lossrate":lossrate,"lossrateLimit":cfg.lossrateLimit});
+              }
+              if ( type === 'dns' ) {
+                alarmDetail["p.lookupName"] = cfg.lookupName;
+              }
+              const alarm = new Alarm.NetworkMonitorLossrateAlarm(new Date() / 1000, null, alarmDetail);
+              alarmManager2.enqueueAlarm(alarm);
+            }
+
+            // ALWAYS sending event
+            let labels = {
+              "target":target,
+              "lossrate":lossrate,
+              "lossrateLimit":cfg.lossrateLimit
+            }
+            if ( monitorType === 'dns' ) {
+              labels.lookupName = cfg.lookupName;
+            }
+            era.addActionEvent(`${monitorType}_lossrate`,1,labels);
           }, cfg.alarmDelayLossrate*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayLossrate} seconds, alerts=`,this.alerts);
         }

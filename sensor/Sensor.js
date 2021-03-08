@@ -63,14 +63,16 @@ let Sensor = class {
   }
 
   async globalOn() {
-
+    log.info('Enabling feature:', this.featureName)
   }
 
   async globalOff() {
-
+    log.info('Disabling feature:', this.featureName)
   }
 
   hookFeature(featureName) {
+    featureName = featureName || this.featureName
+    this.featureName = featureName;
 
     sem.once('IPTABLES_READY', async () => {
       log.info("iptables is ready, start enabling feature", featureName);
@@ -117,6 +119,8 @@ let Sensor = class {
         }
       })
 
+      log.debug('Global hooks registered for', this.featureName)
+
       try {
         await this.job();
       } catch(err) {
@@ -134,7 +138,6 @@ let Sensor = class {
       }
 
     });
-    this.featureName = featureName;
   }
 
   async setFeatureStats(stats) {
@@ -171,7 +174,7 @@ let Sensor = class {
   }
 
   async job() {
-
+    log.info('running job for', this.featureName)
   }
 
 };

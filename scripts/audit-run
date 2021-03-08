@@ -1,20 +1,28 @@
 #!/bin/bash
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 
 logger 'FIREWALLA.ACLAUDIT Starting'
 
-# remove deprecated log file & tmpfs mount
-sudo rm /log/alog/acl-audit.log
+sudo mkdir -p /alog/
+sudo rm -r -f /alog/*
 sudo umount -l /alog
-sudo rm -rf /alog
+sudo mount -t tmpfs -o size=10m tmpfs /alog
 
 # ensure log file is readable
-sudo mkdir -p /log/alog
-sudo mkfifo /log/alog/acl-audit-pipe
-sudo chgrp adm /log/alog/acl-audit-pipe
-sudo chown syslog /log/alog/acl-audit-pipe
-sudo chmod 644 /log/alog/acl-audit-pipe
+touch /alog/acl-audit.log
+sudo chgrp adm /alog/acl-audit.log
+sudo chown syslog /alog/acl-audit.log
+sudo chmod 644 /alog/acl-audit.log
+
+sudo rm -rf /log/alog
+sudo ln -sf /alog /log/alog
+
+mkdir -p $FIREWALLA_HIDDEN/config/crontab/
+sudo cp $FIREWALLA_HOME/etc/logrotate.d/acl-audit /etc/logrotate.d/
+echo "*/2 * * * * sudo logrotate /etc/logrotate.d/acl-audit" > $FIREWALLA_HIDDEN/config/crontab/acl-audit-logrotate
+$FIREWALLA_HOME/scripts/update_crontab.sh
 
 sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
 sudo systemctl restart rsyslog

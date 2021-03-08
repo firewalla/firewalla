@@ -636,7 +636,7 @@ check_portmapping() {
     redis-cli get extension.portforward.config |
       jq -r '.maps[] | select(.state == true) | "\"\(._type // "Forward")\",\"\(.active)\",\"\(.protocol)\",\"\(.dport)\",\"\(.toIP)\",\"\(.toPort)\",\"\(.toMac)\",\"\(.autoFirewall)\",\"\(.description)\""'
     redis-cli hget sys:scan:nat upnp |
-      jq -r '.[] | "\"UPnP\",\"\(.expire)\",\"\(.protocol)\",\"\(.public.port)\",\"\(.private.port)\",\"\(.private.host)\",\"N\/A\",\"N\/A\",\"\(.description)\""'
+      jq -r '.[] | "\"UPnP\",\"\(.expire)\",\"\(.protocol)\",\"\(.public.port)\",\"\(.private.host)\",\"\(.private.port)\",\"N\/A\",\"N\/A\",\"\(.description)\""'
   ) |
   column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
   echo ""
@@ -758,7 +758,6 @@ if [ "$FAST" == false ]; then
     check_wan_conn_log
     check_reboot
     check_system_config
-    check_network
     check_sys_features
     check_sys_config
     check_policies
@@ -767,7 +766,8 @@ if [ "$FAST" == false ]; then
     check_conntrack
     check_dhcp
     check_redis
+    check_network
     check_portmapping
-    test -z $SPEED || check_speed
     check_hosts
+    test -z $SPEED || check_speed
 fi
