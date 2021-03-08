@@ -191,33 +191,45 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
+    if (!localIP) {
+      log.error('No local IP', line)
+    }
+
+    const localIPisV4 = new Address4(localIP).isValid()
 
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
     if (intf.name === "tun_fwvpn") {
       const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
-      if (!vpnProfile) {
-        log.WARN('VPNProfile not found for', localIP);
-        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-      } else {
+      if (vpnProfile) {
         mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
         record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
+      } else {
+        log.warn('VPNProfile not found for', localIP);
+        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
       }
     }
+    // TODO: wireguard client recognition
+    else if (intf.name.startsWith("wg")) {
+      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
     // local IP being Firewalla's own interface, use if:<uuid> as "mac"
-    else if (new Address4(localIP).isValid() ?
+    else if (localIPisV4 ?
       sysManager.isMyIP(localIP, false) :
       sysManager.isMyIP6(localIP, false)
     ) {
       mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
-    // try resolve ip to device mac
+    // not Firewalla's IP, try resolve to device mac
     else if (!mac || mac == intf.mac_address.toUpperCase()) {
-      mac = await l2.getMACAsync(localIP).catch(err => {
-        log.warn("Failed to get MAC address from link layer for " + localIP, err);
-        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-      })
+      mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
+              log.error("Failed to get MAC address from link layer for", localIP, err);
+            })
+         || await hostTool.getMacByIPWithCache(localIP).catch(err => {
+              log.error("Failed to get MAC address from SysManager for", localIP, err);
+            })
+         || `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
@@ -250,7 +262,12 @@ class ACLAuditLogPlugin extends Sensor {
       if (!vpnProfile) throw new Error('VPNProfile not found for', record.sh);
       mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
       record.rl = vpnProfileManager.getRealAddrByVirtualAddr(record.sh);
-    } else {
+    }
+    // TODO: wireguard client recognition
+    else if (intf.name.startsWith("wg")) {
+      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
+    else {
       mac = await hostTool.getMacByIPWithCache(record.sh, false);
     }
 
