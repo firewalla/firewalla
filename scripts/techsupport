@@ -25,6 +25,7 @@ cd $FIREWALLA_TMP
 rm -r -f techsupport
 mkdir techsupport
 cd techsupport
+dmesg > dmesg.txt
 ifconfig > ifconfig.txt
 ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
@@ -55,9 +56,9 @@ cp -rfp /home/pi/.forever/* .
 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
 (curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password)' | cat) &> frcc.log
 # save events
-redis-cli zrangebyscore event:log 0 inf > events_all.log
-redis-cli hgetall event:state:cache > events_state_all.log
-redis-cli hgetall event:state:cache:error > events_state_error.log
+redis-cli zrangebyscore event:log 0 inf > events_all.txt
+redis-cli hgetall event:state:cache > events_state_all.txt
+redis-cli hgetall event:state:cache:error > events_state_error.txt
 cd ..
 tar -zcvf support.tar.gz techsupport
 rm -r -f techsupport
