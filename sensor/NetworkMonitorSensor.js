@@ -447,7 +447,7 @@ class NetworkMonitorSensor extends Sensor {
                 "p.lossrateLimit": cfg.lossrateLimit,
                 "p.lossrate": lossrate
               }
-              if ( type === 'dns' ) {
+              if ( monitorType === 'dns' ) {
                 alarmDetail["p.lookupName"] = cfg.lookupName;
               }
               const alarm = new Alarm.NetworkMonitorLossrateAlarm(new Date() / 1000, null, alarmDetail);
