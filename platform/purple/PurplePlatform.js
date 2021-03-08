@@ -26,7 +26,7 @@ const readFileAsync = util.promisify(fs.readFile)
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
-class NavyPlatform extends Platform {
+class PurplePlatform extends Platform {
 
   getName() {
     return "purple";
@@ -191,4 +191,4 @@ class NavyPlatform extends Platform {
   }
 }
 
-module.exports = NavyPlatform;
+module.exports = PurplePlatform;
