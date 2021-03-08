@@ -394,7 +394,7 @@ class NetworkProfile {
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
     const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
-    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_SEC_DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
     const inputRule6Sec = inputRuleSec.clone().fam(6);
     if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
@@ -514,7 +514,7 @@ class NetworkProfile {
       realIntf = realIntf.substring(0, realIntf.length - 2);
     // remove WAN INPUT protection rules
     const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
-    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_SEC_DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
     const inputRule6Sec = inputRule.clone().fam(6);
     await exec(inputRule.toCmd("-D")).catch((err) => {});
