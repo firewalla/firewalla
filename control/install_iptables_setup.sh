@@ -171,7 +171,8 @@ sudo iptables -w -F FW_SEC_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 sudo iptables -w -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 sudo iptables -w -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
-sudo iptables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
+# do not reply anything for security block
+#sudo iptables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_SEC_DROP -j DROP
 
 # add FW_ACCEPT to the end of FORWARD chain
@@ -524,7 +525,8 @@ if [[ -e /sbin/ip6tables ]]; then
   # do not apply ACL enforcement for outbound connections of acl off devices/networks
   sudo ip6tables -w -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
   sudo ip6tables -w -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
-  sudo ip6tables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
+  # do not reply anything for security block
+  #sudo ip6tables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
   sudo ip6tables -w -A FW_SEC_DROP -j DROP
 
   # add FW_ACCEPT to the end of FORWARD chain
