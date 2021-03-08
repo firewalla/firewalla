@@ -206,7 +206,7 @@ class ACLAuditLogPlugin extends Sensor {
         mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
         record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
       } else {
-        log.warn('VPNProfile not found for', localIP);
+        log.debug('VPNProfile not found for', localIP);
         mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
       }
     }
