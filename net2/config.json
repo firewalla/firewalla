@@ -602,7 +602,6 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "ClashPlugin": {},
-    "InternalScanSensor": {},
     "LogScanSensor": {
       "fireResetBluetooth": true,
       "bonelogInterval": 900

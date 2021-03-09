@@ -61,9 +61,13 @@ class InternalScanSensor extends Sensor {
 
     extensionManager.onCmd("killScanSession", async (msg, data) => {
       this.killCmd = true;
+      // this.currentPid is the bash command process
       if (this.currentPid) {
+        // cPid is sudo process which fork from currentPid
         const cPid = await execAsync(`ps -ef| grep nmap| awk '$3 == '${this.currentPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
+        // ccPid is timeout process which fork from cPid
         const ccPid = await execAsync(`ps -ef| grep nmap| awk '$3 == '${cPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
+        // cccPid is nmap process which fork from ccPid
         const cccPid = await execAsync(`ps -ef| grep nmap| awk '$3 == '${ccPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
         if (cccPid) await execAsync(`sudo kill -9 ${cccPid}`).catch((err) => { });
       }
@@ -81,15 +85,15 @@ class InternalScanSensor extends Sensor {
 
   }
 
-  async run() {
-    fc.onFeature(featureName, (feature, status) => {
-      if (feature != featureName)
-        return
-      if (status) {
-        this.checkAndRunOnce();
-      }
-    })
-  }
+  // async run() {
+  //   fc.onFeature(featureName, (feature, status) => {
+  //     if (feature != featureName)
+  //       return
+  //     if (status) {
+  //       this.checkAndRunOnce();
+  //     }
+  //   })
+  // }
 
   async checkAndRunOnce() {
     await this.runOnce();
