@@ -658,9 +658,10 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
     }
     await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
-    const dnsLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: false});
-    const groupedDnsLogs = this.auditLogsGroupByDestIP(dnsLogs);
-    await flowAggrTool.addFlows(macAddress, "dns", this.config.interval, end, groupedDnsLogs.dns, this.config.aggrFlowExpireTime);
+    // dns aggrflow, disable for now to reduce memory cost
+    // const dnsLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: false});
+    // const groupedDnsLogs = this.auditLogsGroupByDestIP(dnsLogs);
+    // await flowAggrTool.addFlows(macAddress, "dns", this.config.interval, end, groupedDnsLogs.dns, this.config.aggrFlowExpireTime);
   }
 
   async getFlow(dimension, type, options) {
