@@ -22,6 +22,7 @@ const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 const firewalla = require('../net2/Firewalla.js');
 const _ = require('lodash')
+const LRU = require('lru-cache');
 
 var instance = null;
 
@@ -37,7 +38,7 @@ class DomainUpdater {
   registerUpdate(domain, options) {
     // use mapping key to uniquely identify each domain mapping settings
     const key = domainIPTool.getDomainIPMappingKey(domain, options);
-    const config = {domain: domain, options: options};
+    const config = {domain: domain, options: options, ipCache: new LRU({maxAge: options.ipttl / 2 || 0})}; // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
     this.updateOptions[key] = config;
   }
 
@@ -54,8 +55,11 @@ class DomainUpdater {
       const config = this.updateOptions[key];
       const d = config.domain;
       const options = config.options;
+      const ipCache = config.ipCache || null;
 
-      if (domain.toLowerCase() === d.toLowerCase() || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())) {
+      if (domain.toLowerCase() === d.toLowerCase()
+        || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())
+        || d.startsWith("*.") && domain.toLowerCase().endsWith(d.toLowerCase().substring(1))) {
         const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
         const existingSet = {};
         existingAddresses.forEach((addr) => {
@@ -69,10 +73,13 @@ class DomainUpdater {
         let updateIpsetNeeded = false;
         if (options.blockSet)
           blockSet = options.blockSet;
+        const ipttl = options.ipttl || null;
+        
         for (let i in addresses) {
           const address = addresses[i];
-          if (!existingSet[address]) {
+          if (!existingSet[address] || (Number.isInteger(ipttl) && ipCache && !ipCache.get(address))) {
             updateIpsetNeeded = true;
+            ipCache && ipCache.set(address, 1);
             await rclient.saddAsync(key, address);
             if (!options.ignoreApplyBlock){
               const BlockManager = require('./BlockManager.js');

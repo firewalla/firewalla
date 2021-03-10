@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,7 @@ const flowTool = require('../net2/FlowTool');
 const auditTool = require('../net2/AuditTool');
 const FlowAggrTool = require('../net2/FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
+const ActivityAggrTool = require('../flow/ActivityAggrTool');
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 const appFlowTool = new TypeFlowTool('app')
@@ -218,38 +219,56 @@ class FlowAggregationSensor extends Sensor {
   // flows => { ip1 => 100KB, ip2 => 2MB }
   trafficGroupByDestIP(flows) {
 
-    let traffic = {};
+    const traffic = {};
 
     flows.forEach((flow) => {
 
-      let destIP = flow.type == 'dns' ? flow.domain : flow.ip;
-
-      let t = traffic[destIP];
+      let t = traffic[flow.ip];
 
       if (!t) {
-        t = flow.type ? { count: 0, type: flow.type } : { upload: 0, download: 0 };
-        traffic[destIP] = t;
+        t = { upload: 0, download: 0 };
+        traffic[flow.ip] = t;
       }
 
-      if (flow.type) {
-        t.count += flow.count;
-      } else {
-        t.upload += flow.upload;
-        t.download += flow.download;
-      }
+      t.upload += flow.upload;
+      t.download += flow.download;
 
-      if (flow.port) {
-        if (!t.port) t.port = []
-
-        const port = String(flow.port); //make sure it is string
-        if (!t.port.includes(port)) {
-          t.port.push(port)
-          t.port.sort((a,b)=>{return a-b})
-        }
-      }
+      this.addPortToEntry(t, flow.port)
     });
 
     return traffic;
+  }
+
+  addPortToEntry(t, port) {
+    if (!port) return
+    if (!t.port) t.port = []
+
+    port = String(port); //make sure it is string
+    if (!t.port.includes(port)) {
+      t.port.push(port)
+      t.port.sort((a,b)=>{return a-b})
+    }
+  }
+
+  auditLogsGroupByDestIP(logs) {
+    const result = { dns: {}, ip: {} };
+
+    logs.forEach(log => {
+      const destIP = log.type == 'dns' ? log.domain : log.ip;
+
+      let t = result[log.type][destIP];
+
+      if (!t) {
+        t = { count: 0 };
+        result[log.type][destIP] = t;
+      }
+
+      t.count += log.count;
+
+      this.addPortToEntry(t, log.port)
+    });
+
+    return result;
   }
 
   async aggrAll(ts) {
@@ -262,7 +281,8 @@ class FlowAggregationSensor extends Sensor {
       throw new Error("aggregation too soon");
     }
 
-    let macs = hostManager.getActiveMACs();
+    const macs = hostManager.getActiveMACs()
+    macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
     await Promise.all(macs.map(async mac => {
       log.debug("FlowAggrSensor on mac", mac);
       await this.aggr(mac, ts);
@@ -337,9 +357,23 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async addFlowsForView(options, apps, categories) {
+    let endString = new Date(options.end * 1000).toLocaleString();
+    let beginString = new Date(options.begin * 1000).toLocaleString();
+
+    if (options.intf) {
+      log.debug(`Aggregating between ${beginString} and ${endString} for intf`, options.intf);
+    } else if (options.tag) {
+      log.debug(`Aggregating between ${beginString} and ${endString} for tag`, options.tag);
+    } if(options.mac) {
+      log.debug(`Aggregating between ${beginString} and ${endString} for device ${options.mac}`);
+    } else {
+      log.debug(`Aggregating between ${beginString} and ${endString}`);
+    }
+
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
-    await flowAggrTool.addSumFlow("block", options);
+    await flowAggrTool.addSumFlow("dnsB", options);
+    await flowAggrTool.addSumFlow("ipB", options);
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
     await flowAggrTool.addSumFlow("category", options);
@@ -347,11 +381,11 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async sumViews(options, apps, categories) {
+    log.debug('sumViews', JSON.stringify(options), '\n', JSON.stringify(apps), JSON.stringify(categories))
     await this.addFlowsForView(options, apps, categories)
 
     // aggregate intf
     const intfs = hostManager.getActiveIntfs();
-    log.debug(`sumViews intfs:`, intfs);
 
     for (const intf of intfs) {
       if(!intf || _.isEmpty(intf.macs)) {
@@ -366,8 +400,7 @@ class FlowAggregationSensor extends Sensor {
     }
 
     // aggregate tags
-    const tags = hostManager.getActiveTags();
-    log.debug(`sumViews tags:`, tags);
+    const tags = await hostManager.getActiveTags();
 
     for (const tag of tags) {
       if(!tag || _.isEmpty(tag.macs)) {
@@ -395,6 +428,12 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
+    for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
+      const optionsCopy = JSON.parse(JSON.stringify(options));
+      optionsCopy.mac = selfMac
+      await flowAggrTool.addSumFlow('ipB', options)
+    }
+
     const vpnIntf = sysManager.getInterface("tun_fwvpn");
     if (vpnIntf && vpnIntf.uuid) {
       const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
@@ -402,7 +441,7 @@ class FlowAggregationSensor extends Sensor {
       // aggregate vpn server interface
       const optionsCopy = JSON.parse(JSON.stringify(options));
       optionsCopy.intf = vpnIntf.uuid;
-      optionsCopy.macs = cns;
+      optionsCopy.macs = cns.map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
 
       await this.addFlowsForView(optionsCopy, apps, categories)
 
@@ -473,6 +512,8 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async aggrActivity(macAddress, ts) {
+    if (sysManager.isMyMac(macAddress)) return
+
     let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
     let begin = end - this.config.interval;
 
@@ -523,16 +564,17 @@ class FlowAggregationSensor extends Sensor {
       await this.accountTrafficByX(macAddress, flows);
     }
 
-    let appTraffic = await this.trafficGroupByApp(flows);
-    await flowAggrTool.addAppActivityFlows(macAddress, this.config.interval, end, appTraffic, this.config.aggrFlowExpireTime);
+    for (const dimension of ['app', 'category']) {
+      const activityTraffic = await this.trafficGroupByX(flows, dimension);
+      const activityAggrTool = new ActivityAggrTool(dimension)
+      await activityAggrTool.addActivityFlows(macAddress, this.config.interval, end, activityTraffic, this.config.aggrFlowExpireTime);
 
-    let categoryTraffic = await this.trafficGroupByCategory(flows);
-    await flowAggrTool.addCategoryActivityFlows(macAddress, this.config.interval, end, categoryTraffic, this.config.aggrFlowExpireTime);
-
-    // record detail app/category flows by upload/download/ts/duration
-
-    await this.recordApp(macAddress, appTraffic);
-    await this.recordCategory(macAddress, categoryTraffic);
+      // record detail app/category flows by upload/download/ts/duration
+      if (dimension == 'app')
+        await this.recordApp(macAddress, activityTraffic);
+      else
+        await this.recordCategory(macAddress, activityTraffic);
+    }
 
     if(recentFlow) {
       let recentActivity = await this.getIntel(recentFlow);
@@ -589,28 +631,37 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async aggr(macAddress, ts) {
-    let end = flowAggrTool.getIntervalTick(ts, this.config.interval);
-    let begin = end - this.config.interval;
+    const end = flowAggrTool.getIntervalTick(ts, this.config.interval);
+    const begin = end - this.config.interval;
 
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
+    const endString = new Date(end * 1000).toLocaleTimeString();
+    const beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    let msg = util.format("Aggregating %s flows between %s and %s", macAddress, beginString, endString)
+    const msg = util.format("Aggregating %s flows between %s and %s", macAddress, beginString, endString)
     log.debug(msg);
 
-    // in => outgoing, out => incoming
-    const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end});
-    const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end});
-    // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
-    const flows = outgoingFlows.concat(incomingFlows)
+    if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
+      // in => outgoing, out => incoming
+      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end});
+      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end});
+      // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
+      const flows = outgoingFlows.concat(incomingFlows)
 
-    const traffic = this.trafficGroupByDestIP(flows);
-    await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
-    await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
+      const traffic = this.trafficGroupByDestIP(flows);
+      await flowAggrTool.addFlows(macAddress, "upload", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
+      await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
+    }
 
-    const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end});
-    const groupedLogs = this.trafficGroupByDestIP(auditLogs);
-    await flowAggrTool.addFlows(macAddress, "block", this.config.interval, end, groupedLogs, this.config.aggrFlowExpireTime);
+    const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true});
+    const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
+    if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
+      await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+    }
+    await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
+    // dns aggrflow, disable for now to reduce memory cost
+    // const dnsLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: false});
+    // const groupedDnsLogs = this.auditLogsGroupByDestIP(dnsLogs);
+    // await flowAggrTool.addFlows(macAddress, "dns", this.config.interval, end, groupedDnsLogs.dns, this.config.aggrFlowExpireTime);
   }
 
   async getFlow(dimension, type, options) {
@@ -651,22 +702,11 @@ class FlowAggregationSensor extends Sensor {
     let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     let end = options.end || (begin + 3600);
 
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
-
-    if (options.intf) {
-      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for intf`, options.intf);
-    } else if (options.tag) {
-      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for tag`, options.tag);
-    } if(options.mac) {
-      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString} for device ${options.mac}`);
-    } else {
-      log.debug(`Cleaning up ${dimension} activities between ${beginString} and ${endString}`);
-    }
+    const activityAggrTool = new ActivityAggrTool(dimension)
 
     try {
       if(options.skipIfExists) {
-        let exists = await flowAggrTool.cleanedAppKeyExists(begin, end, options)
+        let exists = await activityAggrTool.keyExists(begin, end, options)
         if(exists) {
           return
         }
@@ -686,14 +726,14 @@ class FlowAggregationSensor extends Sensor {
       let hashCache = {}
 
       if(Object.keys(allFlows).length > 0) {
-        await flowAggrTool.setCleanedAppActivity(begin, end, allFlows, options)
+        await activityAggrTool.setActivity(begin, end, allFlows, options)
 
         // change after store
         flowUtil.hashIntelFlows(allFlows, hashCache)
 //        await bone.flowgraphAsync('summarizeApp', allFlows)
 //        let unhashedData = flowUtil.unhashIntelFlows(data, hashCache)
       } else {
-        await flowAggrTool.setCleanedAppActivity(begin, end, {}, options) // if no data, set an empty {}
+        await activityAggrTool.setActivity(begin, end, {}, options) // if no data, set an empty {}
       }
     } catch(err) {
       log.error(`Failed to summarize ${dimension} activity: `, err);

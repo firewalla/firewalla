@@ -21,6 +21,9 @@ sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 sudo ipset create block_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create block_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create block_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
+sudo ipset create sec_block_net_set hash:net family inet hashsize 4096 maxelem 65536 &>/dev/null
 # inbound
 sudo ipset create block_ib_ip_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
 sudo ipset create block_ib_domain_set hash:ip family inet hashsize 16384 maxelem 65536 &>/dev/null
@@ -53,11 +56,15 @@ sudo ipset create monitored_net_set list:set &>/dev/null
 sudo ipset create qos_off_mac_set hash:mac &>/dev/null
 sudo ipset create qos_off_set list:set &>/dev/null
 
+sudo ipset create match_all_set4 hash:net maxelem 16 &> /dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush block_ip_set
 sudo ipset flush block_domain_set
 sudo ipset flush block_net_set
+sudo ipset flush sec_block_ip_set
+sudo ipset flush sec_block_domain_set
+sudo ipset flush sec_block_net_set
 sudo ipset flush block_ib_ip_set
 sudo ipset flush block_ib_domain_set
 sudo ipset flush block_ib_net_set
@@ -88,6 +95,10 @@ sudo ipset flush monitored_net_set
 sudo ipset flush qos_off_mac_set
 sudo ipset flush qos_off_set
 sudo ipset add -! qos_off_set qos_off_mac_set
+
+sudo ipset flush match_all_set4
+sudo ipset add -! match_all_set4 0.0.0.0/1
+sudo ipset add -! match_all_set4 128.0.0.0/1
 
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
@@ -154,6 +165,20 @@ sudo iptables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --ma
 sudo iptables -w -A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_DROP -j DROP
 
+# multi protocol block chain
+sudo iptables -w -N FW_SEC_DROP &>/dev/null
+sudo iptables -w -F FW_SEC_DROP
+# do not apply ACL enforcement for outbound connections of acl off devices/networks
+sudo iptables -w -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+sudo iptables -w -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
+sudo iptables -w -A FW_SEC_DROP -j DROP
+
+# WAN inbound drop chain
+sudo iptables -w -N FW_WAN_IN_DROP &>/dev/null
+sudo iptables -w -F FW_WAN_IN_DROP
+sudo iptables -w -A FW_WAN_IN_DROP -j DROP
+
 # add FW_ACCEPT to the end of FORWARD chain
 sudo iptables -w -N FW_ACCEPT &>/dev/null
 sudo iptables -w -F FW_ACCEPT
@@ -168,8 +193,57 @@ sudo iptables -w -F FW_VPN_CLIENT
 sudo iptables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
 sudo iptable -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
+# initialize firewall high priority chain
+sudo iptables -w -N FW_FIREWALL_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_HI
+sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_HI
+# 90 percent to bypass firewall if the packet belongs to a previously accepted flow
+sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
+# device high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_DEV_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_BLOCK_HI
+# device group high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_DEV_G_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_G_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_DEV_G_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_G_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_BLOCK_HI
+# network high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_NET_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_NET_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_BLOCK_HI
+# network group high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_NET_G_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_G_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_NET_G_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_G_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_BLOCK_HI
+# global high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_GLOBAL_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_GLOBAL_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_GLOBAL_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_GLOBAL_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_BLOCK_HI
+# security block ipset in global high priority chain
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set src -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set dst -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set src -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set dst -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set src -j FW_SEC_DROP
+sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set dst -j FW_SEC_DROP
 
-# initialize firewall chain
+# initialize firewall regular chain
 sudo iptables -w -N FW_FIREWALL &> /dev/null
 sudo iptables -w -F FW_FIREWALL
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
@@ -264,6 +338,16 @@ sudo iptables -w -t nat -N FW_POSTROUTING &> /dev/null
 
 sudo iptables -w -t nat -C POSTROUTING -j FW_POSTROUTING &>/dev/null || sudo iptables -w -t nat -A POSTROUTING -j FW_POSTROUTING
 
+# create POSTROUTING VPN chain
+sudo iptables -w -t nat -N FW_POSTROUTING_OPENVPN &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN
+sudo iptables -w -t nat -C FW_POSTROUTING -j FW_POSTROUTING_OPENVPN &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -j FW_POSTROUTING_OPENVPN
+
+# create POSTROUTING WIREGUARD chain
+sudo iptables -w -t nat -N FW_POSTROUTING_WIREGUARD &> /dev/null
+sudo iptables -w -t nat -F FW_POSTROUTING_WIREGUARD
+sudo iptables -w -t nat -C FW_POSTROUTING -j FW_POSTROUTING_WIREGUARD &> /dev/null || sudo iptables -w -t nat -A FW_POSTROUTING -j FW_POSTROUTING_WIREGUARD
+
 # nat POSTROUTING port forward hairpin chain
 sudo iptables -w -t nat -N FW_POSTROUTING_PORT_FORWARD &> /dev/null
 sudo iptables -w -t nat -F FW_POSTROUTING_PORT_FORWARD
@@ -334,95 +418,15 @@ sudo iptables -w -t nat -A FW_NAT_BYPASS -m set --match-set no_dns_caching_set s
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_VPN
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
+sudo iptables -w -t nat -N FW_PREROUTING_DNS_WG &> /dev/null
+sudo iptables -w -t nat -F FW_PREROUTING_DNS_WG
+sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_WG &> /dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_WG
 sudo iptables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
 sudo iptables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
 # traverse DNS fallback chain if default chain is not taken
 sudo iptables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
 
-# initialize nat firewall chain
-sudo iptables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
-sudo iptables -w -t nat -F FW_NAT_FIREWALL
-# sudo iptables -w -t nat -C FW_PREROUTING -j FW_NAT_FIREWALL &>/dev/null || sudo iptables -w -t nat -A FW_PREROUTING -j FW_NAT_FIREWALL
-# # device block/allow chains
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_DEV_ALLOW &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_DEV_ALLOW
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_DEV_ALLOW
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_DEV_BLOCK &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_DEV_BLOCK
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_DEV_BLOCK
-# # device group block/allow chains
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_DEV_G_ALLOW &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_DEV_G_ALLOW
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_DEV_G_ALLOW
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_DEV_G_BLOCK &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_DEV_G_BLOCK
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_DEV_G_BLOCK
-# # network block/allow chains
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_NET_ALLOW &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_NET_ALLOW
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_NET_ALLOW
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_NET_BLOCK &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_NET_BLOCK
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_NET_BLOCK
-# # network group block/allow chains
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_NET_G_ALLOW &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_NET_G_ALLOW
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_NET_G_ALLOW
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_NET_G_BLOCK &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_NET_G_BLOCK
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_NET_G_BLOCK
-# # global block/allow chains
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_GLOBAL_ALLOW &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_GLOBAL_ALLOW
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_GLOBAL_ALLOW
-# sudo iptables -w -t nat -N FW_NAT_FIREWALL_GLOBAL_BLOCK &> /dev/null
-# sudo iptables -w -t nat -F FW_NAT_FIREWALL_GLOBAL_BLOCK
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_GLOBAL_BLOCK
-
-# # bidirection
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set src -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set dst -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set src -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set dst -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set src -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set dst -j ACCEPT
-# # inbound
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_ip_set src -m conntrack --ctdir ORIGINAL -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_ip_set dst -m conntrack --ctdir REPLY -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_domain_set src -m conntrack --ctdir ORIGINAL -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_domain_set dst -m conntrack --ctdir REPLY -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_net_set src -m conntrack --ctdir ORIGINAL -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_net_set dst -m conntrack --ctdir REPLY -j ACCEPT
-# # outbound
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_ip_set src -m conntrack --ctdir REPLY -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_ip_set dst -m conntrack --ctdir ORIGINAL -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_domain_set src -m conntrack --ctdir REPLY -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_domain_set dst -m conntrack --ctdir ORIGINAL -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set src -m conntrack --ctdir REPLY -j ACCEPT
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set dst -m conntrack --ctdir ORIGINAL -j ACCEPT
-
-# # bidirection
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set src -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set dst -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set src -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -j FW_NAT_HOLE
-# # inbound
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set src -m conntrack --ctdir ORIGINAL -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set dst -m conntrack --ctdir REPLY -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set src -m conntrack --ctdir ORIGINAL -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set dst -m conntrack --ctdir REPLY -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set src -m conntrack --ctdir ORIGINAL -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set dst -m conntrack --ctdir REPLY -j FW_NAT_HOLE
-# # outbound
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set src -m conntrack --ctdir REPLY -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set dst -m conntrack --ctdir ORIGINAL -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set src -m conntrack --ctdir REPLY -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set dst -m conntrack --ctdir ORIGINAL -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set src -m conntrack --ctdir REPLY -j FW_NAT_HOLE
-# sudo iptables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set dst -m conntrack --ctdir ORIGINAL -j FW_NAT_HOLE
 
 if [[ -e /.dockerenv ]]; then
   sudo iptables -w -C OUTPUT -j FW_BLOCK &>/dev/null || sudo iptables -w -A OUTPUT -j FW_BLOCK
@@ -433,6 +437,9 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset create block_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create block_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create block_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
+  sudo ipset create sec_block_net_set6 hash:net family inet6 hashsize 4096 maxelem 65536 &>/dev/null
   # inbound
   sudo ipset create block_ib_ip_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
   sudo ipset create block_ib_domain_set6 hash:ip family inet6 hashsize 16384 maxelem 65536 &>/dev/null
@@ -457,9 +464,14 @@ if [[ -e /sbin/ip6tables ]]; then
 
   sudo ipset create monitored_ip_set6 hash:ip family inet6 hashsize 1024 maxelem 65536 &>/dev/null
 
+  sudo ipset create match_all_set6 hash:net family inet6 maxelem 16 &> /dev/null
+
   sudo ipset flush block_ip_set6
   sudo ipset flush block_domain_set6
   sudo ipset flush block_net_set6
+  sudo ipset flush sec_block_ip_set6
+  sudo ipset flush sec_block_domain_set6
+  sudo ipset flush sec_block_net_set6
   sudo ipset flush block_ib_ip_set6
   sudo ipset flush block_ib_domain_set6
   sudo ipset flush block_ib_net_set6
@@ -475,6 +487,10 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ipset flush allow_ob_ip_set6
   sudo ipset flush allow_ob_domain_set6
   sudo ipset flush allow_ob_net_set6
+
+  sudo ipset flush match_all_set6
+  sudo ipset add -! match_all_set6 ::/1
+  sudo ipset add -! match_all_set6 8000::/1
 
   sudo ipset flush monitored_ip_set6
 
@@ -508,6 +524,19 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
   sudo ip6tables -w -A FW_DROP -j DROP
 
+  sudo ip6tables -w -N FW_SEC_DROP &>/dev/null
+  sudo ip6tables -w -F FW_SEC_DROP
+  # do not apply ACL enforcement for outbound connections of acl off devices/networks
+  sudo ip6tables -w -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+  sudo ip6tables -w -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
+  sudo ip6tables -w -A FW_SEC_DROP -j DROP
+
+  # WAN inbound drop chain
+  sudo ip6tables -w -N FW_WAN_IN_DROP &>/dev/null
+  sudo ip6tables -w -F FW_WAN_IN_DROP
+  sudo ip6tables -w -A FW_WAN_IN_DROP -j DROP
+
   # add FW_ACCEPT to the end of FORWARD chain
   sudo ip6tables -w -N FW_ACCEPT &>/dev/null
   sudo ip6tables -w -F FW_ACCEPT
@@ -515,7 +544,57 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_ACCEPT -j ACCEPT
   sudo ip6tables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_ACCEPT
 
-  # initialize firewall chain
+  # initialize firewall high priority chain
+  sudo ip6tables -w -N FW_FIREWALL_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_HI
+  sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_HI
+  # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
+  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
+  # device high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_DEV_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_BLOCK_HI
+  # device group high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_DEV_G_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_G_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_DEV_G_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_G_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_BLOCK_HI
+  # network high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_NET_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_NET_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_BLOCK_HI
+  # network group high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_NET_G_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_G_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_NET_G_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_G_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_BLOCK_HI
+  # global high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_GLOBAL_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_GLOBAL_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_GLOBAL_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_GLOBAL_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_BLOCK_HI
+  # security block ipset in global high priority chain
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set6 src -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set6 dst -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set6 src -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set6 dst -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set6 src -j FW_SEC_DROP
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set6 dst -j FW_SEC_DROP
+
+  # initialize regular firewall chain
   sudo ip6tables -w -N FW_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
@@ -645,95 +724,15 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_VPN &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_VPN
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_VPN &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
+  sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_WG &> /dev/null
+  sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_WG
+  sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_WG &> /dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_WG
   sudo ip6tables -w -t nat -N FW_PREROUTING_DNS_DEFAULT &> /dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING_DNS_DEFAULT
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
   # traverse DNS fallback chain if default chain is not taken
   sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
 
-  # initialize nat firewall chain
-  sudo ip6tables -w -t nat -N FW_NAT_FIREWALL &> /dev/null
-  sudo ip6tables -w -t nat -F FW_NAT_FIREWALL
-  # sudo ip6tables -w -t nat -C FW_PREROUTING -j FW_NAT_FIREWALL &>/dev/null || sudo ip6tables -w -t nat -A FW_PREROUTING -j FW_NAT_FIREWALL
-  # # device block/allow chains
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_DEV_ALLOW &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_DEV_ALLOW
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_DEV_ALLOW
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_DEV_BLOCK &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_DEV_BLOCK
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_DEV_BLOCK
-  # # device group block/allow chains
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_DEV_G_ALLOW &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_DEV_G_ALLOW
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_DEV_G_ALLOW
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_DEV_G_BLOCK &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_DEV_G_BLOCK
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_DEV_G_BLOCK
-  # # network block/allow chains
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_NET_ALLOW &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_NET_ALLOW
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_NET_ALLOW
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_NET_BLOCK &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_NET_BLOCK
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_NET_BLOCK
-  # # network group block/allow chains
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_NET_G_ALLOW &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_NET_G_ALLOW
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_NET_G_ALLOW
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_NET_G_BLOCK &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_NET_G_BLOCK
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_NET_G_BLOCK
-  # # global block/allow chains
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_GLOBAL_ALLOW &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_GLOBAL_ALLOW
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_GLOBAL_ALLOW
-  # sudo ip6tables -w -t nat -N FW_NAT_FIREWALL_GLOBAL_BLOCK &> /dev/null
-  # sudo ip6tables -w -t nat -F FW_NAT_FIREWALL_GLOBAL_BLOCK
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL -j FW_NAT_FIREWALL_GLOBAL_BLOCK
-
-  # # bidirection
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set6 dst -j ACCEPT
-  # # inbound
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_ip_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_ip_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_domain_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_domain_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_net_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_net_set6 dst -j ACCEPT
-  # # outbound
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_ip_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_ip_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_domain_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_domain_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set6 dst -j ACCEPT
-
-  # # bidirection
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set6 dst -j ACCEPT
-  # # inbound
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set6 dst -j ACCEPT
-  # # outbound
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set6 dst -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set6 src -j ACCEPT
-  # sudo ip6tables -w -t nat -A FW_NAT_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set6 dst -j ACCEPT
 fi
 
 # redirect blue hole ip 80/443 port to localhost
@@ -750,6 +749,14 @@ sudo ipset create -! c_vpn_client_tag_m_set list:set skbinfo
 sudo ipset flush -! c_vpn_client_tag_m_set
 sudo ipset create -! c_vpn_client_m_set hash:mac skbinfo
 sudo ipset flush -! c_vpn_client_m_set
+
+sudo iptables -w -t mangle -N FW_OUTPUT &> /dev/null
+sudo iptables -w -t mangle -F FW_OUTPUT
+sudo iptables -w -t mangle -C OUTPUT -j FW_OUTPUT &>/dev/null && sudo iptables -w -t mangle -D OUTPUT -j FW_OUTPUT
+sudo iptables -w -t mangle -I OUTPUT -j FW_OUTPUT
+
+# restore fwmark for reply packets of inbound connections
+sudo iptables -w -t mangle -A FW_OUTPUT -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 
 # the sequence is important, higher priority rule is placed after lower priority rule
 sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
@@ -861,6 +868,14 @@ sudo iptables -w -t mangle -N FW_QOS_DEV &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_DEV
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV
 
+sudo ip6tables -w -t mangle -N FW_OUTPUT &> /dev/null
+sudo ip6tables -w -t mangle -F FW_OUTPUT
+sudo ip6tables -w -t mangle -C OUTPUT -j FW_OUTPUT &>/dev/null && sudo iptables -w -t mangle -D OUTPUT -j FW_OUTPUT
+sudo ip6tables -w -t mangle -I OUTPUT -j FW_OUTPUT
+
+# restore fwmark for reply packets of inbound connections
+sudo ip6tables -w -t mangle -A FW_OUTPUT -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+
 sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
 sudo ip6tables -w -t mangle -F FW_PREROUTING
 sudo ip6tables -w -t mangle -C PREROUTING -j FW_PREROUTING &>/dev/null && sudo ip6tables -w -t mangle -D PREROUTING -j FW_PREROUTING
@@ -969,6 +984,12 @@ sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV_G
 sudo ip6tables -w -t mangle -N FW_QOS_DEV &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_DEV
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV
+
+# destroy rule group chains
+sudo iptables -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -t mangle -F $CHAIN; sudo iptables -t mangle -X $CHAIN; done;
+sudo iptables -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -F $CHAIN; sudo iptables -X $CHAIN; done;
+sudo ip6tables -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -t mangle -F $CHAIN; sudo ip6tables -t mangle -X $CHAIN; done;
+sudo ip6tables -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -F $CHAIN; sudo ip6tables -X $CHAIN; done;
 
 # This will remove all customized ip sets that are not referred in iptables after initialization
 for set in `sudo ipset list -name | egrep "^c_"`; do

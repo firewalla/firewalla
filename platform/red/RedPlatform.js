@@ -105,6 +105,11 @@ class RedPlatform extends Platform {
   isBluetoothAvailable() {
     return false
   }
+
+  isEventsSupported() {
+    return false;
+  }
+
 }
 
 module.exports = RedPlatform;

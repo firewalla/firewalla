@@ -33,8 +33,8 @@ class Tracking {
       this.expireInterval = 3600 * 2; // two hours;
       this.bucketInterval = 5 * 60 * 1000; // every 5 mins
       this.maxBuckets = 288;
-      this.maxAggrBuckets = 576;
-      this.maxResultAggrBuckets = 2016; // 7 days
+      this.maxAggrBuckets = 288;
+      this.maxResultAggrBuckets = 576; // 2 days
       this.bucketCountPerAggr = 12;
       this.maxItemsInBucket = 100;
       this.resetOffset = 0; // local timezone, starting from 0 O'Clock
@@ -130,6 +130,7 @@ class Tracking {
   }
   
   async recordFlows(mac, flows) {
+    if (!f.isDevelopmentVersion()) return;
     for(const flow of flows) {
       const destIP = flowTool.getDestIP(flow);
       const intel = await intelTool.getIntel(destIP);
@@ -166,8 +167,8 @@ class Tracking {
       const key = this.getTrafficKey(mac, b);
       const x = await rclient.getAsync(key) || 0;
 
-      if(!f.isProduction()) {
-        await rclient.hset(aggrTrafficKey, b, x);
+      if(f.isDevelopmentVersion() && x != 0) { // no need to record if value is 0, to save memory usage
+        await rclient.hsetAsync(aggrTrafficKey, b, x);
       }
 
       if (x > 50 * 1000) { // hard code, 50k
@@ -181,8 +182,8 @@ class Tracking {
       const key = this.getDestinationKey(mac, b);
       const x = await rclient.scardAsync(key) || 0;
 
-      if(!f.isProduction()) {
-        await rclient.hset(aggrDestKey, b, x);
+      if(f.isDevelopmentVersion() && x != 0) { // no need to record if value is 0, to save memory usage
+        await rclient.hsetAsync(aggrDestKey, b, x);
       }
       
       if (x > 5) { // hard code, 5 conns
@@ -193,15 +194,16 @@ class Tracking {
     const aggrResultKey = this.getAggregateResultKey(mac);
     for(let b = buckets[0]; b <= buckets[1]; b++) {
       if (results[b]) {
-        await rclient.hset(aggrResultKey, b, 1);
+        await rclient.hsetAsync(aggrResultKey, b, 1);
       } else {
-        await rclient.hset(aggrResultKey, b, 0);
+        // no need to record if value is 0, to save memory usage
+        // await rclient.hsetAsync(aggrResultKey, b, 0);
       }
     }
   }
   
   async _cleanup(hashKey, expireBucketIndex) {
-    const keys = rclient.hkeysAsync(hashKey);
+    const keys = await rclient.hkeysAsync(hashKey);
     let count = 0;
     for(const key of keys) {
       if(key < expireBucketIndex) {
@@ -209,7 +211,7 @@ class Tracking {
         await rclient.hdelAsync(hashKey, key);
       }
     }
-    log.info("Cleaned up", count, "old aggr data for key", keys);
+    log.debug("Cleaned up", count, "old aggr data for key", keys);
   }
   
   async cleanup(mac) {
@@ -220,7 +222,7 @@ class Tracking {
     
     await this._cleanup(this.getAggregateTrafficKey(mac), buckets[0]);
     await this._cleanup(this.getAggregateDestinationCountKey(mac), buckets[0]);
-    await this._cleanup(this.getAggregateResultKey(mac), buckets[0] - 2016); // 2016 = 3600*24*7/5/60 => how many 5-min time slots in last 7 days, keep the result date for 7 more days       
+    await this._cleanup(this.getAggregateResultKey(mac), buckets[0] - 576); // 576 => two more days
   }
   
   async getDistribution(mac, time) {
@@ -236,6 +238,7 @@ class Tracking {
     
     const key = this.getAggregateResultKey(mac);
     const results = await rclient.hgetallAsync(key);
+    if (!results) return [];
     let distribution = [];
     
     for(let i = beginBucket; i < endBucket; i++) {      
@@ -256,6 +259,7 @@ class Tracking {
     
     const key = this.getAggregateResultKey(mac);
     const results = await rclient.hgetallAsync(key);
+    if (!results) return 0;
     let count = 0;
     for(let i = beginBucket; i < endBucket; i++) {
       if(results[i] === '1') {

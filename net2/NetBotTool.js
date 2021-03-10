@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,7 @@ const util = require('util');
 
 const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
+const ActivityAggrTool = require('../flow/ActivityAggrTool')
 
 const HostTool = require('./HostTool');
 const hostTool = new HostTool();
@@ -134,15 +135,17 @@ class NetBotTool {
 
     const key = dimension + 'Details'
 
+    const activityAggrTool = new ActivityAggrTool(dimension)
+
     let flows = null
     if (options.queryall && options.mac) {
       // need to support queryall too
-      let lastAppActivityKey = await flowAggrTool.getLastAppActivity(options.mac)
+      let lastAppActivityKey = await activityAggrTool.getLastActivity(options.mac)
       if (lastAppActivityKey) {
-        flows = await flowAggrTool.getCleanedAppActivityByKey(lastAppActivityKey)
+        flows = await activityAggrTool.getActivityByKey(lastAppActivityKey)
       }
     } else {
-      flows = await flowAggrTool.getCleanedAppActivity(begin, end, options)
+      flows = await activityAggrTool.getActivity(begin, end, options)
     }
     this._dedupActivityDuration(flows);
     if (flows) {
@@ -179,7 +182,7 @@ class NetBotTool {
       allMacs = hostManager.getIntfMacs(options.intf);
       log.info(`prepareDetailedFlows ${dimension} intf: ${options.intf}, ${allMacs}`);
     } else if (options.tag) {
-      allMacs = hostManager.getTagMacs(options.tag);
+      allMacs = await hostManager.getTagMacs(options.tag);
       log.info(`prepareDetailedFlows ${dimension} tag: ${options.tag}, ${allMacs}`);
     } else if (options.mac) {
       allMacs = [ options.mac ]

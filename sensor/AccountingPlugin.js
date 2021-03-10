@@ -26,6 +26,7 @@ const accounting = require('../extension/accounting/accounting.js');
 const fc = require('../net2/config.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const { generateStrictDateTs } = require('../util/util.js');
+const f = require('../net2/Firewalla.js');
 class AccountingPlugin extends Sensor {
   constructor() {
     super();
@@ -34,7 +35,7 @@ class AccountingPlugin extends Sensor {
   }
 
   async scheduledJob() {
-    if(!platform.isAccountingSupported() || !fc.isFeatureOn("accounting")) {
+    if(!platform.isAccountingSupported() || !fc.isFeatureOn("accounting") || !f.isDevelopmentVersion()) {
       log.info("Accounting feature is not supported or disabled.");
       return;
     }
@@ -68,6 +69,7 @@ class AccountingPlugin extends Sensor {
   }
 
   async cleanupJob() {
+    if (!f.isDevelopmentVersion()) return;
     log.info("Clean up data usage for all devices...");
 
     const macs = hostManager.getActiveMACs();

@@ -243,7 +243,6 @@ class InternalScanSensor extends Sensor {
     }
 
     if (weakPasswords.length > 0) {
-      log.info(ipAddr, serviceName, protocol, port, weakPasswords);
       let alarm = new Alarm.WeakPasswordAlarm(
         Date.now() / 1000,
         hostName,

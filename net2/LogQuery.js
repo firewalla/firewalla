@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,6 +17,7 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sysManager = require('./SysManager')
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
@@ -24,6 +25,7 @@ const intelTool = new IntelTool();
 const DestIPFoundHook = require('../hook/DestIPFoundHook');
 const destIPFoundHook = new DestIPFoundHook();
 
+const Constants = require('../net2/Constants.js');
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_LOG = 100;
 
@@ -43,7 +45,6 @@ class LogQuery {
   }
 
   // logs should already be sorted
-  // adds a minimal merge time span so logs 
   mergeLogs(logs, options) {
     if (options.no_merge) return logs
 
@@ -108,39 +109,48 @@ class LogQuery {
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+    let prevFeed, prevTS
 
     while (feed && this.validResultCount(feed.options, results) < options.count) {
+
+      prevFeed = feed
+      prevTS = feed.options.ts
 
       const logs = await feed.query(feed.options)
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
+
+        // a more complicated and faster ordered merging without accessing elements via index.
+        // result should be the same as
+        // Array.prototype.push.apply(results, logs)
+        // results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
+        const merged = []
+        let a = logs.shift();
+        let b = results.shift();
+        while (a || b) {
+          if (a && (!b || options.asc ^ a.ts > b.ts)) {
+            merged.push(a)
+            a = logs.shift()
+          } else {
+            merged.push(b)
+            b = results.shift()
+          }
+        }
+        results = merged
+
+        // leaving merging for front-end
+        // results = this.mergeLogs(results, options);
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
-        log.debug('Removing feed', feed.mac || feed.intf || feed.tag || feed.macs )
+        log.debug('Removing feed', feed.query.name, JSON.stringify(feed.options))
       }
 
-      // // merge logs and results with order
-      // const merged = []
-      // let i = 0, j = 0;
-      // while (i < logs.length && j < results.length) {
-      //   if (options.asc ^ (logs[i] > results[j])) {
-      //     merged.push(logs[i ++])
-      //   } else {
-      //     merged.push(results[j ++])
-      //   }
-      // }
-      // while (i < logs.length) merged.push(logs[i ++])
-      // while (j < results.length) merged.push(results[j ++])
-
-      // results = merged
-
-      while (logs.length) results.push(logs.shift());
-
-      results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
-      // results = this.mergeLogs(results, options);
-
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+      if (feed == prevFeed && feed.options.ts == prevTS) {
+        log.error("Looping!!", feed.query.name, feed.options)
+        break
+    }
     }
 
     return results
@@ -151,7 +161,9 @@ class LogQuery {
     if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
     if (!options.asc) options.asc = false;
     if (!options.ts) {
-      options.ts = (options.asc ? options.begin : options.end) || new Date() / 1000;
+      options.ts = options.asc ?
+        options.begin || new Date() / 1000 - MAX_RECENT_INTERVAL :
+        options.end || new Date() / 1000
     }
     if (!options.ets) {
       options.ets = options.asc ?
@@ -162,12 +174,14 @@ class LogQuery {
     return options
   }
 
+
+
   // get logs across different devices
   async getAllLogs(options) {
 
     options = this.checkArguments(options)
 
-    log.debug(this.constructor.name, 'getAllLogs', options)
+    log.debug('----====', this.constructor.name, 'getAllLogs', JSON.stringify(options))
 
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
@@ -184,9 +198,11 @@ class LogQuery {
         allMacs = options.macs;
       }
     } else if (options.tag) {
-      allMacs = hostManager.getTagMacs(options.tag);
+      allMacs = await hostManager.getTagMacs(options.tag);
     } else {
       allMacs = hostManager.getActiveMACs();
+      if (this.includeFirewallaInterfaces())
+        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
       if (_.isArray(options.macs))
         allMacs = _.uniq(allMacs.concat(options.macs));
     }
@@ -196,8 +212,9 @@ class LogQuery {
     const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
 
     // query less each time to improve perf
-    // options = Object.assign({count: Math.round(options.count * 2 / feeds.length)}, options)
+    options = Object.assign({count: _.min(Math.round(options.count * 2 / feeds.length), options.count)}, options)
 
+    delete options.macs // for a cleaner debug log
     const allLogs = await this.logFeeder(options, feeds)
 
     const enriched = await this.enrichWithIntel(allLogs);
@@ -208,6 +225,7 @@ class LogQuery {
 
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {
+      if (!f.ip) return f
       // get intel from redis. if failed, create a new one
       const intel = await intelTool.getIntel(f.ip);
 
@@ -239,10 +257,11 @@ class LogQuery {
 
   async getDeviceLogs(options) {
     options = this.checkArguments(options)
+
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 
-    log.debug(this.constructor.name, 'getDeviceLogs', options)
+    log.debug(this.constructor.name, 'getDeviceLogs', JSON.stringify(options))
 
     const key = this.getLogKey(target, options);
 

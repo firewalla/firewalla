@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,7 +36,6 @@ const dc = require('../extension/dnscrypt/dnscrypt');
 
 const sysManager = require("../net2/SysManager.js")
 
-const sem = require('../sensor/SensorEventManager.js').getInstance()
 const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
@@ -49,14 +48,14 @@ const _ = require('lodash');
 class DomainBlock {
 
   constructor() {
-    
+
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
   async blockDomain(domain, options) {
     options = options || {}
     domain = domain && domain.toLowerCase();
-    log.info(`Implementing Block on ${domain}`);
+    log.debug(`Implementing Block on ${domain}`);
 
     await this.syncDomainIPMapping(domain, options)
     domainUpdater.registerUpdate(domain, options);
@@ -169,7 +168,7 @@ class DomainBlock {
       if (!this.setUpServers) {
         try {
           resolver.setServers([server]);
-          this.setUpServers = true; 
+          this.setUpServers = true;
         } catch (err) {
           log.warn('set resolver servers error', err);
         }
@@ -198,22 +197,25 @@ class DomainBlock {
 
     const key = domainIPTool.getDomainIPMappingKey(domain, options)
 
-    await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
-
     let list = []
 
-    // load other addresses from rdns, critical to apply instant blocking
-    const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
-    list.push.apply(list, addresses)  // concat arrays
+    // *. wildcard will exclude the suffix itself
+    if (!domain.startsWith("*.")) {
+      await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
+      // load other addresses from rdns, critical to apply instant blocking
+      const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
+      list.push.apply(list, addresses)  // concat arrays
+    }
 
-    if (!options.exactMatch) {
-      const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
+    if (!options.exactMatch || domain.startsWith("*.")) {
+      const suffix = domain.startsWith("*.") ? domain.substring(2) : domain;
+      const patternAddresses = await dnsTool.getIPsByDomainPattern(suffix).catch((err) => []);
       list.push.apply(list, patternAddresses)
     }
 
     if (list.length === 0)
       return;
-      
+
     return rclient.saddAsync(key, list)
   }
 
@@ -232,18 +234,20 @@ class DomainBlock {
       return
     }
 
-    await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
-
     let set = {}
 
-    // load other addresses from rdns, critical to apply instant blocking
-    const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
-    addresses.forEach((addr) => {
-      set[addr] = 1
-    })
+    if (!domain.startsWith("*.")) {
+      await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
+      // load other addresses from rdns, critical to apply instant blocking
+      const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
+      addresses.forEach((addr) => {
+        set[addr] = 1
+      })
+    }
 
-    if (!options.exactMatch) {
-      const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
+    if (!options.exactMatch || domain.startsWith("*.")) {
+      const suffix = domain.startsWith("*.") ? domain.substring(2) : domain;
+      const patternAddresses = await dnsTool.getIPsByDomainPattern(suffix).catch((err) => []);
       patternAddresses.forEach((addr) => {
         set[addr] = 1
       })
@@ -286,14 +290,15 @@ class DomainBlock {
   async updateCategoryBlock(category) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
-    const PM2 = require('../alarm/PolicyManager2.js');	
-    const pm2 = new PM2();	
-    const policies = await pm2.loadActivePoliciesAsync();	
-    for (const policy of policies) {	
-      if (policy.type == "category" && policy.target == category) {	
-        dnsmasq.scheduleRestartDNSService();
+    const PM2 = require('../alarm/PolicyManager2.js');
+    const pm2 = new PM2();
+    const policies = await pm2.loadActivePoliciesAsync();
+    for (const policy of policies) {
+      if (policy.type == "category" && policy.target == category) {
+        if (!dnsmasq.isRedisHashMatchUsed())
+          dnsmasq.scheduleRestartDNSService();
         return;
-      }	
+      }
     }
   }
 
@@ -306,27 +311,28 @@ class DomainBlock {
     const defaultDomainsOnly = await categoryUpdater.getDefaultDomainsOnly(category);
     const hashedDomains = await categoryUpdater.getDefaultHashedDomains(category);
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
-    const finalDomains = domains.filter((de) => {
-      return !defaultDomains.includes(de.domain)
-    }).map((de) => { return de.domain }).concat(defaultDomains).filter((domain)=>{
-      return !excludedDomains.includes(domain)
-    }).concat(includedDomains).concat(defaultDomainsOnly).concat(hashedDomains);
+    const superSetDomains = domains.map(de => de.domain)
+      .concat(defaultDomains, includedDomains, defaultDomainsOnly)
 
-    function dedupAndPattern(arr) {
-      const pattern = arr.filter((domain) => {
-        return domain.startsWith("*.")
-      }).map((domain) => domain.substring(2))
-      return Array.from(new Set(arr.filter((domain) => {
-        if (!domain.startsWith("*.") && pattern.includes(domain)) {
-          return false;
-        } else if (domain.startsWith("*.")) {
-          return false;
-        } else {
-          return true;
-        }
-      }).concat(pattern)))
+    const splitedNames = superSetDomains.map(d => {
+      const splited = d.split('.')
+      if (splited[0] == '*') splited.shift()
+      return splited.reverse()
+    }).sort()
+
+    // O(n) domain dedup, assuming exclude list is much smaller than super set
+    const resultDomains = []
+    let i = 0
+    while (i < splitedNames.length) {
+      const base = splitedNames[i]
+      let j = i + 1
+      while ( j < splitedNames.length && _.isEqual(splitedNames[j].slice(0, base.length), base) ) j++
+      const original = base.reverse().join('.')
+      if (!excludedDomains.some(d => original.endsWith(d))) resultDomains.push(original)
+      i = j
     }
-    return dedupAndPattern(finalDomains)
+
+    return resultDomains.concat(hashedDomains)
   }
 
   patternDomain(domain) {

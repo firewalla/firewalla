@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -304,7 +304,6 @@ module.exports = class {
       this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
 
       this.enableRecording = true
-      this.cc = 0
       this.activeMac = {};
 
       setInterval(() => {
@@ -348,7 +347,8 @@ module.exports = class {
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `Device network activity heartbeat ${host.ipv4Addr || host.ipv6Addr} ${host.mac}`,
-          host: host
+          host,
+          suppressEventLogging: true
         });
       }
     }
@@ -551,31 +551,30 @@ module.exports = class {
         }
       }
       if (fc.isFeatureOn("acl_audit")) {
-        // detect DNS level block (NXDOMAIN) in dns log
         if (
-          obj["rcode_name"] === "NXDOMAIN" &&
-          (obj["qtype_name"] === "A" || obj["qtype_name"] === "AAAA") &&
-          obj["id.resp_p"] == 53 &&
-          obj["id.orig_h"] != null &&
-          _.isString(obj["query"]) &&
-          obj["query"].length > 0 &&
-          !sysManager.isMyIP(obj["id.orig_h"]) &&
-          !sysManager.isMyIP6(obj["id.orig_h"])
-        ) {
-          const record = {
-            ts: Math.round(obj.ts * 1000) / 1000,
-            // rtt (round trip time) is usually very short here, ignore it
-            sh: obj["id.orig_h"],   // source host
-            dh: obj["id.resp_h"],   // destination host
-            dn: obj["query"],       // domain name
-            qt: obj["qtype_name"]
-          };
-          sem.emitEvent({
-            type: Message.MSG_ACL_DNS_NXDOMAIN,
-            record: record,
-            suppressEventLogging: true
-          });
-        }
+          !obj["id.orig_h"] ||
+          sysManager.isMyIP(obj["id.orig_h"], false) ||
+          sysManager.isMyIP6(obj["id.orig_h"], false) ||
+          !_.isString(obj["query"]) || !obj["query"].length
+        ) return
+
+        const record = {
+          ts: Math.round(obj.ts * 1000) / 1000,
+          // rtt (round trip time) is usually very short here, ignore it
+          sh: obj["id.orig_h"],   // source host
+          dh: obj["id.resp_h"],   // destination host
+          dp: obj["id.resp_p"],   // destination port
+          dn: obj["query"],       // domain name
+          qc: obj["qclass"],      // resource record (RR) class
+          qt: obj["qtype"],       // resource record (RR) type
+          rc: obj["rcode"],       // RCODE
+        };
+        if (obj.answers) record.ans = obj.answers
+        sem.emitEvent({
+          type: Message.MSG_ACL_DNS,
+          record,
+          suppressEventLogging: true
+        });
       }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
@@ -1187,29 +1186,18 @@ module.exports = class {
           this.activeMac[localMac] = macIPEntry;
         }
 
-        if (tmpspec.fd == 'in') {
-          // use now instead of the start time of this flow
-          this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, localMac);
-          if (intfId) {
-            this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'intf:' + intfId, true);
-          }
-          if (tags.length > 0) {
-            for (let index = 0; index < tags.length; index++) {
-              const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.rb, tmpspec.ob, 'tag:' + tag, true);
-            }
-          }
-        } else {
-          this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, localMac);
-          if (intfId) {
-            this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'intf' + intfId, true);
-          }
-          if (tags.length > 0) {
-            for (let index = 0; index < tags.length; index++) {
-              const tag = tags[index];
-              this.recordTraffic(new Date() / 1000, tmpspec.ob, tmpspec.rb, 'tag:' + tag, true);
-            }
-          }
+        const traffic = [ tmpspec.ob, tmpspec.rb ]
+        if (tmpspec.fd == 'in') traffic.reverse()
+
+        // use now instead of the start time of this flow
+        if (localMac) {
+          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+        }
+        if (intfId) {
+          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+        }
+        for (const tag of tags) {
+          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
         }
 
         if (localMac) {
@@ -1304,7 +1292,7 @@ module.exports = class {
           log.info("Conn:Save:Summary", sstart, send, this.flowstashExpires);
           for (let key in stashed) {
             let stash = stashed[key];
-            log.info("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
+            log.debug("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
 
             let transaction = [];
             transaction.push(['zremrangebyscore', key, sstart, send]);
@@ -1315,7 +1303,7 @@ module.exports = class {
 
             try {
               await rclient.multi(transaction).execAsync();
-              log.info("Conn:Save:Removed", key);
+              log.debug("Conn:Save:Removed", key);
             } catch (err) {
               log.error("Conn:Save:Error", err);
             }
@@ -1371,6 +1359,10 @@ module.exports = class {
     if (obj["san.ip"] && obj["san.ip"].constructor === Array) {
       obj["san.ip"] = JSON.stringify(obj["san.ip"]);
     }
+
+    if (obj["san.email"] && obj["san.email"].constructor === Array) {
+      obj["san.email"] = JSON.stringify(obj["san.email"]);
+    }
   }
 
   /*
@@ -1390,6 +1382,9 @@ module.exports = class {
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
         return;
+      if (obj['server_name']) {
+        obj['server_name'] = obj['server_name'].toLocaleLowerCase();
+      }
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
       let key = "host:ext.x509:" + dst;
@@ -1632,14 +1627,7 @@ module.exports = class {
     this.callbacks[something] = callback;
   }
 
-  enableRecordHitsTimer() {
-    setInterval(() => {
-      timeSeries.exec(() => { })
-      this.cc = 0
-    }, 1 * 60 * 1000) // every minute to record the left-over items if no new flows
-  }
-
-  recordTraffic(ts, inBytes, outBytes, mac, ignoreGlobal = false) {
+  recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
 
@@ -1651,35 +1639,39 @@ module.exports = class {
 
         this.lastNTS = normalizedTS
         this.fullLastNTS = Math.floor(ts)
-        this.timeSeriesCache = { global: { upload: 0, download: 0 } }
+        this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
 
         for (const key in toRecord) {
           const subKey = key == 'global' ? '' : ':' + key
-          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload)
+          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload, toRecord[key].conn)
           timeSeries
             .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
             .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
+            .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
         }
         timeSeries.exec()
       }
 
       // append current status
       if (!ignoreGlobal) {
-        // for traffic account
-        (async () => {
-          await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
-          await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
-        })()
+        // // for traffic account
+        // (async () => {
+        //   await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
+        //   await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+        //   await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
+        // })()
 
         this.timeSeriesCache.global.download += Number(inBytes)
         this.timeSeriesCache.global.upload += Number(outBytes)
+        this.timeSeriesCache.global.conn += Number(conn)
       }
 
       if (!this.timeSeriesCache[mac]) {
-        this.timeSeriesCache[mac] = { upload: 0, download: 0 }
+        this.timeSeriesCache[mac] = { upload: 0, download: 0, conn: 0 }
       }
       this.timeSeriesCache[mac].download += Number(inBytes)
       this.timeSeriesCache[mac].upload += Number(outBytes)
+      this.timeSeriesCache[mac].conn += Number(conn)
     }
   }
 

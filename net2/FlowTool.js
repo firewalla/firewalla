@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,7 +27,6 @@ const intelTool = new IntelTool();
 
 const auditTool = require('./AuditTool')
 
-const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_FLOW = 100;
 
 const _ = require('lodash');
@@ -70,6 +69,8 @@ class FlowTool extends LogQuery {
     const compareKeys = ['device', 'ip', 'fd', 'port', 'protocol'];
     return _.isEqual(_.pick(targetFlow, compareKeys), _.pick(flow, compareKeys));
   }
+
+  includeFirewallaInterfaces() { return false }
 
   isLogValid(flow) {
     if (!super.isLogValid(flow)) return false
@@ -120,8 +121,13 @@ class FlowTool extends LogQuery {
       feeds.push({ query: this.getAllLogs.bind(this), options: {direction: 'out'} })
     }
     if (options.audit) {
-      feeds.push({ query: auditTool.getAllLogs.bind(auditTool) })
+      feeds.push({ query: auditTool.getAllLogs.bind(auditTool), options: {block: true} })
     }
+    if (options.auditDNSSuccess) {
+      feeds.push({ query: auditTool.getAllLogs.bind(auditTool), options: {block: false} })
+    }
+    delete options.audit
+    delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
 
     recentFlows = recentFlows.slice(0, options.count);
@@ -132,7 +138,9 @@ class FlowTool extends LogQuery {
 
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFormat(flow) {
-    let f = {};
+    let f = {
+      ltype: 'flow'
+    };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
     f.duration = flow.du

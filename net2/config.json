@@ -36,7 +36,8 @@
     "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
-    "notification.box_online.cooldown": 900
+    "notification.box_online.cooldown": 900,
+    "notification.box_offline.threshold": 900
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -85,9 +86,11 @@
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
-    "WireGuardPlugin": {},
     "EventSensor":{},
-    "NetworkMonitorSensor":{}
+    "NetworkMonitorSensor":{},
+    "LiveStatsPlugin": {},
+    "AdblockPlugin": {},
+    "WireGuardPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -408,6 +411,11 @@
         "ping": {
             "sampleCount": 20,
             "sampleInterval": 300,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 600,
+            "alarmDelayLossrate": 60,
+            "lossrateLimit": 0.5,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -417,6 +425,11 @@
             "lookupName": "check.firewalla.com",
             "sampleCount": 5,
             "sampleInterval": 180,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 360,
+            "alarmDelayLossrate": 30,
+            "lossrateLimit": 0.5,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -425,6 +438,11 @@
         "http": {
             "sampleCount": 5,
             "sampleInterval": 180,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 360,
+            "alarmDelayLossrate": 30,
+            "lossrateLimit": 0.5,
+            "tValue": 2.576,
             "processInterval": 3600,
             "expirePeriod": 86400
         }
@@ -491,8 +509,12 @@
         "expires": 86400,
         "count": 10000
       },
-      "audit": {
+      "auditDrop": {
         "expires": 86400,
+        "count": 10000
+      },
+      "auditAccept": {
+        "expires": 3600,
         "count": 10000
       },
       "ssh": {
@@ -577,20 +599,37 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "ClashPlugin": {},
-    "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "LogScanSensor": {
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
     "ACLAuditLogPlugin": {
+      "buffer": 2,
       "interval": 300,
       "expires": 86400
     },
+    "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
     "DockerSensor": {},
-    "EventSensor": {}
+    "EventSensor": {
+      "eventsLimit" : 10000,
+      "eventsExpire" : 604800,
+      "latestStateEventsExpire" : 2592000,
+      "intervals" : {
+        "cleanEventsByTime" : 3600,
+        "cleanEventsByCount" : 300,
+        "pingGateway" : 300,
+        "digDNS" : 300,
+        "disk_space.sh" : 300,
+        "ethernet_state.sh" : 60,
+        "service_status.sh" : -1,
+        "speed_test.sh" : -1,
+        "system_load.sh" : 300,
+        "default" : 3600
+      }
+    }
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -611,6 +650,7 @@
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
         "Weird::Activity": "ignore",
+        "HTTP::SQL_Injection_Victim":"ignore",
         "HTTP::SQL_Injection_Attacker": "ignore"
       },
       "path": "/blog/current/notice.log",
@@ -750,7 +790,7 @@
     "clash": false,
     "single_wan_conn_check": false,
     "accounting": true,
-    "event_schedule": true,
+    "event_collect": true,
     "network_metrics": true,
     "network_monitor": true
   },
@@ -766,5 +806,6 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
-  }
+  },
+  "pairedDeviceMaxHistory": 100
 }

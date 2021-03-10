@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -82,8 +82,9 @@ class PortForward {
             if (!this._started)
               return;
             try {
-              if (this._wanIPs && (sysManager.myWanIps().length !== this._wanIPs.length || sysManager.myWanIps().some(i => !this._wanIPs.includes(i)))) {
-                this._wanIPs = sysManager.myWanIps();
+              const myWanIps = sysManager.myWanIps().v4
+              if (this._wanIPs && (myWanIps.length !== this._wanIPs.length || myWanIps.some(i => !this._wanIPs.includes(i)))) {
+                this._wanIPs = myWanIps;
                 await this.updateExtIPChain(this._wanIPs);
               }
               await this.loadConfig();
@@ -187,13 +188,13 @@ class PortForward {
         return;
     }
     let string = JSON.stringify(this.config)
-    log.info("PortForwarder:Saving:",string);
+    log.debug("PortForwarder:Saving:",string);
     return rclient.setAsync(configKey, string)
   }
 
   async loadConfig() {
     let json = await rclient.getAsync(configKey)
-    log.info("PortForwarder:Config:", json);
+    log.debug("PortForwarder:Config:", json);
     if (json) {
       try {
         let config = JSON.parse(json)
@@ -296,7 +297,6 @@ class PortForward {
       if (this.config && this.config.maps) {
         for (let i in this.config.maps) {
           let map = this.config.maps[i];
-          log.info("Restoring Map: ", map);
           await this.addPort(map, true)
         }
       }
@@ -305,7 +305,7 @@ class PortForward {
 
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
-    this._wanIPs = sysManager.myWanIps();
+    this._wanIPs = sysManager.myWanIps().v4;
     await this.updateExtIPChain(this._wanIPs);
     await this.loadConfig()
     await this.restore()

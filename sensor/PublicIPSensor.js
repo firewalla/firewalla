@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,7 +25,7 @@ const sysManager = require('../net2/SysManager.js');
 
 const exec = require('child-process-promise').exec;
 
-const rp = require('request-promise');
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
 const command = "dig +short myip.opendns.com @resolver1.opendns.com";
 const redisKey = "sys:network:info";
@@ -51,12 +51,12 @@ class PublicIPSensor extends Sensor {
       if(publicIP === "") {
         if(this.publicIPAPI) {
           try {
-            const result = await rp({
+            const result = await rrWithErrHandling({
               uri: this.publicIPAPI,
               json: true
             });
-            if(result && result.ip) {
-              publicIP = result.ip;
+            if(result.body && result.body.ip) {
+              publicIP = result.body.ip;
               log.info(`Found public IP from ${this.publicIPAPI} is ${publicIP}`);
             }
           } catch(err) {
@@ -66,9 +66,17 @@ class PublicIPSensor extends Sensor {
         }
       }
 
-      const publicWanIps = sysManager.myPublicWanIps().sort();
+      // TODO: support v6
+      const publicWanIps = sysManager.filterPublicIp4(sysManager.myWanIps(true).v4).sort();
       const existingPublicWanIpsJSON = await rclient.hgetAsync(redisKey, publicWanIPsHashKey);
       const existingPublicWanIps = ((existingPublicWanIpsJSON && JSON.parse(existingPublicWanIpsJSON)) || []).sort();
+
+      // connected public WAN IP overrides public IP from http request, this is mainly used in load-balance mode
+      if (publicWanIps.length > 0) {
+        if (!publicIP  || !publicWanIps.includes(publicIP)) {
+          publicIP = publicWanIps[0];
+        }
+      }
 
       let existingPublicIPJSON = await rclient.hgetAsync(redisKey, redisHashKey);
       let existingPublicIP = JSON.parse(existingPublicIPJSON);

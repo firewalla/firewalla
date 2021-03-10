@@ -82,7 +82,7 @@ class DeviceServiceScanSensor extends Sensor {
           case "Tag": {
             const tagUid = host.o && host.o.uid;
             if (tagUid) {
-              const allMacs = hostManager.getTagMacs(tagUid);
+              const allMacs = await hostManager.getTagMacs(tagUid);
               allMacs.map((mac) => {
                 !this.scanSettings[mac] && (this.scanSettings[mac] = {})
                 this.scanSettings[mac].tagPolicy = policy;
@@ -162,7 +162,10 @@ class DeviceServiceScanSensor extends Sensor {
         log.info("Scanning device: ", host.o.ipv4Addr);
         const scanResult = await this._scan(host.o.ipv4Addr);
         if (scanResult) {
-          await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
+          const hostKeyExists = await rclient.existsAsync(`host:mac:${host.o.mac}`);
+          // in case host entry is deleted when the scan is in progress
+          if (hostKeyExists == 1)
+            await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
         }
       }
     } catch (err) {

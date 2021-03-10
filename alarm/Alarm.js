@@ -527,22 +527,18 @@ class BroNoticeAlarm extends Alarm {
   localizedNotificationContentKey() {
     if (this["p.noticeType"]) {
       let key = `notif.content.${this.type}.${this["p.noticeType"]}`;
-      if (this["p.noticeType"] == "Scan::Port_Scan") {
-        if (this["p.dest.name"] != this["p.dest.ip"]) {
-          if (this["p.local_is_client"] != "1") {
-            key += ".inbound.internal";
-          } else {
-            key += ".outbound.internal";
-          }
+      if (this["p.local_is_client"] != undefined) {
+        if (this["p.local_is_client"] != "1") {
+          key += ".inbound";
         } else {
-          if (this["p.local_is_client"] != "1") {
-            key += ".inbound";
-          } else {
-            key += ".outbound";
-          }
+          key += ".outbound";
         }
       }
-
+      if (this["p.noticeType"] == "Scan::Port_Scan") {
+        if (this["p.dest.name"] != this["p.dest.ip"]) {
+          key += ".internal";
+        }
+      }
       return key;
     } else {
       return super.localizedNotificationContentKey();
@@ -664,7 +660,7 @@ class IntelAlarm extends Alarm {
     // device url
     return [this["p.device.name"],
     this.getReadableDestination(),
-    this["p.security.primaryReason"],
+    this["p.security.primaryReason"] || "malicious",
     this["p.device.port"],
     this["p.device.url"]];
   }
@@ -1145,6 +1141,50 @@ class ScreenTimeAlarm extends Alarm {
   }
 }
 
+class NetworkMonitorRTTAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_NETWORK_MONITOR_RTT", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ['p.monitorType','p.target'];
+  }
+
+  requiredKeys(){
+    return this.keysToCompareForDedup()
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.monitorType"],
+    this["p.target"],
+    this["p.rtt"],
+    this["p.rttLimit"]
+    ];
+  }
+}
+
+class NetworkMonitorLossrateAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_NETWORK_MONITOR_LOSSRATE", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ['p.monitorType','p.target'];
+  }
+
+  requiredKeys(){
+    return this.keysToCompareForDedup()
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.monitorType"],
+    this["p.target"],
+    this["p.lossrateLimit"],
+    this["p.lossrate"]
+    ];
+  }
+}
+
 const classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
@@ -1169,7 +1209,9 @@ const classMapping = {
   ALARM_OPENPORT: OpenPortAlarm.prototype,
   ALARM_UPNP: UpnpAlarm.prototype,
   ALARM_DUAL_WAN: DualWanAlarm.prototype,
-  ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype
+  ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
+  ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
+  ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype
 }
 
 module.exports = {
@@ -1199,5 +1241,7 @@ module.exports = {
   UpnpAlarm,
   DualWanAlarm,
   ScreenTimeAlarm,
+  NetworkMonitorRTTAlarm,
+  NetworkMonitorLossrateAlarm,
   mapping: classMapping
 }
