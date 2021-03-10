@@ -1,5 +1,8 @@
 #!/bin/bash
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
 # if the box is in dhcp mode, we want to keep MASQUERADE rule alive as much as possible
 # or user's internet connection will go dead
 # DNAT rules are free to flush as they won't block internet
@@ -13,7 +16,7 @@ fi
 # Same situation applies to VPN connection
 mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | grep SNAT )
 
-if [[ $(uname -m) == "x86_64" ]]; then
+if [[ "$MANAGED_BY_FIREROUTER" == "yes" ]]; then
   sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
   sudo iptables -w -t mangle -F FW_PREROUTING
   sudo iptables -w -t mangle -N FW_FORWARD &> /dev/null
@@ -63,10 +66,6 @@ for RULE in "${VPN_RULES[@]}";
 do
   sudo iptables -w -t nat $RULE
 done
-
-: ${FIREWALLA_HOME:=/home/pi/firewalla}
-
-source ${FIREWALLA_HOME}/platform/platform.sh
 
 # no need to handle SNAT if it is managed by firerouter
 if [ "$MODE" = "dhcp" ] && [ "$MANAGED_BY_FIREROUTER" != "yes" ];
