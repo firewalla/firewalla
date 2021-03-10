@@ -7,7 +7,7 @@ MODE=$(redis-cli get mode)
 if [ "$MODE" = "dhcp" ]
 then
   # reading filtered rules into an array https://www.computerhope.com/unix/bash/mapfile.htm
-  mapfile -t DHCP_RULES < <( sudo iptables -w -t nat -S | grep MASQUERADE )
+  mapfile -t DHCP_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | grep MASQUERADE )
 fi
 
 # Same situation applies to VPN connection
@@ -64,7 +64,12 @@ do
   sudo iptables -w -t nat $RULE
 done
 
-if [ "$MODE" = "dhcp" ]
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+# no need to handle SNAT if it is managed by firerouter
+if [ "$MODE" = "dhcp" ] && [ "$MANAGED_BY_FIREROUTER" != "yes" ];
 then
   for RULE in "${DHCP_RULES[@]}";
   do 
