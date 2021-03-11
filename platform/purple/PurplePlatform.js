@@ -33,7 +33,7 @@ class PurplePlatform extends Platform {
   }
 
   getLicenseTypes() {
-    return ["a3"];
+    return ["c1"];
   }
 
   getBoardSerial() {
