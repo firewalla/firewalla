@@ -19,6 +19,7 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
+const ipset = require('../../net2/Ipset.js');
 
 const fs = require('fs');
 const util = require('util');
@@ -34,6 +35,19 @@ class PurplePlatform extends Platform {
 
   getLicenseTypes() {
     return ["a3"];
+  }
+
+  getAllNicNames() {
+    // there are two NICs on purple
+    return ["eth0", "eth1"];
+  }
+
+  getDNSServiceName() {
+    return "firerouter_dns";
+  }
+
+  getDHCPServiceName() {
+    return "firerouter_dhcp";
   }
 
   getBoardSerial() {
@@ -59,7 +73,7 @@ class PurplePlatform extends Platform {
 
   getLedPaths() {
     return [
-      "/sys/devices/platform/gpio-leds/leds/status_led"
+      
     ];
   }
 
@@ -77,13 +91,19 @@ class PurplePlatform extends Platform {
   }
 
   async switchQoS(state, qdisc) {
-    if (state == true) {
-      await exec(`sudo tc qdisc replace dev eth0 root ${qdisc}`).catch((err) => {
-        log.error(`Failed to replace qdisc on eth0 with ${qdisc}`, err.message);
+    if (state == false) {
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     } else {
-      await exec(`sudo tc qdisc del dev eth0 root`).catch((err) => {
-        log.error(`Failed to remove qdisc on eth0`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     }
   }
@@ -134,7 +154,7 @@ class PurplePlatform extends Platform {
   }
 
   isFireRouterManaged() {
-    return false;
+    return true;
   }
   getAllowCustomizedProfiles(){
     return 1;
@@ -147,8 +167,16 @@ class PurplePlatform extends Platform {
     }
   }
 
-  defaultPassword() {
-    return "firewalla"
+  isBonjourBroadcastEnabled() {
+    return false;
+  }
+
+  isOverlayNetworkAvailable() {
+    return false;
+  }
+
+  isIFBSupported() {
+    return true;
   }
 
   getRetentionTimeMultiplier() {
@@ -157,13 +185,6 @@ class PurplePlatform extends Platform {
 
   getRetentionCountMultiplier() {
     return 1;
-  }
-
-  async onWanIPChanged(ip) {
-    await super.onWanIPChanged(ip)
-
-    // to refresh VPN filter in zeek
-    await exec("sudo systemctl restart brofish");
   }
 
   isAccountingSupported() {
