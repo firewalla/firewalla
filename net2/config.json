@@ -90,7 +90,8 @@
     "NetworkMonitorSensor":{},
     "LiveStatsPlugin": {},
     "AdblockPlugin": {},
-    "WireGuardPlugin": {}
+    "WireGuardPlugin": {},
+    "InternalScanSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -599,7 +600,6 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "ClashPlugin": {},
-    "InternalScanSensor": {},
     "LogScanSensor": {
       "fireResetBluetooth": true,
       "bonelogInterval": 900
@@ -783,7 +783,7 @@
     "adblock": false,
     "family_protect": false,
     "smart_block": false,
-    "internal_scan": false,
+    "internal_scan": true,
     "acl_audit": true,
     "new_device_tag": false,
     "dual_wan": true,

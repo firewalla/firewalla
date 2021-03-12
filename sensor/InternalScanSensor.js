@@ -40,30 +40,60 @@ const am2 = new AM2();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const featureName = "internal_scan";
 
+const extensionManager = require('./ExtensionManager.js')
+
 class InternalScanSensor extends Sensor {
   constructor() {
     super();
   }
 
-  async run() {
+  async apiRun() {
+
     this.running = false;
     this.supportPorts = ["tcp_23", "tcp_80", "tcp_21", "tcp_3306", "tcp_6379"]; // default support: telnet http ftp mysql redis
     if (platform.getName() === 'gold') {
       this.supportPorts.push("tcp_22"); // gold: ssh
     }
-    //this.supportPorts = ["tcp_23"];
-    sem.once("DeviceServiceScanComplete", async (event) => {
-      await this.checkAndRunOnce();
+
+    extensionManager.onGet("getScanStatus", async (msg, data) => {
+      return this.scanStatus;
     });
 
-    fc.onFeature(featureName, (feature, status) => {
-      if (feature != featureName)
-        return
-      if (status) {
-        this.checkAndRunOnce();
+    extensionManager.onCmd("killScanSession", async (msg, data) => {
+      this.killCmd = true;
+      // this.currentPid is the bash command process
+      if (this.currentPid) {
+        // cPid is sudo process which fork from currentPid
+        const cPid = await execAsync(`ps -ef| grep nmap| awk '$3 == '${this.currentPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
+        // ccPid is timeout process which fork from cPid
+        const ccPid = await execAsync(`ps -ef| grep nmap| awk '$3 == '${cPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
+        // cccPid is nmap process which fork from ccPid
+        const cccPid = await execAsync(`ps -ef| grep nmap| awk '$3 == '${ccPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
+        if (cccPid) await execAsync(`sudo kill -9 ${cccPid}`).catch((err) => { });
       }
-    })
+    });
+
+    extensionManager.onCmd("startScanSession", async (msg, data) => {
+      if (!this.running) {
+        this.killCmd = false;
+        await this.runOnce();
+        return {"msg":"start scan"} 
+      } else {
+        return {"msg":"previous scan is running"} 
+      }
+    });
+
   }
+
+  // async run() {
+  //   fc.onFeature(featureName, (feature, status) => {
+  //     if (feature != featureName)
+  //       return
+  //     if (status) {
+  //       this.checkAndRunOnce();
+  //     }
+  //   })
+  // }
 
   async checkAndRunOnce() {
     await this.runOnce();
@@ -84,6 +114,7 @@ class InternalScanSensor extends Sensor {
     }
 
     this.running = true;
+    this.scanStatus = {};
     try {
       log.info('Scan start...');
       await this.checkDictionary();
@@ -91,6 +122,7 @@ class InternalScanSensor extends Sensor {
       let results = await hostManager.getHostsAsync();
       results = results && results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && host.o.openports);
       for (const host of results) {
+        if (this.killCmd) throw new Error("scan interruptted")
         let openPorts = JSON.parse(host.o.openports);
         log.info(host.o.ipv4Addr, openPorts);
         let mergePorts = [];
@@ -103,10 +135,13 @@ class InternalScanSensor extends Sensor {
         const hostName = host.name();
         const waitPorts = this.supportPorts.filter((portid) => mergePorts.includes(portid));
         log.info("Scanning device: ", host.o.ipv4Addr, waitPorts);
+        this.scanStatus[host.o.ipv4Addr] = {}
         for (const portid of waitPorts) {
           const nmapBrute = bruteConfig[portid];
           if (nmapBrute) {
+            this.scanStatus[host.o.ipv4Addr][portid] = "scanning"
             await this.nmapGuessPassword(host.o.ipv4Addr, hostName, nmapBrute);
+            this.scanStatus[host.o.ipv4Addr][portid] = "scanned"
           }
         }
       };
@@ -114,6 +149,7 @@ class InternalScanSensor extends Sensor {
      log.error("Failed to scan: " + err);
     }
     this.running = false;
+    this.currentPid = undefined;
     log.info('Scan end');
   }
 
@@ -199,38 +235,41 @@ class InternalScanSensor extends Sensor {
       log.info("Running command:", cmd);
       const startTime = Date.now() / 1000;
       try {
-        const result = await execAsync(cmd);
-        let output = JSON.parse(result.stdout);
-        let findings = null;
-        if (bruteScript.scriptName == "redis-info") {
-          findings = _.get(output, `nmaprun.host.ports.port.service.version`, null);
-          if (findings != null) {
-            weakPasswords.push({username: "", password: ""});  //empty password access
-          }
-        } else {
-          findings = _.get(output, `nmaprun.host.ports.port.script.table.table`, null);
-          if (findings != null) {
-            if (findings.constructor === Object)  {
-              findings = [findings]
+        const result = cp.exec(cmd);
+        this.currentPid = result.pid;
+        for await (const r of result.stdout) {
+          let output = JSON.parse(r);
+          let findings = null;
+          if (bruteScript.scriptName == "redis-info") {
+            findings = _.get(output, `nmaprun.host.ports.port.service.version`, null);
+            if (findings != null) {
+              weakPasswords.push({username: "", password: ""});  //empty password access
             }
-
-            for (const finding of findings) {
-              let weakPassword = {};
-              finding.elem.forEach((x) => {
-                switch (x.key) {
-                  case "username":
-                    weakPassword.username = x["#content"];
-                    break;
-                  case "password":
-                    weakPassword.password = x["#content"];
-                    break;
-                  default:
-                }
-              });
-              weakPasswords.push(weakPassword);
+          } else {
+            findings = _.get(output, `nmaprun.host.ports.port.script.table.table`, null);
+            if (findings != null) {
+              if (findings.constructor === Object)  {
+                findings = [findings]
+              }
+  
+              for (const finding of findings) {
+                let weakPassword = {};
+                finding.elem.forEach((x) => {
+                  switch (x.key) {
+                    case "username":
+                      weakPassword.username = x["#content"];
+                      break;
+                    case "password":
+                      weakPassword.password = x["#content"];
+                      break;
+                    default:
+                  }
+                });
+                weakPasswords.push(weakPassword);
+              }
             }
           }
-        }
+        }        
       } catch (err) {
         log.error("Failed to nmap scan:", err);
       }
