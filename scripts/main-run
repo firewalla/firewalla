@@ -105,7 +105,7 @@ else
     $FIREWALLA_HOME/scripts/fire-ping.sh
     sleep 3
 
-    if [[ `uname -m` != "x86_64" ]]; then
+    if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
       sudo service watchdog start
       echo "WatchDog Started"
       logger "FIREWALLA:WATCHDOG:ENABLED"
