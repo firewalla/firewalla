@@ -179,6 +179,7 @@ class BlockManager {
         let exist;
         if (!fc.isFeatureOn(featureName)) {
             ipBlockInfo.blockLevel = 'ip';
+            return ipBlockInfo; // return directly if smart_block disabled
         } else {
             const key = this.ipBlockInfoKey(ip);
             exist = (await rclient.existsAsync(key) == 1);

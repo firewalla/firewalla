@@ -786,7 +786,7 @@
     "family_protect": false,
     "smart_block": false,
     "internal_scan": true,
-    "acl_audit": false,
+    "acl_audit": true,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
