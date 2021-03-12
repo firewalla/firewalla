@@ -231,11 +231,11 @@ class NetBotTool {
 
     let sumFlowKey = null
 
-    if(options.queryall && target) {
+    if(options.queryall) {
       sumFlowKey = await flowAggrTool.getLastSumFlow(target, trafficDirection);
 
       if (!sumFlowKey) {
-        log.warn('Aggregation not found', target, trafficDirection)
+        log.warn('Aggregation not found', target || 'system', trafficDirection)
         return []
       }
 
