@@ -11,6 +11,7 @@ CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.purple'
 FW_PROBABILITY="0.99"
 FW_SCHEDULE_BRO=false
+STATUS_LED_PATH='/sys/class/leds/red_led'
 IFB_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
 
@@ -19,12 +20,12 @@ function get_openssl_cnf_file {
 }
 
 function heartbeatLED {
-  sudo sh -c 'echo heartbeat > /sys/devices/platform/gpio-leds/leds/status_led/trigger'
+  sudo sh -c "echo heartbeat > $STATUS_LED_PATH/trigger"
 }
 
 function turnOffLED {
-  sudo sh -c 'echo none > /sys/devices/platform/gpio-leds/leds/status_led/trigger'
-  sudo sh -c 'echo 0 > /sys/devices/platform/gpio-leds/leds/status_led/brightness'
+  sudo sh -c "echo none > $STATUS_LED_PATH/trigger"
+  sudo sh -c "echo 0 > $STATUS_LED_PATH/brightness"
 }
 
 function get_node_modules_url {
