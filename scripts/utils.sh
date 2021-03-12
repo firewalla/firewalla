@@ -11,8 +11,11 @@ function setup_folders() {
     sudo chown -R pi ~/logs/
     mkdir -p ~/.firewalla/run/ovpn_profile
     test -e ~/.firewalla/.sshpasswd && sudo chown pi ~/.firewalla/.sshpasswd
-    # this is mainly for x86_64, /etc/openvpn will link to this directory
-    if [[ $(uname -m) == "x86_64" ]]; then
+    : ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+    source ${FIREWALLA_HOME}/platform/platform.sh
+    # this is mainly for firerouter managed platform, /etc/openvpn will link to this directory
+    if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
       mkdir -p /home/pi/openvpn
       if [[ ! -h /etc/openvpn ]]; then
         sudo rm -rf /etc/openvpn

@@ -102,7 +102,7 @@ sudo ipset add -! match_all_set4 128.0.0.0/1
 
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
-if [[ $(uname -m) != "x86_64" ]]; then
+if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
   sudo iptables -w -F FORWARD
   sudo iptables -w -t nat -F PREROUTING
   sudo ip6tables -w -F FORWARD
@@ -1002,7 +1002,7 @@ done
 
 
 
-if [[ $(uname -m) == "x86_64" ]]; then
+if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -N DOCKER-USER &>/dev/null
   sudo iptables -w -F DOCKER-USER
   sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
