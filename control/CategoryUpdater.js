@@ -66,6 +66,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       this.customizedCategories = {};
 
+      this.recycleTasks = {};
+
       this.excludedDomains = {
         "av": [
           "www.google.com",
@@ -681,7 +683,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   // rebuild category ipset
   async recycleIPSet(category) {
-
+    if (this.recycleTasks[category]) {
+      log.info(`Recycle ipset task for ${category} is already running`);
+      return;
+    }
+    this.recycleTasks[category] = true;
+    
     await this.updatePersistentIPSets(category, { useTemp: true });
 
     const domains = await this.getDomains(category)
@@ -741,6 +748,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
         await domainBlock.blockDomain(domain, {exactMatch: true, blockSet: this.getIPSetName(category)});
     }
     this.effectiveCategoryDomains[category] = dd;
+
+    this.recycleTasks[category] = false;
   }
 
   async refreshCategoryRecord(category) {
