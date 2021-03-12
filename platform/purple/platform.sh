@@ -13,18 +13,19 @@ FW_PROBABILITY="0.98"
 FW_SCHEDULE_BRO=false
 FW_ZEEK_CPU_THRESHOLD=98
 FW_ZEEK_RSS_THRESHOLD=380000
+STATUS_LED_PATH='/sys/class/leds/red_led'
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
 }
 
 function heartbeatLED {
-  sudo sh -c 'echo heartbeat > /sys/devices/platform/gpio-leds/leds/status_led/trigger'
+  sudo sh -c "echo heartbeat > $STATUS_LED_PATH/trigger"
 }
 
 function turnOffLED {
-  sudo sh -c 'echo none > /sys/devices/platform/gpio-leds/leds/status_led/trigger'
-  sudo sh -c 'echo 0 > /sys/devices/platform/gpio-leds/leds/status_led/brightness'
+  sudo sh -c "echo none > $STATUS_LED_PATH/trigger"
+  sudo sh -c "echo 0 > $STATUS_LED_PATH/brightness"
 }
 
 function get_node_modules_url {

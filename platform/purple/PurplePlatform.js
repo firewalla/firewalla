@@ -59,7 +59,7 @@ class PurplePlatform extends Platform {
 
   getLedPaths() {
     return [
-      "/sys/devices/platform/gpio-leds/leds/status_led"
+      "/sys/class/leds/red_led"
     ];
   }
 
