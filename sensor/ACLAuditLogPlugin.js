@@ -259,9 +259,13 @@ class ACLAuditLogPlugin extends Sensor {
     let mac
     if (intf.name === "tun_fwvpn") {
       const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(record.sh);
-      if (!vpnProfile) throw new Error('VPNProfile not found for', record.sh);
-      mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-      record.rl = vpnProfileManager.getRealAddrByVirtualAddr(record.sh);
+      if (vpnProfile) {
+        mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+        record.rl = vpnProfileManager.getRealAddrByVirtualAddr(record.sh);
+      } else {
+        log.debug('VPNProfile not found for', record.sh);
+        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+      }
     }
     // TODO: wireguard client recognition
     else if (intf.name.startsWith("wg")) {
