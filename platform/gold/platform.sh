@@ -15,6 +15,7 @@ FW_PROBABILITY="0.99"
 FW_SCHEDULE_BRO=false
 IFB_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
+REDIS_MAXMEMORY=400mb
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
