@@ -4,6 +4,14 @@ CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 [[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/zeekctl.cfg
 
+# check conflict on bro listen port and change default port if necessary
+for p in $(seq 47760 1 65520); do
+  if ! sudo netstat -anlp | grep 127.0.0.1 | grep "ESTABLISHED\|LISTEN" | awk '{print $4" "$7}' | grep -v zeek | grep "127.0.0.1:$p"; then
+    sudo bash -c "echo 'ZeekPort = $p' >> /usr/local/zeek/etc/zeekctl.cfg"
+    break
+  fi
+done
+
 EXTERNAL_IP=$(ip addr show dev eth0 | awk '/inet /'  | grep -vw secondary | awk '$NF=="eth0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
 OVERLAY_IP=$(ip addr show dev eth0 | awk '/inet /'  | grep -vw secondary | awk '$NF=="eth0:0" {print $2}' | cut -f1 -d/ | grep -v '^169\.254\.')
 

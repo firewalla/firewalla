@@ -72,6 +72,7 @@ alias rst='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/
 alias frset='curl -X POST http://localhost:8837/v1/config/set -H "Content-Type:application/json"'
 
 alias less='less -r'
+alias ls='ls --color=auto'
 
 export PS1='\[\e]0;\u@\h: \w\a\]\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\] ($(redis-cli get groupName)) \$ '
 
