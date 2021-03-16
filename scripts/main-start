@@ -323,6 +323,7 @@ test -z $NO_MGIT_RECOVER && $PI_HOME/scripts/mgit recover
 #reload services
 if [[ ! -f /.dockerenv ]]; then
     sudo cp $(get_brofish_service) /etc/systemd/system/.
+    sudo cp $(get_openvpn_service) /lib/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemon.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
