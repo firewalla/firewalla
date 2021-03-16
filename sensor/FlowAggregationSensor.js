@@ -283,23 +283,14 @@ class FlowAggregationSensor extends Sensor {
 
     const macs = hostManager.getActiveMACs()
     macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+    macs.push(... Object.keys(VPNProfileManager.getAllVPNProfiles()).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`))
     await Promise.all(macs.map(async mac => {
-      log.debug("FlowAggrSensor on mac", mac);
+      log.debug("aggrAll", mac);
       await this.aggr(mac, ts);
       await this.aggr(mac, ts + this.config.interval);
       await this.aggrActivity(mac, ts);
       await this.aggrActivity(mac, ts + this.config.interval);
     }))
-
-    const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
-    await Promise.all(Object.keys(vpnProfiles).map(async cn => {
-      log.debug("FlowAggrSensor on VPN profile", cn);
-      // use specific namespace to identify vpn profiles
-      await this.aggr(`${Constants.NS_VPN_PROFILE}:${cn}`, ts);
-      await this.aggr(`${Constants.NS_VPN_PROFILE}:${cn}`, ts + this.config.interval);
-      await this.aggrActivity(`${Constants.NS_VPN_PROFILE}:${cn}`, ts);
-      await this.aggrActivity(`${Constants.NS_VPN_PROFILE}:${cn}`, ts + this.config.interval);
-    }));
   }
 
   // this will be periodically called to update the summed flows in last 24 hours
@@ -428,10 +419,11 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
+    // for Firewalla interface as device, only aggregate ipB for now
     for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
       const optionsCopy = JSON.parse(JSON.stringify(options));
       optionsCopy.mac = selfMac
-      await flowAggrTool.addSumFlow('ipB', options)
+      await flowAggrTool.addSumFlow('ipB', optionsCopy)
     }
 
     const vpnIntf = sysManager.getInterface("tun_fwvpn");
