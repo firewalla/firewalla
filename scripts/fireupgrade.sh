@@ -216,7 +216,6 @@ $FIRELOG -t debug -m  "FIREWALLA.UPGRADE Done $branch"
 
 sudo cp $FIREWALLA_HOME/etc/firewalla.service /etc/systemd/system/.
 #[ -s $FIREWALLA_HOME/etc/fireupgrade.service ]  && sudo cp $FIREWALLA_HOME/etc/fireupgrade.service /etc/systemd/system/.
-sudo cp $FIREWALLA_HOME/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
 
 case $mode in

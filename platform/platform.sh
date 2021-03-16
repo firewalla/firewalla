@@ -12,6 +12,7 @@ FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
 IFB_SUPPORTED=no
 MANAGED_BY_FIREROUTER=no
+REDIS_MAXMEMORY=300mb
 
 hook_server_route_up() {
   echo nothing > /dev/null
