@@ -15,6 +15,7 @@ FW_PROBABILITY="0.99"
 FW_SCHEDULE_BRO=false
 IFB_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
+REDIS_MAXMEMORY=400mb
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -36,6 +37,10 @@ CURRENT_DIR=$(dirname $BASH_SOURCE)
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
+}
+
+function get_openvpn_service {
+  echo "${CURRENT_DIR}/files/openvpn@.service"
 }
 
 function get_sysctl_conf_path {

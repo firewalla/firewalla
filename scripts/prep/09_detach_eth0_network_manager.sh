@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [[ $FIREWALLA_PLATFORM == "gold" ]]; then
+if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   exit
 fi
 
