@@ -19,6 +19,7 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const PolicyManager = require('./PolicyManager.js');
+const sysManager = require('./SysManager.js');
 const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
@@ -124,6 +125,14 @@ class VPNProfile {
   }
 
   static async ensureCreateEnforcementEnv(cn) {
+    // always re-create dnsmasq config file in case VPN server UUID is changed
+    const content = `redis-src-address-group=%${VPNProfile.getRedisClientAddressSetName(cn)}@${cn}`;
+    const vpnIntf = sysManager.getInterface("tun_fwvpn");
+    const vpnIntfUUID = vpnIntf && vpnIntf.uuid;
+    if (vpnIntfUUID) {
+      await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${vpnIntfUUID}/vpn_prof_${cn}.conf`, content, {encoding: 'utf8'});
+      dnsmasq.scheduleRestartDNSService();
+    }
     if (envCreatedMap[cn])
       return;
     // create related ipsets
@@ -133,9 +142,6 @@ class VPNProfile {
     await exec(`sudo ipset create -! ${VPNProfile.getVPNProfileSetName(cn, 6)} hash:net family inet6`).catch((err) => {
       log.error(`Failed to create VPN profile ipset ${VPNProfile.getVPNProfileSetName(cn, 6)}`, err.message);
     });
-    const content = `redis-src-address-group=%${VPNProfile.getRedisClientAddressSetName(cn)}@${cn}`;
-    await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vpn_prof_${cn}.conf`, content, {encoding: 'utf8'});
-    dnsmasq.scheduleRestartDNSService();
     envCreatedMap[cn] = 1;
   }
 
