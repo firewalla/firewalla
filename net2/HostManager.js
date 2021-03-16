@@ -741,7 +741,6 @@ module.exports = class HostManager {
       this.getCpuUsage(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
-      this.getRedisMaxMemory(json),
       this.systemdRestartMetrics(json)
     ]
 
@@ -2032,23 +2031,4 @@ module.exports = class HostManager {
       log.warn('getCpuProfile error', e)
     }
   }
-
-  async getRedisConfig(configKey) {
-    try {
-      [err,result] = await rclient.configAsync("get",configKey);
-      return result;
-    } catch (err) {
-      log.error(`failed to get ${configKey}:`, err);
-      return null;
-    }
-  }
-
-  async getRedisMaxMemory(json) {
-    let result = {};
-    const redisMaxMemory = await this.getRedisConfig("maxmemory");
-    if ( redisMaxMemory ) {
-      json.redisMaxMemory = redisMaxMemory;
-    }
-  }
-
 }
