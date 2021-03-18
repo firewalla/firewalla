@@ -222,50 +222,52 @@ class FlowAggregationSensor extends Sensor {
     const traffic = {};
 
     flows.forEach((flow) => {
+      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}`
 
-      let t = traffic[flow.ip];
+      let t = traffic[descriptor];
 
       if (!t) {
-        t = { upload: 0, download: 0 };
-        traffic[flow.ip] = t;
+        t = { upload: 0, download: 0, destIP: flow.ip };
+        if (flow.fd == 'out')
+          t.devicePort = flow.devicePort
+        else
+          t.port = flow.port
+
+        traffic[descriptor] = t;
       }
 
       t.upload += flow.upload;
       t.download += flow.download;
-
-      this.addPortToEntry(t, flow.port)
     });
 
     return traffic;
-  }
-
-  addPortToEntry(t, port) {
-    if (!port) return
-    if (!t.port) t.port = []
-
-    port = String(port); //make sure it is string
-    if (!t.port.includes(port)) {
-      t.port.push(port)
-      t.port.sort((a,b)=>{return a-b})
-    }
   }
 
   auditLogsGroupByDestIP(logs) {
     const result = { dns: {}, ip: {} };
 
     logs.forEach(log => {
-      const destIP = log.type == 'dns' ? log.domain : log.ip;
+      const descriptor = log.type == 'dns' ? log.domain : `${log.ip}:${log.fd  == 'out' ? log.devicePort : log.port}`;
 
-      let t = result[log.type][destIP];
+      let t = result[log.type][descriptor];
 
       if (!t) {
         t = { count: 0 };
-        result[log.type][destIP] = t;
+
+        if (log.fd == 'out')
+          t.devicePort = log.devicePort
+        else  // also covers dns here
+          t.port = log.port
+
+        if (log.type == 'dns')
+          t.domain = log.domain
+        else
+          t.destIP = log.ip
+
+        result[log.type][descriptor] = t;
       }
 
       t.count += log.count;
-
-      this.addPortToEntry(t, log.port)
     });
 
     return result;
