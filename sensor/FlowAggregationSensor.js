@@ -229,9 +229,9 @@ class FlowAggregationSensor extends Sensor {
       if (!t) {
         t = { upload: 0, download: 0, destIP: flow.ip };
         if (flow.fd == 'out')
-          t.devicePort = flow.devicePort
+          t.devicePort = [ flow.devicePort ]
         else
-          t.port = flow.port
+          t.port = [ flow.port ]
 
         traffic[descriptor] = t;
       }
@@ -255,9 +255,9 @@ class FlowAggregationSensor extends Sensor {
         t = { count: 0 };
 
         if (log.fd == 'out')
-          t.devicePort = log.devicePort
+          t.devicePort = [ log.devicePort ]
         else  // also covers dns here
-          t.port = log.port
+          t.port = [ log.port ]
 
         if (log.type == 'dns')
           t.domain = log.domain
