@@ -109,16 +109,12 @@ class FlowAggrTool {
 
       args.push(t)  // score
 
-      // TODO: mac is already in zset key, remove to save memory
-      const result = {
-        device: mac
-      }
-      if (trafficDirection.startsWith('dns'))
-        result.domain = target
-      else
-        result.destIP = target
+      // mac in json is used as differentiator on aggreation (zunionstore), don't remove it here
+      const result = { device: mac };
 
-      if (entry.port) result.port = entry.port
+      [ 'destIP', 'domain', 'port', 'devicePort' ].forEach(f => {
+        if (entry[f]) result[f] = entry[f]
+      })
 
       args.push(JSON.stringify(result))
     }
@@ -367,7 +363,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port');
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort');
             flow.count = count
             if (json.destIP) flow.ip = json.destIP
             results.push(flow);
