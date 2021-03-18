@@ -325,7 +325,7 @@ class FlowAggrTool {
               }
             }
           } catch(err) {
-            log.error("Failed to parse payload: ", payload);
+            log.error("Failed to parse payload: ", err, payload);
           }
         }
       }
