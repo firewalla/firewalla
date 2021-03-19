@@ -228,10 +228,11 @@ class FlowAggregationSensor extends Sensor {
 
       if (!t) {
         t = { upload: 0, download: 0, destIP: flow.ip };
+        // lagacy app only compatible with port number as string
         if (flow.fd == 'out')
-          t.devicePort = [ flow.devicePort ]
+          t.devicePort = [ String(flow.devicePort) ]
         else
-          t.port = [ flow.port ]
+          t.port = [ String(flow.port) ]
 
         traffic[descriptor] = t;
       }
@@ -254,10 +255,11 @@ class FlowAggregationSensor extends Sensor {
       if (!t) {
         t = { count: 0 };
 
+        // lagacy app only compatible with port number as string
         if (log.fd == 'out')
-          t.devicePort = [ log.devicePort ]
+          t.devicePort = [ String(log.devicePort) ]
         else  // also covers dns here
-          t.port = [ log.port ]
+          t.port = [ String(log.port) ]
 
         if (log.type == 'dns')
           t.domain = log.domain
