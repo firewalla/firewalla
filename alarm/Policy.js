@@ -273,7 +273,6 @@ class Policy {
     ) {
       return false; // tag not match
     }
-    let found = false;
     if (
       this.tag &&
       _.isArray(this.tag) &&
@@ -281,6 +280,7 @@ class Policy {
       _.has(alarm, 'p.tag.ids') &&
       !_.isEmpty(alarm['p.tag.ids'])
     ) {
+      let found = false;
       for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
         const tag = alarm['p.tag.ids'][index];
         if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
@@ -336,7 +336,10 @@ class Policy {
             return false
           }
         } else {
-          return found
+          // type:mac target: TAG 
+          // block internet on group/network
+          // already matched p.tag.ids/p.intf.id above, return true directly here
+          return true 
         }
 
       case "category":
