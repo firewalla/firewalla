@@ -19,6 +19,7 @@
 
 SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
 LOGGER=/usr/bin/logger
+CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 err() {
     msg="$@"
@@ -29,7 +30,7 @@ err() {
 ERR=err
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-[ -s /home/pi/scripts/network_settings.sh ] && source /home/pi/scripts/network_settings.sh ||
+[ -s $CUR_DIR/network_settings.sh ] && source $CUR_DIR/network_settings.sh ||
     source $FIREWALLA_HOME/scripts/network_settings.sh
 
 if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]]; then
