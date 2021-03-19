@@ -16,9 +16,6 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-if [[ $(uname -m) == "x86_64" ]]; then
-    exit 0
-fi
 
 SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
 LOGGER=/usr/bin/logger
@@ -34,6 +31,10 @@ ERR=err
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 [ -s /home/pi/scripts/network_settings.sh ] && source /home/pi/scripts/network_settings.sh ||
     source $FIREWALLA_HOME/scripts/network_settings.sh
+
+if [[ $FIREWALLA_PLATFORM == "gold" ]]; then
+    exit 0
+fi
 
 set_timeout() {
     [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
