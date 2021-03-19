@@ -27,7 +27,10 @@
 # FIXME: /dev/sda1 is not USB in Gold
 : ${USB_DEV:=/dev/sda1}
 
-if [[ $(uname -m) == "x86_64" ]]; then
+[ -s /home/pi/scripts/network_settings.sh ] && source /home/pi/scripts/network_settings.sh ||
+    source $FIREWALLA_HOME/scripts/network_settings.sh
+
+if [[ $FIREWALLA_PLATFORM == "gold" ]]; then
     exit 0
 fi
 
