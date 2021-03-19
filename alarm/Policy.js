@@ -332,7 +332,7 @@ class Policy {
         break
 
       case "mac":
-        if (alarm['p.device.mac']) {
+        if (alarm['p.device.mac'] && this.target != 'TAG') {
           return alarm['p.device.mac'] === this.target
         } else {
           return false
