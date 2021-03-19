@@ -93,3 +93,35 @@ restore_values() {
   return $r
 }
 
+UNAME=$(uname -m)
+
+case "$UNAME" in
+  "x86_64")
+    export FIREWALLA_PLATFORM=gold
+    ;;
+  "aarch64")
+    if [[ -e /etc/firewalla-release ]]; then
+      BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      BOARD='unknown'
+    fi
+    case $BOARD in
+      navy)
+        export FIREWALLA_PLATFORM=navy
+        ;;
+      blue)
+        export FIREWALLA_PLATFORM=blue
+        ;;
+      ubt)
+        export FIREWALLA_PLATFORM=ubt
+	;;
+      *)
+        ;;
+    esac
+    ;;
+  "armv7l")
+    export FIREWALLA_PLATFORM=red
+    ;;
+  *)
+    ;;
+esac
