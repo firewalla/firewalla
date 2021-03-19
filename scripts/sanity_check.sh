@@ -598,7 +598,7 @@ check_conntrack() {
 }
 
 check_network() {
-    if [[ $(uname -m) != "x86_64" ]]; then
+    if [[ $PLATFORM != "gold" ]]; then
         return
     fi
 

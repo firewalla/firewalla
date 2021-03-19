@@ -93,7 +93,7 @@ LOGGER=logger
 ERR=logger
 [ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
-if [ "$(uname -m)" != "x86_64" ]; then
+if [[ $FIREWALLA_PLATFORM != "gold" ]]; then
   await_ip_assigned || restore_values
 fi
 
@@ -133,7 +133,7 @@ $FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
 # gold branch mapping, don't source platform.sh here as depencencies will be massive
 function map_target_branch {
-  if [ "$(uname -m)" = "x86_64" ]; then
+  if [[ $FIREWALLA_PLATFORM == "gold" ]]; then
     case "$1" in
       "release_6_0")
         echo "release_7_0"
@@ -151,7 +151,7 @@ function map_target_branch {
         echo $1
         ;;
     esac
-  elif [[ $(head -n 1 /etc/firewalla-release 2>/dev/null) == "BOARD=navy" ]]; then
+  elif [[ $FIREWALLA_PLATFORM == "navy" ]]; then
     case "$1" in
       "release_6_0")
         echo "release_8_0"
