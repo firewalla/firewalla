@@ -30,7 +30,7 @@
 [ -s /home/pi/scripts/network_settings.sh ] && source /home/pi/scripts/network_settings.sh ||
     source $FIREWALLA_HOME/scripts/network_settings.sh
 
-if [[ $FIREWALLA_PLATFORM == "gold" ]]; then
+if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]]; then
     exit 0
 fi
 

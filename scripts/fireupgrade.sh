@@ -93,7 +93,7 @@ LOGGER=logger
 ERR=logger
 [ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
-if [[ $FIREWALLA_PLATFORM != "gold" ]]; then
+if [[ $FIREWALLA_PLATFORM != "gold" ]] && [[ $FIREWALLA_PLATFORM != "purple" ]]; then
   await_ip_assigned || restore_values
 fi
 
@@ -133,7 +133,7 @@ $FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
 # gold branch mapping, don't source platform.sh here as depencencies will be massive
 function map_target_branch {
-  if [[ $FIREWALLA_PLATFORM == "gold" ]]; then
+  if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]]; then
     case "$1" in
       "release_6_0")
         echo "release_7_0"

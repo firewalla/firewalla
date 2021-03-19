@@ -114,6 +114,9 @@ case "$UNAME" in
         ;;
       ubt)
         export FIREWALLA_PLATFORM=ubt
+      purple)
+        export FIREWALLA_PLATFORM=purple
+        ;;
 	;;
       *)
         ;;
