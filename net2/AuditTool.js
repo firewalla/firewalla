@@ -57,6 +57,11 @@ class AuditTool extends LogQuery {
       intf: entry.intf,
     };
 
+    if (entry.rl) {
+      // real IP:port of the client in VPN network
+      f.rl = entry.rl;
+    }
+
     if (entry.type == 'dns') {
       Object.assign(f, {
         rrClass: entry.qc,
