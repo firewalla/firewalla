@@ -273,7 +273,7 @@ class Policy {
     ) {
       return false; // tag not match
     }
-
+    let found = false;
     if (
       this.tag &&
       _.isArray(this.tag) &&
@@ -281,11 +281,11 @@ class Policy {
       _.has(alarm, 'p.tag.ids') &&
       !_.isEmpty(alarm['p.tag.ids'])
     ) {
-      let found = false;
       for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
         const tag = alarm['p.tag.ids'][index];
         if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
           found = true;
+          break;
         }
       }
 
@@ -312,14 +312,12 @@ class Policy {
         } else {
           return false
         }
-        break
       case "net":
         if (alarm['p.dest.ip']) {
           return iptool.cidrSubnet(this.target).contains(alarm['p.dest.ip'])
         } else {
           return false
         }
-        break
 
       case "dns":
       case "domain":
@@ -329,15 +327,17 @@ class Policy {
         } else {
           return false
         }
-        break
 
       case "mac":
-        if (alarm['p.device.mac']) {
-          return alarm['p.device.mac'] === this.target
+        if (hostTool.isMacAddress(this.target)) {
+          if (alarm['p.device.mac']) {
+            return alarm['p.device.mac'] === this.target
+          } else {
+            return false
+          }
         } else {
-          return false
+          return found
         }
-        break
 
       case "category":
         if (alarm['p.dest.category']) {
@@ -345,7 +345,6 @@ class Policy {
         } else {
           return false;
         }
-        break
 
       case "devicePort":
         if (!alarm['p.device.mac']) return false;
@@ -373,24 +372,20 @@ class Policy {
         }
 
         return false;
-        break
       case "remotePort":
         if (alarm['p.dest.port']) {
           return this.portInRange(this.target, alarm['p.dest.port'])
         } else {
           return false;
         }
-        break;
       case 'country':
         if (alarm['p.dest.country']) {
           return alarm['p.dest.country'] == this.target;
         } else {
           return false;
         }
-        break;
       default:
         return false
-        break
     }
   }
 
