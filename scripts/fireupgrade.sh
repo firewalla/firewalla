@@ -26,7 +26,7 @@
 #   0 - process exits before timeout
 #   1 - process killed due to timeout
 
-: ${SCRIPTS_DIR:=/home/pi/scripts}
+: ${SCRIPTS_DIR:="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 # Cleanup if almost full(discard stdout/stderr to avoid logging failure due to disk full)
