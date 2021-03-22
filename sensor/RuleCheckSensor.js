@@ -25,6 +25,7 @@ const f = require('../net2/Firewalla.js');
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const {Address4, Address6} = require('ip-address');
+const Constants = require('../net2/Constants.js');
 
 class RuleCheckSensor extends Sensor {
   constructor() {
@@ -112,6 +113,10 @@ class RuleCheckSensor extends Sensor {
     }
   }
 
+  _isActiveProtectRule(rule) {
+    return rule && rule.type === "category" && rule.target == "default_c" && rule.action == "block";
+  }
+
   async needCheckActive(policy) {
     if (policy.type && ["ip", "net", "domain", "dns"].includes(policy.type)) {
       // other rule types have separate rules
@@ -128,6 +133,18 @@ class RuleCheckSensor extends Sensor {
       if (policy.tag && policy.tag.length > 0) {
         return false;
       }
+      const security = policy.method == 'auto' && policy.category == 'intel' && policy.action == 'block';
+      let seq = policy.seq;
+      if (!seq) {
+        if (security || this._isActiveProtectRule(policy))
+          seq = Constants.RULE_SEQ_HI;
+        else
+          seq = Constants.RULE_SEQ_REG;
+      }
+      // high priority rule has separate rule
+      if (seq !== Constants.RULE_SEQ_REG)
+        return false;
+
       // do not check expired rules
       if (policy.expire) {
         if (policy.willExpireSoon() || policy.isExpired()) {

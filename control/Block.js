@@ -27,6 +27,7 @@ const exec = require('child-process-promise').exec
 const f = require('../net2/Firewalla.js')
 
 const Ipset = require('../net2/Ipset.js');
+const Constants = require('../net2/Constants.js');
 
 const { Rule } = require('../net2/Iptables.js');
 const qos = require('./QoS.js');
@@ -187,12 +188,21 @@ function setupIpset(element, ipset, remove = false) {
   return action(ipset, element)
 }
 
-async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}`);
+async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, seq) {
+  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, seq ${seq}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   let table = null;
   let chain = null;
   let target = null;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   const filterPrio = 1;
   switch (action) {
     case "qos": {
@@ -228,14 +238,14 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
     }
     case "allow": {
       table = "filter";
-      chain = "FW_FIREWALL_GLOBAL_ALLOW";
+      chain = "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix;
       target = "FW_ACCEPT";
       break;
     }
     case "block":
     default: {
       table = "filter";
-      chain = "FW_FIREWALL_GLOBAL_BLOCK";
+      chain = "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix;
       target = "FW_DROP";
     }
   }
@@ -296,12 +306,21 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
 }
 
 // device-wise rules
-async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
-  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}`);
+async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, seq) {
+  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, seq ${seq}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   let table = null;
   let chain = null;
   let target = null;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   const filterPrio = 1;
   switch (action) {
     case "qos": {
@@ -337,14 +356,14 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
     }
     case "allow": {
       table = "filter";
-      chain = "FW_FIREWALL_DEV_ALLOW";
+      chain = "FW_FIREWALL_DEV_ALLOW" + chainSuffix;
       target = "FW_ACCEPT";
       break;
     }
     case "block":
     default: {
       table = "filter";
-      chain = "FW_FIREWALL_DEV_BLOCK";
+      chain = "FW_FIREWALL_DEV_BLOCK" + chainSuffix;
       target = "FW_DROP";
     }
   }
@@ -404,13 +423,22 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
   }
 }
 
-async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
-  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}`);
+async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, seq) {
+  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, seq ${seq}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   let table = null;
   let devChain = null;
   let netChain = null;
   let target = null;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   const filterPrio = 1;
   switch (action) {
     case "qos": {
@@ -448,16 +476,16 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
     }
     case "allow": {
       table = "filter";
-      devChain = "FW_FIREWALL_DEV_G_ALLOW";
-      netChain = "FW_FIREWALL_NET_G_ALLOW";
+      devChain = "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix;
+      netChain = "FW_FIREWALL_NET_G_ALLOW" + chainSuffix;
       target = "FW_ACCEPT";
       break;
     }
     case "block":
     default: {
       table = "filter";
-      devChain = "FW_FIREWALL_DEV_G_BLOCK";
-      netChain = "FW_FIREWALL_NET_G_BLOCK"
+      devChain = "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix;
+      netChain = "FW_FIREWALL_NET_G_BLOCK" + chainSuffix;
       target = "FW_DROP";
     }
   }
@@ -541,14 +569,23 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
   }
 }
 
-async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID) {
-  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}`);
+async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, seq) {
+  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, seq ${seq}`);
   if (_.isEmpty(uuids))
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
   let table = null;
   let chain = null;
   let target = null;
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   const filterPrio = 1;
   switch (action) {
     case "qos": {
@@ -583,14 +620,14 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
     }
     case "allow": {
       table = "filter";
-      chain = "FW_FIREWALL_NET_ALLOW";
+      chain = "FW_FIREWALL_NET_ALLOW" + chainSuffix;
       target = "FW_ACCEPT";
       break;
     }
     case "block":
     default: {
       table = "filter";
-      chain = "FW_FIREWALL_NET_BLOCK";
+      chain = "FW_FIREWALL_NET_BLOCK" + chainSuffix;
       target = "FW_DROP";
     }
   }

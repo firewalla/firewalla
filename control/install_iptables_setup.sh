@@ -169,7 +169,50 @@ sudo iptables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m st
 sudo iptable -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
 
-# initialize firewall chain
+# initialize firewall high priority chain
+sudo iptables -w -N FW_FIREWALL_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_HI
+sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_HI
+# 90 percent to bypass firewall if the packet belongs to a previously accepted flow
+sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
+# device high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_DEV_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_BLOCK_HI
+# device group high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_DEV_G_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_G_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_DEV_G_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_G_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_BLOCK_HI
+# network high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_NET_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_NET_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_BLOCK_HI
+# network group high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_NET_G_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_G_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_NET_G_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_G_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_BLOCK_HI
+# global high priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_GLOBAL_ALLOW_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_GLOBAL_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_ALLOW_HI
+sudo iptables -w -N FW_FIREWALL_GLOBAL_BLOCK_HI &> /dev/null
+sudo iptables -w -F FW_FIREWALL_GLOBAL_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_BLOCK_HI
+
+# initialize firewall regular chain
 sudo iptables -w -N FW_FIREWALL &> /dev/null
 sudo iptables -w -F FW_FIREWALL
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
@@ -510,7 +553,50 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_ACCEPT -j ACCEPT
   sudo ip6tables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_ACCEPT
 
-  # initialize firewall chain
+  # initialize firewall high priority chain
+  sudo ip6tables -w -N FW_FIREWALL_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_HI
+  sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_HI
+  # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
+  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
+  # device high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_DEV_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_BLOCK_HI
+  # device group high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_DEV_G_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_G_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_DEV_G_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_G_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_BLOCK_HI
+  # network high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_NET_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_NET_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_BLOCK_HI
+  # network group high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_NET_G_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_G_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_NET_G_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_G_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_BLOCK_HI
+  # global high priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_GLOBAL_ALLOW_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_GLOBAL_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_ALLOW_HI
+  sudo ip6tables -w -N FW_FIREWALL_GLOBAL_BLOCK_HI &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_GLOBAL_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_BLOCK_HI
+
+  # initialize regular firewall chain
   sudo ip6tables -w -N FW_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
