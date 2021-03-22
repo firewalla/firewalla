@@ -30,6 +30,10 @@ STATE_TYPE='diskspace'
 # ----------------------------------------------------------------------------
 for path in $PATHS
 do
+    test -e $path || {
+        echo "WARN: $path NOT exist" >&2
+        continue
+    }
     used_pcent=$(df --output=pcent $path | tail -1 | tr -d ' %')
     avail=$(df -k --output=avail $path | tail -1| tr -d ' ')
     size=$(df -k --output=size $path | tail -1 | tr -d ' ')
