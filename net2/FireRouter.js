@@ -946,7 +946,7 @@ class FireRouter {
         log.debug("original state value=",dualWANStateValue);
         /*
           * OK state
-          * - Failover   : primary active but standby inactive, both ready
+          * - Failover   : both ready, and primary active but standby inactive, or either active if failback 
           * - LoadBalance: both active and ready
           */
         let labels = {
@@ -962,9 +962,14 @@ class FireRouter {
             routerConfig.routing.global.default &&
             routerConfig.routing.global.default.viaIntf) {
           const primaryInterface = routerConfig.routing.global.default.viaIntf;
+          const failback = routerConfig.routing.global.default.failback || false;
           labels.primaryInterface = primaryInterface;
-          if ((primaryInterface === wanIntfs[1] && dualWANStateValue === 1) ||
-              (primaryInterface === wanIntfs[0] && dualWANStateValue === 4)) {
+          if ( failback ) {
+            if ((primaryInterface === wanIntfs[1] && dualWANStateValue === 1) ||
+                (primaryInterface === wanIntfs[0] && dualWANStateValue === 4)) {
+              dualWANStateValue = 0;
+            }
+          } else if ( (dualWANStateValue === 1) || (dualWANStateValue === 4) ) {
             dualWANStateValue = 0;
           }
         }
