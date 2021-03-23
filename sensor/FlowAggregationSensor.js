@@ -227,12 +227,12 @@ class FlowAggregationSensor extends Sensor {
       let t = traffic[descriptor];
 
       if (!t) {
-        t = { upload: 0, download: 0, destIP: flow.ip };
+        t = { upload: 0, download: 0, destIP: flow.ip, fd: flow.fd };
         // lagacy app only compatible with port number as string
         if (flow.fd == 'out') {
           if (flow.devicePort) t.devicePort = [ String(flow.devicePort) ]
           else log.warn('Data corrupted, no devicePort', flow)
-        } else { // also covers dns here
+        } else {
           if (flow.port) t.port = [ String(flow.port) ]
           else log.warn('Data corrupted, no port', flow)
         }
@@ -267,10 +267,12 @@ class FlowAggregationSensor extends Sensor {
           else log.warn('Data corrupted, no port', l)
         }
 
-        if (l.type == 'dns')
+        if (l.type == 'dns') {
           t.domain = l.domain
-        else
+        } else {
           t.destIP = l.ip
+          t.fd = l.fd
+        }
 
         result[l.type][descriptor] = t;
       }
