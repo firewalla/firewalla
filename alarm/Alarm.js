@@ -638,6 +638,14 @@ class IntelAlarm extends Alarm {
     return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tag.ids"];
   }
 
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
+  }
+
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
@@ -650,6 +658,10 @@ class IntelAlarm extends Alarm {
     if (this.isAutoBlock()) {
       key += ".AUTOBLOCK";
     }
+
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
     return key;
   }
 
@@ -659,7 +671,11 @@ class IntelAlarm extends Alarm {
     // dest category
     // device port
     // device url
-    return [this["p.device.name"],
+    let deviceName = this["p.device.name"];
+    if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN && this["p.device.real.ip"])
+      deviceName = this["p.device.real.ip"].split(":")[0];
+
+    return [deviceName,
     this.getReadableDestination(),
     this["p.security.primaryReason"] || "malicious",
     this["p.device.port"],
