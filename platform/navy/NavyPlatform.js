@@ -195,6 +195,20 @@ class NavyPlatform extends Platform {
       stat: '3d'
     }]
   }
+
+  async installTLSModule() {
+    if (this.tlsInstalled) return;
+    const cmdResult = await exec(`lsmod | grep xt_tls |awk '{print $1}'`);
+    const results = cmdResult.stdout.toString().trim().split('\n');
+    for(const result of results) {
+      if (result == 'xt_tls') return; 
+    }
+    await exec(`sudo insmod ${__dirname}/files/xt_tls.ko`)
+    await exec(`sudo install -D -v -m 644 ${__dirname}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables`)
+    this.tlsInstalled = true;
+  }
+
+  isTLSModuleInstalled() {return this.tlsInstalled;}
 }
 
 module.exports = NavyPlatform;

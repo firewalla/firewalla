@@ -306,6 +306,7 @@ class DomainBlock {
   }
 
   async blockTLSDomain(domain, tlsHostSet) {
+    await exec(`sudo bash -c 'echo / > ${tlsHostSetPath}${tlsHostSet}'`);
     await exec(`sudo bash -c 'echo +${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
   }
 
@@ -317,7 +318,7 @@ class DomainBlock {
     const domains = await this.getCategoryDomains(category);
     const CategoryUpdater = require('./CategoryUpdater.js');
     const categoryUpdater = new CategoryUpdater();
-    const tlsHostSet = categoryUpdater.getHostSetName(target);
+    const tlsHostSet = categoryUpdater.getHostSetName(category);
     const suffixDomains = domains.filter(domain=>{
       if(domain.startsWith("*.")) 
         return domain.substring(2, domain.length);

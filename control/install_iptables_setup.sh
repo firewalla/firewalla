@@ -198,7 +198,7 @@ sudo iptables -w -N FW_FIREWALL_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_HI
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_HI
 # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device high priority block/allow chains
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
@@ -248,7 +248,7 @@ sudo iptables -w -N FW_FIREWALL &> /dev/null
 sudo iptables -w -F FW_FIREWALL
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
 # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device block/allow chains
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -549,7 +549,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_FIREWALL_HI
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_HI
   # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device high priority block/allow chains
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
@@ -599,7 +599,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_FIREWALL
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
   # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device block/allow chains
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null

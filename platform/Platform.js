@@ -215,6 +215,9 @@ class Platform {
   getStatsSpecs(){
     return [];
   }
+
+  async installTLSModule() {}
+  isTLSModuleInstalled() {return false;}
 }
 
 module.exports = Platform;

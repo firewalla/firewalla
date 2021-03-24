@@ -1245,6 +1245,7 @@ class PolicyManager2 {
       case "dns":
         if (policy.useTLS) {
           tlsHostSet = Block.getTLSHostSet(pid);
+          protocol = 'tcp';
         } else {
           if (["allow", "block"].includes(action)) {
             if (direction !== "inbound" && !localPort && !remotePort) {
@@ -1303,6 +1304,7 @@ class PolicyManager2 {
       case "category":
         if (policy.useTLS) {
           tlsHostSet = categoryUpdater.getHostSetName(target);
+          protocol = 'tcp'
         } else {
           if (["allow", "block"].includes(action)) {
             if (direction !== "inbound" && !localPort && !remotePort) {
@@ -1378,6 +1380,9 @@ class PolicyManager2 {
     }
 
     const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet]
+    if (tlsHostSet) {
+      await platform.installTLSModule();
+    }
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);
@@ -1398,7 +1403,7 @@ class PolicyManager2 {
       if (type == 'dns') 
         await domainBlock.blockTLSDomain(target, tlsHostSet);
       else if(type == 'category') 
-        await domainBlock.updateTLSCategoryBlock(category)
+        await domainBlock.updateTLSCategoryBlock(target)
     }
   } 
 
@@ -1546,6 +1551,7 @@ class PolicyManager2 {
       case "dns":
         if (policy.useTLS) {
           tlsHostSet = Block.getTLSHostSet(pid);
+          protocol = 'tcp';
         } else {
           if (["allow", "block"].includes(action)) {
             if (direction !== "inbound" && !localPort && !remotePort) {
@@ -1596,6 +1602,7 @@ class PolicyManager2 {
       case "category":
         if (policy.useTLS) {
           tlsHostSet = categoryUpdater.getHostSetName(target);
+          protocol = 'tcp';
         } else {
           if (["allow", "block"].includes(action)) {
             if (direction !== "inbound" && !localPort && !remotePort) {
