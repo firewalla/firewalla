@@ -945,10 +945,18 @@ module.exports = class HostManager {
     if (!platform.isFireRouterManaged())
       return;
     const config = FireRouter.getConfig();
-    if (filterSensitive && config && config.interface && config.interface.pppoe) {
-      for (const key in config.interface.pppoe) {
-        const temp = _.omit(config.interface.pppoe[key], ['password', 'username']);
-        config.interface.pppoe[key] = temp;
+    if (filterSensitive) {
+      if (config && config.interface && config.interface.pppoe) {
+        for (const key in config.interface.pppoe) {
+          const temp = _.omit(config.interface.pppoe[key], ['password', 'username']);
+          config.interface.pppoe[key] = temp;
+        }
+      }
+      if (config && config.interface && config.interface.wireguard) {
+        for (const key in config.interface.wireguard) {
+          const temp = _.omit(config.interface.wireguard[key], ['privateKey']);
+          config.interface.wireguard[key] = temp;
+        }
       }
     }
     json.networkConfig = config;
