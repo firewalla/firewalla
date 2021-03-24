@@ -227,11 +227,15 @@ class FlowAggregationSensor extends Sensor {
       let t = traffic[descriptor];
 
       if (!t) {
-        t = { upload: 0, download: 0, destIP: flow.ip };
-        if (flow.fd == 'out')
-          t.devicePort = [ flow.devicePort ]
-        else
-          t.port = [ flow.port ]
+        t = { upload: 0, download: 0, destIP: flow.ip, fd: flow.fd };
+        // lagacy app only compatible with port number as string
+        if (flow.fd == 'out') {
+          if (flow.devicePort) t.devicePort = [ String(flow.devicePort) ]
+          else log.warn('Data corrupted, no devicePort', flow)
+        } else {
+          if (flow.port) t.port = [ String(flow.port) ]
+          else log.warn('Data corrupted, no port', flow)
+        }
 
         traffic[descriptor] = t;
       }
@@ -246,28 +250,34 @@ class FlowAggregationSensor extends Sensor {
   auditLogsGroupByDestIP(logs) {
     const result = { dns: {}, ip: {} };
 
-    logs.forEach(log => {
-      const descriptor = log.type == 'dns' ? log.domain : `${log.ip}:${log.fd  == 'out' ? log.devicePort : log.port}`;
+    logs.forEach(l => {
+      const descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
 
-      let t = result[log.type][descriptor];
+      let t = result[l.type][descriptor];
 
       if (!t) {
         t = { count: 0 };
 
-        if (log.fd == 'out')
-          t.devicePort = [ log.devicePort ]
-        else  // also covers dns here
-          t.port = [ log.port ]
+        // lagacy app only compatible with port number as string
+        if (l.fd == 'out') {
+          if (l.devicePort) t.devicePort = [ String(l.devicePort) ]
+          else log.warn('Data corrupted, no devicePort', l)
+        } else { // also covers dns here
+          if (l.port) t.port = [ String(l.port) ]
+          else log.warn('Data corrupted, no port', l)
+        }
 
-        if (log.type == 'dns')
-          t.domain = log.domain
-        else
-          t.destIP = log.ip
+        if (l.type == 'dns') {
+          t.domain = l.domain
+        } else {
+          t.destIP = l.ip
+          t.fd = l.fd
+        }
 
-        result[log.type][descriptor] = t;
+        result[l.type][descriptor] = t;
       }
 
-      t.count += log.count;
+      t.count += l.count;
     });
 
     return result;
