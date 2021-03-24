@@ -229,13 +229,15 @@ class NetBotTool {
     let end = options.end || (begin + 3600);
     const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || options.mac || undefined;
 
+    log.debug('prepareTopFlows', trafficDirection, target, options.queryall ? 'last24' : [ begin, end ])
+
     let sumFlowKey = null
 
-    if(options.queryall && target) {
+    if(options.queryall) {
       sumFlowKey = await flowAggrTool.getLastSumFlow(target, trafficDirection);
 
       if (!sumFlowKey) {
-        log.warn('Aggregation not found', target, trafficDirection)
+        log.warn('Aggregation not found', target || 'system', trafficDirection)
         return []
       }
 

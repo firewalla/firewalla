@@ -2309,6 +2309,13 @@ class netBot extends ControllerBot {
           }
           options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
           jsonobj = vpnProfile.toJson();
+        } else if (target.startsWith(`${Constants.NS_INTERFACE}:`)) {
+          const uuid = target.substring(Constants.NS_INTERFACE.length + 1)
+          const intf = this.networkProfileManager.getNetworkProfile(uuid);
+          if (!intf) throw new Error("Invalid Network ID")
+          options.mac = target
+          jsonobj = intf.toJson();
+          break
         } else {
           const host = await this.hostManager.getHostAsync(target);
           if (!host || !host.o.mac) {

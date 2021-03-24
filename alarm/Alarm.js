@@ -23,6 +23,7 @@ const i18n = require('../util/i18n.js');
 const fc = require('../net2/config.js');
 const moment = require('moment-timezone');
 const sysManager = require('../net2/SysManager.js');
+const Constants = require('../net2/Constants.js');
 
 
 // Alarm structure
@@ -637,6 +638,14 @@ class IntelAlarm extends Alarm {
     return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tag.ids"];
   }
 
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
+  }
+
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
@@ -649,6 +658,10 @@ class IntelAlarm extends Alarm {
     if (this.isAutoBlock()) {
       key += ".AUTOBLOCK";
     }
+
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
     return key;
   }
 
@@ -658,7 +671,11 @@ class IntelAlarm extends Alarm {
     // dest category
     // device port
     // device url
-    return [this["p.device.name"],
+    let deviceName = this["p.device.name"];
+    if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN && this["p.device.real.ip"])
+      deviceName = this["p.device.real.ip"].split(":")[0];
+
+    return [deviceName,
     this.getReadableDestination(),
     this["p.security.primaryReason"] || "malicious",
     this["p.device.port"],
@@ -887,8 +904,31 @@ class VideoAlarm extends OutboundAlarm {
     this["p.showMap"] = false;
   }
 
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.dest.name"]];
+    if (this["p.device.vpnProfile"]) {
+      if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN) {
+        const realIP = this["p.device.real.ip"].split(":")[0];
+        return [realIP, this["p.dest.name"]];
+      } else
+        return [this["p.device.name"], this["p.dest.name"]];
+    } else 
+      return [this["p.device.name"], this["p.dest.name"]];
+  }
+
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
   }
 }
 
@@ -898,8 +938,31 @@ class GameAlarm extends OutboundAlarm {
     this["p.showMap"] = false;
   }
 
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.dest.name"]];
+    if (this["p.device.vpnProfile"]) {
+      if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN) {
+        const realIP = this["p.device.real.ip"].split(":")[0];
+        return [realIP, this["p.dest.name"]];
+      } else
+        return [this["p.device.name"], this["p.dest.name"]];
+    } else 
+      return [this["p.device.name"], this["p.dest.name"]];
+  }
+
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
   }
 }
 
@@ -909,8 +972,31 @@ class PornAlarm extends OutboundAlarm {
     this["p.showMap"] = false;
   }
 
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.dest.name"]];
+    if (this["p.device.vpnProfile"]) {
+      if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN) {
+        const realIP = this["p.device.real.ip"].split(":")[0];
+        return [realIP, this["p.dest.name"]];
+      } else
+        return [this["p.device.name"], this["p.dest.name"]];
+    } else 
+      return [this["p.device.name"], this["p.dest.name"]];
+  }
+
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
   }
 }
 
@@ -920,8 +1006,31 @@ class VpnAlarm extends OutboundAlarm {
     this["p.showMap"] = false;
   }
 
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.dest.name"]];
+    if (this["p.device.vpnProfile"]) {
+      if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN) {
+        const realIP = this["p.device.real.ip"].split(":")[0];
+        return [realIP, this["p.dest.name"]];
+      } else
+        return [this["p.device.name"], this["p.dest.name"]];
+    } else 
+      return [this["p.device.name"], this["p.dest.name"]];
+  }
+
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+    if (this["p.device.vpnProfile"]) {
+      key = `${key}.ovpn`;
+    }
+    return key;
   }
 }
 
