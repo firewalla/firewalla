@@ -19,6 +19,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const LOG_PREFIX = "[FW_ACL_AUDIT]";
 const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
 const {Address4, Address6} = require('ip-address');
@@ -52,6 +53,10 @@ class ACLAuditLogPlugin extends Sensor {
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
     this.buffer = { }
     this.bufferTs = Date.now() / 1000
+  }
+
+  hookFeature() {
+    if (platform.isAuditLogSupported()) super.hookFeature()
   }
 
   async run() {
@@ -201,6 +206,8 @@ class ACLAuditLogPlugin extends Sensor {
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
     if (intf.name === "tun_fwvpn") {
+      if (!platform.isFireRouterManaged()) return
+
       const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
       if (vpnProfile) {
         mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
@@ -212,6 +219,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // TODO: wireguard client recognition
     else if (intf.name.startsWith("wg")) {
+      if (!platform.isFireRouterManaged()) return
       mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     // local IP being Firewalla's own interface, use if:<uuid> as "mac"
@@ -258,6 +266,8 @@ class ACLAuditLogPlugin extends Sensor {
 
     let mac
     if (intf.name === "tun_fwvpn") {
+      if (!platform.isFireRouterManaged()) return
+
       const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(record.sh);
       if (vpnProfile) {
         mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
@@ -269,6 +279,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // TODO: wireguard client recognition
     else if (intf.name.startsWith("wg")) {
+      if (!platform.isFireRouterManaged()) return
       mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     else {
