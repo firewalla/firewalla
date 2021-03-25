@@ -1969,7 +1969,12 @@ class PolicyManager2 {
           }
         }
 
-        const security = rule.method == 'auto' && rule.category == 'intel' && action == 'block';
+        const policy = rule;
+
+        const isSecurityPolicy = action == 'block' && policy.alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(policy.alarm_type));
+        const isRegionBlockPolicy = action == 'block' && policy.type === 'country';
+        const isAutoBlockPolicy = policy.method == 'auto' && policy.category == 'intel' && action == 'block';
+        const security = isSecurityPolicy || isRegionBlockPolicy || isAutoBlockPolicy;
 
         if (!rule.seq) {
           if (security || this._isActiveProtectRule(rule))
