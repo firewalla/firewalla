@@ -1079,7 +1079,10 @@ class PolicyManager2 {
       }
     }
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block';
+    const isSecurityPolicy = action == 'block' && policy.alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(policy.alarm_type));
+    const isRegionBlockPolicy = action == 'block' && type === 'country';
+    const isAutoBlockPolicy = policy.method == 'auto' && policy.category == 'intel' && action == 'block';
+    const security = isSecurityPolicy || isRegionBlockPolicy || isAutoBlockPolicy;
 
     if (!seq) {
       if (security || this._isActiveProtectRule(policy))
@@ -1351,7 +1354,10 @@ class PolicyManager2 {
       }
     }
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block';
+    const isSecurityPolicy = action == 'block' && policy.alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(policy.alarm_type));
+    const isRegionBlockPolicy = action == 'block' && type === 'country';
+    const isAutoBlockPolicy = policy.method == 'auto' && policy.category == 'intel' && action == 'block';
+    const security = isSecurityPolicy || isRegionBlockPolicy || isAutoBlockPolicy;
 
     if (!seq) {
       if (security || this._isActiveProtectRule(policy))
@@ -1537,14 +1543,14 @@ class PolicyManager2 {
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
+        await Block.setupTagsRules(pid, tags, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, seq);
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
+        await Block.setupIntfsRules(pid, intfs, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, seq);
       if (!_.isEmpty(scope))
-        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
+        await Block.setupDevicesRules(pid, scope, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, seq);
     } else {
       // apply to global
-      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID);
+      await Block.setupGlobalRules(pid, localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, seq);
     }
 
     if (localPortSet) {
@@ -1963,7 +1969,12 @@ class PolicyManager2 {
           }
         }
 
-        const security = rule.method == 'auto' && rule.category == 'intel' && action == 'block';
+        const policy = rule;
+
+        const isSecurityPolicy = action == 'block' && policy.alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(policy.alarm_type));
+        const isRegionBlockPolicy = action == 'block' && policy.type === 'country';
+        const isAutoBlockPolicy = policy.method == 'auto' && policy.category == 'intel' && action == 'block';
+        const security = isSecurityPolicy || isRegionBlockPolicy || isAutoBlockPolicy;
 
         if (!rule.seq) {
           if (security || this._isActiveProtectRule(rule))
