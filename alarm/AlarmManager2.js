@@ -130,7 +130,11 @@ module.exports = class {
             let aid = await this.checkAndSaveAsync(alarm);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
-            log.error("failed to create alarm:", err);
+            if (err.code === 'ERR_DUP_ALARM') {
+              log.info("failed to create alarm:", err);
+            } else {
+              log.error("failed to create alarm:", err);
+            }
           }
 
           done();
