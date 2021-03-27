@@ -222,6 +222,15 @@ class RuleCheckSensor extends Sensor {
       case "net": {
         if (!new Address4(target).isValid() && !new Address6(target).isValid())
           return;
+        if (type === "net") {
+          if (new Address4(target).isValid()) {
+            const addr4 = new Address4(target);
+            target = `${addr4.startAddress().addressMinusSuffix}${addr4.subnet === "/32" ? "" : addr4.subnet}`;
+          } else {
+            const addr6 = new Address4(target);
+            target = `${addr6.startAddress().addressMinusSuffix}${addr6.subnet === "/128" ? "" : addr6.subnet}`;
+          }
+        }
         const set = (security ? 'sec_' : '' )
           + (action === "allow" ? 'allow_' : 'block_')
           + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
