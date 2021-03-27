@@ -1140,10 +1140,13 @@ class PolicyManager2 {
     const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
 
     if (!seq) {
+      seq = Constants.RULE_SEQ_REG;
       if (this._isActiveProtectRule(policy))
         seq = Constants.RULE_SEQ_HI;
-      else
-        seq = Constants.RULE_SEQ_REG;
+      if (this._isInboundAllowRule(policy))
+        seq = Constants.RULE_SEQ_LO;
+      if (this._isInboundFirewallRule(policy))
+        seq = Constants.RULE_SEQ_LO;
     }
 
     let remoteSet4 = null;
@@ -1432,10 +1435,13 @@ class PolicyManager2 {
     const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
 
     if (!seq) {
+      seq = Constants.RULE_SEQ_REG;
       if (this._isActiveProtectRule(policy))
         seq = Constants.RULE_SEQ_HI;
-      else
-        seq = Constants.RULE_SEQ_REG;
+      if (this._isInboundAllowRule(policy))
+        seq = Constants.RULE_SEQ_LO;
+      if (this._isInboundFirewallRule(policy))
+        seq = Constants.RULE_SEQ_LO;
     }
 
     let remoteSet4 = null;
@@ -2042,6 +2048,19 @@ class PolicyManager2 {
     return rule && rule.type === "category" && rule.target == "default_c" && rule.action == "block";
   }
 
+  _isInboundAllowRule(rule) {
+    return rule && rule.direction === "inbound" && rule.action === "allow";
+  }
+
+  _isInboundFirewallRule(rule) {
+    return rule && rule.direction === "inbound" 
+      && (rule.action || "block") === "block" 
+      && !ht.isMacAddress(rule.target) 
+      && _.isEmpty(rule.scope) 
+      && _.isEmpty(rule.tag) 
+      && _.isEmpty(rule.vpnProfile);
+  }
+
   async _matchLocal(rule, localMac) {
     if (!localMac)
       return false;
@@ -2078,6 +2097,7 @@ class PolicyManager2 {
   }
 
   async _matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck) {
+    const security = rule.method == 'auto' && rule.category == 'intel' && action == 'block';
     // matching remote target
     switch (rule.type) {
       case "ip": {
@@ -2111,13 +2131,13 @@ class PolicyManager2 {
         if (!rule.dnsmasq_only) {
           let remoteSet4 = null;
           let remoteSet6 = null;
-          if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || !_.isEmpty(rule.vpnProfile) || rule.localPort || rule.remotePort || rule.parentRgId || Number.isInteger(rule.ipttl)) {
+          if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || !_.isEmpty(rule.vpnProfile) || rule.localPort || rule.remotePort || rule.parentRgId || Number.isInteger(rule.ipttl) || rule.seq !== Constants.RULE_SEQ_REG) {
             remoteSet4 = Block.getDstSet(rule.pid);
             remoteSet6 = Block.getDstSet6(rule.pid);
             if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
               return false;
           } else {
-            remoteSet4 = (rule.action === "allow" ? 'allow_' : 'block_') + (rule.direction === "inbound" ? "ib_" : (rule.direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[rule.type];
+            remoteSet4 = (security ? 'sec_' : '' ) + (rule.action === "allow" ? 'allow_' : 'block_') + (rule.direction === "inbound" ? "ib_" : (rule.direction === "outbound" ? "ob_" : "")) + simpleRuleSetMap[rule.type];
             remoteSet6 = remoteSet4 + "6";
             const mappedAddresses = (await domainIPTool.getMappedIPAddresses(rule.target, {blockSet: remoteSet4})) || [];
             if (!(_.intersection(mappedAddresses, remoteIpsToCheck).length > 0)
@@ -2203,13 +2223,14 @@ class PolicyManager2 {
           }
         }
 
-        const security = rule.method == 'auto' && rule.category == 'intel' && action == 'block'
-
         if (!rule.seq) {
+          rule.seq = Constants.RULE_SEQ_REG;
           if (this._isActiveProtectRule(rule))
             rule.seq = Constants.RULE_SEQ_HI;
-          else
-            rule.seq = Constants.RULE_SEQ_REG;
+          if (this._isInboundAllowRule(rule))
+            rule.seq = Constants.RULE_SEQ_LO;
+          if (this._isInboundFirewallRule(rule))
+            rule.seq = Constants.RULE_SEQ_LO;
         }
 
         rule.rank = 6;
@@ -2271,8 +2292,17 @@ class PolicyManager2 {
           // a trick that makes match_group rule be checked after allow rule and before block rule
           rule.rank += 0.5;
         // high priority rule has a smaller base rank
-        if (rule.rank >= 0)
-          rule.rank += (rule.seq === Constants.RULE_SEQ_HI ? 0 : 10);
+        if (rule.rank >= 0) {
+          switch (rule.seq) {
+            case Constants.RULE_SEQ_REG:
+              rule.rank += 10;
+              break;
+            case Constants.RULE_SEQ_LO:
+              rule.rank += 20;
+              break;
+            default:
+          }
+        }
         return rule;
         // sort rules by rank in ascending order
       }).filter(rule => rule.rank >= 0).sort((a, b) => {return a.rank - b.rank});
