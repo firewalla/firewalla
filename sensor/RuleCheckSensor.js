@@ -152,10 +152,13 @@ class RuleCheckSensor extends Sensor {
       // non-regular rule has separate rule in iptables
       let seq = policy.seq;
       if (!seq) {
+        seq = Constants.RULE_SEQ_REG;
         if (this._isActiveProtectRule(policy))
           seq = Constants.RULE_SEQ_HI;
-        else
-          seq = Constants.RULE_SEQ_REG;
+        if (this._isInboundAllowRule(policy))
+          seq = Constants.RULE_SEQ_LO;
+        if (this._isInboundFirewallRule(policy))
+          seq = Constants.RULE_SEQ_LO;
       }
       if (seq !== Constants.RULE_SEQ_REG)
         return false;
