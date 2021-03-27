@@ -738,7 +738,7 @@ module.exports = class FlowMonitor {
       const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
       for (const cn of Object.keys(vpnProfiles)) {
         const vpnProfile = vpnProfiles[cn];
-        if (service === "detect" && f.isDevelopmentVersion()) { // TODO: remove this restriction in future version
+        if (service === "detect") {
           const uid = `${Constants.NS_VPN_PROFILE}:${cn}`;
           
           // if mac is pre-specified and mac does not equal to the vpn profile, continue
