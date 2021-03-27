@@ -130,7 +130,9 @@ class VPNProfile {
     const vpnIntf = sysManager.getInterface("tun_fwvpn");
     const vpnIntfUUID = vpnIntf && vpnIntf.uuid;
     if (vpnIntfUUID) {
-      await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${vpnIntfUUID}/vpn_prof_${cn}.conf`, content, {encoding: 'utf8'});
+      await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${vpnIntfUUID}/vpn_prof_${cn}.conf`, content, {encoding: 'utf8'}).catch((err) => {
+        log.error(`Failed to create dnsmasq config for VPN profile ${cn}`, err.message);
+      });
       dnsmasq.scheduleRestartDNSService();
     }
     if (envCreatedMap[cn])
