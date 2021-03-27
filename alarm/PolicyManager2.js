@@ -2049,7 +2049,7 @@ class PolicyManager2 {
   }
 
   _isInboundAllowRule(rule) {
-    return rule && rule.direction === "inbound" && rule.action === "allow";
+    return rule && rule.direction === "inbound" && rule.action === "allow" && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
   }
 
   _isInboundFirewallRule(rule) {
