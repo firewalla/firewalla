@@ -2058,7 +2058,8 @@ class PolicyManager2 {
       && !ht.isMacAddress(rule.target) 
       && _.isEmpty(rule.scope) 
       && _.isEmpty(rule.tag) 
-      && _.isEmpty(rule.vpnProfile);
+      && _.isEmpty(rule.vpnProfile)
+      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
   }
 
   async _matchLocal(rule, localMac) {
