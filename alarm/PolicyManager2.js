@@ -2098,7 +2098,8 @@ class PolicyManager2 {
   }
 
   async _matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck) {
-    const security = rule.method == 'auto' && rule.category == 'intel' && action == 'block';
+    const security = rule.isSecurityBlockPolicy();
+    
     // matching remote target
     switch (rule.type) {
       case "ip": {
