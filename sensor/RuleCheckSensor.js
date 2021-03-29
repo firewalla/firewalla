@@ -232,7 +232,7 @@ class RuleCheckSensor extends Sensor {
 
     log.debug(`Checking rule enforcement ${pid}`);
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.isSecurityBlockPolicy();
 
     switch (type) {
       case "ip":

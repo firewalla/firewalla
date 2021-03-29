@@ -1137,7 +1137,7 @@ class PolicyManager2 {
       return;
     }
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.isSecurityBlockPolicy();
 
     if (!seq) {
       seq = Constants.RULE_SEQ_REG;
@@ -1432,7 +1432,7 @@ class PolicyManager2 {
       return;
     }
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.isSecurityBlockPolicy();
 
     if (!seq) {
       seq = Constants.RULE_SEQ_REG;
