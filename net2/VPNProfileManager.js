@@ -151,6 +151,7 @@ class VPNProfileManager {
             if (this.iptablesReady) {
               for (let cn in this.vpnProfiles) {
                 const vpnProfile = this.vpnProfiles[cn];
+                await VPNProfile.ensureCreateEnforcementEnv(cn);
                 vpnProfile.scheduleApplyPolicy();
               }
             }
