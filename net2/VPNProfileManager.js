@@ -46,7 +46,7 @@ class VPNProfileManager {
           // in case uuid of VPN server network is changed
           for (const cn of Object.keys(this.vpnProfiles)) {
             await VPNProfile.ensureCreateEnforcementEnv(cn).catch((err) => {
-              this.log.error(`Failed to create enforcement env for VPN profile ${cn}`, err.message);
+              log.error(`Failed to create enforcement env for VPN profile ${cn}`, err.message);
             });
           }
         });
@@ -151,6 +151,7 @@ class VPNProfileManager {
             if (this.iptablesReady) {
               for (let cn in this.vpnProfiles) {
                 const vpnProfile = this.vpnProfiles[cn];
+                await VPNProfile.ensureCreateEnforcementEnv(cn);
                 vpnProfile.scheduleApplyPolicy();
               }
             }
