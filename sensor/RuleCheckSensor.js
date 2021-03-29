@@ -152,10 +152,13 @@ class RuleCheckSensor extends Sensor {
       // non-regular rule has separate rule in iptables
       let seq = policy.seq;
       if (!seq) {
+        seq = Constants.RULE_SEQ_REG;
         if (this._isActiveProtectRule(policy))
           seq = Constants.RULE_SEQ_HI;
-        else
-          seq = Constants.RULE_SEQ_REG;
+        if (this._isInboundAllowRule(policy))
+          seq = Constants.RULE_SEQ_LO;
+        if (this._isInboundFirewallRule(policy))
+          seq = Constants.RULE_SEQ_LO;
       }
       if (seq !== Constants.RULE_SEQ_REG)
         return false;
@@ -192,6 +195,20 @@ class RuleCheckSensor extends Sensor {
 
   _isActiveProtectRule(rule) {
     return rule && rule.type === "category" && rule.target == "default_c" && rule.action == "block";
+  }
+
+  _isInboundAllowRule(rule) {
+    return rule && rule.direction === "inbound" && rule.action === "allow" && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
+  }
+
+  _isInboundFirewallRule(rule) {
+    return rule && rule.direction === "inbound" 
+      && (rule.action || "block") === "block" 
+      && !ht.isMacAddress(rule.target) 
+      && _.isEmpty(rule.scope) 
+      && _.isEmpty(rule.tag) 
+      && _.isEmpty(rule.vpnProfile)
+      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
   }
 
   async checkActiveRule(policy) {
