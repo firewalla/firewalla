@@ -8,7 +8,7 @@ logger 'FIREWALLA.ACLAUDIT Starting'
 sudo mkdir -p /alog/
 sudo rm -r -f /alog/*
 sudo umount -l /alog
-sudo mount -t tmpfs -o size=10m tmpfs /alog
+sudo mount -t tmpfs -o size=20m tmpfs /alog
 
 # ensure log file is readable
 touch /alog/acl-audit.log
@@ -21,7 +21,7 @@ sudo ln -sf /alog /log/alog
 
 mkdir -p $FIREWALLA_HIDDEN/config/crontab/
 sudo cp $FIREWALLA_HOME/etc/logrotate.d/acl-audit /etc/logrotate.d/
-echo "*/2 * * * * sudo logrotate /etc/logrotate.d/acl-audit" > $FIREWALLA_HIDDEN/config/crontab/acl-audit-logrotate
+echo "* * * * * sudo logrotate /etc/logrotate.d/acl-audit" > $FIREWALLA_HIDDEN/config/crontab/acl-audit-logrotate
 $FIREWALLA_HOME/scripts/update_crontab.sh
 
 sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
