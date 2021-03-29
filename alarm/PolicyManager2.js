@@ -1137,7 +1137,7 @@ class PolicyManager2 {
       return;
     }
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.isSecurityBlockPolicy();
 
     if (!seq) {
       if (this._isActiveProtectRule(policy))
@@ -1429,7 +1429,7 @@ class PolicyManager2 {
       return;
     }
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.isSecurityBlockPolicy();
 
     if (!seq) {
       if (this._isActiveProtectRule(policy))
@@ -2203,7 +2203,7 @@ class PolicyManager2 {
           }
         }
 
-        const security = rule.method == 'auto' && rule.category == 'intel' && action == 'block'
+        const security = rule.isSecurityBlockPolicy();
 
         if (!rule.seq) {
           if (this._isActiveProtectRule(rule))
