@@ -179,7 +179,7 @@ async function getDiskInfo() {
   try {
     const response = await df()
     const disks = response.filter(entry => {
-      return entry.filesystem.startsWith("/dev/mmc");
+      return ["/dev/mmc", "overlay"].some(x => entry.filesystem.startsWith(x));
     })
 
     diskInfo = disks;
