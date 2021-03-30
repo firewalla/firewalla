@@ -112,7 +112,7 @@ class FlowAggrTool {
       // mac in json is used as differentiator on aggreation (zunionstore), don't remove it here
       const result = { device: mac };
 
-      [ 'destIP', 'domain', 'port', 'devicePort' ].forEach(f => {
+      [ 'destIP', 'domain', 'port', 'devicePort', 'fd' ].forEach(f => {
         if (entry[f]) result[f] = entry[f]
       })
 
@@ -359,6 +359,7 @@ class FlowAggrTool {
     for(let i = 0; i < destAndScores.length; i++) {
       if(i % 2 === 1) {
         let payload = destAndScores[i-1];
+        // TODO: change this to number after most clints are adapted
         let count = destAndScores[i];
         if(payload !== '_' && count !== 0) {
           try {
