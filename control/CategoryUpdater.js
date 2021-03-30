@@ -489,15 +489,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
 
     // skip ipset and dnsmasq config update if category is not activated
-    if (!this.isActivated(category)) {
-      return
+    if (this.isActivated(category)) {
+      if (!isDomainOnly) {
+        this.addUpdateIPSetByDomainTask(category, d);
+        this.addFilterIPSetByDomainTask(category);
+      }
+      if (!dynamicCategoryDomainExists && !defaultDomainExists) {
+        domainBlock.updateCategoryBlock(category);
+      }
     }
-    if (!isDomainOnly) {
-      this.addUpdateIPSetByDomainTask(category, d);
-      this.addFilterIPSetByDomainTask(category);
-    }
-    if (!dynamicCategoryDomainExists && !defaultDomainExists) {
-      domainBlock.updateCategoryBlock(category);
+    if (this.isTLSCatetoryActivated[category]) {
+      const domains = [d];
+      domainBlock.updateTLSCategoryBlock(category, domains);
     }
   }
 

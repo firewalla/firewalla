@@ -238,15 +238,30 @@ class GoldPlatform extends Platform {
     }]
   }
 
-  async installTLSModule() {
+  async installTLSModule(max_host_sets) {
     if (this.tlsInstalled) return;
     const cmdResult = await exec(`lsmod | grep xt_tls |awk '{print $1}'`);
     const results = cmdResult.stdout.toString().trim().split('\n');
     for(const result of results) {
-      if (result == 'xt_tls') return; 
+      if (result == 'xt_tls') {
+        this.tlsInstalled = true;
+        return; 
+      }
     }
-    await exec(`sudo insmod ${__dirname}/files/xt_tls.ko`)
-    await exec(`sudo install -D -v -m 644 ${__dirname}/files/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`)
+    let TLSmodulePathPrefix = null;
+    if (this.isUbuntu20()) {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u20"
+    } else {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u18"
+    }
+    if (max_host_sets) {
+      log.info("cmd is", `sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=${max_host_sets}`);
+      await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=${max_host_sets}`)
+    } else {
+      log.info("cmd is", `sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko`);
+      await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko`)
+    }
+    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`)
     this.tlsInstalled = true;
   }
 

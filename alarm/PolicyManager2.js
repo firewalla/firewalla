@@ -1117,6 +1117,8 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
+    const max_host_sets = policy["max_host_sets"]
+
     await this._refreshActivatedTime(policy)
 
     if (this.isFirewallaOrCloud(policy)) {
@@ -1157,6 +1159,7 @@ class PolicyManager2 {
     let remoteTupleCount = 1;
     let ctstate = null;
     let tlsHostSet = null;
+    let tlsHost = null;
     if (localPort) {
       localPortSet = `c_${pid}_local_port`;
       await ipset.create(localPortSet, "bitmap:port");
@@ -1247,7 +1250,7 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (policy.useTLS) {
-          tlsHostSet = Block.getTLSHostSet(pid);
+          tlsHost = `*.${target}`
           protocol = 'tcp';
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1382,9 +1385,9 @@ class PolicyManager2 {
       await dnsmasq.linkRuleToRuleGroup({scope, intfs, tags, vpnProfile, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet]
-    if (tlsHostSet) {
-      await platform.installTLSModule();
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost]
+    if (tlsHostSet || tlsHost) {
+      await platform.installTLSModule(max_host_sets);
     }
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
@@ -1402,11 +1405,8 @@ class PolicyManager2 {
       await Block.setupGlobalRules(pid, ... commonArgs);
     }
     
-    if (policy.useTLS) {
-      if (type == 'dns') 
-        await domainBlock.blockTLSDomain(target, tlsHostSet);
-      else if(type == 'category') 
-        await domainBlock.updateTLSCategoryBlock(target)
+    if (policy.useTLS && type == "category") {
+      await domainBlock.updateTLSCategoryBlock(target)
     }
   } 
 
@@ -1473,6 +1473,7 @@ class PolicyManager2 {
     let remoteTupleCount = 1;
     let ctstate = null;
     let tlsHostSet = null;
+    let tlsHost = null;
     if (localPort) {
       localPortSet = `c_${pid}_local_port`;
       await Block.batchUnblock(localPort.split(","), localPortSet);
@@ -1556,7 +1557,7 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (policy.useTLS) {
-          tlsHostSet = Block.getTLSHostSet(pid);
+          tlsHost = `*.${target}`
           protocol = 'tcp';
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1680,7 +1681,7 @@ class PolicyManager2 {
       await dnsmasq.unlinkRuleFromRuleGroup({scope, intfs, tags, vpnProfile, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet]
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost]
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(vpnProfile) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);

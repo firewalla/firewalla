@@ -61,11 +61,11 @@ class CategoryUpdateSensor extends Sensor {
     try {
       const categories = Object.keys(categoryHashsetMapping)
       log.info('Native categories', categories);
+      if (platform.isTLSModuleInstalled()) {
+        await categoryUpdater.setTLSCategoryActived();
+      }
       for (const category of categories) {
         await this.updateCategory(category);
-      }
-      if (platform.isTLSModuleInstalled) {
-        await categoryUpdater.setTLSCategoryActived();
       }
     } catch (err) {
       log.error("Failed to update categories", err)
