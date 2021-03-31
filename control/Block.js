@@ -49,6 +49,14 @@ async function ensureCreateRuleGroupChain(uuid) {
     `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "block")} &> /dev/null`,
     `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")} &> /dev/null`,
     `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "block")} &> /dev/null`,
+    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_HI &> /dev/null`,
+    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_HI &> /dev/null`,
+    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_HI &> /dev/null`,
+    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_HI &> /dev/null`,
+    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_LO &> /dev/null`,
+    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_LO &> /dev/null`,
+    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_LO &> /dev/null`,
+    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_LO &> /dev/null`,
     `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")} &> /dev/null`,
     `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")} &> /dev/null`,
     `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")} &> /dev/null`,
@@ -325,8 +333,12 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow")});
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW", target: getRuleGroupChainName(targetRgId, "allow")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK", target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW_HI", target: getRuleGroupChainName(targetRgId, "allow") + "_HI"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO"});
       parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL", target: getRuleGroupChainName(targetRgId, "qos")});
       parameters.push({table: "mangle", chain: "FW_RT_VC_GLOBAL", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_GLOBAL", target: getRuleGroupChainName(targetRgId, "route")});
@@ -460,8 +472,12 @@ async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPo
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow")});
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW", target: getRuleGroupChainName(targetRgId, "allow")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW_HI", target: getRuleGroupChainName(targetRgId, "allow") + "_HI"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO"});
       parameters.push({table: "mangle", chain: "FW_QOS_DEV_G", target: getRuleGroupChainName(targetRgId, "qos")});
       parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
@@ -609,8 +625,12 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow")});
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW", target: getRuleGroupChainName(targetRgId, "allow")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK", target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW_HI", target: getRuleGroupChainName(targetRgId, "allow") + "_HI"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO"});
       parameters.push({table: "mangle", chain: "FW_QOS_DEV", target: getRuleGroupChainName(targetRgId, "qos")});
       parameters.push({table: "mangle", chain: "FW_RT_VC_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
@@ -752,10 +772,18 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
       }
       case "match_group": {
         await ensureCreateRuleGroupChain(targetRgId);
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow"), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block"), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow"), localSet: netSet, localFlagCount: 2});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block"), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW", target: getRuleGroupChainName(targetRgId, "allow"), localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getRuleGroupChainName(targetRgId, "block"), localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW", target: getRuleGroupChainName(targetRgId, "allow"), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK", target: getRuleGroupChainName(targetRgId, "block"), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW_HI", target: getRuleGroupChainName(targetRgId, "allow") + "_HI", localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI", localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW_HI", target: getRuleGroupChainName(targetRgId, "allow") + "_HI", localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI", localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO", localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO", localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO", localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO", localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_QOS_DEV_G", target: getRuleGroupChainName(targetRgId, "qos"), localSet: devSet, localFlagCount: 1});
         parameters.push({table: "mangle", chain: "FW_QOS_NET_G", target: getRuleGroupChainName(targetRgId, "qos"), localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route"), localSet: devSet, localFlagCount: 1});
@@ -893,8 +921,12 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: getRuleGroupChainName(targetRgId, "allow")});
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW", target: getRuleGroupChainName(targetRgId, "allow")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK", target: getRuleGroupChainName(targetRgId, "block")});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW_HI", target: getRuleGroupChainName(targetRgId, "allow") + "_HI"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO"});
       parameters.push({table: "mangle", chain: "FW_QOS_NET", target: getRuleGroupChainName(targetRgId, "qos")});
       parameters.push({table: "mangle", chain: "FW_RT_VC_NETWORK", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_NETWORK", target: getRuleGroupChainName(targetRgId, "route")});
@@ -969,12 +1001,24 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
   }
 }
 
-async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, reverse1, reverse2, tlsHostSet, tlsHost) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
+async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, reverse1, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
+  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const filterPrio = 1;
   const parameters = [];
   await ensureCreateRuleGroupChain(ruleGroupUUID);
+  let chainSuffix = "";
+  switch (seq) {
+    case Constants.RULE_SEQ_HI:
+      chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_LO:
+      chainSuffix = "_LO";
+      break;
+    case Constants.RULE_SEQ_REG:
+    default:
+      chainSuffix = "";
+  }
   switch (action) {
     case "qos": {
       qdisc = qdisc || "fq_codel";
@@ -1017,12 +1061,12 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "allow"), target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "allow") + chainSuffix, target: "FW_ACCEPT"});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block"), target: getDropChain(security)});
+      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: getDropChain(security)});
     }
   }
   const remoteSrcSpecs = [];
