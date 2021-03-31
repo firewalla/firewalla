@@ -51,7 +51,7 @@ if [ -z "$2" ]
      ls -lt /var/log/openvpn* | awk '{print $NF}' | xargs -i sudo cp -p {} .
      ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp -p {} .
 fi
-sudo chmod 777 syslog*
+sudo chmod a+r *
 cp -rfp /home/pi/.forever/* .
 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
 (curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password)' | cat) &> frcc.log
