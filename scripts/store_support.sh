@@ -24,7 +24,7 @@
 : ${FIREWALLA_TMP:='/home/pi/tmp'}
 STORE_DIR=/data/store_techsupport
 BACKUP_COUNT=3
-RUN_TIMEOUT=300
+RUN_TIMEOUT=180
 DISK_FREE_MIN=200000 #200MB in KB
 SUPPORT_FILE_NAME='support.tar.gz'
 SUPPORT_FILE_PATH=$FIREWALLA_TMP/$SUPPORT_FILE_NAME
@@ -63,6 +63,11 @@ run_techsupport || {
     exit 1
 }
 
+test -e $SUPPORT_FILE_PATH || {
+    err $SUPPORT_FILE_PATH NOT exist
+    exit 1
+}
+
 # check file size
 support_file_size=$(stat -c %s $SUPPORT_FILE_PATH)
 test $support_file_size -le $SUPPORT_FILE_SIZE_MAX || {
@@ -71,12 +76,13 @@ test $support_file_size -le $SUPPORT_FILE_SIZE_MAX || {
 }
 
 # rotate existing files if any
-for i in $(seq $BACKUP_COUNT -1 1)
+for i in $(seq $BACKUP_COUNT -1 2)
 do
     let j=i-1
     test -e ${SUPPORT_FILE_NAME}.$j && mv -f ${SUPPORT_FILE_NAME}.{$j,$i} 
 done
-cp -f $SUPPORT_FILE_PATH ${SUPPORT_FILE_NAME}.1
+mv -f ${SUPPORT_FILE_NAME}{,.1}
+mv -f $SUPPORT_FILE_PATH $SUPPORT_FILE_NAME
 
 ls -l
 echo "Tech support file stored successfully"
