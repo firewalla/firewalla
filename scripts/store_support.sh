@@ -46,6 +46,12 @@ run_techsupport() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
+if [[ $1 == '-c' ]]; then
+    echo "Clean $STORE_DIR"
+    rm -rf $STORE_DIR
+    exit $?
+fi
+
 sudo mkdir -p $STORE_DIR
 sudo chown pi:pi $STORE_DIR
 
