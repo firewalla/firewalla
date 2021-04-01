@@ -70,7 +70,7 @@ class DeviceMgmtTool {
   }
 
   async switchCleanSupportFlag(op=false) {
-    const CLEAN_SUPPORT_FLAG_FILE = '/dev/shmem/clean_support.touch'
+    const CLEAN_SUPPORT_FLAG_FILE = '/dev/shm/clean_support.touch'
     try {
       if ( op ) {
         fs.closeSync(fs.openSync(CLEAN_SUPPORT_FLAG_FILE,'w'));
