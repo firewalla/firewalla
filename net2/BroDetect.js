@@ -20,6 +20,7 @@ const log = require('./logger.js')(__filename);
 const Tail = require('../vendor_lib/always-tail.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const iptool = require("ip");
 
@@ -550,7 +551,7 @@ module.exports = class {
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
         }
       }
-      if (fc.isFeatureOn("acl_audit")) {
+      if (fc.isFeatureOn("acl_audit") && platform.isAuditLogSupported()) {
         if (
           !obj["id.orig_h"] ||
           sysManager.isMyIP(obj["id.orig_h"], false) ||

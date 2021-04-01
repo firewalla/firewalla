@@ -44,7 +44,9 @@ class AuditTool extends LogQuery {
 
     const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
 
-    return logs.slice(0, options.count)
+    const enriched = await this.enrichWithIntel(logs.slice(0, options.count));
+
+    return enriched
   }
 
   toSimpleFormat(entry) {
@@ -102,7 +104,7 @@ class AuditTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    // options.block == null will also be counted here
+    // options.block == null is also counted here
     return options.block == undefined || options.block ? `audit:drop:${mac}` : `audit:accept:${mac}`
   }
 }

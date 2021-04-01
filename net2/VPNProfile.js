@@ -37,6 +37,8 @@ const ipset = require('./Ipset.js');
 const _ = require('lodash');
 Promise.promisifyAll(fs);
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 const envCreatedMap = {};
 
 class VPNProfile {
@@ -127,12 +129,20 @@ class VPNProfile {
   static async ensureCreateEnforcementEnv(cn) {
     // always re-create dnsmasq config file in case VPN server UUID is changed
     const content = `redis-src-address-group=%${VPNProfile.getRedisClientAddressSetName(cn)}@${cn}`;
-    const vpnIntf = sysManager.getInterface("tun_fwvpn");
-    const vpnIntfUUID = vpnIntf && vpnIntf.uuid;
-    if (vpnIntfUUID) {
-      await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${vpnIntfUUID}/vpn_prof_${cn}.conf`, content, {encoding: 'utf8'});
-      dnsmasq.scheduleRestartDNSService();
+    if (platform.isFireRouterManaged()) {
+      const vpnIntf = sysManager.getInterface("tun_fwvpn");
+      const vpnIntfUUID = vpnIntf && vpnIntf.uuid;
+      if (vpnIntfUUID && sysManager.getInterfaceViaUUID(vpnIntfUUID)) {
+        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/${vpnIntfUUID}/vpn_prof_${cn}.conf`, content, { encoding: 'utf8' }).catch((err) => {
+          log.error(`Failed to create dnsmasq config for VPN profile ${cn}`, err.message);
+        });
+      }
+    } else {
+      await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vpn_prof_${cn}.conf`, content, {encoding: 'utf8'}).catch((err) => {
+        log.error(`Failed to create dnsmasq config for VPN profile ${cn}`, err.message);
+      });
     }
+    dnsmasq.scheduleRestartDNSService();
     if (envCreatedMap[cn])
       return;
     // create related ipsets
