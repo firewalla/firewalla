@@ -48,7 +48,7 @@ run_techsupport() {
 
 if [[ $1 == '-c' ]]; then
     echo "Clean $STORE_DIR"
-    rm -rf $STORE_DIR
+    sudo rm -rf $STORE_DIR
     exit $?
 fi
 
