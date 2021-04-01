@@ -22,7 +22,7 @@
 # ----------------------------------------------------------------------------
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
 : ${FIREWALLA_TMP:='/home/pi/tmp'}
-STORE_DIR=/data/store_techsupport
+STORE_DIR=/data/support
 BACKUP_COUNT=3
 RUN_TIMEOUT=180
 DISK_FREE_MIN=200000 #200MB in KB
