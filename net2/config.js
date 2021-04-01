@@ -29,6 +29,7 @@ const complexNodes = [ 'sensors', 'apiSensors', 'features', 'userFeatures', 'bro
 const dynamicConfigKey = "sys:features"
 
 var dynamicConfigs = {}
+let cloudConfigs = {}
 
 let callbacks = {}
 
@@ -40,6 +41,8 @@ const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 
 const platform = require('../platform/PlatformLoader').getPlatform()
+
+const request = require('requestretry');
 
 async function updateUserConfig(updatedPart) {
   await getUserConfig(true);
@@ -163,6 +166,16 @@ function isFeatureOn_Dynamic(featureName) {
   }
 }
 
+function isFeatureOnCloud(featureName) {
+  if (cloudConfigs && cloudConfigs.userFeatures && featureName in cloudConfigs.userFeatures) {
+    if(cloudConfigs.userFeatures[featureName]) 
+      return true;
+    else 
+      return false;
+  }
+  return undefined;
+}
+
 function isFeatureHidden(featureName) {
   if(!f.isProductionOrBeta()) {
     return false; // for dev mode, never hide features
@@ -193,6 +206,9 @@ function isFeatureOn(featureName, defaultValue) {
     return dynamicFlag
   }
 
+  const cloudConfigFlag = isFeatureOnCloud(featureName)
+  if (cloudConfigFlag !== undefined) return cloudConfigFlag;
+
   const staticFlag = isFeatureOn_Static(featureName)
   if(staticFlag !== undefined) {
     return staticFlag
@@ -207,6 +223,33 @@ async function syncDynamicFeaturesConfigs() {
     dynamicConfigs = configs
   } else {
     dynamicConfigs = {}
+  }
+}
+
+function syncCloudFeaturesConfigs() {
+  let configServerUrl = null;
+  if (f.isDevelopmentVersion()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_dev.json'
+  if (f.isAlpha()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_alpha.json'
+  if (f.isProductionOrBeta()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box.json'
+  
+  if(configServerUrl) {
+    const options = {
+      uri: configServerUrl,
+      family: 4,
+      method: 'GET',
+      maxAttempts: 5,
+      retryDelay: 1000,
+      json: true
+    };
+    request(options, (err, httpResponse, body) => {
+      if (err != null) {
+        log.error("requesting url error", url, error)
+        return
+      }
+      if (httpResponse.statusCode > 199 && httpResponse.statusCode < 300) {
+        cloudConfigs = body
+      }
+    });
   }
 }
 
@@ -232,13 +275,18 @@ function getDynamicConfigs() {
   return dynamicConfigs
 }
 
+function getCloudConfigs() {
+  return cloudConfigs
+}
+
 function getFeatures() {
   let staticFeatures = getConfig().userFeatures
   let dynamicFeatures = getDynamicConfigs()
+  let cloudFeatures = getCloudConfigs()
 
   let x = {}
 
-  let merged = Object.assign(x, staticFeatures, dynamicFeatures)
+  let merged = Object.assign(x, staticFeatures, cloudFeatures, dynamicFeatures)
 
   for(let key in merged) {
     if(merged[key] == '0') {
@@ -301,7 +349,11 @@ setInterval(() => {
   syncDynamicFeaturesConfigs()
 }, 60 * 1000) // every minute
 
+syncCloudFeaturesConfigs()
 
+setInterval(() => {
+  syncCloudFeaturesConfigs()
+}, 5 * 60 * 1000)
 
 function onFeature(feature, callback) {
   if(!callbacks[feature]) {
