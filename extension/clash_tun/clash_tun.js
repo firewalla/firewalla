@@ -117,8 +117,12 @@ class ClashTun {
     log.info("Preparing environment for Clash...");
     this.ready = false;
     try {
-      await this.prepareClashConfig();
-      await this.prepareDockerComposeFile();
+      if(this.confg && this.config.selfManaged) {
+        // no need to prepare clash config if it's selfManaged
+      } else {
+        await this.prepareClashConfig();
+        await this.prepareDockerComposeFile();  
+      }
 
       await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
 
@@ -176,7 +180,12 @@ class ClashTun {
     
     try {
       await this.preStart();
-      await this.rawStart()
+
+      if(this.confg && this.config.selfManaged) {
+        // no need to start clash if it's selfManaged
+      } else {
+        await this.rawStart()
+      }
       
       let up = false;
       for(let i = 0; i < 30; i++) {
@@ -203,7 +212,12 @@ class ClashTun {
   }
 
   async stop() {
-    return this.rawStop();
+    if(this.confg && this.config.selfManaged) {
+      // no need to stop clash if it's selfManaged
+      return;
+    } else {
+      return this.rawStop();
+    }
   }
 
   async rawStart() {
