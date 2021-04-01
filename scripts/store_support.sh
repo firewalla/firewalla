@@ -24,12 +24,11 @@
 : ${FIREWALLA_TMP:='/home/pi/tmp'}
 STORE_DIR=/data/store_techsupport
 BACKUP_COUNT=3
-SUPPORT_FILE_NAME='support.tar.gz'
 RUN_TIMEOUT=300
 DISK_FREE_MIN=204800
-FILE_SIZE_MAX=512
+SUPPORT_FILE_NAME='support.tar.gz'
 SUPPORT_FILE_PATH=$FIREWALLA_TMP/$SUPPORT_FILE_NAME
-SUPPORT_FILE_LIMIT=51200
+SUPPORT_FILE_SIZE_MAX=51200
 
 # ----------------------------------------------------------------------------
 # Functions
@@ -54,8 +53,8 @@ cd $STORE_DIR
 
 # check disk space
 disk_free=$(df -Pk . | tail -1 | awk '{print $4}')
-test $disk_free -ge $DISK_FREE_LIMIT || {
-    err "free disk space in $PWD is less than $DISK_FREE_LIMIT, skip storing"
+test $disk_free -ge $DISK_FREE_MIN || {
+    err "free disk space in $PWD is less than $DISK_FREE_MIN, skip storing"
     exit 1
 }
 
@@ -66,8 +65,8 @@ run_techsupport || {
 
 # check file size
 support_file_size=$(stat -c %s $SUPPORT_FILE_PATH)
-test $support_file_size -le $SUPPORT_FILE_LIMIT || {
-    err "$SUPPORT_FILE_PATH size($support_file_size) is over limit($SUPPORT_FILE_LIMIT), skip storing"
+test $support_file_size -le $SUPPORT_FILE_SIZE_MAX || {
+    err "$SUPPORT_FILE_PATH size($support_file_size) is over limit($SUPPORT_FILE_SIZE_MAX), skip storing"
     exit 1
 }
 
