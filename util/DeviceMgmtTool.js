@@ -69,7 +69,7 @@ class DeviceMgmtTool {
     }
   }
 
-  async switchCleanSupportFlag(op=false) {
+  async switchCleanSupportFlag(op=true) {
     const CLEAN_SUPPORT_FLAG_FILE = '/dev/shm/clean_support.touch'
     try {
       if ( op ) {
